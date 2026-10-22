@@ -42,6 +42,7 @@ typedef struct WhisperContext {
     const AVClass *class;
     char *model_path;
     char *language;
+    bool translate;
     bool use_gpu;
     int gpu_device;
     char *vad_model_path;
@@ -52,6 +53,7 @@ typedef struct WhisperContext {
     int64_t queue;
     char *destination;
     char *format;
+    int max_len;
 
     struct whisper_context *ctx_wsp;
     struct whisper_vad_context *ctx_vad;
@@ -149,6 +151,18 @@ static int init(AVFilterContext *ctx)
         wctx->avio_context->direct = AVIO_FLAG_DIRECT;
     }
 
+    if (!whisper_is_multilingual(wctx->ctx_wsp)) {
+        if (!wctx->translate && strcmp(wctx->language, "auto") == 0) {
+            av_log(ctx, AV_LOG_WARNING,
+                   "Multilingual model not provided. Non-English audio may not be correctly transcribed.\n");
+        } else if (wctx->translate || (strcmp(wctx->language, "auto") != 0 && strcmp(wctx->language, "en") != 0)) {
+            av_log(ctx, AV_LOG_ERROR,
+                   "%s requested but multilingual model not provided.\n", wctx->translate ? "Translation" : "Transcription");
+            return AVERROR(ENOSYS);
+        }
+        wctx->language = "en";
+    }
+
     av_log(ctx, AV_LOG_INFO,
            "Whisper filter initialized: model: %s lang: %s queue: %" PRId64 " ms\n",
            wctx->model_path, wctx->language, wctx->queue / 1000);
@@ -199,11 +213,14 @@ static void run_transcription(AVFilterContext *ctx, AVFrame *frame, int samples)
 
     struct whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     params.language = wctx->language;
+    params.translate = wctx->translate;
     params.n_threads = ff_filter_get_nb_threads(ctx);
     params.print_special = 0;
     params.print_progress = 0;
     params.print_realtime = 0;
     params.print_timestamps = 0;
+    params.max_len = wctx->max_len;
+    params.token_timestamps = (wctx->max_len > 0);
 
     if (whisper_full(wctx->ctx_wsp, params, wctx->audio_buffer, samples) != 0) {
         av_log(ctx, AV_LOG_ERROR, "Failed to process audio with whisper.cpp\n");
@@ -220,6 +237,14 @@ static void run_transcription(AVFilterContext *ctx, AVFrame *frame, int samples)
         char *text_cleaned = av_strireplace(text, "[BLANK_AUDIO]", "");
 
         if (av_strnlen(text_cleaned, 1) == 0) {
+            av_freep(&text_cleaned);
+            continue;
+        }
+
+        // Skip segments that are parts of [BLANK_AUDIO] when max_len splits them
+        if (wctx->max_len > 0 && (strcmp(text_cleaned, "[") == 0 || strcmp(text_cleaned, "]") == 0 ||
+                                  strcmp(text_cleaned, "BLANK") == 0 || strcmp(text_cleaned, "_") == 0 ||
+                                  strcmp(text_cleaned, "AUDIO") == 0)) {
             av_freep(&text_cleaned);
             continue;
         }
@@ -256,7 +281,7 @@ static void run_transcription(AVFilterContext *ctx, AVFrame *frame, int samples)
             } else if (!av_strcasecmp(wctx->format, "json")) {
                 buf = av_asprintf("{\"start\":%" PRId64 ",\"end\":%" PRId64 ",\"text\":\"%s\"}\n", start_t, end_t, text_cleaned);
             } else
-                buf = av_strdup(text_cleaned);
+                buf = av_asprintf("%s\n", text_cleaned);
 
             if (buf) {
                 avio_write(wctx->avio_context, buf, strlen(buf));
@@ -432,11 +457,13 @@ static int query_formats(const AVFilterContext *ctx,
 static const AVOption whisper_options[] = {
     { "model", "Path to the whisper.cpp model file", OFFSET(model_path), AV_OPT_TYPE_STRING,.flags = FLAGS },
     { "language", "Language for transcription ('auto' for auto-detect)", OFFSET(language), AV_OPT_TYPE_STRING, {.str = "auto"}, .flags = FLAGS },
+    { "translate", "Translate from source language to English", OFFSET(translate), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, .flags = FLAGS },
     { "queue", "Audio queue size", OFFSET(queue), AV_OPT_TYPE_DURATION, {.i64 = 3000000}, 20000, HOURS, .flags = FLAGS },
     { "use_gpu", "Use GPU for processing", OFFSET(use_gpu), AV_OPT_TYPE_BOOL, {.i64 = 1}, 0, 1, .flags = FLAGS },
     { "gpu_device", "GPU device to use", OFFSET(gpu_device), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, .flags = FLAGS },
     { "destination", "Output destination", OFFSET(destination), AV_OPT_TYPE_STRING, {.str = ""}, .flags = FLAGS },
     { "format", "Output format (text|srt|json)", OFFSET(format), AV_OPT_TYPE_STRING, {.str = "text"},.flags = FLAGS },
+    { "max_len", "Max segment length in characters", OFFSET(max_len), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, .flags = FLAGS },
     { "vad_model", "Path to the VAD model file", OFFSET(vad_model_path), AV_OPT_TYPE_STRING,.flags = FLAGS },
     { "vad_threshold", "VAD threshold", OFFSET(vad_threshold), AV_OPT_TYPE_FLOAT, {.dbl = 0.5}, 0.0, 1.0, .flags = FLAGS },
     { "vad_min_speech_duration", "Minimum speech duration for VAD", OFFSET(vad_min_speech_duration), AV_OPT_TYPE_DURATION, {.i64 = 100000}, 20000, HOURS, .flags = FLAGS },

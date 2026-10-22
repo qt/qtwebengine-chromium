@@ -22,8 +22,12 @@ of the most important listed here:
   APIs to launch Cast applications.
 
 * standalone_receiver/ - A reference implementation of a receiver application.
+  Supports `--enable-input-events` to send SDL mouse events to the sender.
 
 * standalone_sender/ - A reference implementation of a sender application.
+  Supports `--enable-input-events` to receive and log input events from the receiver.
+
+* [docs/input_demo.md](docs/input_demo.md) - A guide on how to use the Input Event API demo.
 
 * [test/](test/README.md) - Integration tests.
 

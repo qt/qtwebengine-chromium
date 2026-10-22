@@ -515,8 +515,7 @@ Error Controller::CloseConnection(Connection* connection,
   msgs::PresentationConnectionCloseEvent event = {
       .connection_id = connection->connection_id(),
       .reason = ConvertCloseEventReason(reason),
-      .connection_count = connection_manager_->ConnectionCount(),
-      .has_error_message = false};
+      .connection_count = connection_manager_->ConnectionCount()};
   return protocol_connection->WriteMessage(
       event, msgs::EncodePresentationConnectionCloseEvent);
 }

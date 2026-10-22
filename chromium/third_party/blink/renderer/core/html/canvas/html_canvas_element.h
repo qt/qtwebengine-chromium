@@ -66,11 +66,13 @@ class CanvasHighDynamicRangeOptions;
 class CanvasRenderingContextFactory;
 class DOMMatrix;
 class Element;
+class ElementImage;
 class GraphicsContext;
 class HTMLCanvasElement;
 class ImageBitmapOptions;
 class StaticBitmapImageToVideoFrameCopier;
 class SharedContextRateLimiter;
+class V8UnionElementOrElementImage;
 
 class
     CanvasRenderingContext2DOrWebGLRenderingContextOrWebGL2RenderingContextOrImageBitmapRenderingContextOrGPUCanvasContext;
@@ -99,6 +101,10 @@ class CORE_EXPORT HTMLCanvasElement final
   explicit HTMLCanvasElement(Document&);
   ~HTMLCanvasElement() override;
 
+  ElementType GetElementType() const final {
+    return ElementType::kHTMLCanvasElement;
+  }
+
   // cc::TextureLayerClient implementation.
   bool PrepareTransferableResource(
       viz::TransferableResource* out_resource,
@@ -113,6 +119,8 @@ class CORE_EXPORT HTMLCanvasElement final
 
   void setLayoutSubtree(bool);
   bool layoutSubtree() const;
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(paint, kPaint)
+  void requestPaint();
 
   void SetSize(gfx::Size new_size);
 
@@ -187,6 +195,9 @@ class CORE_EXPORT HTMLCanvasElement final
 
   void DiscardResources() override;
 
+  std::optional<CanvasChildPaintRecord> GetCanvasChildPaintRecord(
+      DOMNodeId child_id) const override;
+
   TextDirection GetTextDirection(const ComputedStyle*) override;
   const LayoutLocale* GetLocale() const override;
 
@@ -200,7 +211,10 @@ class CORE_EXPORT HTMLCanvasElement final
 
   bool IsDirty() { return !dirty_rect_.IsEmpty(); }
 
-  void DoDeferredPaintInvalidation();
+  // Pushes dirty rects onto the backing cc::TextureLayer for a composited
+  // canvas. Returns `true` if any invalidations were actually applied,
+  // indicating that layer state must be pushed during commit.
+  bool DoDeferredPaintInvalidation();
 
   void InitializeLayerWithCSSProperties(cc::Layer* layer) override;
   void PostFinalizeFrame(FlushReason) override;
@@ -208,8 +222,7 @@ class CORE_EXPORT HTMLCanvasElement final
   CanvasResourceDispatcher* GetOrCreateResourceDispatcher() override;
   void DiscardResourceDispatcher() override { frame_dispatcher_ = nullptr; }
 
-  bool PushFrame(scoped_refptr<CanvasResource>&& image,
-                 const SkIRect& damage_rect) override;
+  bool PushFrame(scoped_refptr<CanvasResource>&& image) override;
 
   // ExecutionContextLifecycleObserver and PageVisibilityObserver implementation
   void ContextDestroyed() override;
@@ -333,14 +346,18 @@ class CORE_EXPORT HTMLCanvasElement final
 
   void ResetLayer();
 
-  gfx::Vector2dF PhysicalPixelToCanvasGridScaleFactor();
-
   // If `element` is drawn into the canvas's coordinate system with
   // `draw_transform`, this returns the transform that can be applied to
   // `element` to make its CSS position match the drawn position.
-  DOMMatrix* getElementTransform(Element* element,
+  DOMMatrix* getElementTransform(const V8UnionElementOrElementImage* element,
                                  DOMMatrix* draw_transform,
                                  ExceptionState&);
+
+  bool VerifyDrawElementImageEligibility(Element* element,
+                                         const String& func_name,
+                                         ExceptionState& exception_state) const;
+
+  ElementImage* captureElementImage(Element* element, ExceptionState&);
 
  protected:
   void DidMoveToNewDocument(Document& old_document) override;
@@ -388,7 +405,14 @@ class CORE_EXPORT HTMLCanvasElement final
   static std::pair<blink::Image*, float> BrokenCanvas(
       float device_scale_factor);
 
+  bool ChildrenChangedAllChildrenRemovedNeedsList() const final;
   void ChildrenChanged(const ChildrenChange&) override;
+  void ChildElementRemoved(Element&);
+
+  const CanvasChildPaintState* GetCanvasChildPaintState(
+      DOMNodeId child_id) const;
+  const CanvasChildPaintState* GetCanvasChildPaintState(
+      const V8UnionElementOrElementImage* element) const;
 
   FRIEND_TEST_ALL_PREFIXES(HTMLCanvasElementTest, BrokenCanvasHighRes);
 

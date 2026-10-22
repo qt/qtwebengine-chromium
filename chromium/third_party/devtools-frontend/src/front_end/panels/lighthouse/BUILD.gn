@@ -23,7 +23,6 @@ devtools_ui_module("lighthouse") {
     "LighthouseProtocolService.ts",
     "LighthouseReportRenderer.ts",
     "LighthouseReportSelector.ts",
-    "LighthouseReporterTypes.ts",
     "LighthouseStartView.ts",
     "LighthouseStatusView.ts",
     "LighthouseTimespanView.ts",
@@ -41,6 +40,7 @@ devtools_ui_module("lighthouse") {
     "../../generated:protocol",
     "../../models/emulation:bundle",
     "../../models/geometry:bundle",
+    "../../models/lighthouse:bundle",
     "../../models/text_utils:bundle",
     "../../models/trace:bundle",
     "../../models/workspace:bundle",
@@ -68,6 +68,7 @@ devtools_entrypoint("bundle") {
   visibility = [
     ":*",
     "../../entrypoints/*",
+    "../../panels/ai_assistance/*",
   ]
 
   visibility += devtools_panels_visibility
@@ -93,6 +94,10 @@ devtools_ui_module("unittests") {
     "LighthousePanel.test.ts",
     "LighthouseProtocolService.test.ts",
     "LighthouseReportRenderer.test.ts",
+    "LighthouseStartView.test.ts",
+    "LighthouseStatusView.test.ts",
+    "LighthouseTimespanView.test.ts",
+    "RadioSetting.test.ts",
   ]
 
   deps = [

@@ -36,6 +36,7 @@
 #include "extensions/browser/lazy_context_id.h"
 #include "extensions/browser/lazy_context_task_queue.h"
 #include "extensions/browser/process_manager_factory.h"
+#include "extensions/browser/shared_module_service.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/api/runtime.h"
 #include "extensions/common/constants.h"
@@ -502,9 +503,9 @@ void RuntimeEventRouter::DispatchOnInstalledEvent(
   // 1. the extension has just been installed/updated
   // 2. chrome has updated and the extension had runtime.onInstalled listener.
   // TODO(devlin): Having the chrome_update event tied to onInstalled has caused
-  // some issues in the past, see crbug.com/451268. We might want to eventually
-  // decouple the chrome_updated event from onInstalled and/or throttle
-  // dispatching the chrome_updated event.
+  // some issues in the past, see crbug.com/41153454. We might want to
+  // eventually decouple the chrome_updated event from onInstalled and/or
+  // throttle dispatching the chrome_updated event.
   if (chrome_updated && !EventRouter::Get(context)->ExtensionHasEventListener(
                             extension_id, runtime::OnInstalled::kEventName)) {
     return;
@@ -534,7 +535,9 @@ void RuntimeEventRouter::DispatchOnInstalledEvent(
             extension_id);
     if (extension && SharedModuleInfo::IsSharedModule(extension)) {
       std::unique_ptr<ExtensionSet> dependents =
-          system->GetDependentExtensions(extension);
+          ExtensionsBrowserClient::Get()
+              ->GetSharedModuleService(context)
+              ->GetDependentExtensions(extension);
       for (ExtensionSet::const_iterator i = dependents->begin();
            i != dependents->end(); i++) {
         base::ListValue sm_event_args;

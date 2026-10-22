@@ -44,6 +44,8 @@
 
 namespace tint::hlsl::writer {
 
+namespace {
+
 Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& options) {
     // Check for unsupported types.
     for (auto* ty : ir.Types()) {
@@ -60,12 +62,12 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
                     return Failure("runtime binding array not supported by the HLSL FXC backend");
                 }
             }
+            if (ty->Is<core::type::U16>()) {
+                return Failure("16-bit integers are not supported by the HLSL FXC backend");
+            }
         }
         if (ty->Is<core::type::Buffer>()) {
             return Failure("buffers are not supported by the HLSL backend");
-        }
-        if (ty->Is<core::type::U16>()) {
-            return Failure("16-bit unsigned integers are not supported by the HLSL backend");
         }
     }
 
@@ -75,12 +77,19 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
             continue;
         }
 
-        if (call->Func() == core::BuiltinFn::kGetResource ||
-            call->Func() == core::BuiltinFn::kHasResource) {
-            return Failure("resource tables not supported by the HLSL backend");
+        if ((call->Func() == core::BuiltinFn::kGetResource ||
+             call->Func() == core::BuiltinFn::kHasResource) &&
+            options.compiler == Options::Compiler::kFXC) {
+            return Failure(
+                "resource tables not supported by the HLSL backend for compiling with FXC");
         }
         if (call->Func() == core::BuiltinFn::kPrint) {
             return Failure("print is not supported by the HLSL backend");
+        }
+        if (call->Func() == core::BuiltinFn::kAtomicStoreMax ||
+            call->Func() == core::BuiltinFn::kAtomicStoreMin) {
+            return Failure(
+                "64-bit (vec2u) atomic operations are not yet supported by the HLSL backend");
         }
     }
 
@@ -168,12 +177,16 @@ Result<SuccessType> CanGenerate(const core::ir::Module& ir, const Options& optio
         TINT_CHECK_RESULT(check_io_attributes(ep_func->ReturnAttributes()));
     }
 
-    TINT_CHECK_RESULT(ValidateBindingOptions(options));
+    TINT_CHECK_RESULT(ValidateBindingOptions(ir, options));
 
     return Success;
 }
 
+}  // namespace
+
 Result<Output> Generate(core::ir::Module& ir, const Options& options) {
+    TINT_CHECK_RESULT(CanGenerate(ir, options));
+
     // Raise the core-dialect to HLSL-dialect
     TINT_CHECK_RESULT(Raise(ir, options));
 

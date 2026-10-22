@@ -95,7 +95,7 @@ export function convertRawOutputToEval(opts: RawToEvalOptions): EvalFileOutput {
                 continue;
               }
 
-              const responseText = aidaResponse.explanation?.trim() ?? undefined;
+              const responseText = aidaResponse.explanation?.trim();
 
               const query: ProcessedQuery = {
                 request: {
@@ -130,9 +130,7 @@ export function convertRawOutputToEval(opts: RawToEvalOptions): EvalFileOutput {
   return finalOutput;
 }
 
-const isBeingRunOnCommandLine = process.argv[1] === import.meta.url.replace('file://', '');
-
-if (isBeingRunOnCommandLine) {
+if (import.meta.main) {
   const userArgs =
       yargs(hideBin(process.argv))
           .option('file', {type: 'string', demandOption: true, description: 'The raw JSON file from Auto Run.'})

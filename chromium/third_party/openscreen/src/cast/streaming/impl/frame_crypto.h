@@ -17,7 +17,6 @@
 
 namespace openscreen::cast {
 
-class FrameCollector;
 class FrameCrypto;
 
 // A subclass of EncodedFrame that represents an EncodedFrame with encrypted
@@ -31,9 +30,8 @@ struct EncryptedFrame : public EncodedFrame {
   EncryptedFrame& operator=(EncryptedFrame&&);
 
  protected:
-  // Since only FrameCrypto and FrameCollector are trusted to generate the
-  // payload data, only they are allowed direct access to the storage.
-  friend class FrameCollector;
+  // Since only FrameCrypto is trusted to generate the
+  // payload data, it is allowed direct access to the storage.
   friend class FrameCrypto;
 
   // Note: EncodedFrame::data must be updated whenever any mutations are
@@ -45,6 +43,8 @@ struct EncryptedFrame : public EncodedFrame {
 // been received.
 class FrameCrypto {
  public:
+  using ChunkList = std::span<const ByteView>;
+
   // Construct with the given 16-bytes AES key and IV mask. Both arguments
   // should be randomly-generated for each new streaming session.
   // GenerateRandomBytes() can be used to create them.
@@ -55,18 +55,9 @@ class FrameCrypto {
 
   EncryptedFrame Encrypt(const EncodedFrame& encoded_frame) const;
 
-  // Decrypts `encrypted_frame` into `out`. `out` must have a sufficiently-sized
-  // data buffer (see GetPlaintextSize()).
-  void Decrypt(const EncryptedFrame& encrypted_frame, ByteBuffer out) const;
-
-  // AES crypto inputs and outputs (for either encrypting or decrypting) are
-  // always the same size in bytes. The following are just "documentative code."
-  static int GetEncryptedSize(const EncodedFrame& encoded_frame) {
-    return encoded_frame.data.size();
-  }
-  static int GetPlaintextSize(const EncryptedFrame& encrypted_frame) {
-    return encrypted_frame.data.size();
-  }
+  // Decrypts `chunks` into `out`. `out` must have a sufficiently-sized
+  // data buffer.
+  void Decrypt(FrameId frame_id, ChunkList chunks, ByteBuffer out) const;
 
  private:
   // The 244-byte AES_KEY struct, derived from the `aes_key` passed to the ctor,
@@ -79,7 +70,7 @@ class FrameCrypto {
 
   // AES-CTR is symmetric. Thus, the "meat" of both Encrypt() and Decrypt() is
   // the same.
-  void EncryptCommon(FrameId frame_id, ByteView in, ByteBuffer out) const;
+  void Crypt(FrameId frame_id, ChunkList chunks, ByteBuffer out) const;
 };
 
 }  // namespace openscreen::cast

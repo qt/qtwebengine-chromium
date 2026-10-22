@@ -32,6 +32,8 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/cord.h"
+#include "absl/strings/match.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/civil_time.h"
 #include "fcp/base/monitoring.h"
@@ -150,7 +152,8 @@ absl::Status GenerateAggregationTensorsFromExampleQueryResult(
     auto it = example_query_result.vector_data().vectors().find(vector_name);
     if (it == example_query_result.vector_data().vectors().end()) {
       return absl::DataLossError(
-          "Expected value not found in the example query result");
+          absl::StrCat("Expected value not found in the example query result: ",
+                       vector_name));
     }
     const ExampleQueryResult::VectorData::Values values = it->second;
     Tensor tensor;
@@ -198,8 +201,29 @@ absl::Status GenerateAggregationTensorsFromExampleQueryResult(
                       TensorShape({values.double_values().value_size()}),
                       values.double_values().value()));
     } else if (values.has_bytes_values()) {
-      // TODO: b/296046539 - add support for bytes values type
-      return absl::UnimplementedError("Bytes values currently not supported.");
+      // Allow output vector specs to be either BYTES or STRING when the values
+      // are bytes, as both are represented by string tensors in FCCheckpoints.
+      //
+      // This is needed for the private logger compatibility between older and
+      // newer clients, as the ExampleQuerySpec for the private logger SQL
+      // upload task uses STRING for its output vector spec, even though the
+      // values are bytes from newer clients and base64 encoded strings from
+      // older clients.
+      absl::Status bytes_check =
+          CheckOutputVectorDataType(output_vector_spec, DataType::BYTES);
+      absl::Status string_check =
+          CheckOutputVectorDataType(output_vector_spec, DataType::STRING);
+
+      if (!bytes_check.ok() && !string_check.ok()) {
+        return absl::DataLossError(absl::StrCat(
+            "Output vector spec data type mismatch for bytes values. Expected "
+            "BYTES or STRING, got: ",
+            DataType_Name(output_vector_spec.data_type())));
+      }
+      FCP_ASSIGN_OR_RETURN(
+          tensor,
+          ConvertStringTensor(TensorShape({values.bytes_values().value_size()}),
+                              values.bytes_values().value()));
     } else {
       return absl::DataLossError(
           "Unexpected data type in the example query result");
@@ -268,7 +292,6 @@ absl::Status CreateOrUpdateCheckpointBuilders(
       in_progress_checkpoints[per_privacy_id_result.privacy_id] = {
           .checkpoint_builder = std::move(checkpoint_builder)};
     }
-
     FCP_RETURN_IF_ERROR(GenerateAggregationTensorsFromExampleQueryResult(
         *in_progress_checkpoints[per_privacy_id_result.privacy_id]
              .checkpoint_builder,
@@ -364,7 +387,8 @@ PlanResult ExampleQueryPlanEngine::RunPlan(
     const std::string& output_checkpoint_filename,
     bool use_client_report_wire_format, bool enable_event_time_data_upload,
     std::optional<absl::string_view> source_id, bool uses_confidential_agg,
-    bool enable_privacy_id_generation) {
+    bool enable_privacy_id_generation, bool enable_private_logger,
+    bool drop_out_based_data_availability) {
   std::atomic<int> total_example_count = 0;
   std::atomic<int64_t> total_example_size_bytes = 0;
   bool has_event_time_range = false;
@@ -427,6 +451,41 @@ PlanResult ExampleQueryPlanEngine::RunPlan(
             PlanOutcome::kExampleIteratorError,
             absl::DataLossError("Unexpected example query result format"));
       }
+
+      if (drop_out_based_data_availability &&
+          example_query_result.stats().output_rows_count() <
+              example_query.min_output_row_count()) {
+        return PlanResult(
+            PlanOutcome::kInsufficientData,
+            absl::FailedPreconditionError(
+                "Not enough output rows to satisfy min_output_row_count"));
+      }
+
+      if (enable_private_logger && example_query_result.result_source() ==
+                                       ExampleQueryResult::PRIVATE_LOGGER) {
+        // An ExampleQueryResult from PrivateLogger won't set the query name
+        // prefix appropriately, so we retroactively get it from
+        // the ExampleQuerySpec and rewrite the column names in order to keep
+        // compatibility with the existing federated sql stack.
+        ExampleQueryResult::VectorData new_vector_data;
+        for (auto& [result_vector_name, values] :
+             *example_query_result.mutable_vector_data()->mutable_vectors()) {
+          for (auto const& [spec_tensor_name, spec_output_vector] :
+               example_query.output_vector_specs()) {
+            if (spec_output_vector.vector_name() == result_vector_name ||
+                absl::EndsWith(spec_output_vector.vector_name(),
+                               absl::StrCat("/", result_vector_name))) {
+              (*new_vector_data
+                    .mutable_vectors())[spec_output_vector.vector_name()] =
+                  std::move(values);
+              break;
+            }
+          }
+        }
+        *example_query_result.mutable_vector_data() =
+            std::move(new_vector_data);
+      }
+
       // We currently use the number of example query output rows as the
       // 'example count' for the purpose of diagnostic logs. We may want to
       // reconsider this in the future and introduce a proper notion of the
@@ -517,6 +576,13 @@ PlanResult ExampleQueryPlanEngine::RunPlan(
                             example.status());
         }
         example_query_results.push_back(std::move(*example));
+      }
+      if (drop_out_based_data_availability &&
+          example_query_results.size() < example_query.min_output_row_count()) {
+        return PlanResult(
+            PlanOutcome::kInsufficientData,
+            absl::FailedPreconditionError(
+                "Not enough output rows to satisfy min_output_row_count"));
       }
       direct_example_query_results[example_query.direct_output_tensor_name()] =
           std::move(example_query_results);

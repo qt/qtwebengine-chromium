@@ -57,6 +57,8 @@ tint_add_target(tint_lang_core_ir_transform lib
   lang/core/ir/transform/builtin_scalarize.h
   lang/core/ir/transform/change_immediate_to_uniform.cc
   lang/core/ir/transform/change_immediate_to_uniform.h
+  lang/core/ir/transform/collapse_subgroup_min_max.cc
+  lang/core/ir/transform/collapse_subgroup_min_max.h
   lang/core/ir/transform/combine_access_instructions.cc
   lang/core/ir/transform/combine_access_instructions.h
   lang/core/ir/transform/conversion_polyfill.cc
@@ -78,6 +80,8 @@ tint_add_target(tint_lang_core_ir_transform lib
   lang/core/ir/transform/preserve_padding.h
   lang/core/ir/transform/prevent_infinite_loops.cc
   lang/core/ir/transform/prevent_infinite_loops.h
+  lang/core/ir/transform/propagate_buffer_sizes.cc
+  lang/core/ir/transform/propagate_buffer_sizes.h
   lang/core/ir/transform/remove_continue_in_switch.cc
   lang/core/ir/transform/remove_continue_in_switch.h
   lang/core/ir/transform/remove_terminator_args.cc
@@ -151,6 +155,7 @@ tint_add_target(tint_lang_core_ir_transform_test test
   lang/core/ir/transform/builtin_polyfill_test.cc
   lang/core/ir/transform/builtin_scalarize_test.cc
   lang/core/ir/transform/change_immediate_to_uniform_test.cc
+  lang/core/ir/transform/collapse_subgroup_min_max_test.cc
   lang/core/ir/transform/combine_access_instructions_test.cc
   lang/core/ir/transform/conversion_polyfill_test.cc
   lang/core/ir/transform/dead_code_elimination_test.cc
@@ -162,6 +167,7 @@ tint_add_target(tint_lang_core_ir_transform_test test
   lang/core/ir/transform/prepare_immediate_data_test.cc
   lang/core/ir/transform/preserve_padding_test.cc
   lang/core/ir/transform/prevent_infinite_loops_test.cc
+  lang/core/ir/transform/propagate_buffer_sizes_test.cc
   lang/core/ir/transform/remove_continue_in_switch_test.cc
   lang/core/ir/transform/remove_terminator_args_test.cc
   lang/core/ir/transform/remove_uniform_vector_component_loads_test.cc

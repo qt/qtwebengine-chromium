@@ -25,6 +25,8 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "src/tint/lang/wgsl/resolver/dependency_graph.h"
+
 #include <string>
 #include <tuple>
 #include <utility>
@@ -32,7 +34,6 @@
 #include "gmock/gmock.h"
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
-#include "src/tint/lang/wgsl/resolver/dependency_graph.h"
 #include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 #include "src/tint/utils/containers/transform.h"
 
@@ -1122,7 +1123,8 @@ TEST_F(ResolverDependencyGraphOrderedGlobalsTest, DirectiveFirst) {
     auto* var_1 = GlobalVar("SYMBOL1", ty.i32());
     auto* enable = Enable(wgsl::Extension::kF16);
     auto* var_2 = GlobalVar("SYMBOL2", ty.f32());
-    auto* diagnostic = DiagnosticDirective(wgsl::DiagnosticSeverity::kWarning, "foo");
+    auto* diagnostic =
+        DiagnosticDirective(wgsl::DiagnosticSeverity::kWarning, DiagnosticRuleName("foo"));
     auto* var_3 = GlobalVar("SYMBOL3", ty.u32());
     auto* req = Require(wgsl::LanguageFeature::kReadonlyAndReadwriteStorageTextures);
 

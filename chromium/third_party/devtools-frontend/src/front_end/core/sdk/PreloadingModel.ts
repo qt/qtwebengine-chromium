@@ -16,7 +16,6 @@ import {
 } from './ResourceTreeModel.js';
 import {SDKModel} from './SDKModel.js';
 import {Capability, type Target} from './Target.js';
-import {TargetManager} from './TargetManager.js';
 
 export interface WithId<I, V> {
   id: I;
@@ -48,20 +47,34 @@ export class PreloadingModel extends SDKModel<EventTypes> {
 
     const targetInfo = target.targetInfo();
     if (targetInfo?.subtype === 'prerender') {
-      this.lastPrimaryPageModel = TargetManager.instance().primaryPageTarget()?.model(PreloadingModel) || null;
+      this.lastPrimaryPageModel = target.targetManager().primaryPageTarget()?.model(PreloadingModel) || null;
     }
 
-    TargetManager.instance().addModelListener(
+    target.targetManager().addModelListener(
         ResourceTreeModel, ResourceTreeModelEvents.PrimaryPageChanged, this.onPrimaryPageChanged, this);
   }
 
   override dispose(): void {
     super.dispose();
 
-    TargetManager.instance().removeModelListener(
+    this.target().targetManager().removeModelListener(
         ResourceTreeModel, ResourceTreeModelEvents.PrimaryPageChanged, this.onPrimaryPageChanged, this);
 
     void this.agent.invoke_disable();
+  }
+
+  reset(): void {
+    this.documents.clear();
+    this.loaderIds = [];
+    this.targetJustAttached = true;
+    this.dispatchEventToListeners(Events.MODEL_UPDATED);
+  }
+
+  private maybeInferLoaderId(loaderId: Protocol.Network.LoaderId): void {
+    if (this.currentLoaderId() === null) {
+      this.loaderIds = [loaderId];
+      this.targetJustAttached = false;
+    }
   }
 
   private ensureDocumentPreloadingData(loaderId: Protocol.Network.LoaderId): void {
@@ -241,12 +254,7 @@ export class PreloadingModel extends SDKModel<EventTypes> {
 
     const loaderId = ruleSet.loaderId;
 
-    // Infer current loaderId if DevTools is opned at the current page.
-    if (this.currentLoaderId() === null) {
-      this.loaderIds = [loaderId];
-      this.targetJustAttached = false;
-    }
-
+    this.maybeInferLoaderId(loaderId);
     this.ensureDocumentPreloadingData(loaderId);
     this.documents.get(loaderId)?.ruleSets.upsert(ruleSet);
     this.dispatchEventToListeners(Events.MODEL_UPDATED);
@@ -572,7 +580,7 @@ function makePreloadingAttemptId(key: Protocol.Preload.PreloadingAttemptKey): Pr
       break;
   }
 
-  return `${key.loaderId}:${action}:${key.url}:${targetHint}`;
+  return `${key.loaderId}:${action}:${key.url}:${targetHint}:${key.formSubmission ? 'formSubmission' : 'undefined'}`;
 }
 
 export class PreloadPipeline {

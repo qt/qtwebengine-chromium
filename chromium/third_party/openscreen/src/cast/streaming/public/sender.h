@@ -26,7 +26,7 @@
 #include "cast/streaming/sender_packet_router.h"
 #include "platform/api/time.h"
 #include "platform/base/span.h"
-#include "util/yet_another_bit_vector.h"
+#include "util/bit_vector.h"
 
 namespace openscreen::cast {
 
@@ -190,7 +190,7 @@ class Sender final : public SenderPacketRouter::Sender,
 
     // Represents which packets need to be sent. Elements are indexed by
     // FramePacketId. A set bit means a packet needs to be sent (or re-sent).
-    YetAnotherBitVector send_flags;
+    BitVector send_flags;
 
     // The time when each of the packets was last sent, or
     // `SenderPacketRouter::kNever` if the packet has not been sent yet.

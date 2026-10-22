@@ -1706,7 +1706,7 @@ AXNode* AXTree::CreateNode(AXNode* parent,
   [[maybe_unused]] bool inserted =
       id_map_.try_emplace(id, std::move(node)).second;
   // There should not have been a node already in the map with the same id.
-  DCHECK(inserted);
+  CHECK(inserted);
   return node_raw;
 }
 
@@ -1769,8 +1769,10 @@ bool AXTree::ComputePendingChanges(const AXTreeUpdate& update,
   // on the tree during the update.
   int number_of_inline_textboxes = 0;
   for (const AXNodeData& new_data : update_state->pending_tree_update->nodes) {
-    if (new_data.id == kInvalidAXNodeID)
-      continue;
+    if (new_data.id == kInvalidAXNodeID) {
+      RecordError(*update_state, "Node ID is invalid.");
+      return false;
+    }
     bool is_new_root =
         update_state->root_will_be_created && new_data.id == update.root_id;
     if (!ComputePendingChangesToNode(new_data, is_new_root, update_state)) {
@@ -1804,6 +1806,10 @@ bool AXTree::ComputePendingChangesToNode(const AXNodeData& new_data,
   // unignored index in parent.
   size_t j = 0;
   for (auto child_id : new_data.child_ids) {
+    if (child_id == kInvalidAXNodeID) {
+      RecordError(*update_state, "Child ID is invalid.");
+      return false;
+    }
     if (const AXNode* node = GetFromId(child_id);
         node && node->GetIndexInParent() != j) {
       update_state->InvalidateParentNodeUnignoredCacheValues(node->id());
@@ -2037,6 +2043,18 @@ bool AXTree::UpdateNode(const AXNodeData& src,
     node = CreateNode(nullptr, src.id, 0, update_state);
     UpdateReverseRelations(node, src, /*is_new_node*/ true);
     node->SetData(src);
+  }
+
+  // The browser must not trust the renderer to correctly supply the
+  // kClipsChildren attribute for rootWebArea nodes. A compromised renderer
+  // could omit it to supply out-of-bounds coordinates that bypass clipping,
+  // allowing spoofed accessibility focus rings and synthesized taps at
+  // arbitrary screen locations. Enforce the attribute unconditionally.
+  if (src.role == ax::mojom::Role::kRootWebArea) {
+    AXNodeData enforced_data = node->data();
+    enforced_data.AddBoolAttribute(ax::mojom::BoolAttribute::kClipsChildren,
+                                   true);
+    node->SetData(enforced_data);
   }
 
   // If we come across a page breaking object, mark the tree as a paginated root

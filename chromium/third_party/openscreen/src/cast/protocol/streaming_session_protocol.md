@@ -429,7 +429,7 @@ into licensing issues.
 | aesIvMask            | `string` | A String specifying which initialization vector mask to use. Must consist of exactly 32 hex digits. Must be provided. |
 | receiverRtcpEventLog | `boolean` (optional) | True to request receiver to send event log via RTCP. False otherwise. |
 | receiverRtcpDscp     | `int` (optional) | Request receiver to send RTCP packets using DSCP value indicated. Typically this value is 46. |
-| rtpExtensions        | `Array of string` (optional) | RTP extensions (Currently only `adaptive_playout_delay`) supported by the Sender. Receivers can then reply with a list of rtpExtensions from this list that it also supports. |
+| rtpExtensions        | `Array of string` (optional) | RTP extensions supported by the Sender. Receivers can then reply with a list of rtpExtensions from this list that it also supports. |
 | timeBase             | `string` (optional) | Number specifying the time base used by this "rtpPayloadType". Default value is `1/90000`. Valid values are "1/\<sample rate\>" where sample rate is strictly positive. |
 
 ##### Audio Stream object
@@ -476,14 +476,14 @@ The "type" must be set to "ANSWER", with the message body in an "answer" object.
 
 | Name | Type | Value/description |
 | :---- | :---- | :---- |
-| udpPort | `int` | A Number specifying the UDP port used for all streams (RTP and RTCP) in this session. *Note: values 1 to 65535 is valid.* |
+| udpPort | `int` | A Number specifying the UDP port used for all streams (RTP and RTCP) in this session. *Note: values 1 to 65535 are valid.* |
 | sendIndexes | `Array of  int` | Numbers specifying the indexes chosen from the `OFFER` message. |
-| ssrcs | `Array of  uint32` | Number specifying the RTP SSRC used to send the RTCP feedback of the stream indicated by the "sendIndexes" above. *Note: values 0 to 2^32 is valid.* |
+| ssrcs | `Array of  uint32` | Numbers specifying the RTP SSRC used to send the RTCP feedback of the stream indicated by the "sendIndexes" above. Order must match `sendIndexes` exactly. *Note: values 0 to 2^32 are valid.* |
 | constraints | `receiver constraints object` (optional, but highly recommended) | Provides detailed maximum capabilities of the receiver for processing the streams selected in "sendIndexes" above; including audio sampling rate and number of channels, video dimensions and rates, encoded bit rates, and target latency. A sender may alter video resolution or frame rate throughout a session. The constraints here restrict how much data volume is allowed before the sender must subsample (e.g., downscale and/or reduce frame rate). |
 | display | `display description object` (optional, but highly recommended) | Provides details about the display on the receiver, including dimensions (aspect ratio implied), scaling behavior, color profile, etc. |
 | receiverRtcpEventLog | `Array of int` (optional) | Numbers specifying the indexes of streams that will send event log via RTCP. If this field is not present then the receiver does not support sending an event log via RTCP. |
 | receiverRtcpDscp | `Array of int` (optional) | Numbers specifying the indexes of streams that will use DSCP values specified in the `OFFER` message for RTCP packets. If this field is not present then the receiver does not support DSCP. |
-| rtpExtensions | `Array of string` (optional) | If this field is not present then the receiver does not support any RTP extensions. |
+| rtpExtensions | `Array of Array of string` (optional) | Arrays specifying the RTP extensions enabled for each stream, in the same order as `sendIndexes`. If this field is not present then the receiver does not support any RTP extensions. |
 
 ##### Receiver Constraints Object Definition
 
@@ -588,6 +588,19 @@ The "type" must be set to "RPC", with the base64-encoded protobuf message stored
 as a string under the "rpc" key.
 
 Protobuf messages are complex, and defined in the [remoting.proto](../streaming/remoting.proto)
+file.
+
+#### Input (Draft)
+
+The `com.google.cast.remoting` namespace also supports sending input events from
+receiver to sender.
+
+##### INPUT
+
+The "type" must be set to "INPUT", with the base64-encoded protobuf message
+stored as a string under the "input" key.
+
+Protobuf messages are complex, and defined in the [input.proto](../streaming/input.proto)
 file.
 
 #### Media Status Messages (`com.google.cast.media`)

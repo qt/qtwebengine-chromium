@@ -11,8 +11,6 @@
 #include "Core"
 
 #include "Cholesky"
-#include "Jacobi"
-#include "Householder"
 #include "LU"
 #include "Geometry"
 #include "Sparse"  // Needed by ComplexQZ.
@@ -20,8 +18,6 @@
 #include "src/Core/util/DisableStupidWarnings.h"
 
 /** \defgroup Eigenvalues_Module Eigenvalues module
- *
- *
  *
  * This module mainly provides various eigenvalue solvers.
  * This module also provides some MatrixBase methods, including:
@@ -49,6 +45,8 @@
 #ifdef EIGEN_USE_LAPACKE
 #ifdef EIGEN_USE_MKL
 #include "mkl_lapacke.h"
+#elif defined(EIGEN_LAPACKE_SYSTEM)
+#include <lapacke.h>
 #else
 #include "src/misc/lapacke.h"
 #endif

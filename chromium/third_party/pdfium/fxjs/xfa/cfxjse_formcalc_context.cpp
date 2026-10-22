@@ -521,7 +521,7 @@ bool IsPartOfNumberW(wchar_t ch) {
 
 ByteString GUIDString(bool bSeparator) {
   std::array<uint8_t, 16> data;
-  FX_Random_GenerateMT(
+  FX_Random::Fill(
       fxcrt::reinterpret_span<uint32_t, uint8_t>(pdfium::span(data)));
   data[6] = (data[6] & 0x0F) | 0x40;
 

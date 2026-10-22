@@ -14,11 +14,12 @@
 #include "base/containers/map_util.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/stack_trace.h"
+#include "base/feature.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/system/sys_info.h"
 #include "base/task/common/task_annotator.h"
 #include "base/task/sequenced_task_runner.h"
@@ -65,6 +66,11 @@ bool HasElapsedCadenceInterval(
 }
 
 namespace viz {
+
+// TODO (crbug.com/495852034): Remove once M150 hits Stable.
+BASE_FEATURE(kDisconnectOnInvalidHitTestRegionList,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 namespace {
 
 // The maximum amount of time to wait for a new interactive frame before
@@ -281,10 +287,16 @@ void CompositorFrameSinkSupport::SetAllowThrottling(bool allowed) {
   throttler_.SetAllowThrottling(allowed);
 }
 
+void CompositorFrameSinkSupport::SetThrottledDueToInteraction(bool throttled) {
+  throttler_.SetThrottledDueToInteraction(throttled);
+}
+
 void CompositorFrameSinkSupport::SetIsHandlingInteraction(
     bool is_handling_interaction) {
   if (is_handling_interaction_ != is_handling_interaction) {
     is_handling_interaction_ = is_handling_interaction;
+    frame_sink_manager_->OnFrameSinkInteractionChanged(frame_sink_id_,
+                                                       is_handling_interaction);
   }
 
   if (is_handling_interaction_) {
@@ -997,8 +1009,13 @@ SubmitResult CompositorFrameSinkSupport::MaybeSubmitCompositorFrame(
 
   // QueueFrame can fail in unit tests, so SubmitHitTestRegionList has to be
   // called before that.
-  frame_sink_manager()->SubmitHitTestRegionList(
-      last_created_surface_id_, frame_index, std::move(hit_test_region_list));
+  if (!frame_sink_manager()->SubmitHitTestRegionList(
+          last_created_surface_id_, frame_index,
+          std::move(hit_test_region_list))) {
+    if (base::FeatureList::IsEnabled(kDisconnectOnInvalidHitTestRegionList)) {
+      return SubmitResult::HIT_TEST_DATA_INVALID;
+    }
+  }
   // Update the interaction state at the end of this method to ensure it only
   // reflects valid frames that were successfully accepted. This prevents
   // invalid frames (e.g. those with a size mismatch) from affecting the global
@@ -1463,6 +1480,8 @@ const char* CompositorFrameSinkSupport::GetSubmitResultAsString(
       return "LocalSurfaceId sequence numbers decreased";
     case SubmitResult::SURFACE_OWNED_BY_ANOTHER_CLIENT:
       return "Surface belongs to another client";
+    case SubmitResult::HIT_TEST_DATA_INVALID:
+      return "Invalid hit-test data";
   }
   NOTREACHED();
 }
@@ -1712,10 +1731,15 @@ void CompositorFrameSinkSupport::OnSaveTransitionDirectiveProcessed(
         directive.sequence_id());
   }
 
+  // Subtle: the iterator `it` may be invalidated after the call to
+  // `CacheSurfaceAnimationManager` due to new SurfaceAnimationManager being
+  // created and put into the map. This can happen due to the FrameSinkObserver
+  // getting notified of the view transition saving surface being activated.
   if (directive.maybe_cross_frame_sink()) {
     frame_sink_manager_->CacheSurfaceAnimationManager(
         directive.transition_token(), std::move(it->second));
-    view_transition_token_to_animation_manager_.erase(it);
+    view_transition_token_to_animation_manager_.erase(
+        directive.transition_token());
   }
 }
 

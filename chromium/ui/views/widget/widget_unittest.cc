@@ -1613,10 +1613,6 @@ TEST_P(WidgetWithDestroyedNativeViewOrNativeWidgetTest, Init) {
   EXPECT_DCHECK_DEATH(widget()->Init(std::move(params)));
 }
 
-TEST_P(WidgetWithDestroyedNativeViewOrNativeWidgetTest, is_secondary_widget) {
-  widget()->is_secondary_widget();
-}
-
 TEST_P(WidgetWithDestroyedNativeViewOrNativeWidgetTest, IsActive) {
   widget()->IsActive();
 }
@@ -1884,10 +1880,10 @@ TEST_P(WidgetWithDestroyedNativeViewOrNativeWidgetTest, RunMoveLoop) {
                         Widget::MoveLoopEscapeBehavior::kHide);
 }
 
-TEST_P(WidgetWithDestroyedNativeViewOrNativeWidgetTest, RunShellDrag) {
+TEST_P(WidgetWithDestroyedNativeViewOrNativeWidgetTest, RunDragDropLoop) {
   std::unique_ptr<OSExchangeData> data(std::make_unique<OSExchangeData>());
-  widget()->RunShellDrag(nullptr, std::move(data), gfx::Point(), 0,
-                         ui::mojom::DragEventSource::kMouse);
+  widget()->RunDragDropLoop(nullptr, std::move(data), gfx::Point(), 0,
+                            ui::mojom::DragEventSource::kMouse);
 }
 
 TEST_P(WidgetWithDestroyedNativeViewOrNativeWidgetTest, ScheduleLayout) {
@@ -2961,6 +2957,44 @@ TEST_F(DesktopWidgetTest, TestWindowVisibilityAfterHide) {
   EXPECT_FALSE(IsNativeWindowVisible(widget->GetNativeWindow()));
   widget->Show();
   EXPECT_TRUE(IsNativeWindowVisible(widget->GetNativeWindow()));
+}
+
+// Verifies that Widget::IsVisible() returns true inside the
+// OnWidgetVisibilityChanged(widget, true) callback.
+TEST_F(DesktopWidgetTest, IsVisibleDuringVisibilityChangedCallback) {
+  // Observer that checks Widget::IsVisible() matches the |visible| parameter
+  // during OnWidgetVisibilityChanged callbacks.
+  class VisibilityCheckObserver : public WidgetObserver {
+   public:
+    void OnWidgetVisibilityChanged(Widget* widget, bool visible) override {
+      notified_visible_ = visible;
+      queried_visible_ = widget->IsVisible();
+    }
+
+    bool notified_visible() const { return notified_visible_; }
+    bool queried_visible() const { return queried_visible_; }
+
+   private:
+    bool notified_visible_ = false;
+    bool queried_visible_ = false;
+  };
+
+  std::unique_ptr<Widget> widget = CreateTestWidget(
+      Widget::InitParams::CLIENT_OWNS_WIDGET, Widget::InitParams::TYPE_WINDOW);
+
+  VisibilityCheckObserver observer;
+  widget->AddObserver(&observer);
+
+  // Show: Widget::IsVisible() should agree with the notification parameter.
+  widget->Show();
+  EXPECT_EQ(observer.notified_visible(), observer.queried_visible());
+
+  // Hide: Widget::IsVisible() should agree with the notification parameter.
+  widget->Hide();
+  EXPECT_EQ(observer.notified_visible(), observer.queried_visible());
+
+  widget->RemoveObserver(&observer);
+  widget->CloseNow();
 }
 
 // Tests that wheel events generated from scroll events are targeted to the
@@ -6416,6 +6450,18 @@ TEST_F(WidgetTest, ClosingChildWidgetUnregisterAccelerators) {
   ASSERT_TRUE(focus_manager->IsAcceleratorRegistered(accelerator));
   child_widget.reset();
   EXPECT_FALSE(focus_manager->IsAcceleratorRegistered(accelerator));
+}
+
+TEST_F(WidgetTest, IsDragging) {
+  std::unique_ptr<Widget> widget =
+      CreateTestWidget(Widget::InitParams::CLIENT_OWNS_WIDGET);
+  EXPECT_FALSE(widget->is_dragging());
+  static_cast<internal::NativeWidgetDelegate*>(widget.get())
+      ->OnNativeWidgetUserDragStarted();
+  EXPECT_TRUE(widget->is_dragging());
+  static_cast<internal::NativeWidgetDelegate*>(widget.get())
+      ->OnNativeWidgetUserDragEnded();
+  EXPECT_FALSE(widget->is_dragging());
 }
 
 }  // namespace views::test

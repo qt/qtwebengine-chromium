@@ -702,6 +702,12 @@ static bcm_status mlkem_marshal_public_key(CBB *out,
 }
 
 template <int RANK>
+static bool mlkem_public_keys_equal(const public_key<RANK> *a,
+                                    const public_key<RANK> *b) {
+  return OPENSSL_memcmp(a->public_key_hash, b->public_key_hash, 32) == 0;
+}
+
+template <int RANK>
 void mlkem_generate_key_external_seed_no_self_test(
     uint8_t *out_encoded_public_key, private_key<RANK> *priv,
     const uint8_t seed[MLKEM_SEED_BYTES]) {
@@ -891,6 +897,10 @@ public_key<RANK768> *public_key_768_from_external(
     MLKEM768_public_key *external) {
   return reinterpret_cast<public_key<RANK768> *>(external);
 }
+const MLKEM768_public_key *public_key_768_to_external(
+    const public_key<RANK768> *public_key) {
+  return reinterpret_cast<const MLKEM768_public_key *>(public_key);
+}
 
 static_assert(sizeof(MLKEM1024_public_key) >= sizeof(public_key<RANK1024>));
 static_assert(alignof(MLKEM1024_public_key) >= alignof(public_key<RANK1024>));
@@ -902,6 +912,11 @@ const public_key<RANK1024> *public_key_1024_from_external(
 public_key<RANK1024> *public_key_1024_from_external(
     MLKEM1024_public_key *external) {
   return reinterpret_cast<public_key<RANK1024> *>(external);
+}
+
+const MLKEM1024_public_key *public_key_1024_to_external(
+    const public_key<RANK1024> *public_key) {
+  return reinterpret_cast<const MLKEM1024_public_key *>(public_key);
 }
 
 static_assert(sizeof(MLKEM768_private_key) >= sizeof(private_key<RANK768>));
@@ -972,12 +987,10 @@ static int keygen_self_test() {
   constexpr size_t kMarshaledPrivateKeySize = 2400;
   uint8_t priv_bytes[kMarshaledPrivateKeySize];
   CBB_init_fixed(&cbb, priv_bytes, sizeof(priv_bytes));
-  static_assert(sizeof(kExpectedPrivateKeyBytes) == kMarshaledPrivateKeySize);
-  static_assert(sizeof(kExpectedPublicKeyBytes) == sizeof(pub_key));
   if (!mlkem_marshal_private_key(&cbb, &priv) ||
       !BORINGSSL_check_test(kExpectedPrivateKeyBytes, priv_bytes,
-                            sizeof(priv_bytes), "ML-KEM keygen private key") ||
-      !BORINGSSL_check_test(kExpectedPublicKeyBytes, pub_key, sizeof(pub_key),
+                            "ML-KEM keygen private key") ||
+      !BORINGSSL_check_test(kExpectedPublicKeyBytes, pub_key,
                             "ML-KEM keygen public key")) {
     return 0;
   }
@@ -996,10 +1009,9 @@ static int encap_self_test() {
   static_assert(sizeof(kTestEntropy) >= BCM_MLKEM_ENCAP_ENTROPY);
   mlkem_encap_external_entropy_no_self_test(ciphertext, shared_secret, &pub,
                                             kTestEntropy);
-  if (!BORINGSSL_check_test(ciphertext, kExpectedCiphertext, sizeof(ciphertext),
+  if (!BORINGSSL_check_test(ciphertext, kExpectedCiphertext,
                             "ML-KEM encap ciphertext") ||
       !BORINGSSL_check_test(kExpectedSharedSecret, shared_secret,
-                            sizeof(kExpectedSharedSecret),
                             "ML-KEM encap shared secret")) {
     return 0;
   }
@@ -1015,9 +1027,7 @@ static int decap_self_test() {
   }
   uint8_t shared_secret[MLKEM_SHARED_SECRET_BYTES];
   mlkem_decap_no_self_test(shared_secret, kExpectedCiphertext, &priv);
-  static_assert(sizeof(kExpectedSharedSecret) == sizeof(shared_secret));
   if (!BORINGSSL_check_test(kExpectedSharedSecret, shared_secret,
-                            sizeof(shared_secret),
                             "ML-KEM decap shared secret")) {
     return 0;
   }
@@ -1027,11 +1037,8 @@ static int decap_self_test() {
                 sizeof(kExpectedCiphertext));
   mlkem_decap_no_self_test(implicit_rejection_shared_secret,
                            kExpectedPrivateKeyBytes, &priv);
-  static_assert(sizeof(kExpectedImplicitRejectionSharedSecret) ==
-                sizeof(implicit_rejection_shared_secret));
   if (!BORINGSSL_check_test(kExpectedImplicitRejectionSharedSecret,
                             implicit_rejection_shared_secret,
-                            sizeof(implicit_rejection_shared_secret),
                             "ML-KEM decap implicit rejection shared secret")) {
     return 0;
   }
@@ -1245,6 +1252,20 @@ bcm_infallible bssl::BCM_mlkem1024_public_from_private(
   return bcm_infallible::approved;
 }
 
+const MLKEM768_public_key *bssl::BCM_mlkem768_public_of_private(
+    const MLKEM768_private_key *private_key) {
+  const mlkem::private_key<RANK768> *const priv =
+      mlkem::private_key_768_from_external(private_key);
+  return mlkem::public_key_768_to_external(&priv->pub);
+}
+
+const MLKEM1024_public_key *bssl::BCM_mlkem1024_public_of_private(
+    const MLKEM1024_private_key *private_key) {
+  const mlkem::private_key<RANK1024> *const priv =
+      mlkem::private_key_1024_from_external(private_key);
+  return mlkem::public_key_1024_to_external(&priv->pub);
+}
+
 // Calls |MLKEM768_encap_external_entropy| with random bytes from
 // |BCM_rand_bytes|
 bcm_infallible bssl::BCM_mlkem768_encap(
@@ -1331,6 +1352,26 @@ bcm_status bssl::BCM_mlkem1024_marshal_public_key(
     CBB *out, const MLKEM1024_public_key *public_key) {
   return mlkem_marshal_public_key(
       out, mlkem::public_key_1024_from_external(public_key));
+}
+
+int bssl::BCM_mlkem768_public_keys_equal(const MLKEM768_public_key *a,
+                                         const MLKEM768_public_key *b) {
+  const auto *pub_a = mlkem::public_key_768_from_external(a);
+  const auto *pub_b = mlkem::public_key_768_from_external(b);
+  if (mlkem_public_keys_equal(pub_a, pub_b)) {
+    return 1;
+  }
+  return 0;
+}
+
+int bssl::BCM_mlkem1024_public_keys_equal(const MLKEM1024_public_key *a,
+                                          const MLKEM1024_public_key *b) {
+  const auto *pub_a = mlkem::public_key_1024_from_external(a);
+  const auto *pub_b = mlkem::public_key_1024_from_external(b);
+  if (mlkem_public_keys_equal(pub_a, pub_b)) {
+    return 1;
+  }
+  return 0;
 }
 
 bcm_status bssl::BCM_mlkem768_parse_public_key(MLKEM768_public_key *public_key,

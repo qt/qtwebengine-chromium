@@ -18,6 +18,7 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/api/cookies/cookies_helpers.h"
 #include "chrome/common/extensions/api/cookies.h"
+#include "chrome/test/base/chrome_test_utils.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/browser_task_environment.h"
 #include "extensions/buildflags/buildflags.h"
@@ -47,7 +48,9 @@ struct DomainMatchCase {
 
 }  // namespace
 
-class ExtensionCookiesTest : public testing::Test {
+class ExtensionCookiesTest
+    : public chrome_test_utils::TestingBrowserProcessDeathTestMixin,
+      public testing::Test {
  private:
   content::BrowserTaskEnvironment task_environment_;
 };
@@ -98,7 +101,8 @@ TEST_F(ExtensionCookiesTest, ExtensionTypeCreation) {
       net::CanonicalCookie::CreateUnsafeCookieForTesting(
           "ABC", "DEF", "www.example.com", "/", base::Time(), base::Time(),
           base::Time(), base::Time(), false, false,
-          net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT);
+          net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT,
+          net::CookieSourceType::kOther);
   ASSERT_NE(nullptr, canonical_cookie1.get());
   Cookie cookie1 =
       cookies_helpers::CreateCookie(*canonical_cookie1, "some cookie store");
@@ -119,7 +123,7 @@ TEST_F(ExtensionCookiesTest, ExtensionTypeCreation) {
           "ABC", "DEF", ".example.com", "/", base::Time(),
           base::Time::FromSecondsSinceUnixEpoch(10000), base::Time(),
           base::Time(), false, false, net::CookieSameSite::STRICT_MODE,
-          net::COOKIE_PRIORITY_DEFAULT);
+          net::COOKIE_PRIORITY_DEFAULT, net::CookieSourceType::kOther);
   ASSERT_NE(nullptr, canonical_cookie2.get());
   Cookie cookie2 =
       cookies_helpers::CreateCookie(*canonical_cookie2, "some cookie store");
@@ -143,7 +147,8 @@ TEST_F(ExtensionCookiesTest, GetURLFromCanonicalCookie) {
       net::CanonicalCookie::CreateUnsafeCookieForTesting(
           "ABC", "DEF", ".example.com", "/", base::Time(), base::Time(),
           base::Time(), base::Time(), false, false,
-          net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT);
+          net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT,
+          net::CookieSourceType::kOther);
   ASSERT_NE(nullptr, cookie1.get());
   EXPECT_EQ("http://example.com/",
             cookies_helpers::GetURLFromCanonicalCookie(*cookie1).spec());
@@ -152,7 +157,8 @@ TEST_F(ExtensionCookiesTest, GetURLFromCanonicalCookie) {
       net::CanonicalCookie::CreateUnsafeCookieForTesting(
           "ABC", "DEF", ".helloworld.com", "/", base::Time(), base::Time(),
           base::Time(), base::Time(), true, false,
-          net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT);
+          net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT,
+          net::CookieSourceType::kOther);
   ASSERT_NE(nullptr, cookie2.get());
   EXPECT_EQ("https://helloworld.com/",
             cookies_helpers::GetURLFromCanonicalCookie(*cookie2).spec());
@@ -191,7 +197,8 @@ TEST_F(ExtensionCookiesTest, DomainMatching) {
         net::CanonicalCookie::CreateUnsafeCookieForTesting(
             "name", std::string(), tests[i].domain, "/", base::Time(),
             base::Time(), base::Time(), base::Time(), false, false,
-            net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT);
+            net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT,
+            net::CookieSourceType::kOther);
     ASSERT_NE(nullptr, cookie.get());
     EXPECT_EQ(tests[i].matches, filter.MatchesCookie(*cookie)) << " test " << i;
   }
@@ -201,7 +208,7 @@ TEST_F(ExtensionCookiesTest, DecodeUTF8WithErrorHandling) {
   std::unique_ptr<net::CanonicalCookie> canonical_cookie(
       net::CanonicalCookie::CreateForTesting(
           GURL("http://test.com"), "=011Q255bNX_1!yd\203e+;path=/path\203",
-          base::Time::Now()));
+          base::Time::Now(), net::CookieSourceType::kOther));
   ASSERT_NE(nullptr, canonical_cookie.get());
   Cookie cookie =
       cookies_helpers::CreateCookie(*canonical_cookie, "some cookie store");
@@ -232,7 +239,7 @@ TEST_F(ExtensionCookiesTest, PartitionKeySerialization) {
       "__Host-A", "B", "x.y", "/", base::Time(), base::Time(), base::Time(),
       base::Time(), /*secure=*/true,
       /*httponly=*/false, net::CookieSameSite::UNSPECIFIED,
-      net::COOKIE_PRIORITY_LOW,
+      net::COOKIE_PRIORITY_LOW, net::CookieSourceType::kOther,
       net::CookiePartitionKey::FromURLForTesting(GURL(top_level_site)));
   EXPECT_TRUE(cookie->IsPartitioned());
   EXPECT_FALSE(net::CookiePartitionKey::HasNonce(cookie->PartitionKey()));
@@ -243,7 +250,7 @@ TEST_F(ExtensionCookiesTest, PartitionKeySerialization) {
       "__Host-A", "B", "x.y", "/", base::Time(), base::Time(), base::Time(),
       base::Time(), /*secure=*/true,
       /*httponly=*/false, net::CookieSameSite::UNSPECIFIED,
-      net::COOKIE_PRIORITY_LOW,
+      net::COOKIE_PRIORITY_LOW, net::CookieSourceType::kOther,
       net::CookiePartitionKey::FromURLForTesting(GURL()));
 
   EXPECT_TRUE(opaque_cookie->IsPartitioned());
@@ -254,7 +261,7 @@ TEST_F(ExtensionCookiesTest, PartitionKeySerialization) {
       "__Host-A", "B", "x.y", "/", base::Time(), base::Time(), base::Time(),
       base::Time(), /*secure=*/true,
       /*httponly=*/false, net::CookieSameSite::UNSPECIFIED,
-      net::COOKIE_PRIORITY_LOW,
+      net::COOKIE_PRIORITY_LOW, net::CookieSourceType::kOther,
       net::CookiePartitionKey::FromURLForTesting(
           GURL("https://toplevelsite.com"),
           net::CookiePartitionKey::AncestorChainBit::kCrossSite,

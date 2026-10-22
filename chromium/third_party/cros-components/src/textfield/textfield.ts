@@ -8,8 +8,8 @@ import '@material/web/textfield/outlined-text-field.js';
 
 import {MdOutlinedTextField, TextFieldType} from '@material/web/textfield/outlined-text-field.js';
 import {css, CSSResultGroup, html, LitElement, nothing, PropertyValues} from 'lit';
-import {classMap} from 'lit/directives/class-map';
-import {ifDefined} from 'lit/directives/if-defined';
+import {classMap} from 'lit/directives/class-map.js';
+import {ifDefined} from 'lit/directives/if-defined.js';
 
 /**
  * Textfields have two variants that differ only by the container background,
@@ -648,7 +648,7 @@ customElements.define('cros-textfield', Textfield);
 declare global {
   interface HTMLElementEventMap {
     [Textfield.events.CHANGE]: Event;
-    [Textfield.events.INPUT]: Event;
+    [Textfield.events.INPUT]: InputEvent;
     [Textfield.events.INVALID]: Event;
   }
 

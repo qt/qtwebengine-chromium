@@ -263,12 +263,14 @@ export type DispatchHttpRequestRequest = {
   path: string,
   method: 'GET',
   queryParams?: Record<string, string|string[]>,
+  streamId?: number,
   body?: never,
 }|{
   service: string,
   path: string,
   method: 'POST',
   queryParams?: Record<string, string|string[]>,
+  streamId?: number,
   // A JSON string containing the request body.
   body?: string,
 };
@@ -353,7 +355,7 @@ export interface InspectorFrontendHostAPI {
   /**
    * If you need to alert to the user after copying use {@link UIUtils.copyTextToClipboard}.
    */
-  copyText(text: string|null|undefined): void;
+  copyText(text?: string|null): void;
 
   inspectedURLChanged(url: Platform.DevToolsPath.UrlString): void;
 
@@ -453,6 +455,7 @@ export interface InspectorFrontendHostAPI {
   recordFunctionCall(event: FunctionCallEvent): void;
 
   setChromeFlag(flagName: string, value: boolean): void;
+  requestRestart(): void;
 }
 
 export interface AcceleratorDescriptor {
@@ -553,5 +556,6 @@ export const enum EnumeratedHistogram {
   LighthouseCategoryUsed = 'DevTools.LighthouseCategoryUsed',
   SwatchActivated = 'DevTools.SwatchActivated',
   BuiltInAiAvailability = 'DevTools.BuiltInAiAvailability',
+  ExtensionEvalTarget = 'DevTools.ExtensionEvalTarget',
   // LINT.ThenChange(/front_end/devtools_compatibility.js:EnumeratedHistogram)
 }

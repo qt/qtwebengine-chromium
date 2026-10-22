@@ -28,8 +28,6 @@ void lmpar2(const QRSolver &qr, const VectorType &diag, const VectorType &qtb, t
   using std::sqrt;
   typedef typename QRSolver::MatrixType MatrixType;
   typedef typename QRSolver::Scalar Scalar;
-  //    typedef typename QRSolver::StorageIndex StorageIndex;
-
   /* Local variables */
   Index j;
   Scalar fp;
@@ -55,11 +53,10 @@ void lmpar2(const QRSolver &qr, const VectorType &diag, const VectorType &qtb, t
   /* compute and store in x the gauss-newton direction. if the */
   /* jacobian is rank-deficient, obtain a least squares solution. */
 
-  //    const Index rank = qr.nonzeroPivots(); // exactly double(0.)
   const Index rank = qr.rank();  // use a threshold
   wa1 = qtb;
   wa1.tail(n - rank).setZero();
-  // FIXME There is no solve in place for sparse triangularView
+  // FIXME: There is no solve-in-place for sparse triangularView.
   wa1.head(rank) = s.topLeftCorner(rank, rank).template triangularView<Upper>().solve(qtb.head(rank));
 
   x = qr.colsPermutation() * wa1;

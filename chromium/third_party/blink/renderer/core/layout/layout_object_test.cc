@@ -985,7 +985,7 @@ TEST_F(LayoutObjectTest, DisplayContentsWrapperInTableCell) {
 TEST_F(LayoutObjectTest, DumpLayoutObject) {
   // Test dumping for debugging, in particular that newlines and non-ASCII
   // characters are escaped as expected.
-  SetBodyInnerHTML(String::FromUTF8(R"HTML(
+  SetBodyInnerHTML(String::FromUtf8(R"HTML(
     <div id='block' style='background:
 lime'>
       testing Среќен роденден
@@ -1023,14 +1023,14 @@ TEST_F(LayoutObjectTest, DumpDestroyedLayoutObject) {
   StringBuilder builder;
   layout_object->DumpLayoutObject(builder, false, 0);
   String result = builder.ToString();
-  EXPECT_FALSE(result.StartsWith("[DESTROYED] "));
+  EXPECT_FALSE(result.starts_with("[DESTROYED] "));
 
   element->remove();
   UpdateAllLifecyclePhasesForTest();
   builder.Clear();
   layout_object->DumpLayoutObject(builder, false, 0);
   result = builder.ToString();
-  EXPECT_TRUE(result.StartsWith("[DESTROYED] "));
+  EXPECT_TRUE(result.starts_with("[DESTROYED] "));
 }
 #endif  // DCHECK_IS_ON()
 

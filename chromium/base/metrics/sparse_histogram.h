@@ -81,9 +81,11 @@ class BASE_EXPORT SparseHistogram : public HistogramBase {
                   HistogramSamples::Metadata* meta,
                   HistogramSamples::Metadata* logged_meta);
 
-  friend BASE_EXPORT HistogramBase* DeserializeHistogramInfo(
-      base::PickleIterator* iter);
-  static HistogramBase* DeserializeInfoImpl(base::PickleIterator* iter);
+  friend HistogramBase* HistogramBase::DeserializeInfo(
+      base::PickleIterator* iter,
+      NameMapper mapper);
+  static HistogramBase* DeserializeInfoImpl(base::PickleIterator* iter,
+                                            NameMapper mapper);
 
   // Writes the type of the sparse histogram in the |params|.
   DictValue GetParameters() const override;

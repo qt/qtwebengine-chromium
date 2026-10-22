@@ -7,13 +7,16 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
+import * as Bindings from '../../models/bindings/bindings.js';
+import * as Workspace from '../../models/workspace/workspace.js';
 import {
   createConsoleViewMessageWithStubDeps,
   createStackTrace,
 } from '../../testing/ConsoleHelpers.js';
-import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
+import {raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createTarget} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -124,6 +127,30 @@ describeWithMockConnection('ConsoleViewMessage', () => {
     });
   });
 
+  describe('formatParameter', () => {
+    it('creates an editable object properties section for objects', async () => {
+      const target = createTarget();
+      const runtimeModel = target.model(SDK.RuntimeModel.RuntimeModel);
+      const remoteObject = SDK.RemoteObject.RemoteObject.fromLocalObject({foo: 'bar'});
+      const rawMessage = new SDK.ConsoleModel.ConsoleMessage(
+          runtimeModel, Common.Console.FrontendMessageSource.ConsoleAPI, Protocol.Log.LogEntryLevel.Info, '',
+          {parameters: [remoteObject]});
+      const {message} = createConsoleViewMessageWithStubDeps(rawMessage);
+      const messageElement = message.toMessageElement();
+
+      const propertiesSectionElement = messageElement.querySelector('.console-view-object-properties-section');
+      assert.exists(propertiesSectionElement);
+
+      const section = ObjectUI.ObjectPropertiesSection.getObjectPropertiesSectionFrom(propertiesSectionElement);
+      assert.exists(section);
+
+      const rootElement = section.objectTreeElement();
+      await rootElement.onpopulate();
+      const child = rootElement.childAt(0);
+      assert.instanceOf(child, ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement);
+      assert.isTrue(child.editable);
+    });
+  });
   describe('console insights', () => {
     const createMessage =
         (source: SDK.ConsoleModel.MessageSource, level: Protocol.Log.LogEntryLevel, messageText: string):
@@ -230,7 +257,7 @@ describeWithMockConnection('ConsoleViewMessage', () => {
       const results = [];
       for (const line of element.querySelectorAll('.formatted-stack-frame,.formatted-builtin-stack-frame')) {
         if (line.checkVisibility()) {
-          results.push(line.textContent ?? 'Error: line was null or undefined');
+          results.push(line.textContent);
         }
       }
       return results;
@@ -240,24 +267,27 @@ describeWithMockConnection('ConsoleViewMessage', () => {
       const results = [];
       for (const line of findStackPreviewContainer(element).querySelectorAll('tbody tr')) {
         if (line.checkVisibility()) {
-          results.push(line.textContent ?? 'Error: line was null or undefined');
+          results.push(line.textContent);
         }
       }
       return results;
     }
 
-    function expandStructuredTrace(element: HTMLElement) {
+    async function expandStructuredTrace(element: HTMLElement) {
       (element.querySelector('.console-message-stack-trace-wrapper > div') as HTMLElement).click();
+      await UI.Widget.Widget.allUpdatesComplete;
     }
 
-    function expandIgnored(element: HTMLElement) {
+    async function expandIgnored(element: HTMLElement) {
       const {showAll} = findLinks(element);
       (showAll.querySelector('.link') as HTMLElement).click();
+      await UI.Widget.Widget.allUpdatesComplete;
     }
 
-    function collapseIgnored(element: HTMLElement) {
+    async function collapseIgnored(element: HTMLElement) {
       const {showLess} = findLinks(element);
       (showLess.querySelector('.link') as HTMLElement).click();
+      await UI.Widget.Widget.allUpdatesComplete;
     }
 
     async function createConsoleMessageWithIgnoreListing(
@@ -292,21 +322,21 @@ describeWithMockConnection('ConsoleViewMessage', () => {
         }
         return link;
       });
-      linkifier.maybeLinkifyConsoleCallFrame.callsFake((_target, callFrame, options) => {
-        const link = Components.Linkifier.Linkifier.linkifyURL(
-            urlString`${callFrame.url}`, {lineNumber: callFrame.lineNumber, ...options});
-        if (ignoreListFn(callFrame.url)) {
+      const originalLinkifyStackTraceFrame = Components.Linkifier.Linkifier.linkifyStackTraceFrame;
+      sinon.stub(Components.Linkifier.Linkifier, 'linkifyStackTraceFrame').callsFake((frame, options) => {
+        const link = originalLinkifyStackTraceFrame(frame, options);
+        if ((frame.url && ignoreListFn(frame.url)) || (frame.uiSourceCode && ignoreListFn(frame.uiSourceCode.url()))) {
           link.classList.add(IGNORE_LIST_LINK);
         }
         return link;
       });
       const element = message.toMessageElement();  // Trigger rendering.
-      await message.formatErrorStackPromiseForTest();
 
       const wrapperElement = document.createElement('div');
       const shadowElement = UI.UIUtils.createShadowRootWithCoreStyles(wrapperElement, {cssFile: consoleViewStyles});
       shadowElement.appendChild(element);
       renderElementIntoDOM(wrapperElement);
+      await raf();
       assert.isTrue(element.checkVisibility());
       return element;
     }
@@ -335,21 +365,35 @@ describeWithMockConnection('ConsoleViewMessage', () => {
       '    at JSON.parse (<anonymous>)\n',
     ];
     const EXPANDED_STRUCTURED = [
-      '\nuserNestedFunction @ example.com/script.js:41',
-      '\nuserFunction @ example.com/script.js:11',
-      '\nentry @ example.com/app.js:26',
+      '\nuserNestedFunction @ /script.js:41',
+      '\nuserFunction @ /script.js:11',
+      '\nentry @ /app.js:26',
     ];
     const COLLAPSED_STRUCTURED = [
-      '\nuserNestedFunction @ example.com/script.js:41',
-      '\nuserFunction @ example.com/script.js:11',
+      '\nuserNestedFunction @ /script.js:41',
+      '\nuserFunction @ /script.js:11',
     ];
+
+    beforeEach(() => {
+      const targetManager = SDK.TargetManager.TargetManager.instance();
+      const resourceMapping =
+          new Bindings.ResourceMapping.ResourceMapping(targetManager, Workspace.Workspace.WorkspaceImpl.instance());
+      const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
+      Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
+        forceNew: true,
+        resourceMapping,
+        targetManager,
+        ignoreListManager,
+        workspace: Workspace.Workspace.WorkspaceImpl.instance(),
+      });
+    });
 
     it('shows everything with no links when nothing is ignore listed', async () => {
       const element = await createConsoleMessageWithIgnoreListing(_ => false);
       assertNoLinks(element);
       assert.deepEqual(getCallFrames(element), EXPANDED_UNSTRUCTURED);
       assert.deepEqual(getStructuredCallFrames(element), []);
-      expandStructuredTrace(element);
+      await expandStructuredTrace(element);
       assertNoLinks(element);
       assert.deepEqual(getStructuredCallFrames(element), EXPANDED_STRUCTURED);
     });
@@ -359,32 +403,101 @@ describeWithMockConnection('ConsoleViewMessage', () => {
       assertNoLinks(element);
       assert.deepEqual(getCallFrames(element), EXPANDED_UNSTRUCTURED);
       assert.deepEqual(getStructuredCallFrames(element), []);
-      expandStructuredTrace(element);
+      await expandStructuredTrace(element);
       assertNoLinks(element);
       assert.deepEqual(getStructuredCallFrames(element), EXPANDED_STRUCTURED);
     });
+
+    // Regression test for crbug.com/379788109: when all inline Error frames
+    // are ignore-listed but the structured stack trace (console.error call
+    // stack) has non-ignore-listed frames, the toggle should still appear.
+    it('shows expandable list when all inline frames are ignored but structured trace has non-ignored frames',
+       async () => {
+         const target = createTarget();
+         const runtimeModel = target.model(SDK.RuntimeModel.RuntimeModel);
+         const stackTrace = createStackTrace([
+           'USER_ID::userNestedFunction::http://example.com/script.js::40::15',
+           'USER_ID::userFunction::http://example.com/script.js::10::2',
+           'APP_ID::entry::http://example.com/app.js::25::10',
+         ]);
+         const stackTraceMessage = errorMessageForStack(stackTrace);
+         const messageDetails: SDK.ConsoleModel.ConsoleMessageDetails = {
+           type: Protocol.Runtime.ConsoleAPICalledEventType.Error,
+           stackTrace,
+           parameters: [{
+             type: Protocol.Runtime.RemoteObjectType.Object,
+             subtype: Protocol.Runtime.RemoteObjectSubtype.Error,
+             className: 'Error',
+             description: stackTraceMessage,
+           }],
+         };
+         const rawMessage = new SDK.ConsoleModel.ConsoleMessage(
+             runtimeModel, Common.Console.FrontendMessageSource.ConsoleAPI, Protocol.Log.LogEntryLevel.Error,
+             stackTraceMessage, messageDetails);
+         const {message, linkifier} = createConsoleViewMessageWithStubDeps(rawMessage);
+
+         // Inline Error frames: ALL ignore-listed
+         linkifier.linkifyScriptLocation.callsFake((_target, _scriptId, sourceURL, lineNumber, options) => {
+           const link = Components.Linkifier.Linkifier.linkifyURL(sourceURL, {lineNumber, ...options});
+           link.classList.add(IGNORE_LIST_LINK);
+           return link;
+         });
+         // Structured stack trace: only app.js is ignore-listed, script.js is NOT
+         linkifier.maybeLinkifyConsoleCallFrame.callsFake((_target, callFrame, options) => {
+           const link = Components.Linkifier.Linkifier.linkifyURL(
+               urlString`${callFrame.url}`, {lineNumber: callFrame.lineNumber, ...options});
+           if (callFrame.url.includes('/app.js')) {
+             link.classList.add(IGNORE_LIST_LINK);
+           }
+           return link;
+         });
+         const element = message.toMessageElement();
+         await message.formatErrorStackPromiseForTest();
+
+         const wrapperElement = document.createElement('div');
+         const shadowElement = UI.UIUtils.createShadowRootWithCoreStyles(wrapperElement, {cssFile: consoleViewStyles});
+         shadowElement.appendChild(element);
+         renderElementIntoDOM(wrapperElement);
+         await raf();
+         assert.isTrue(element.checkVisibility());
+
+         // All inline frames are ignored, so with the fix they should be hidden
+         // and the "Show ignore-listed frames" toggle should be visible.
+         assertShowAllLink(element);
+         assert.deepEqual(getCallFrames(element), []);
+
+         // Clicking "Show ignore-listed frames" reveals them
+         await expandIgnored(element);
+         assertShowLessLink(element);
+         assert.deepEqual(getCallFrames(element), EXPANDED_UNSTRUCTURED);
+
+         // Collapsing hides them again
+         await collapseIgnored(element);
+         assertShowAllLink(element);
+         assert.deepEqual(getCallFrames(element), []);
+       });
 
     it('shows expandable list when something is ignore listed', async () => {
       const element = await createConsoleMessageWithIgnoreListing(url => url.includes('/app.js'));
       assertShowAllLink(element);
       assert.deepEqual(getStructuredCallFrames(element), []);
       assert.deepEqual(getCallFrames(element), COLLAPSED_UNSTRUCTURED);
-      expandIgnored(element);
+      await expandIgnored(element);
       assertShowLessLink(element);
       assert.deepEqual(getCallFrames(element), EXPANDED_UNSTRUCTURED);
-      collapseIgnored(element);
+      await collapseIgnored(element);
       assertShowAllLink(element);
 
-      expandStructuredTrace(element);
+      await expandStructuredTrace(element);
 
       assertShowAllLink(element);
       assert.deepEqual(getStructuredCallFrames(element), COLLAPSED_STRUCTURED);
       assert.deepEqual(getCallFrames(element), COLLAPSED_UNSTRUCTURED);
-      expandIgnored(element);
+      await expandIgnored(element);
       assertShowLessLink(element);
       assert.deepEqual(getCallFrames(element), EXPANDED_UNSTRUCTURED);
       assert.deepEqual(getStructuredCallFrames(element), EXPANDED_STRUCTURED);
-      collapseIgnored(element);
+      await collapseIgnored(element);
       assertShowAllLink(element);
       assert.deepEqual(getStructuredCallFrames(element), COLLAPSED_STRUCTURED);
       assert.deepEqual(getCallFrames(element), COLLAPSED_UNSTRUCTURED);
@@ -395,7 +508,7 @@ describeWithMockConnection('ConsoleViewMessage', () => {
       assertNoLinks(element);
       assert.deepEqual(getCallFrames(element), EXPANDED_UNSTRUCTURED_WITH_BUILTIN);
       assert.deepEqual(getStructuredCallFrames(element), []);
-      expandStructuredTrace(element);
+      await expandStructuredTrace(element);
       assertNoLinks(element);
       assert.deepEqual(getStructuredCallFrames(element), EXPANDED_STRUCTURED);
     });
@@ -405,7 +518,7 @@ describeWithMockConnection('ConsoleViewMessage', () => {
       assertNoLinks(element);
       assert.deepEqual(getCallFrames(element), EXPANDED_UNSTRUCTURED_WITH_BUILTIN);
       assert.deepEqual(getStructuredCallFrames(element), []);
-      expandStructuredTrace(element);
+      await expandStructuredTrace(element);
       assertNoLinks(element);
       assert.deepEqual(getStructuredCallFrames(element), EXPANDED_STRUCTURED);
     });
@@ -415,22 +528,22 @@ describeWithMockConnection('ConsoleViewMessage', () => {
       assertShowAllLink(element);
       assert.deepEqual(getStructuredCallFrames(element), []);
       assert.deepEqual(getCallFrames(element), COLLAPSED_UNSTRUCTURED_WITH_BUILTIN);
-      expandIgnored(element);
+      await expandIgnored(element);
       assertShowLessLink(element);
       assert.deepEqual(getCallFrames(element), EXPANDED_UNSTRUCTURED_WITH_BUILTIN);
-      collapseIgnored(element);
+      await collapseIgnored(element);
       assertShowAllLink(element);
 
-      expandStructuredTrace(element);
+      await expandStructuredTrace(element);
 
       assertShowAllLink(element);
       assert.deepEqual(getStructuredCallFrames(element), COLLAPSED_STRUCTURED);
       assert.deepEqual(getCallFrames(element), COLLAPSED_UNSTRUCTURED_WITH_BUILTIN);
-      expandIgnored(element);
+      await expandIgnored(element);
       assertShowLessLink(element);
       assert.deepEqual(getCallFrames(element), EXPANDED_UNSTRUCTURED_WITH_BUILTIN);
       assert.deepEqual(getStructuredCallFrames(element), EXPANDED_STRUCTURED);
-      collapseIgnored(element);
+      await collapseIgnored(element);
       assertShowAllLink(element);
       assert.deepEqual(getStructuredCallFrames(element), COLLAPSED_STRUCTURED);
       assert.deepEqual(getCallFrames(element), COLLAPSED_UNSTRUCTURED_WITH_BUILTIN);

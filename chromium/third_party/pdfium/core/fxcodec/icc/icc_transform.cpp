@@ -116,30 +116,30 @@ std::unique_ptr<IccTransform> IccTransform::CreateTransformSRGB(
       new IccTransform(hTransform, nSrcComponents, bLab, bNormal));
 }
 
-void IccTransform::Translate(pdfium::span<const float> pSrcValues,
-                             pdfium::span<float> pDestValues) {
+void IccTransform::Translate(pdfium::span<const float> src_values,
+                             pdfium::span<float, 3> dest_values) {
   uint8_t output[4];
   // TODO(npm): Currently the CmsDoTransform method is part of LCMS and it will
   // apply some member of transform_ to the input. We need to go over all the
-  // places which set transform to verify that only `pSrcValues.size()`
+  // places which set transform to verify that only `src_values.size()`
   // components are used.
   if (lab_) {
-    DataVector<double> inputs(std::max<size_t>(pSrcValues.size(), 16));
-    for (uint32_t i = 0; i < pSrcValues.size(); ++i) {
-      inputs[i] = pSrcValues[i];
+    DataVector<double> inputs(std::max<size_t>(src_values.size(), 16));
+    for (uint32_t i = 0; i < src_values.size(); ++i) {
+      inputs[i] = src_values[i];
     }
     cmsDoTransform(transform_, inputs.data(), output, 1);
   } else {
-    DataVector<uint8_t> inputs(std::max<size_t>(pSrcValues.size(), 16));
-    for (size_t i = 0; i < pSrcValues.size(); ++i) {
+    DataVector<uint8_t> inputs(std::max<size_t>(src_values.size(), 16));
+    for (size_t i = 0; i < src_values.size(); ++i) {
       inputs[i] =
-          static_cast<int>(std::clamp(pSrcValues[i] * 255.0f, 0.0f, 255.0f));
+          static_cast<int>(std::clamp(src_values[i] * 255.0f, 0.0f, 255.0f));
     }
     cmsDoTransform(transform_, inputs.data(), output, 1);
   }
-  pDestValues[0] = output[2] / 255.0f;
-  pDestValues[1] = output[1] / 255.0f;
-  pDestValues[2] = output[0] / 255.0f;
+  dest_values[0] = output[2] / 255.0f;
+  dest_values[1] = output[1] / 255.0f;
+  dest_values[2] = output[0] / 255.0f;
 }
 
 void IccTransform::TranslateScanline(pdfium::span<uint8_t> pDest,

@@ -182,8 +182,8 @@ export class PerformanceInsightFormatter {
         return [{title: 'How do I optimize my network dependency tree?'}];
       case 'RenderBlocking':
         return [
-          {title: 'Show me the most impactful render blocking requests that I should focus on'},
-          {title: 'How can I reduce the number of render blocking requests?'}
+          {title: 'Show me the most impactful render-blocking requests that I should focus on'},
+          {title: 'How can I reduce the number of render-blocking requests?'}
         ];
       case 'SlowCSSSelector':
         return [{title: 'How can I optimize my CSS to increase the performance of CSS selectors?'}];
@@ -202,6 +202,10 @@ export class PerformanceInsightFormatter {
         return [
           {title: 'Is my site polyfilling modern JavaScript features?'},
           {title: 'How can I reduce the amount of legacy JavaScript on my page?'},
+        ];
+      case 'CharacterSet':
+        return [
+          {title: 'How do I declare a character encoding for my page?'},
         ];
       default:
         throw new Error(`Unknown insight key '${this.#insight.insightKey}'`);
@@ -769,18 +773,18 @@ ${requestSummary}`;
   }
 
   /**
-   * Create an AI prompt string out of the Render Blocking Insight model to use with Ask AI.
-   * @param insight The Render Blocking Model to query.
+   * Create an AI prompt string out of the Render-blocking Insight model to use with Ask AI.
+   * @param insight The Render-blocking Model to query.
    * @returns a string formatted for sending to Ask AI.
    */
   formatRenderBlockingInsight(insight: Trace.Insights.Models.RenderBlocking.RenderBlockingInsightModel): string {
     const requestSummary = this.#traceFormatter.formatNetworkRequests(insight.renderBlockingRequests);
 
     if (requestSummary.length === 0) {
-      return 'There are no network requests that are render blocking.';
+      return 'There are no network requests that are render-blocking.';
     }
 
-    return `Here is a list of the network requests that were render blocking on this page and their duration:
+    return `Here is a list of the network requests that were render-blocking on this page and their duration:
 
 ${requestSummary}`;
   }
@@ -881,6 +885,20 @@ ${requestSummary}`;
    * @param insight The Network Dependency Tree Insight Model to query.
    * @returns a string formatted for sending to Ask AI.
    */
+  formatCharacterSetInsight(insight: Trace.Insights.Models.CharacterSet.CharacterSetInsightModel): string {
+    let output = '';
+    if (insight.data) {
+      output += 'HTTP Content-Type header charset: ' + (insight.data.hasHttpCharset ? 'present' : 'missing') + '.\n';
+      output += 'HTML meta charset disposition: ' + (insight.data.metaCharsetDisposition ?? 'unknown') + '.\n';
+
+      if (!insight.data.hasHttpCharset && insight.data.metaCharsetDisposition !== 'found-in-first-1024-bytes') {
+        output +=
+            '\nThe page does not declare character encoding via HTTP header or a meta charset tag in the first 1024 bytes.\n';
+      }
+    }
+    return output;
+  }
+
   formatViewportInsight(insight: Trace.Insights.Models.Viewport.ViewportInsightModel): string {
     let output = '';
 
@@ -995,6 +1013,10 @@ ${this.#links()}`;
       return this.formatViewportInsight(this.#insight);
     }
 
+    if (Trace.Insights.Models.CharacterSet.isCharacterSetInsight(this.#insight)) {
+      return this.formatCharacterSetInsight(this.#insight);
+    }
+
     return '';
   }
 
@@ -1074,6 +1096,9 @@ ${this.#links()}`;
         links.push('https://web.dev/articles/baseline-and-polyfills');
         links.push('https://philipwalton.com/articles/the-state-of-es5-on-the-web/');
         break;
+      case 'CharacterSet':
+        links.push('https://developer.chrome.com/docs/insights/charset/');
+        break;
     }
 
     return links.map(link => '- ' + link).join('\n');
@@ -1136,7 +1161,7 @@ It is important that all of these checks pass to minimize the delay between the 
    3. The maximum of 4 preconnects should be respected.
 - Opportunities to add [preconnect] for a faster loading experience.`;
       case 'RenderBlocking':
-        return 'This insight identifies network requests that were render blocking. Render blocking requests are impactful because they are deemed critical to the page and therefore the browser stops rendering the page until it has dealt with these resources. For this insight make sure you fully inspect the details of each render blocking network request and prioritize your suggestions to the user based on the impact of each render blocking request.';
+        return 'This insight identifies network requests that were render-blocking. Render-blocking requests are impactful because they are deemed critical to the page and therefore the browser stops rendering the page until it has dealt with these resources. For this insight make sure you fully inspect the details of each render-blocking network request and prioritize your suggestions to the user based on the impact of each render-blocking request.';
       case 'SlowCSSSelector':
         return `This insight identifies CSS selectors that are slowing down your page's rendering performance.`;
       case 'ThirdParties':
@@ -1158,6 +1183,8 @@ To pass this insight, ensure your server supports and prioritizes a modern HTTP 
         return `This insight identified legacy JavaScript in your application's modules that may be creating unnecessary code.
 
 Polyfills and transforms enable older browsers to use new JavaScript features. However, many are not necessary for modern browsers. Consider modifying your JavaScript build process to not transpile Baseline features, unless you know you must support older browsers.`;
+      case 'CharacterSet':
+        return `This insight checks that the page declares a character encoding, ideally via the Content-Type HTTP response header. A missing or late charset declaration can force the browser to re-parse the document once it finally determines the encoding, delaying first contentful paint. Best practice: include charset=utf-8 in the Content-Type header and add <meta charset="utf-8"> as the very first element inside <head>.`;
     }
   }
 }

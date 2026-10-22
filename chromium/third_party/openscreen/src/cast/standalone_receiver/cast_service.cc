@@ -48,7 +48,8 @@ CastService::CastService(CastService::Configuration config)
       mirroring_application_(config.task_runner,
                              local_endpoint_.address,
                              agent_,
-                             config.enable_dscp),
+                             config.enable_dscp,
+                             config.enable_input_events),
       socket_factory_(agent_, *agent_.cast_socket_client()),
       connection_factory_(
           TlsConnectionFactory::CreateFactory(socket_factory_,

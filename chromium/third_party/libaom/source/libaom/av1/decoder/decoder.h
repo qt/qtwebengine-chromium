@@ -339,6 +339,8 @@ typedef struct AV1Decoder {
 #endif
   int operating_point;
   int current_operating_point;
+  // If nonzero, the maximum frame size (width * height). 0 means unlimited.
+  unsigned int frame_size_limit;
   int seen_frame_header;
   // The expected start_tile (tg_start syntax element) of the next tile group.
   int next_start_tile;

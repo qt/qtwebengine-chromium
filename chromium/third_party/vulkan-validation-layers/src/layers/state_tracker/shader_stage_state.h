@@ -45,12 +45,15 @@ class Instruction;
 // A good example is Descriptor Heap flags, we have a nice |descriptor_heap_mode| member we want to query, because it requires the
 // pipelineFlags2 pNext struct. Because we don't have the Pipeline/ShaderObject state object we have to basically reimplement
 // various state.
+// The core issue with this is we use it everything for Pipeline, but for ShaderObject, we only use at vkCreateShadersEXT()
+// Also for Pipeline, we create the state object prior to validating the vkCreatePipeline call
 struct ShaderStageState {
     // We use this over a spirv::Module because there are times we need to create empty objects
     std::shared_ptr<const vvl::ShaderModule> module_state;
     std::shared_ptr<const spirv::Module> spirv_state;
     const vku::safe_VkPipelineShaderStageCreateInfo *pipeline_create_info;
     const vku::safe_VkShaderCreateInfoEXT *shader_object_create_info;
+    // Can be null because GPL
     const vvl::DescriptorSetLayoutList *descriptor_set_layouts;
     // Will be NULL if coming from ShaderObject or Descriptor Heaps
     VkPipelineLayout pipeline_layout;
@@ -58,6 +61,8 @@ struct ShaderStageState {
     std::shared_ptr<const spirv::EntryPoint> entrypoint;
     // Because this can come from a different struct depending on the Pipeline type, have it passed on creation
     const bool descriptor_heap_mode;
+    const bool uses_resource_heap;
+    const bool uses_sampler_heap;
 
     ShaderStageState(const vku::safe_VkPipelineShaderStageCreateInfo* pipeline_create_info,
                      const vku::safe_VkShaderCreateInfoEXT* shader_object_create_info,
@@ -70,6 +75,13 @@ struct ShaderStageState {
     VkShaderStageFlagBits GetStage() const;
     vku::safe_VkSpecializationInfo *GetSpecializationInfo() const;
     const void* GetPNext() const;
+
+    // Handles things like VK_EXT_shader_module_identifier and VK_SHADER_CODE_TYPE_SPIRV_EXT
+    bool HasSpirv() const { return spirv_state.get() != nullptr && entrypoint.get() != nullptr; }
+
+  private:
+    bool ResourceHeapIsUsed();
+    bool SamplerHeapIsUsed();
 };
 
 namespace spirv {

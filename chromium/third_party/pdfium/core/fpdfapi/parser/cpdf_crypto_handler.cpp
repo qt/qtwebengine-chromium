@@ -26,6 +26,8 @@
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/check_op.h"
+#include "core/fxcrt/fx_random.h"
+#include "core/fxcrt/span_util.h"
 #include "core/fxcrt/stl_util.h"
 
 namespace {
@@ -95,9 +97,7 @@ DataVector<uint8_t> CPDF_CryptoHandler::EncryptContent(
     auto dest_data_span = dest_span.subspan(kIVSize, source_data_size);
     auto dest_padding_span = dest_span.subspan(kIVSize + source_data_size);
 
-    for (auto& v : dest_iv_span) {
-      v = static_cast<uint8_t>(rand());
-    }
+    FX_Random::Fill(fxcrt::reinterpret_span<uint32_t>(dest_iv_span));
     CRYPT_AESSetIV(aes_context_.get(), dest_iv_span);
     CRYPT_AESEncrypt(aes_context_.get(), dest_data_span,
                      source.first(source_data_size));

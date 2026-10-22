@@ -77,6 +77,7 @@ const UIStrings = {
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/elements/EventListenersWidget.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+const {widget} = UI.Widget;
 let eventListenersWidgetInstance: EventListenersWidget;
 
 interface ViewInput {
@@ -105,8 +106,7 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
       <devtools-toolbar class="event-listener-toolbar" role="presentation">
         <devtools-button ${bindToAction(input.refreshEventListenersActionName)}></devtools-button>
         <devtools-checkbox title=${i18nString(UIStrings.showListenersOnTheAncestors)}
-          ${bindToSetting(input.showForAncestorsSetting)}
-          jslog=${VisualLogging.toggle('show-event-listeners-for-ancestors').track({ change: true })}>
+          ${bindToSetting(input.showForAncestorsSetting)}>
           ${i18nString(UIStrings.ancestors)}
         </devtools-checkbox>
         <select class="dispatch-filter"
@@ -120,16 +120,15 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
             </option>`)}
         </select>
         <devtools-checkbox title=${i18nString(UIStrings.resolveEventListenersBoundWith)}
-          ${bindToSetting(input.showFrameworkListenersSetting)}
-          jslog=${VisualLogging.toggle('show-frameowkr-listeners').track({ change: true })}>
+          ${bindToSetting(input.showFrameworkListenersSetting)}>
           ${i18nString(UIStrings.frameworkListeners)}
         </devtools-checkbox>
       </devtools-toolbar>
-      <devtools-widget .widgetConfig=${UI.Widget.widgetConfig(EventListeners.EventListenersView.EventListenersView, {
+      ${widget(EventListeners.EventListenersView.EventListenersView, {
         changeCallback: input.onEventListenersViewChange,
         objects: input.eventListenerObjects,
         filter: input.filter,
-      })}></devtools-widget>
+      })}
     </div>`, target);
   // clang-format on
 };

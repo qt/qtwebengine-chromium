@@ -40,11 +40,11 @@ To test the `DEFAULT_VIEW` function itself, we should use screenshot and e2e tes
 
 We should no longer use imperative API to update DOM. Instead we rely on orchestrated rendering of lit-html templates. The view function described above should be a call to lit-html `render`. The view function should be called from `UI.Widget`’s `performUpdate` method, which by default is scheduled using `requestAnimationFrame`.
 
-To embed another presenter (`UI.Widget`) in the lit-html template, use `<devtools-widget .widgetConfig=${widgetConfig(<class>, {foo: 1, bar: 2})}`
+To embed another presenter (`UI.Widget`) in the lit-html template, use `widget(<class>, {foo: 1, bar: 2})`
 
 This will instantiate a `Widget` class with the web component as its `element` and, optionally, will set the properties provided in the second parameter. The widget won’t be re-instantiated on the subsequent template renders, but the properties would be updated. For this to work, the widget needs to accept `HTMLElement` as a sole constructor parameter and properties need to be public members or setters.
 
-For backwards compatibility, the first argument to `widgetConfig` can also be a factory function: `<devtools-widget .widgetConfig=${widgetConfig(element => new MyWidget(foo, bar, element))}>`. Similar to the class constructor version, `element` is the actual `<devtools-widget>` so the following two invocations of `widgetConfig` are equivalent: `widgetConfig(MyWidget)` and `widgetConfig(element => new MyWidget(element))`.
+For backwards compatibility, the first argument to `widget` can also be a factory function: `widget(element => new MyWidget(foo, bar, element))`. Similar to the class constructor version, `element` is the actual `<devtools-widget>` so the following two invocations of `widget` are equivalent: `widget(MyWidget)` and `widget(element => new MyWidget(element))`.
 
 ## Styling
 To prevent style conflicts in widgets without relying on shadow DOM, we use the CSS [`@scope`](https://developer.mozilla.org/en-US/docs/Web/CSS/@scope) at-rule for style encapsulation. This ensures that styles defined for a widget do not leak out and affect other components.
@@ -83,22 +83,24 @@ render(html`
   <div class="container">
     <h3 class="title">My Widget</h3>
     ...
-    <devtools-widget .widgetConfig=${widgetConfig(NestedWidget)}></devtools-widget>
+    ${widget(NestedWidget)}
   </div>
 `, this.element);
 ```
 
-In this example, the `.title` style will apply within the parent widget but will not leak into the nested `<devtools-widget>`. Because this convention relies on developer discipline, it is important to verify its correct application during code reviews.
+In this example, the `.title` style will apply within the parent widget but will not leak into the nested widget. Because this convention relies on developer discipline, it is important to verify its correct application during code reviews.
+
+**Note:** Inside a `<devtools-data-grid>`, any `<style>` tags must be placed as direct children of the `<table>` element.
 
 ## Examples
 
 ```html
-<devtools-widget .widgetConfig=${widgetConfig(ElementsPanel)}>
+<devtools-widget ${widget(ElementsPanel)}>
   <devtools-split-view>
-    <devtools-widget slot="main" .widgetConfig=${widgetConfig(ElementsTree)}></devtools-widget>
+    <devtools-widget slot="main" ${widget(ElementsTree)}></devtools-widget>
     <devtools-tab-pane slot="sidebar">
-      <devtools-widget .widgetConfig=${widgetConfig(StylesPane, {element: input.element})}></devtools-widget>
-      <devtools-widget .widgetConfig=${widgetConfig(ComputedPane, {element: input.element})}></devtools-widget>
+      ${widget(StylesPane, {element: input.element})}
+      ${widget(ComputedPane, {element: input.element})}
       ...
     </devtools-tab-pane>
   </devtools-split-view>
@@ -109,8 +111,7 @@ In this example, the `.title` style will apply within the parent widget but will
 type View = (input: ViewInput, output: ViewOutput, target: HTMLElement) => void;
 const DEFAULT_VIEW = (input, output, target) => {
   render(html`
-    <devtools-widget .widgetConfig=${widgetConfig(MetricsPane, {element: input.element})}>
-    </devtools-widget>
+    ${widget(MetricsPane, {element: input.element})}
     <devtools-toolbar>
       <devtools-filter-input @change=${input.onFilter}></devtools-filter-input>
       <devtools-checkbox @change=${input.onShowAll}>Show All</devtools-checkbox>
@@ -611,7 +612,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
       <a href="https://www.google.com" data-some-key="some-value" role="some-role">some-text</a>
       <img src="https://www.google.com/some-image.png" alt="some-alt" draggable="true" height="100"
           hidden="hidden" href="https://www.google.com" id="some-id" name="some-name" rel="some-rel"
-          scope="some-scope"></img>
+          scope="some-scope">
       <input type="text" placeholder="some-placeholder" value="some-value"
           ?disabled=${!this.enabled} checked>
     </div>`,
@@ -1170,50 +1171,14 @@ export const DEFAULT_VIEW = (input, _output, target) => {
     <div>
       <devtools-split-view direction=${this.vertical ? 'column' : 'row'} sidebar-position="first"
           sidebar-initial-size="200">
-        <devtools-widget slot="sidebar" .widgetConfig=${widgetConfig(SidebarPanel,
+        <devtools-widget slot="sidebar" ${widget(SidebarPanel,
             {minimumSize: {width: 100, height: 25}})}></devtools-widget>
         <devtools-split-view direction="column" sidebar-position="second" slot="main"
             direction="row" sidebar-position="$this.dockedLeft ? 'second' : 'first'}">
-          <devtools-widget slot="main" .widgetConfig=${widgetConfig(UI.Widget.EmptyWidget)}></devtools-widget>
-          <devtools-widget slot="sidebar" .widgetConfig=${widgetConfig(DetailsView)}></devtools-widget>
+          <devtools-widget slot="main" ${widget(UI.Widget.EmptyWidget)}></devtools-widget>
+          <devtools-widget slot="sidebar" ${widget(DetailsView)}></devtools-widget>
         </devtools-split-view>
       </devtools-split-view>
-    </div>`,
-    target, {host: input});
-};
-```
-
-## Migrating `UI.Fragment`
-
-Replace `UI.Fragment.Fragment.build` with a standard lit-html template. To get a reference to an element, use the `ref` directive.
-
-**Before:**
-```typescript
-
-class SomeWidget extends UI.Widget.Widget {
-  constructor() {
-    super();
-    const contrastFragment = UI.Fragment.Fragment.build`
-      <div class="contrast-container-in-grid" $="contrast-container-element">
-        <span class="contrast-preview">Aa</span>
-        <span>${contrastRatioString}</span>
-      </div>`;
-    this.contentElement.appendChild(contrastFragment.element());
-  }
-}
-```
-
-**After:**
-```typescript
-
-
-export const DEFAULT_VIEW = (input, output, target) => {
-  render(html`
-    <div>
-      <div class="contrast-container-in-grid" ${ref(e => { output.contrastContainerElement = e; })}>
-        <span class="contrast-preview">Aa</span>
-        <span>${contrastRatioString}</span>
-      </div>
     </div>`,
     target, {host: input});
 };
@@ -1272,7 +1237,7 @@ export const DEFAULT_VIEW = (input, _output, target) => {
 
 ## Migrating `EmptyWidget`
 
-Replace the imperative `EmptyWidget` with a declarative `<devtools-widget>` and configure it with `widgetConfig` to render an `EmptyWidget`.
+Replace the imperative `EmptyWidget` with a declarative `widget` and configure it to render an `EmptyWidget`.
 
 **Before:**
 ```typescript
@@ -1294,9 +1259,9 @@ class SomeWidget extends UI.Widget.Widget {
 export const DEFAULT_VIEW = (input, _output, target) => {
   render(html`
     <div>
-      <devtools-widget .widgetConfig=${widgetConfig(UI.EmptyWidget.EmptyWidget,{
+      ${widget(UI.EmptyWidget.EmptyWidget,{
           header: i18nString(UIStrings.nothingToSeeHere), text: this.explanation,
-          link: 'http://www.google.com',})}></devtools-widget>
+          link: 'http://www.google.com',})}
     </div>`,
     target, {host: input});
 };
@@ -1370,9 +1335,9 @@ export const DEFAULT_VIEW = (input, _output, target) => {
       <devtools-tree .template=${html`
         <ul role="tree">
           <li role="treeitem">Node 1</li>
-          <li role="treeitem">
+          <li role="treeitem" open>
             Node 2
-            <ul role="group" hidden>
+            <ul role="group">
               <li role="treeitem">Child 1</li>
             </ul>
           </li>
@@ -1382,6 +1347,39 @@ export const DEFAULT_VIEW = (input, _output, target) => {
     target, {host: input});
 };
 ```
+
+In a more complex case you might want to skip rendering of the collapsed nodes
+subtrees and temporarily expand nodes to show search matches. This could be done
+as follows:
+
+```typescript
+export const DEFAULT_VIEW = (input, _output, target) => {
+  render(html`
+    <div>
+      <devtools-tree .template=${html`
+        <ul role="tree">
+          ${input.topLevelNodes.map(node => html`
+            <li role="treeitem" ?open=${containsSearchResult(node)}>
+              ${node.name}
+              ${node.children.length ? html`
+                <ul role="group">
+                  ${ifExpanded(node.children.map(renderChild))}
+                </ul>
+              ` : nothing}
+            </li>`)}
+        </ul>
+      `}></devtools-tree>
+    </div>`,
+    target, {host: input});
+};
+```
+
+Here `open` attribute overrides the expansion state set by the user. Once `open`
+attribute is removed, the expansion state is reversed to the last state set by
+the user.
+
+`ifExpanded` is a lit directive provided on `UI.TreeOutline` and it makes its
+argument render only if the current tree node is expanded.
 
 ## Refactoring UI.Toolbar.Provider
 

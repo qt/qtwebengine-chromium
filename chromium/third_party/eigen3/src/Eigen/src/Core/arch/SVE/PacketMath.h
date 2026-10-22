@@ -354,10 +354,17 @@ struct packet_traits<float> : default_packet_traits {
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,
     HasTan = EIGEN_FAST_MATH,
+    HasACos = 1,
+    HasASin = 1,
+    HasATan = 1,
+    HasATanh = 1,
     HasLog = 1,
+    HasLog1p = 1,
+    HasExpm1 = 1,
     HasExp = 1,
     HasPow = 1,
     HasSqrt = 1,
+    HasCbrt = 1,
     HasTanh = EIGEN_FAST_MATH,
     HasErf = EIGEN_FAST_MATH,
     HasErfc = EIGEN_FAST_MATH
@@ -489,6 +496,22 @@ EIGEN_STRONG_INLINE PacketXf pcmp_lt_or_nan<PacketXf>(const PacketXf& a, const P
 template <>
 EIGEN_STRONG_INLINE PacketXf pfloor<PacketXf>(const PacketXf& a) {
   return svrintm_f32_x(svptrue_b32(), a);
+}
+template <>
+EIGEN_STRONG_INLINE PacketXf pceil<PacketXf>(const PacketXf& a) {
+  return svrintp_f32_x(svptrue_b32(), a);
+}
+template <>
+EIGEN_STRONG_INLINE PacketXf print<PacketXf>(const PacketXf& a) {
+  return svrintn_f32_x(svptrue_b32(), a);
+}
+template <>
+EIGEN_STRONG_INLINE PacketXf ptrunc<PacketXf>(const PacketXf& a) {
+  return svrintz_f32_x(svptrue_b32(), a);
+}
+template <>
+EIGEN_STRONG_INLINE PacketXf pround<PacketXf>(const PacketXf& a) {
+  return svrinta_f32_x(svptrue_b32(), a);
 }
 
 template <>

@@ -17,6 +17,10 @@ class HTMLSelectedContentElement : public HTMLElement {
  public:
   explicit HTMLSelectedContentElement(Document&);
 
+  ElementType GetElementType() const final {
+    return ElementType::kHTMLSelectedContentElement;
+  }
+
   // TODO(crbug.com/357649033): Make this clone all selected options, not just
   // one, for <select multiple>
   void CloneContentsFromOptionElement(const HTMLOptionElement* option);
@@ -25,9 +29,13 @@ class HTMLSelectedContentElement : public HTMLElement {
   void DidNotifySubtreeInsertionsToDocument() override;
   void RemovedFrom(ContainerNode&) override;
 
+  void Trace(Visitor*) const override;
+
  private:
   // When this is true, cloning is disabled.
   bool disabled_ = false;
+
+  Member<HTMLSelectElement> nearest_ancestor_select_;
 };
 
 }  // namespace blink

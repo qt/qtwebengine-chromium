@@ -1076,12 +1076,13 @@ TEST_F(PaymentsNetworkInterfaceTest, GetUploadAccountFromSyncTest) {
       secondary_account_info);
 
   StartUploading();
-  ReturnResponse(payments_network_interface_.get(), net::HTTP_OK, "{}");
 
   // Issue a token for the secondary account.
   identity_test_env_.WaitForAccessTokenRequestIfNecessaryAndRespondWithToken(
       secondary_account_info.account_id, "secondary_account_token",
       AutofillClock::Now() + base::Days(10));
+
+  ReturnResponse(payments_network_interface_.get(), net::HTTP_OK, "{}");
 
   // Verify the auth header.
   EXPECT_THAT(
@@ -1415,64 +1416,6 @@ TEST_F(PaymentsNetworkInterfaceTest, CardInfoRetrievalPermanentFailure) {
       "{ \"error\": { \"code\": \"ANYTHING_ELSE\", "
       "\"api_error_reason\": \"card_from_vendor_permanent_error\"} }");
   EXPECT_EQ(PaymentsRpcResult::kPermanentFailure, result_);
-}
-
-TEST_F(PaymentsNetworkInterfaceTest, UnmaskSuccessMeasureTimeoutHistogram) {
-  base::HistogramTester histogram_tester;
-
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      features::kAutofillUnmaskCardRequestTimeout);
-
-  StartUnmasking(CardUnmaskOptions());
-  IssueOAuthToken();
-  ReturnResponse(payments_network_interface_.get(), net::HTTP_OK,
-                 "{ \"pan\": \"1234\" }");
-
-  EXPECT_EQ(PaymentsRpcResult::kSuccess, result_);
-  histogram_tester.ExpectUniqueSample(
-      "Autofill.PaymentsNetworkInterface.UnmaskCardRequest.ClientSideTimedOut",
-      /*sample=*/false, /*expected_bucket_count=*/1);
-}
-
-TEST_F(PaymentsNetworkInterfaceTest, UnmaskFailureDueToClientSideTimeout) {
-  base::HistogramTester histogram_tester;
-
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      features::kAutofillUnmaskCardRequestTimeout);
-
-  // Fake a client-side timeout on the card unmask.
-  StartUnmasking(CardUnmaskOptions());
-  IssueOAuthToken();
-  ReturnResponse(payments_network_interface_.get(), net::ERR_TIMED_OUT, "");
-
-  EXPECT_EQ(PaymentsRpcResult::kClientSideTimeout, result_);
-  histogram_tester.ExpectUniqueSample(
-      "Autofill.PaymentsNetworkInterface.UnmaskCardRequest.ClientSideTimedOut",
-      /*sample=*/true, /*expected_bucket_count=*/1);
-}
-
-TEST_F(PaymentsNetworkInterfaceTest,
-       UnmaskClientTimeoutNotRecordedForOtherFailure) {
-  base::HistogramTester histogram_tester;
-
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      features::kAutofillUnmaskCardRequestTimeout);
-
-  // Fake a network issue on the unmask; this shouldn't result in any record
-  // being made for the client timeout histogram. In particular,
-  // HTTP_REQUEST_TIMEOUT is treated differently than the client side timeout.
-  StartUnmasking(CardUnmaskOptions());
-  IssueOAuthToken();
-  ReturnResponse(payments_network_interface_.get(), net::HTTP_REQUEST_TIMEOUT,
-                 "");
-
-  EXPECT_EQ(PaymentsRpcResult::kNetworkError, result_);
-  histogram_tester.ExpectTotalCount(
-      "Autofill.PaymentsNetworkInterface.UnmaskCardRequest.ClientSideTimedOut",
-      /*expected_count=*/0);
 }
 
 TEST_F(PaymentsNetworkInterfaceTest, SelectChallengeOptionWithSmsOtpMethod) {

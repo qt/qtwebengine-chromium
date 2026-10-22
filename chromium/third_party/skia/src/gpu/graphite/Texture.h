@@ -41,7 +41,7 @@ public:
 
     const Texture* asTexture() const override { return this; }
 
-    virtual bool canUploadOnHost(const UploadSource&) const { return false; }
+    virtual bool canUploadOnHost() const { return false; }
 
     // With the assumption that source.canUploadOnHost() is true, attempts to write to the
     // texture on the host directly. Returns `false` only if driver calls fail.
@@ -50,10 +50,11 @@ public:
 protected:
     Texture(const SharedContext*,
             SkISize dimensions,
-            const TextureInfo& info,
+            const TextureInfo&,
             bool isTransient,
-            sk_sp<MutableTextureState> mutableState,
-            Ownership);
+            sk_sp<MutableTextureState>,
+            Ownership,
+            std::string_view label);
 
     MutableTextureState* mutableState() const;
 

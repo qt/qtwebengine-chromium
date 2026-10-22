@@ -42,7 +42,8 @@ TEST_F(GlslWriterTest, Let) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {
@@ -59,7 +60,8 @@ TEST_F(GlslWriterTest, LetValue) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {
@@ -76,7 +78,8 @@ TEST_F(GlslWriterTest, Var) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {
@@ -92,7 +95,8 @@ TEST_F(GlslWriterTest, VarZeroInit) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {
@@ -115,7 +119,8 @@ TEST_F(GlslWriterTest, VarSampler) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {
@@ -137,7 +142,8 @@ TEST_F(GlslWriterTest, VarInBuiltin) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {
@@ -160,7 +166,8 @@ TEST_F(GlslWriterTest, VarIn) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate({}, core::ir::Function::PipelineStage::kFragment)) << err_ << output_.glsl;
+    auto result = Generate({}, core::ir::Function::PipelineStage::kFragment);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
 precision highp int;
 
@@ -184,7 +191,8 @@ TEST_F(GlslWriterTest, VarOutBuiltin) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate({}, core::ir::Function::PipelineStage::kFragment)) << err_ << output_.glsl;
+    auto result = Generate({}, core::ir::Function::PipelineStage::kFragment);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(precision highp float;
 precision highp int;
 
@@ -206,7 +214,8 @@ TEST_F(GlslWriterTest, VarBuiltinSampleIndex_ES) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate({}, core::ir::Function::PipelineStage::kFragment)) << err_ << output_.glsl;
+    auto result = Generate({}, core::ir::Function::PipelineStage::kFragment);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(#extension GL_OES_sample_variables: require
 precision highp float;
 precision highp int;
@@ -229,7 +238,8 @@ TEST_F(GlslWriterTest, VarBuiltinSampleMask_ES) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate({}, core::ir::Function::PipelineStage::kFragment)) << err_ << output_.glsl;
+    auto result = Generate({}, core::ir::Function::PipelineStage::kFragment);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(#extension GL_OES_sample_variables: require
 precision highp float;
 precision highp int;
@@ -250,8 +260,8 @@ TEST_F(GlslWriterTest, VarBuiltinSampled_NonES) {
 
     Options opts{};
     opts.version = Version(Version::Standard::kDesktop, 4, 6);
-    ASSERT_TRUE(Generate(opts, core::ir::Function::PipelineStage::kFragment))
-        << err_ << output_.glsl;
+    auto result = Generate(opts, core::ir::Function::PipelineStage::kFragment);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, R"(#version 460
 precision highp float;
 precision highp int;
@@ -274,7 +284,8 @@ TEST_F(GlslWriterTest, VarStorageUint32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(binding = 1, std430)
 buffer v_block_1_ssbo {
@@ -304,7 +315,8 @@ TEST_F(GlslWriterTest, VarStorageStruct) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 
 struct SB {
@@ -335,7 +347,8 @@ TEST_F(GlslWriterTest, VarUniform) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(binding = 1, std140)
 uniform v_block_1_ubo {
@@ -363,7 +376,8 @@ TEST_F(GlslWriterTest, VarHandleStorageTexture) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(binding = 1, r32f) uniform highp writeonly image2D v;
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
@@ -386,7 +400,8 @@ TEST_F(GlslWriterTest, VarHandleDepthTexture) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 uniform highp sampler2DShadow v;
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
@@ -406,7 +421,8 @@ TEST_F(GlslWriterTest, VarWorkgroup) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 shared uint v;
 void main_inner(uint tint_local_index) {

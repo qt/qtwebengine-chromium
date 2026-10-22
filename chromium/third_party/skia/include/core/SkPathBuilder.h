@@ -977,15 +977,6 @@ public:
     */
     bool isInverseFillType() const { return SkPathFillType_IsInverse(fFillType); }
 
-#ifdef SK_SUPPORT_UNSPANNED_APIS
-    SkPathBuilder& addPolygon(const SkPoint pts[], int count, bool close) {
-        return this->addPolygon({pts, count}, close);
-    }
-    SkPathBuilder& polylineTo(const SkPoint pts[], int count) {
-        return this->polylineTo({pts, count});
-    }
-#endif
-
     SkSpan<const SkPoint> points() const {
         return fPts;
     }
@@ -996,7 +987,13 @@ public:
         return fConicWeights;
     }
 
-    SkPathBuilder& addRaw(const SkPathRaw&);
+    enum class Reserve {
+        // Reserves the exact amount of storage needed for pathraw (never overallocates).
+        kExact,
+        // Allows the storage buffers to overallocate, based on their internal growth policy.
+        kGrow
+    };
+    SkPathBuilder& addRaw(const SkPathRaw&, Reserve);
 
     SkPathIter iter() const;
 

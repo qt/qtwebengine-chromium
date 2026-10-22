@@ -30,6 +30,7 @@ class MockTabContextualizationController
       tabs::TabInterface* tab_interface);
   ~MockTabContextualizationController() override;
 
+  MOCK_METHOD(bool, GetInitialPageContextEligibility, (), (override));
   MOCK_METHOD(void,
               GetPageContext,
               (GetPageContextCallback callback),
@@ -77,8 +78,8 @@ class MockSearchboxPage : public searchbox::mojom::Page {
   MOCK_METHOD(void,
               OnContextualInputStatusChanged,
               (const base::UnguessableToken&,
-               contextual_search::FileUploadStatus,
-               std::optional<contextual_search::FileUploadErrorType>));
+               contextual_search::ContextUploadStatus,
+               std::optional<contextual_search::ContextUploadErrorType>));
   MOCK_METHOD(void, OnTabStripChanged, ());
   MOCK_METHOD(void,
               OnInputStateChanged,

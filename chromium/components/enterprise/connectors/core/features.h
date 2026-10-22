@@ -10,10 +10,6 @@
 
 namespace enterprise_connectors {
 
-// Controls whether enterprise features will attempt to attach the active
-// content area user email to DLP/reporting requests on Workspace sites.
-BASE_DECLARE_FEATURE(kEnterpriseActiveUserDetection);
-
 // Controls whether the iFrame parent url chain initiated from the active frame
 // will be attached to DLP scan requests.
 BASE_DECLARE_FEATURE(kEnterpriseIframeDlpRulesSupport);
@@ -45,6 +41,17 @@ BASE_DECLARE_FEATURE_PARAM(size_t, kParallelContentAnalysisRequestCountMax);
 BASE_DECLARE_FEATURE(kEnableEncryptedFileUpload);
 
 BASE_DECLARE_FEATURE(kDlpScanPastedImages);
+
+// Controls enabling bulk data entry support in Glic actuation logic.
+BASE_DECLARE_FEATURE(kGlicBulkDataEntrySupport);
+
+#if BUILDFLAG(IS_ANDROID)
+// Controls whether WebProtect download on Clank is enabled.
+BASE_DECLARE_FEATURE(kEnableDownloadEnterpriseScanOnClank);
+#endif
+
+// Controls whether cancellation of uploads is enabled for content analysis.
+BASE_DECLARE_FEATURE(kEnableCancelUploadOnContentAnalysis);
 
 }  // namespace enterprise_connectors
 

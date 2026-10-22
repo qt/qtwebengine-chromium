@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::gainmap::GainMap;
 use crate::image::*;
 use crate::*;
 
@@ -189,7 +190,7 @@ impl Y4MReader {
 }
 
 impl Reader for Y4MReader {
-    fn read_frame(&mut self, _config: &Config) -> AvifResult<(Image, u64)> {
+    fn read_frame(&mut self, _config: &Config) -> AvifResult<(Image, u64, Option<GainMap>)> {
         const FRAME_MARKER: &str = "FRAME";
         let mut frame_marker = String::new();
         let bytes_read = self
@@ -243,7 +244,7 @@ impl Reader for Y4MReader {
                 }
             }
         }
-        Ok((image, 0))
+        Ok((image, 0, None))
     }
 
     fn has_more_frames(&mut self) -> bool {

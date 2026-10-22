@@ -1596,9 +1596,10 @@ enum aome_enc_control_id {
   /*!\brief Codec control to set the screen content detection mode,
    * aom_screen_detection_mode parameter.
    *
-   * - 1: AOM_SCREEN_DETECTION_STANDARD = standard (default)
+   * - 1: AOM_SCREEN_DETECTION_STANDARD = standard (default in good quality and
+       realtime modes)
    * - 2: AOM_SCREEN_DETECTION_ANTIALIASING_AWARE = anti-aliased text and
-   *   graphics aware
+   *   graphics aware (default in all intra mode)
    */
   AV1E_SET_SCREEN_CONTENT_DETECTION_MODE = 171,
 
@@ -1731,10 +1732,10 @@ typedef enum {
  * Changes the encoder to tune for certain types of input material.
  *
  * \note
- * AOM_TUNE_IQ and AOM_TUNE_SSIMULACRA2 are restricted to all intra mode
- * (AOM_USAGE_ALL_INTRA). Setting the tuning option to either AOM_TUNE_IQ or
- * AOM_TUNE_SSIMULACRA2 causes the following options to be set (expressed as
- * command-line options):
+ * AOM_TUNE_IQ and AOM_TUNE_SSIMULACRA2 are meant for image encoding. Using
+ * these tuning modes for videos isn't recommended.
+ * Setting the tuning option to either AOM_TUNE_IQ or AOM_TUNE_SSIMULACRA2
+ * causes the following options to be set (expressed as command-line options):
  *   * --enable-qm=1
  *   * --qm-min=2
  *   * --qm-max=10
@@ -1759,16 +1760,30 @@ typedef enum {
   AOM_TUNE_VMAF_SALIENCY_MAP = 9,
 /*!\brief Allows detection of the presence of AOM_TUNE_IQ at compile time. */
 #define AOM_HAVE_TUNE_IQ 1
-  /* Image quality (or intra quality). Increases image quality and consistency,
+  /* "Image Quality" tuning mode. Increases image quality and consistency,
    * guided by the SSIMULACRA 2 metric and subjective quality checks. Shares
    * the rdmult code with AOM_TUNE_SSIM.
+   * Note: AOM_TUNE_IQ is only meant to be used to encode a still image or a
+   * layered AVIF image.
    */
   AOM_TUNE_IQ = 10,
 /*!\brief Allows detection of the presence of AOM_TUNE_SSIMULACRA2 at compile
  * time. */
 #define AOM_HAVE_TUNE_SSIMULACRA2 1
-  /* Tune that optimizes for maximum SSIMULACRA 2 scores. Shares the rdmult code
-     with AOM_TUNE_SSIM. */
+  /* A tuning mode that optimizes for maximum SSIMULACRA 2 scores. Shares the
+   * rdmult code with AOM_TUNE_SSIM.
+   * Unlike metrics like AOM_TUNE_VMAF_* or AOM_TUNE_BUTTERAUGLI,
+   * AOM_TUNE_SSIMULACRA2 doesn't use the SSIMULACRA 2 metric for
+   * rate-distortion optimization decisions. Instead, the tuning mode relies
+   * purely on hand-crafted heuristics. This means no additional external
+   * dependencies are required.
+   * AOM_TUNE_SSIMULACRA2 shares most of the tweaks and optimizations with
+   * AOM_TUNE_IQ. However, AOM_TUNE_SSIMULACRA2 fine-tunes the encoder in ways
+   * that have been shown to not come with a corresponding positive impact on
+   * subjective quality in human evaluations.
+   * Note: AOM_TUNE_SSIMULACRA2 is only meant to be used to encode a still
+   * image or a layered AVIF image.
+   */
   AOM_TUNE_SSIMULACRA2 = 11,
 } aom_tune_metric;
 

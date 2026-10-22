@@ -55,6 +55,8 @@ String TechnologyToString(CSSFontFaceSrcValue::FontTechnology font_technology) {
   // https://drafts.csswg.org/cssom/#serialize-a-css-component-value these all
   // need to be serialized as lowercase.
   switch (font_technology) {
+    case CSSFontFaceSrcValue::FontTechnology::kTechnologyAvar2:
+      return "avar2";
     case CSSFontFaceSrcValue::FontTechnology::kTechnologyVariations:
       return "variations";
     case CSSFontFaceSrcValue::FontTechnology::kTechnologyFeaturesAAT:
@@ -92,7 +94,7 @@ bool CSSFontFaceSrcValue::IsSupportedFormat() const {
   const String& resolved_url_string =
       src_value_->UrlData().ResolvedUrl().GetString();
   return ProtocolIs(resolved_url_string, "data") ||
-         !resolved_url_string.EndsWithIgnoringASCIICase(".eot");
+         !resolved_url_string.EndsWithIgnoringAsciiCase(".eot");
 }
 
 void CSSFontFaceSrcValue::AppendTechnology(FontTechnology technology) {

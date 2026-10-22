@@ -16,10 +16,12 @@
 
 #include <assert.h>
 
+#include <type_traits>
+
 #include <openssl/bytestring.h>
 #include <openssl/err.h>
-#include <openssl/nid.h>
 #include <openssl/mldsa.h>
+#include <openssl/nid.h>
 #include <openssl/span.h>
 
 #include "../fipsmodule/bcm_interface.h"
@@ -36,6 +38,8 @@ constexpr uint8_t kMLDSA44OID[] = {OBJ_ENC_ML_DSA_44};
 constexpr uint8_t kMLDSA65OID[] = {OBJ_ENC_ML_DSA_65};
 constexpr uint8_t kMLDSA87OID[] = {OBJ_ENC_ML_DSA_87};
 
+constexpr int kMaxContextLength = 255;
+
 // We must generate EVP bindings for three ML-DSA algorithms. Define a traits
 // type that captures the functions and other parameters of an ML-DSA algorithm.
 #define MAKE_MLDSA_TRAITS(kl)                                                 \
@@ -48,6 +52,7 @@ constexpr uint8_t kMLDSA87OID[] = {OBJ_ENC_ML_DSA_87};
     static constexpr Span<const uint8_t> kOID = kMLDSA##kl##OID;              \
     static constexpr auto PrivateKeyFromSeed =                                \
         &MLDSA##kl##_private_key_from_seed;                                   \
+    static constexpr auto GenerateKey = &MLDSA##kl##_generate_key;            \
     static constexpr auto Sign = &MLDSA##kl##_sign;                           \
     static constexpr auto ParsePublicKey = &MLDSA##kl##_parse_public_key;     \
     static constexpr auto PublicOfPrivate =                                   \
@@ -56,6 +61,8 @@ constexpr uint8_t kMLDSA87OID[] = {OBJ_ENC_ML_DSA_87};
     static constexpr auto PublicKeysEqual =                                   \
         &BCM_mldsa##kl##_public_keys_equal;                                   \
     static constexpr auto Verify = &MLDSA##kl##_verify;                       \
+    static_assert(std::is_trivially_copyable_v<PublicKey>,                    \
+                  "PublicKey type must be trivially copyable.");              \
   };
 
 MAKE_MLDSA_TRAITS(44)
@@ -102,6 +109,11 @@ class PublicKeyData : public KeyData<Traits> {
  public:
   enum { kAllowUniquePtr = true };
   PublicKeyData() : KeyData<Traits>(/*is_private=*/false) {}
+
+  // Allows copying the PublicKey.
+  explicit PublicKeyData(const typename Traits::PublicKey &key)
+      : KeyData<Traits>(/*is_private=*/false), pub(key) {}
+
   typename Traits::PublicKey pub;
 };
 
@@ -145,6 +157,11 @@ void KeyData<Traits>::Free(KeyData<Traits> *data) {
     Delete(static_cast<PublicKeyData<Traits> *>(data));
   }
 }
+
+struct MldsaPkeyCtx {
+  bssl::Array<uint8_t> context;
+};
+
 
 // Finally, MLDSAImplementation instantiates the methods themselves.
 
@@ -271,6 +288,17 @@ struct MLDSAImplementation {
 
   static bool HasPublic(const EvpPkey *pk) { return true; }
 
+  static bool CopyPublic(EvpPkey *out, const EvpPkey *pk) {
+    auto *public_copy =
+        New<PublicKeyData<Traits>>(*GetKeyData(pk)->GetPublicKey());
+    if (public_copy == nullptr) {
+      OPENSSL_PUT_ERROR(EVP, ERR_R_INTERNAL_ERROR);
+      return false;
+    }
+    evp_pkey_set0(out, pk->ameth, public_copy);
+    return true;
+  }
+
   static evp_decode_result_t DecodePrivate(const EVP_PKEY_ALG *alg,
                                            EvpPkey *out, CBS *params,
                                            CBS *key) {
@@ -345,9 +373,43 @@ struct MLDSAImplementation {
     return Traits::kPublicKeyBytes * 8;
   }
 
-  // There is, for now, no context state to copy. When we add support for
-  // streaming signing, that will change.
-  static int CopyContext(EvpPkeyCtx *dst, EvpPkeyCtx *src) { return 1; }
+  static int Init(EvpPkeyCtx *ctx, const EVP_PKEY_ALG *) {
+    MldsaPkeyCtx *mctx = New<MldsaPkeyCtx>();
+    if (mctx == nullptr) {
+      return 0;
+    }
+    ctx->data = mctx;
+    return 1;
+  }
+
+  static void Cleanup(EvpPkeyCtx *ctx) {
+    Delete(static_cast<MldsaPkeyCtx *>(ctx->data));
+  }
+
+  static int CopyContext(EvpPkeyCtx *dst, EvpPkeyCtx *src) {
+    if (!Init(dst, nullptr)) {
+      return 0;
+    }
+    MldsaPkeyCtx *sctx = static_cast<MldsaPkeyCtx *>(src->data);
+    MldsaPkeyCtx *dctx = static_cast<MldsaPkeyCtx *>(dst->data);
+    if (!dctx->context.CopyFrom(sctx->context)) {
+      return 0;
+    }
+    return 1;
+  }
+
+  static int KeyGen(EvpPkeyCtx *ctx, EvpPkey *pkey) {
+    auto priv = MakeUnique<PrivateKeyData<Traits>>();
+    if (priv == nullptr) {
+      return 0;
+    }
+    uint8_t unused_public[Traits::kPublicKeyBytes];
+    if (!Traits::GenerateKey(unused_public, priv->seed, &priv->priv)) {
+      return 0;
+    }
+    evp_pkey_set0(pkey, &asn1_method, priv.release());
+    return 1;
+  }
 
   static int SignMessage(EvpPkeyCtx *ctx, uint8_t *sig, size_t *siglen,
                          const uint8_t *tbs, size_t tbslen) {
@@ -364,8 +426,9 @@ struct MLDSAImplementation {
       OPENSSL_PUT_ERROR(EVP, EVP_R_BUFFER_TOO_SMALL);
       return 0;
     }
-    if (!Traits::Sign(sig, &priv_data->priv, tbs, tbslen, /*context=*/nullptr,
-                      /*context_len=*/0)) {
+    MldsaPkeyCtx *mctx = static_cast<MldsaPkeyCtx *>(ctx->data);
+    if (!Traits::Sign(sig, &priv_data->priv, tbs, tbslen, mctx->context.data(),
+                      mctx->context.size())) {
       return 0;
     }
     *siglen = Traits::kSignatureBytes;
@@ -375,21 +438,41 @@ struct MLDSAImplementation {
   static int VerifyMessage(EvpPkeyCtx *ctx, const uint8_t *sig, size_t siglen,
                            const uint8_t *tbs, size_t tbslen) {
     const auto *pub = GetKeyData(ctx->pkey.get())->GetPublicKey();
-    if (!Traits::Verify(pub, sig, siglen, tbs, tbslen, /*context=*/nullptr,
-                        /*context_len=*/0)) {
+    MldsaPkeyCtx *mctx = static_cast<MldsaPkeyCtx *>(ctx->data);
+    if (!Traits::Verify(pub, sig, siglen, tbs, tbslen, mctx->context.data(),
+                        mctx->context.size())) {
       OPENSSL_PUT_ERROR(EVP, EVP_R_INVALID_SIGNATURE);
       return 0;
     }
     return 1;
   }
 
+  static int Ctrl(EvpPkeyCtx *ctx, int type, int p1, void *p2) {
+    MldsaPkeyCtx *mctx = static_cast<MldsaPkeyCtx *>(ctx->data);
+    switch (type) {
+      case EVP_PKEY_CTRL_SIGNATURE_CONTEXT_STRING: {
+        const auto *context_string =
+            reinterpret_cast<const Span<const uint8_t> *>(p2);
+        if (context_string == nullptr ||
+            context_string->size() > kMaxContextLength) {
+          OPENSSL_PUT_ERROR(EVP, EVP_R_INVALID_PARAMETERS);
+          return 0;
+        }
+        return mctx->context.CopyFrom(*context_string);
+      }
+
+      default:
+        OPENSSL_PUT_ERROR(EVP, EVP_R_COMMAND_NOT_SUPPORTED);
+        return 0;
+    }
+  }
+
   static constexpr EVP_PKEY_CTX_METHOD pkey_method = {
       Traits::kType,
-      /*init=*/nullptr,
+      &Init,
       &CopyContext,
-      /*cleanup=*/nullptr,
-      // TODO(crbug.com/449751916): Add keygen support.
-      /*keygen=*/nullptr,
+      &Cleanup,
+      &KeyGen,
       /*sign=*/nullptr,
       &SignMessage,
       /*verify=*/nullptr,
@@ -399,7 +482,9 @@ struct MLDSAImplementation {
       /*decrypt=*/nullptr,
       /*derive=*/nullptr,
       /*paramgen=*/nullptr,
-      /*ctrl=*/nullptr,
+      /*encap=*/nullptr,
+      /*decap=*/nullptr,
+      &Ctrl,
   };
 
   static constexpr EVP_PKEY_ASN1_METHOD BuildASN1Method() {
@@ -413,6 +498,7 @@ struct MLDSAImplementation {
         &EncodePublic,
         &EqualPublic,
         &HasPublic,
+        &CopyPublic,
         &DecodePrivate,
         &EncodePrivate,
         &HasPrivate,
@@ -431,8 +517,8 @@ struct MLDSAImplementation {
         &PkeySize,
         &PkeyBits,
         /*param_missing=*/nullptr,
+        /*param_copy=*/nullptr,
         /*param_equal=*/nullptr,
-        /*param_cmp=*/nullptr,
         &PkeyFree,
     };
     // TODO(crbug.com/404286922): Use std::copy in C++20, when it's constexpr.
@@ -448,7 +534,7 @@ struct MLDSAImplementation {
   }
 
   static constexpr EVP_PKEY_ASN1_METHOD asn1_method = BuildASN1Method();
-  static constexpr EVP_PKEY_ALG pkey_alg = {&asn1_method};
+  static constexpr EVP_PKEY_ALG pkey_alg = {&asn1_method, &pkey_method};
 };
 
 }  // namespace

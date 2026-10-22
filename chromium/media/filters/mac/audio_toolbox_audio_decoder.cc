@@ -131,14 +131,18 @@ void AudioToolboxAudioDecoder::Initialize(const AudioDecoderConfig& config,
   decoder_.reset();
 
   output_cb_ = output_cb;
+  const bool success = CreateDecoder(config);
+  if (!success) {
+    decoder_.reset();
+  }
   base::BindPostTaskToCurrentDefault(std::move(init_cb))
-      .Run(CreateDecoder(config)
-               ? DecoderStatus::Codes::kOk
-               : DecoderStatus::Codes::kFailedToCreateDecoder);
+      .Run(success ? DecoderStatus::Codes::kOk
+                   : DecoderStatus::Codes::kFailedToCreateDecoder);
 }
 
 void AudioToolboxAudioDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
                                       DecodeCB decode_cb) {
+  CHECK(decoder_);
   DecodeCB decode_cb_bound =
       base::BindPostTaskToCurrentDefault(std::move(decode_cb));
 
@@ -226,6 +230,7 @@ void AudioToolboxAudioDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
 }
 
 void AudioToolboxAudioDecoder::Reset(base::OnceClosure reset_cb) {
+  CHECK(decoder_);
   // This could fail, but ResetCB has no error reporting mechanism, so just let
   // a subsequent decode call fail.
   const auto result = AudioConverterReset(decoder_.get());
@@ -315,7 +320,7 @@ bool AudioToolboxAudioDecoder::CreateDecoder(const AudioDecoderConfig& config) {
     return false;
   }
 
-  if (channel_count_ > kMaxConcurrentChannels) {
+  if (channel_count_ > static_cast<uint32_t>(GetConcurrentMaxChannels())) {
     channel_layout_ = CHANNEL_LAYOUT_DISCRETE;
   } else {
     // Get the decoder's output channel layout.
@@ -362,6 +367,11 @@ bool AudioToolboxAudioDecoder::CreateDecoder(const AudioDecoderConfig& config) {
   // channel order description. This let decoder output correct orders.
   auto ordered_layout =
       ChannelLayoutToAudioChannelLayout(channel_layout_, channel_count_);
+  if (!ordered_layout) {
+    MEDIA_LOG(ERROR, media_log_) << "Failed to create audio channel layout.";
+    return false;
+  }
+
   result = AudioConverterSetProperty(
       decoder_.get(), kAudioConverterOutputChannelLayout,
       ordered_layout->layout_size(), ordered_layout->layout());

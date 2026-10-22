@@ -253,9 +253,9 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
                 base::flat_set<base::PlatformThreadId> renderer_main_thread_ids,
                 HintSession::BoostType boost_type,
                 int64_t choreographer_vsync_id,
+                int64_t swap_trace_id,
                 std::optional<PossibleDeadline> deadline,
-                std::optional<PossibleDeadline> preferred,
-                base::TimeTicks throttled_adjusted_frame_time);
+                std::optional<PossibleDeadline> preferred);
     void OnSwap(gfx::SwapTimings timings, DisplaySchedulerBase* scheduler);
     bool HasSwapped() const { return !swap_timings_.is_null(); }
     void OnPresent(const gfx::PresentationFeedback& feedback);
@@ -267,6 +267,7 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
     }
 
     int64_t choreographer_vsync_id() const { return choreographer_vsync_id_; }
+    int64_t swap_trace_id() const { return swap_trace_id_; }
     const std::optional<PossibleDeadline>& deadline() const {
       return deadline_;
     }
@@ -285,9 +286,9 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
         presentation_helpers_;
     HintSession::BoostType boost_type_;
     int64_t choreographer_vsync_id_ = 0;
+    int64_t swap_trace_id_ = 0;
     std::optional<PossibleDeadline> deadline_;
     std::optional<PossibleDeadline> preferred_;
-    base::TimeTicks throttled_adjusted_frame_time_;
   };
 
   void InitializeRenderer();
@@ -363,8 +364,6 @@ class VIZ_SERVICE_EXPORT Display : public DisplaySchedulerClient,
   // Callback that will be run after all pending swaps have acked.
   base::OnceClosure no_pending_swaps_callback_;
 
-  std::deque<int64_t> pending_swap_ack_trace_ids_;
-  std::deque<int64_t> pending_presented_trace_ids_;
   int pending_swaps_ = 0;
 
   uint64_t frame_sequence_number_ = 0;

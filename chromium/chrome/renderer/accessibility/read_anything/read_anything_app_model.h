@@ -17,6 +17,7 @@
 #include "base/observer_list_types.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/common/read_anything/read_anything.mojom-shared.h"
 #include "chrome/common/read_anything/read_anything.mojom.h"
 #include "chrome/common/read_anything/read_anything_util.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
@@ -94,6 +95,9 @@ class ReadAnythingAppModel {
     // Whether the latest tree is a reload of the previous tree. If false, the
     // latest tree is a new page.
     bool is_reload = false;
+
+    // Whether the latest tree is the "What's New" page.
+    bool is_whats_new = false;
 
     // TODO(41496290): Include any information that is associated with a
     // particular AXTree, namely is_pdf. Right now, this is set every time the
@@ -267,6 +271,36 @@ class ReadAnythingAppModel {
   bool is_readability_next_distillation_method() const {
     return next_distillation_method() == DistillationMethod::kReadability;
   }
+  bool is_readability_current_distillation_method() const {
+    return current_content_distillation_method_ ==
+           DistillationMethod::kReadability;
+  }
+  bool should_apply_accessibility_updates_for_readability_links() const {
+    // Accessibility updates for Readability shouldn't be applied outside
+    // of the regular accessibility update process if Readability is disabled
+    // or ReadAnythingWithReadabilityAllowLinksEnabled is disabled, as these
+    // updates are only needed when links are supported.
+    if (!features::IsReadAnythingWithReadabilityEnabled() ||
+        !features::IsReadAnythingWithReadabilityAllowLinksEnabled()) {
+      return false;
+    }
+
+    if (is_readability_next_distillation_method() &&
+        distillation_state_ ==
+            read_anything::mojom::ReadAnythingDistillationState::
+                kDistillationInProgress) {
+      return true;
+    }
+
+    if (is_readability_current_distillation_method() &&
+        distillation_state_ ==
+            read_anything::mojom::ReadAnythingDistillationState::
+                kDistillationWithContent) {
+      return true;
+    }
+
+    return false;
+  }
 
   read_anything::mojom::LetterSpacing letter_spacing() const {
     return letter_spacing_;
@@ -287,24 +321,39 @@ class ReadAnythingAppModel {
     color_theme_ = color_theme;
   }
 
-  read_anything::mojom::LineFocus line_focus() const { return line_focus_; }
-  void set_line_focus(read_anything::mojom::LineFocus line_focus) {
-    line_focus_ = line_focus;
+  read_anything::mojom::LineFocus last_non_disabled_line_focus() const {
+    return last_non_disabled_line_focus_;
+  }
+  void set_last_non_disabled_line_focus(
+      read_anything::mojom::LineFocus last_non_disabled_line_focus) {
+    last_non_disabled_line_focus_ = last_non_disabled_line_focus;
+  }
+
+  bool line_focus_enabled() const { return line_focus_enabled_; }
+  void set_line_focus_enabled(bool line_focus_enabled) {
+    line_focus_enabled_ = line_focus_enabled;
   }
 
   // Sometimes iframes can return selection objects that have a valid id but
   // aren't in the tree.
   bool has_selection() const {
-    return start_.is_valid() && GetAXNode(start_.id);
+    if (IsWhatsNew()) {
+      return start_.is_valid() && end_.is_valid() &&
+             GetAXNodeFromRoot(start_.id) && GetAXNodeFromRoot(end_.id);
+    }
+    return start_.is_valid() && end_.is_valid() && GetAXNode(start_.id) &&
+           GetAXNode(end_.id);
   }
   ui::AXNodeID start_node_id() const { return start_.id; }
   ui::AXNodeID end_node_id() const { return end_.id; }
   int start_offset() const { return start_.offset; }
   int end_offset() const { return end_.offset; }
 
-  bool distillation_in_progress() const { return distillation_in_progress_; }
-  void set_distillation_in_progress(bool distillation_in_progress) {
-    distillation_in_progress_ = distillation_in_progress;
+  bool screen2x_distiller_running() const {
+    return screen2x_distiller_running_;
+  }
+  void set_screen2x_distiller_running(bool screen2x_distiller_running) {
+    screen2x_distiller_running_ = screen2x_distiller_running;
   }
 
   bool should_extract_anchors_from_tree_for_readability() const {
@@ -390,6 +439,7 @@ class ReadAnythingAppModel {
   void SetUrlInformationCallback(base::OnceCallback<void()> callback);
   bool IsDocs() const;
   bool IsReload() const;
+  bool IsWhatsNew() const;
 
   const std::set<ui::AXNodeID>* GetCurrentlyVisibleNodes() const;
 
@@ -412,7 +462,8 @@ class ReadAnythingAppModel {
       bool links_enabled,
       bool images_enabled,
       read_anything::mojom::Colors color,
-      read_anything::mojom::LineFocus line_focus);
+      read_anything::mojom::LineFocus last_non_disabled_line_focus,
+      bool line_focus_enabled);
 
   void OnScroll(bool on_selection, bool from_reading_mode) const;
 
@@ -536,6 +587,8 @@ class ReadAnythingAppModel {
 
   ui::AXSerializableTree* GetTreeFromId(const ui::AXTreeID& tree_id) const;
 
+  ui::AXNode* GetAXNodeFromRoot(const ui::AXNodeID& ax_node_id) const;
+
   void ResetSelection();
 
   bool ContentNodesOnlyContainHeadings();
@@ -604,7 +657,7 @@ class ReadAnythingAppModel {
   // Distillation is slow and happens out-of-process when Screen2x is running.
   // This boolean marks when distillation is in progress to avoid sending
   // new distillation requests during that time.
-  bool distillation_in_progress_ = false;
+  bool screen2x_distiller_running_ = false;
 
   // A mapping of a tree ID to a queue of pending updates on the active AXTree,
   // which will be unserialized once distillation completes.
@@ -647,8 +700,9 @@ class ReadAnythingAppModel {
   read_anything::mojom::Colors color_theme_ =
       read_anything::mojom::Colors::kDefaultValue;
 
-  read_anything::mojom::LineFocus line_focus_ =
-      read_anything::mojom::LineFocus::kDefaultValue;
+  read_anything::mojom::LineFocus last_non_disabled_line_focus_ =
+      read_anything::mojom::LineFocus::kMediumStaticWindow;
+  bool line_focus_enabled_ = false;
 
   // Invariant: Either both endpoints are `!is_valid()`, or they are both valid
   // and non-equal.

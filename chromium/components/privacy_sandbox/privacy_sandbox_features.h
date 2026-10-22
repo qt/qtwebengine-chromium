@@ -16,17 +16,6 @@ namespace privacy_sandbox {
 COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
 BASE_DECLARE_FEATURE(kPrivacySandboxSettings4);
 
-#if BUILDFLAG(IS_ANDROID)
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-BASE_DECLARE_FEATURE(kPrivacySandboxAdsNoticeCCT);
-
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-extern const char kPrivacySandboxAdsNoticeCCTAppIdName[];
-
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-extern const base::FeatureParam<std::string> kPrivacySandboxAdsNoticeCCTAppId;
-#endif  // BUILDFLAG(IS_ANDROID)
-
 // Split out name definitions since about_flags otherwise complains about the
 // features having static initializers. Not sure if there is a better solution
 // that both allows usage of these params in about_flags.cc and usage of the
@@ -84,12 +73,6 @@ COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
 extern const base::FeatureParam<bool>
     kPrivacySandboxSettings4ShowSampleDataForTesting;
 
-// When true, suppress any Privacy Sandbox dialog if Chrome is launched
-// from an external app.
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-extern const base::FeatureParam<bool>
-    kPrivacySandboxSettings4SuppressDialogForExternalAppLaunches;
-
 COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
 BASE_DECLARE_FEATURE(kOverridePrivacySandboxSettingsLocalTesting);
 
@@ -146,44 +129,13 @@ BASE_DECLARE_FEATURE(kRelatedWebsiteSetsUi);
 COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
 BASE_DECLARE_FEATURE(kPsDualWritePrefsToNoticeStorage);
 
-// Enables Activity Type Storage
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-BASE_DECLARE_FEATURE(kPrivacySandboxActivityTypeStorage);
-
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-extern const char kPrivacySandboxActivityTypeStorageLastNLaunchesName[];
-
-
 // Enables chrome://privacy-sandbox-internals/private-state-tokens DevUI
 // page. Relies on PrivacySandboxInternalsDevUI also being enabled.
 COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
 BASE_DECLARE_FEATURE(kPrivateStateTokensDevUI);
 
 COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-extern const base::FeatureParam<int>
-    kPrivacySandboxActivityTypeStorageLastNLaunches;
-
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-extern const char kPrivacySandboxActivityTypeStorageWithinXDaysName[];
-
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-extern const base::FeatureParam<int>
-    kPrivacySandboxActivityTypeStorageWithinXDays;
-
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-extern const base::FeatureParam<bool>
-    kPrivacySandboxActivityTypeStorageSkipPreFirstTab;
-
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
 BASE_DECLARE_FEATURE(kPrivacySandboxAdTopicsContentParity);
-
-// Enables the `Always on` sentiment survey
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-BASE_DECLARE_FEATURE(kPrivacySandboxSentimentSurvey);
-
-COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
-extern const base::FeatureParam<std::string>
-    kPrivacySandboxSentimentSurveyTriggerId;
 
 #if BUILDFLAG(IS_ANDROID)
 // The delay in milliseconds between the first click and the next accepted
@@ -200,6 +152,12 @@ BASE_DECLARE_FEATURE(kPrivacySandboxAdsApiUxEnhancements);
 // If true, enable showing notices through the notice framework.
 COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
 BASE_DECLARE_FEATURE(kPrivacySandboxNoticeFramework);
+
+// If true, the Ad Topics, Site Suggested Ads, and Ad Measurement API prefs are
+// set to false for users on startup. The UX to access these Ad Privacy settings
+// will be removed from all surfaces.
+COMPONENT_EXPORT(PRIVACY_SANDBOX_FEATURES)
+BASE_DECLARE_FEATURE(kPrivacySandboxAdPrivacyUxDeprecation);
 
 }  // namespace privacy_sandbox
 

@@ -5,7 +5,6 @@
 include_rules = [
     # Platform base code should depend on no outside code/libraries, other than
     # the standard toolchain libraries (C, STL).
-    '-absl',
     '-platform',
     '+platform/base',
     '-util',

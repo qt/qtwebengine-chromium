@@ -147,20 +147,23 @@ inline int64_t TextNativeLength(UText* text) {
 void TextFixPointer(const UText* source,
                     UText* destination,
                     const void*& pointer) {
+  // SAFETY: The pointer arithmetic below computes bounds within UText structs
+  // and their associated extra buffers, which were allocated by utext_setup()
+  // with the sizes indicated by extraSize and sizeOfStruct.
   if (pointer >= source->pExtra &&
-      pointer <
-          UNSAFE_TODO(static_cast<char*>(source->pExtra) + source->extraSize)) {
+      pointer < UNSAFE_BUFFERS(static_cast<char*>(source->pExtra) +
+                               source->extraSize)) {
     // Pointer references source extra buffer.
-    pointer = UNSAFE_TODO(static_cast<char*>(destination->pExtra) +
-                          (static_cast<const char*>(pointer) -
-                           static_cast<const char*>(source->pExtra)));
+    pointer = UNSAFE_BUFFERS(static_cast<char*>(destination->pExtra) +
+                             (static_cast<const char*>(pointer) -
+                              static_cast<const char*>(source->pExtra)));
   } else if (pointer >= source &&
-             pointer < UNSAFE_TODO(reinterpret_cast<const char*>(source) +
-                                   source->sizeOfStruct)) {
+             pointer < UNSAFE_BUFFERS(reinterpret_cast<const char*>(source) +
+                                      source->sizeOfStruct)) {
     // Pointer references source text structure, but not source extra buffer.
-    pointer = UNSAFE_TODO(reinterpret_cast<char*>(destination) +
-                          (static_cast<const char*>(pointer) -
-                           reinterpret_cast<const char*>(source)));
+    pointer = UNSAFE_BUFFERS(reinterpret_cast<char*>(destination) +
+                             (static_cast<const char*>(pointer) -
+                              reinterpret_cast<const char*>(source)));
   }
 }
 
@@ -180,11 +183,15 @@ UText* TextClone(UText* destination,
   void* extra_new = destination->pExtra;
   int32_t flags = destination->flags;
   int size_to_copy = std::min(source->sizeOfStruct, destination->sizeOfStruct);
-  UNSAFE_TODO(memcpy(destination, source, size_to_copy));
+  // SAFETY: `destination` and `source` are UText structs allocated by
+  // utext_setup(). `size_to_copy` is the minimum of their sizeOfStruct
+  // fields, so the copy stays within both allocations. `extra_size` is the
+  // source's extraSize, and destination was set up with the same extra_size.
+  UNSAFE_BUFFERS(memcpy(destination, source, size_to_copy));
   destination->pExtra = extra_new;
   destination->flags = flags;
   if (extra_size > 0) {
-    UNSAFE_TODO(memcpy(destination->pExtra, source->pExtra, extra_size));
+    UNSAFE_BUFFERS(memcpy(destination->pExtra, source->pExtra, extra_size));
   }
   TextFixPointer(source, destination, destination->context);
   TextFixPointer(source, destination, destination->p);
@@ -262,11 +269,16 @@ void TextLatin1MoveInPrimaryContext(UText* text,
                           : 0;
   text->nativeIndexingLimit = text->chunkLength;
   text->chunkOffset = forward ? 0 : text->chunkLength;
-  auto source = UNSAFE_TODO(base::span(
+  // SAFETY: `text->p` points to the Latin1 string data with `text->a` chars
+  // starting at offset `text->b`. The chunk range [chunkNativeStart,
+  // chunkNativeLimit) is clamped to valid bounds above. `chunkContents`
+  // points to the UText extra buffer with capacity `extraSize / sizeof(UChar)`.
+  auto source = UNSAFE_BUFFERS(base::span(
       static_cast<const LChar*>(text->p) + (text->chunkNativeStart - text->b),
       static_cast<unsigned>(text->chunkLength)));
-  auto dest = UNSAFE_TODO(base::span(const_cast<UChar*>(text->chunkContents),
-                                     static_cast<unsigned>(text->chunkLength)));
+  auto dest =
+      UNSAFE_BUFFERS(base::span(const_cast<UChar*>(text->chunkContents),
+                                static_cast<unsigned>(text->chunkLength)));
   StringImpl::CopyChars(dest, source);
 }
 
@@ -691,8 +703,9 @@ TextBreakIterator* WordBreakIteratorPool::Get(base::span<const UChar> string) {
 }  // namespace
 
 TextBreakIterator* WordBreakIterator(base::span<const UChar> string) {
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(WordBreakIteratorPool, pool, ());
-  return pool.Get(string);
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<WordBreakIteratorPool>, pool,
+                                  ());
+  return pool->Get(string);
 }
 
 TextBreakIterator* WordBreakIterator(const StringView& string) {
@@ -700,8 +713,9 @@ TextBreakIterator* WordBreakIterator(const StringView& string) {
     return nullptr;
   }
   if (string.Is8Bit()) {
-    DEFINE_THREAD_SAFE_STATIC_LOCAL(WordBreakIteratorPool, pool, ());
-    return pool.Get(string.Span8());
+    DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<WordBreakIteratorPool>, pool,
+                                    ());
+    return pool->Get(string.Span8());
   }
   return WordBreakIterator(string.Span16());
 }
@@ -927,20 +941,23 @@ int CharacterBreakIterator::Following(int offset) const {
 
 TextBreakIterator* SentenceBreakIterator(base::span<const UChar> string) {
   UErrorCode open_status = U_ZERO_ERROR;
-  static TextBreakIterator* iterator = nullptr;
-  if (!iterator) {
-    iterator = icu::BreakIterator::createSentenceInstance(
-        CurrentTextBreakIcuLocale(), open_status);
+  // We cannot use ThreadSpecific<TextBreakIterator> directly because
+  // TextBreakIterator is an abstract class. So a pointer is required.
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      ThreadSpecific<std::unique_ptr<TextBreakIterator>>, iterator, ());
+  if (!iterator->get()) {
+    *iterator = base::WrapUnique(icu::BreakIterator::createSentenceInstance(
+        CurrentTextBreakIcuLocale(), open_status));
     DCHECK(U_SUCCESS(open_status))
         << "ICU could not open a break iterator: " << u_errorName(open_status)
         << " (" << open_status << ")";
-    if (!iterator) {
+    if (!iterator->get()) {
       return nullptr;
     }
   }
 
-  SetText16(iterator, string);
-  return iterator;
+  SetText16(iterator->get(), string);
+  return iterator->get();
 }
 
 bool IsWordTextBreak(TextBreakIterator* iterator) {
@@ -948,122 +965,6 @@ bool IsWordTextBreak(TextBreakIterator* iterator) {
       static_cast<icu::RuleBasedBreakIterator*>(iterator);
   int rule_status = rule_based_break_iterator->getRuleStatus();
   return rule_status != UBRK_WORD_NONE;
-}
-
-TextBreakIterator* CursorMovementIteratorDeprecated(
-    base::span<const UChar> string) {
-  // This rule set is based on character-break iterator rules of ICU 4.0
-  // <http://source.icu-project.org/repos/icu/icu/tags/release-4-0/source/data/brkitr/char.txt>.
-  // The major differences from the original ones are listed below:
-  // * Replaced '[\p{Grapheme_Cluster_Break = SpacingMark}]' with
-  //   '[\p{General_Category = Spacing Mark} - $Extend]' for ICU 3.8 or earlier;
-  // * Removed rules that prevent a cursor from moving after prepend characters
-  //   (Bug 24342);
-  // * Added rules that prevent a cursor from moving after virama signs of Indic
-  //   languages except Tamil (Bug 15790), and;
-  // * Added rules that prevent a cursor from moving before Japanese half-width
-  //   katakara voiced marks.
-  // * Added rules for regional indicator symbols.
-  static const char* const kRules =
-      "$CR      = [\\p{Grapheme_Cluster_Break = CR}];"
-      "$LF      = [\\p{Grapheme_Cluster_Break = LF}];"
-      "$Control = [\\p{Grapheme_Cluster_Break = Control}];"
-      "$VoiceMarks = [\\uFF9E\\uFF9F];"  // Japanese half-width katakana voiced
-                                         // marks
-      "$Extend  = [\\p{Grapheme_Cluster_Break = Extend} $VoiceMarks - [\\u0E30 "
-      "\\u0E32 \\u0E45 \\u0EB0 \\u0EB2]];"
-      "$SpacingMark = [[\\p{General_Category = Spacing Mark}] - $Extend];"
-      "$L       = [\\p{Grapheme_Cluster_Break = L}];"
-      "$V       = [\\p{Grapheme_Cluster_Break = V}];"
-      "$T       = [\\p{Grapheme_Cluster_Break = T}];"
-      "$LV      = [\\p{Grapheme_Cluster_Break = LV}];"
-      "$LVT     = [\\p{Grapheme_Cluster_Break = LVT}];"
-      "$Hin0    = [\\u0905-\\u0939];"          // Devanagari Letter A,...,Ha
-      "$HinV    = \\u094D;"                    // Devanagari Sign Virama
-      "$Hin1    = [\\u0915-\\u0939];"          // Devanagari Letter Ka,...,Ha
-      "$Ben0    = [\\u0985-\\u09B9];"          // Bengali Letter A,...,Ha
-      "$BenV    = \\u09CD;"                    // Bengali Sign Virama
-      "$Ben1    = [\\u0995-\\u09B9];"          // Bengali Letter Ka,...,Ha
-      "$Pan0    = [\\u0A05-\\u0A39];"          // Gurmukhi Letter A,...,Ha
-      "$PanV    = \\u0A4D;"                    // Gurmukhi Sign Virama
-      "$Pan1    = [\\u0A15-\\u0A39];"          // Gurmukhi Letter Ka,...,Ha
-      "$Guj0    = [\\u0A85-\\u0AB9];"          // Gujarati Letter A,...,Ha
-      "$GujV    = \\u0ACD;"                    // Gujarati Sign Virama
-      "$Guj1    = [\\u0A95-\\u0AB9];"          // Gujarati Letter Ka,...,Ha
-      "$Ori0    = [\\u0B05-\\u0B39];"          // Oriya Letter A,...,Ha
-      "$OriV    = \\u0B4D;"                    // Oriya Sign Virama
-      "$Ori1    = [\\u0B15-\\u0B39];"          // Oriya Letter Ka,...,Ha
-      "$Tel0    = [\\u0C05-\\u0C39];"          // Telugu Letter A,...,Ha
-      "$TelV    = \\u0C4D;"                    // Telugu Sign Virama
-      "$Tel1    = [\\u0C14-\\u0C39];"          // Telugu Letter Ka,...,Ha
-      "$Kan0    = [\\u0C85-\\u0CB9];"          // Kannada Letter A,...,Ha
-      "$KanV    = \\u0CCD;"                    // Kannada Sign Virama
-      "$Kan1    = [\\u0C95-\\u0CB9];"          // Kannada Letter A,...,Ha
-      "$Mal0    = [\\u0D05-\\u0D39];"          // Malayalam Letter A,...,Ha
-      "$MalV    = \\u0D4D;"                    // Malayalam Sign Virama
-      "$Mal1    = [\\u0D15-\\u0D39];"          // Malayalam Letter A,...,Ha
-      "$RI      = [\\U0001F1E6-\\U0001F1FF];"  // Emoji regional indicators
-      "!!chain;"
-      "!!forward;"
-      "$CR $LF;"
-      "$L ($L | $V | $LV | $LVT);"
-      "($LV | $V) ($V | $T);"
-      "($LVT | $T) $T;"
-      "[^$Control $CR $LF] $Extend;"
-      "[^$Control $CR $LF] $SpacingMark;"
-      "$RI $RI / $RI;"
-      "$RI $RI;"
-      "$Hin0 $HinV $Hin1;"  // Devanagari Virama (forward)
-      "$Ben0 $BenV $Ben1;"  // Bengali Virama (forward)
-      "$Pan0 $PanV $Pan1;"  // Gurmukhi Virama (forward)
-      "$Guj0 $GujV $Guj1;"  // Gujarati Virama (forward)
-      "$Ori0 $OriV $Ori1;"  // Oriya Virama (forward)
-      "$Tel0 $TelV $Tel1;"  // Telugu Virama (forward)
-      "$Kan0 $KanV $Kan1;"  // Kannada Virama (forward)
-      "$Mal0 $MalV $Mal1;"  // Malayalam Virama (forward)
-      "!!reverse;"
-      "$LF $CR;"
-      "($L | $V | $LV | $LVT) $L;"
-      "($V | $T) ($LV | $V);"
-      "$T ($LVT | $T);"
-      "$Extend      [^$Control $CR $LF];"
-      "$SpacingMark [^$Control $CR $LF];"
-      "$RI $RI / $RI $RI;"
-      "$RI $RI;"
-      "$Hin1 $HinV $Hin0;"  // Devanagari Virama (backward)
-      "$Ben1 $BenV $Ben0;"  // Bengali Virama (backward)
-      "$Pan1 $PanV $Pan0;"  // Gurmukhi Virama (backward)
-      "$Guj1 $GujV $Guj0;"  // Gujarati Virama (backward)
-      "$Ori1 $OriV $Ori0;"  // Gujarati Virama (backward)
-      "$Tel1 $TelV $Tel0;"  // Telugu Virama (backward)
-      "$Kan1 $KanV $Kan0;"  // Kannada Virama (backward)
-      "$Mal1 $MalV $Mal0;"  // Malayalam Virama (backward)
-      "!!safe_reverse;"
-      "!!safe_forward;";
-
-  if (string.empty()) {
-    return nullptr;
-  }
-
-  DEFINE_THREAD_SAFE_STATIC_LOCAL(
-      ThreadSpecific<std::unique_ptr<icu::RuleBasedBreakIterator>>,
-      thread_specific, ());
-
-  std::unique_ptr<icu::RuleBasedBreakIterator>& iterator = *thread_specific;
-
-  if (!iterator) {
-    UParseError parse_status;
-    UErrorCode open_status = U_ZERO_ERROR;
-    // break_rules is ASCII. Pick the most efficient UnicodeString ctor.
-    iterator = std::make_unique<icu::RuleBasedBreakIterator>(
-        icu::UnicodeString(kRules, -1, US_INV), parse_status, open_status);
-    DCHECK(U_SUCCESS(open_status))
-        << "ICU could not open a break iterator: " << u_errorName(open_status)
-        << " (" << open_status << ")";
-  }
-
-  SetText16(iterator.get(), string);
-  return iterator.get();
 }
 
 }  // namespace blink

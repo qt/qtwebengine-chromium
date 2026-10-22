@@ -186,6 +186,7 @@ struct traits<MINRES<MatrixType_, UpLo_, Preconditioner_> > {
  */
 template <typename MatrixType_, int UpLo_, typename Preconditioner_>
 class MINRES : public IterativeSolverBase<MINRES<MatrixType_, UpLo_, Preconditioner_> > {
+ protected:
   typedef IterativeSolverBase<MINRES> Base;
   using Base::m_error;
   using Base::m_info;

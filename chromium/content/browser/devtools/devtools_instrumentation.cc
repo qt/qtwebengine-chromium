@@ -317,19 +317,6 @@ FederatedAuthRequestResultToProtocol(
     case FederatedAuthRequestResult::kConfigInvalidContentType: {
       return FederatedAuthRequestIssueReasonEnum::ConfigInvalidContentType;
     }
-    case FederatedAuthRequestResult::kClientMetadataHttpNotFound: {
-      return FederatedAuthRequestIssueReasonEnum::ClientMetadataHttpNotFound;
-    }
-    case FederatedAuthRequestResult::kClientMetadataNoResponse: {
-      return FederatedAuthRequestIssueReasonEnum::ClientMetadataNoResponse;
-    }
-    case FederatedAuthRequestResult::kClientMetadataInvalidResponse: {
-      return FederatedAuthRequestIssueReasonEnum::ClientMetadataInvalidResponse;
-    }
-    case FederatedAuthRequestResult::kClientMetadataInvalidContentType: {
-      return FederatedAuthRequestIssueReasonEnum::
-          ClientMetadataInvalidContentType;
-    }
     case FederatedAuthRequestResult::kAccountsHttpNotFound: {
       return FederatedAuthRequestIssueReasonEnum::AccountsHttpNotFound;
     }
@@ -375,9 +362,6 @@ FederatedAuthRequestResultToProtocol(
     case FederatedAuthRequestResult::kSilentMediationFailure: {
       return FederatedAuthRequestIssueReasonEnum::SilentMediationFailure;
     }
-    case FederatedAuthRequestResult::kThirdPartyCookiesBlocked: {
-      return FederatedAuthRequestIssueReasonEnum::ThirdPartyCookiesBlocked;
-    }
     case FederatedAuthRequestResult::kNotSignedInWithIdp: {
       return FederatedAuthRequestIssueReasonEnum::NotSignedInWithIdp;
     }
@@ -387,9 +371,6 @@ FederatedAuthRequestResultToProtocol(
     }
     case FederatedAuthRequestResult::kReplacedByActiveMode: {
       return FederatedAuthRequestIssueReasonEnum::ReplacedByActiveMode;
-    }
-    case FederatedAuthRequestResult::kInvalidFieldsSpecified: {
-      return FederatedAuthRequestIssueReasonEnum::InvalidFieldsSpecified;
     }
     case FederatedAuthRequestResult::kRelyingPartyOriginIsOpaque: {
       return FederatedAuthRequestIssueReasonEnum::RelyingPartyOriginIsOpaque;
@@ -879,6 +860,7 @@ void DidUpdatePrerenderStatus(
     const base::UnguessableToken& initiator_devtools_navigation_token,
     blink::mojom::SpeculationAction action,
     const GURL& prerender_url,
+    bool form_submission,
     std::optional<blink::mojom::SpeculationTargetHint> target_hint,
     const base::UnguessableToken& preload_pipeline_id,
     PreloadingTriggeringOutcome status,
@@ -901,13 +883,14 @@ void DidUpdatePrerenderStatus(
   // We update DevToolsPreloadStorage, even if there are no active DevTools
   // sessions, to persist the latest status update.
   devtools_preload_storage->UpdatePrerenderStatus(
-      action, prerender_url, target_hint, preload_pipeline_id, status,
-      prerender_status, disallowed_mojo_interface, mismatched_headers);
+      action, prerender_url, form_submission, target_hint, preload_pipeline_id,
+      status, prerender_status, disallowed_mojo_interface, mismatched_headers);
 
   DispatchToAgents(ftn, &protocol::PreloadHandler::DidUpdatePrerenderStatus,
                    initiator_devtools_navigation_token, action, prerender_url,
-                   target_hint, preload_pipeline_id, status, prerender_status,
-                   disallowed_mojo_interface, mismatched_headers);
+                   form_submission, target_hint, preload_pipeline_id, status,
+                   prerender_status, disallowed_mojo_interface,
+                   mismatched_headers);
 }
 
 namespace {
@@ -1597,7 +1580,7 @@ WillCreateURLLoaderFactoryParams::ForServiceWorker(RenderProcessHost& rph,
                                                    int routing_id) {
   ServiceWorkerDevToolsAgentHost* agent_host =
       ServiceWorkerDevToolsManager::GetInstance()
-          ->GetDevToolsAgentHostForWorker(rph.GetDeprecatedID(), routing_id);
+          ->GetDevToolsAgentHostForWorker(rph.GetID(), routing_id);
   CHECK(agent_host);
   return WillCreateURLLoaderFactoryParams(
       agent_host, agent_host->devtools_worker_token(), rph.GetDeprecatedID(),
@@ -2594,6 +2577,10 @@ protocol::Audits::GenericIssueErrorType GenericIssueErrorTypeToProtocol(
         kManualTextPolicyControlledFeatureInfo:
       return protocol::Audits::GenericIssueErrorTypeEnum::
           ManualTextPolicyControlledFeatureInfo;
+    case blink::mojom::GenericIssueErrorType::
+        kFormModelContextParameterMissingTitleAndDescription:
+      return protocol::Audits::GenericIssueErrorTypeEnum::
+          FormModelContextParameterMissingTitleAndDescription;
   }
 }
 

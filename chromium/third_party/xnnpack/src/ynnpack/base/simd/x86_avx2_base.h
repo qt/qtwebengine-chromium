@@ -9,7 +9,9 @@
 #include <immintrin.h>
 
 #include <cassert>
-#include <cstdint>
+#include <cstddef>
+#include <tuple>
+#include <type_traits>
 
 #include "ynnpack/base/base.h"
 #include "ynnpack/base/simd/x86_avx_base.h"  // IWYU pragma: export
@@ -18,73 +20,104 @@ namespace ynn {
 
 namespace simd {
 
-namespace internal {
-
-YNN_ALWAYS_INLINE s32x8 unpacklo(s32x8 a, s32x8 b) {
-  return s32x8{_mm256_unpacklo_epi32(a.v, b.v)};
+YNN_ALWAYS_INLINE std::tuple<u8x32, u8x32> interleave(
+    std::integral_constant<size_t, 128>, u8x32 x0, u8x32 x1) {
+  return {u8x32{_mm256_permute2x128_si256(x0.v, x1.v, 32)},
+          u8x32{_mm256_permute2x128_si256(x0.v, x1.v, 49)}};
 }
-YNN_ALWAYS_INLINE s32x8 unpackhi(s32x8 a, s32x8 b) {
-  return s32x8{_mm256_unpackhi_epi32(a.v, b.v)};
+YNN_ALWAYS_INLINE std::tuple<u8x32, u8x32> interleave(
+    std::integral_constant<size_t, 64>, u8x32 x0, u8x32 x1) {
+  return interleave(std::integral_constant<size_t, 128>{},
+                    u8x32{_mm256_unpacklo_epi64(x0.v, x1.v)},
+                    u8x32{_mm256_unpackhi_epi64(x0.v, x1.v)});
 }
-
-YNN_ALWAYS_INLINE s8x32 unpacklo(s8x32 a, s8x32 b) {
-  return s8x32{_mm256_unpacklo_epi8(a.v, b.v)};
+YNN_ALWAYS_INLINE std::tuple<u8x32, u8x32> interleave(
+    std::integral_constant<size_t, 32>, u8x32 x0, u8x32 x1) {
+  return interleave(std::integral_constant<size_t, 128>{},
+                    u8x32{_mm256_unpacklo_epi32(x0.v, x1.v)},
+                    u8x32{_mm256_unpackhi_epi32(x0.v, x1.v)});
 }
-YNN_ALWAYS_INLINE s8x32 unpackhi(s8x32 a, s8x32 b) {
-  return s8x32{_mm256_unpackhi_epi8(a.v, b.v)};
+YNN_ALWAYS_INLINE std::tuple<u8x32, u8x32> interleave(
+    std::integral_constant<size_t, 16>, u8x32 x0, u8x32 x1) {
+  return interleave(std::integral_constant<size_t, 128>{},
+                    u8x32{_mm256_unpacklo_epi16(x0.v, x1.v)},
+                    u8x32{_mm256_unpackhi_epi16(x0.v, x1.v)});
 }
-
-YNN_ALWAYS_INLINE u8x32 unpacklo(u8x32 a, u8x32 b) {
-  return u8x32{_mm256_unpacklo_epi8(a.v, b.v)};
+YNN_ALWAYS_INLINE std::tuple<u8x32, u8x32> interleave(
+    std::integral_constant<size_t, 8>, u8x32 x0, u8x32 x1) {
+  return interleave(std::integral_constant<size_t, 128>{},
+                    u8x32{_mm256_unpacklo_epi8(x0.v, x1.v)},
+                    u8x32{_mm256_unpackhi_epi8(x0.v, x1.v)});
 }
-YNN_ALWAYS_INLINE u8x32 unpackhi(u8x32 a, u8x32 b) {
-  return u8x32{_mm256_unpackhi_epi8(a.v, b.v)};
-}
-
-}  // namespace internal
-
-YNN_ALWAYS_INLINE s32x8& operator+=(s32x8& a, s32x8 b) {
-  a.v = _mm256_add_epi32(a.v, b.v);
-  return a;
-}
-YNN_ALWAYS_INLINE s8x32& operator+=(s8x32& a, s8x32 b) {
-  a.v = _mm256_add_epi8(a.v, b.v);
-  return a;
-}
-YNN_ALWAYS_INLINE u8x32& operator+=(u8x32& a, u8x32 b) {
-  a.v = _mm256_add_epi8(a.v, b.v);
-  return a;
-}
-
-YNN_ALWAYS_INLINE s32x8& operator-=(s32x8& a, s32x8 b) {
-  a.v = _mm256_sub_epi32(a.v, b.v);
-  return a;
-}
-YNN_ALWAYS_INLINE s8x32& operator-=(s8x32& a, s8x32 b) {
-  a.v = _mm256_sub_epi8(a.v, b.v);
-  return a;
-}
-YNN_ALWAYS_INLINE u8x32& operator-=(u8x32& a, u8x32 b) {
-  a.v = _mm256_sub_epi8(a.v, b.v);
-  return a;
+YNN_ALWAYS_INLINE std::tuple<u8x32, u8x32> interleave(
+    std::integral_constant<size_t, 4>, u8x32 x0, u8x32 x1) {
+  __m256i even0 = _mm256_and_si256(x0.v, _mm256_set1_epi8(0x0f));
+  __m256i even1 = _mm256_and_si256(x1.v, _mm256_set1_epi8(0x0f));
+  __m256i odd0 = _mm256_and_si256(x0.v, _mm256_set1_epi8(0xf0));
+  __m256i odd1 = _mm256_and_si256(x1.v, _mm256_set1_epi8(0xf0));
+  return interleave(std::integral_constant<size_t, 8>{},
+                    u8x32{_mm256_or_si256(_mm256_slli_epi16(even1, 4), even0)},
+                    u8x32{_mm256_or_si256(odd1, _mm256_srli_epi16(odd0, 4))});
 }
 
-YNN_ALWAYS_INLINE s32x8& operator*=(s32x8& a, s32x8 b) {
-  a.v = _mm256_mullo_epi32(a.v, b.v);
-  return a;
+YNN_ALWAYS_INLINE s32x8 operator+(s32x8 a, s32x8 b) {
+  return s32x8{_mm256_add_epi32(a.v, b.v)};
 }
-YNN_ALWAYS_INLINE s32x8 operator+(s32x8 a, s32x8 b) { return a += b; }
-YNN_ALWAYS_INLINE s8x32 operator+(s8x32 a, s8x32 b) { return a += b; }
-YNN_ALWAYS_INLINE u8x32 operator+(u8x32 a, u8x32 b) { return a += b; }
+YNN_ALWAYS_INLINE s8x32 operator+(s8x32 a, s8x32 b) {
+  return s8x32{_mm256_add_epi8(a.v, b.v)};
+}
+YNN_ALWAYS_INLINE u8x32 operator+(u8x32 a, u8x32 b) {
+  return u8x32{_mm256_add_epi8(a.v, b.v)};
+}
 
-YNN_ALWAYS_INLINE s32x8 operator-(s32x8 a, s32x8 b) { return a -= b; }
-YNN_ALWAYS_INLINE s8x32 operator-(s8x32 a, s8x32 b) { return a -= b; }
-YNN_ALWAYS_INLINE u8x32 operator-(u8x32 a, u8x32 b) { return a -= b; }
+YNN_ALWAYS_INLINE s32x8 operator-(s32x8 a, s32x8 b) {
+  return s32x8{_mm256_sub_epi32(a.v, b.v)};
+}
+YNN_ALWAYS_INLINE s8x32 operator-(s8x32 a, s8x32 b) {
+  return s8x32{_mm256_sub_epi8(a.v, b.v)};
+}
+YNN_ALWAYS_INLINE u8x32 operator-(u8x32 a, u8x32 b) {
+  return u8x32{_mm256_sub_epi8(a.v, b.v)};
+}
 
-YNN_ALWAYS_INLINE s32x8 operator*(s32x8 a, s32x8 b) { return a *= b; }
+YNN_ALWAYS_INLINE s16x16 add_sat(s16x16 a, s16x16 b) {
+  return s16x16{_mm256_adds_epi16(a.v, b.v)};
+}
+YNN_ALWAYS_INLINE u16x16 add_sat(u16x16 a, u16x16 b) {
+  return u16x16{_mm256_adds_epu16(a.v, b.v)};
+}
+YNN_ALWAYS_INLINE s8x32 add_sat(s8x32 a, s8x32 b) {
+  return s8x32{_mm256_adds_epi8(a.v, b.v)};
+}
+YNN_ALWAYS_INLINE u8x32 add_sat(u8x32 a, u8x32 b) {
+  return u8x32{_mm256_adds_epu8(a.v, b.v)};
+}
+
+YNN_ALWAYS_INLINE s16x16 sub_sat(s16x16 a, s16x16 b) {
+  return s16x16{_mm256_subs_epi16(a.v, b.v)};
+}
+YNN_ALWAYS_INLINE u16x16 sub_sat(u16x16 a, u16x16 b) {
+  return u16x16{_mm256_subs_epu16(a.v, b.v)};
+}
+YNN_ALWAYS_INLINE s8x32 sub_sat(s8x32 a, s8x32 b) {
+  return s8x32{_mm256_subs_epi8(a.v, b.v)};
+}
+YNN_ALWAYS_INLINE u8x32 sub_sat(u8x32 a, u8x32 b) {
+  return u8x32{_mm256_subs_epu8(a.v, b.v)};
+}
+
+YNN_ALWAYS_INLINE s32x8 operator*(s32x8 a, s32x8 b) {
+  return s32x8{_mm256_mullo_epi32(a.v, b.v)};
+}
 
 YNN_ALWAYS_INLINE s16x16 operator>>(s16x16 a, int b) {
   return s16x16{_mm256_srai_epi16(a.v, b)};
+}
+YNN_ALWAYS_INLINE s16x16 operator<<(s16x16 a, int b) {
+  return s16x16{_mm256_slli_epi16(a.v, b)};
+}
+YNN_ALWAYS_INLINE s32x8 operator<<(s32x8 a, int b) {
+  return s32x8{_mm256_slli_epi32(a.v, b)};
 }
 
 YNN_ALWAYS_INLINE s32x8 min(s32x8 a, s32x8 b) {
@@ -114,86 +147,12 @@ YNN_ALWAYS_INLINE u8x32 max(u8x32 a, u8x32 b) {
 }
 
 YNN_ALWAYS_INLINE u8x32 abs(s8x32 a) { return u8x32{_mm256_abs_epi8(a.v)}; }
+YNN_ALWAYS_INLINE u16x16 abs(s16x16 a) { return u16x16{_mm256_abs_epi16(a.v)}; }
+YNN_ALWAYS_INLINE u32x8 abs(s32x8 a) { return u32x8{_mm256_abs_epi32(a.v)}; }
 
-YNN_ALWAYS_INLINE f32x8 convert(bf16x8 a, float) {
+YNN_ALWAYS_INLINE f32x8 cast(bf16x8 a, float) {
   return f32x8{_mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(a.v),
       16))};
-}
-
-YNN_ALWAYS_INLINE int16_t horizontal_max(s16x16 a) {
-  const __m128i max8_vals = _mm_max_epi16(_mm256_castsi256_si128(a.v),
-                                          _mm256_extracti128_si256(a.v, 1));
-  const __m128i max4_vals =
-      _mm_max_epi16(max8_vals, _mm_srli_si128(max8_vals, 8));
-  const __m128i max2_vals =
-      _mm_max_epi16(max4_vals, _mm_srli_si128(max4_vals, 4));
-  return static_cast<int16_t>(_mm_cvtsi128_si32(
-      _mm_max_epi16(max2_vals, _mm_srli_si128(max2_vals, 2))));
-}
-YNN_ALWAYS_INLINE int16_t horizontal_min(s16x16 a) {
-  const __m128i min8_vals = _mm_min_epi16(_mm256_castsi256_si128(a.v),
-                                          _mm256_extracti128_si256(a.v, 1));
-  const __m128i min4_vals =
-      _mm_min_epi16(min8_vals, _mm_srli_si128(min8_vals, 8));
-  const __m128i min2_vals =
-      _mm_min_epi16(min4_vals, _mm_srli_si128(min4_vals, 4));
-  return static_cast<int16_t>(_mm_cvtsi128_si32(
-      _mm_min_epi16(min2_vals, _mm_srli_si128(min2_vals, 2))));
-}
-
-YNN_ALWAYS_INLINE int32_t horizontal_max(s32x8 a) {
-  const __m128i max8_vals = _mm_max_epi32(_mm256_castsi256_si128(a.v),
-                                          _mm256_extracti128_si256(a.v, 1));
-  const __m128i max4_vals =
-      _mm_max_epi32(max8_vals, _mm_srli_si128(max8_vals, 8));
-  return _mm_cvtsi128_si32(
-      _mm_max_epi32(max4_vals, _mm_srli_si128(max4_vals, 4)));
-}
-YNN_ALWAYS_INLINE int32_t horizontal_min(s32x8 a) {
-  const __m128i min8_vals = _mm_min_epi32(_mm256_castsi256_si128(a.v),
-                                          _mm256_extracti128_si256(a.v, 1));
-  const __m128i min4_vals =
-      _mm_min_epi32(min8_vals, _mm_srli_si128(min8_vals, 8));
-  return static_cast<int32_t>(_mm_cvtsi128_si32(
-      _mm_min_epi32(min4_vals, _mm_srli_si128(min4_vals, 4))));
-}
-
-YNN_ALWAYS_INLINE int8_t horizontal_max(s8x32 a) {
-  const __m128i max16 = _mm_max_epi8(_mm256_castsi256_si128(a.v),
-                                     _mm256_extracti128_si256(a.v, 1));
-  const __m128i max8 = _mm_max_epi8(max16, _mm_srli_si128(max16, 8));
-  const __m128i max4 = _mm_max_epi8(max8, _mm_srli_si128(max8, 4));
-  const __m128i max2 = _mm_max_epi8(max4, _mm_srli_si128(max4, 2));
-  return static_cast<int8_t>(
-      _mm_cvtsi128_si32(_mm_max_epi8(max2, _mm_srli_si128(max2, 1))));
-}
-YNN_ALWAYS_INLINE int8_t horizontal_min(s8x32 a) {
-  const __m128i min16 = _mm_min_epi8(_mm256_castsi256_si128(a.v),
-                                     _mm256_extracti128_si256(a.v, 1));
-  const __m128i min8 = _mm_min_epi8(min16, _mm_srli_si128(min16, 8));
-  const __m128i min4 = _mm_min_epi8(min8, _mm_srli_si128(min8, 4));
-  const __m128i min2 = _mm_min_epi8(min4, _mm_srli_si128(min4, 2));
-  return static_cast<int8_t>(
-      _mm_cvtsi128_si32(_mm_min_epi8(min2, _mm_srli_si128(min2, 1))));
-}
-
-YNN_ALWAYS_INLINE uint8_t horizontal_max(u8x32 a) {
-  const __m128i max16 = _mm_max_epu8(_mm256_castsi256_si128(a.v),
-                                     _mm256_extracti128_si256(a.v, 1));
-  const __m128i max8 = _mm_max_epu8(max16, _mm_srli_si128(max16, 8));
-  const __m128i max4 = _mm_max_epu8(max8, _mm_srli_si128(max8, 4));
-  const __m128i max2 = _mm_max_epu8(max4, _mm_srli_si128(max4, 2));
-  return static_cast<uint8_t>(
-      _mm_cvtsi128_si32(_mm_max_epu8(max2, _mm_srli_si128(max2, 1))));
-}
-YNN_ALWAYS_INLINE uint8_t horizontal_min(u8x32 a) {
-  const __m128i min16 = _mm_min_epu8(_mm256_castsi256_si128(a.v),
-                                     _mm256_extracti128_si256(a.v, 1));
-  const __m128i min8 = _mm_min_epu8(min16, _mm_srli_si128(min16, 8));
-  const __m128i min4 = _mm_min_epu8(min8, _mm_srli_si128(min8, 4));
-  const __m128i min2 = _mm_min_epu8(min4, _mm_srli_si128(min4, 2));
-  return static_cast<uint8_t>(
-      _mm_cvtsi128_si32(_mm_min_epu8(min2, _mm_srli_si128(min2, 1))));
 }
 
 }  // namespace simd

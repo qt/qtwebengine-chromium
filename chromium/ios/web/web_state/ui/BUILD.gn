@@ -22,6 +22,7 @@ source_set("ui") {
     "//ios/web/annotations",
     "//ios/web/browsing_data",
     "//ios/web/common",
+    "//ios/web/common:crw_web_view_resizing_type",
     "//ios/web/download",
     "//ios/web/favicon",
     "//ios/web/find_in_page",
@@ -50,6 +51,7 @@ source_set("ui") {
     "//ios/web/web_state:user_interaction",
     "//ios/web/web_state:web_state_impl_header",
     "//ios/web/web_state:web_view_internal_creation_util",
+    "//ios/web/web_state:web_view_pass_key",
     "//ios/web/web_state/ui:wk_web_view_configuration_provider",
     "//ios/web/webui",
     "//net",
@@ -63,6 +65,7 @@ source_set("ui") {
   }
 
   sources = [
+    "crw_content_view.h",
     "crw_media_capture_permission_request.h",
     "crw_media_capture_permission_request.mm",
     "crw_touch_tracking_recognizer.mm",
@@ -71,6 +74,8 @@ source_set("ui") {
     "crw_web_controller_container_view.mm",
     "crw_web_request_controller.h",
     "crw_web_request_controller.mm",
+    "crw_web_view_content_view.h",
+    "crw_web_view_content_view.mm",
     "crw_web_view_proxy_impl.h",
     "crw_web_view_proxy_impl.mm",
     "crw_web_view_scroll_view_delegate_proxy.h",
@@ -89,7 +94,10 @@ source_set("web_controller_header") {
     "crw_web_controller.h",
   ]
 
-  deps = [ ":crw_web_view_navigation_proxy" ]
+  deps = [
+    ":crw_web_view_navigation_proxy",
+    "//ios/web/web_state:web_view_pass_key",
+  ]
 
   public_deps = [ "//base" ]
 }
@@ -123,10 +131,6 @@ source_set("crw_context_menu_controller") {
     "//ui/gfx/geometry",
   ]
 
-  if (use_be_deferred_context_menu) {
-    frameworks = [ "BrowserEngineKit.framework" ]
-  }
-
   sources = [
     "crw_context_menu_controller.h",
     "crw_context_menu_controller.mm",
@@ -153,6 +157,7 @@ source_set("wk_web_view_configuration_provider") {
     "//base",
     "//components/safe_browsing/core/common",
     "//ios/components/security_interstitials/https_only_mode:feature",
+    "//ios/public/provider/web:cobalt",
     "//ios/third_party/webkit",
     "//ios/web/common",
     "//ios/web/js_features/window_error",

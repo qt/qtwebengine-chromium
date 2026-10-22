@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "core/fxcrt/fx_memory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/pdf_test_environment.h"
@@ -24,8 +23,6 @@ int main(int argc, char** argv) {
 #if defined(PDF_USE_PARTITION_ALLOC)
   pdfium::ConfigurePartitionAllocShimPartitionForTest();
 #endif  // defined(PDF_USE_PARTITION_ALLOC)
-
-  FX_InitializeMemoryAllocators();
 
   // PDF test environment will be deleted by gtest.
   AddGlobalTestEnvironment(new PDFTestEnvironment());

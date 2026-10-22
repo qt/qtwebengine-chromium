@@ -930,6 +930,118 @@ TEST_F(SpirvParserTest, Switch) {
 )");
 }
 
+TEST_F(SpirvParserTest, SwitchManyCases) {
+    EXPECT_IR(R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main"
+               OpExecutionMode %main LocalSize 1 1 1
+       %void = OpTypeVoid
+        %i32 = OpTypeInt 32 1
+       %bool = OpTypeBool
+        %one = OpConstant %i32 1
+        %two = OpConstant %i32 2
+      %three = OpConstant %i32 3
+       %four = OpConstant %i32 4
+       %five = OpConstant %i32 5
+        %six = OpConstant %i32 6
+      %seven = OpConstant %i32 7
+      %eight = OpConstant %i32 8
+       %nine = OpConstant %i32 9
+        %ten = OpConstant %i32 10
+       %true = OpConstantTrue %bool
+    %ep_type = OpTypeFunction %void
+       %main = OpFunction %void None %ep_type
+         %10 = OpLabel
+               OpSelectionMerge %99 None
+               OpSwitch %two %98 20 %20 30 %30 40 %40 50 %50 60 %60 70 %70 80 %80 90 %90 100 %100
+         %20 = OpLabel
+         %21 = OpIAdd %i32 %one %two
+               OpBranch %99
+         %30 = OpLabel
+         %31 = OpIAdd %i32 %one %three
+               OpBranch %99
+         %40 = OpLabel
+         %41 = OpIAdd %i32 %one %four
+               OpBranch %99
+         %50 = OpLabel
+         %51 = OpIAdd %i32 %one %five
+               OpBranch %99
+         %60 = OpLabel
+         %61 = OpIAdd %i32 %one %six
+               OpBranch %99
+         %70 = OpLabel
+         %71 = OpIAdd %i32 %one %seven
+               OpBranch %99
+         %80 = OpLabel
+         %81 = OpIAdd %i32 %one %eight
+               OpBranch %99
+         %90 = OpLabel
+         %91 = OpIAdd %i32 %one %nine
+               OpBranch %99
+        %100 = OpLabel
+        %101 = OpIAdd %i32 %one %ten
+               OpBranch %99
+         %98 = OpLabel
+         %22 = OpIAdd %i32 %two %two
+               OpBranch %99
+         %99 = OpLabel
+         %23 = OpIAdd %i32 %ten %two
+               OpReturn
+               OpFunctionEnd
+)",
+              R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    switch 2i [c: (default, $B2), c: (20i, $B3), c: (30i, $B4), c: (40i, $B5), c: (50i, $B6), c: (60i, $B7), c: (70i, $B8), c: (80i, $B9), c: (90i, $B10), c: (100i, $B11)] {  # switch_1
+      $B2: {  # case
+        %2:i32 = spirv.add<i32> 2i, 2i
+        exit_switch  # switch_1
+      }
+      $B3: {  # case
+        %3:i32 = spirv.add<i32> 1i, 2i
+        exit_switch  # switch_1
+      }
+      $B4: {  # case
+        %4:i32 = spirv.add<i32> 1i, 3i
+        exit_switch  # switch_1
+      }
+      $B5: {  # case
+        %5:i32 = spirv.add<i32> 1i, 4i
+        exit_switch  # switch_1
+      }
+      $B6: {  # case
+        %6:i32 = spirv.add<i32> 1i, 5i
+        exit_switch  # switch_1
+      }
+      $B7: {  # case
+        %7:i32 = spirv.add<i32> 1i, 6i
+        exit_switch  # switch_1
+      }
+      $B8: {  # case
+        %8:i32 = spirv.add<i32> 1i, 7i
+        exit_switch  # switch_1
+      }
+      $B9: {  # case
+        %9:i32 = spirv.add<i32> 1i, 8i
+        exit_switch  # switch_1
+      }
+      $B10: {  # case
+        %10:i32 = spirv.add<i32> 1i, 9i
+        exit_switch  # switch_1
+      }
+      $B11: {  # case
+        %11:i32 = spirv.add<i32> 1i, 10i
+        exit_switch  # switch_1
+      }
+    }
+    %12:i32 = spirv.add<i32> 10i, 2i
+    ret
+  }
+}
+)");
+}
+
 TEST_F(SpirvParserTest, Switch_DefaultIsMerge) {
     EXPECT_IR(R"(
                OpCapability Shader

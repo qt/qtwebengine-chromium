@@ -54,7 +54,8 @@ TEST_F(SpirvWriterTest, Construct_Vector) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpCompositeConstruct %v4int %a %b %c %d");
 }
 
@@ -77,7 +78,8 @@ TEST_F(SpirvWriterTest, Construct_Matrix) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpCompositeConstruct %mat3v4float %a %b %c");
 }
 
@@ -102,7 +104,8 @@ TEST_F(SpirvWriterTest, Construct_Array) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpCompositeConstruct %_arr_float_uint_4 %a %b %c %d");
 }
 
@@ -130,7 +133,8 @@ TEST_F(SpirvWriterTest, Construct_Struct) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpCompositeConstruct %MyStruct %a %b %c");
 }
 
@@ -148,7 +152,8 @@ TEST_F(SpirvWriterTest, Construct_Scalar_Identity) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpReturnValue %arg");
 }
 
@@ -166,7 +171,8 @@ TEST_F(SpirvWriterTest, Construct_Vector_Identity) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpReturnValue %arg");
 }
 
@@ -184,7 +190,8 @@ TEST_F(SpirvWriterTest, Construct_Array_ZeroValue) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpConstantNull %_arr_float_uint_4");
 }
 
@@ -199,7 +206,8 @@ TEST_F(SpirvWriterTest, Construct_SubgroupMatrix_ZeroValue) {
 
     Options options;
     options.extensions.use_vulkan_memory_model = true;
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%6 = OpTypeCooperativeMatrixKHR %float %uint_3 %uint_4 %uint_8 %uint_0");
     EXPECT_INST("%left = OpConstantNull %6");
     EXPECT_INST("%14 = OpTypeCooperativeMatrixKHR %int %uint_3 %uint_8 %uint_4 %uint_1");
@@ -227,7 +235,8 @@ TEST_F(SpirvWriterTest, Construct_SubgroupMatrix_SingleValue) {
 
     Options options;
     options.extensions.use_vulkan_memory_model = true;
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%7 = OpTypeCooperativeMatrixKHR %int %uint_3 %uint_4 %uint_8 %uint_0");
     EXPECT_INST("%14 = OpTypeCooperativeMatrixKHR %int %uint_3 %uint_8 %uint_4 %uint_1");
     EXPECT_INST("%17 = OpTypeCooperativeMatrixKHR %int %uint_3 %uint_2 %uint_2 %uint_2");
@@ -252,7 +261,8 @@ TEST_F(SpirvWriterTest, Construct_ArrayOfSubgroupMatrix_ZeroValue) {
                 .use_vulkan_memory_model = true,
             },
     };
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %7 = OpTypeCooperativeMatrixKHR %float %uint_3 %uint_4 %uint_8 %uint_0
 %_arr_7_uint_4 = OpTypeArray %7 %uint_4
@@ -291,7 +301,8 @@ TEST_F(SpirvWriterTest, Construct_StructOfSubgroupMatrix_ZeroValue) {
                 .use_vulkan_memory_model = true,
             },
     };
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %8 = OpTypeCooperativeMatrixKHR %float %uint_3 %uint_4 %uint_8 %uint_0
 %_arr_8_uint_4 = OpTypeArray %8 %uint_4

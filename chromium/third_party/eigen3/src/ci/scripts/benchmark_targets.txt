@@ -1,0 +1,19 @@
+# Nightly core benchmark subset.
+# One executable name per line. Lines starting with # are ignored.
+# These cover the most performance-critical dense linear algebra kernels.
+
+# BLAS-like operations
+bench_gemm
+bench_gemm_double
+bench_gemv
+bench_dot
+bench_vecadd
+bench_trsm
+bench_reductions
+
+# Decompositions
+bench_cholesky
+bench_cholesky_double
+bench_qr
+bench_svd
+bench_householder

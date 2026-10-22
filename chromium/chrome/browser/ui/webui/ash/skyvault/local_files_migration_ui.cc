@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/webui/ash/skyvault/local_files_migration_ui.h"
 
+#include "ash/constants/ash_features.h"
+#include "ash/constants/webui_url_constants.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/time/time.h"
@@ -14,7 +16,6 @@
 #include "chrome/browser/ui/webui/ash/skyvault/local_files_migration_dialog.h"
 #include "chrome/browser/ui/webui/ash/skyvault/local_files_migration_page_handler.h"
 #include "chrome/common/chrome_features.h"
-#include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/skyvault_resources.h"
 #include "chrome/grit/skyvault_resources_map.h"
 #include "components/strings/grit/components_strings.h"
@@ -27,13 +28,13 @@ namespace policy::local_user_files {
 bool LocalFilesMigrationUIConfig::IsWebUIEnabled(
     content::BrowserContext* browser_context) {
   return base::FeatureList::IsEnabled(features::kSkyVault) &&
-         base::FeatureList::IsEnabled(features::kSkyVaultV2);
+         base::FeatureList::IsEnabled(ash::features::kSkyVaultV2);
 }
 
 LocalFilesMigrationUI::LocalFilesMigrationUI(content::WebUI* web_ui)
     : ui::MojoWebDialogUI(web_ui) {
   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
-      Profile::FromWebUI(web_ui), chrome::kChromeUILocalFilesMigrationHost);
+      Profile::FromWebUI(web_ui), ash::kChromeUILocalFilesMigrationHost);
   static constexpr webui::LocalizedString kStrings[] = {
       // Upload case:
       // Cloud providers

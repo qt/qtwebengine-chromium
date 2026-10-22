@@ -27,6 +27,8 @@
 
 // GEN_BUILD:CONDITION(tint_build_wgsl_reader)
 
+#include "src/tint/lang/wgsl/resolver/uniformity.h"
+
 #include <memory>
 #include <string>
 #include <string_view>
@@ -34,14 +36,12 @@
 #include <utility>
 #include <vector>
 
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "src/tint/lang/wgsl/program/program_builder.h"
 #include "src/tint/lang/wgsl/reader/reader.h"
 #include "src/tint/lang/wgsl/resolver/resolve.h"
-#include "src/tint/lang/wgsl/resolver/uniformity.h"
 #include "src/tint/utils/text/string_stream.h"
-
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 
 namespace tint::resolver {
 namespace {
@@ -11090,42 +11090,6 @@ fn foo() {
     RunTest(src, true);
 }
 
-// TODO(jrprice): This test requires variable pointers.
-TEST_F(UniformityAnalysisTest, DISABLED_ArrayLength_PtrArgRequiredToBeUniformForRetval_Fail) {
-    std::string src = R"(
-@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
-@group(0) @binding(1) var<storage, read_write> arr1 : array<f32>;
-@group(0) @binding(2) var<storage, read_write> arr2 : array<f32>;
-
-fn length(p : ptr<storage, array<f32>, read_write>) -> u32 {
-  return arrayLength(p);
-}
-
-fn foo() {
-  let non_uniform_ptr = select(&arr1, &arr2, non_uniform == 0);
-  let len = length(non_uniform_ptr);
-  if (len > 10) {
-    workgroupBarrier();
-  }
-}
-)";
-
-    RunTest(src, false);
-    EXPECT_EQ(error_,
-              R"(test:16:5 error: 'workgroupBarrier' must only be called from uniform control flow
-    workgroupBarrier();
-    ^^^^^^^^^^^^^^^^
-
-test:15:3 note: control flow depends on non-uniform value
-  if (len > 10) {
-  ^^
-
-test:14:20 note: passing non-uniform pointer to 'length' may produce a non-uniform output
-  let len = length(non_uniform_ptr, &len);
-                   ^^^^^^^^^^^^^^^
-)");
-}
-
 TEST_F(UniformityAnalysisTest, ArrayLength_PtrArgRequiredToBeUniformForOtherPtrResult_Pass) {
     std::string src = R"(
 @group(0) @binding(0) var<storage, read_write> arr : array<f32>;
@@ -11144,44 +11108,6 @@ fn foo() {
 )";
 
     RunTest(src, true);
-}
-
-// TODO(jrprice): This test requires variable pointers.
-TEST_F(UniformityAnalysisTest,
-       DISABLED_ArrayLength_PtrArgRequiredToBeUniformForOtherPtrResult_Fail) {
-    std::string src = R"(
-@group(0) @binding(0) var<storage, read_write> non_uniform : i32;
-@group(0) @binding(1) var<storage, read_write> arr1 : array<f32>;
-@group(0) @binding(2) var<storage, read_write> arr2 : array<f32>;
-
-fn length(p : ptr<storage, array<f32>, read_write>, out : ptr<function, u32>) {
-  *out = arrayLength(p);
-}
-
-fn foo() {
-  var len : u32;
-  let non_uniform_ptr = select(&arr1, &arr2, non_uniform == 0);
-  length(non_uniform_ptr, &len);
-  if (len > 10) {
-    workgroupBarrier();
-  }
-}
-)";
-
-    RunTest(src, false);
-    EXPECT_EQ(error_,
-              R"(test:17:5 error: 'workgroupBarrier' must only be called from uniform control flow
-    workgroupBarrier();
-    ^^^^^^^^^^^^^^^^
-
-test:16:3 note: control flow depends on non-uniform value
-  if (len > 10) {
-  ^^
-
-test:15:10 note: passing non-uniform pointer to 'length' may produce a non-uniform output
-  length(non_uniform_ptr, &len);
-         ^^^^^^^^^^^^^^^
-)");
 }
 
 TEST_F(UniformityAnalysisTest, ArrayLength_PtrArgRequiresUniformityAndAffectsReturnValue) {

@@ -20,16 +20,16 @@
 
 namespace gpuav {
 
-void RegisterMeshShadingValidation(Validator &gpuav, CommandBufferSubState &cb) {
+void RegisterMeshShadingValidation(Validator& gpuav, CommandBufferSubState& cb) {
     if (!gpuav.gpuav_settings.shader_instrumentation.mesh_shading) {
         return;
     }
 
     cb.on_instrumentation_error_logger_register_functions.emplace_back(
-        [](Validator &gpuav, CommandBufferSubState &cb, const LastBound &last_bound) {
+        [](Validator& gpuav, CommandBufferSubState& cb, const LastBound& last_bound) {
             CommandBufferSubState::InstrumentationErrorLogger inst_error_logger =
-                [](Validator &gpuav, const Location &loc, const uint32_t *error_record, std::string &out_error_msg,
-                   std::string &out_vuid_msg) {
+                [](Validator& gpuav, const Location& loc, const uint32_t* error_record, const InstrumentedShader*,
+                   std::string& out_error_msg, std::string& out_vuid_msg) {
                     using namespace glsl;
                     bool error_found = false;
                     if (GetErrorGroup(error_record) != kErrorGroup_InstMeshShading) {
@@ -66,6 +66,13 @@ void RegisterMeshShadingValidation(Validator &gpuav, CommandBufferSubState &cb) 
                                     "indices uint3 primitives["
                                  << output_primitive << "], out vertices MeshOutput vertices[" << output_vertices << "])\"";
                         } break;
+                        case kErrorSubCode_MeshShading_TaskPayloadAlways: {
+                            out_vuid_msg = "VUID-RuntimeSpirv-MeshEXT-12380";
+                            // TODO - Print the variable name
+                            strm << "The mesh shader is accessing a TaskPayloadWorkgroupEXT variable, but there is no Task Shader "
+                                    "to set the payload values.";
+                            break;
+                        }
                         default:
                             error_found = false;
                             break;

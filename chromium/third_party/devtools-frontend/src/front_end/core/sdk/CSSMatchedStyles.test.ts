@@ -502,14 +502,21 @@ describe('CSSMatchedStyles', () => {
     function checkResolution(
         matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
         properties: Array<Protocol.CSS.CSSProperty&{expectedValue?: string}>): void {
-      const ownProperties = new Map(matchedStyles.nodeStyles()
-                                        .find(style => style.type === SDK.CSSStyleDeclaration.Type.Regular)
-                                        ?.allProperties()
-                                        .map(property => [property.name, property]));
+      // Find all winning properties (declarations), flattening all matched
+      // rules. We reverse the list such that stronger properties (set later)
+      // can overwrite weaker ones (set earlier).
+      const ownProperties = new Map<string, SDK.CSSProperty.CSSProperty>();
+      for (const style of [...matchedStyles.nodeStyles()].reverse()) {
+        if (style.type === SDK.CSSStyleDeclaration.Type.Regular || style.type === SDK.CSSStyleDeclaration.Type.Inline) {
+          for (const property of style.allProperties()) {
+            ownProperties.set(property.name, property);
+          }
+        }
+      }
 
       for (const {name: propertyName, expectedValue} of properties) {
         const property = ownProperties.get(propertyName);
-        assert.isOk(property);
+        assert.isOk(property, propertyName);
 
         let resolvedValue: SDK.CSSMatchedStyles.CSSValueSource|null = new SDK.CSSMatchedStyles.CSSValueSource(property);
         while (resolvedValue?.value && SDK.CSSMetadata.CSSMetadata.isCSSWideKeyword(resolvedValue?.value)) {
@@ -750,6 +757,37 @@ describe('CSSMatchedStyles', () => {
       assert.isOk(inlineProperty);
       const resolved = matchedStyles.resolveGlobalKeyword(inlineProperty, SDK.CSSMetadata.CSSWideKeyword.REVERT_LAYER);
       assert.strictEqual(resolved?.value, 'author-origin');
+    });
+
+    it('correctly resolves the keyword `revert-rule`', async () => {
+      const properties = [
+        {name: 'color', value: 'revert-rule', expectedValue: 'previous-rule'},
+      ];
+
+      const mainRule = ruleMatch('div', properties);
+      const previousRule = ruleMatch('div', [{name: 'color', value: 'previous-rule'}]);
+      const matchedStyles = await getMatchedStyles({
+        matchedPayload: [previousRule, mainRule],
+        node,
+      });
+      checkResolution(matchedStyles, properties);
+    });
+
+    it('correctly resolves the keyword `revert-rule` when reverting from inline style', async () => {
+      const inlineProperties = [
+        {name: 'color', value: 'revert-rule', expectedValue: 'authored-rule'},
+      ];
+      const properties = [
+        {name: 'color', value: 'authored-rule'},
+      ];
+      const mainRule = ruleMatch('div', properties);
+      const inlinePayload = ruleMatch('', inlineProperties).rule.style;
+      const matchedStyles = await getMatchedStyles({
+        inlinePayload,
+        matchedPayload: [mainRule],
+        node,
+      });
+      checkResolution(matchedStyles, inlineProperties);
     });
   });
 

@@ -20,10 +20,6 @@
 namespace fcp {
 namespace confidential_compute {
 
-inline constexpr char kComposedTeeUri[] = "composed_tee";
-inline constexpr char kComposedTeeLeafUri[] = "composed_tee/leaf";
-inline constexpr char kComposedTeeRootUri[] = "composed_tee/root";
-
 inline constexpr char kDirectDataUploadTensorName[] = "output_tensor_name";
 
 inline constexpr char kFileInfoKeySeparator[] = "/";
@@ -33,6 +29,10 @@ inline constexpr char kEventTimeColumnName[] =
 
 inline constexpr char kPrivacyIdColumnName[] =
     "confidential_compute_privacy_id";
+
+// Values keyed by this key are serialized proto bytes. Older clients may upload
+// base64 encoded serialized proto bytes.
+inline constexpr char kPrivateLoggerEntryKey[] = "entry";
 
 }  // namespace confidential_compute
 }  // namespace fcp

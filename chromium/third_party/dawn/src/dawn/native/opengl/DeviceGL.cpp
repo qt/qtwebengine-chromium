@@ -420,7 +420,7 @@ ResultOrError<Ref<TextureBase>> Device::CreateTextureWrappingEGLImageImpl(
 
         return DAWN_VALIDATION_ERROR(
             "EGLImage size (width: %u, height: %u, depth: 1) doesn't match descriptor size %s.",
-            width, height, &textureDescriptor->size);
+            width, height, textureDescriptor->size);
     }
 
     // TODO(dawn:803): Validate the OpenGL texture format from the EGLImage against the format
@@ -475,7 +475,7 @@ ResultOrError<Ref<TextureBase>> Device::CreateTextureWrappingGLTextureImpl(
         textureDescriptor->size.depthOrArrayLayers != 1) {
         return DAWN_VALIDATION_ERROR(
             "GL texture size (width: %u, height: %u, depth: 1) doesn't match descriptor size %s.",
-            width, height, &textureDescriptor->size);
+            width, height, textureDescriptor->size);
     }
 
     auto result = AcquireRef(new Texture(this, textureDescriptor, texture, OwnsHandle::No));
@@ -502,9 +502,9 @@ MaybeError Device::FlushPendingGLCommands() {
 
     ContextEGL::ScopedMakeCurrent scopedCurrentContext;
     DAWN_TRY_ASSIGN(scopedCurrentContext, mContext->MakeCurrent());
-    const OpenGLFunctions& gl = GetGL(/*makeCurrent=*/false);
+    MarkGLUsed(ExecutionQueueBase::SubmitMode::Normal);
     for (auto& work : workList) {
-        DAWN_TRY(work(gl));
+        DAWN_TRY(work(mGL));
     }
     return scopedCurrentContext.End();
 }
@@ -589,7 +589,7 @@ const EGLFunctions& Device::GetEGL(bool makeCurrent) const {
         mContext->DeprecatedMakeCurrent();
         MarkGLUsed(ExecutionQueueBase::SubmitMode::Normal);
     }
-    return ToBackend(GetPhysicalDevice())->GetDisplay()->egl;
+    return ToBackend(GetPhysicalDevice())->GetDisplay()->egl.get();
 }
 
 EGLDisplay Device::GetEGLDisplay() const {

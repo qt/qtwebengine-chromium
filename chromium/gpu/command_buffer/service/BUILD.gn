@@ -480,7 +480,8 @@ target(link_target_type, "gles2_sources") {
 
       deps += [ "//ui/ozone" ]
 
-      if (is_chromeos) {
+      if (is_linux || is_chromeos) {
+        deps += [ "//third_party/libsync" ]
         deps += [ "//ui/gfx/linux:drm" ]
       }
     }
@@ -528,14 +529,6 @@ target(link_target_type, "gles2_sources") {
     # Do not compile with ARC because Dawn is not (yet) compatible with being
     # called from code compiled with ARC.
     configs -= [ "//build/config/compiler:enable_arc" ]
-
-    if (skia_use_metal) {
-      sources += [
-        "metal_context_provider.h",
-        "metal_context_provider.mm",
-      ]
-      deps += [ "//components/metal_util" ]
-    }
 
     # Required by gles2_cmd_decoder.cc on Apple.
     frameworks = [

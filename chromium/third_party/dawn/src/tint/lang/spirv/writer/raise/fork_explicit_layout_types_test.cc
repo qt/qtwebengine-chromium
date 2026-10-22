@@ -32,6 +32,7 @@
 #include "src/tint/lang/core/ir/transform/helper_test.h"
 #include "src/tint/lang/core/type/struct.h"
 #include "src/tint/lang/spirv/ir/builtin_call.h"
+#include "src/tint/lang/spirv/type/literal.h"
 #include "src/tint/lang/spirv/writer/common/options.h"
 
 namespace tint::spirv::writer::raise {
@@ -2739,7 +2740,9 @@ TEST_F(SpirvWriter_ForkExplicitLayoutTypesTest, ArrayLength) {
 
     auto* func = b.Function("foo", ty.void_());
     b.Append(func->Block(), [&] {
-        b.Call<spirv::ir::BuiltinCall>(ty.u32(), BuiltinFn::kArrayLength, buffer, 1_u);
+        auto* literal_index = b.Constant(
+            mod.constant_values.Get<core::constant::Scalar<u32>>(ty.Get<type::Literal>(), 1_u));
+        b.Call<spirv::ir::BuiltinCall>(ty.u32(), BuiltinFn::kArrayLength, buffer, literal_index);
         b.Return(func);
     });
 

@@ -9,7 +9,7 @@ import '@material/web/checkbox/checkbox.js';
 import {MdCheckbox} from '@material/web/checkbox/checkbox.js';
 import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
 
-import {shouldProcessClick} from '../helpers/helpers';
+import {shouldProcessClick} from '../helpers/helpers.js';
 
 // The spec says icon size is 20px, but that doesn't render to the same thing.
 const ICON_SIZE = css`16px`;

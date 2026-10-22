@@ -282,7 +282,7 @@ struct DAWN_NATIVE_EXPORT ExternalImageExportInfo {
 
 DAWN_NATIVE_EXPORT bool CheckIsErrorForTesting(void* objectHandle);
 
-DAWN_NATIVE_EXPORT const char* GetObjectLabelForTesting(void* objectHandle);
+DAWN_NATIVE_EXPORT std::string GetObjectLabelForTesting(void* objectHandle);
 
 DAWN_NATIVE_EXPORT uint64_t GetAllocatedSizeForTesting(WGPUBuffer buffer);
 

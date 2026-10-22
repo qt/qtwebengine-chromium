@@ -22,44 +22,16 @@ CFX_AggClipRgn::CFX_AggClipRgn(const CFX_AggClipRgn& src) = default;
 CFX_AggClipRgn::~CFX_AggClipRgn() = default;
 
 void CFX_AggClipRgn::IntersectRect(const FX_RECT& rect) {
-  if (type_ == kRectI) {
+  if (!mask_) {
     box_.Intersect(rect);
     return;
   }
-  IntersectMaskRect(rect, box_, mask_);
+  IntersectMaskAndRect(rect, box_, mask_);
 }
 
-void CFX_AggClipRgn::IntersectMaskRect(FX_RECT rect,
-                                       FX_RECT mask_rect,
-                                       RetainPtr<CFX_DIBitmap> pOldMask) {
-  type_ = kMaskF;
-  box_ = rect;
-  box_.Intersect(mask_rect);
-  if (box_.IsEmpty()) {
-    type_ = kRectI;
-    return;
-  }
-  if (box_ == mask_rect) {
-    mask_ = std::move(pOldMask);
-    return;
-  }
-  mask_ = pdfium::MakeRetain<CFX_DIBitmap>();
-  CHECK(mask_->Create(box_.Width(), box_.Height(), FXDIB_Format::k8bppMask));
-  const int offset = box_.left - mask_rect.left;
-  for (int row = box_.top; row < box_.bottom; row++) {
-    pdfium::span<uint8_t> dest_scan =
-        mask_->GetWritableScanline(row - box_.top);
-    pdfium::span<const uint8_t> src_scan =
-        pOldMask->GetScanline(row - mask_rect.top);
-    fxcrt::Copy(src_scan.subspan(static_cast<size_t>(offset),
-                                 static_cast<size_t>(box_.Width())),
-                dest_scan);
-  }
-}
-
-void CFX_AggClipRgn::IntersectMaskF(int left,
-                                    int top,
-                                    RetainPtr<CFX_DIBitmap> pMask) {
+void CFX_AggClipRgn::IntersectMask(int left,
+                                   int top,
+                                   RetainPtr<CFX_DIBitmap> pMask) {
   FX_RECT mask_box(left, top, left + pMask->GetWidth(),
                    top + pMask->GetHeight());
   if (!mask_box.IsEmpty()) {
@@ -67,15 +39,14 @@ void CFX_AggClipRgn::IntersectMaskF(int left,
     // then the format does not matter as it will not get used.
     CHECK_EQ(pMask->GetFormat(), FXDIB_Format::k8bppMask);
   }
-  if (type_ == kRectI) {
-    IntersectMaskRect(box_, mask_box, std::move(pMask));
+  if (!mask_) {
+    IntersectMaskAndRect(box_, mask_box, std::move(pMask));
     return;
   }
 
   FX_RECT new_box = box_;
   new_box.Intersect(mask_box);
   if (new_box.IsEmpty()) {
-    type_ = kRectI;
     mask_ = nullptr;
     box_ = new_box;
     return;
@@ -94,4 +65,31 @@ void CFX_AggClipRgn::IntersectMaskF(int left,
   }
   box_ = new_box;
   mask_ = std::move(new_dib);
+}
+
+void CFX_AggClipRgn::IntersectMaskAndRect(FX_RECT rect,
+                                          FX_RECT mask_rect,
+                                          RetainPtr<CFX_DIBitmap> pOldMask) {
+  box_ = rect;
+  box_.Intersect(mask_rect);
+  if (box_.IsEmpty()) {
+    mask_ = nullptr;
+    return;
+  }
+  if (box_ == mask_rect) {
+    mask_ = std::move(pOldMask);
+    return;
+  }
+  mask_ = pdfium::MakeRetain<CFX_DIBitmap>();
+  CHECK(mask_->Create(box_.Width(), box_.Height(), FXDIB_Format::k8bppMask));
+  const int offset = box_.left - mask_rect.left;
+  for (int row = box_.top; row < box_.bottom; row++) {
+    pdfium::span<uint8_t> dest_scan =
+        mask_->GetWritableScanline(row - box_.top);
+    pdfium::span<const uint8_t> src_scan =
+        pOldMask->GetScanline(row - mask_rect.top);
+    fxcrt::Copy(src_scan.subspan(static_cast<size_t>(offset),
+                                 static_cast<size_t>(box_.Width())),
+                dest_scan);
+  }
 }

@@ -8,9 +8,11 @@
 
 #include "angle_gl.h"
 #include "common/utilities.h"
+#include "compiler/translator/BuiltInFunctionEmulator.h"
 #include "compiler/translator/StaticType.h"
 #include "compiler/translator/glsl/BuiltInFunctionEmulatorGLSL.h"
 #include "compiler/translator/glsl/OutputESSL.h"
+#include "compiler/translator/tree_ops/AddDefaultReturnStatements.h"
 #include "compiler/translator/tree_ops/DeclarePerVertexBlocks.h"
 #include "compiler/translator/tree_ops/MonomorphizeUnsupportedFunctions.h"
 #include "compiler/translator/tree_ops/RecordConstantPrecision.h"
@@ -55,15 +57,6 @@ TranslatorESSL::TranslatorESSL(sh::GLenum type, ShShaderSpec spec)
     : TCompiler(type, spec, SH_ESSL_OUTPUT)
 {}
 
-void TranslatorESSL::initBuiltInFunctionEmulator(BuiltInFunctionEmulator *emu,
-                                                 const ShCompileOptions &compileOptions)
-{
-    if (compileOptions.emulateAtan2FloatFunction)
-    {
-        InitBuiltInAtanFunctionEmulatorForGLSLWorkarounds(emu);
-    }
-}
-
 bool TranslatorESSL::translate(TIntermBlock *root,
                                const ShCompileOptions &compileOptions,
                                PerformanceDiagnostics * /*perfDiagnostics*/)
@@ -104,13 +97,18 @@ bool TranslatorESSL::translate(TIntermBlock *root,
     // like non-preprocessor tokens.
     WritePragma(sink, compileOptions, getPragma());
 
-    if (!RecordConstantPrecision(this, root, &getSymbolTable()))
-    {
-        return false;
-    }
-
     if (!compileOptions.useIR)
     {
+        if (!RecordConstantPrecision(this, root, &getSymbolTable()))
+        {
+            return false;
+        }
+
+        if (!sh::AddDefaultReturnStatements(this, root))
+        {
+            return false;
+        }
+
         // anglebug.com/42265954: The ESSL spec has a bug with images as function arguments. The
         // recommended workaround is to inline functions that accept image arguments.
         if (shaderVer >= 310 && !MonomorphizeUnsupportedFunctions(
@@ -122,7 +120,13 @@ bool TranslatorESSL::translate(TIntermBlock *root,
     }
 
     // Write emulated built-in functions if needed.
-    if (!getBuiltInFunctionEmulator().isOutputEmpty())
+    BuiltInFunctionEmulator builtInFunctionEmulator;
+    if (compileOptions.emulateAtan2FloatFunction)
+    {
+        InitBuiltInAtanFunctionEmulatorForGLSLWorkarounds(&builtInFunctionEmulator);
+        builtInFunctionEmulator.markBuiltInFunctionsForEmulation(root);
+    }
+    if (!builtInFunctionEmulator.isOutputEmpty())
     {
         sink << "// BEGIN: Generated code for built-in function emulation\n\n";
         if (getShaderType() == GL_FRAGMENT_SHADER)
@@ -138,7 +142,7 @@ bool TranslatorESSL::translate(TIntermBlock *root,
             sink << "#define emu_precision highp\n";
         }
 
-        getBuiltInFunctionEmulator().outputEmulatedFunctions(sink);
+        builtInFunctionEmulator.outputEmulatedFunctions(sink);
         sink << "// END: Generated code for built-in function emulation\n\n";
     }
 
@@ -284,13 +288,11 @@ void TranslatorESSL::writeExtensionBehavior(const ShCompileOptions &compileOptio
             else if (iter->first == TExtension::ANGLE_multi_draw)
             {
                 // Don't emit anything. This extension is emulated
-                ASSERT(compileOptions.emulateGLDrawID);
                 continue;
             }
             else if (iter->first == TExtension::ANGLE_base_vertex_base_instance_shader_builtin)
             {
                 // Don't emit anything. This extension is emulated
-                ASSERT(compileOptions.emulateGLBaseVertexBaseInstance);
                 continue;
             }
             else if (iter->first == TExtension::EXT_clip_cull_distance ||

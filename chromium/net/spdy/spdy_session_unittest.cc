@@ -133,6 +133,25 @@ class SpdySessionRequestDelegate
       base::WeakPtr<SpdySession> spdy_session) override {}
 };
 
+// Custom delegate to wait for headers sent on a stream.
+class HeadersSentDelegate : public test::StreamDelegateDoNothing {
+ public:
+  HeadersSentDelegate(const base::WeakPtr<SpdyStream>& stream,
+                      base::OnceClosure quit_closure)
+      : StreamDelegateDoNothing(stream),
+        quit_closure_(std::move(quit_closure)) {}
+
+  void OnHeadersSent() override {
+    test::StreamDelegateDoNothing::OnHeadersSent();
+    if (quit_closure_) {
+      std::move(quit_closure_).Run();
+    }
+  }
+
+ private:
+  base::OnceClosure quit_closure_;
+};
+
 }  // namespace
 
 class SpdySessionTest : public PlatformTest, public WithTaskEnvironment {
@@ -179,9 +198,9 @@ class SpdySessionTest : public PlatformTest, public WithTaskEnvironment {
                                base::test::TaskEnvironment::TimeSource::DEFAULT)
       : WithTaskEnvironment(time_source),
         old_max_group_sockets_(ClientSocketPoolManager::max_sockets_per_group(
-            HttpNetworkSession::NORMAL_SOCKET_POOL)),
+            HttpNetworkSession::SocketPoolType::kNormal)),
         old_socket_soft_cap_(ClientSocketPoolManager::socket_soft_cap_per_pool(
-            HttpNetworkSession::NORMAL_SOCKET_POOL)),
+            HttpNetworkSession::SocketPoolType::kNormal)),
         test_url_(kDefaultUrl),
         test_server_(test_url_),
         key_(HostPortPair::FromURL(test_url_),
@@ -192,15 +211,18 @@ class SpdySessionTest : public PlatformTest, public WithTaskEnvironment {
              NetworkAnonymizationKey(),
              SecureDnsPolicy::kAllow,
              /*disable_cert_verification_network_fetches=*/false),
-        ssl_(SYNCHRONOUS, OK) {}
+        ssl_(SYNCHRONOUS, OK) {
+    feature_list_.InitAndDisableFeature(
+        features::kTcpSocketPoolLimitRandomization);
+  }
 
   ~SpdySessionTest() override {
     // Important to restore the per-pool limit first, since the pool limit must
     // always be greater than group limit, and the tests reduce both limits.
     ClientSocketPoolManager::set_socket_soft_cap_per_pool_for_test(
-        HttpNetworkSession::NORMAL_SOCKET_POOL, old_socket_soft_cap_);
+        HttpNetworkSession::SocketPoolType::kNormal, old_socket_soft_cap_);
     ClientSocketPoolManager::set_max_sockets_per_group_for_test(
-        HttpNetworkSession::NORMAL_SOCKET_POOL, old_max_group_sockets_);
+        HttpNetworkSession::SocketPoolType::kNormal, old_max_group_sockets_);
   }
 
   void SetUp() override {
@@ -372,6 +394,7 @@ class SpdySessionTest : public PlatformTest, public WithTaskEnvironment {
   const url::SchemeHostPort test_server_;
   SpdySessionKey key_;
   SSLSocketDataProvider ssl_;
+  base::test::ScopedFeatureList feature_list_;
 };
 
 class SpdySessionTestWithMockTime : public SpdySessionTest {
@@ -976,10 +999,14 @@ TEST_F(SpdySessionTest, CreateStreamAfterGoAway) {
   EXPECT_TRUE(session_->IsStreamActive(1));
 
   SpdyStreamRequest stream_request;
+  // Note that `can_send_early` is needed to bypass confirming the handshake. If
+  // this regresses, may need to do what other tests to, and use
+  // CreateStreamSynchronously() to create an initial SpdyStream and set up the
+  // socket.
   int rv = stream_request.StartRequest(
-      SPDY_REQUEST_RESPONSE_STREAM, session_, test_url_, false, MEDIUM,
-      SocketTag(), NetLogWithSource(), CompletionOnceCallback(),
-      TRAFFIC_ANNOTATION_FOR_TESTS);
+      SPDY_REQUEST_RESPONSE_STREAM, session_, test_url_,
+      /*can_send_early=*/true, MEDIUM, SocketTag(), NetLogWithSource(),
+      CompletionOnceCallback(), TRAFFIC_ANNOTATION_FOR_TESTS);
   EXPECT_THAT(rv, IsError(ERR_FAILED));
 
   EXPECT_TRUE(session_);
@@ -1989,6 +2016,97 @@ TEST_F(SpdySessionTest, Initialize) {
   EXPECT_NE(net_log_with_source_.source().id, socket_source.id);
 }
 
+namespace {
+
+class FailingGetPeerAddressSocket : public MockTCPClientSocket {
+ public:
+  FailingGetPeerAddressSocket(const AddressList& addresses,
+                              net::NetLog* net_log,
+                              SocketDataProvider* socket)
+      : MockTCPClientSocket(addresses, net_log, socket) {}
+
+  int GetPeerAddress(IPEndPoint* address) const override {
+    return ERR_SOCKET_NOT_CONNECTED;
+  }
+};
+
+class FailingSocketFactory : public MockClientSocketFactory {
+ public:
+  FailingSocketFactory() = default;
+  ~FailingSocketFactory() override = default;
+
+  std::unique_ptr<TransportClientSocket> CreateTransportClientSocket(
+      const AddressList& addresses,
+      std::unique_ptr<SocketPerformanceWatcher> socket_performance_watcher,
+      NetworkQualityEstimator* network_quality_estimator,
+      NetLog* net_log,
+      const NetLogSource& source) override {
+    SocketDataProvider* data_provider = mock_data().GetNext();
+    auto socket = std::make_unique<FailingGetPeerAddressSocket>(
+        addresses, net_log, data_provider);
+    return std::move(socket);
+  }
+};
+
+class SpdySessionParametrizedTest : public SpdySessionTest,
+                                    public testing::WithParamInterface<bool> {
+ public:
+  SpdySessionParametrizedTest() {
+    if (GetParam()) {
+      feature_list_.InitAndEnableFeature(
+          features::kDrainSpdySessionSynchronouslyOnRemoteEndpointDisconnect);
+    } else {
+      feature_list_.InitAndDisableFeature(
+          features::kDrainSpdySessionSynchronouslyOnRemoteEndpointDisconnect);
+    }
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+}  // namespace
+
+INSTANTIATE_TEST_SUITE_P(All,
+                         SpdySessionParametrizedTest,
+                         testing::Values(false, true));
+
+// Regression test for https://crbug.com/482074640.
+TEST_P(SpdySessionParametrizedTest,
+       GetRemoteEndpointDisconnectedDrainsSessionSynchronously) {
+  MockRead reads[] = {MockRead(ASYNC, ERR_IO_PENDING, 0)};
+  StaticSocketDataProvider data(reads, base::span<MockWrite>());
+
+  auto failing_factory = std::make_unique<FailingSocketFactory>();
+  failing_factory->AddSocketDataProvider(&data);
+
+  SSLSocketDataProvider ssl_data(ASYNC, OK);
+  failing_factory->AddSSLSocketDataProvider(&ssl_data);
+
+  // Replace the default socket factory with our failing one.
+  session_deps_.socket_factory = std::move(failing_factory);
+
+  http_session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
+  spdy_session_pool_ = http_session_->spdy_session_pool();
+
+  CreateSpdySession();
+  EXPECT_TRUE(HasSpdySession(spdy_session_pool_, key_));
+
+  // GetRemoteEndpoint() should detect the disconnected socket and drain the
+  // session only if the feature is enabled.
+  IPEndPoint endpoint;
+  EXPECT_THAT(session_->GetRemoteEndpoint(&endpoint),
+              IsError(ERR_SOCKET_NOT_CONNECTED));
+
+  if (GetParam()) {
+    // The session should be removed from the pool synchronously.
+    EXPECT_FALSE(HasSpdySession(spdy_session_pool_, key_));
+  } else {
+    // The session should remain in the pool.
+    EXPECT_TRUE(HasSpdySession(spdy_session_pool_, key_));
+  }
+}
+
 TEST_F(SpdySessionTest, NetLogOnSessionGoaway) {
   spdy::SpdySerializedFrame goaway(spdy_util_.ConstructSpdyGoAway(
       42, spdy::ERROR_CODE_ENHANCE_YOUR_CALM, "foo"));
@@ -2587,6 +2705,219 @@ TEST_F(SpdySessionTest, CloseActivatedStreamThatClosesSession) {
   EXPECT_TRUE(data.AllReadDataConsumed());
 }
 
+// Tests that the session drains when the number of queued capped frames
+// exceeds the limit during a window update. This is a regression test for
+// crbug.com/503420443.
+TEST_F(SpdySessionTest, WindowUpdateExceedsCappedFramesLimit) {
+  // Set the capped frames limit to 1.
+  session_deps_.session_max_queued_capped_frames = 1;
+
+  spdy::SpdySerializedFrame req1(spdy_util_.ConstructSpdyGet(
+      base::span<const std::string_view>(), 1, LOWEST));
+  spdy::SpdySerializedFrame req2(spdy_util_.ConstructSpdyGet(
+      base::span<const std::string_view>(), 3, LOWEST));
+  spdy::SpdySerializedFrame req3(spdy_util_.ConstructSpdyGet(
+      base::span<const std::string_view>(), 5, LOWEST));
+
+  spdy::SpdySerializedFrame rst1(
+      spdy_util_.ConstructSpdyRstStream(1, spdy::ERROR_CODE_CANCEL));
+  spdy::SpdySerializedFrame rst2(
+      spdy_util_.ConstructSpdyRstStream(3, spdy::ERROR_CODE_CANCEL));
+
+  spdy::SpdySerializedFrame goaway(spdy_util_.ConstructSpdyGoAway(
+      0, spdy::ERROR_CODE_PROTOCOL_ERROR, "Exceeded max queued capped frames"));
+
+  MockWrite writes[] = {
+      CreateMockWrite(req1, 0), CreateMockWrite(req2, 1),
+      CreateMockWrite(req3, 2), CreateMockWrite(rst1, 3),
+      CreateMockWrite(rst2, 4), CreateMockWrite(goaway, 5),
+  };
+
+  MockRead reads[] = {
+      MockRead(ASYNC, ERR_IO_PENDING, 6), MockRead(ASYNC, 0, 7)  // EOF
+  };
+
+  SequencedSocketData data(reads, writes);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  AddSSLSocketData();
+
+  CreateNetworkSession();
+  CreateSpdySession();
+
+  // Create three streams.
+  base::WeakPtr<SpdyStream> stream1 =
+      CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM, session_,
+                                test_url_, LOWEST, NetLogWithSource());
+  ASSERT_TRUE(stream1);
+
+  base::WeakPtr<SpdyStream> stream2 =
+      CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM, session_,
+                                test_url_, LOWEST, NetLogWithSource());
+  ASSERT_TRUE(stream2);
+
+  base::WeakPtr<SpdyStream> stream3 =
+      CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM, session_,
+                                test_url_, LOWEST, NetLogWithSource());
+  ASSERT_TRUE(stream3);
+
+  test::StreamDelegateDoNothing delegate1(stream1);
+  stream1->SetDelegate(&delegate1);
+
+  test::StreamDelegateDoNothing delegate2(stream2);
+  stream2->SetDelegate(&delegate2);
+
+  base::RunLoop run_loop;
+  HeadersSentDelegate delegate3(stream3, run_loop.QuitClosure());
+  stream3->SetDelegate(&delegate3);
+
+  quiche::HttpHeaderBlock headers1(
+      spdy_util_.ConstructGetHeaderBlock(kDefaultUrl));
+  stream1->SendRequestHeaders(std::move(headers1), NO_MORE_DATA_TO_SEND);
+
+  quiche::HttpHeaderBlock headers2(
+      spdy_util_.ConstructGetHeaderBlock(kDefaultUrl));
+  stream2->SendRequestHeaders(std::move(headers2), NO_MORE_DATA_TO_SEND);
+
+  quiche::HttpHeaderBlock headers3(
+      spdy_util_.ConstructGetHeaderBlock(kDefaultUrl));
+  stream3->SendRequestHeaders(std::move(headers3), NO_MORE_DATA_TO_SEND);
+
+  // Wait for headers to be sent for all streams.
+  run_loop.Run();
+
+  EXPECT_EQ(1u, stream1->stream_id());
+  EXPECT_EQ(3u, stream2->stream_id());
+  EXPECT_EQ(5u, stream3->stream_id());
+
+  // Cancel stream1 and stream2 to enqueue 2 capped frames (RST_STREAM).
+  // This fills the queue up to count 2 (limit is 1).
+  stream1->Cancel(ERR_ABORTED);
+  stream2->Cancel(ERR_ABORTED);
+
+  // Trigger a window update on stream3. This will try to enqueue a third
+  // capped frame (WINDOW_UPDATE). Since count (2) > limit (1), this should
+  // trigger session draining.
+  stream3->IncreaseRecvWindowSize(40000);
+
+  // Wait for stream3 to close due to session drain.
+  EXPECT_THAT(delegate3.WaitForClose(), IsError(ERR_CONNECTION_CLOSED));
+}
+
+// Tests that the session drains when the number of queued capped frames
+// exceeds the limit due to a Preface Ping triggered during SendData.
+//
+// This test sets up the following scenario:
+// 1. Set the capped frames limit to 1.
+// 2. Create 3 streams: stream1 (GET), stream2 (GET), and stream3 (POST).
+// 3. Cancel stream1 and stream2. Each cancellation enqueues a RST_STREAM frame.
+//    RST_STREAM is a "capped" frame.
+//    After 2 cancellations, there are 2 capped frames in the write queue.
+//    Since 2 > limit(1), the next attempt to enqueue a capped frame will
+//    trigger a session drain.
+//    Note: The effective limit is actually the max queue size + 1.
+// 4. Advance time to make the session appear idle.
+// 5. Call stream3->SendData(). This triggers a Preface Ping.
+// 6. The Preface Ping is a PING frame, which is also a capped frame.
+// 7. Enqueuing the Preface Ping sees that the queue already has 2 capped
+//    frames, which exceeds the limit of 1.
+// 8. This triggers DoDrainSessionAsync().
+//
+// This is a regression test for crbug.com/507365348.
+TEST_F(SpdySessionTest, SendDataExceedsCappedFramesLimitViaPrefacePing) {
+  // Set the capped frames limit to 1.
+  session_deps_.session_max_queued_capped_frames = 1;
+  session_deps_.enable_ping = true;
+  session_deps_.time_func = TheNearFuture;
+  g_time_delta = base::TimeDelta();
+
+  spdy::SpdySerializedFrame req1(spdy_util_.ConstructSpdyGet(
+      base::span<const std::string_view>(), 1, LOWEST));
+  spdy::SpdySerializedFrame req2(spdy_util_.ConstructSpdyGet(
+      base::span<const std::string_view>(), 3, LOWEST));
+  spdy::SpdySerializedFrame req3(
+      spdy_util_.ConstructSpdyPost(kDefaultUrl, 5, kUploadDataSize, LOWEST,
+                                   base::span<const std::string_view>()));
+
+  spdy::SpdySerializedFrame rst1(
+      spdy_util_.ConstructSpdyRstStream(1, spdy::ERROR_CODE_CANCEL));
+  spdy::SpdySerializedFrame rst2(
+      spdy_util_.ConstructSpdyRstStream(3, spdy::ERROR_CODE_CANCEL));
+
+  MockWrite writes[] = {
+      CreateMockWrite(req1, 1), CreateMockWrite(req2, 2),
+      CreateMockWrite(req3, 3), CreateMockWrite(rst1, 4),
+      CreateMockWrite(rst2, 5),
+  };
+
+  MockRead reads[] = {
+      MockRead(SYNCHRONOUS, ERR_IO_PENDING, 0),
+  };
+
+  SequencedSocketData data(reads, writes);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  AddSSLSocketData();
+
+  CreateNetworkSession();
+  CreateSpdySession();
+
+  base::WeakPtr<SpdyStream> stream1 =
+      CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM, session_,
+                                test_url_, LOWEST, NetLogWithSource());
+  ASSERT_TRUE(stream1);
+
+  base::WeakPtr<SpdyStream> stream2 =
+      CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM, session_,
+                                test_url_, LOWEST, NetLogWithSource());
+  ASSERT_TRUE(stream2);
+
+  base::WeakPtr<SpdyStream> stream3 =
+      CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM, session_,
+                                test_url_, LOWEST, NetLogWithSource());
+  ASSERT_TRUE(stream3);
+
+  test::StreamDelegateDoNothing delegate1(stream1);
+  stream1->SetDelegate(&delegate1);
+
+  test::StreamDelegateDoNothing delegate2(stream2);
+  stream2->SetDelegate(&delegate2);
+
+  base::RunLoop run_loop;
+  HeadersSentDelegate delegate3(stream3, run_loop.QuitClosure());
+  stream3->SetDelegate(&delegate3);
+
+  quiche::HttpHeaderBlock headers1(
+      spdy_util_.ConstructGetHeaderBlock(kDefaultUrl));
+  stream1->SendRequestHeaders(std::move(headers1), NO_MORE_DATA_TO_SEND);
+
+  quiche::HttpHeaderBlock headers2(
+      spdy_util_.ConstructGetHeaderBlock(kDefaultUrl));
+  stream2->SendRequestHeaders(std::move(headers2), NO_MORE_DATA_TO_SEND);
+
+  quiche::HttpHeaderBlock headers3(
+      spdy_util_.ConstructPostHeaderBlock(kDefaultUrl, kUploadDataSize));
+  stream3->SendRequestHeaders(std::move(headers3), MORE_DATA_TO_SEND);
+
+  run_loop.Run();
+
+  EXPECT_EQ(1u, stream1->stream_id());
+  EXPECT_EQ(3u, stream2->stream_id());
+  EXPECT_EQ(5u, stream3->stream_id());
+
+  stream1->Cancel(ERR_ABORTED);
+  stream2->Cancel(ERR_ABORTED);
+
+  // Advance time to simulate connection idleness, forcing the next SendData
+  // call to trigger a Preface Ping.
+  g_time_delta += base::Seconds(kSpdyDefaultConnectionAtRiskOfLossSeconds + 1);
+
+  auto body = base::MakeRefCounted<StringIOBuffer>(kUploadData);
+  stream3->SendData(body.get(), kUploadDataSize, NO_MORE_DATA_TO_SEND);
+
+  EXPECT_THAT(delegate3.WaitForClose(), IsError(ERR_CONNECTION_CLOSED));
+}
+
 TEST_F(SpdySessionTest, VerifyDomainAuthentication) {
   SequencedSocketData data;
   session_deps_.socket_factory->AddSocketDataProvider(&data);
@@ -2833,6 +3164,62 @@ TEST_F(SpdySessionTest, CancelTwoStalledCreateStream) {
   EXPECT_EQ(0u, num_active_streams());
   EXPECT_EQ(kInitialMaxConcurrentStreams - 1, num_created_streams());
   EXPECT_EQ(0u, pending_create_stream_queue_size(LOWEST));
+}
+
+// Check that SpdyStreamRequest::StartRequest() does not synchronously notify
+// live streams of their destruction when it notices the socket has been closed.
+// This can racily happen when a new request occurs before a read error from the
+// socket is processed. This synchronously informing other streams of their
+// destruction could result in modifying objects that are on the top of the
+// callstack due to shared state, which can lead to bugs.
+TEST_F(SpdySessionTest,
+       SpdyStreamRequestStartRequestAsynchronouslyNotifiesOtherStreams) {
+  StaticSocketDataProvider data;
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+  AddSSLSocketData();
+
+  CreateNetworkSession();
+  CreateSpdySession();
+
+  // Create a stream on the session, and set up a delegate to watch it.
+  base::WeakPtr<SpdyStream> spdy_stream =
+      CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM, session_,
+                                test_url_, MEDIUM, NetLogWithSource());
+  test::StreamDelegateDoNothing delegate(spdy_stream);
+  spdy_stream->SetDelegate(&delegate);
+
+  // Close the socket, without a read/write event, to simulate the
+  // StartRequest() being the first call to notice the socket is closed.
+  data.set_silently_closed();
+
+  // Start a StreamRequest request. Note that `can_send_early` must be true to
+  // avoid calling MockSSLClientSocket::ConfirmHandshake(), will cause the
+  // request not to check the state of the connection, while it waits for the
+  // SSL handshake to be confirmed (that handshake confirmation check will also
+  // cause the MockSSLClientSocket to CHECK, if it happens, as the socket is
+  // closed).
+  SpdyStreamRequest request;
+  int rv = request.StartRequest(
+      SPDY_REQUEST_RESPONSE_STREAM, session_, test_url_,
+      /*can_send_early=*/true, LOWEST, SocketTag(), NetLogWithSource(),
+      base::BindOnce([](int result) {
+        ADD_FAILURE()
+            << "Callback should not be invoked on synchronous completion";
+      }),
+      TRAFFIC_ANNOTATION_FOR_TESTS);
+  // The request should synchronously fail.
+  EXPECT_THAT(rv, IsError(ERR_CONNECTION_CLOSED));
+
+  // The session should be flagged as going away, and should no longer be
+  // available but should still exist.
+  EXPECT_TRUE(session_->IsGoingAway());
+  EXPECT_FALSE(HasSpdySession(spdy_session_pool_, key_));
+  // The first stream should not have been closed synchronously. Instead, a task
+  // should have been posted to close it.
+  EXPECT_FALSE(delegate.StreamIsClosed());
+
+  // Wait for the stream to be closed.
+  EXPECT_THAT(delegate.WaitForClose(), IsError(ERR_CONNECTION_CLOSED));
 }
 
 // Test that SpdySession::DoReadLoop reads data from the socket
@@ -3306,9 +3693,9 @@ TEST_F(SpdySessionTest, ProtocolNegotiation) {
 // pointers to the idle session are currently held.
 TEST_F(SpdySessionTest, CloseOneIdleConnection) {
   ClientSocketPoolManager::set_max_sockets_per_group_for_test(
-      HttpNetworkSession::NORMAL_SOCKET_POOL, 1);
+      HttpNetworkSession::SocketPoolType::kNormal, 1);
   ClientSocketPoolManager::set_socket_soft_cap_per_pool_for_test(
-      HttpNetworkSession::NORMAL_SOCKET_POOL, 1);
+      HttpNetworkSession::SocketPoolType::kNormal, 1);
 
   MockRead reads[] = {
     MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
@@ -3322,7 +3709,7 @@ TEST_F(SpdySessionTest, CloseOneIdleConnection) {
   CreateNetworkSession();
 
   ClientSocketPool* pool = http_session_->GetSocketPool(
-      HttpNetworkSession::NORMAL_SOCKET_POOL, ProxyChain::Direct());
+      HttpNetworkSession::SocketPoolType::kNormal, ProxyChain::Direct());
 
   // Create an idle SPDY session.
   CreateSpdySession();
@@ -3338,7 +3725,8 @@ TEST_F(SpdySessionTest, CloseOneIdleConnection) {
           ClientSocketPool::GroupId(
               url::SchemeHostPort(url::kHttpScheme, "2.com", 80),
               PrivacyMode::PRIVACY_MODE_DISABLED, NetworkAnonymizationKey(),
-              SecureDnsPolicy::kAllow, /*disable_cert_network_fetches=*/false),
+              SecureDnsPolicy::kAllow, /*disable_cert_network_fetches=*/false,
+              handles::kInvalidNetworkHandle),
           ClientSocketPool::SocketParams::CreateForHttpForTesting(),
           std::nullopt /* proxy_annotation_tag */, DEFAULT_PRIORITY,
           SocketTag(), ClientSocketPool::RespectLimits::ENABLED,
@@ -3358,9 +3746,9 @@ TEST_F(SpdySessionTest, CloseOneIdleConnection) {
 // has an alias.
 TEST_F(SpdySessionTest, CloseOneIdleConnectionWithAlias) {
   ClientSocketPoolManager::set_max_sockets_per_group_for_test(
-      HttpNetworkSession::NORMAL_SOCKET_POOL, 1);
+      HttpNetworkSession::SocketPoolType::kNormal, 1);
   ClientSocketPoolManager::set_socket_soft_cap_per_pool_for_test(
-      HttpNetworkSession::NORMAL_SOCKET_POOL, 1);
+      HttpNetworkSession::SocketPoolType::kNormal, 1);
 
   MockRead reads[] = {
     MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
@@ -3377,7 +3765,7 @@ TEST_F(SpdySessionTest, CloseOneIdleConnectionWithAlias) {
   CreateNetworkSession();
 
   ClientSocketPool* pool = http_session_->GetSocketPool(
-      HttpNetworkSession::NORMAL_SOCKET_POOL, ProxyChain::Direct());
+      HttpNetworkSession::SocketPoolType::kNormal, ProxyChain::Direct());
 
   SpdySessionKey key1(HostPortPair("www.example.org", 80),
                       PRIVACY_MODE_DISABLED, ProxyChain::Direct(),
@@ -3445,7 +3833,8 @@ TEST_F(SpdySessionTest, CloseOneIdleConnectionWithAlias) {
           ClientSocketPool::GroupId(
               url::SchemeHostPort(url::kHttpScheme, "3.com", 80),
               PrivacyMode::PRIVACY_MODE_DISABLED, NetworkAnonymizationKey(),
-              SecureDnsPolicy::kAllow, /*disable_cert_network_fetches=*/false),
+              SecureDnsPolicy::kAllow, /*disable_cert_network_fetches=*/false,
+              handles::kInvalidNetworkHandle),
           ClientSocketPool::SocketParams::CreateForHttpForTesting(),
           std::nullopt /* proxy_annotation_tag */, DEFAULT_PRIORITY,
           SocketTag(), ClientSocketPool::RespectLimits::ENABLED,
@@ -3471,9 +3860,9 @@ TEST_F(SpdySessionTest, CloseOneIdleConnectionWithAlias) {
 // a lower layer pool stalled on the per-pool socket limit.
 TEST_F(SpdySessionTest, CloseSessionOnIdleWhenPoolStalled) {
   ClientSocketPoolManager::set_max_sockets_per_group_for_test(
-      HttpNetworkSession::NORMAL_SOCKET_POOL, 1);
+      HttpNetworkSession::SocketPoolType::kNormal, 1);
   ClientSocketPoolManager::set_socket_soft_cap_per_pool_for_test(
-      HttpNetworkSession::NORMAL_SOCKET_POOL, 1);
+      HttpNetworkSession::SocketPoolType::kNormal, 1);
 
   MockRead reads[] = {
     MockRead(SYNCHRONOUS, ERR_IO_PENDING)  // Stall forever.
@@ -3499,7 +3888,7 @@ TEST_F(SpdySessionTest, CloseSessionOnIdleWhenPoolStalled) {
   CreateNetworkSession();
 
   ClientSocketPool* pool = http_session_->GetSocketPool(
-      HttpNetworkSession::NORMAL_SOCKET_POOL, ProxyChain::Direct());
+      HttpNetworkSession::SocketPoolType::kNormal, ProxyChain::Direct());
 
   // Create a SPDY session.
   CreateSpdySession();
@@ -3532,7 +3921,8 @@ TEST_F(SpdySessionTest, CloseSessionOnIdleWhenPoolStalled) {
           ClientSocketPool::GroupId(
               url::SchemeHostPort(url::kHttpScheme, "2.com", 80),
               PrivacyMode::PRIVACY_MODE_DISABLED, NetworkAnonymizationKey(),
-              SecureDnsPolicy::kAllow, /*disable_cert_network_fetches=*/false),
+              SecureDnsPolicy::kAllow, /*disable_cert_network_fetches=*/false,
+              handles::kInvalidNetworkHandle),
           ClientSocketPool::SocketParams::CreateForHttpForTesting(),
           std::nullopt /* proxy_annotation_tag */, DEFAULT_PRIORITY,
           SocketTag(), ClientSocketPool::RespectLimits::ENABLED,
@@ -3842,6 +4232,52 @@ TEST_F(SpdySessionTestWithMockTime, FlowControlSlowReads) {
   IncreaseRecvWindowSize(delta_window_size);
   EXPECT_EQ(initial_window_size, session_recv_window_size());
   EXPECT_EQ(0, session_unacked_recv_window_bytes());
+}
+
+TEST_F(SpdySessionTestWithMockTime, PendingStreamRequestQueueWaitTime) {
+  MockRead reads[] = {
+      MockRead(SYNCHRONOUS, ERR_IO_PENDING, 0)  // Stall forever.
+  };
+  StaticSocketDataProvider data(reads, base::span<MockWrite>());
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  AddSSLSocketData();
+
+  CreateNetworkSession();
+  CreateSpdySession();
+
+  // Create kInitialMaxConcurrentStreams streams.
+  std::vector<base::WeakPtr<SpdyStream>> streams;
+  for (size_t i = 0; i < kInitialMaxConcurrentStreams; ++i) {
+    base::WeakPtr<SpdyStream> spdy_stream =
+        CreateStreamSynchronously(SPDY_BIDIRECTIONAL_STREAM, session_,
+                                  test_url_, MEDIUM, NetLogWithSource());
+    ASSERT_TRUE(spdy_stream);
+    streams.push_back(spdy_stream);
+  }
+
+  // This request should be stalled.
+  TestCompletionCallback callback;
+  SpdyStreamRequest request;
+  int rv =
+      request.StartRequest(SPDY_BIDIRECTIONAL_STREAM, session_, test_url_,
+                           false, MEDIUM, SocketTag(), NetLogWithSource(),
+                           callback.callback(), TRAFFIC_ANNOTATION_FOR_TESTS);
+  EXPECT_EQ(ERR_IO_PENDING, rv);
+
+  // Advance time by 100ms.
+  constexpr base::TimeDelta kWaitTime = base::Milliseconds(100);
+  FastForwardBy(kWaitTime);
+
+  // Close one of the active streams.
+  streams[0]->Close();
+
+  // The stalled request should now be satisfied.
+  rv = callback.WaitForResult();
+  EXPECT_THAT(rv, IsOk());
+
+  // Check the queue wait time.
+  EXPECT_GE(request.max_stream_limit_pending_delay(), kWaitTime);
 }
 
 // SpdySession::{Increase,Decrease}SendWindowSize should properly

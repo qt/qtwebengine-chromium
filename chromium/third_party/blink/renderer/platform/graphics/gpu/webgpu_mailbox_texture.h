@@ -35,14 +35,16 @@ class PLATFORM_EXPORT WebGPUMailboxTexture
       const wgpu::Device& device,
       wgpu::TextureUsage usage,
       scoped_refptr<StaticBitmapImage> image,
-      const SkImageInfo& info,
       const gfx::Rect& image_sub_rect,
       bool is_dummy_mailbox_texture);
 
+  // Always returns a valid WebGPUMailboxTexture.
   static scoped_refptr<WebGPUMailboxTexture> FromCanvasResource(
       scoped_refptr<DawnControlClientHolder> dawn_control_client,
       const wgpu::Device& device,
       wgpu::TextureUsage usage,
+      scoped_refptr<gpu::ClientSharedImage> shared_image,
+      const gpu::SyncToken& sync_token,
       std::unique_ptr<RecyclableCanvasResource> recyclable_canvas_resource);
 
   static scoped_refptr<WebGPUMailboxTexture> FromExistingSharedImage(

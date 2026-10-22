@@ -6,7 +6,6 @@
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Trace from '../../models/trace/trace.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
-import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import thirdPartyTreeViewStyles from './thirdPartyTreeView.css.js';
@@ -39,8 +38,12 @@ export class ThirdPartyTreeViewWidget extends TimelineTreeView.TimelineTreeView 
   // want to do this when the user hovers.
   protected override autoSelectFirstChildOnRefresh = false;
 
-  constructor() {
-    super();
+  #onRowHovered?: (node: Trace.Extras.TraceTree.Node|null, events?: Trace.Types.Events.Event[]) => void;
+  #onBottomUpButtonClicked?: (node: Trace.Extras.TraceTree.Node|null) => void;
+  #onRowClicked?: (node: Trace.Extras.TraceTree.Node|null, events?: Trace.Types.Events.Event[]) => void;
+
+  constructor(element?: HTMLElement) {
+    super(element);
     this.element.setAttribute('jslog', `${VisualLogging.pane('third-party-tree').track({hover: true})}`);
     this.init();
     this.dataGrid.markColumnAsSortedBy('self', DataGrid.DataGrid.Order.Descending);
@@ -52,22 +55,28 @@ export class ThirdPartyTreeViewWidget extends TimelineTreeView.TimelineTreeView 
     this.dataGrid.expandNodesWhenArrowing = false;
   }
 
+  override isThirdPartyTreeView(): boolean {
+    return true;
+  }
+
   override wasShown(): void {
     super.wasShown();
     this.registerRequiredCSS(thirdPartyTreeViewStyles);
   }
 
-  override setModelWithEvents(
-      selectedEvents: Trace.Types.Events.Event[]|null, parsedTrace?: Trace.TraceModel.ParsedTrace|null,
-      entityMappings?: Trace.EntityMapper.EntityMapper|null): void {
-    super.setModelWithEvents(selectedEvents, parsedTrace, entityMappings);
+  override set model(model: {
+    selectedEvents: Trace.Types.Events.Event[]|null,
+    parsedTrace: Trace.TraceModel.ParsedTrace|null,
+    entityMapper: Trace.EntityMapper.EntityMapper|null,
+  }) {
+    super.model = model;
 
-    const hasEvents = Boolean(selectedEvents && selectedEvents.length > 0);
+    const hasEvents = Boolean(model.selectedEvents && model.selectedEvents.length > 0);
     this.element.classList.toggle('empty-table', !hasEvents);
   }
 
   override buildTree(): Trace.Extras.TraceTree.Node {
-    const parsedTrace = this.parsedTrace();
+    const parsedTrace = this.parsedTrace;
     const entityMapper = this.entityMapper();
 
     if (!parsedTrace || !entityMapper) {
@@ -87,7 +96,7 @@ export class ThirdPartyTreeViewWidget extends TimelineTreeView.TimelineTreeView 
     const filter = new Trace.Extras.TraceFilter.VisibleEventsFilter(
         Trace.Styles.visibleTypes().concat([Trace.Types.Events.Name.SYNTHETIC_NETWORK_REQUEST]));
 
-    const node = new Trace.Extras.TraceTree.BottomUpRootNode(this.selectedEvents(), {
+    const node = new Trace.Extras.TraceTree.BottomUpRootNode(this.selectedEvents, {
       textFilter: this.textFilter(),
       filters: [filter],
       startTime: this.startTime,
@@ -217,7 +226,7 @@ export class ThirdPartyTreeViewWidget extends TimelineTreeView.TimelineTreeView 
   displayInfoForGroupNode(node: Trace.Extras.TraceTree.Node): {
     name: string,
     color: string,
-    icon: (Element|undefined),
+    icon?: Element,
   } {
     const color = 'gray';
     const unattributed = i18nString(UIStrings.unattributed);
@@ -225,10 +234,13 @@ export class ThirdPartyTreeViewWidget extends TimelineTreeView.TimelineTreeView 
     // This `undefined` is [unattributed]
     // TODO(paulirish): Improve attribution to reduce amount of items in [unattributed].
     const domainName = id ? this.entityMapper()?.entityForEvent(node.event)?.name || id : undefined;
-    return {name: domainName || unattributed, color, icon: undefined};
+    return {
+      name: domainName || unattributed,
+      color,
+    };
   }
 
-  nodeIsFirstParty(node: Trace.Extras.TraceTree.Node): boolean {
+  override nodeIsFirstParty(node: Trace.Extras.TraceTree.Node): boolean {
     const mapper = this.entityMapper();
     if (!mapper) {
       return false;
@@ -237,7 +249,7 @@ export class ThirdPartyTreeViewWidget extends TimelineTreeView.TimelineTreeView 
     return firstParty === mapper.entityForEvent(node.event);
   }
 
-  nodeIsExtension(node: Trace.Extras.TraceTree.Node): boolean {
+  override nodeIsExtension(node: Trace.Extras.TraceTree.Node): boolean {
     const mapper = this.entityMapper();
     if (!mapper) {
       return false;
@@ -245,34 +257,41 @@ export class ThirdPartyTreeViewWidget extends TimelineTreeView.TimelineTreeView 
     const entity = mapper.entityForEvent(node.event);
     return Boolean(entity) && entity?.category === 'Chrome Extension';
   }
-}
 
-export class ThirdPartyTreeElement extends UI.Widget.WidgetElement<UI.Widget.Widget> {
-  #treeView?: ThirdPartyTreeViewWidget;
-
-  set treeView(treeView: ThirdPartyTreeViewWidget) {
-    this.#treeView = treeView;
+  override get maxRows(): number|undefined {
+    return super.maxRows;
   }
 
-  constructor() {
-    super();
-    this.style.display = 'contents';
+  override set maxRows(maxRows: number) {
+    super.maxRows = maxRows;
+    this.element.style.setProperty('--max-rows', String(maxRows));
+    this.element.classList.toggle('has-max-rows', Boolean(maxRows));
   }
 
-  override createWidget(): UI.Widget.Widget {
-    const containerWidget = new UI.Widget.Widget(this);
-    containerWidget.contentElement.style.display = 'contents';
-    if (this.#treeView) {
-      this.#treeView.show(containerWidget.contentElement);
+  set onRowHovered(callback: (node: Trace.Extras.TraceTree.Node|null, events?: Trace.Types.Events.Event[]) => void) {
+    if (!this.#onRowHovered) {
+      this.addEventListener(TimelineTreeView.TimelineTreeView.Events.TREE_ROW_HOVERED, ({data}) => {
+        this.#onRowHovered?.(data.node, data.events);
+      });
     }
-    return containerWidget;
+    this.#onRowHovered = callback;
   }
-}
 
-customElements.define('devtools-performance-third-party-tree-view', ThirdPartyTreeElement);
+  set onBottomUpButtonClicked(callback: (node: Trace.Extras.TraceTree.Node|null) => void) {
+    if (!this.#onBottomUpButtonClicked) {
+      this.addEventListener(TimelineTreeView.TimelineTreeView.Events.BOTTOM_UP_BUTTON_CLICKED, ({data}) => {
+        this.#onBottomUpButtonClicked?.(data);
+      });
+    }
+    this.#onBottomUpButtonClicked = callback;
+  }
 
-declare global {
-  interface HTMLElementTagNameMap {
-    'devtools-performance-third-party-tree-view': ThirdPartyTreeElement;
+  set onRowClicked(callback: (node: Trace.Extras.TraceTree.Node|null, events?: Trace.Types.Events.Event[]) => void) {
+    if (!this.#onRowClicked) {
+      this.addEventListener(TimelineTreeView.TimelineTreeView.Events.TREE_ROW_CLICKED, ({data}) => {
+        this.#onRowClicked?.(data.node, data.events);
+      });
+    }
+    this.#onRowClicked = callback;
   }
 }

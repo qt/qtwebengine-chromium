@@ -753,6 +753,7 @@ static void init_config(struct AV1_COMP *cpi, const AV1EncoderConfig *oxcf) {
   cpi->svc.number_temporal_layers = 1;
   cm->spatial_layer_id = 0;
   cm->temporal_layer_id = 0;
+  cpi->src_sad_blk_alloc_size = 0;
   // Init rtc_ref parameters.
   cpi->ppi->rtc_ref.set_ref_frame_config = 0;
   cpi->ppi->rtc_ref.non_reference_frame = 0;
@@ -879,6 +880,7 @@ void av1_change_config(struct AV1_COMP *cpi, const AV1EncoderConfig *oxcf,
   const FrameDimensionCfg *const frm_dim_cfg = &cpi->oxcf.frm_dim_cfg;
   const RateControlCfg *const rc_cfg = &oxcf->rc_cfg;
   FeatureFlags *const features = &cm->features;
+  const int is_highbitdepth = seq_params->use_highbitdepth;
 
   // in case of LAP, lag in frames is set according to number of lap buffers
   // calculated at init time. This stores and restores LAP's lag in frames to
@@ -974,6 +976,14 @@ void av1_change_config(struct AV1_COMP *cpi, const AV1EncoderConfig *oxcf,
         x->e_mbd.tmp_obmc_bufs[i] = x->tmp_pred_bufs[i];
       }
     }
+  }
+
+  if (x->upsample_pred == NULL) {
+    CHECK_MEM_ERROR(
+        cm, x->upsample_pred,
+        aom_memalign(16, (1 + is_highbitdepth) * ((MAX_SB_SIZE + 16) + 16) *
+                             MAX_SB_SIZE * sizeof(*x->upsample_pred)));
+    x->e_mbd.tmp_upsample_pred = x->upsample_pred;
   }
 
   av1_reset_segment_features(cm);
@@ -3148,20 +3158,24 @@ static int encode_without_recode(AV1_COMP *cpi) {
 
   // This is for rtc temporal filtering case.
   if (is_psnr_calc_enabled(cpi) && cpi->sf.rt_sf.use_rtc_tf) {
-    const SequenceHeader *seq_params = cm->seq_params;
-
     if (cpi->orig_source.buffer_alloc_sz == 0 ||
-        cpi->rc.prev_coded_width != cpi->oxcf.frm_dim_cfg.width ||
-        cpi->rc.prev_coded_height != cpi->oxcf.frm_dim_cfg.height) {
-      // Allocate a source buffer to store the true source for psnr calculation.
-      if (aom_alloc_frame_buffer(
-              &cpi->orig_source, cpi->oxcf.frm_dim_cfg.width,
-              cpi->oxcf.frm_dim_cfg.height, seq_params->subsampling_x,
-              seq_params->subsampling_y, seq_params->use_highbitdepth,
-              cpi->oxcf.border_in_pixels, cm->features.byte_alignment, false,
-              0))
+        cpi->orig_source.y_crop_width != cpi->source->y_crop_width ||
+        cpi->orig_source.y_crop_height != cpi->source->y_crop_height ||
+        cpi->orig_source.subsampling_x != cpi->source->subsampling_x ||
+        cpi->orig_source.subsampling_y != cpi->source->subsampling_y ||
+        cpi->orig_source.flags != cpi->source->flags) {
+      // Allocate a source buffer to store the original source for psnr
+      // calculation.
+      const int use_highbitdepth =
+          (cpi->source->flags & YV12_FLAG_HIGHBITDEPTH) != 0;
+      if (aom_alloc_frame_buffer(&cpi->orig_source, cpi->source->y_crop_width,
+                                 cpi->source->y_crop_height,
+                                 cpi->source->subsampling_x,
+                                 cpi->source->subsampling_y, use_highbitdepth,
+                                 cpi->oxcf.border_in_pixels,
+                                 cm->features.byte_alignment, false, 0))
         aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
-                           "Failed to allocate scaled buffer");
+                           "Failed to allocate cpi->orig_source buffer");
     }
 
     aom_yv12_copy_y(cpi->source, &cpi->orig_source, 1);
@@ -3429,9 +3443,7 @@ static int encode_with_recode_loop(AV1_COMP *cpi, size_t *size, uint8_t *dest,
       }
     }
 
-    if (cpi->ext_ratectrl.ready &&
-        (cpi->ext_ratectrl.funcs.rc_type & AOM_RC_QP) != 0 &&
-        cpi->ext_ratectrl.funcs.get_encodeframe_decision != NULL) {
+    if (av1_encode_for_extrc(&cpi->ext_ratectrl)) {
       aom_codec_err_t codec_status;
       aom_rc_encodeframe_decision_t encode_frame_decision;
       const int sb_rows = CEIL_POWER_OF_TWO(cm->mi_params.mi_rows,
@@ -3447,6 +3459,7 @@ static int encode_with_recode_loop(AV1_COMP *cpi, size_t *size, uint8_t *dest,
                 sb_rows * sb_cols, sizeof(*cpi->ext_ratectrl.sb_params_list)));
       }
       encode_frame_decision.sb_params_list = cpi->ext_ratectrl.sb_params_list;
+      encode_frame_decision.use_delta_q = &cpi->ext_ratectrl.use_delta_q;
       codec_status = av1_extrc_get_encodeframe_decision(
           &cpi->ext_ratectrl, cpi->gf_frame_index, &encode_frame_decision);
       if (codec_status != AOM_CODEC_OK) {
@@ -3603,9 +3616,7 @@ static int encode_with_recode_loop(AV1_COMP *cpi, size_t *size, uint8_t *dest,
     }
 
     // Do not recode if external rate control is used.
-    if (cpi->ext_ratectrl.ready &&
-        (cpi->ext_ratectrl.funcs.rc_type & AOM_RC_QP) != 0 &&
-        cpi->ext_ratectrl.funcs.get_encodeframe_decision != NULL) {
+    if (av1_encode_for_extrc(&cpi->ext_ratectrl)) {
       loop = 0;
     }
 #if CONFIG_BITRATE_ACCURACY || CONFIG_RD_COMMAND
@@ -3896,7 +3907,7 @@ static int encode_with_and_without_superres(AV1_COMP *cpi, size_t *size,
     // Note: Both use common rdmult based on base qindex of fullres.
     const int64_t rdmult = av1_compute_rd_mult_based_on_qindex(
         bit_depth, update_type, cm->quant_params.base_qindex,
-        cpi->oxcf.tune_cfg.tuning);
+        cpi->oxcf.tune_cfg.tuning, cpi->oxcf.mode);
 
     // Find the best rdcost among all superres denoms.
     int best_denom = -1;
@@ -3961,7 +3972,7 @@ static int encode_with_and_without_superres(AV1_COMP *cpi, size_t *size,
     // Note: Both use common rdmult based on base qindex of fullres.
     const int64_t rdmult = av1_compute_rd_mult_based_on_qindex(
         bit_depth, update_type, cm->quant_params.base_qindex,
-        cpi->oxcf.tune_cfg.tuning);
+        cpi->oxcf.tune_cfg.tuning, cpi->oxcf.mode);
     proj_rdcost1 =
         RDCOST_DBL_WITH_NATIVE_BD_DIST(rdmult, rate1, sse1, bit_depth);
     const double proj_rdcost2 =
@@ -4601,7 +4612,7 @@ int av1_encode(AV1_COMP *const cpi, uint8_t *const dest, size_t dest_size,
 
   if (is_stat_generation_stage(cpi)) {
 #if !CONFIG_REALTIME_ONLY
-    if (cpi->oxcf.q_cfg.use_fixed_qp_offsets)
+    if (cpi->oxcf.q_cfg.use_fixed_qp_offsets != 0)
       av1_noop_first_pass_frame(cpi, frame_input->ts_duration);
     else
       av1_first_pass(cpi, frame_input->ts_duration);

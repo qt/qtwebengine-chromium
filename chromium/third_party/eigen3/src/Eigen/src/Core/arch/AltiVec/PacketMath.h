@@ -41,7 +41,7 @@ typedef __vector signed char Packet16c;
 typedef __vector unsigned char Packet16uc;
 typedef eigen_packet_wrapper<__vector unsigned short int, 0> Packet8bf;
 
-// We don't want to write the same code all the time, but we need to reuse the constants
+// To avoid repeating the same code, but we need to reuse the constants
 // and it doesn't really work to declare them global, so we define macros instead
 #define EIGEN_DECLARE_CONST_FAST_Packet4f(NAME, X) Packet4f p4f_##NAME = {X, X, X, X}
 
@@ -1163,7 +1163,7 @@ EIGEN_STRONG_INLINE Packet4i pdiv<Packet4i>(const Packet4i& a, const Packet4i& b
 #endif
 }
 
-// for some weird raisons, it has to be overloaded for packet of integers
+// This overload is required for integer packet types.
 template <>
 EIGEN_STRONG_INLINE Packet4f pmadd(const Packet4f& a, const Packet4f& b, const Packet4f& c) {
   return vec_madd(a, b, c);
@@ -3274,7 +3274,7 @@ EIGEN_STRONG_INLINE Packet2d pdiv<Packet2d>(const Packet2d& a, const Packet2d& b
   return vec_div(a, b);
 }
 
-// for some weird raisons, it has to be overloaded for packet of integers
+// This overload is required for integer packet types.
 template <>
 EIGEN_STRONG_INLINE Packet2d pmadd(const Packet2d& a, const Packet2d& b, const Packet2d& c) {
   return vec_madd(a, b, c);

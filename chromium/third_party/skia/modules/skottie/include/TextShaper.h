@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -184,13 +184,6 @@ public:
     // below the box bottom).
     static Result Shape(const SkString& text, const TextDesc& desc, const SkRect& box,
                         const sk_sp<SkFontMgr>&, const sk_sp<SkShapers::Factory>&);
-
-#if !defined(SK_DISABLE_LEGACY_SHAPER_FACTORY)
-    static Result Shape(const SkString& text, const TextDesc& desc, const SkPoint& point,
-                        const sk_sp<SkFontMgr>&);
-    static Result Shape(const SkString& text, const TextDesc& desc, const SkRect& box,
-                        const sk_sp<SkFontMgr>&);
-#endif
 
 private:
     Shaper() = delete;

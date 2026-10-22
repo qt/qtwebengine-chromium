@@ -8,7 +8,7 @@ import '@material/web/button/filled-button.js';
 import '@material/web/button/text-button.js';
 
 import {css, CSSResultGroup, html, LitElement} from 'lit';
-import {ifDefined} from 'lit/directives/if-defined';
+import {ifDefined} from 'lit/directives/if-defined.js';
 
 // The padding on the label start/end when there is no icons.
 const LABEL_PADDING_START_END = css`16px`;

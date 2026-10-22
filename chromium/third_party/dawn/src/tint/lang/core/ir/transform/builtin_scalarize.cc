@@ -26,6 +26,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/ir/transform/builtin_scalarize.h"
+
 #include <cstdint>
 #include <utility>
 
@@ -134,8 +135,7 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BuiltinScalarize(Module& ir, const BuiltinScalarizeConfig& config) {
-    TINT_CHECK_RESULT(
-        ValidateAndDumpIfNeeded(ir, "core.BuiltinScalarize", kBuiltinScalarizeCapabilities));
+    core::ir::AssertValid(ir, kBuiltinScalarizeCapabilities, "before core.BuiltinScalarize");
 
     State{config, ir}.Process();
 

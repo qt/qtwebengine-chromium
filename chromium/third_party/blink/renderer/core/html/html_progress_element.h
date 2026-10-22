@@ -39,6 +39,10 @@ class CORE_EXPORT HTMLProgressElement final : public HTMLElement {
   explicit HTMLProgressElement(Document&);
   ~HTMLProgressElement() override;
 
+  ElementType GetElementType() const final {
+    return ElementType::kHTMLProgressElement;
+  }
+
   double value() const;
   void setValue(double);
 
@@ -52,6 +56,9 @@ class CORE_EXPORT HTMLProgressElement final : public HTMLElement {
   bool IsRichlyEditableForAccessibility() const override { return false; }
 
   void Trace(Visitor*) const override;
+
+ protected:
+  bool SupportsBaseAppearanceInternal(BaseAppearanceValue) const override;
 
  private:
   bool ShouldAppearIndeterminate() const override;

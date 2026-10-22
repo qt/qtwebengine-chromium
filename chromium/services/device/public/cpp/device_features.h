@@ -20,15 +20,24 @@ namespace features {
 // The features should be documented alongside the definition of their values
 // in the .cc file.
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kGenericSensorExtraClasses);
+DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(
+    kSensorsAllowAskBlockPermissionModel);
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kSerialPortConnected);
+DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kWebSerialWorldIsolatedCache);
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kWebUsbBlocklist);
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(
     kWebUsbProtectedClassControlTransferBlock);
+DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kWebUsbHardenEndpointAliasing);
+DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(
+    kWebUsbEnforceStandardRequestAllowlist);
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(
     kWebHidAttributeAllowsBackForwardCache);
 #if BUILDFLAG(IS_WIN)
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kWinSystemLocationPermission);
+DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(
+    kWinSystemLocationPermissionEventBased);
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kHidGetFeatureReportFix);
+DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kSafeHidConnectionWinClose);
 
 extern const DEVICE_FEATURES_EXPORT base::FeatureParam<int>
     kWinSystemLocationPermissionPollingParam;
@@ -53,6 +62,10 @@ DEVICE_FEATURES_EXPORT bool IsOsLevelGeolocationPermissionSupportEnabled();
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX)
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kAutomaticUsbDetach);
 #endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX)
+
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kProductNameOverHidName);
+#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
 #if !BUILDFLAG(IS_WIN)
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kSerialSplitDtrAndRts);

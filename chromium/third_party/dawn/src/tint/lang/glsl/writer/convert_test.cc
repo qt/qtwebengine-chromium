@@ -46,7 +46,8 @@ TEST_F(GlslWriterTest, ConvertU32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 uint a() {
   int v = 2;

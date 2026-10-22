@@ -47,8 +47,7 @@ export class BuiltInAi extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   }
 
   async getLanguageModelAvailability(): Promise<LanguageModelAvailability> {
-    if (!Root.Runtime.hostConfig.devToolsConsoleInsightsTeasers?.enabled ||
-        (Root.Runtime.hostConfig.devToolsAiPromptApi && !Root.Runtime.hostConfig.devToolsAiPromptApi.enabled)) {
+    if (!Root.Runtime.hostConfig.devToolsConsoleInsightsTeasers?.enabled) {
       this.#availability = LanguageModelAvailability.DISABLED;
       return this.#availability;
     }

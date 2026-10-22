@@ -54,6 +54,13 @@ if (!defined(partition_alloc_dcheck_always_on_default)) {
   }
 }
 
+# Enables a fallback to the system free() for unmanaged pointers.
+# For example, this is necessary on some Android systems where libraries
+# bypass the allocator shim.
+if (!defined(partition_alloc_enable_system_free_fallback_default)) {
+  partition_alloc_enable_system_free_fallback_default = false
+}
+
 # Allows embedders to optionally disable PartitionAlloc.
 if (!defined(use_partition_alloc_default)) {
   use_partition_alloc_default = true
@@ -98,6 +105,12 @@ has_memory_tagging = current_cpu == "arm64" && is_clang && !is_asan &&
 declare_args() {
   # Debug configuration.
   partition_alloc_is_debug = partition_alloc_is_debug_default
+
+  # Enables a fallback to the system free() for unmanaged pointers.
+  # For example, this is necessary on some Android systems where libraries
+  # bypass the allocator shim.
+  partition_alloc_enable_system_free_fallback =
+      partition_alloc_enable_system_free_fallback_default
 
   # Enable PA_DCHECKs in PartitionAlloc in release mode.
   partition_alloc_dcheck_always_on = partition_alloc_dcheck_always_on_default
@@ -363,10 +376,6 @@ declare_args() {
   use_full_mte = false
 }
 
-stack_scan_supported = current_cpu == "x64" || current_cpu == "x86" ||
-                       current_cpu == "arm" || current_cpu == "arm64" ||
-                       current_cpu == "riscv64" || current_cpu == "loong64"
-
 # We want to provide assertions that guard against inconsistent build
 # args, but there is no point in having them fire if we're not building
 # PartitionAlloc at all. If `use_partition_alloc` is false, we jam all
@@ -415,6 +424,9 @@ if (!has_memory_tagging) {
 # enable_backup_ref_ptr_support is true.
 assert(enable_backup_ref_ptr_support || !use_raw_ptr_backup_ref_impl,
        "Can't use RawPtrBackupRefImpl if BRP isn't enabled at all")
+
+assert(!partition_alloc_enable_system_free_fallback || is_android,
+       "System free fallback is only supported on Android")
 
 # enable_backup_ref_ptr_slow_checks can only be used if
 # enable_backup_ref_ptr_support is true.
@@ -547,3 +559,6 @@ declare_args() {
   enable_partition_lock_priority_inheritance =
       is_android && (current_cpu == "x64" || current_cpu == "arm64")
 }
+
+# Activates bounds checks for two-arg constructor of `base::span`.
+use_checked_span = use_partition_alloc && false

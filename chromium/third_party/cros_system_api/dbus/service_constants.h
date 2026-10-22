@@ -267,8 +267,6 @@ const char kChromeFeaturesServiceIsRootNsDnsProxyEnabledMethod[] =
     "IsRootNsDnsProxyEnabled";
 const char kChromeFeaturesServiceIsSuspendToDiskEnabledMethod[] =
     "IsSuspendToDiskEnabled";
-const char kChromeFeaturesServiceSetCrostiniVmTypeMethod[] =
-    "SetCrostiniVmType";
 
 const char kUrlHandlerServiceName[] = "org.chromium.UrlHandlerService";
 const char kUrlHandlerServicePath[] = "/org/chromium/UrlHandlerService";
@@ -317,6 +315,16 @@ const char kVmPermissionServiceRegisterVmMethod[] = "RegisterVm";
 const char kVmPermissionServiceUnregisterVmMethod[] = "UnregisterVm";
 const char kVmPermissionServiceGetPermissionsMethod[] = "GetPermissions";
 const char kVmPermissionServiceSetPermissionsMethod[] = "SetPermissions";
+
+constexpr char kVmManagementServiceName[] = "org.chromium.VmManagementService";
+constexpr char kVmManagementServicePath[] = "/org/chromium/VmManagementService";
+constexpr char kVmManagementServiceInterface[] =
+    "org.chromium.VmManagementServiceInterface";
+
+constexpr char kVmManagementServiceSetCrostiniVmTypeMethod[] =
+    "SetCrostiniVmType";
+constexpr char kVmManagementServiceGetCrostiniVmTypeMethod[] =
+    "GetCrostiniVmType";
 
 constexpr char kChromeReportingServiceInterface[] =
     "org.chromium.ChromeReportingServiceInterface";

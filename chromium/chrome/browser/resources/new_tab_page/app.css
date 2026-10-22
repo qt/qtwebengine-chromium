@@ -180,8 +180,9 @@ cr-most-visited {
 }
 
 #logo {
-  margin-bottom: 38px;
-  z-index: 1; /* Needed so it layers on top of OneGoogleBar. */
+  margin-bottom: var(--ntp-logo-margin-bottom, 38px);
+  /* Needed so it layers on top of OneGoogleBar. */
+  z-index: var(--ntp-logo-z-index, 1);
 }
 
 :host([show-composebox_]) #logo,
@@ -203,10 +204,6 @@ cr-most-visited {
   animation: 300ms ease-in-out fade-in-animation;
 }
 
-:host([reduced-motion-preferred_]) #modules {
-  animation: none;
-}
-
 @keyframes fade-in-animation {
   0% {
     opacity: 0;
@@ -220,11 +217,11 @@ ntp-middle-slot-promo {
   max-width: var(--ntp-search-box-width);
 }
 
-cr-searchbox {
+ntp-searchbox {
   visibility: hidden;
 }
 
-cr-searchbox[shown] {
+ntp-searchbox[shown] {
   visibility: visible;
 }
 
@@ -322,9 +319,28 @@ svg {
 }
 
 cr-composebox {
-  --cr-composebox-width: var(--ntp-search-box-width);
+  --color-composebox-submit-button-background: var(
+    --color-new-tab-page-composebox-submit-button-background);
+
   --cr-composebox-background-color: var(--color-composebox-background);
+  --cr-composebox-submit-border-radius: 100px;
+  --cr-composebox-submit-height: 36px;
+  --cr-composebox-submit-icon-size: 24px;
+  --cr-composebox-submit-icon-offset: 0;
+  --cr-composebox-submit-width: 48px;
+  --cr-composebox-width: var(--ntp-search-box-width);
+
   --text-input-inline-end-spacing: 90px;
+}
+
+cr-composebox::part(cancel-icon) {
+  inset-inline-end: 16px;
+}
+
+/* Adjust voice-icon to maintain 12px gap from cancel-icon (which is 24px wide
+   with inset-inline-end of 16px). 16px + 24px + 12px = 52px). */
+cr-composebox::part(voice-icon) {
+  inset-inline-end: 52px;
 }
 
 cr-composebox,
@@ -343,10 +359,6 @@ ntp-lens-upload-dialog {
   position: fixed;
   transition: all 250ms ease;
   z-index: 1;
-}
-
-:host([reduced-motion-preferred_]) #scrim {
-  transition: none;
 }
 
 #webstoreToast {
@@ -385,4 +397,13 @@ ntp-lens-upload-dialog {
 
 #undoToast {
   flex-grow: 1;
+}
+
+@container style(--cr-animations-disabled: 1) {
+  #modules:not([hidden]) {
+    animation: none;
+  }
+  #scrim {
+    transition: none;
+  }
 }

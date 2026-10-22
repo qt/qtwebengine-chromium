@@ -12,10 +12,12 @@ import type {ViewerSaveToDriveBubbleElement} from './viewer_save_to_drive_bubble
 export function getHtml(this: ViewerSaveToDriveBubbleElement) {
   // clang-format off
   return html`<!--_html_template_start_-->
-    <dialog id="dialog" @close="${this.onDialogClose_}"
+    <dialog id="dialog"
+        aria-labelledby="status"
+        @close="${this.onDialogClose_}"
         @focusout="${this.onFocusout_}">
       <div id="header">
-        <h2>${this.dialogTitle_}</h2>
+        <h2 id="status">${this.dialogTitle_}</h2>
         <cr-icon-button id="close" iron-icon="cr:close"
             aria-label="$i18n{propertiesDialogClose}"
             title="$i18n{propertiesDialogClose}"
@@ -26,14 +28,14 @@ export function getHtml(this: ViewerSaveToDriveBubbleElement) {
           ?hidden="${this.isSaveToDriveState_(SaveToDriveState.UPLOADING)}">
       </div>
       <div id="file-content">
-        <cr-icon icon="pdf:pdf-icon" id="pdf-icon"></cr-icon>
+        <cr-icon icon="pdf-save-to-drive:pdf-icon" id="pdf-icon"></cr-icon>
         <div id="filename-content">
           <div id="filename">${this.getFileName_()}</div>
           <div id="file-metadata">${this.getMetadata_()}</div>
         </div>
         ${this.isSaveToDriveState_(SaveToDriveState.UPLOADING) ? html`
           <cr-icon-button id="cancel-upload-button"
-              iron-icon="pdf:cancel-unfill"
+              iron-icon="pdf-save-to-drive:cancel-unfill"
               aria-label="$i18n{saveToDriveDialogCancelUploadButtonLabel}"
               title="$i18n{saveToDriveDialogCancelUploadButtonLabel}"
               @click="${this.onRequestButtonClick_}">

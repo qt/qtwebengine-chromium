@@ -72,6 +72,15 @@ class GreenDevFloaty {
       });
     }
 
+    const learnMoreLink = doc.querySelector('.learn-more-link');
+    if (learnMoreLink) {
+      learnMoreLink.addEventListener('click', event => {
+        event.preventDefault();
+        Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(
+            'https://developer.chrome.com/docs/devtools/ai-assistance' as Platform.DevToolsPath.UrlString);
+      });
+    }
+
     const nodeDescriptionElement = doc.querySelector('.green-dev-floaty-dialog-node-description') as HTMLDivElement;
     nodeDescriptionElement?.addEventListener('mousemove', () => {
       if (this.#node) {
@@ -245,6 +254,10 @@ class GreenDevFloaty {
     return messages;
   }
 
+  #formatError(errorMessage: string): string {
+    return `Error: '${errorMessage}' - Protip: to use AI features you need to be signed in.`;
+  }
+
   runConversation = async(): Promise<void> => {
     if (!this.#textField || !this.#node) {
       return;
@@ -267,7 +280,7 @@ class GreenDevFloaty {
       nodeDescription: document.querySelector('.green-dev-floaty-dialog-node-description')?.textContent,
     });
 
-    const {content: aiContent} = this.#addMessageInternal('Thinking...', false);
+    const aiContent = this.#addMessageInternal('Thinking...', false);
     this.#syncChannel.postMessage({
       type: 'new-message',
       text: 'Thinking...',
@@ -288,9 +301,9 @@ class GreenDevFloaty {
                 {type: 'update-last-message', text: result.text, sessionId: this.#backendNodeId});
             break;
           case ResponseType.ERROR:
-            aiContent.textContent = `Error: ${result.error}`;
+            aiContent.textContent = this.#formatError(result.error);
             this.#syncChannel.postMessage(
-                {type: 'update-last-message', text: `Error: ${result.error}`, sessionId: this.#backendNodeId});
+                {type: 'update-last-message', text: this.#formatError(result.error), sessionId: this.#backendNodeId});
             break;
           case ResponseType.SIDE_EFFECT:
             result.confirm(true);
@@ -307,7 +320,7 @@ class GreenDevFloaty {
     }
   };
 
-  #addMessageInternal(text: string, isUser: boolean): {content: HTMLDivElement, details?: HTMLDivElement} {
+  #addMessageInternal(text: string, isUser: boolean): HTMLDivElement {
     const messageElement = document.createElement('div');
     messageElement.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
 
@@ -316,30 +329,11 @@ class GreenDevFloaty {
     content.textContent = text;
     messageElement.appendChild(content);
 
-    let details: HTMLDivElement|undefined;
-    if (!isUser) {
-      details = document.createElement('div');
-      details.className = 'message-details';
-      details.style.display = 'none';
-      messageElement.appendChild(details);
-
-      const toggle = document.createElement('div');
-      toggle.className = 'message-details-toggle';
-      toggle.textContent = 'Show details';
-      toggle.onclick = () => {
-        if (details) {
-          const isHidden = details.style.display === 'none';
-          details.style.display = isHidden ? 'block' : 'none';
-          toggle.textContent = isHidden ? 'Hide details' : 'Show details';
-        }
-      };
-      messageElement.appendChild(toggle);
-    }
     if (this.#chatContainer) {
       this.#chatContainer.appendChild(messageElement);
       this.#chatContainer.scrollTop = this.#chatContainer.scrollHeight;
     }
-    return {content, details};
+    return content;
   }
 }
 
@@ -437,7 +431,7 @@ async function init(): Promise<void> {
         settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
       }
     });
-    Root.DevToolsContext.setGlobalInstance(universe.context);
+    Root.DevToolsContext.setGlobalInstance(universe.context as Root.DevToolsContext.WritableDevToolsContext);
 
     await i18n.i18n.fetchAndRegisterLocaleData('en-US');
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.connectionReady();

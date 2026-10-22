@@ -4,17 +4,30 @@
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as AiAssistanceModel from '../../../models/ai_assistance/ai_assistance.js';
-import {initializePersistenceImplForTests, setupAutomaticFileSystem} from '../../../testing/AiAssistanceHelpers.js';
+import {
+  cleanup,
+  initializePersistenceImplForTests,
+  setupAutomaticFileSystem
+} from '../../../testing/AiAssistanceHelpers.js';
 import {renderElementIntoDOM} from '../../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
 import * as AiAssistancePanel from '../ai_assistance.js';
 
 describeWithEnvironment('ChatView', () => {
+  beforeEach(() => {
+    initializePersistenceImplForTests();
+    setupAutomaticFileSystem();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
   function getProp(options: Partial<AiAssistancePanel.Props>): AiAssistancePanel.Props {
     const noop = () => {};
     const messages = options.messages ?? [];
-    const selectedContext = sinon.createStubInstance(AiAssistanceModel.StylingAgent.NodeContext);
-    selectedContext.getTitle.returns('');
+    const context = sinon.createStubInstance(AiAssistanceModel.StylingAgent.NodeContext);
+    context.getTitle.returns('');
     return {
       onTextSubmit: noop,
       onInspectElementClick: noop,
@@ -23,16 +36,19 @@ describeWithEnvironment('ChatView', () => {
       onContextClick: noop,
       onCopyResponseClick: noop,
       onNewConversation: noop,
+      onExportConversation: noop,
+      generateConversationSummary: async () => '',
+      conversationMarkdown: 'placeholder conversation markdown',
       onContextRemoved: noop,
       onContextAdd: noop,
       changeManager: new AiAssistanceModel.ChangeManager.ChangeManager(),
       inspectElementToggled: false,
       conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType.STYLING,
       messages,
-      selectedContext,
+      context,
+      isContextSelected: true,
       isLoading: false,
       canShowFeedbackForm: false,
-      userInfo: {},
       blockedByCrossOrigin: false,
       isReadOnly: false,
       isTextInputDisabled: false,
@@ -40,16 +56,20 @@ describeWithEnvironment('ChatView', () => {
       inputPlaceholder: i18n.i18n.lockedString('input placeholder'),
       disclaimerText: i18n.i18n.lockedString('disclaimer text'),
       markdownRenderer: new AiAssistancePanel.MarkdownRendererWithCodeBlock(),
-      additionalFloatyContext: [],
+      walkthrough: {
+        onToggle: () => {},
+        onOpen: () => {},
+        isInlined: false,
+        isExpanded: false,
+        activeSidebarMessage: null,
+        inlineExpandedMessages: [],
+      },
       ...options,
     };
   }
 
   describe('SideEffects', () => {
     it('should show SideEffects when the step contains "sideEffect" object', async () => {
-      initializePersistenceImplForTests();
-      setupAutomaticFileSystem();
-
       const props = getProp({
         messages: [
           {
@@ -62,7 +82,8 @@ describeWithEnvironment('ChatView', () => {
                   title: 'Updating element styles',
                   thought: 'Updating element styles',
                   code: '$0.style.background = "blue";',
-                  sideEffect: {
+                  requestApproval: {
+                    description: null,
                     onAnswer: () => {},
                   },
                 },

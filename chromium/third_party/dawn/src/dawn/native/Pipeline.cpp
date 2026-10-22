@@ -53,9 +53,9 @@ namespace {
 // Note: this is only used in compatibility mode.
 uint32_t ComputeNumTextureSamplerCombinations(const dawn::native::EntryPointMetadata& metadata) {
     // separate sampled from non-sampled and put sampled in set
-    std::set<BindingSlot> sampledTextures;
-    std::set<BindingSlot> sampledExternalTextures;
-    std::vector<BindingSlot> nonSampled;
+    std::set<WGSLBindPoint> sampledTextures;
+    std::set<WGSLBindPoint> sampledExternalTextures;
+    std::vector<WGSLBindPoint> nonSampled;
     uint32_t numSamplerTexturePairs = 0;
     uint32_t numSamplerExternalTexturePairs = 0;
 
@@ -78,7 +78,7 @@ uint32_t ComputeNumTextureSamplerCombinations(const dawn::native::EntryPointMeta
 
     // count the number of non-sampled that are not referenced by sampled pairs.
     auto numNonSampled = std::count_if(nonSampled.begin(), nonSampled.end(),
-                                       [&](const BindingSlot& nonSampledBindingPoint) {
+                                       [&](const WGSLBindPoint& nonSampledBindingPoint) {
                                            return !sampledTextures.contains(nonSampledBindingPoint);
                                        });
     return numSamplerTexturePairs + numNonSampled + numSamplerExternalTexturePairs * 3 +
@@ -122,7 +122,7 @@ ResultOrError<ShaderModuleEntryPoint> ValidateProgrammableStage(DeviceBase* devi
         for (const std::string& limit : metadata.infringedLimitErrors) {
             limitList << " - " << limit << "\n";
         }
-        return DAWN_VALIDATION_ERROR("%s infringes limits:\n%s", &entryPoint, limitList.str());
+        return DAWN_VALIDATION_ERROR("%s infringes limits:\n%s", entryPoint, limitList.str());
     }
 
     DAWN_INVALID_IF(metadata.stage != stage,
@@ -442,7 +442,7 @@ MaybeError PipelineBase::Initialize(std::optional<ScopedUseShaderPrograms> scope
         GetImmediateConstantBlockBits(0, GetLayout()->GetImmediateDataRangeByteSize());
     mImmediateMask |= userConstantsBits;
 
-    DAWN_TRY_CONTEXT(InitializeImpl(), "initializing %s", this);
+    DAWN_TRY_CONTEXT(InitializeWithShaders(), "initializing %s", this);
     return {};
 }
 
@@ -456,6 +456,58 @@ uint32_t PipelineBase::GetImmediateConstantSize() const {
 
 ImmediateConstantMask PipelineBase::GetUserImmediateSlots() const {
     return mUserImmdiateSlots;
+}
+
+PipelineBase::SamplerForExternalTextureMap PipelineBase::ComputeSamplerForExternalTextureMap()
+    const {
+    SamplerForExternalTextureMap map;
+
+    // Insert all external textures bind point, so even those not used with a sampler are present.
+    for (BindGroupIndex group : GetLayout()->GetBindGroupLayoutsMask()) {
+        const auto* bgl = GetLayout()->GetBindGroupLayout(group);
+
+        for (APIBindingIndex etIndex : bgl->GetExternalTextureIndices()) {
+            map.insert({APIBindPoint{group, etIndex}, std::nullopt});
+        }
+    }
+
+    for (SingleShaderStage stage : IterateStages(GetStageMask())) {
+        for (const auto& pair : GetStage(stage).metadata->samplerAndNonSamplerTexturePairs) {
+            const auto* textureBGL = GetLayout()->GetBindGroupLayout(pair.texture.group);
+            APIBindingIndex textureBinding = textureBGL->GetAPIBindingIndex(pair.texture.binding);
+
+            // Find external texture used with samplers.
+            if (!textureBGL->IsExternalTextureBinding(textureBinding) ||
+                pair.sampler == EntryPointMetadata::nonSamplerBindingPoint) {
+                continue;
+            }
+
+            // This function must return the sampler that's used to sample the external texture (if
+            // there's one). While WebGPU allows multiple different samplers to be used with an
+            // external texture, the static YCbCr sampler mechanism in Vulkan needs to have a 1-1
+            // relationship between the YCbCr texture and its static sampler. In the unlikely case
+            // where the external texture is used by two different samplers, emit a warning (as
+            // that's just a minor correctness issue).
+            auto it = map.find({pair.texture.group, textureBinding});
+            DAWN_ASSERT(it != map.end());
+            auto& mapValue = it->second;
+
+            const auto* samplerBGL = GetLayout()->GetBindGroupLayout(pair.sampler.group);
+            BindPoint samplerBindPoint = {
+                pair.sampler.group,
+                samplerBGL->AsBindingIndex(samplerBGL->GetAPIBindingIndex(pair.sampler.binding))};
+
+            if (mapValue.has_value() && mapValue.value() != samplerBindPoint) {
+                GetDevice()->EmitWarningOnce(
+                    "ExternalTexture used by multiple samplers in the pipeline: only using the "
+                    "first one to sample.");
+                continue;
+            }
+            mapValue = {samplerBindPoint};
+        }
+    }
+
+    return map;
 }
 
 }  // namespace dawn::native

@@ -10,6 +10,7 @@
 #include "components/optimization_guide/content/browser/mock_autofill_annotations_provider.h"
 #include "components/optimization_guide/content/browser/page_content_proto_provider.h"
 #include "content/public/test/browser_task_environment.h"
+#include "content/public/test/navigation_simulator.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/test/test_web_contents.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -96,7 +97,9 @@ base::expected<void, std::string> ConvertAIPageContentToProto(
     AIPageContentResult& page_content,
     const std::optional<GURL>& main_frame_url = {},
     std::optional<content::GlobalRenderFrameHostToken>
-        main_frame_token_override = std::nullopt) {
+        main_frame_token_override = std::nullopt,
+    blink::mojom::AIPageContentMode mode =
+        blink::mojom::AIPageContentMode::kDefault) {
   auto main_frame_token =
       main_frame_token_override.value_or(CreateFrameToken());
   AIPageContentMap page_content_map;
@@ -119,9 +122,11 @@ base::expected<void, std::string> ConvertAIPageContentToProto(
         return std::nullopt;
       });
   FrameTokenSet frame_token_set;
-  return ConvertAIPageContentToProto(
-      blink::mojom::AIPageContentOptions::New(), main_frame_token,
-      page_content_map, get_render_frame_info, frame_token_set, page_content);
+  auto options = blink::mojom::AIPageContentOptions::New();
+  options->mode = mode;
+  return ConvertAIPageContentToProto(std::move(options), main_frame_token,
+                                     page_content_map, get_render_frame_info,
+                                     frame_token_set, page_content);
 }
 
 void CheckTextNodeProto(const proto::ContentNode& node_proto,
@@ -689,6 +694,8 @@ TEST_F(PageContentProtoUtilTest, ConvertIframeData) {
   frame_data->frame_interaction_info->selection->end_dom_node_id = 2;
   frame_data->frame_interaction_info->selection->start_offset = 3;
   frame_data->frame_interaction_info->selection->end_offset = 4;
+  frame_data->frame_interaction_info->focused_dom_node_id = 1;
+  frame_data->frame_interaction_info->accessibility_focused_dom_node_id = 2;
   iframe_data->content =
       blink::mojom::AIPageContentIframeContent::NewLocalFrameData(
           std::move(frame_data));
@@ -753,6 +760,8 @@ TEST_F(PageContentProtoUtilTest, ConvertIframeData) {
   EXPECT_EQ(selection.end_node_id(), 2);
   EXPECT_EQ(selection.start_offset(), 3);
   EXPECT_EQ(selection.end_offset(), 4);
+  EXPECT_EQ(frame_interaction_info.focused_node_id(), 1);
+  EXPECT_EQ(frame_interaction_info.accessibility_focused_node_id(), 2);
 
   EXPECT_FALSE(page_content.proto.main_frame_data().has_media_data());
   EXPECT_TRUE(proto_iframe_data.frame_data().has_media_data());
@@ -772,7 +781,73 @@ TEST_F(PageContentProtoUtilTest, AttributeTypeDoesNotMatchData_Form) {
       base::test::ErrorIs("table_row_data present, but node isn't kTableRow"));
 }
 
-TEST_F(PageContentProtoUtilTest, ConvertGeometry) {
+TEST_F(PageContentProtoUtilTest, ConvertGeometry_Default) {
+  auto root_content = CreatePageContent();
+  auto text_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kText);
+  text_node->content_attributes->dom_node_id = 1;
+  text_node->content_attributes->geometry =
+      blink::mojom::AIPageContentGeometry::New();
+  text_node->content_attributes->geometry->outer_bounding_box =
+      gfx::Rect(10, 20, 30, 40);
+  text_node->content_attributes->geometry->visible_bounding_box =
+      gfx::Rect(11, 21, 31, 41);
+  root_content->root_node->children_nodes.emplace_back(std::move(text_node));
+
+  auto text_node2 =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kText);
+  text_node2->content_attributes->dom_node_id = 2;
+  text_node2->content_attributes->geometry =
+      blink::mojom::AIPageContentGeometry::New();
+  text_node2->content_attributes->geometry->outer_bounding_box =
+      gfx::Rect(110, 120, 130, 140);
+  text_node2->content_attributes->geometry->visible_bounding_box =
+      gfx::Rect(111, 121, 131, 141);
+  root_content->root_node->children_nodes.emplace_back(std::move(text_node2));
+
+  root_content->frame_data->frame_interaction_info->focused_dom_node_id = 1;
+  root_content->frame_data->frame_interaction_info
+      ->accessibility_focused_dom_node_id = 1;
+
+  AIPageContentResult page_content;
+  EXPECT_TRUE(
+      ConvertAIPageContentToProto(root_content, page_content).has_value());
+
+  EXPECT_EQ(page_content.proto.version(),
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
+  ASSERT_EQ(page_content.proto.root_node().children_nodes_size(), 2);
+  EXPECT_EQ(page_content.proto.root_node()
+                .children_nodes(0)
+                .content_attributes()
+                .attribute_type(),
+            optimization_guide::proto::CONTENT_ATTRIBUTE_TEXT);
+  const auto& geometry = page_content.proto.root_node()
+                             .children_nodes(0)
+                             .content_attributes()
+                             .geometry();
+  EXPECT_EQ(geometry.outer_bounding_box().x(), 10);
+  EXPECT_EQ(geometry.outer_bounding_box().y(), 20);
+  EXPECT_EQ(geometry.outer_bounding_box().width(), 30);
+  EXPECT_EQ(geometry.outer_bounding_box().height(), 40);
+  EXPECT_EQ(geometry.visible_bounding_box().x(), 11);
+  EXPECT_EQ(geometry.visible_bounding_box().y(), 21);
+  EXPECT_EQ(geometry.visible_bounding_box().width(), 31);
+  EXPECT_EQ(geometry.visible_bounding_box().height(), 41);
+
+  EXPECT_EQ(page_content.proto.root_node()
+                .children_nodes(1)
+                .content_attributes()
+                .attribute_type(),
+            optimization_guide::proto::CONTENT_ATTRIBUTE_TEXT);
+  // When in non-actionable mode, geometry is only poluated for the
+  // accessibility focused node.
+  EXPECT_FALSE(page_content.proto.root_node()
+                   .children_nodes(1)
+                   .content_attributes()
+                   .has_geometry());
+}
+
+TEST_F(PageContentProtoUtilTest, ConvertGeometry_ActionableElements) {
   auto root_content = CreatePageContent();
   auto text_node =
       CreateContentNode(blink::mojom::AIPageContentAttributeType::kText);
@@ -785,11 +860,15 @@ TEST_F(PageContentProtoUtilTest, ConvertGeometry) {
   root_content->root_node->children_nodes.emplace_back(std::move(text_node));
 
   AIPageContentResult page_content;
-  EXPECT_TRUE(
-      ConvertAIPageContentToProto(root_content, page_content).has_value());
+  EXPECT_TRUE(ConvertAIPageContentToProto(
+                  root_content, page_content, /*main_frame_url=*/std::nullopt,
+                  /*main_frame_token_override=*/std::nullopt,
+                  blink::mojom::AIPageContentMode::kActionableElements)
+                  .has_value());
 
   EXPECT_EQ(page_content.proto.version(),
-            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
+            optimization_guide::proto::
+                ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0);
   ASSERT_EQ(page_content.proto.root_node().children_nodes_size(), 1);
   EXPECT_EQ(page_content.proto.root_node()
                 .children_nodes(0)
@@ -808,6 +887,115 @@ TEST_F(PageContentProtoUtilTest, ConvertGeometry) {
   EXPECT_EQ(geometry.visible_bounding_box().y(), 21);
   EXPECT_EQ(geometry.visible_bounding_box().width(), 31);
   EXPECT_EQ(geometry.visible_bounding_box().height(), 41);
+}
+
+TEST_F(PageContentProtoUtilTest, ConvertGeometryInIframe) {
+  auto main_frame_token = CreateFrameToken();
+  auto root_content = CreatePageContent();
+  root_content->root_node->children_nodes.emplace_back(
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kIframe));
+
+  auto iframe_token = CreateFrameToken();
+  auto iframe_data = blink::mojom::AIPageContentIframeData::New();
+  iframe_data->frame_token = iframe_token.frame_token;
+  auto frame_data = blink::mojom::AIPageContentFrameData::New();
+  frame_data->frame_interaction_info =
+      blink::mojom::AIPageContentFrameInteractionInfo::New();
+  frame_data->frame_interaction_info->focused_dom_node_id = 1;
+  frame_data->frame_interaction_info->accessibility_focused_dom_node_id = 1;
+  iframe_data->content =
+      blink::mojom::AIPageContentIframeContent::NewLocalFrameData(
+          std::move(frame_data));
+
+  auto& iframe_node = root_content->root_node->children_nodes.back();
+  iframe_node->content_attributes->iframe_data = std::move(iframe_data);
+
+  auto text_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kText);
+  text_node->content_attributes->dom_node_id = 1;
+  text_node->content_attributes->geometry =
+      blink::mojom::AIPageContentGeometry::New();
+  text_node->content_attributes->geometry->outer_bounding_box =
+      gfx::Rect(10, 20, 30, 40);
+  text_node->content_attributes->geometry->visible_bounding_box =
+      gfx::Rect(11, 21, 31, 41);
+  iframe_node->children_nodes.emplace_back(std::move(text_node));
+
+  auto text_node2 =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kText);
+  text_node2->content_attributes->dom_node_id = 2;
+  text_node2->content_attributes->geometry =
+      blink::mojom::AIPageContentGeometry::New();
+  text_node2->content_attributes->geometry->outer_bounding_box =
+      gfx::Rect(110, 120, 130, 140);
+  text_node2->content_attributes->geometry->visible_bounding_box =
+      gfx::Rect(111, 121, 131, 141);
+  iframe_node->children_nodes.emplace_back(std::move(text_node2));
+
+  AIPageContentMap page_content_map;
+  page_content_map[main_frame_token] = std::move(root_content);
+
+  std::optional<blink::FrameToken> query_token;
+  auto get_render_frame_info = base::BindLambdaForTesting(
+      [&](int child_process_id,
+          blink::FrameToken token) -> std::optional<RenderFrameInfo> {
+        query_token = token;
+        RenderFrameInfo render_frame_info;
+        if (token == main_frame_token.frame_token) {
+          render_frame_info.global_frame_token = main_frame_token;
+        } else {
+          render_frame_info.global_frame_token = iframe_token;
+          render_frame_info.media_data = CreateMediaData();
+        }
+        render_frame_info.source_origin =
+            url::Origin::Create(GURL("https://example.com"));
+        render_frame_info.url = GURL("https://example.com");
+        render_frame_info.serialized_server_token =
+            main_frame_token.frame_token.ToString();
+        return render_frame_info;
+      });
+
+  AIPageContentResult page_content;
+  FrameTokenSet frame_token_set;
+  auto result = ConvertAIPageContentToProto(
+      blink::mojom::AIPageContentOptions::New(), main_frame_token,
+      page_content_map, get_render_frame_info, frame_token_set, page_content);
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(query_token.has_value());
+  EXPECT_EQ(iframe_token.frame_token, *query_token);
+
+  EXPECT_EQ(page_content.proto.version(),
+            optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
+  ASSERT_EQ(page_content.proto.root_node().children_nodes_size(), 1);
+  EXPECT_EQ(page_content.proto.root_node()
+                .children_nodes(0)
+                .content_attributes()
+                .attribute_type(),
+            optimization_guide::proto::CONTENT_ATTRIBUTE_IFRAME);
+  const auto& proto_iframe_node =
+      page_content.proto.root_node().children_nodes(0);
+  ASSERT_EQ(proto_iframe_node.children_nodes_size(), 2);
+  EXPECT_EQ(
+      proto_iframe_node.children_nodes(0).content_attributes().attribute_type(),
+      optimization_guide::proto::CONTENT_ATTRIBUTE_TEXT);
+  const auto& geometry =
+      proto_iframe_node.children_nodes(0).content_attributes().geometry();
+  EXPECT_EQ(geometry.outer_bounding_box().x(), 10);
+  EXPECT_EQ(geometry.outer_bounding_box().y(), 20);
+  EXPECT_EQ(geometry.outer_bounding_box().width(), 30);
+  EXPECT_EQ(geometry.outer_bounding_box().height(), 40);
+  EXPECT_EQ(geometry.visible_bounding_box().x(), 11);
+  EXPECT_EQ(geometry.visible_bounding_box().y(), 21);
+  EXPECT_EQ(geometry.visible_bounding_box().width(), 31);
+  EXPECT_EQ(geometry.visible_bounding_box().height(), 41);
+
+  EXPECT_EQ(
+      proto_iframe_node.children_nodes(1).content_attributes().attribute_type(),
+      optimization_guide::proto::CONTENT_ATTRIBUTE_TEXT);
+  // When in non-actionable mode, geometry is only poluated for the
+  // accessibility focused node.
+  EXPECT_FALSE(
+      proto_iframe_node.children_nodes(1).content_attributes().has_geometry());
 }
 
 TEST_F(PageContentProtoUtilTest, ConvertPageInteractionInfo) {
@@ -848,6 +1036,8 @@ TEST_F(PageContentProtoUtilTest, ConvertMainFrameInteractionInfo) {
   frame_data->frame_interaction_info->selection->end_dom_node_id = 2u;
   frame_data->frame_interaction_info->selection->start_offset = 3u;
   frame_data->frame_interaction_info->selection->end_offset = 4u;
+  frame_data->frame_interaction_info->focused_dom_node_id = 1;
+  frame_data->frame_interaction_info->accessibility_focused_dom_node_id = 2;
 
   root_content->frame_data = std::move(frame_data);
 
@@ -865,6 +1055,8 @@ TEST_F(PageContentProtoUtilTest, ConvertMainFrameInteractionInfo) {
   EXPECT_EQ(selection.end_node_id(), 2);
   EXPECT_EQ(selection.start_offset(), 3);
   EXPECT_EQ(selection.end_offset(), 4);
+  EXPECT_EQ(frame_interaction_info.focused_node_id(), 1);
+  EXPECT_EQ(frame_interaction_info.accessibility_focused_node_id(), 2);
 }
 
 TEST_F(PageContentProtoUtilTest, ConvertAnnotatedRoles) {
@@ -974,7 +1166,9 @@ TEST_F(PageContentProtoUtilTest, ConvertFormControlData) {
       ->text = "option text";
   form_control_node->content_attributes->form_control_data->select_options[0]
       ->is_selected = true;
-  form_control_node->content_attributes->form_control_data->redaction_decision =
+  // The canonical redaction signal now lives on ContentAttributes. The proto
+  // form-control field is kept only for compatibility.
+  form_control_node->content_attributes->redaction_decision =
       blink::mojom::AIPageContentRedactionDecision::kNoRedactionNecessary;
   root_content->root_node->children_nodes.emplace_back(
       std::move(form_control_node));
@@ -997,16 +1191,23 @@ TEST_F(PageContentProtoUtilTest, ConvertFormControlData) {
   EXPECT_EQ(form_control_data_proto.placeholder(), "placeholder");
   EXPECT_TRUE(form_control_data_proto.is_checked());
   EXPECT_FALSE(form_control_data_proto.is_required());
-  // Read-only is mapped to disabled until the proto gains a dedicated field.
+  // Read-only is mapped to disabled until deprecation.
   EXPECT_TRUE(page_content.proto.root_node()
                   .children_nodes(0)
                   .content_attributes()
                   .interaction_info()
                   .is_disabled());
+  EXPECT_TRUE(form_control_data_proto.is_readonly());
   ASSERT_EQ(form_control_data_proto.select_options_size(), 1);
   EXPECT_EQ(form_control_data_proto.select_options(0).value(), "option value");
   EXPECT_EQ(form_control_data_proto.select_options(0).text(), "option text");
   EXPECT_TRUE(form_control_data_proto.select_options(0).is_selected());
+  EXPECT_EQ(
+      page_content.proto.root_node()
+          .children_nodes(0)
+          .content_attributes()
+          .redaction_decision(),
+      optimization_guide::proto::REDACTION_DECISION_NO_REDACTION_NECESSARY);
   EXPECT_EQ(
       form_control_data_proto.redaction_decision(),
       optimization_guide::proto::REDACTION_DECISION_NO_REDACTION_NECESSARY);
@@ -1025,8 +1226,7 @@ TEST_F(PageContentProtoUtilTest, ConvertFormControlDataRedactionDecision) {
   empty_password_node->content_attributes->form_control_data->field_name =
       "empty_password_field";
   empty_password_node->content_attributes->form_control_data->field_value = "";
-  empty_password_node->content_attributes->form_control_data
-      ->redaction_decision =
+  empty_password_node->content_attributes->redaction_decision =
       blink::mojom::AIPageContentRedactionDecision::kUnredacted_EmptyPassword;
   root_content->root_node->children_nodes.emplace_back(
       std::move(empty_password_node));
@@ -1041,11 +1241,25 @@ TEST_F(PageContentProtoUtilTest, ConvertFormControlDataRedactionDecision) {
   redacted_password_node->content_attributes->form_control_data->field_name =
       "redacted_password_field";
   // field_value is not set when redacted
-  redacted_password_node->content_attributes->form_control_data
-      ->redaction_decision =
+  redacted_password_node->content_attributes->redaction_decision =
       blink::mojom::AIPageContentRedactionDecision::kRedacted_HasBeenPassword;
   root_content->root_node->children_nodes.emplace_back(
       std::move(redacted_password_node));
+
+  // Test kUnredacted_EmptyCustomPassword
+  auto custom_password_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kFormControl);
+  custom_password_node->content_attributes->form_control_data =
+      blink::mojom::AIPageContentFormControlData::New();
+  custom_password_node->content_attributes->form_control_data
+      ->form_control_type = blink::mojom::FormControlType::kInputText;
+  custom_password_node->content_attributes->form_control_data->field_name =
+      "custom_password_field";
+  custom_password_node->content_attributes->form_control_data->field_value = "";
+  custom_password_node->content_attributes->redaction_decision = blink::mojom::
+      AIPageContentRedactionDecision::kUnredacted_EmptyCustomPassword;
+  root_content->root_node->children_nodes.emplace_back(
+      std::move(custom_password_node));
 
   AIPageContentResult page_content;
   EXPECT_TRUE(
@@ -1053,7 +1267,7 @@ TEST_F(PageContentProtoUtilTest, ConvertFormControlDataRedactionDecision) {
 
   EXPECT_EQ(page_content.proto.version(),
             optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
-  ASSERT_EQ(page_content.proto.root_node().children_nodes_size(), 2);
+  ASSERT_EQ(page_content.proto.root_node().children_nodes_size(), 3);
 
   // Test first node: kUnredacted_EmptyPassword
   const auto& empty_password_proto = page_content.proto.root_node()
@@ -1079,6 +1293,59 @@ TEST_F(PageContentProtoUtilTest, ConvertFormControlDataRedactionDecision) {
   EXPECT_EQ(redacted_password_proto.field_value(), "");  // Empty when redacted
   EXPECT_EQ(
       redacted_password_proto.redaction_decision(),
+      optimization_guide::proto::REDACTION_DECISION_REDACTED_HAS_BEEN_PASSWORD);
+
+  EXPECT_EQ(
+      page_content.proto.root_node()
+          .children_nodes(0)
+          .content_attributes()
+          .redaction_decision(),
+      optimization_guide::proto::REDACTION_DECISION_UNREDACTED_EMPTY_PASSWORD);
+  EXPECT_EQ(
+      page_content.proto.root_node()
+          .children_nodes(1)
+          .content_attributes()
+          .redaction_decision(),
+      optimization_guide::proto::REDACTION_DECISION_REDACTED_HAS_BEEN_PASSWORD);
+
+  // Test third node: kUnredacted_EmptyCustomPassword
+  const auto& custom_password_proto = page_content.proto.root_node()
+                                          .children_nodes(2)
+                                          .content_attributes()
+                                          .form_control_data();
+  EXPECT_EQ(custom_password_proto.form_control_type(),
+            optimization_guide::proto::FORM_CONTROL_TYPE_INPUT_TEXT);
+  EXPECT_EQ(custom_password_proto.field_name(), "custom_password_field");
+  EXPECT_EQ(custom_password_proto.field_value(), "");
+  EXPECT_EQ(
+      custom_password_proto.redaction_decision(),
+      optimization_guide::proto::REDACTION_DECISION_UNREDACTED_EMPTY_PASSWORD);
+  EXPECT_EQ(
+      page_content.proto.root_node()
+          .children_nodes(2)
+          .content_attributes()
+          .redaction_decision(),
+      optimization_guide::proto::REDACTION_DECISION_UNREDACTED_EMPTY_PASSWORD);
+}
+
+TEST_F(PageContentProtoUtilTest, ConvertContentAttributesRedactionDecision) {
+  auto root_content = CreatePageContent();
+  auto anchor_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kAnchor);
+  anchor_node->content_attributes->redaction_decision = blink::mojom::
+      AIPageContentRedactionDecision::kRedacted_CustomPassword_CSS;
+  root_content->root_node->children_nodes.emplace_back(std::move(anchor_node));
+
+  AIPageContentResult page_content;
+  EXPECT_TRUE(
+      ConvertAIPageContentToProto(root_content, page_content).has_value());
+
+  ASSERT_EQ(page_content.proto.root_node().children_nodes_size(), 1);
+  EXPECT_EQ(
+      page_content.proto.root_node()
+          .children_nodes(0)
+          .content_attributes()
+          .redaction_decision(),
       optimization_guide::proto::REDACTION_DECISION_REDACTED_HAS_BEEN_PASSWORD);
 }
 
@@ -1106,6 +1373,7 @@ TEST_F(PageContentProtoUtilTest, ConvertLabel) {
 TEST_F(PageContentProtoUtilTest, ConvertPopup) {
   base::test::ScopedFeatureList feature_list(
       blink::features::kAIPageContentIncludePopupWindows);
+  auto main_frame_token = CreateFrameToken();
   auto mojom_content = CreatePageContent();
 
   blink::mojom::AIPageContentPopupPtr popup =
@@ -1119,10 +1387,30 @@ TEST_F(PageContentProtoUtilTest, ConvertPopup) {
   popup->opener_dom_node_id = 1;
   mojom_content->frame_data->popup = std::move(popup);
 
-  AIPageContentResult page_content;
+  AIPageContentMap page_content_map;
+  page_content_map[main_frame_token] = std::move(mojom_content);
 
-  EXPECT_TRUE(
-      ConvertAIPageContentToProto(mojom_content, page_content).has_value());
+  auto get_render_frame_info = base::BindLambdaForTesting(
+      [&](int, blink::FrameToken token) -> std::optional<RenderFrameInfo> {
+        if (token == main_frame_token.frame_token) {
+          RenderFrameInfo render_frame_info;
+          render_frame_info.global_frame_token = main_frame_token;
+          render_frame_info.serialized_server_token = token.ToString();
+          // MOCK: signal that the browser process verified this popup.
+          render_frame_info.has_active_popup = true;
+          return render_frame_info;
+        }
+        return std::nullopt;
+      });
+
+  AIPageContentResult page_content;
+  FrameTokenSet frame_token_set;
+
+  EXPECT_TRUE(ConvertAIPageContentToProto(
+                  blink::mojom::AIPageContentOptions::New(), main_frame_token,
+                  page_content_map, get_render_frame_info, frame_token_set,
+                  page_content)
+                  .has_value());
 
   EXPECT_EQ(page_content.proto.version(),
             optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0);
@@ -1134,6 +1422,213 @@ TEST_F(PageContentProtoUtilTest, ConvertPopup) {
   EXPECT_EQ(
       page_content.proto.popup_window().opener_common_ancestor_dom_node_id(),
       1);
+}
+
+TEST_F(PageContentProtoUtilTest, ConvertPopupNotAuthorized) {
+  base::test::ScopedFeatureList feature_list(
+      blink::features::kAIPageContentIncludePopupWindows);
+  auto main_frame_token = CreateFrameToken();
+  auto mojom_content = CreatePageContent();
+
+  blink::mojom::AIPageContentPopupPtr popup =
+      blink::mojom::AIPageContentPopup::New();
+  popup->root_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kRoot);
+  popup->opener_dom_node_id = 1;
+  mojom_content->frame_data->popup = std::move(popup);
+
+  AIPageContentMap page_content_map;
+  page_content_map[main_frame_token] = std::move(mojom_content);
+
+  auto get_render_frame_info = base::BindLambdaForTesting(
+      [&](int, blink::FrameToken token) -> std::optional<RenderFrameInfo> {
+        if (token == main_frame_token.frame_token) {
+          RenderFrameInfo render_frame_info;
+          render_frame_info.global_frame_token = main_frame_token;
+          render_frame_info.serialized_server_token = token.ToString();
+          // MOCK: Signal that browser process DID NOT find an active popup.
+          render_frame_info.has_active_popup = false;
+          return render_frame_info;
+        }
+        return std::nullopt;
+      });
+
+  AIPageContentResult page_content;
+  FrameTokenSet frame_token_set;
+
+  // Should succeed but with NO popup data because the frame is not authorized.
+  EXPECT_TRUE(ConvertAIPageContentToProto(
+                  blink::mojom::AIPageContentOptions::New(), main_frame_token,
+                  page_content_map, get_render_frame_info, frame_token_set,
+                  page_content)
+                  .has_value());
+
+  EXPECT_FALSE(page_content.proto.has_popup_window());
+}
+
+TEST_F(PageContentProtoUtilTest, ConvertPopupPriority) {
+  base::test::ScopedFeatureList feature_list(
+      blink::features::kAIPageContentIncludePopupWindows);
+
+  auto main_frame_token = CreateFrameToken();
+  auto root_content = CreatePageContent();
+
+  // Main frame popup
+  blink::mojom::AIPageContentPopupPtr main_popup =
+      blink::mojom::AIPageContentPopup::New();
+  main_popup->root_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kRoot);
+  main_popup->root_node->children_nodes.push_back(CreateTextNode(
+      "main popup text", blink::mojom::AIPageContentTextSize::kM, false, 0));
+  main_popup->opener_dom_node_id = 1;
+  root_content->frame_data->popup = std::move(main_popup);
+
+  // Add an iframe
+  auto iframe_token = CreateFrameToken();
+  auto iframe_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kIframe);
+  auto iframe_data = blink::mojom::AIPageContentIframeData::New();
+  iframe_data->frame_token = iframe_token.frame_token;
+
+  auto iframe_frame_data = blink::mojom::AIPageContentFrameData::New();
+  iframe_frame_data->frame_interaction_info =
+      blink::mojom::AIPageContentFrameInteractionInfo::New();
+  // Iframe popup
+  blink::mojom::AIPageContentPopupPtr iframe_popup =
+      blink::mojom::AIPageContentPopup::New();
+  iframe_popup->root_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kRoot);
+  iframe_popup->root_node->children_nodes.push_back(CreateTextNode(
+      "iframe popup text", blink::mojom::AIPageContentTextSize::kM, false, 0));
+  iframe_popup->opener_dom_node_id = 100;
+  iframe_frame_data->popup = std::move(iframe_popup);
+
+  iframe_data->content =
+      blink::mojom::AIPageContentIframeContent::NewLocalFrameData(
+          std::move(iframe_frame_data));
+
+  iframe_node->content_attributes->iframe_data = std::move(iframe_data);
+  root_content->root_node->children_nodes.push_back(std::move(iframe_node));
+
+  AIPageContentMap page_content_map;
+  page_content_map[main_frame_token] = std::move(root_content);
+
+  auto get_render_frame_info = base::BindLambdaForTesting(
+      [&](int, blink::FrameToken token) -> std::optional<RenderFrameInfo> {
+        RenderFrameInfo render_frame_info;
+        if (token == main_frame_token.frame_token) {
+          render_frame_info.global_frame_token = main_frame_token;
+          render_frame_info.has_active_popup = true;
+        } else if (token == iframe_token.frame_token) {
+          render_frame_info.global_frame_token = iframe_token;
+          render_frame_info.has_active_popup = true;
+        } else {
+          return std::nullopt;
+        }
+        render_frame_info.source_origin =
+            url::Origin::Create(GURL("https://example.com"));
+        render_frame_info.url = GURL("https://example.com");
+        render_frame_info.serialized_server_token = token.ToString();
+        return render_frame_info;
+      });
+
+  AIPageContentResult page_content;
+  FrameTokenSet frame_token_set;
+  EXPECT_TRUE(ConvertAIPageContentToProto(
+                  blink::mojom::AIPageContentOptions::New(), main_frame_token,
+                  page_content_map, get_render_frame_info, frame_token_set,
+                  page_content)
+                  .has_value());
+
+  // Verify only main frame's popup is present.
+  ASSERT_TRUE(page_content.proto.has_popup_window());
+  const auto& popup_window = page_content.proto.popup_window();
+  EXPECT_EQ(popup_window.opener_common_ancestor_dom_node_id(), 1);
+  EXPECT_EQ(popup_window.root_node().children_nodes_size(), 1);
+  EXPECT_EQ(popup_window.root_node()
+                .children_nodes(0)
+                .content_attributes()
+                .text_data()
+                .text_content(),
+            "main popup text");
+}
+
+TEST_F(PageContentProtoUtilTest, ConvertPopupIframeOnly) {
+  base::test::ScopedFeatureList feature_list(
+      blink::features::kAIPageContentIncludePopupWindows);
+
+  auto main_frame_token = CreateFrameToken();
+  auto root_content = CreatePageContent();
+  // No main frame popup.
+
+  // Add an iframe
+  auto iframe_token = CreateFrameToken();
+  auto iframe_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kIframe);
+  auto iframe_data = blink::mojom::AIPageContentIframeData::New();
+  iframe_data->frame_token = iframe_token.frame_token;
+
+  auto iframe_frame_data = blink::mojom::AIPageContentFrameData::New();
+  iframe_frame_data->frame_interaction_info =
+      blink::mojom::AIPageContentFrameInteractionInfo::New();
+  // Iframe popup
+  blink::mojom::AIPageContentPopupPtr iframe_popup =
+      blink::mojom::AIPageContentPopup::New();
+  iframe_popup->root_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kRoot);
+  iframe_popup->root_node->children_nodes.push_back(CreateTextNode(
+      "iframe popup text", blink::mojom::AIPageContentTextSize::kM, false, 0));
+  iframe_popup->opener_dom_node_id = 100;
+  iframe_frame_data->popup = std::move(iframe_popup);
+
+  iframe_data->content =
+      blink::mojom::AIPageContentIframeContent::NewLocalFrameData(
+          std::move(iframe_frame_data));
+
+  iframe_node->content_attributes->iframe_data = std::move(iframe_data);
+  root_content->root_node->children_nodes.push_back(std::move(iframe_node));
+
+  AIPageContentMap page_content_map;
+  page_content_map[main_frame_token] = std::move(root_content);
+
+  auto get_render_frame_info = base::BindLambdaForTesting(
+      [&](int, blink::FrameToken token) -> std::optional<RenderFrameInfo> {
+        RenderFrameInfo render_frame_info;
+        if (token == main_frame_token.frame_token) {
+          render_frame_info.global_frame_token = main_frame_token;
+          render_frame_info.has_active_popup = false;
+        } else if (token == iframe_token.frame_token) {
+          render_frame_info.global_frame_token = iframe_token;
+          render_frame_info.has_active_popup = true;
+        } else {
+          return std::nullopt;
+        }
+        render_frame_info.source_origin =
+            url::Origin::Create(GURL("https://example.com"));
+        render_frame_info.url = GURL("https://example.com");
+        render_frame_info.serialized_server_token = token.ToString();
+        return render_frame_info;
+      });
+
+  AIPageContentResult page_content;
+  FrameTokenSet frame_token_set;
+  EXPECT_TRUE(ConvertAIPageContentToProto(
+                  blink::mojom::AIPageContentOptions::New(), main_frame_token,
+                  page_content_map, get_render_frame_info, frame_token_set,
+                  page_content)
+                  .has_value());
+
+  // Verify iframe's popup is present since main frame didn't have one.
+  ASSERT_TRUE(page_content.proto.has_popup_window());
+  const auto& popup_window = page_content.proto.popup_window();
+  EXPECT_EQ(popup_window.opener_common_ancestor_dom_node_id(), 100);
+  EXPECT_EQ(popup_window.root_node().children_nodes_size(), 1);
+  EXPECT_EQ(popup_window.root_node()
+                .children_nodes(0)
+                .content_attributes()
+                .text_data()
+                .text_content(),
+            "iframe popup text");
 }
 
 // Test helper to set the geometry of a ContentNode.
@@ -1711,6 +2206,107 @@ TEST_F(PageContentProtoUtilTest,
   ASSERT_EQ(form_control_data_proto.coarse_autofill_field_type_size(), 1);
   EXPECT_EQ(form_control_data_proto.coarse_autofill_field_type(0),
             proto::COARSE_AUTOFILL_FIELD_TYPE_CREDIT_CARD);
+}
+
+TEST_F(PageContentProtoUtilTest, CompromisedRendererIframeNotChild) {
+  content::RenderViewHostTestEnabler rvh_test_enabler;
+
+  auto browser_context = std::make_unique<content::TestBrowserContext>();
+  content::WebContents::CreateParams create_params(browser_context.get());
+  std::unique_ptr<content::TestWebContents> web_contents(
+      content::TestWebContents::Create(create_params));
+  web_contents->NavigateAndCommit(GURL("https://example.com"));
+
+  content::RenderFrameHost* main_rfh = web_contents->GetPrimaryMainFrame();
+  content::RenderFrameHost* child_rfh1 =
+      content::RenderFrameHostTester::For(main_rfh)->AppendChild("child1");
+  child_rfh1 = content::NavigationSimulator::NavigateAndCommitFromDocument(
+      GURL("https://child1.com"), child_rfh1);
+  content::RenderFrameHost* child_rfh2 =
+      content::RenderFrameHostTester::For(main_rfh)->AppendChild("child2");
+  child_rfh2 = content::NavigationSimulator::NavigateAndCommitFromDocument(
+      GURL("https://child2.com"), child_rfh2);
+
+  auto main_frame_token = main_rfh->GetGlobalFrameToken();
+  // child1 and child2 must be RemoteFrameTokens from the perspective of the
+  // frame that includes them to trigger cross-frame recursion.
+  blink::RemoteFrameToken child1_remote_token(
+      child_rfh1->GetFrameToken().value());
+  blink::RemoteFrameToken child2_remote_token(
+      child_rfh2->GetFrameToken().value());
+
+  auto child1_token = child_rfh1->GetGlobalFrameToken();
+
+  // child1 claims child2 is its child.
+  auto child1_content = CreatePageContent();
+
+  auto child1_frame_data = blink::mojom::AIPageContentFrameData::New();
+  child1_frame_data->frame_interaction_info =
+      blink::mojom::AIPageContentFrameInteractionInfo::New();
+  child1_content->frame_data = std::move(child1_frame_data);
+
+  auto malicious_iframe_node =
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kIframe);
+  auto iframe_data = blink::mojom::AIPageContentIframeData::New();
+  iframe_data->frame_token = child2_remote_token;
+
+  malicious_iframe_node->content_attributes->iframe_data =
+      std::move(iframe_data);
+
+  child1_content->root_node->children_nodes.emplace_back(
+      std::move(malicious_iframe_node));
+
+  // We need a page_content_map that includes both main frame and child1.
+  AIPageContentMap page_content_map;
+  auto root_content = CreatePageContent();
+  root_content->root_node->children_nodes.emplace_back(
+      CreateContentNode(blink::mojom::AIPageContentAttributeType::kIframe));
+
+  auto main_frame_data = blink::mojom::AIPageContentFrameData::New();
+  main_frame_data->frame_interaction_info =
+      blink::mojom::AIPageContentFrameInteractionInfo::New();
+  root_content->frame_data = std::move(main_frame_data);
+
+  auto main_iframe_data = blink::mojom::AIPageContentIframeData::New();
+  main_iframe_data->frame_token = child1_remote_token;
+
+  root_content->root_node->children_nodes.back()
+      ->content_attributes->iframe_data = std::move(main_iframe_data);
+
+  page_content_map[main_frame_token] = std::move(root_content);
+  page_content_map[child1_token] = std::move(child1_content);
+
+  auto get_render_frame_info = base::BindLambdaForTesting(
+      [&](int child_process_id,
+          blink::FrameToken token) -> std::optional<RenderFrameInfo> {
+        content::RenderFrameHost* rfh = nullptr;
+        if (token == main_frame_token.frame_token) {
+          rfh = main_rfh;
+        } else if (token == child1_remote_token) {
+          rfh = child_rfh1;
+        } else if (token == child2_remote_token) {
+          rfh = child_rfh2;
+        }
+        if (!rfh) {
+          return std::nullopt;
+        }
+        RenderFrameInfo render_frame_info;
+        render_frame_info.global_frame_token = rfh->GetGlobalFrameToken();
+        render_frame_info.source_origin = rfh->GetLastCommittedOrigin();
+        render_frame_info.url = rfh->GetLastCommittedURL();
+        render_frame_info.serialized_server_token = token.ToString();
+        return render_frame_info;
+      });
+
+  AIPageContentResult page_content;
+  FrameTokenSet frame_token_set;
+  EXPECT_THAT(
+      ConvertAIPageContentToProto(blink::mojom::AIPageContentOptions::New(),
+                                  main_frame_token, page_content_map,
+                                  get_render_frame_info, frame_token_set,
+                                  page_content),
+      base::test::ErrorIs(
+          "compromised renderer: iframe is not a child of the current frame"));
 }
 
 class PageContentProtoUtilCreditCardRedactionTest

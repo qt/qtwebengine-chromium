@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/memory/ptr_util.h"
+#include "base/no_destructor.h"
 #include "content/public/browser/render_process_host.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/service_worker/worker_id.h"
@@ -44,8 +45,9 @@ std::unique_ptr<EventListener> EventListener::ForURL(
     std::optional<base::DictValue> filter) {
   // Use only the origin to identify the event listener, e.g. chrome://settings
   // for chrome://settings/accounts, to avoid multiple events being triggered
-  // for the same process. See crbug.com/536858 for details. // TODO(devlin): If
-  // we dispatched events to processes more intelligently this could be avoided.
+  // for the same process. See crbug.com/40437704 for details.
+  // TODO(devlin): If we dispatched events to processes more intelligently this
+  // could be avoided.
   return base::WrapUnique(new EventListener(
       event_name, ExtensionId(), url::Origin::Create(listener_url).GetURL(),
       process, process->GetBrowserContext(), false,
@@ -151,11 +153,19 @@ EventListener::EventListener(const std::string& event_name,
   }
 }
 
-EventListenerMap::EventListenerMap(Delegate* delegate)
-    : delegate_(delegate) {
-}
+EventListenerMap::EventListenerMap(Delegate* delegate) : delegate_(delegate) {}
 
 EventListenerMap::~EventListenerMap() = default;
+
+const EventListenerMap::ListenerList& EventListenerMap::GetEventListenersByName(
+    const std::string& event_name) const {
+  auto it = listeners_.find(event_name);
+  if (it != listeners_.end()) {
+    return it->second;
+  }
+  static const base::NoDestructor<ListenerList> empty_list;
+  return *empty_list;
+}
 
 bool EventListenerMap::AddListener(std::unique_ptr<EventListener> listener) {
   if (HasListener(listener.get())) {
@@ -193,6 +203,11 @@ bool EventListenerMap::RemoveListener(const EventListener* listener) {
   ListenerList& listeners = listener_itr->second;
   for (auto& it : listeners) {
     if (it->Equals(listener)) {
+      std::vector<MatcherID> matcher_ids_to_remove;
+      if (it->matcher_id() != -1) {
+        matcher_ids_to_remove.push_back(it->matcher_id());
+      }
+      event_filter_.RemoveEventMatchers(matcher_ids_to_remove);
       CleanupListener(it.get());
       // Popping from the back should be cheaper than erase(it).
       std::swap(it, listeners.back());
@@ -309,7 +324,11 @@ void EventListenerMap::RemoveActiveServiceWorkerListenersForExtension(
              EventListener* listener) {
             return listener->extension_id() == worker_id.extension_id &&
                    listener->is_for_service_worker() && !listener->IsLazy() &&
-                   listener->process()->GetID() == worker_id.render_process_id;
+                   listener->service_worker_version_id() ==
+                       worker_id.version_id &&
+                   listener->process()->GetID() ==
+                       worker_id.render_process_id &&
+                   listener->worker_thread_id() == worker_id.thread_id;
           },
           worker_id));
 }
@@ -362,13 +381,15 @@ std::set<const EventListener*> EventListenerMap::GetEventListeners(
     std::set<MatcherID> ids = event_filter_.MatchEvent(
         event.event_name, *event.filter_info, IPC::mojom::kRoutingIdNone);
     for (const MatcherID& id : ids) {
-      EventListener* listener = listeners_by_matcher_id_[id];
-      CHECK(listener);
-      interested_listeners.insert(listener);
+      auto it = listeners_by_matcher_id_.find(id);
+      if (it != listeners_by_matcher_id_.end()) {
+        interested_listeners.insert(it->second);
+      }
     }
   } else {
-    for (const auto& listener : listeners_[event.event_name])
+    for (const auto& listener : GetEventListenersByName(event.event_name)) {
       interested_listeners.insert(listener.get());
+    }
   }
 
   return interested_listeners;
@@ -377,6 +398,16 @@ std::set<const EventListener*> EventListenerMap::GetEventListeners(
 void EventListenerMap::RemoveListenersForProcess(
     const content::RenderProcessHost* process) {
   CHECK(process);
+  std::vector<MatcherID> matcher_ids_to_remove;
+  for (const auto& [event_name, listener_list] : listeners_) {
+    for (const auto& listener : listener_list) {
+      if (listener->process() == process && listener->matcher_id() != -1) {
+        matcher_ids_to_remove.push_back(listener->matcher_id());
+      }
+    }
+  }
+  event_filter_.RemoveEventMatchers(matcher_ids_to_remove);
+
   for (auto it = listeners_.begin(); it != listeners_.end();) {
     auto& listener_list = it->second;
     for (auto it2 = listener_list.begin(); it2 != listener_list.end();) {
@@ -403,6 +434,17 @@ void EventListenerMap::RemoveListenersForExtensionImpl(
     const ExtensionId& extension_id,
     base::RepeatingCallback<bool(const ExtensionId&, EventListener*)>
         removal_predicate) {
+  std::vector<MatcherID> matcher_ids_to_remove;
+  for (const auto& [event_name, listener_list] : listeners_) {
+    for (const auto& listener : listener_list) {
+      if (removal_predicate.Run(extension_id, listener.get()) &&
+          listener->matcher_id() != -1) {
+        matcher_ids_to_remove.push_back(listener->matcher_id());
+      }
+    }
+  }
+  event_filter_.RemoveEventMatchers(matcher_ids_to_remove);
+
   for (auto it = listeners_.begin(); it != listeners_.end();) {
     auto& listener_list = it->second;
     for (auto it2 = listener_list.begin(); it2 != listener_list.end();) {
@@ -436,7 +478,6 @@ void EventListenerMap::CleanupListener(EventListener* listener) {
   if (iter->second.size() == 1) {
     filtered_events_.erase(iter->first);
   }
-  event_filter_.RemoveEventMatcher(listener->matcher_id());
   CHECK_EQ(1u, listeners_by_matcher_id_.erase(listener->matcher_id()));
 }
 

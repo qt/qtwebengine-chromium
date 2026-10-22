@@ -4,10 +4,12 @@
 
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import * as Lit from '../../ui/lit/lit.js';
 import * as RenderCoordinator from '../components/render_coordinator/render_coordinator.js';
 
 import * as UI from './legacy.js';
 
+const {html} = Lit;
 const {Widget} = UI.Widget;
 
 function checkFocus(id: string) {
@@ -201,6 +203,46 @@ describeWithEnvironment('Widget', () => {
   });
 
   describe('performUpdate', () => {
+    it('passes an AbortSignal that is aborted on a subsequent requestUpdate()', async () => {
+      let capturedSignal: AbortSignal|undefined;
+      const widget = new (class extends Widget {
+        override async performUpdate(signal?: AbortSignal): Promise<void> {
+          capturedSignal = signal;
+        }
+      })();
+      widget.markAsRoot();
+      widget.show(renderElementIntoDOM(document.createElement('main')));
+
+      widget.requestUpdate();
+      await widget.updateComplete;
+
+      assert.isDefined(capturedSignal);
+      assert.isFalse(capturedSignal?.aborted);
+
+      widget.requestUpdate();
+      assert.isTrue(capturedSignal?.aborted);
+    });
+
+    it('passes an AbortSignal that is aborted when the widget is detached', async () => {
+      let capturedSignal: AbortSignal|undefined;
+      const widget = new (class extends Widget {
+        override async performUpdate(signal?: AbortSignal): Promise<void> {
+          capturedSignal = signal;
+        }
+      })();
+      widget.markAsRoot();
+      widget.show(renderElementIntoDOM(document.createElement('main')));
+
+      widget.requestUpdate();
+      await widget.updateComplete;
+
+      assert.isDefined(capturedSignal);
+      assert.isFalse(capturedSignal?.aborted);
+
+      widget.detach();
+      assert.isTrue(capturedSignal?.aborted);
+    });
+
     it('can safely use the `RenderCoordinator` primitives', async () => {
       const widget = new (class extends Widget {
         override async performUpdate(): Promise<void> {
@@ -322,6 +364,30 @@ describeWithEnvironment('Widget', () => {
 
       assert.notStrictEqual(updateComplete, widget.updateComplete);
       await widget.updateComplete;
+    });
+
+    it('resolves when performUpdate throws an error', async () => {
+      const widget = new (class extends Widget {
+        override async performUpdate(): Promise<void> {
+          throw new Error('AbortError');
+        }
+      })();
+
+      // Prevent the test from failing due to the unhandled rejection
+      const originalHandler = window.onunhandledrejection;
+      window.onunhandledrejection = e => {
+        if (e.reason?.message === 'AbortError') {
+          e.preventDefault();
+        }
+      };
+
+      try {
+        widget.requestUpdate();
+        // This should not hang
+        await widget.updateComplete;
+      } finally {
+        window.onunhandledrejection = originalHandler;
+      }
     });
   });
 
@@ -542,18 +608,343 @@ describeWithEnvironment('Widget', () => {
 
       assert.strictEqual(document.activeElement, child2.element);
     });
+
+    it('does not recursively call focus when the widget element has autofocus', () => {
+      class FocusableWidget extends UI.Widget.Widget {
+        override performUpdate(): void {
+          // no-op
+        }
+      }
+
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+      Lit.render(
+          html`<devtools-widget autofocus tabindex="-1" ${UI.Widget.widget(FocusableWidget)}></devtools-widget>`,
+          container);
+
+      const widgetElement = container.querySelector('devtools-widget') as UI.Widget.WidgetElement<FocusableWidget>;
+
+      const widget = widgetElement.getWidget();
+      assert.exists(widget);
+
+      widget!.focus();
+
+      assert.strictEqual(document.activeElement, widgetElement);
+    });
+  });
+
+  describe('WidgetDirective', () => {
+    let attachedCount = 0;
+    let detachedCount = 0;
+    let fooSetterCount = 0;
+    let barSetterCount = 0;
+
+    class TestWidget extends UI.Widget.Widget {
+      params?: {foo: string};
+
+      override wasShown(): void {
+        super.wasShown();
+        attachedCount++;
+      }
+
+      override wasHidden(): void {
+        detachedCount++;
+      }
+
+      set foo(_value: string) {
+        fooSetterCount++;
+      }
+
+      set bar(_value: string) {
+        barSetterCount++;
+      }
+    }
+
+    beforeEach(() => {
+      attachedCount = 0;
+      detachedCount = 0;
+      fooSetterCount = 0;
+      barSetterCount = 0;
+    });
+
+    it('creates a new Widget when the widget class changes in a ternary operator', () => {
+      class WidgetA extends UI.Widget.Widget {}
+      class WidgetB extends UI.Widget.Widget {}
+
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      const renderTernary = (condition: boolean) =>
+          Lit.render(html`${condition ? UI.Widget.widget(WidgetA) : UI.Widget.widget(WidgetB)}`, container);
+
+      renderTernary(true);
+      const widgetElement1 = container.querySelector('devtools-widget') as UI.Widget.WidgetElement<WidgetA>;
+      const widget1 = widgetElement1.getWidget();
+      assert.instanceOf(widget1, WidgetA);
+
+      renderTernary(false);
+      const widgetElement2 = container.querySelector('devtools-widget') as UI.Widget.WidgetElement<WidgetB>;
+      const widget2 = widgetElement2.getWidget();
+      assert.instanceOf(widget2, WidgetB);
+      assert.notStrictEqual(widgetElement1, widgetElement2);
+    });
+
+    it('instantiates widget on a child directive', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      Lit.render(html`${UI.Widget.widget(TestWidget)}`, container);
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      assert.strictEqual(attachedCount, 1);
+      const widget = UI.Widget.Widget.get(container.firstElementChild!);
+      assert.instanceOf(widget, TestWidget);
+    });
+
+    it('instantiates widget on an element directive', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      Lit.render(html`<devtools-widget ${UI.Widget.widget(TestWidget)}></devtools-widget>`, container);
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      assert.strictEqual(attachedCount, 1);
+      const devtoolsWidget = container.querySelector('devtools-widget');
+      assert.exists(devtoolsWidget);
+      const widget = UI.Widget.Widget.get(devtoolsWidget!);
+      assert.instanceOf(widget, TestWidget);
+    });
+
+    it('passes and updates widget parameters', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      Lit.render(
+          html`<devtools-widget ${UI.Widget.widget(TestWidget, {params: {foo: 'bar'}})}></devtools-widget>`, container);
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      const devtoolsWidget = container.querySelector('devtools-widget');
+      assert.exists(devtoolsWidget);
+      const widget = UI.Widget.Widget.get(devtoolsWidget!) as TestWidget;
+      assert.deepEqual(widget.params, {foo: 'bar'});
+
+      Lit.render(
+          html`<devtools-widget ${UI.Widget.widget(TestWidget, {params: {foo: 'baz'}})}></devtools-widget>`, container);
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      const devtoolsWidget2 = container.querySelector('devtools-widget');
+      const widget2 = UI.Widget.Widget.get(devtoolsWidget2!) as TestWidget;
+      assert.deepEqual(widget2.params, {foo: 'baz'});
+    });
+
+    it('detaches the widget when the Lit template re-renders and removes it', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      Lit.render(html`<devtools-widget ${UI.Widget.widget(TestWidget)}></devtools-widget>`, container);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert.strictEqual(attachedCount, 1);
+      assert.strictEqual(detachedCount, 0);
+
+      Lit.render(html`<div></div>`, container);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert.strictEqual(detachedCount, 1);
+    });
+
+    it('only calls setters for changed widget parameters', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      const renderWidget = (foo: string, bar: string) => {
+        Lit.render(html`<devtools-widget ${UI.Widget.widget(TestWidget, {foo, bar})}></devtools-widget>`, container);
+      };
+
+      renderWidget('1', '1');
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      assert.strictEqual(fooSetterCount, 1, 'fooSetterCount 1st');
+      assert.strictEqual(barSetterCount, 1, 'barSetterCount 1st');
+
+      renderWidget('2', '1');
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      assert.strictEqual(fooSetterCount, 2, 'fooSetterCount 2nd');
+    });
   });
 
   describe('WidgetElement', () => {
     it('renders WidgetElement into DOM without a root element', async () => {
-      const widget = new UI.Widget.WidgetElement();
       class WidgetInstance extends UI.Widget.Widget {
         override performUpdate(): void {
           // no-op
         }
       }
-      widget.widgetConfig = UI.Widget.widgetConfig(WidgetInstance);
-      renderElementIntoDOM(widget);
+      const container = document.createElement('div');
+      Lit.render(html`<devtools-widget ${UI.Widget.widget(WidgetInstance)}></devtools-widget>`, container);
+
+      const devtoolsWidget = container.firstElementChild as UI.Widget.WidgetElement<WidgetInstance>;
+      assert.exists(devtoolsWidget);
+      renderElementIntoDOM(devtoolsWidget);
+    });
+  });
+
+  describe('WidgetDirective', () => {
+    let attachedCount = 0;
+    let detachedCount = 0;
+    let fooSetterCount = 0;
+    let barSetterCount = 0;
+
+    class TestWidget extends UI.Widget.Widget {
+      params?: {foo: string};
+
+      override wasShown(): void {
+        super.wasShown();
+        attachedCount++;
+      }
+
+      override wasHidden(): void {
+        detachedCount++;
+      }
+
+      set foo(_value: string) {
+        fooSetterCount++;
+      }
+
+      set bar(_value: string) {
+        barSetterCount++;
+      }
+    }
+
+    beforeEach(() => {
+      attachedCount = 0;
+      detachedCount = 0;
+      fooSetterCount = 0;
+      barSetterCount = 0;
+    });
+
+    it('instantiates widget on a child directive', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      Lit.render(html`${UI.Widget.widget(TestWidget)}`, container);
+
+      assert.strictEqual(attachedCount, 1);
+      const widget = UI.Widget.Widget.get(container.firstElementChild!);
+      assert.instanceOf(widget, TestWidget);
+    });
+
+    it('instantiates widget on an element directive', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      Lit.render(html`<span ${UI.Widget.widget(TestWidget)}></span>`, container);
+
+      assert.strictEqual(attachedCount, 1);
+      const span = container.querySelector('span');
+      assert.exists(span);
+      const widget = UI.Widget.Widget.get(span!);
+      assert.instanceOf(widget, TestWidget);
+    });
+
+    it('passes and updates widget parameters', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      Lit.render(html`<span ${UI.Widget.widget(TestWidget, {params: {foo: 'bar'}})}></span>`, container);
+
+      const span = container.querySelector('span');
+      assert.exists(span);
+      const widget = UI.Widget.Widget.get(span!) as TestWidget;
+      assert.deepEqual(widget.params, {foo: 'bar'});
+
+      Lit.render(html`<span ${UI.Widget.widget(TestWidget, {params: {foo: 'baz'}})}></span>`, container);
+
+      const span2 = container.querySelector('span');
+      const widget2 = UI.Widget.Widget.get(span2!) as TestWidget;
+      assert.deepEqual(widget2.params, {foo: 'baz'});
+    });
+
+    it('detaches the widget when the Lit template re-renders and removes it', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      Lit.render(html`<span ${UI.Widget.widget(TestWidget)}></span>`, container);
+      assert.strictEqual(attachedCount, 1);
+      assert.strictEqual(detachedCount, 0);
+
+      Lit.render(html`<div></div>`, container);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert.strictEqual(detachedCount, 1);
+    });
+
+    it('only calls setters for changed widget parameters', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      const renderWidget = (foo: string, bar: string) => {
+        Lit.render(html`<span ${UI.Widget.widget(TestWidget, {foo, bar})}></span>`, container);
+      };
+
+      renderWidget('1', '1');
+
+      assert.strictEqual(fooSetterCount, 1, 'fooSetterCount 1st');
+      assert.strictEqual(barSetterCount, 1, 'barSetterCount 1st');
+
+      renderWidget('2', '1');
+
+      assert.strictEqual(fooSetterCount, 2, 'fooSetterCount 2nd');
+      assert.strictEqual(barSetterCount, 1, 'barSetterCount 2nd');
+    });
+
+    it('detaches the widget when an ancestor is imperatively removed from the DOM', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      // Create a legacy widget hierarchy
+      const legacyParent = new UI.Widget.Widget();
+      legacyParent.markAsRoot();
+      legacyParent.show(container);
+
+      // Render a lit template inside the legacy widget
+      Lit.render(html`<span ${UI.Widget.widget(TestWidget)}></span>`, legacyParent.contentElement);
+
+      assert.strictEqual(attachedCount, 1);
+      assert.strictEqual(detachedCount, 0);
+
+      // Imperatively detach the legacy parent, which removes the DOM nodes outside of Lit's knowledge
+      legacyParent.detach();
+
+      // The tracker should trigger disconnectedCallback and a setTimeout
+
+      assert.strictEqual(detachedCount, 1);
+    });
+
+    it('detaches the widget in a shadow root when the owner element is removed', async () => {
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+
+      const ownerElement = document.createElement('div');
+      const shadowRoot = ownerElement.attachShadow({mode: 'open'});
+      container.appendChild(ownerElement);
+
+      Lit.render(html`<span ${UI.Widget.widget(TestWidget)}></span>`, shadowRoot);
+
+      assert.strictEqual(attachedCount, 1);
+      assert.strictEqual(detachedCount, 0);
+
+      // The owner element is removed, which removes the shadow root containing the lit template
+      ownerElement.remove();
+
+      // The tracker should trigger disconnectedCallback and a setTimeout
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      assert.strictEqual(detachedCount, 1);
+
+      // Remove the container before teardown.
+      // Since ownerElement was removed *before* detach, decrementWidgetCounter couldn't reach `container`.
+      // By resetting the container's innerHTML manually here, we prevent the removeChildren() check from failing in teardown.
+      container.innerHTML = '';
+      container.remove();
     });
   });
 });

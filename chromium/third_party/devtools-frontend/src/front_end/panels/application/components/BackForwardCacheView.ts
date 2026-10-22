@@ -147,7 +147,7 @@ const UIStrings = {
 
 const str_ = i18n.i18n.registerUIStrings('panels/application/components/BackForwardCacheView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-const {widgetConfig} = UI.Widget;
+const {widget} = UI.Widget;
 
 const enum ScreenStatusType {
   RUNNING = 'Running',
@@ -223,7 +223,7 @@ function maybeRenderFrameTree(
         ` : nothing}
         ${node.text}
         ${node.children?.length ? html`
-          <ul role="group" hidden>
+          <ul role="group">
             ${node.children.map(child => renderFrameTreeNode(child))}
           </ul>` : nothing}
       </li>`;
@@ -353,7 +353,7 @@ function renderFramesPerReason(frames: string[]|undefined): LitTemplate {
   }
   const rows = [html`<div>${i18nString(UIStrings.framesPerIssue, {n: frames.length})}</div>`];
   rows.push(...frames.map(url => html`<div class="text-ellipsis" title=${url}
-    jslog=${VisualLogging.treeItem()}>${url}</div>`));
+    jslog=${VisualLogging.treeItem().track({resize: true})}>${url}</div>`));
   return html`
       <div class="details-list"
       jslog=${VisualLogging.tree('frames-per-issue')}>
@@ -361,7 +361,9 @@ function renderFramesPerReason(frames: string[]|undefined): LitTemplate {
     rows,
     title: i18nString(UIStrings.framesPerIssue, {n: frames.length}),
   } as ExpandableList.ExpandableList.ExpandableListData}
-        jslog=${VisualLogging.treeItem()}></devtools-expandable-list>
+        jslog=${VisualLogging.treeItem().track({
+    resize: true
+  })}></devtools-expandable-list>
       </div>
     `;
 }
@@ -385,7 +387,7 @@ function maybeRenderJavaScriptDetails(details: Protocol.Page.BackForwardCacheBlo
   const maxLengthForDisplayedURLs = 50;
   const rows = [html`<div>${i18nString(UIStrings.filesPerIssue, {n: details.length})}</div>`];
   rows.push(...details.map(detail => html`
-          <devtools-widget .widgetConfig=${widgetConfig(Components.Linkifier.ScriptLocationLink, {
+          ${widget(Components.Linkifier.ScriptLocationLink, {
                              sourceURL: detail.url as Platform.DevToolsPath.UrlString,
                              lineNumber: detail.lineNumber,
                              options: {
@@ -394,7 +396,7 @@ function maybeRenderJavaScriptDetails(details: Protocol.Page.BackForwardCacheBlo
                                inlineFrameIndex: 0,
                                maxLength: maxLengthForDisplayedURLs,
                              }
-                           })}></devtools-widget>`));
+                           })}`));
   return html`
       <div class="details-list">
         <devtools-expandable-list .data=${

@@ -281,8 +281,6 @@ impl avifCodecChoice {
             (Self::Aom, "aom"),
             #[cfg(feature = "dav1d")]
             (Self::Dav1d, "dav1d"),
-            #[cfg(feature = "libgav1")]
-            (Self::Libgav1, "libgav1"),
         ];
         for available_codec in available_codecs {
             if name == available_codec.1 {
@@ -548,18 +546,11 @@ pub const AVIF_COLOR_PRIMARIES_DCI_P3: u16 = 12;
 pub const AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084: u16 = 16;
 
 /// # Safety
-/// C API function that does not perform any unsafe operation.
+/// C API function.
 #[no_mangle]
 pub unsafe extern "C" fn crabby_avifAlloc(size: usize) -> *mut c_void {
-    let mut data: Vec<u8> = Vec::new();
-    if data.try_reserve_exact(size).is_err() {
-        return std::ptr::null_mut();
-    }
-    data.resize(size, 0);
-    let mut boxed_slice = data.into_boxed_slice();
-    let ptr = boxed_slice.as_mut_ptr();
-    std::mem::forget(boxed_slice);
-    ptr as *mut c_void
+    // SAFETY: Calling a C function with valid parameters.
+    unsafe { libc::calloc(1, size) }
 }
 
 /// # Safety
@@ -568,8 +559,8 @@ pub unsafe extern "C" fn crabby_avifAlloc(size: usize) -> *mut c_void {
 #[no_mangle]
 pub unsafe extern "C" fn crabby_avifFree(p: *mut c_void) {
     if !p.is_null() {
-        // SAFETY: Safe because of the pre-condition and the null check.
-        let _ = unsafe { Box::from_raw(p as *mut u8) };
+        // SAFETY: Calling a C function with valid parameters.
+        unsafe { libc::free(p) }
     }
 }
 

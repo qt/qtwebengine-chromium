@@ -151,6 +151,18 @@ PrerenderNavigationThrottle::WillStartOrRedirectRequest(bool is_redirection) {
     return CANCEL;
   }
 
+  if (navigation_handle()->IsFormSubmission()) {
+    // Form submission from a prerendered page is currently disallowed.
+    if (!IsInitialNavigation()) {
+      CancelPrerendering(PrerenderFinalStatus::kFormSubmitWhenPrerendering);
+      return CANCEL;
+    }
+
+    // A prerender form submission should only be generated when
+    // `form_submission` is true.
+    CHECK(prerender_host_->form_submission());
+  }
+
   // Origin checks for the navigation (redirection), which varies depending on
   // whether the navigation is initial one or not.
   if (IsInitialNavigation()) {

@@ -37,9 +37,9 @@
 #include "platform/test/fake_clock.h"
 #include "platform/test/fake_task_runner.h"
 #include "util/alarm.h"
+#include "util/bit_vector.h"
 #include "util/chrono_helpers.h"
 #include "util/std_util.h"
-#include "util/yet_another_bit_vector.h"
 
 using testing::_;
 using testing::AtLeast;
@@ -293,16 +293,18 @@ class MockReceiver : public Environment::PacketConsumer {
     if (!collector.is_complete()) {
       return;
     }
-    const EncryptedFrame& encrypted = collector.PeekAtAssembledFrame();
+    const EncodedFrame& metadata = collector.PeekFrameMetadata();
+    const size_t payload_size = collector.GetFramePayloadSize();
     EncodedFrameWithBuffer& decrypted = complete_frames_[frame_id];
     // Note: Not setting decrypted->reference_time here since the logic around
     // calculating the playout time is rather complex, and is definitely outside
     // the scope of the testing being done in this module. Instead, end-to-end
     // testing should exist elsewhere to confirm frame play-out times with real
     // Receivers.
-    decrypted.buffer.resize(FrameCrypto::GetPlaintextSize(encrypted));
-    crypto_.Decrypt(encrypted, decrypted.buffer);
-    encrypted.CopyMetadataTo(&decrypted);
+    decrypted.buffer.resize(payload_size);
+    crypto_.Decrypt(metadata.frame_id, collector.GetPayloadChunks(),
+                    decrypted.buffer);
+    metadata.CopyMetadataTo(&decrypted);
     decrypted.data = decrypted.buffer;
     incomplete_frames_.erase(frame_id);
     OnFrameComplete(frame_id);

@@ -27,16 +27,15 @@ that the `.member = value` struct initialization syntax is not supported unless
 all struct members are primitive types or structs of primitive types (i.e. no
 unions, complex constructors, etc.).
 
+Abseil is not allowed in Open Screen, although it is still a dependency due to
+being needed for some third party libraries, e.g. protobuf.
+
 ## Modifications to the Chromium C++ Guidelines
 
 - `<functional>` and `std::function` objects are allowed.
 
 - `<chrono>` is allowed and encouraged for representation of time.
 
-- Abseil types are allowed based on the allowed list in [DEPS](https://chromium.googlesource.com/openscreen/+/refs/heads/main/DEPS).
-
-- However, Abseil types **must not be used in public APIs**.  Public APIs are
-  headers in targets with GN visibility outside the library or in public/ folders.
 
 - `<thread>` and `<mutex>` are allowed, but discouraged from general use as the
   library only needs to handle threading in very specific places;

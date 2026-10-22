@@ -14,6 +14,7 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notimplemented.h"
 #include "base/rand_util.h"
@@ -66,6 +67,7 @@ bool IsEqual(const std::optional<DnsConfig>& c1, const DnsConfig* c2) {
 }
 
 void UpdateConfigForDohUpgrade(DnsConfig* config) {
+  config->should_perform_doh_fallback_upgrade = false;
   bool has_doh_servers = !config->doh_config.servers().empty();
   // Do not attempt upgrade when there are already DoH servers specified or
   // when there are aspects of the system DNS config that are unhandled.
@@ -98,7 +100,6 @@ void UpdateConfigForDohUpgrade(DnsConfig* config) {
       // Note: we don't apply this upgrade if the DNS config has a local
       // nameserver to give local resolvers priority over fallback DoH.
       has_doh_servers = !config->doh_config.servers().empty();
-      bool upgraded_config_using_fallback = false;
       if (!has_doh_servers) {
         bool fallback_doh_nameservers_provided =
             !config->fallback_doh_nameservers.empty();
@@ -118,20 +119,23 @@ void UpdateConfigForDohUpgrade(DnsConfig* config) {
                 has_loopback_nameserver, has_local_non_loopback_nameserver));
         bool has_local_nameserver =
             has_loopback_nameserver || has_local_non_loopback_nameserver;
-        if (!has_local_nameserver && fallback_doh_nameservers_provided &&
+        if ((!has_local_nameserver ||
+             base::FeatureList::IsEnabled(
+                 features::kDohFallbackAllowedWithLocalNameservers)) &&
+            fallback_doh_nameservers_provided &&
             base::FeatureList::IsEnabled(
                 net::features::kAddAutomaticWithDohFallbackMode)) {
           config->doh_config =
               DnsOverHttpsConfig(GetDohUpgradeServersFromNameservers(
                   config->fallback_doh_nameservers));
-          upgraded_config_using_fallback =
+          config->should_perform_doh_fallback_upgrade =
               !config->doh_config.servers().empty();
         }
         has_doh_servers = !config->doh_config.servers().empty();
       }
       UMA_HISTOGRAM_BOOLEAN(
           "Net.DNS.UpgradeConfig.InsecureUpgradeWithFallbackSucceeded",
-          upgraded_config_using_fallback);
+          config->should_perform_doh_fallback_upgrade);
       UMA_HISTOGRAM_BOOLEAN("Net.DNS.UpgradeConfig.InsecureUpgradeSucceeded",
                             has_doh_servers);
     }
@@ -178,13 +182,76 @@ class DnsClientImpl : public DnsClient {
     can_query_additional_types_via_insecure_ = additional_types_enabled;
   }
 
+  void RecordFallbackFromSecureTransactionPreferred(
+      FallbackFromSecureTransactionPreferredReason reason) const {
+    base::UmaHistogramEnumeration(
+        "Net.DNS.FallbackFromSecureTransactionPreferred", reason);
+  }
+
   bool FallbackFromSecureTransactionPreferred(
       ResolveContext* context) const override {
-    if (!CanUseSecureDnsTransactions())
+    if (!CanUseSecureDnsTransactions()) {
+      RecordFallbackFromSecureTransactionPreferred(
+          FallbackFromSecureTransactionPreferredReason::
+              kFallbackPreferredCannotUseSecureDns);
       return true;
+    }
 
     DCHECK(session_);  // Should be true if CanUseSecureDnsTransactions() true.
-    return context->NumAvailableDohServers(session_.get()) == 0;
+
+    // If the canary domain check is enabled and the canary domain is not
+    // successfully resolved, fall back to insecure DNS.
+    if (context->IsDohFallbackProbeEnabled()) {
+      switch (context->doh_fallback_canary_domain_check_status()) {
+        case CanaryDomainCheckStatus::kPositive:
+          // On a positive canary domain check, no fallback to insecure DNS.
+          break;
+        case CanaryDomainCheckStatus::kNegative:
+          RecordFallbackFromSecureTransactionPreferred(
+              FallbackFromSecureTransactionPreferredReason::
+                  kFallbackPreferredCanaryDomainCheckNegative);
+          return true;
+        case CanaryDomainCheckStatus::kNotStarted:
+        case CanaryDomainCheckStatus::kStarted:
+          RecordFallbackFromSecureTransactionPreferred(
+              FallbackFromSecureTransactionPreferredReason::
+                  kFallbackPreferredCanaryDomainCheckPending);
+          return true;
+        case CanaryDomainCheckStatus::kInactive:
+          NOTREACHED();
+      }
+    }
+
+    if (context->IsDohConfigFromFallbackDohNameservers()) {
+      if (!context->doh_fallback_upgrade_allowed()) {
+        RecordFallbackFromSecureTransactionPreferred(
+            FallbackFromSecureTransactionPreferredReason::
+                kFallbackPreferredDohFallbackUpgradeNotAllowed);
+        return true;
+      }
+      // It's important to check the feature flag after the other checks so that
+      // only eligible users get activated into the experiment.
+      if (!base::FeatureList::IsEnabled(
+              net::features::kForceSecureDnsDohFallback)) {
+        RecordFallbackFromSecureTransactionPreferred(
+            FallbackFromSecureTransactionPreferredReason::
+                kFallbackPreferredDohFallbackExperimentDisabled);
+        return true;
+      }
+    }
+
+    // Otherwise, fall back to insecure DNS if there are no available DoH
+    // servers.
+    if (context->NumAvailableDohServers(session_.get()) == 0) {
+      RecordFallbackFromSecureTransactionPreferred(
+          FallbackFromSecureTransactionPreferredReason::
+              kFallbackPreferredNoAvailableDohServers);
+      return true;
+    }
+
+    RecordFallbackFromSecureTransactionPreferred(
+        FallbackFromSecureTransactionPreferredReason::kFallbackNotPreferred);
+    return false;
   }
 
   bool FallbackFromInsecureTransactionPreferred() const override {
@@ -300,7 +367,7 @@ class DnsClientImpl : public DnsClient {
 
   void SetAddressSorterForTesting(
       std::unique_ptr<AddressSorter> address_sorter) override {
-    NOTIMPLEMENTED();
+    address_sorter_ = std::move(address_sorter);
   }
 
  private:
@@ -334,7 +401,6 @@ class DnsClientImpl : public DnsClient {
 
   bool UpdateDnsConfig() {
     std::optional<DnsConfig> new_effective_config = BuildEffectiveConfig();
-
     if (IsEqual(new_effective_config, GetEffectiveConfig()))
       return false;
 

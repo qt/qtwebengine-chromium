@@ -99,8 +99,9 @@ int DateComponents::MaxWeekNumberInYear() const {
 static unsigned CountDigits(const String& src, unsigned start) {
   unsigned index = start;
   for (; index < src.length(); ++index) {
-    if (!IsASCIIDigit(src[index]))
+    if (!IsAsciiDigit(src[index])) {
       break;
+    }
   }
   return index - start;
 }
@@ -119,8 +120,9 @@ static bool ToInt(const String& src,
 
   // We don't need to handle negative numbers for ISO 8601.
   for (; current < end; ++current) {
-    if (!IsASCIIDigit(src[current]))
+    if (!IsAsciiDigit(src[current])) {
       return false;
+    }
     int digit = src[current] - '0';
     if (value > (INT_MAX - digit) / 10)  // Check for overflow.
       return false;
@@ -371,6 +373,9 @@ void DateComponents::SetMillisecondsSinceMidnightInternal(int ms_in_day) {
 }
 
 bool DateComponents::SetMillisecondsSinceEpochForDateInternal(double ms) {
+  if (ms < kMinimumECMADateInMs || ms > kMaximumECMADateInMs) {
+    return false;
+  }
   year_ = MsToYear(ms);
   int year_day = DayInYear(ms, year_);
   month_ = MonthFromDayInYear(year_day, IsLeapYear(year_));

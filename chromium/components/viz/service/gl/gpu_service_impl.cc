@@ -111,10 +111,6 @@
 #include "gpu/command_buffer/service/gpu_persistent_cache.h"
 #endif
 
-#if BUILDFLAG(SKIA_USE_METAL)
-#include "gpu/command_buffer/service/metal_context_provider.h"
-#endif
-
 #if BUILDFLAG(CLANG_PROFILING_INSIDE_SANDBOX)
 #include "base/test/clang_profiling.h"
 #endif
@@ -233,8 +229,8 @@ GpuServiceImpl::GpuServiceImpl(
       std::make_unique<gpu::webgpu::DawnCachingInterfaceFactory>();
 #endif
 
-  if (gpu_preferences_.gr_context_type == gpu::GrContextType::kGraphiteDawn) {
 #if BUILDFLAG(SKIA_USE_DAWN)
+  if (gpu_preferences_.gr_context_type == gpu::GrContextType::kGraphiteDawn) {
     dawn_context_provider_ = std::move(init_params.dawn_context_provider);
 
     if (dawn_context_provider_) {
@@ -261,16 +257,8 @@ GpuServiceImpl::GpuServiceImpl(
             std::move(dawn_caching_interface));
       }
     }
-#endif  // BUILDFLAG(SKIA_USE_DAWN)
-  } else if (gpu_preferences_.gr_context_type ==
-             gpu::GrContextType::kGraphiteMetal) {
-#if BUILDFLAG(SKIA_USE_METAL)
-    metal_context_provider_ = MetalContextProvider::Create();
-    if (!metal_context_provider_) {
-      DLOG(ERROR) << "Failed to create Metal context provider for Graphite.";
-    }
-#endif  // BUILDFLAG(SKIA_USE_METAL)
   }
+#endif  // BUILDFLAG(SKIA_USE_DAWN)
 
   weak_ptr_ = weak_ptr_factory_.GetWeakPtr();
 }
@@ -482,9 +470,9 @@ void GpuServiceImpl::InitializeWithHostInternal(
       gpu_preferences_, this, watchdog_thread_.get(), main_runner_, io_runner_,
       scheduler_, sync_point_manager, shared_image_manager, gpu_feature_info_,
       &use_shader_cache_shm_count_->data, std::move(default_offscreen_surface),
-      vulkan_context_provider(), metal_context_provider(),
-      dawn_context_provider(), dawn_caching_interface_factory(),
-      gr_context_options_provider_, &persistent_caches_);
+      vulkan_context_provider(), dawn_context_provider(),
+      dawn_caching_interface_factory(), gr_context_options_provider_,
+      &persistent_caches_);
 
   media_gpu_channel_manager_ = std::make_unique<media::MediaGpuChannelManager>(
       gpu_channel_manager_.get());
@@ -644,32 +632,55 @@ void GpuServiceImpl::CreateVideoEncodeAcceleratorProvider(
 void GpuServiceImpl::BindWebNNContextProvider(
     mojo::PendingReceiver<webnn::mojom::WebNNContextProvider> pending_receiver,
     int client_id,
+    uint64_t client_tracing_id,
     bool is_incognito) {
   if (!main_runner_->BelongsToCurrentThread()) {
     main_runner_->PostTask(
-        FROM_HERE,
-        base::BindOnce(&GpuServiceImpl::BindWebNNContextProvider, weak_ptr_,
-                       std::move(pending_receiver), client_id, is_incognito));
+        FROM_HERE, base::BindOnce(&GpuServiceImpl::BindWebNNContextProvider,
+                                  weak_ptr_, std::move(pending_receiver),
+                                  client_id, client_tracing_id, is_incognito));
     return;
   }
 
-  if (!webnn_context_provider_) {
-    scoped_refptr<gpu::SharedContextState> shared_context_state =
-        GetContextState();
-    // `shared_context_state` may be nullptr if there is no GPU acceleration.
-    // For such case, WebNN CPU backend, e.g. TFLite XNNPACK, is still useful.
+  CreateWebNNContextProviderIfNeeded();
 
-    // TODO(crbug.com/345352987): manage `WebNNContextProviderImpl` instance per
-    // `client_id` in order to support memory metrics.
-    webnn_context_provider_ = webnn::WebNNContextProviderImpl::Create(
-        std::move(shared_context_state), gpu_feature_info_, gpu_info_,
-        shared_image_manager(),
-        base::BindOnce(&GpuServiceImpl::LoseAllContexts, weak_ptr_),
-        main_runner(), GetGpuScheduler(), gpu_host_);
+  webnn_context_provider_->BindWebNNContextProvider(
+      std::move(pending_receiver),
+      {is_incognito, client_id, client_tracing_id});
+}
+
+void GpuServiceImpl::CreateWebNNContextProviderIfNeeded() {
+  if (webnn_context_provider_) {
+    return;
   }
 
-  webnn_context_provider_->BindWebNNContextProvider(std::move(pending_receiver),
-                                                    {is_incognito, client_id});
+  scoped_refptr<gpu::SharedContextState> shared_context_state =
+      GetContextState();
+  // `shared_context_state` may be nullptr if there is no GPU acceleration.
+  // For such case, WebNN CPU backend, e.g. TFLite XNNPACK, is still useful.
+
+  webnn_context_provider_ = webnn::WebNNContextProviderImpl::Create(
+      std::move(shared_context_state), gpu_feature_info_, gpu_info_,
+      shared_image_manager(), gpu_channel_manager_->peak_memory_monitor(),
+      base::BindOnce(&GpuServiceImpl::LoseAllContexts, weak_ptr_),
+      main_runner(), GetGpuScheduler(), gpu_host_);
+}
+
+void GpuServiceImpl::BindWebNNServiceIntrospection(
+    mojo::PendingReceiver<webnn::mojom::WebNNServiceIntrospection>
+        pending_receiver) {
+  if (!main_runner_->BelongsToCurrentThread()) {
+    main_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(&GpuServiceImpl::BindWebNNServiceIntrospection,
+                       weak_ptr_, std::move(pending_receiver)));
+    return;
+  }
+
+  CreateWebNNContextProviderIfNeeded();
+
+  webnn_context_provider_->BindWebNNServiceIntrospection(
+      std::move(pending_receiver));
 }
 
 void GpuServiceImpl::GetVideoMemoryUsageStats(
@@ -849,12 +860,13 @@ bool GpuServiceImpl::IsExiting() const {
   return is_exiting_.IsSet();
 }
 
-void GpuServiceImpl::EstablishGpuChannel(int32_t client_id,
-                                         uint64_t client_tracing_id,
-                                         bool is_gpu_host,
-                                         bool enable_extra_handles_validation,
-                                         EstablishGpuChannelCallback callback) {
-  // This should always be called on the IO thread first.
+void GpuServiceImpl::EstablishGpuChannel(
+    int32_t client_id,
+    uint64_t client_tracing_id,
+    bool is_gpu_host,
+    bool enable_extra_handles_validation,
+    mojo::ScopedMessagePipeHandle channel_handle,
+    EstablishGpuChannelCallback callback) {
   if (io_runner_->BelongsToCurrentThread()) {
     if (IsExiting()) {
       // We are already exiting so there is no point in responding. Close the
@@ -864,48 +876,45 @@ void GpuServiceImpl::EstablishGpuChannel(int32_t client_id,
     }
 
     if (gpu::IsReservedClientId(client_id)) {
-      // This returns a null handle, which is treated by the client as a failure
-      // case.
-      std::move(callback).Run(mojo::ScopedMessagePipeHandle(), gpu::GPUInfo(),
+      std::move(callback).Run(/*success=*/false, gpu::GPUInfo(),
                               gpu::GpuFeatureInfo(),
                               gpu::SharedImageCapabilities());
       return;
     }
-
     EstablishGpuChannelCallback wrap_callback =
         base::BindPostTask(io_runner_, std::move(callback));
     main_runner_->PostTask(
-        FROM_HERE, base::BindOnce(&GpuServiceImpl::EstablishGpuChannel,
-                                  weak_ptr_, client_id, client_tracing_id,
-                                  is_gpu_host, enable_extra_handles_validation,
-                                  std::move(wrap_callback)));
+        FROM_HERE,
+        base::BindOnce(&GpuServiceImpl::EstablishGpuChannel, weak_ptr_,
+                       client_id, client_tracing_id, is_gpu_host,
+                       enable_extra_handles_validation,
+                       std::move(channel_handle), std::move(wrap_callback)));
     return;
   }
 
   auto channel_token = base::UnguessableToken::Create();
   gpu::GpuChannel* gpu_channel = gpu_channel_manager_->EstablishChannel(
       channel_token, client_id, client_tracing_id, is_gpu_host,
-      enable_extra_handles_validation, gpu_extra_info_);
+      enable_extra_handles_validation, gpu_extra_info_, gpu_info_,
+      gpu_feature_info_);
 
   if (!gpu_channel) {
-    // This returns a null handle, which is treated by the client as a failure
-    // case.
-    std::move(callback).Run(mojo::ScopedMessagePipeHandle(), gpu::GPUInfo(),
+    std::move(callback).Run(/*success=*/false, gpu::GPUInfo(),
                             gpu::GpuFeatureInfo(),
                             gpu::SharedImageCapabilities());
     return;
   }
-  mojo::MessagePipe pipe;
+
   if (features::IsLegacyIpcDisabled()) {
-    gpu_channel->Start(std::move(pipe.handle0));
+    gpu_channel->Start(std::move(channel_handle));
   } else {
-    gpu_channel->Init(pipe.handle0.release(), shutdown_event_);
+    gpu_channel->Init(channel_handle.release(), shutdown_event_);
   }
 
   media_gpu_channel_manager_->AddChannel(client_id, channel_token);
 
   std::move(callback).Run(
-      std::move(pipe.handle1), gpu_info_, gpu_feature_info_,
+      /*success=*/true, gpu_info_, gpu_feature_info_,
       gpu_channel->shared_image_stub()->factory()->MakeCapabilities());
 }
 

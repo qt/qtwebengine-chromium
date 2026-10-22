@@ -15,18 +15,27 @@
 #include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
 #include "build/buildflag.h"
+#include "components/contextual_tasks/public/ai_thread_data_type_controller.h"
 #include "components/supervised_user/core/common/buildflags.h"
 #include "components/sync/base/data_type.h"
 
+class AimEligibilityService;
 class GoogleGroupsManager;
 class PrefService;
 class SharingMessageBridge;
 class TemplateURLService;
 
+namespace accessibility_annotator {
+class AccessibilityAnnotatorBackend;
+}  // namespace accessibility_annotator
+
+namespace account_settings {
+class AccountSettingService;
+}  // namespace account_settings
+
 namespace autofill {
 class AddressDataManager;
 class AutofillWebDataService;
-class AccountSettingService;
 }  // namespace autofill
 
 namespace bookmarks {
@@ -37,9 +46,9 @@ namespace collaboration {
 class CollaborationService;
 }  // namespace collaboration
 
-namespace commerce {
-class ProductSpecificationsService;
-}  // namespace commerce
+namespace contextual_tasks {
+class ContextualTasksService;
+}  // namespace contextual_tasks
 
 namespace consent_auditor {
 class ConsentAuditor;
@@ -139,8 +148,11 @@ class CommonControllerBuilder {
 
   // Setters to inject dependencies. Each of these setters must be invoked
   // before invoking `Build()`. In some cases it is allowed to inject nullptr.
+  void SetAccessibilityAnnotatorBackend(
+      accessibility_annotator::AccessibilityAnnotatorBackend*
+          accessibility_annotator_backend);
   void SetAccountSettingService(
-      autofill::AccountSettingService* account_setting_service);
+      account_settings::AccountSettingService* account_setting_service);
   void SetAddressDataManagerGetter(
       base::RepeatingCallback<autofill::AddressDataManager*()>
           address_data_manager_getter);
@@ -150,6 +162,7 @@ class CommonControllerBuilder {
           web_data_service_on_disk,
       const scoped_refptr<autofill::AutofillWebDataService>&
           web_data_service_in_memory);
+  void SetAimEligibilityService(AimEligibilityService* aim_eligibility_service);
   void SetBookmarkModel(bookmarks::BookmarkModel* bookmark_model);
   void SetBookmarkSyncService(
       sync_bookmarks::BookmarkSyncService*
@@ -158,6 +171,8 @@ class CommonControllerBuilder {
   void SetConsentAuditor(consent_auditor::ConsentAuditor* consent_auditor);
   void SetCollaborationService(
       collaboration::CollaborationService* collaboration_service);
+  void SetContextualTasksService(
+      contextual_tasks::ContextualTasksService* contextual_tasks_service);
   void SetPersonalCollaborationDataService(
       data_sharing::personal_collaboration_data::
           PersonalCollaborationDataService*
@@ -194,8 +209,6 @@ class CommonControllerBuilder {
   void SetPrefService(PrefService* pref_service);
   void SetPrefServiceSyncable(
       sync_preferences::PrefServiceSyncable* pref_service_syncable);
-  void SetProductSpecificationsService(
-      commerce::ProductSpecificationsService* product_specifications_service);
   void SetDualReadingListModel(
       reading_list::DualReadingListModel* dual_reading_list_model);
   void SetSendTabToSelfSyncService(send_tab_to_self::SendTabToSelfSyncService*
@@ -222,6 +235,105 @@ class CommonControllerBuilder {
       version_info::Channel channel);
 
  private:
+  std::unique_ptr<syncer::DataTypeController>
+  CreateDeviceInfoDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAutofillDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAutofillProfileDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateContactInfoDataTypeController(syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAutofillWalletDataTypeController(syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAutofillWalletMetadataDataTypeController(
+      syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAutofillWalletOfferDataTypeController(
+      syncer::SyncService* sync_service);
+#if !BUILDFLAG(IS_IOS)
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAutofillWalletUsageDataTypeController(
+      syncer::SyncService* sync_service);
+#endif
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAutofillWalletCredentialDataTypeController(
+      syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::DataTypeController>
+  CreateBookmarksDataTypeController();
+  std::unique_ptr<syncer::DataTypeController> CreateHistoryDataTypeController(
+      syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::DataTypeController>
+  CreateHistoryDeleteDirectivesDataTypeController(
+      syncer::SyncService* sync_service,
+      version_info::Channel channel);
+  std::unique_ptr<syncer::DataTypeController> CreateSessionsDataTypeController(
+      syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::DataTypeController>
+  CreatePasswordsDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateIncomingPasswordSharingInvitationDataTypeController(
+      syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::DataTypeController>
+  CreateOutgoingPasswordSharingInvitationDataTypeController(
+      syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::DataTypeController>
+  CreatePlusAddressDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreatePlusAddressSettingDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreatePreferencesDataTypeController(version_info::Channel channel);
+  std::unique_ptr<syncer::DataTypeController>
+  CreatePriorityPreferencesDataTypeController(version_info::Channel channel);
+  std::unique_ptr<syncer::DataTypeController>
+  CreateSavedTabGroupDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateSharedTabGroupDataTypeController(syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::DataTypeController>
+  CreateSharingMessageDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateReadingListDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateSearchEnginesDataTypeController(version_info::Channel channel);
+  std::unique_ptr<syncer::DataTypeController>
+  CreateUserEventsDataTypeController(syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::DataTypeController>
+  CreateSendTabToSelfDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateUserConsentsDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAutofillValuableDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAutofillValuableMetadataDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAccountSettingDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateSharedTabGroupAccountDataTypeController(
+      syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::DataTypeController>
+  CreateSharedCommentDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAiThreadDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateGeminiThreadDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateAccessibilityAnnotationDataTypeController();
+  std::unique_ptr<syncer::DataTypeController>
+  CreateContextualTaskDataTypeController();
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  std::unique_ptr<syncer::DataTypeController> CreateSkillDataTypeController();
+#endif
+#if !BUILDFLAG(IS_ANDROID)
+  std::unique_ptr<syncer::DataTypeController>
+  CreateWebauthnCredentialDataTypeController(syncer::SyncService* sync_service);
+#endif
+#if BUILDFLAG(ENABLE_SUPERVISED_USERS)
+  std::unique_ptr<syncer::DataTypeController>
+  CreateFamilyLinkSettingsDataTypeController(version_info::Channel channel);
+#endif
+  std::unique_ptr<syncer::DataTypeController>
+  CreateCollaborationGroupDataTypeController(syncer::SyncService* sync_service);
+
   // Minimalistic fork of std::optional that enforces via CHECK that it has a
   // value when accessing it.
   template <typename Ptr>
@@ -261,7 +373,9 @@ class CommonControllerBuilder {
 
   // For all above, nullopt indicates the corresponding setter wasn't invoked.
   // nullptr indicates the setter was invoked with nullptr.
-  SafeOptional<raw_ptr<autofill::AccountSettingService>>
+  SafeOptional<raw_ptr<accessibility_annotator::AccessibilityAnnotatorBackend>>
+      accessibility_annotator_backend_;
+  SafeOptional<raw_ptr<account_settings::AccountSettingService>>
       account_setting_service_;
   base::RepeatingCallback<autofill::AddressDataManager*()>
       address_data_manager_getter_;
@@ -294,6 +408,7 @@ class CommonControllerBuilder {
       profile_autofill_web_data_service_;
   SafeOptional<scoped_refptr<autofill::AutofillWebDataService>>
       account_autofill_web_data_service_;
+  SafeOptional<raw_ptr<AimEligibilityService>> aim_eligibility_service_;
   SafeOptional<scoped_refptr<password_manager::PasswordStoreInterface>>
       profile_password_store_;
   SafeOptional<scoped_refptr<password_manager::PasswordStoreInterface>>
@@ -309,10 +424,10 @@ class CommonControllerBuilder {
       plus_address_setting_service_;
   SafeOptional<scoped_refptr<plus_addresses::PlusAddressWebDataService>>
       plus_address_webdata_service_;
-  SafeOptional<raw_ptr<commerce::ProductSpecificationsService>>
-      product_specifications_service_;
   SafeOptional<raw_ptr<collaboration::CollaborationService>>
       collaboration_service_;
+  SafeOptional<raw_ptr<contextual_tasks::ContextualTasksService>>
+      contextual_tasks_service_;
   SafeOptional<raw_ptr<data_sharing::personal_collaboration_data::
                            PersonalCollaborationDataService>>
       personal_collaboration_data_service_;

@@ -7,7 +7,10 @@
 #include <memory>
 
 #include "base/check_op.h"
+#include "base/functional/bind.h"
+#include "base/location.h"
 #include "base/memory/raw_ptr.h"
+#include "base/task/single_thread_task_runner.h"
 #include "device/bluetooth/bluetooth_classic_device_mac.h"
 #include "device/bluetooth/bluetooth_socket_mac.h"
 
@@ -75,6 +78,13 @@
 - (void)rfcommChannelClosed:(IOBluetoothRFCOMMChannel*)rfcommChannel {
   [_rfcommChannel setDelegate:nil];
 
+  // Maintain a strong local reference to ensure the delegate survives the
+  // callback. This is necessary for incoming connections or failed outgoing
+  // connections where `_strongSelf` is never armed, leaving `delegate_` in
+  // C++ as the only strong reference keeping this object alive.
+  [[maybe_unused]] NS_VALID_UNTIL_END_OF_SCOPE BluetoothRfcommChannelDelegate*
+      keepAlive = self;
+
   // If `_channel` still exists, notify it that the channel was closed so it
   // can release its strong references to `rfcommChannel` and the channel
   // delegate (this object). In the typical case we expect `_channel` has
@@ -117,7 +127,16 @@ BluetoothRfcommChannelMac::~BluetoothRfcommChannelMac() {
   // delegate's reference to this object so the delegate will not notify us
   // for events that occur after our destruction.
   [delegate_ resetOwner];
+  [channel_ setDelegate:nil];
   [channel_ closeChannel];
+  // `delegate_`'s self-retain (`_strongSelf`) is only armed after a successful
+  // open. If we are destroyed during a pending or failed open, keep the
+  // delegate alive across one main-run-loop turn so any already-enqueued
+  // IOBluetooth callbacks hit a live receiver. See FB13705522.
+  BluetoothRfcommChannelDelegate* __strong delegate = delegate_;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    (void)delegate;
+  });
 }
 
 // static
@@ -184,8 +203,12 @@ void BluetoothRfcommChannelMac::OnChannelOpenComplete(
     DCHECK_EQ(status, kIOReturnSuccess);
   }
 
-  socket()->OnChannelOpenComplete(
-      BluetoothClassicDeviceMac::GetDeviceAddress([channel getDevice]), status);
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&BluetoothSocketMac::OnChannelOpenComplete,
+                                base::WrapRefCounted(socket()),
+                                BluetoothClassicDeviceMac::GetDeviceAddress(
+                                    [channel getDevice]),
+                                status));
 }
 
 void BluetoothRfcommChannelMac::OnChannelClosed(

@@ -2,10 +2,11 @@
 evliu@google.com
 jonross@chromium.org
 # accessibility_annotator
-sophiechang@chromium.org
-wittman@chromium.org
 holte@chromium.org
 nyquist@chromium.org
+schwering@google.com
+sophiechang@chromium.org
+wittman@chromium.org
 # account_manager
 sinhak@chromium.org
 # android
@@ -97,7 +98,6 @@ gavinwill@chromium.org
 chadduffin@chromium.org
 crisrael@google.com
 enlightened@chromium.org
-hsuregan@google.com
 jiajunz@google.com
 jorgelo@chromium.org
 julietlevesque@google.com
@@ -153,6 +153,8 @@ eirage@chromium.org
 lizeb@chromium.org
 # data
 tbansal@chromium.org
+# desktop
+erikchen@chromium.org
 # dev
 changhaohan@chromium.org
 # diagnostics
@@ -196,6 +198,7 @@ rizvis@google.com
 thesalsa@google.com
 # gcm
 peter@chromium.org
+rushans@google.com
 # geolocation
 reillyg@chromium.org
 # glic
@@ -282,7 +285,6 @@ nidhijaju@chromium.org
 toyoshim@chromium.org
 # network
 chadduffin@chromium.org
-hsuregan@google.com
 jiajunz@google.com
 khorimoto@chromium.org
 matthewmwang@chromium.org
@@ -341,6 +343,7 @@ drubery@chromium.org
 thefrog@chromium.org
 xinghuilu@chromium.org
 # payment
+darwinyang@chromium.org
 smcgruer@chromium.org
 # performance_controls
 agale@chromium.org
@@ -408,6 +411,8 @@ schenney@chromium.org
 # renderer
 schenney@chromium.org
 # safe_browsing
+bcb@chromium.org
+andysjlim@chromium.org
 drubery@chromium.org
 jacastro@chromium.org
 pkotwicz@google.com

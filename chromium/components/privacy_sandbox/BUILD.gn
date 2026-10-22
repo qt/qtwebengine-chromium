@@ -12,6 +12,7 @@ static_library("privacy_sandbox_prefs") {
   ]
 
   deps = [
+    ":features",
     "//components/pref_registry",
     "//components/prefs",
   ]
@@ -30,10 +31,6 @@ component("features") {
   ]
 
   public_deps = [ "//base" ]
-}
-
-source_set("privacy_sandbox_survey_service") {
-  public = [ "privacy_sandbox_survey_service.h" ]
 }
 
 source_set("tracking_protection_settings") {
@@ -88,7 +85,6 @@ if (use_blink) {
 
     deps = [
       ":privacy_sandbox_prefs",
-      ":privacy_sandbox_survey_service",
       "//components/browsing_topics/common",
       "//components/content_settings/core/browser",
       "//components/content_settings/core/browser:cookie_settings",

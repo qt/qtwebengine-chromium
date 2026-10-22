@@ -170,6 +170,9 @@ class ImageResource::ImageResourceInfoImpl final
 
  private:
   const KURL& Url() const override { return resource_->Url(); }
+  bool IsAutomaticUpgrade() const override {
+    return resource_->GetResourceRequest().IsAutomaticUpgrade();
+  }
   base::TimeTicks LoadEnd() const override {
     if (ResourceLoadTiming* load_timing =
             resource_->GetResponse().GetResourceLoadTiming()) {
@@ -239,8 +242,8 @@ class ImageResource::ImageResourceInfoImpl final
     }
   }
 
-  bool IsAdResource() const override {
-    return resource_->GetResourceRequest().IsAdResource();
+  const std::optional<AdProvenance>& GetAdProvenance() const override {
+    return resource_->GetResourceRequest().GetAdProvenance();
   }
 
   const HashSet<String>* GetUnsupportedImageMimeTypes() const override {

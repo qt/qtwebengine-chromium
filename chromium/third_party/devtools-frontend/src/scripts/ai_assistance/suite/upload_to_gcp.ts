@@ -6,10 +6,6 @@ import {execSync} from 'node:child_process';
 import crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import {fileURLToPath} from 'node:url';
-
-const filename = fileURLToPath(import.meta.url);
-const dirname = path.dirname(filename);
 
 // the upload_to_google_storage_first_class.py script only lets you upload
 // folders in the immediate directory, so we run it from the `outputs`
@@ -17,9 +13,9 @@ const dirname = path.dirname(filename);
 // this:
 // scripts/ai_assistance/suite/outputs/outputs
 // We need to run the script from the first outputs directory, uploading the second.
-const CWD_TO_UPLOAD_FROM = path.join(dirname, 'outputs');
+const CWD_TO_UPLOAD_FROM = path.join(import.meta.dirname, 'outputs');
 
-const DEVTOOLS_ROOT = path.join(dirname, '..', '..', '..');
+const DEVTOOLS_ROOT = path.join(import.meta.dirname, '..', '..', '..');
 
 const hash = await getDirectoryHash(path.join(CWD_TO_UPLOAD_FROM, 'outputs'));
 

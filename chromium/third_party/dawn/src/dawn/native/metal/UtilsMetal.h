@@ -28,6 +28,8 @@
 #ifndef SRC_DAWN_NATIVE_METAL_UTILSMETAL_H_
 #define SRC_DAWN_NATIVE_METAL_UTILSMETAL_H_
 
+#import <Metal/Metal.h>
+
 #include <string>
 
 #include "absl/container/inlined_vector.h"
@@ -37,8 +39,6 @@
 #include "dawn/native/metal/DeviceMTL.h"
 #include "dawn/native/metal/ShaderModuleMTL.h"
 #include "dawn/native/metal/TextureMTL.h"
-
-#import <Metal/Metal.h>
 
 namespace dawn::native {
 struct BeginRenderPassCmd;
@@ -76,6 +76,12 @@ MTLCompareFunction ToMetalCompareFunction(wgpu::CompareFunction compareFunction)
 // texels so there are no overloads with BlockExtent/Origin3D on purpose.
 MTLSize ToMTLSize(const TexelExtent3D& extent);
 MTLOrigin ToMTLOrigin(const TexelOrigin3D& origin);
+
+// When using argument buffers, we use the compacted BindingIndex directly in MSL, instead of
+// remapping to per-resource-type indices (from GetBindingIndexInfo) like we do without argbufs.
+inline uint32_t ToMTLArgumentBufferIndex(BindingIndex bindingIndex) {
+    return uint32_t(bindingIndex);
+}
 
 // For different reasons a WebGPU copy may need to be split into multiple copies for Metal. This
 // structure and its associated function `ComputeTextureBufferCopySplit` have the necessary logic

@@ -52,7 +52,9 @@ CoreBuiltinCall::~CoreBuiltinCall() = default;
 CoreBuiltinCall* CoreBuiltinCall::Clone(CloneContext& ctx) {
     auto* new_result = ctx.Clone(Result());
     auto args = ctx.Remap<CoreBuiltinCall::kDefaultNumOperands>(Args());
-    return ctx.ir.CreateInstruction<CoreBuiltinCall>(new_result, func_, args);
+    auto* cloned = ctx.ir.CreateInstruction<CoreBuiltinCall>(new_result, func_, args);
+    cloned->SetExplicitTemplateParams(ExplicitTemplateParams());
+    return cloned;
 }
 
 tint::core::ir::Instruction::Accesses CoreBuiltinCall::GetSideEffects() const {
@@ -85,6 +87,8 @@ tint::core::ir::Instruction::Accesses CoreBuiltinCall::GetSideEffects() const {
         case BuiltinFn::kAtomicXor:
         case BuiltinFn::kAtomicExchange:
         case BuiltinFn::kAtomicCompareExchangeWeak:
+        case BuiltinFn::kAtomicStoreMax:
+        case BuiltinFn::kAtomicStoreMin:
         case BuiltinFn::kDpdx:
         case BuiltinFn::kDpdxCoarse:
         case BuiltinFn::kDpdxFine:
@@ -136,6 +140,7 @@ tint::core::ir::Instruction::Accesses CoreBuiltinCall::GetSideEffects() const {
         case BuiltinFn::kAtan:
         case BuiltinFn::kAtan2:
         case BuiltinFn::kAtanh:
+        case BuiltinFn::kBitcast:
         case BuiltinFn::kCeil:
         case BuiltinFn::kClamp:
         case BuiltinFn::kCos:
@@ -220,6 +225,7 @@ tint::core::ir::Instruction::Accesses CoreBuiltinCall::GetSideEffects() const {
         case BuiltinFn::kHasResource:
         case BuiltinFn::kBufferView:
         case BuiltinFn::kBufferLength:
+        case BuiltinFn::kBufferArrayView:
         case BuiltinFn::kNone:
             break;
     }

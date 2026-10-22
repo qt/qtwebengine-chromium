@@ -46,6 +46,8 @@
     X(kBufferView, BufferView)                                                     \
     X(kFilteringParameters, FilteringParameters)                                   \
     X(kSwizzleAssignment, SwizzleAssignment)                                       \
+    X(kLinearIndexing, LinearIndexing)                                             \
+    X(kTextureFormatsTier1, TextureFormatsTier1)                                   \
     /* ----------------- entries below are only for testing  ------------------ */ \
     X(kChromiumTestingUnimplemented, ChromiumTestingUnimplemented)                 \
     X(kChromiumTestingUnsafeExperimental, ChromiumTestingUnsafeExperimental)       \

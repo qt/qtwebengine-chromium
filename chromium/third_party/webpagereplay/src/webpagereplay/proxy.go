@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,14 +20,11 @@ import (
 
 const errStatus = http.StatusInternalServerError
 
-func makeLogger(req *http.Request, quietMode bool) func(msg string, args ...interface{}) {
+func makeLogger(req *http.Request, quietMode bool) Logger {
 	if quietMode {
-		return func(string, ...interface{}) {}
+		return NullLogger()
 	}
-	prefix := fmt.Sprintf("ServeHTTP(%s): ", req.URL)
-	return func(msg string, args ...interface{}) {
-		log.Print(prefix + fmt.Sprintf(msg, args...))
-	}
+	return Log().With("url", req.URL.String())
 }
 
 // fixupRequestURL adds a scheme and host to req.URL.
@@ -109,33 +105,36 @@ type replayingProxy struct {
 }
 
 func (proxy *replayingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	Log().Debug("Proxy: Handling request", "method", req.Method, "url", req.URL.String())
 	if req.URL.Path == "/web-page-replay-generate-200" {
 		w.WriteHeader(200)
 		return
 	}
 	if req.URL.Path == "/web-page-replay-command-exit" {
-		log.Printf("Shutting down. Received /web-page-replay-command-exit")
+		Log().Info("Received /web-page-replay-command-exit")
+		Log().Info("Shutting down")
 		os.Exit(0)
 		return
 	}
 	if req.URL.Path == "/web-page-replay-reset-replay-chronology" {
-		log.Printf("Received /web-page-replay-reset-replay-chronology")
-		log.Printf("Reset replay order to start.")
+		Log().Info("Received /web-page-replay-reset-replay-chronology")
+		Log().Info("Reset replay order")
 		proxy.a.StartNewReplaySession()
 		return
 	}
 	fixupRequestURL(req, proxy.scheme)
 	if err := processRequestURLParams(req, proxy.paramToIgnoreInURLPath); err != nil {
-		log.Printf("Error processing request URL: %v", err)
+		Log().Error("Error processing request URL", "error", err)
 		os.Exit(-1)
 		return
 	}
-	logf := makeLogger(req, proxy.quietMode)
+
+	logger := makeLogger(req, proxy.quietMode)
 
 	// Lookup the response in the archive.
 	_, storedResp, err := proxy.a.FindRequest(req)
 	if err != nil {
-		logf("couldn't find matching request: %v", err)
+		logger.Warn("Proxy: FAILED to find request", "error", err)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -146,22 +145,22 @@ func (proxy *replayingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	clientAE := strings.ToLower(req.Header.Get("Accept-Encoding"))
 	originCE := strings.ToLower(storedResp.Header.Get("Content-Encoding"))
 	if !strings.Contains(clientAE, originCE) {
-		logf("translating Content-Encoding [%s] -> [%s]", originCE, clientAE)
+		logger.Info("translating Content-Encoding", "origin", originCE, "client", clientAE)
 		body, err := ioutil.ReadAll(storedResp.Body)
 		if err != nil {
-			logf("error reading response body from archive: %v", err)
+			logger.Error("error reading response body from archive", "error", err)
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		body, err = decompressBody(originCE, body)
 		if err != nil {
-			logf("error decompressing response body: %v", err)
+			logger.Error("error decompressing response body", "error", err)
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		body, ce, err := CompressBody(clientAE, body)
 		if err != nil {
-			logf("error recompressing response body: %v", err)
+			logger.Error("error recompressing response body", "error", err)
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -178,13 +177,13 @@ func (proxy *replayingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	updateDates(storedResp.Header, time.Now())
 
 	// Forward the response.
-	logf("serving %v response", storedResp.StatusCode)
+	logger.Info("Proxy: SERVING response", "status", storedResp.StatusCode)
 	for k, v := range storedResp.Header {
 		w.Header()[k] = append([]string{}, v...)
 	}
 	w.WriteHeader(storedResp.StatusCode)
 	if _, err := io.Copy(w, storedResp.Body); err != nil {
-		logf("warning: client response truncated: %v", err)
+		logger.Error("Client response truncated", "error", err)
 	}
 }
 
@@ -204,26 +203,28 @@ type recordingProxy struct {
 }
 
 func (proxy *recordingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	Log().Debug("Proxy: Handling request", "method", req.Method, "url", req.URL.String())
 	if req.URL.Path == "/web-page-replay-generate-200" {
 		w.WriteHeader(200)
 		return
 	}
 	if req.URL.Path == "/web-page-replay-command-exit" {
-		log.Printf("Shutting down. Received /web-page-replay-command-exit")
+		Log().Info("Received /web-page-replay-command-exit")
+		Log().Info("Shutting down")
 		if err := proxy.a.Close(); err != nil {
-			log.Printf("Error flushing archive: %v", err)
+			Log().Error("Error flushing archive", "error", err)
 		}
 		os.Exit(0)
 		return
 	}
 	fixupRequestURL(req, proxy.scheme)
 	if err := processRequestURLParams(req, proxy.paramToIgnoreInURLPath); err != nil {
-		log.Printf("Error processing request URL: %v", err)
+		Log().Error("Error processing request URL", "error", err)
 		os.Exit(-1)
 		return
 	}
 
-	logf := makeLogger(req, false)
+	logger := makeLogger(req, false)
 	// https://github.com/golang/go/issues/16036. Server requests always
 	// have non-nil body even for GET and HEAD. This prevents http.Transport
 	// from retrying requests on dead reused conns. Catapult Issue 3706.
@@ -242,7 +243,7 @@ func (proxy *recordingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request)
 		var err error
 		requestBody, err = ioutil.ReadAll(req.Body)
 		if err != nil {
-			logf("read request body failed: %v", err)
+			logger.Error("read request body failed", "error", err)
 			w.WriteHeader(errStatus)
 			return
 		}
@@ -253,7 +254,7 @@ func (proxy *recordingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	// If RoundTrip fails, convert the response to a 500.
 	resp, err := proxy.tr.RoundTrip(req)
 	if err != nil {
-		logf("RoundTrip failed: %v", err)
+		logger.Error("RoundTrip failed", "error", err)
 		resp = &http.Response{
 			Status:     http.StatusText(errStatus),
 			StatusCode: errStatus,
@@ -267,7 +268,7 @@ func (proxy *recordingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request)
 	// Copy the entire response body.
 	responseBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		logf("warning: origin response truncated: %v", err)
+		logger.Warn("Origin response truncated", "error", err)
 	}
 	resp.Body.Close()
 
@@ -277,7 +278,7 @@ func (proxy *recordingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request)
 		req.Body = ioutil.NopCloser(bytes.NewReader(requestBody))
 	}
 	if err := proxy.a.RecordRequest(req, resp); err != nil {
-		logf("failed recording request: %v", err)
+		logger.Error("Failed recording request", "error", err)
 	}
 
 	// Restore req and response body which are consumed by RecordRequest.
@@ -293,16 +294,18 @@ func (proxy *recordingProxy) ServeHTTP(w http.ResponseWriter, req *http.Request)
 
 	responseBodyAfterTransform, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		logf("warning: transformed response truncated: %v", err)
+		logger.Warn("Transformed response truncated", "error", err)
 	}
 
 	// Forward the response.
-	logf("serving %d, %d bytes", resp.StatusCode, len(responseBodyAfterTransform))
+	logger.Info("Proxy: SERVING response", "status", resp.StatusCode, "bytes",
+		len(responseBodyAfterTransform))
 	for k, v := range resp.Header {
 		w.Header()[k] = append([]string{}, v...)
 	}
 	w.WriteHeader(resp.StatusCode)
 	if n, err := io.Copy(w, bytes.NewReader(responseBodyAfterTransform)); err != nil {
-		logf("warning: client response truncated (%d/%d bytes): %v", n, len(responseBodyAfterTransform), err)
+		logger.Warn("Client response truncated", "written", n, "total",
+			len(responseBodyAfterTransform), "error", err)
 	}
 }

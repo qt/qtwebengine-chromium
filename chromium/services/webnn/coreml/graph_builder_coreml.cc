@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/349653202): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "services/webnn/coreml/graph_builder_coreml.h"
 
 #include <algorithm>
@@ -22,6 +17,9 @@
 #include <type_traits>
 
 #include "base/bits.h"
+#include "base/check.h"
+#include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/containers/fixed_flat_set.h"
 #include "base/containers/span.h"
 #include "base/containers/span_reader.h"
@@ -29,6 +27,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/json/json_file_value_serializer.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/numerics/byte_conversions.h"
@@ -634,7 +633,8 @@ template <typename DataType>
   requires internal::IsSupportedTensorType<DataType>
 CoreML::Specification::MILSpec::Value CreateScalarImmediateValue(
     const DataType& value) {
-  return CreateTensorImmediateValue(/*dimensions=*/{}, base::span(&value, 1u));
+  return CreateTensorImmediateValue(/*dimensions=*/{},
+                                    UNSAFE_TODO(base::span(&value, 1u)));
 }
 
 // `Operation` input can bind to a `Value` or name, when binding to a name it
@@ -1210,8 +1210,6 @@ ContextProperties GraphBuilderCoreml::GetContextProperties() {
        /*dequantize_linear_input=*/{kInts8Ints32, kMaxRank},
        /*dequantize_linear_scale=*/
        {DataTypeConstraint::kFloat16To32, kMaxRank},
-       /*dequantize_linear_zero_point=*/
-       {kInts8Ints32, kMaxRank},
        /*add_input=*/{kFloatsAndInt32, kMaxRank},
        /*sub_input=*/{kFloatsAndInt32, kMaxRank},
        /*mul_input=*/{kFloatsAndInt32, kMaxRank},
@@ -1417,8 +1415,6 @@ ContextProperties GraphBuilderCoreml::GetContextProperties() {
 
   if (__builtin_available(macOS 15, *)) {
     properties.data_type_limits.dequantize_linear_input.data_types =
-        DataTypeConstraint::kInts4Ints8Ints32;
-    properties.data_type_limits.dequantize_linear_zero_point.data_types =
         DataTypeConstraint::kInts4Ints8Ints32;
   }
   return properties;
@@ -2390,8 +2386,8 @@ GraphBuilderCoreml::AddOperationForDequantizeLinear(
             .Has(input_operand_data_type));
   CHECK(context_properties_.data_type_limits.dequantize_linear_scale.data_types
             .Has(scale_operand_data_type));
-  CHECK(context_properties_.data_type_limits.dequantize_linear_zero_point
-            .data_types.Has(zero_point_operand_data_type));
+  CHECK(context_properties_.data_type_limits.dequantize_linear_input.data_types
+            .Has(zero_point_operand_data_type));
 
   if (input_operand_data_type == OperandDataType::kInt32 ||
       input_operand_data_type == OperandDataType::kUint32) {
@@ -5973,9 +5969,10 @@ GraphBuilderCoreml::SetInputFromTwoConstantsReordered(
           float16s[i].data = fp16_ieee_from_fp32_value(
               data.ValueOrDefault(std::numeric_limits<float>::infinity()));
         }
-        RETURN_IF_ERROR(weight_item->WriteBytes(base::span<const uint8_t>(
-            reinterpret_cast<const uint8_t*>(float16s.data()),
-            subspan_byte_size)));
+        RETURN_IF_ERROR(
+            weight_item->WriteBytes(UNSAFE_TODO(base::span<const uint8_t>(
+                reinterpret_cast<const uint8_t*>(float16s.data()),
+                subspan_byte_size))));
         break;
       }
       case OperandDataType::kFloat32: {
@@ -5988,9 +5985,10 @@ GraphBuilderCoreml::SetInputFromTwoConstantsReordered(
           floats[i] =
               data.ValueOrDefault(std::numeric_limits<float>::infinity());
         }
-        RETURN_IF_ERROR(weight_item->WriteBytes(base::span<const uint8_t>(
-            reinterpret_cast<const uint8_t*>(floats.data()),
-            subspan_byte_size)));
+        RETURN_IF_ERROR(
+            weight_item->WriteBytes(UNSAFE_TODO(base::span<const uint8_t>(
+                reinterpret_cast<const uint8_t*>(floats.data()),
+                subspan_byte_size))));
         break;
       }
       case OperandDataType::kUint8: {
@@ -6003,9 +6001,10 @@ GraphBuilderCoreml::SetInputFromTwoConstantsReordered(
           uints[i] =
               data.ValueOrDefault(std::numeric_limits<uint8_t>::infinity());
         }
-        RETURN_IF_ERROR(weight_item->WriteBytes(base::span<const uint8_t>(
-            reinterpret_cast<const uint8_t*>(uints.data()),
-            subspan_byte_size)));
+        RETURN_IF_ERROR(
+            weight_item->WriteBytes(UNSAFE_TODO(base::span<const uint8_t>(
+                reinterpret_cast<const uint8_t*>(uints.data()),
+                subspan_byte_size))));
         break;
       }
       case OperandDataType::kInt8: {
@@ -6018,8 +6017,10 @@ GraphBuilderCoreml::SetInputFromTwoConstantsReordered(
           ints[i] =
               data.ValueOrDefault(std::numeric_limits<int8_t>::infinity());
         }
-        RETURN_IF_ERROR(weight_item->WriteBytes(base::span<const uint8_t>(
-            reinterpret_cast<const uint8_t*>(ints.data()), subspan_byte_size)));
+        RETURN_IF_ERROR(
+            weight_item->WriteBytes(UNSAFE_TODO(base::span<const uint8_t>(
+                reinterpret_cast<const uint8_t*>(ints.data()),
+                subspan_byte_size))));
         break;
       }
       case OperandDataType::kInt32:
@@ -6059,11 +6060,12 @@ GraphBuilderCoreml::SliceFirstDimension(
                                                sliced_dimensions));
   RETURN_IF_ERROR(AddOperationForSlice(input_operand_id, sliced, beginnings,
                                        Ui32ToI32(endings), strides, block));
-  ASSIGN_OR_RETURN(OperandId sliced_squeezed,
-                   GenerateInternalOperandInfo(
-                       input_operand_info.mil_data_type,
-                       base::span<const uint32_t>(sliced_dimensions.begin() + 1,
-                                                  sliced_dimensions.end())));
+  ASSIGN_OR_RETURN(
+      OperandId sliced_squeezed,
+      GenerateInternalOperandInfo(
+          input_operand_info.mil_data_type,
+          UNSAFE_TODO(base::span<const uint32_t>(sliced_dimensions.begin() + 1,
+                                                 sliced_dimensions.end()))));
   RETURN_IF_ERROR(AddOperationForReshape(sliced, sliced_squeezed, block));
   return sliced_squeezed;
 }

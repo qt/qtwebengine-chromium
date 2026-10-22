@@ -16,6 +16,8 @@ generate_css("css_files") {
     "./components/chatView.css",
     "./components/disabledWidget.css",
     "./components/exploreWidget.css",
+    "./components/exportForAgentsDialog.css",
+    "./components/walkthroughView.css",
     "./selectWorkspaceDialog.css",
   ]
 }
@@ -23,15 +25,20 @@ generate_css("css_files") {
 devtools_ui_module("ai_assistance") {
   sources = [
     "AiAssistancePanel.ts",
+    "ExportConversation.ts",
     "PatchWidget.ts",
     "SelectWorkspaceDialog.ts",
+    "components/AccessibilityAgentMarkdownRenderer.ts",
     "components/ChatInput.ts",
     "components/ChatMessage.ts",
     "components/ChatView.ts",
     "components/DisabledWidget.ts",
     "components/ExploreWidget.ts",
+    "components/ExportForAgentsDialog.ts",
     "components/MarkdownRendererWithCodeBlock.ts",
     "components/PerformanceAgentMarkdownRenderer.ts",
+    "components/StylingAgentMarkdownRenderer.ts",
+    "components/WalkthroughView.ts",
   ]
 
   deps = [
@@ -58,6 +65,8 @@ devtools_ui_module("ai_assistance") {
     "../../models/workspace_diff:bundle",
     "../../panels/changes:bundle",
     "../../panels/common:bundle",
+    "../../panels/elements:bundle",
+    "../../panels/lighthouse:bundle",
     "../../panels/network:bundle",
     "../../panels/network/forward:bundle",
     "../../panels/timeline:bundle",
@@ -90,6 +99,7 @@ devtools_entrypoint("bundle") {
     ":*",
     "../../entrypoints/*",
     "../../ui/components/docs/ai_assistance/*",
+    "../console/*",
     "../explain",
   ]
 
@@ -109,14 +119,18 @@ devtools_ui_module("unittests") {
 
   sources = [
     "AiAssistancePanel.test.ts",
+    "ExportConversation.test.ts",
     "PatchWidget.test.ts",
     "SelectWorkspaceDialog.test.ts",
+    "components/AccessibilityAgentMarkdownRenderer.test.ts",
     "components/ChatInput.test.ts",
     "components/ChatMessage.test.ts",
     "components/ChatView.test.ts",
     "components/DisabledWidget.test.ts",
     "components/ExploreWidget.test.ts",
+    "components/ExportForAgentsDialog.test.ts",
     "components/MarkdownRendererWithCodeBlock.test.ts",
+    "components/WalkthroughView.test.ts",
   ]
 
   deps = [

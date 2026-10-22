@@ -4,7 +4,7 @@
   "description": "Catapult project base",
   "repository": {
     "type": "git",
-    "url": "https://github.com/catapult-project/catapult/tree/master/catapult_base"
+    "url": "https://chromium.googlesource.com/catapult/+/refs/heads/main/catapult_base"
   },
   "main": "index.js",
   "scripts": {

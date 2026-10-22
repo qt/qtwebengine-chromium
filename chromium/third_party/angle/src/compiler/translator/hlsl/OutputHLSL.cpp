@@ -416,8 +416,6 @@ void OutputHLSL::output(TIntermNode *treeRoot, TInfoSinkBase &objSink)
     objSink << mHeader.c_str();
     objSink << mBody.c_str();
     objSink << mFooter.c_str();
-
-    builtInFunctionEmulator.cleanup();
 }
 
 const std::map<std::string, unsigned int> &OutputHLSL::getUniformBlockRegisterMap() const
@@ -1236,7 +1234,7 @@ void OutputHLSL::visitSymbol(TIntermSymbol *node)
             mReferencedOutputVariables[uniqueId.get()] = &variable;
             out << "out_" << name;
         }
-        else if (qualifier == EvqViewIDOVR)
+        else if (qualifier == EvqEmulatedViewIDOVR)
         {
             out << name;
             mUsesViewID = true;

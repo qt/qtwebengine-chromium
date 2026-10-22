@@ -40,6 +40,7 @@
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/css/counters_attachment_context.h"
 #include "third_party/blink/renderer/core/css/css_identifier_value.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/css_value.h"
@@ -49,6 +50,7 @@
 #include "third_party/blink/renderer/core/dom/comment.h"
 #include "third_party/blink/renderer/core/dom/document_fragment.h"
 #include "third_party/blink/renderer/core/dom/document_init.h"
+#include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
 #include "third_party/blink/renderer/core/dom/range.h"
@@ -84,8 +86,11 @@
 #include "third_party/blink/renderer/core/mathml/mathml_element.h"
 #include "third_party/blink/renderer/core/mathml_names.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/sanitizer/sanitizer_api.h"
 #include "third_party/blink/renderer/core/svg/svg_style_element.h"
 #include "third_party/blink/renderer/core/svg/svg_use_element.h"
+#include "third_party/blink/renderer/core/trustedtypes/trusted_types_names.h"
+#include "third_party/blink/renderer/platform/bindings/exception_context.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/runtime_call_stats.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -94,6 +99,7 @@
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+#include "third_party/blink/renderer/platform/wtf/text/line_ending.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -144,13 +150,6 @@ class EmptyLocalFrameClientWithFailingLoaderFactory final
             }));
   }
 };
-
-void LogFastPathParserTotalTime(base::TimeDelta parse_time) {
-  // The time needed to parse is typically < 1ms (even at the 99%).
-  UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
-      "Blink.HTMLFastPathParser.TotalParseTime2", parse_time,
-      base::Microseconds(1), base::Milliseconds(10), 100);
-}
 
 }  // namespace
 
@@ -400,9 +399,10 @@ DocumentFragment* CreateFragmentFromMarkup(
   fragment->ParseHTML(markup, fake_body, /*registry*/ nullptr,
                       parser_content_policy);
 
-  if (!base_url.empty() && base_url != BlankURL() &&
-      base_url != document.BaseURL())
+  if (!base_url.empty() && base_url != BlankUrl() &&
+      base_url != document.BaseURL()) {
     CompleteURLs(*fragment, base_url);
+  }
 
   return fragment;
 }
@@ -463,7 +463,7 @@ DocumentFragment* CreateFragmentFromMarkupWithContext(
   // markers.
 
   StringBuilder tagged_markup;
-  tagged_markup.Append(markup.Left(fragment_start));
+  tagged_markup.Append(markup.subview(0, fragment_start));
   MarkupFormatter::AppendComment(tagged_markup, kFragmentMarkerTag);
   tagged_markup.Append(
       markup.Substring(fragment_start, fragment_end - fragment_start));
@@ -537,7 +537,7 @@ static void FillContainerFromString(ContainerNode* paragraph,
     return;
   }
 
-  DCHECK_EQ(string.find('\n'), kNotFound) << string;
+  DCHECK(!string.contains('\n')) << string;
 
   Vector<StringView> tab_list = string.Split('\t');
   StringBuilder tab_text;
@@ -592,12 +592,12 @@ bool IsPlainTextMarkup(Node* node) {
 static bool ShouldPreserveNewline(const EphemeralRange& range) {
   if (Node* node = range.StartPosition().NodeAsRangeFirstNode()) {
     if (LayoutObject* layout_object = node->GetLayoutObject())
-      return layout_object->Style()->ShouldPreserveBreaks();
+      return layout_object->StyleRef().ShouldPreserveBreaks();
   }
 
   if (Node* node = range.StartPosition().AnchorNode()) {
     if (LayoutObject* layout_object = node->GetLayoutObject())
-      return layout_object->Style()->ShouldPreserveBreaks();
+      return layout_object->StyleRef().ShouldPreserveBreaks();
   }
 
   return false;
@@ -614,14 +614,12 @@ DocumentFragment* CreateFragmentFromText(const EphemeralRange& context,
   if (text.empty())
     return fragment;
 
-  String string = text;
-  string.Replace("\r\n", "\n");
-  string.Replace('\r', '\n');
+  String string = NormalizeLineEndingsToLF(text);
 
   if (!IsRichlyEditablePosition(context.StartPosition()) ||
       ShouldPreserveNewline(context)) {
     fragment->AppendChild(document.createTextNode(string));
-    if (string.EndsWith('\n')) {
+    if (string.ends_with('\n')) {
       auto* element = MakeGarbageCollected<HTMLBRElement>(document);
       element->setAttribute(html_names::kClassAttr,
                             AtomicString(AppleInterchangeNewline));
@@ -632,7 +630,7 @@ DocumentFragment* CreateFragmentFromText(const EphemeralRange& context,
 
   // A string with no newlines gets added inline, rather than being put into a
   // paragraph.
-  if (string.find('\n') == kNotFound) {
+  if (!string.contains('\n')) {
     FillContainerFromString(fragment, string);
     return fragment;
   }
@@ -664,98 +662,6 @@ DocumentFragment* CreateFragmentFromText(const EphemeralRange& context,
       FillContainerFromString(element, s);
     }
     fragment->AppendChild(element);
-  }
-  return fragment;
-}
-
-DocumentFragment* CreateFragmentForInnerOuterHTML(
-    const String& markup,
-    Element* context_element,
-    ParserContentPolicy parser_content_policy,
-    Element::ParseDeclarativeShadowRoots parse_declarative_shadows,
-    Element::ForceHtml force_html,
-    ForceInertTemplate force_inert,
-    CustomElementRegistry* registry,
-    ExceptionState& exception_state) {
-  DCHECK(context_element);
-  const HTMLTemplateElement* template_element =
-      DynamicTo<HTMLTemplateElement>(*context_element);
-  if (template_element && !template_element->GetExecutionContext()) {
-    return nullptr;
-  }
-
-  Document& document =
-      (IsA<HTMLTemplateElement>(*context_element) ||
-       force_inert == ForceInertTemplate::kForce)
-          ? context_element->GetDocument().EnsureTemplateDocument()
-          : context_element->GetDocument();
-  DocumentFragment* fragment = DocumentFragment::Create(document);
-  document.setAllowDeclarativeShadowRoots(
-      parse_declarative_shadows ==
-      Element::ParseDeclarativeShadowRoots::kParse);
-
-  if (IsA<HTMLDocument>(document) || force_html == Element::ForceHtml::kForce) {
-    bool log_tag_stats = false;
-    base::ElapsedTimer parse_timer;
-    HTMLFragmentParsingBehaviorSet parser_behavior;
-    if (parse_declarative_shadows ==
-        Element::ParseDeclarativeShadowRoots::kParse) {
-      parser_behavior.Put(HTMLFragmentParsingBehavior::kIncludeShadowRoots);
-    }
-    const bool parsed_fast_path = TryParsingHTMLFragment(
-        markup, document, *fragment, *context_element, parser_content_policy,
-        parser_behavior, &log_tag_stats);
-    if (parsed_fast_path) {
-      fragment->SetHoldsUnnotifiedChildren(true);
-      fragment->ParserFinishedBuildingDocumentFragment(
-          DocumentFragment::ShouldNotifyInsertedNodes::kSkip);
-      // If parsed by fast path, no upgrade will be happening so we can simply
-      // set the custom element registry to the new elements to keep track.
-      // We attempt to optimize the registry setting by checking if the
-      // newly-created elements are using the same registry as the tree scope.
-      // If they're the same, we don't need to set registry on the descendants
-      // as the descendants can look up the registry from tree scope like usual.
-      if (RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled() &&
-          registry != context_element->GetTreeScope().customElementRegistry()) {
-        for (Element& element : ElementTraversal::DescendantsOf(*fragment)) {
-          element.SetCustomElementRegistry(registry);
-        }
-      }
-      LogFastPathParserTotalTime(parse_timer.Elapsed());
-#if DCHECK_IS_ON()
-      // As a sanity check for the fast-path, create another fragment using
-      // the full parser and compare the results.
-      // See https://bugs.chromium.org/p/chromium/issues/detail?id=1407201
-      // for details.
-      DocumentFragment* fragment2 = DocumentFragment::Create(document);
-      fragment2->ParseHTML(markup, context_element, registry,
-                           parser_content_policy);
-      DCHECK_EQ(CreateMarkup(fragment), CreateMarkup(fragment2))
-          << " supplied value " << markup;
-      DCHECK(fragment->isEqualNode(fragment2));
-#endif
-      return fragment;
-    }
-    fragment = DocumentFragment::Create(document);
-    fragment->ParseHTML(markup, context_element, registry,
-                        parser_content_policy);
-    LogFastPathParserTotalTime(parse_timer.Elapsed());
-    if (log_tag_stats &&
-        RuntimeEnabledFeatures::InnerHTMLParserFastpathLogFailureEnabled()) {
-      LogTagsForUnsupportedTagTypeFailure(*fragment);
-    }
-    return fragment;
-  }
-
-  bool was_valid = fragment->ParseXML(markup, context_element, exception_state,
-                                      parser_content_policy);
-  if (!was_valid) {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kSyntaxError,
-        "The provided markup is invalid XML, and "
-        "therefore cannot be inserted into an XML "
-        "document.");
-    return nullptr;
   }
   return fragment;
 }
@@ -793,53 +699,6 @@ DocumentFragment* CreateFragmentForTransformToFragment(
 
   // FIXME: Do we need to mess with URLs here?
 
-  return fragment;
-}
-
-static inline void RemoveElementPreservingChildren(DocumentFragment* fragment,
-                                                   HTMLElement* element) {
-  Node* next_child = nullptr;
-  for (Node* child = element->firstChild(); child; child = next_child) {
-    next_child = child->nextSibling();
-    element->RemoveChild(child);
-    fragment->InsertBefore(child, element);
-  }
-  fragment->RemoveChild(element);
-}
-
-DocumentFragment* CreateContextualFragment(
-    const String& markup,
-    Element* element,
-    ParserContentPolicy parser_content_policy,
-    ExceptionState& exception_state) {
-  DCHECK(element);
-
-  DocumentFragment* fragment = CreateFragmentForInnerOuterHTML(
-      markup, element, parser_content_policy,
-      Element::ParseDeclarativeShadowRoots::kDontParse,
-      Element::ForceHtml::kDontForce, ForceInertTemplate::kDontForce,
-      RuntimeEnabledFeatures::ScopedCustomElementRegistryEnabled()
-          ? element->customElementRegistry()
-          : element->GetDocument().customElementRegistry(),
-      exception_state);
-  if (!fragment)
-    return nullptr;
-
-  // We need to pop <html> and <body> elements and remove <head> to
-  // accommodate folks passing complete HTML documents to make the
-  // child of an element.
-
-  Node* next_node = nullptr;
-  for (Node* node = fragment->firstChild(); node; node = next_node) {
-    next_node = node->nextSibling();
-    if (IsA<HTMLHtmlElement>(node) || IsA<HTMLHeadElement>(node) ||
-        IsA<HTMLBodyElement>(node)) {
-      auto* child_element = To<HTMLElement>(node);
-      if (Node* first_child = child_element->firstChild())
-        next_node = first_child;
-      RemoveElementPreservingChildren(fragment, child_element);
-    }
-  }
   return fragment;
 }
 
@@ -939,7 +798,7 @@ static Document* CreateStagingDocumentForMarkupSanitization(
   // TODO(https://crbug.com/1355751) Initialize `storage_key`.
   frame->Init(/*opener=*/nullptr, DocumentToken(), /*policy_container=*/nullptr,
               StorageKey(), /*document_ukm_source_id=*/ukm::kInvalidSourceId,
-              /*creator_base_url=*/KURL());
+              /*creator_base_url=*/NullUrl());
 
   Document* document = frame->GetDocument();
   DCHECK(document);
@@ -1010,7 +869,7 @@ String CreateStrictlyProcessedMarkupWithContext(
     last_markup = markup;
 
     DocumentFragment* fragment = CreateFragmentFromMarkupWithContext(
-        *staging_document, last_markup, fragment_start, fragment_end, KURL(),
+        *staging_document, last_markup, fragment_start, fragment_end, NullUrl(),
         kDisallowScriptingAndPluginContent);
     if (!fragment) {
       staging_document->GetPage()->WillBeDestroyed();
@@ -1066,7 +925,7 @@ DocumentFragment* CreateStrictlyProcessedFragmentFromMarkupWithContext(
     unsigned fragment_end,
     const String& base_url) {
   String sanitized_markup = CreateStrictlyProcessedMarkupWithContext(
-      document, raw_markup, fragment_start, fragment_end, KURL());
+      document, raw_markup, fragment_start, fragment_end, NullUrl());
   if (sanitized_markup.IsNull())
     return nullptr;
   return CreateFragmentFromMarkup(document, sanitized_markup, base_url,

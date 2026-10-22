@@ -658,6 +658,7 @@ angle::Result ContextWgpu::syncState(const gl::Context *context,
                 // May modify framebuffer size, so invalidate driver uniforms which contain the
                 // framebuffer size.
                 invalidateDriverUniforms();
+                updatePipelineColorMasks();
                 ANGLE_TRY(endRenderPass(webgpu::RenderPassClosureReason::FramebufferBindingChange));
             }
             break;
@@ -725,14 +726,7 @@ angle::Result ContextWgpu::syncState(const gl::Context *context,
                 break;
             case gl::state::DIRTY_BIT_COLOR_MASK:
             {
-                const gl::BlendStateExt &blendStateExt = mState.getBlendStateExt();
-                for (size_t i = 0; i < blendStateExt.getDrawBufferCount(); i++)
-                {
-                    bool r, g, b, a;
-                    blendStateExt.getColorMaskIndexed(i, &r, &g, &b, &a);
-                    mRenderPipelineDesc.setColorWriteMask(i, r, g, b, a);
-                }
-                invalidateCurrentRenderPipeline();
+                updatePipelineColorMasks();
             }
             break;
             case gl::state::DIRTY_BIT_SAMPLE_ALPHA_TO_COVERAGE_ENABLED:
@@ -989,6 +983,39 @@ angle::Result ContextWgpu::syncState(const gl::Context *context,
     return angle::Result::Continue;
 }
 
+void ContextWgpu::updatePipelineColorMasks()
+{
+
+    FramebufferWgpu *framebufferWgpu      = webgpu::GetImpl(mState.getDrawFramebuffer());
+    gl::DrawBufferMask enabledDrawBuffers = framebufferWgpu->getState().getEnabledDrawBuffers();
+
+    bool changed = false;
+
+    const gl::BlendStateExt &blendStateExt = mState.getBlendStateExt();
+    for (size_t i = 0; i < blendStateExt.getDrawBufferCount(); i++)
+    {
+        bool r, g, b, a;
+        if (enabledDrawBuffers.test(i))
+        {
+            blendStateExt.getColorMaskIndexed(i, &r, &g, &b, &a);
+        }
+        else
+        {
+            // Disabled draw buffers just have their color mask set to 0.
+            r = 0;
+            g = 0;
+            b = 0;
+            a = 0;
+        }
+        changed = mRenderPipelineDesc.setColorWriteMask(i, r, g, b, a) || changed;
+    }
+
+    if (changed)
+    {
+        invalidateCurrentRenderPipeline();
+    }
+}
+
 GLint ContextWgpu::getGPUDisjoint()
 {
     return 0;
@@ -1085,7 +1112,7 @@ FenceNVImpl *ContextWgpu::createFenceNV()
     return new FenceNVWgpu();
 }
 
-SyncImpl *ContextWgpu::createSync()
+SyncImpl *ContextWgpu::createSync(const gl::Context *)
 {
     return new SyncWgpu();
 }

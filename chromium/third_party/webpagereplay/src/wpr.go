@@ -6,10 +6,11 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"log"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -23,6 +24,8 @@ import (
 	"go.chromium.org/webpagereplay/src/webpagereplay"
 	"golang.org/x/net/http2"
 )
+
+var Log = webpagereplay.Log
 
 const longUsage = `
    %s [installroot|removeroot] [options]
@@ -60,13 +63,17 @@ type CommonConfig struct {
 	// Flags common to RecordCommand and ReplayCommand.
 	host                                     string
 	httpPort, httpsPort, httpSecureProxyPort int
+	logLevel                                 string
+	relativeTimestamps                       bool
 	certConfig                               CertConfig
 	injectScripts                            string
 	paramToIgnoreInURLPath                   string
 	noArchiveCertificates                    bool
+	constantMathRandomResult                 float64
+	skipCertLoadingForTesting                bool
 
 	// Computed state.
-	root_certs   []tls.Certificate
+	rootCerts    []tls.Certificate
 	transformers []webpagereplay.ResponseTransformer
 }
 
@@ -98,13 +105,13 @@ type RootCACommand struct {
 func (certCfg *CertConfig) Flags() []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
-			Name:        "https_cert_file",
+			Name:        "https-cert-file",
 			Value:       "",
 			Usage:       "File containing 1 or more comma separated PEM-encoded X509 certificates to use with SSL.",
 			Destination: &certCfg.certFile,
 		},
 		&cli.StringFlag{
-			Name:        "https_key_file",
+			Name:        "https-key-file",
 			Value:       "",
 			Usage:       "File containing 1 or more comma separated PEM-encoded private keys to use with SSL.",
 			Destination: &certCfg.keyFile,
@@ -121,25 +128,36 @@ func (common *CommonConfig) Flags() []cli.Flag {
 			Destination: &common.host,
 		},
 		&cli.IntFlag{
-			Name:        "http_port",
+			Name:        "http-port",
 			Value:       -1,
 			Usage:       "Port number to listen on for HTTP requests, 0 to use any port, or -1 to disable.",
 			Destination: &common.httpPort,
 		},
 		&cli.IntFlag{
-			Name:        "https_port",
+			Name:        "https-port",
 			Value:       -1,
 			Usage:       "Port number to listen on for HTTPS requests, 0 to use any port, or -1 to disable.",
 			Destination: &common.httpsPort,
 		},
 		&cli.IntFlag{
-			Name:        "https_to_http_port",
+			Name:        "https-to-http-port",
 			Value:       -1,
 			Usage:       "Port number to listen on for HTTP proxy requests over an HTTPS connection, 0 to use any port, or -1 to disable.",
 			Destination: &common.httpSecureProxyPort,
 		},
 		&cli.StringFlag{
-			Name:  "inject_scripts",
+			Name:        "log-level",
+			Value:       "INFO",
+			Usage:       "Logging level (DEBUG, INFO, WARN, ERROR).",
+			Destination: &common.logLevel,
+		},
+		&cli.BoolFlag{
+			Name:        "relative-timestamps",
+			Usage:       "Display relative timestamps in logs.",
+			Destination: &common.relativeTimestamps,
+		},
+		&cli.StringFlag{
+			Name:  "inject-scripts",
 			Value: "deterministic.js",
 			Usage: "A comma separated list of JavaScript sources to inject in all pages. " +
 				"By default a script is injected that eliminates sources of entropy " +
@@ -159,7 +177,7 @@ func (common *CommonConfig) Flags() []cli.Flag {
 			Destination: &common.paramToIgnoreInURLPath,
 		},
 		&cli.BoolFlag{
-			Name: "no_archive_certificates",
+			Name: "no-archive-certificates",
 			Usage: "By default, WPR stores certificates in the archive during " +
 				"recording (minted from the root ones) and reads them during replay " +
 				"Such certificates will expire eventually, so this setup is only " +
@@ -170,7 +188,21 @@ func (common *CommonConfig) Flags() []cli.Flag {
 				"will be generated on replay time, with caching by host.",
 			Destination: &common.noArchiveCertificates,
 		},
+		&cli.Float64Flag{
+			Name: "constant-math-random-result",
+			Usage: "A float between 0.0 (inclusive) and 1.0 (exclusive) to use as " +
+				"a constant Math.random() result. If not specified, a deterministic " +
+				"sequence is used. Note that when using this sequence, invocations " +
+				"from a given point in the code might still run into different " +
+				"values across runs because the calls to Math.random() might get " +
+				"reordered due to external factors.",
+			Destination: &common.constantMathRandomResult,
+		},
 	)
+}
+
+func isSet(c *cli.Context, name string) bool {
+	return c.IsSet(name) || c.IsSet(strings.ReplaceAll(name, "-", "_"))
 }
 
 func (certCfg *CertConfig) CheckArgs(c *cli.Context) error {
@@ -181,7 +213,7 @@ func (certCfg *CertConfig) CheckArgs(c *cli.Context) error {
 	return nil
 }
 
-func (common *CommonConfig) CheckArgs(c *cli.Context) error {
+func (common *CommonConfig) CheckArgsAndSetLogLevel(c *cli.Context) error {
 	if c.Args().Len() > 1 {
 		return errors.New("too many args")
 	}
@@ -192,9 +224,27 @@ func (common *CommonConfig) CheckArgs(c *cli.Context) error {
 		return errors.New("must specify at least one port flag")
 	}
 
+	if err := webpagereplay.SetLogLevel(common.logLevel); err != nil {
+		return fmt.Errorf("Invalid log_level (%s): %v", common.logLevel, err)
+	}
+	webpagereplay.SetRelativeTimestamps(common.relativeTimestamps)
+
+	if isSet(c, "constant-math-random-result") {
+		val := common.constantMathRandomResult
+		if math.IsNaN(val) || math.IsInf(val, 0) || val < 0.0 || val >= 1.0 {
+			return fmt.Errorf("Invalid value (%v) for the flag --%v. "+
+				"The permitted range  is [0, 1).",
+				val, "constant-math-random-result")
+		}
+	}
+
 	err := common.certConfig.CheckArgs(c)
 	if err != nil {
 		return err
+	}
+
+	if common.skipCertLoadingForTesting {
+		return nil
 	}
 
 	// Load certFiles.
@@ -204,38 +254,138 @@ func (common *CommonConfig) CheckArgs(c *cli.Context) error {
 		return fmt.Errorf("list of cert files given should match list of key files")
 	}
 	for i := 0; i < len(certFiles); i++ {
-		log.Printf("Loading cert from %v\n", certFiles[i])
-		log.Printf("Loading key from %v\n", keyFiles[i])
-		root_cert, err := tls.LoadX509KeyPair(certFiles[i], keyFiles[i])
+		Log().Info("Loading cert", "path", certFiles[i])
+		Log().Info("Loading key", "path", keyFiles[i])
+		rootCert, err := tls.LoadX509KeyPair(certFiles[i], keyFiles[i])
 		if err != nil {
 			return fmt.Errorf("error opening cert or key files: %v", err)
 		}
-		common.root_certs = append(common.root_certs, root_cert)
+		common.rootCerts = append(common.rootCerts, rootCert)
 	}
 	return nil
 }
 
-func (common *CommonConfig) ProcessInjectedScripts(timeSeedMs int64) error {
-	if common.injectScripts != "" {
-		for _, scriptFile := range strings.Split(common.injectScripts, ",") {
-			log.Printf("Loading script from %v\n", scriptFile)
-			// Replace {{WPR_TIME_SEED_TIMESTAMP}} with the time seed.
-			replacements := map[string]string{"{{WPR_TIME_SEED_TIMESTAMP}}": strconv.FormatInt(timeSeedMs, 10)}
-			si, err := webpagereplay.NewScriptInjectorFromFile(scriptFile, replacements)
-			if err != nil {
-				return fmt.Errorf("error opening script %s: %v", scriptFile, err)
-			}
-			common.transformers = append(common.transformers, si)
-		}
+func (common *CommonConfig) ProcessInjectedScriptsForRecording(c *cli.Context,
+	archive *webpagereplay.Archive) error {
+	// Determine the time seed.
+	archive.DeterministicTimeSeedMs = 1000 * time.Now().Unix()
+
+	// Determine the constant Math.random() result, if any.
+	if isSet(c, "constant-math-random-result") {
+		archive.ConstantMathRandomResult = &common.constantMathRandomResult
 	}
 
+	return common.processScripts(archive.InjectedScripts,
+		archive.DeterministicTimeSeedMs, archive.ConstantMathRandomResult)
+}
+
+func (common *CommonConfig) ProcessInjectedScriptsForReplay(c *cli.Context,
+	archive *webpagereplay.Archive) error {
+	// Determine the time seed.
+	var timeSeedMs int64
+	if archive.DeterministicTimeSeedMs != 0 {
+		timeSeedMs = archive.DeterministicTimeSeedMs
+	} else {
+		// Old archive, predating the addition of DeterministicTimeSeedMs.
+		timeSeedMs = 1000 * time.Now().Unix()
+	}
+
+	var constantMathRandomResult *float64 = archive.ConstantMathRandomResult
+	if isSet(c, "constant-math-random-result") {
+		flagValue := &common.constantMathRandomResult
+
+		// Warn if archive contains a value that differs what the user specifies.
+		if archive.ConstantMathRandomResult != nil &&
+			*flagValue != *archive.ConstantMathRandomResult {
+			Log().Warn("constant-math-random-result flag differs from archive",
+				"flag", *flagValue, "archive", *archive.ConstantMathRandomResult)
+		}
+
+		// Still respect the user's wishes.
+		constantMathRandomResult = flagValue
+	}
+
+	// Replay from archive (unless --inject-scripts specified).
+	if !isSet(c, "inject-scripts") && len(archive.InjectedScripts) > 0 {
+		for name, contents := range archive.InjectedScripts {
+			replacedContents := replaceConstantsIfDeterministicJs(
+				name, []byte(contents), timeSeedMs, constantMathRandomResult)
+			if err := common.addScriptInjector(replacedContents, name); err != nil {
+				return fmt.Errorf("error processing injected script %s: %v", name, err)
+			}
+		}
+		return nil
+	}
+
+	return common.processScripts(nil, timeSeedMs, constantMathRandomResult)
+}
+
+var (
+	ErrDuplicateScriptName = errors.New("Duplicate script name")
+)
+
+func (common *CommonConfig) processScripts(scripts map[string]string, timeSeedMs int64, constantMathRandomResult *float64) error {
+	if common.injectScripts == "" {
+		return nil
+	}
+	for _, scriptFile := range strings.Split(common.injectScripts, ",") {
+		script, err := os.ReadFile(scriptFile)
+		if err != nil {
+			return fmt.Errorf("error opening script %s: %v", scriptFile, err)
+		}
+		name := filepath.Base(scriptFile)
+		if scripts != nil {
+			if _, ok := scripts[name]; ok {
+				return fmt.Errorf("%w: %s", ErrDuplicateScriptName, name)
+			}
+			scripts[name] = string(script)
+		}
+		script = replaceConstantsIfDeterministicJs(name, script, timeSeedMs, constantMathRandomResult)
+		if err := common.addScriptInjector(script, name); err != nil {
+			return fmt.Errorf("error processing injected script %s: %v", name, err)
+		}
+	}
+	return nil
+}
+
+func replaceConstantsIfDeterministicJs(
+	filename string, script []byte, timeSeedMs int64, constantMathRandomResult *float64) []byte {
+	if filepath.Base(filename) != "deterministic.js" {
+		return script
+	}
+
+	randomResultStr := "null"
+	if constantMathRandomResult != nil {
+		randomResultStr = strconv.FormatFloat(*constantMathRandomResult, 'f', -1, 64)
+	}
+
+	timeSeedTimestamp := strconv.FormatInt(timeSeedMs, 10)
+	// Legacy format, kept for backwards compatibility. These must be applied first,
+	// since the new formats are substrings.
+	script =
+		bytes.Replace(script, []byte("{{WPR_TIME_SEED_TIMESTAMP}}"), []byte(timeSeedTimestamp), -1)
+	script =
+		bytes.Replace(script, []byte("{{WPR_CONSTANT_RANDOM_RESULT}}"), []byte(randomResultStr), -1)
+	// New format.
+	script = bytes.Replace(script, []byte("WPR_TIME_SEED_TIMESTAMP"), []byte(timeSeedTimestamp), -1)
+	script = bytes.Replace(script, []byte("WPR_CONSTANT_RANDOM_RESULT"), []byte(randomResultStr), -1)
+	return script
+}
+
+func (common *CommonConfig) addScriptInjector(script []byte, scriptFile string) error {
+	Log().Info("Processing script", "path", scriptFile)
+	si, err := webpagereplay.NewScriptInjector(script)
+	if err != nil {
+		return fmt.Errorf("error creating script injector for %s: %v", scriptFile, err)
+	}
+	common.transformers = append(common.transformers, si)
 	return nil
 }
 
 func (r *RecordCommand) Flags() []cli.Flag {
 	return append(r.common.Flags(),
 		&cli.BoolFlag{
-			Name: "enable_experimental_timed_chunk",
+			Name: "enable-experimental-timed-chunk",
 			Usage: "When specified, record the precise timings of receiving " +
 				"response stream chunks.",
 			Destination: &r.enableExperimentalTimedChunk,
@@ -243,15 +393,15 @@ func (r *RecordCommand) Flags() []cli.Flag {
 	)
 }
 
-func (r *RecordCommand) CheckArgs(c *cli.Context) error {
-	if err := r.common.CheckArgs(c); err != nil {
+func (r *RecordCommand) CheckArgsAndSetLogLevel(c *cli.Context) error {
+	if err := r.common.CheckArgsAndSetLogLevel(c); err != nil {
 		return err
 	}
 
 	if r.enableExperimentalTimedChunk {
-		log.Printf("WARNING: Timed chunk recording is enabled. Note that the" +
-			"implementation is highly experimental at the moment and the " +
-			"format is subject to change.")
+		Log().Warn("Timed chunk recording is enabled. Note that the " +
+			"implementation is highly experimental at the moment and the format " +
+			"is subject to change.")
 	}
 
 	return nil
@@ -260,13 +410,13 @@ func (r *RecordCommand) CheckArgs(c *cli.Context) error {
 func (r *ReplayCommand) Flags() []cli.Flag {
 	return append(r.common.Flags(),
 		&cli.StringFlag{
-			Name:        "rules_file",
+			Name:        "rules-file",
 			Value:       "",
 			Usage:       "File containing rules to apply to responses during replay",
 			Destination: &r.rulesFile,
 		},
 		&cli.BoolFlag{
-			Name: "serve_response_in_chronological_sequence",
+			Name: "serve-response-in-chronological-sequence",
 			Usage: "When an incoming request matches multiple recorded " +
 				"responses, serve response in chronological sequence. " +
 				"I.e. wpr responds to the first request with the first " +
@@ -275,43 +425,45 @@ func (r *ReplayCommand) Flags() []cli.Flag {
 			Destination: &r.serveResponseInChronologicalSequence,
 		},
 		&cli.BoolFlag{
-			Name:        "disable_fuzzy_url_matching",
+			Name:        "disable-fuzzy-url-matching",
 			Usage:       "When doing playback, require URLs to match exactly.",
 			Destination: &r.disableFuzzyURLMatching,
 		},
 		&cli.BoolFlag{
-			Name: "quiet_mode",
+			Name: "quiet-mode",
 			Usage: "quiets the logging output by not logging the " +
 				"ServeHTTP url call and responses",
 			Destination: &r.quietMode,
-		})
+		},
+	)
 }
 
 func (r *RootCACommand) Flags() []cli.Flag {
 	return append(r.certConfig.Flags(),
 		&cli.StringFlag{
-			Name:        "android_device_id",
+			Name:        "android-device-id",
 			Value:       "",
 			Usage:       "Device id of an android device. Only relevant for Android",
 			Destination: &r.installer.AndroidDeviceId,
 		},
 		&cli.StringFlag{
-			Name:        "adb_binary_path",
+			Name:        "adb-binary-path",
 			Value:       "adb",
 			Usage:       "Path to adb binary. Only relevant for Android",
 			Destination: &r.installer.AdbBinaryPath,
 		},
 		// Most desktop machines Google engineers use come with certutil installed.
-		// In the chromium lab, desktop bots do not have certutil. Instead, desktop bots
-		// deploy certutil binaries to <chromium src>/third_party/nss/certutil.
+		// In the chromium lab, desktop bots do not have certutil. Instead, desktop
+		// bots deploy certutil binaries to <chromium src>/third_party/nss/certutil.
 		// To accommodate chromium bots, the following flag accepts a custom path to
 		// certutil. Otherwise WPR assumes that certutil resides in the PATH.
 		&cli.StringFlag{
-			Name:        "certutil_path",
+			Name:        "certutil-path",
 			Value:       "certutil",
 			Usage:       "Path to Network Security Services (NSS)'s certutil tool.",
 			Destination: &r.installer.CertUtilBinaryPath,
-		})
+		},
+	)
 }
 
 func getListener(host string, port int) (net.Listener, error) {
@@ -410,17 +562,18 @@ func startServers(tlsconfig *tls.Config, httpHandler, httpsHandler http.Handler,
 				panic(fmt.Sprintf("unknown s.Scheme: %s", s.Scheme))
 			}
 			if err != nil {
-				log.Printf("Failed to start server on %s://%s: %v", s.Scheme, s.Addr, err)
+				Log().Error("Failed to start server", "scheme", s.Scheme, "addr", s.Addr, "error", err)
 			}
 		}()
 	}
 
-	log.Printf("Use Ctrl-C to exit.")
+	fmt.Printf("Use Ctrl-C to exit\n")
 	select {}
 }
 
 func logServeStarted(scheme string, ln net.Listener) {
-	log.Printf("Starting server on %s://%s", scheme, ln.Addr().String())
+	// DO NOT CHANGE: this line is parsed by downstream tools like catapult and crossbench.
+	fmt.Printf("Starting server on %s://%s\n", scheme, ln.Addr().String())
 }
 
 func (r *RecordCommand) Run(c *cli.Context) error {
@@ -431,37 +584,35 @@ func (r *RecordCommand) Run(c *cli.Context) error {
 		os.Exit(1)
 	}
 	defer archive.Close()
-	log.Printf("Opened archive %s", archiveFileName)
+	Log().Info("Opened archive", "path", archiveFileName)
 
 	// Install a SIGINT handler to close the archive before shutting down.
 	go func() {
 		sigchan := make(chan os.Signal, 1)
 		signal.Notify(sigchan, os.Interrupt)
 		<-sigchan
-		log.Printf("Shutting down")
-		log.Printf("Writing archive file to %s", archiveFileName)
+		Log().Info("Shutting down")
+		Log().Info("Writing archive", "path", archiveFileName)
 		if err := archive.Close(); err != nil {
-			log.Printf("Error flushing archive: %v", err)
+			Log().Error("Error flushing archive", "error", err)
 		}
 		os.Exit(0)
 	}()
 
-	timeSeedMs := time.Now().Unix() * 1000
-	if err := r.common.ProcessInjectedScripts(timeSeedMs); err != nil {
-		log.Printf("Error processing injected scripts: %v", err)
+	if err := r.common.ProcessInjectedScriptsForRecording(c, &archive.Archive); err != nil {
+		Log().Error("Error processing injected scripts", "error", err)
 		os.Exit(1)
 	}
-	archive.DeterministicTimeSeedMs = timeSeedMs
 
 	if r.enableExperimentalTimedChunk {
-		log.Printf("NOTIMPLEMENTED: Experimental Timed Chunk recording support")
+		Log().Error("NOTIMPLEMENTED: Experimental Timed Chunk recording support")
 		os.Exit(1)
 	}
 	httpHandler := webpagereplay.NewRecordingProxy(archive, "http", r.common.transformers, r.common.paramToIgnoreInURLPath)
 	httpsHandler := webpagereplay.NewRecordingProxy(archive, "https", r.common.transformers, r.common.paramToIgnoreInURLPath)
-	tlsconfig, err := webpagereplay.RecordTLSConfig(r.common.root_certs, archive, !r.common.noArchiveCertificates)
+	tlsconfig, err := webpagereplay.RecordTLSConfig(r.common.rootCerts, archive, !r.common.noArchiveCertificates)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating TLSConfig: %v", err)
+		Log().Error("Error creating TLSConfig", "error", err)
 		os.Exit(1)
 	}
 	startServers(tlsconfig, httpHandler, httpsHandler, &r.common)
@@ -470,41 +621,33 @@ func (r *RecordCommand) Run(c *cli.Context) error {
 
 func (r *ReplayCommand) Run(c *cli.Context) error {
 	archiveFileName := c.Args().First()
-	log.Printf("Loading archive file from %s\n", archiveFileName)
+	Log().Info("Loading archive", "path", archiveFileName)
 	archive, err := webpagereplay.OpenArchive(archiveFileName)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening archive file: %v", err)
+		Log().Error("Error opening archive file", "error", err)
 		os.Exit(1)
 	}
-	log.Printf("Opened archive %s", archiveFileName)
+	Log().Info("Opened archive", "path", archiveFileName)
 
 	archive.ServeResponseInChronologicalSequence = r.serveResponseInChronologicalSequence
 	archive.DisableFuzzyURLMatching = r.disableFuzzyURLMatching
 	if archive.DisableFuzzyURLMatching {
-		log.Printf("Disabling fuzzy URL matching.")
+		Log().Info("Disabling fuzzy URL matching")
 	}
 
-	timeSeedMs := archive.DeterministicTimeSeedMs
-	if timeSeedMs == 0 {
-		// The time seed hasn't been set in the archive. Time seeds used to not be
-		// stored in the archive, so this is expected to happen when loading old
-		// archives. Just revert to the previous behavior: use the current time as
-		// the seed.
-		timeSeedMs = time.Now().Unix() * 1000
-	}
-	if err := r.common.ProcessInjectedScripts(timeSeedMs); err != nil {
-		log.Printf("Error processing injected scripts: %v", err)
+	if err := r.common.ProcessInjectedScriptsForReplay(c, archive); err != nil {
+		Log().Error("Error processing injected scripts", "error", err)
 		os.Exit(1)
 	}
 
 	if r.rulesFile != "" {
 		t, err := webpagereplay.NewRuleBasedTransformer(r.rulesFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error opening rules file %s: %v\n", r.rulesFile, err)
+			Log().Error("Error opening rules file", "path", r.rulesFile, "error", err)
 			os.Exit(1)
 		}
 		r.common.transformers = append(r.common.transformers, t)
-		log.Printf("Loaded replay rules from %s", r.rulesFile)
+		Log().Info("Loaded replay rules", "path", r.rulesFile)
 	}
 
 	// When recording, transformations are applied at request time, because that's
@@ -526,16 +669,16 @@ func (r *ReplayCommand) Run(c *cli.Context) error {
 		return transformedArchive.AddArchivedRequest(req, resp, webpagereplay.AddModeAppend)
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Using original archive, error while creating transformed one: %v\n", err)
+		Log().Error("Error while creating transformed archive", "error", err)
 	} else {
 		archive = &transformedArchive
 	}
 
 	httpHandler := webpagereplay.NewReplayingProxy(archive, "http", r.quietMode, r.common.paramToIgnoreInURLPath)
 	httpsHandler := webpagereplay.NewReplayingProxy(archive, "https", r.quietMode, r.common.paramToIgnoreInURLPath)
-	tlsconfig, err := webpagereplay.ReplayTLSConfig(r.common.root_certs, archive, !r.common.noArchiveCertificates)
+	tlsconfig, err := webpagereplay.ReplayTLSConfig(r.common.rootCerts, archive, !r.common.noArchiveCertificates)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating TLSConfig: %v", err)
+		Log().Error("Error creating TLSConfig", "error", err)
 		os.Exit(1)
 	}
 	startServers(tlsconfig, httpHandler, httpsHandler, &r.common)
@@ -545,7 +688,7 @@ func (r *ReplayCommand) Run(c *cli.Context) error {
 func (r *RootCACommand) Install(c *cli.Context) error {
 	if err := r.installer.InstallRoot(
 		r.certConfig.certFile, r.certConfig.keyFile); err != nil {
-		fmt.Fprintf(os.Stderr, "Install root failed: %v", err)
+		Log().Error("Install root failed", "error", err)
 		os.Exit(1)
 	}
 	return nil
@@ -568,7 +711,7 @@ func main() {
 		Name:   "record",
 		Usage:  "Record web pages to an archive",
 		Flags:  record.Flags(),
-		Before: record.CheckArgs,
+		Before: record.CheckArgsAndSetLogLevel,
 		Action: record.Run,
 	}
 
@@ -576,7 +719,7 @@ func main() {
 		Name:   "replay",
 		Usage:  "Replay a previously-recorded web page archive",
 		Flags:  replay.Flags(),
-		Before: replay.common.CheckArgs,
+		Before: replay.common.CheckArgsAndSetLogLevel,
 		Action: replay.Run,
 	}
 
@@ -598,6 +741,9 @@ func main() {
 
 	app := cli.NewApp()
 	app.Commands = []*cli.Command{&record.cmd, &replay.cmd, &installroot.cmd, &removeroot.cmd}
+	for _, cmd := range app.Commands {
+		webpagereplay.AddLegacyAliases(&cmd.Flags)
+	}
 	app.Usage = "Web Page Replay"
 	app.UsageText = fmt.Sprintf(longUsage, progName, progName)
 	app.HideVersion = true

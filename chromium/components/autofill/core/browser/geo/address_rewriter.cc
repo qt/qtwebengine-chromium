@@ -11,6 +11,7 @@
 #include "base/feature_list.h"
 #include "base/i18n/case_conversion.h"
 #include "base/memory/ptr_util.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_split.h"
@@ -166,8 +167,13 @@ AddressRewriter::AddressRewriter(const CompiledRuleVector* compiled_rules)
 std::u16string AddressRewriter::RewriteForCountryCode(
     const AddressCountryCode& country_code,
     const std::u16string& normalized_text) {
-  AddressRewriter rewriter = AddressRewriter::ForCountryCode(country_code);
-  return rewriter.Rewrite(normalized_text);
+  return ForCountryCode(country_code).Rewrite(normalized_text);
+}
+
+// static
+std::u16string AddressRewriter::RewriteUsingGlobalRules(
+    const std::u16string& normalized_text) {
+  return ForGlobalRules().Rewrite(normalized_text);
 }
 
 // static
@@ -180,6 +186,13 @@ AddressRewriter AddressRewriter::ForCountryCode(
 }
 
 // static
+AddressRewriter AddressRewriter::ForGlobalRules() {
+  const CompiledRuleVector* rules =
+      Cache::GetInstance()->GetRulesForRegion("GLOBAL");
+  return AddressRewriter(rules);
+}
+
+// static
 AddressRewriter AddressRewriter::ForCustomRules(
     const std::string& custom_rules) {
   const CompiledRuleVector* rules =
@@ -188,6 +201,7 @@ AddressRewriter AddressRewriter::ForCustomRules(
 }
 
 std::u16string AddressRewriter::Rewrite(const std::u16string& text) const {
+  SCOPED_UMA_HISTOGRAM_TIMER("Autofill.Timing.AddressRewriter.Rewrite");
   if (compiled_rules_ == nullptr || compiled_rules_->empty()) {
     return base::CollapseWhitespace(text, true);
   }

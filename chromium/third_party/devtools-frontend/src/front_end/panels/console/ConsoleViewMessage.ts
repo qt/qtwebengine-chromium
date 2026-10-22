@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 /* eslint-disable @devtools/no-imperative-dom-api */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 /*
  * Copyright (C) 2011 Google Inc.  All rights reserved.
@@ -42,8 +43,11 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import * as Bindings from '../../models/bindings/bindings.js';
+import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
+import * as Greendev from '../../models/greendev/greendev.js';
 import type * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Logs from '../../models/logs/logs.js';
+import * as StackTrace from '../../models/stack_trace/stack_trace.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
@@ -57,14 +61,14 @@ import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
 import objectValueStyles from '../../ui/legacy/components/object_ui/objectValue.css.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
-import {render} from '../../ui/lit/lit.js';
+import {type LitTemplate, nothing, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import * as AiAssistancePanel from '../ai_assistance/ai_assistance.js';
 
 import {format, updateStyle} from './ConsoleFormat.js';
 import {ConsoleInsightTeaser} from './ConsoleInsightTeaser.js';
 import consoleViewStyles from './consoleView.css.js';
 import type {ConsoleViewportElement} from './ConsoleViewport.js';
-import {augmentErrorStackWithScriptIds, parseSourcePositionsFromErrorStack} from './ErrorStackParser.js';
 
 const UIStrings = {
   /**
@@ -252,9 +256,9 @@ export const concatErrorDescriptionAndIssueSummary = (description: string, issue
   return description;
 };
 
-// This value reflects the 18px min-height of .console-message, plus the
-// 1px border of .console-message-wrapper. Keep in sync with consoleView.css.
-const defaultConsoleRowHeight = 19;
+// This value reflects the 18px min-height of .console-message.
+// Keep in sync with consoleView.css.
+const defaultConsoleRowHeight = 18;
 
 const parameterToRemoteObject = (runtimeModel: SDK.RuntimeModel.RuntimeModel|null):
     (parameter?: SDK.RemoteObject.RemoteObject|Protocol.Runtime.RemoteObject|string) => SDK.RemoteObject.RemoteObject =>
@@ -371,22 +375,20 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     this.consoleGroupInternal = null;
   }
 
-  setInsight(insight: HTMLElement): void {
-    this.elementInternal?.querySelector('.devtools-console-insight')?.remove();
-    this.elementInternal?.append(insight);
-    this.elementInternal?.classList.toggle('has-insight', true);
-    insight.addEventListener('close', () => {
-      Host.userMetrics.actionTaken(Host.UserMetrics.Action.InsightClosed);
-      this.elementInternal?.classList.toggle('has-insight', false);
-      const widget = UI.Widget.Widget.get(insight);
-      if (widget) {
-        widget.detach();
-      } else {
-        this.elementInternal?.removeChild(insight);
-      }
-      this.#teaser?.setInactive(false);
-    }, {once: true});
-    this.#teaser?.setInactive(true);
+  setInsight(insight: LitTemplate): void {
+    if (this.elementInternal) {
+      render(insight, this.elementInternal);
+      this.elementInternal.classList.toggle('has-insight', true);
+      this.elementInternal.addEventListener('closeinsight', () => {
+        Host.userMetrics.actionTaken(Host.UserMetrics.Action.InsightClosed);
+        if (this.elementInternal) {
+          this.elementInternal.classList.toggle('has-insight', false);
+          render(nothing, this.elementInternal);
+        }
+        this.#teaser?.setInactive(false);
+      }, {once: true});
+      this.#teaser?.setInactive(true);
+    }
   }
 
   element(): HTMLElement {
@@ -702,15 +704,27 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
       clickableElement.tabIndex = -1;
     }
     clickableElement.appendChild(messageElement);
-    const stackTraceElement = contentElement.createChild('div');
-    const stackTracePreview = new Components.JSPresentationUtils.StackTracePreviewContent(
-        undefined, target ?? undefined, this.linkifier, {runtimeStackTrace: stackTrace, widthConstrained: true});
+    const stackTraceElement = contentElement.createChild('div', 'hidden-stack-trace');
+    const targetManager = SDK.TargetManager.TargetManager.instance();
+    const stackTraceTarget = target ?? targetManager.primaryPageTarget() ?? targetManager.rootTarget();
+    const stackTracePreview = new Components.JSPresentationUtils.StackTracePreviewContent();
+    stackTracePreview.options = {widthConstrained: true};
+    if (stackTraceTarget && stackTrace) {
+      const selectableChildIndex = this.selectableChildren.length;
+      void Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
+          .createStackTraceFromProtocolRuntime(stackTrace, stackTraceTarget)
+          .then(stackTrace => {
+            stackTracePreview.stackTrace = stackTrace;
+            return stackTracePreview.updateComplete;
+          })
+          .then(() => {
+            const selectableLinks =
+                stackTracePreview.linkElements.map(element => ({element, forceSelect: () => element.focus()}));
+            this.selectableChildren.splice(selectableChildIndex, 0, ...selectableLinks);
+          });
+    }
     stackTracePreview.markAsRoot();
     stackTracePreview.show(stackTraceElement);
-    for (const linkElement of stackTracePreview.linkElements) {
-      this.selectableChildren.push({element: linkElement, forceSelect: () => linkElement.focus()});
-    }
-    stackTraceElement.classList.add('hidden-stack-trace');
     UI.ARIAUtils.setLabel(
         contentElement, `${messageElement.textContent} ${i18nString(UIStrings.stackMessageCollapsed)}`);
     UI.ARIAUtils.markAsGroup(stackTraceElement);
@@ -852,11 +866,17 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
   private formatParameterAsObject(obj: SDK.RemoteObject.RemoteObject, includePreview?: boolean): HTMLElement {
     const titleElement = document.createElement('span');
     titleElement.classList.add('console-object');
+    const renderPreview = (includeNullOrUndefined: boolean): void => {
+      if (obj.preview) {
+        titleElement.classList.add('console-object-preview');
+
+        render(this.previewFormatter.renderObjectPreview(obj.preview, includeNullOrUndefined), titleElement);
+        ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.appendMemoryIcon(titleElement, obj);
+      }
+    };
+
     if (includePreview && obj.preview) {
-      titleElement.classList.add('console-object-preview');
-      /* eslint-disable-next-line  @devtools/no-lit-render-outside-of-view */
-      render(this.previewFormatter.renderObjectPreview(obj.preview), titleElement);
-      ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.appendMemoryIcon(titleElement, obj);
+      renderPreview(true);
     } else if (obj.type === 'function') {
       const functionElement = titleElement.createChild('span');
       void ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.formatObjectAsFunction(obj, functionElement, false);
@@ -886,6 +906,9 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     section.addEventListener(UI.TreeOutline.Events.ElementAttached, this.messageResized);
     section.addEventListener(UI.TreeOutline.Events.ElementExpanded, this.messageResized);
     section.addEventListener(UI.TreeOutline.Events.ElementCollapsed, this.messageResized);
+    section.root.addEventListener(
+        ObjectUI.ObjectPropertiesSection.ObjectTreeNodeBase.Events.FILTER_CHANGED,
+        () => renderPreview(section.root.includeNullOrUndefinedValues));
     return section.element;
   }
 
@@ -1019,7 +1042,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
       type: string, subtype: string|undefined, className: string|null|undefined,
       description: string|undefined): DocumentFragment {
     const fragment = document.createDocumentFragment();
-    /* eslint-disable-next-line  @devtools/no-lit-render-outside-of-view */
+
     render(this.previewFormatter.renderPropertyPreview(type, subtype, className, description), fragment);
     return fragment;
   }
@@ -1425,6 +1448,7 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     this.elementInternal.className = 'console-message-wrapper';
     this.elementInternal.setAttribute('jslog', `${VisualLogging.item('console-message').track({
                                         click: true,
+                                        resize: true,
                                         keydown: 'ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Enter|Space|Home|End',
                                       })}`);
     this.elementInternal.removeChildren();
@@ -1482,6 +1506,11 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     if (UI.ActionRegistry.ActionRegistry.instance().hasAction(EXPLAIN_HOVER_ACTION_ID) && this.shouldShowInsights()) {
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.InsightConsoleMessageShown);
       this.consoleRowWrapper.append(this.#createHoverButton());
+    }
+
+    const breakpointAgentEnabled = Greendev.Prototypes.instance().isEnabled('breakpointDebuggerAgent');
+    if (breakpointAgentEnabled && this.message.level === Protocol.Log.LogEntryLevel.Error) {
+      this.consoleRowWrapper.append(this.#createBreakpointButton());
     }
 
     if (this.repeatCountInternal > 1) {
@@ -1571,6 +1600,85 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
     button.tabIndex = 0;
     button.setAttribute('jslog', `${VisualLogging.action(EXPLAIN_HOVER_ACTION_ID).track({click: true})}`);
     hoverButtonObserver.observe(button);
+    return button;
+  }
+
+  #createBreakpointButton(): HTMLButtonElement {
+    const button = document.createElement('button');
+
+    const icon = new Icon();
+    icon.name = 'bug';
+    icon.style.color = 'var(--devtools-icon-color)';
+    icon.classList.add('medium');
+    button.append(icon);
+
+    const label = document.createElement('div');
+    label.classList.add('button-label');
+    const text = document.createElement('div');
+    text.innerText = 'Debug with breakpoint AI';
+    label.append(text);
+    button.append(label);
+    button.classList.add('hover-button');
+    // Offset the button to the left of the existing one (24px width + 6px right + gap)
+    if (this.shouldShowInsights()) {
+      button.style.right = '36px';
+    }
+    button.ariaLabel = 'Debug with breakpoint AI';
+    button.tabIndex = 0;
+
+    button.onclick = async (event: Event) => {
+      event.stopPropagation();
+      const runtimeModel = this.message.runtimeModel();
+      if (!runtimeModel) {
+        return;
+      }
+      const debuggerModel = runtimeModel.debuggerModel();
+      const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance();
+      let uiLocation: Workspace.UISourceCode.UILocation|null = null;
+
+      // 1. Try stack trace latest called line
+      if (this.message.stackTrace?.callFrames.length) {
+        const callFrame = this.message.stackTrace.callFrames[0];
+        if (callFrame.scriptId) {
+          const script = debuggerModel.scriptForId(callFrame.scriptId);
+          if (script) {
+            const rawLocation = new SDK.DebuggerModel.Location(
+                debuggerModel, callFrame.scriptId, callFrame.lineNumber, callFrame.columnNumber);
+            uiLocation = await debuggerWorkspaceBinding.rawLocationToUILocation(rawLocation);
+          }
+        }
+      }
+
+      // 2. Try scriptId on message
+      if (!uiLocation && this.message.scriptId) {
+        const script = debuggerModel.scriptForId(this.message.scriptId);
+        if (script) {
+          const rawLocation = new SDK.DebuggerModel.Location(
+              debuggerModel, this.message.scriptId, this.message.line, this.message.column);
+          uiLocation = await debuggerWorkspaceBinding.rawLocationToUILocation(rawLocation);
+        }
+      }
+
+      // 3. Try URL
+      if (!uiLocation && this.message.url) {
+        const uiSourceCode = Workspace.Workspace.WorkspaceImpl.instance().uiSourceCodeForURL(this.message.url);
+        if (uiSourceCode) {
+          uiLocation = uiSourceCode.uiLocation(this.message.line, this.message.column);
+        }
+      }
+
+      if (uiLocation) {
+        await Common.Revealer.reveal(uiLocation);
+        const breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance();
+        await breakpointManager.setBreakpoint(
+            uiLocation.uiSourceCode, uiLocation.lineNumber, uiLocation.columnNumber,
+            Breakpoints.BreakpointManager.EMPTY_BREAKPOINT_CONDITION, /* enabled */ true,
+            /* isLogpoint */ false, Breakpoints.BreakpointManager.BreakpointOrigin.OTHER);
+        const aiPanel = await AiAssistancePanel.AiAssistancePanel.instance();
+        void aiPanel.handleBreakpointConversation(uiLocation, this.text);
+      }
+    };
+
     return button;
   }
 
@@ -1837,12 +1945,12 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
       string = concatErrorDescriptionAndIssueSummary(string, issueSummary);
     }
 
-    const linkInfos = parseSourcePositionsFromErrorStack(runtimeModel, string);
+    const linkInfos = StackTrace.ErrorStackParser.parseSourcePositionsFromErrorStack(runtimeModel, string);
     if (!linkInfos?.length) {
       return null;
     }
     if (exceptionDetails?.stackTrace) {
-      augmentErrorStackWithScriptIds(linkInfos, exceptionDetails.stackTrace);
+      StackTrace.ErrorStackParser.augmentErrorStackWithScriptIds(linkInfos, exceptionDetails.stackTrace);
     }
 
     const debuggerModel = runtimeModel.debuggerModel();
@@ -2064,7 +2172,7 @@ export class ConsoleGroupViewMessage extends ConsoleViewMessage {
     this.groupEndMessageInternal = null;
   }
 
-  private setCollapsed(collapsed: boolean): void {
+  setCollapsed(collapsed: boolean): void {
     this.collapsedInternal = collapsed;
     if (this.expandGroupIcon) {
       this.expandGroupIcon.name = this.collapsedInternal ? 'triangle-right' : 'triangle-down';
@@ -2350,11 +2458,6 @@ export class ConsoleTableMessageView extends ConsoleViewMessage {
  * @constant
  */
 const MaxLengthToIgnoreHighlighter = 10000;
-
-/**
- * @constant
- */
-export const MaxLengthForLinks = 40;
 
 let maxTokenizableStringLength = 10000;
 let longStringVisibleLength = 5000;

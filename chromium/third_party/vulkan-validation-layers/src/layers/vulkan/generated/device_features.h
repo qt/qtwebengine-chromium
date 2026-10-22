@@ -246,6 +246,8 @@ struct DeviceFeatures {
     bool descriptorPoolOverallocation;
     // VkPhysicalDeviceDescriptorSetHostMappingFeaturesVALVE
     bool descriptorSetHostMapping;
+    // VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR
+    bool deviceAddressCommands;
     // VkPhysicalDeviceDeviceGeneratedCommandsComputeFeaturesNV
     bool deviceGeneratedCompute;
     // VkPhysicalDeviceDeviceGeneratedCommandsComputeFeaturesNV
@@ -350,10 +352,14 @@ struct DeviceFeatures {
     bool externalMemoryRDMA;
     // VkPhysicalDeviceExternalMemoryScreenBufferFeaturesQNX
     bool screenBufferImport;
-    // VkPhysicalDeviceFaultFeaturesEXT
+    // VkPhysicalDeviceFaultFeaturesEXT, VkPhysicalDeviceFaultFeaturesKHR
     bool deviceFault;
-    // VkPhysicalDeviceFaultFeaturesEXT
+    // VkPhysicalDeviceFaultFeaturesEXT, VkPhysicalDeviceFaultFeaturesKHR
     bool deviceFaultVendorBinary;
+    // VkPhysicalDeviceFaultFeaturesKHR
+    bool deviceFaultDeviceLostOnMasked;
+    // VkPhysicalDeviceFaultFeaturesKHR
+    bool deviceFaultReportMasked;
     // VkPhysicalDeviceFeatures
     bool alphaToOne;
     // VkPhysicalDeviceFeatures
@@ -796,6 +802,8 @@ struct DeviceFeatures {
     bool separateDepthStencilLayouts;
     // VkPhysicalDeviceShader64BitIndexingFeaturesEXT
     bool shader64BitIndexing;
+    // VkPhysicalDeviceShaderAbortFeaturesKHR
+    bool shaderAbort;
     // VkPhysicalDeviceShaderAtomicFloat16VectorFeaturesNV
     bool shaderFloat16VectorAtomics;
     // VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT
@@ -860,6 +868,8 @@ struct DeviceFeatures {
     bool shaderDeviceClock;
     // VkPhysicalDeviceShaderClockFeaturesKHR
     bool shaderSubgroupClock;
+    // VkPhysicalDeviceShaderConstantDataFeaturesKHR
+    bool shaderConstantData;
     // VkPhysicalDeviceShaderCoreBuiltinsFeaturesARM
     bool shaderCoreBuiltins;
     // VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures, VkPhysicalDeviceVulkan13Features
@@ -896,6 +906,8 @@ struct DeviceFeatures {
     bool sparseImageInt64Atomics;
     // VkPhysicalDeviceShaderImageFootprintFeaturesNV
     bool imageFootprint;
+    // VkPhysicalDeviceShaderInstrumentationFeaturesARM
+    bool shaderInstrumentation;
     // VkPhysicalDeviceShaderIntegerDotProductFeatures, VkPhysicalDeviceVulkan13Features
     bool shaderIntegerDotProduct;
     // VkPhysicalDeviceShaderIntegerFunctions2FeaturesINTEL
@@ -904,6 +916,14 @@ struct DeviceFeatures {
     bool longVector;
     // VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR
     bool shaderMaximalReconvergence;
+    // VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE
+    bool shaderMixedFloatDotProductBFloat16Acc;
+    // VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE
+    bool shaderMixedFloatDotProductFloat16AccFloat16;
+    // VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE
+    bool shaderMixedFloatDotProductFloat16AccFloat32;
+    // VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE
+    bool shaderMixedFloatDotProductFloat8AccFloat32;
     // VkPhysicalDeviceShaderModuleIdentifierFeaturesEXT
     bool shaderModuleIdentifier;
     // VkPhysicalDeviceShaderObjectFeaturesEXT
@@ -1084,6 +1104,6 @@ struct DeviceFeatures {
     bool zeroInitializeDeviceMemory;
 };
 
-void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatures *features, const APIVersion &api_version);
+void GetEnabledDeviceFeatures(const VkDeviceCreateInfo* pCreateInfo, DeviceFeatures* features, const APIVersion& api_version);
 
 // NOLINTEND

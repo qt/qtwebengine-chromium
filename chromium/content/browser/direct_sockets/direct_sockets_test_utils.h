@@ -109,6 +109,7 @@ class MockNetworkContext : public network::TestNetworkContextWithHostResolver {
       mojo::PendingReceiver<network::mojom::RestrictedUDPSocket> receiver,
       mojo::PendingRemote<network::mojom::UDPSocketListener> listener,
       bool allow_multicast,
+      bool allow_source_specific_multicast,
       CreateRestrictedUDPSocketCallback callback) override;
 
   MockUDPSocket* get_udp_socket() {
@@ -168,6 +169,25 @@ class AsyncJsRunner : public WebContentsObserver {
   base::Token token_;
 };
 
+class SetHeaderWithFileUrlBuilder {
+ public:
+  explicit SetHeaderWithFileUrlBuilder(std::string_view path);
+  ~SetHeaderWithFileUrlBuilder();
+
+  SetHeaderWithFileUrlBuilder& WithCOIHeaders();
+  SetHeaderWithFileUrlBuilder& WithPermissionsPolicy(std::string_view feature,
+                                                     std::string_view value);
+
+  GURL Build(net::EmbeddedTestServer* server) const;
+
+ private:
+  std::string path_;
+  std::vector<std::string> headers_;
+  std::map<std::string, std::vector<std::string>> permissions_policy_;
+};
+
+SetHeaderWithFileUrlBuilder FileWithHeaders(std::string_view path);
+
 std::string WrapAsync(const std::string& script);
 
 // Mock ContentBrowserClient that enableds direct sockets via permissions policy
@@ -180,11 +200,6 @@ class IsolatedWebAppContentBrowserClient
 
   bool ShouldUrlUseApplicationIsolationLevel(BrowserContext* browser_context,
                                              const GURL& url) override;
-
-  std::optional<std::vector<blink::mojom::IsolatedAppPermissionPolicyEntryPtr>>
-  GetPermissionsPolicyForIsolatedWebApp(
-      content::BrowserContext* browser_context,
-      const url::Origin& app_origin) override;
 
  private:
   url::Origin isolated_app_origin_;

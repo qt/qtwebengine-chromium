@@ -3007,6 +3007,7 @@ static int read_thread(void *arg)
         // initial metadata as update.
         st->event_flags &= ~AVSTREAM_EVENT_FLAG_METADATA_UPDATED;
     }
+    ic->event_flags &= ~AVFMT_EVENT_FLAG_METADATA_UPDATED;
     for (i = 0; i < AVMEDIA_TYPE_NB; i++) {
         if (wanted_stream_spec[i] && st_index[i] == -1) {
             av_log(NULL, AV_LOG_ERROR, "Stream specifier %s does not match any %s stream\n", wanted_stream_spec[i], av_get_media_type_string(i));
@@ -3175,16 +3176,24 @@ static int read_thread(void *arg)
             is->eof = 0;
         }
 
-        if (show_status && ic->streams[pkt->stream_index]->event_flags &
-            AVSTREAM_EVENT_FLAG_METADATA_UPDATED) {
-            fprintf(stderr, "\x1b[2K\r");
-            snprintf(metadata_description,
-                     sizeof(metadata_description),
-                     "\r  New metadata for stream %d",
-                     pkt->stream_index);
-            dump_dictionary(NULL, ic->streams[pkt->stream_index]->metadata,
-                               metadata_description, "    ", AV_LOG_INFO);
+        if (show_status) {
+            if (ic->event_flags & AVFMT_EVENT_FLAG_METADATA_UPDATED) {
+                fprintf(stderr, "\x1b[2K\r");
+                dump_dictionary(NULL, ic->metadata,
+                                "\r  New metadata", "    ", AV_LOG_INFO);
+            }
+            if (ic->streams[pkt->stream_index]->event_flags &
+                AVSTREAM_EVENT_FLAG_METADATA_UPDATED) {
+                fprintf(stderr, "\x1b[2K\r");
+                snprintf(metadata_description,
+                         sizeof(metadata_description),
+                         "\r  New metadata for stream %d",
+                         pkt->stream_index);
+                dump_dictionary(NULL, ic->streams[pkt->stream_index]->metadata,
+                                   metadata_description, "    ", AV_LOG_INFO);
+            }
         }
+        ic->event_flags &= ~AVFMT_EVENT_FLAG_METADATA_UPDATED;
         ic->streams[pkt->stream_index]->event_flags &= ~AVSTREAM_EVENT_FLAG_METADATA_UPDATED;
 
         /* check if packet is in play range specified by user, then queue, otherwise discard */
@@ -3826,9 +3835,9 @@ void show_help_default(const char *opt, const char *arg)
            "c                   cycle program\n"
            "w                   cycle video filters or show modes\n"
            "s                   activate frame-step mode\n"
-           "left/right          seek backward/forward 10 seconds or to custom interval if -seek_interval is set\n"
+           "left/right          seek backward/forward by 10 seconds or a custom interval if -seek_interval is set\n"
            "down/up             seek backward/forward 1 minute\n"
-           "page down/page up   seek backward/forward 10 minutes\n"
+           "page down/page up   seek to previous/next chapter or backward/forward 10 minutes if no chapters\n"
            "right mouse click   seek to percentage in file corresponding to fraction of width\n"
            "left double-click   toggle full screen\n"
            );

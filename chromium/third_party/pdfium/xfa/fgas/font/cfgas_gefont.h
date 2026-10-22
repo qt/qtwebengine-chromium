@@ -22,8 +22,8 @@
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxcrt/retain_ptr.h"
 
+class CFX_CharmapResolver;
 class CFX_Font;
-class CFX_UnicodeEncodingEx;
 class CPDF_Document;
 class CPDF_Font;
 
@@ -74,8 +74,8 @@ class CFGAS_GEFont final : public Retainable {
 
   std::optional<uint32_t> log_font_style_;
   RetainPtr<CPDF_Font> pdffont_;  // Must come before |font_|.
-  MaybeOwned<CFX_Font> font_;     // Must come before |font_encoding_|.
-  std::unique_ptr<CFX_UnicodeEncodingEx> font_encoding_;
+  MaybeOwned<CFX_Font> font_;     // Must come before |charmap_resolver_|.
+  std::unique_ptr<CFX_CharmapResolver> charmap_resolver_;
   std::map<wchar_t, std::optional<uint16_t>> char_width_map_;
   std::map<wchar_t, FX_RECT> bbox_map_;
   std::vector<RetainPtr<CFGAS_GEFont>> subst_fonts_;

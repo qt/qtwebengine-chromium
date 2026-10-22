@@ -43,8 +43,11 @@ namespace base {
 // Therefore, if you want an accurate measure up to kMax, then |exclusive_max|
 // should be set to kMax + 1.
 //
-// |exclusive_max| should be 101 or less. If you need to capture a larger range,
-// we recommend the use of the COUNT histograms below.
+// |exclusive_max| should be 101 or less, otherwise we recommend the use of the
+// COUNT histograms below. If you need exact count with more than 101 values,
+// please escalate by assigning to chromium-metrics-reviews@google.com.
+// Exceptions beyond 1001 are generally not approved.
+//
 //
 // Sample usage:
 //   base::UmaHistogramExactLinear("Histogram.Linear", sample, kMax + 1);
@@ -70,24 +73,26 @@ BASE_EXPORT void UmaHistogramExactLinear(std::string_view name,
 //   base::UmaHistogramEnumeration("My.Enumeration",
 //                                 NewTabPageAction::kClickTitle);
 //
-// `kMaxValue` should be 1000 or less.
-// Note that there is code that refers to implementation details of this
-// function. Keep it synchronized.
-// LINT.IfChange(UmaHistogramEnumeration)
-template <typename T>
-void UmaHistogramEnumeration(std::string_view name, T sample) {
+// `kMaxValue` should be 1000 or less. If it is greater than 100, please
+// escalate by assigning to chromium-metrics-reviews@google.com.
+template <typename StringType, typename T>
+void UmaHistogramEnumeration(const StringType& name, T sample) {
   static_assert(std::is_enum_v<T>, "T is not an enum.");
+  // kMaxValue is the max value in enum, so bucket count is one more than that.
   // This also ensures that an enumeration that doesn't define kMaxValue fails
   // with a semi-useful error ("no member named 'kMaxValue' in ...").
-  static_assert(static_cast<uintmax_t>(T::kMaxValue) <=
-                    static_cast<uintmax_t>(INT_MAX) - 1,
-                "Enumeration's kMaxValue is out of range of INT_MAX!");
+  constexpr auto kBucketCount = static_cast<int>(T::kMaxValue) + 1;
+  constexpr auto kBucketCountMax =
+      static_cast<int>(LinearHistogram::kBucketCount_MAX);
+  // Note: UmaHistogramExactLinear() adds 1 to the bucket count for the overflow
+  // bucket, so kBucketCount must be less than kBucketCount_MAX.
+  static_assert(kBucketCount < kBucketCountMax,
+                "Enumeration's kMaxValue is out of range of "
+                "LinearHistogram::kBucketCount_MAX. Use a sparse histogram "
+                "instead.");
   DCHECK_LE(static_cast<uintmax_t>(sample),
             static_cast<uintmax_t>(T::kMaxValue));
-  // While UmaHistogramExactLinear’s documentation states that the third
-  // argument should be 101 or less, a value up to 1001 is actually accepted.
-  return UmaHistogramExactLinear(name, static_cast<int>(sample),
-                                 static_cast<int>(T::kMaxValue) + 1);
+  return UmaHistogramExactLinear(name, static_cast<int>(sample), kBucketCount);
 }
 
 // Some legacy histograms may manually specify the enum size, with a kCount,
@@ -106,18 +111,22 @@ void UmaHistogramEnumeration(std::string_view name, T sample) {
 //                                 kCount);
 // Note: The value in |sample| must be strictly less than |enum_size|. This is
 // otherwise functionally equivalent to the above.
-// `enum_size` must be less than or equal to 1001.
-template <typename T>
-void UmaHistogramEnumeration(std::string_view name, T sample, T enum_size) {
+// `enum_size` must be less than or equal to 1001. If it is greater than 100,
+// please escalate by assigning to chromium-metrics-reviews@google.com.
+template <typename StringType, typename T>
+void UmaHistogramEnumeration(const StringType& name, T sample, T enum_size) {
   static_assert(std::is_enum_v<T>, "T is not an enum.");
-  DCHECK_LE(static_cast<uintmax_t>(enum_size), static_cast<uintmax_t>(INT_MAX));
+  constexpr auto kBucketCountMax =
+      static_cast<uintmax_t>(LinearHistogram::kBucketCount_MAX);
+  // Note: UmaHistogramExactLinear() adds 1 to the bucket count for the overflow
+  // bucket, so kBucketCount must be less than kBucketCount_MAX.
+  DCHECK_LE(static_cast<uintmax_t>(enum_size), kBucketCountMax)
+      << "Enumeration's enum_size is out of range of "
+         "LinearHistogram::kBucketCount_MAX. Use a sparse histogram instead.";
   DCHECK_LT(static_cast<uintmax_t>(sample), static_cast<uintmax_t>(enum_size));
-  // While UmaHistogramExactLinear’s documentation states that the third
-  // argument should be 101 or less, a value up to 1001 is actually accepted.
   return UmaHistogramExactLinear(name, static_cast<int>(sample),
                                  static_cast<int>(enum_size));
 }
-// LINT.ThenChange(/base/metrics/histogram_functions_internal_overloads.h:UmaHistogramEnumeration)
 
 // For adding a boolean sample to histogram.
 // Sample usage:
@@ -258,13 +267,13 @@ BASE_EXPORT void UmaHistogramSparse(std::string_view name, int sample);
 //
 // Sample usages:
 //   void Function() {
-//     ScopedUmaHistogramTimer("Component.FunctionTime");
+//     ScopedUmaHistogramTimer timer("Component.FunctionTime");
 //     // useful stuff here
 //     ...
 //   }
 //
 //   void Function() {
-//     ScopedUmaHistogramTimer("Component.FunctionTime",
+//     ScopedUmaHistogramTimer timer("Component.FunctionTime",
 //       ScopedUmaHistogramTimer::kMicroSecondTimes);
 //     // useful stuff here
 //     ...
@@ -286,7 +295,7 @@ class BASE_EXPORT ScopedUmaHistogramTimer {
   };
 
   // Constructs the scoped timer with the given histogram name.
-  explicit ScopedUmaHistogramTimer(
+  [[nodiscard]] explicit ScopedUmaHistogramTimer(
       std::string_view name,
       ScopedHistogramTiming timing = ScopedHistogramTiming::kShortTimes);
 

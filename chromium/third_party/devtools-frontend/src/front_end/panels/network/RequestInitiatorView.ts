@@ -10,14 +10,13 @@ import * as Logs from '../../models/logs/logs.js';
 import type * as StackTrace from '../../models/stack_trace/stack_trace.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
-import * as Lit from '../../ui/lit/lit.js';
+import {html, type LitTemplate, nothing, render, type TemplateResult} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import requestInitiatorViewStyles from './requestInitiatorView.css.js';
 import requestInitiatorViewTreeStyles from './requestInitiatorViewTree.css.js';
 
-const {html, render, nothing} = Lit;
-const {widgetConfig} = UI.Widget;
+const {widget} = UI.Widget;
 
 const UIStrings = {
   /**
@@ -37,15 +36,13 @@ const str_ = i18n.i18n.registerUIStrings('panels/network/RequestInitiatorView.ts
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export interface ViewInput {
   initiatorGraph: Logs.NetworkLog.InitiatorGraph;
-  hasStackTrace: boolean;
+  stackTrace: StackTrace.StackTrace.StackTrace|null;
   request: SDK.NetworkRequest.NetworkRequest;
-  linkifier: Components.Linkifier.Linkifier;
-  target?: SDK.Target.Target;
 }
 
 export const DEFAULT_VIEW = (input: ViewInput, _output: undefined, target: HTMLElement): void => {
   const hasInitiatorData =
-      input.initiatorGraph.initiators.size > 1 || input.initiatorGraph.initiated.size > 1 || input.hasStackTrace;
+      input.initiatorGraph.initiators.size > 1 || input.initiatorGraph.initiated.size > 1 || input.stackTrace;
 
   if (!hasInitiatorData) {
     render(
@@ -58,110 +55,120 @@ export const DEFAULT_VIEW = (input: ViewInput, _output: undefined, target: HTMLE
     return;
   }
 
-  const renderStackTraceSection = (): Lit.TemplateResult => {
+  const renderStackTraceSection = (): TemplateResult => {
+    if (!input.stackTrace) {
+      return html`${nothing}`;
+    }
+    // clang-format off
     return html`
-      <li role="treeitem" class="request-initiator-view-section-title" aria-expanded="true">
+      <li role="treeitem" class="request-initiator-view-section-title" aria-expanded="true" open>
         ${i18nString(UIStrings.requestCallStack)}
         <ul role="group">
           <li role="treeitem">
-            <devtools-widget .widgetConfig=${widgetConfig(Components.JSPresentationUtils.StackTracePreviewContent, {
-      target: input.target,
-      linkifier: input.linkifier,
-      options: {runtimeStackTrace: input.request.initiator()?.stack, tabStops: true}
-    })}></devtools-widget>
+            ${widget(Components.JSPresentationUtils.StackTracePreviewContent, {
+              options: {tabStops: true},
+              stackTrace: input.stackTrace,
+            })}
           </li>
         </ul>
       </li>
     `;
+    // clang-format on
   };
 
-  const renderInitiatorNodes = (initiators: SDK.NetworkRequest.NetworkRequest[], index: number,
-                                initiated: Map<SDK.NetworkRequest.NetworkRequest, SDK.NetworkRequest.NetworkRequest>,
-                                visited: Set<SDK.NetworkRequest.NetworkRequest>): Lit.TemplateResult => {
-    if (index >= initiators.length) {
-      return html`${nothing}`;
-    }
-    const request = initiators[index];
-    const isCurrentRequest = (index === initiators.length - 1);
+  const renderInitiatorNodes =
+      (initiators: SDK.NetworkRequest.NetworkRequest[], index: number,
+       initiated: Map<SDK.NetworkRequest.NetworkRequest, SDK.NetworkRequest.NetworkRequest>,
+       visited: Set<SDK.NetworkRequest.NetworkRequest>): TemplateResult => {
+        if (index >= initiators.length) {
+          return html`${nothing}`;
+        }
+        const request = initiators[index];
+        const isCurrentRequest = (index === initiators.length - 1);
+        const hasFurtherInitiatedNodes = index + 1 < initiators.length;
+        const renderedChildren = isCurrentRequest ? renderInitiatedNodes(initiated, request, visited) : nothing;
 
-    return html`
-      <li role="treeitem" ?selected=${isCurrentRequest} aria-expanded="true">
-        <span style=${isCurrentRequest ? 'font-weight: bold' : ''}>${request.url()}</span>
-        <ul role="group">
-          ${renderInitiatorNodes(initiators, index + 1, initiated, visited)}
-          ${isCurrentRequest ? renderInitiatedNodes(initiated, request, visited) : nothing}
-        </ul>
-      </li>
-    `;
-  };
+        // clang-format off
+        return html`
+          <li role="treeitem" ?selected=${isCurrentRequest} aria-expanded="true" open>
+            <span style=${isCurrentRequest ? 'font-weight: bold' : ''}>${request.url()}</span>
+            ${hasFurtherInitiatedNodes || renderedChildren !== nothing ? html`
+              <ul role="group">
+                ${renderInitiatorNodes(initiators, index + 1, initiated, visited)}
+                ${renderedChildren}
+              </ul>` : nothing}
+          </li>`;
+        // clang-format on
+      };
 
-  const renderInitiatedNodes = (initiated: Map<SDK.NetworkRequest.NetworkRequest, SDK.NetworkRequest.NetworkRequest>,
-                                parentRequest: SDK.NetworkRequest.NetworkRequest,
-                                visited: Set<SDK.NetworkRequest.NetworkRequest>): Lit.TemplateResult => {
-    const children = [];
-    for (const [request, initiator] of initiated) {
-      if (initiator === parentRequest) {
-        children.push(request);
-      }
-    }
-    if (children.length === 0) {
-      return html`${nothing}`;
-    }
-    return html`
+  const renderInitiatedNodes =
+      (initiated: Map<SDK.NetworkRequest.NetworkRequest, SDK.NetworkRequest.NetworkRequest>,
+       parentRequest: SDK.NetworkRequest.NetworkRequest,
+       visited: Set<SDK.NetworkRequest.NetworkRequest>): LitTemplate => {
+        const children = [];
+        for (const [request, initiator] of initiated) {
+          if (initiator === parentRequest) {
+            children.push(request);
+          }
+        }
+        if (children.length === 0) {
+          return nothing;
+        }
+        return html`
       ${children.map(child => {
-      const shouldRecurse = !visited.has(child);
-      if (shouldRecurse) {
-        visited.add(child);
-      }
-      return html`
-        <li role="treeitem" aria-expanded="true">
+          const shouldRecurse = !visited.has(child);
+          if (shouldRecurse) {
+            visited.add(child);
+          }
+          const renderedChildren = shouldRecurse ? renderInitiatedNodes(initiated, child, visited) : nothing;
+          return html`
+        <li role="treeitem" aria-expanded="true" open>
           <span>${child.url()}</span>
-          ${shouldRecurse ? html`<ul>${renderInitiatedNodes(initiated, child, visited)}</ul>` : nothing}
+          ${renderedChildren !== nothing ? html`<ul role="group">${renderedChildren}</ul>` : nothing}
         </li>
       `;
-    })}
+        })}
     `;
-  };
+      };
 
-  const renderInitiatorChain = (initiatorGraph: Logs.NetworkLog.InitiatorGraph): Lit.TemplateResult => {
+  const renderInitiatorChain = (initiatorGraph: Logs.NetworkLog.InitiatorGraph): TemplateResult => {
     const initiators = Array.from(initiatorGraph.initiators).reverse();
     const visited = new Set<SDK.NetworkRequest.NetworkRequest>();
     visited.add(input.request);
+    const hasInitiatorChain = initiators.length > 0;
+    // clang-format off
     return html`
-      <li role="treeitem" class="request-initiator-view-section-title" aria-expanded="true">
+      <li role="treeitem" class="request-initiator-view-section-title" aria-expanded="true" open>
         ${i18nString(UIStrings.requestInitiatorChain)}
-        <ul role="group">
-          ${renderInitiatorNodes(initiators, 0, initiatorGraph.initiated, visited)}
-        </ul>
-      </li>
-    `;
+        ${hasInitiatorChain ? html`
+          <ul role="group">
+            ${renderInitiatorNodes(initiators, 0, initiatorGraph.initiated, visited)}
+          </ul>` : nothing}
+      </li>`;
+    // clang-format on
   };
 
-  render(
-      html`
+  const hasInitiatorChain = input.initiatorGraph.initiators.size > 1 || input.initiatorGraph.initiated.size > 1;
+
+  // clang-format off
+  render(html`
     <div class="request-initiator-view-tree" jslog=${VisualLogging.tree('initiator-tree')}>
-      <devtools-tree .template=${
-          html`
-        <style>
-          ${requestInitiatorViewTreeStyles}
-        </style>
-        <ul role="tree">
-           ${input.hasStackTrace ? renderStackTraceSection() : Lit.nothing}
-           ${
-              (input.initiatorGraph.initiators.size > 1 || input.initiatorGraph.initiated.size > 1) ?
-                  renderInitiatorChain(input.initiatorGraph) :
-                  Lit.nothing}
-        </ul>
+      <devtools-tree .template=${html`
+        <style>${requestInitiatorViewTreeStyles}</style>
+        ${input.stackTrace || hasInitiatorChain ? html`
+          <ul role="tree">
+            ${renderStackTraceSection()}
+            ${hasInitiatorChain ? renderInitiatorChain(input.initiatorGraph) : nothing}
+          </ul>` : nothing}
       `}></devtools-tree>
     </div>
-  `,
-      target);
+  `, target);
+  // clang-format on
 };
 
 type View = typeof DEFAULT_VIEW;
 
 export class RequestInitiatorView extends UI.Widget.VBox {
-  private readonly linkifier: Components.Linkifier.Linkifier;
   private readonly request: SDK.NetworkRequest.NetworkRequest;
   #view: View;
 
@@ -169,7 +176,6 @@ export class RequestInitiatorView extends UI.Widget.VBox {
     super({jslog: `${VisualLogging.pane('initiator').track({resize: true})}`});
 
     this.element.classList.add('request-initiator-view');
-    this.linkifier = new Components.Linkifier.Linkifier();
     this.request = request;
     this.#view = view;
   }
@@ -188,8 +194,8 @@ export class RequestInitiatorView extends UI.Widget.VBox {
     const networkManager = SDK.NetworkManager.NetworkManager.forRequest(request);
     const target = networkManager?.target() ?? targetManager.primaryPageTarget() ?? targetManager.rootTarget();
     let stackTrace: StackTrace.StackTrace.StackTrace|null = null;
-    const preview = new Components.JSPresentationUtils.StackTracePreviewContent(
-        undefined, target ?? undefined, linkifier, {tabStops: focusableLink});
+    const preview = new Components.JSPresentationUtils.StackTracePreviewContent();
+    preview.options = {tabStops: focusableLink};
     if (target) {
       stackTrace = await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
                        .createStackTraceFromProtocolRuntime(initiator.stack, target);
@@ -198,18 +204,23 @@ export class RequestInitiatorView extends UI.Widget.VBox {
     return {preview, stackTrace};
   }
 
-  override performUpdate(): void {
+  override async performUpdate(): Promise<void> {
     const initiatorGraph = Logs.NetworkLog.NetworkLog.instance().initiatorGraphForRequest(this.request);
-    const hasStackTrace = !!this.request.initiator()?.stack;
+    const targetManager = SDK.TargetManager.TargetManager.instance();
     const networkManager = SDK.NetworkManager.NetworkManager.forRequest(this.request);
-    const target = networkManager ? networkManager.target() : undefined;
+    const target = networkManager?.target() ?? targetManager.primaryPageTarget() ?? targetManager.rootTarget();
+
+    const rawStack = this.request.initiator()?.stack;
+    let stackTrace: StackTrace.StackTrace.StackTrace|null = null;
+    if (rawStack && target) {
+      stackTrace = await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
+                       .createStackTraceFromProtocolRuntime(rawStack, target);
+    }
 
     const viewInput: ViewInput = {
       initiatorGraph,
-      hasStackTrace,
+      stackTrace,
       request: this.request,
-      linkifier: this.linkifier,
-      target: target || undefined,
     };
 
     this.#view(viewInput, undefined, this.contentElement);

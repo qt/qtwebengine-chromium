@@ -11,6 +11,7 @@ import {createTarget} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
 import {getMatchedStylesWithBlankRule, getMatchedStylesWithStylesheet} from '../../testing/StyleHelpers.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
+import {render} from '../../ui/lit/lit.js';
 
 import * as Elements from './elements.js';
 
@@ -81,7 +82,9 @@ describeWithMockConnection('StylesPropertySection', () => {
     const linkifier = sinon.createStubInstance(Components.Linkifier.Linkifier);
     const originNode =
         Elements.StylePropertiesSection.StylePropertiesSection.createRuleOriginNode(matchedStyles, linkifier, rule);
-    assert.strictEqual(originNode.textContent, '<style>');
+    const div = document.createElement('div');
+    render(originNode, div);
+    assert.strictEqual(div.textContent, '<style>');
     sinon.assert.calledOnce(linkifier.linkifyCSSLocation);
     assert.strictEqual(linkifier.linkifyCSSLocation.args[0][0].styleSheetId, styleSheetId);
     assert.strictEqual(linkifier.linkifyCSSLocation.args[0][0].url, 'constructed.css');
@@ -125,7 +128,9 @@ describeWithMockConnection('StylesPropertySection', () => {
     const linkifier = sinon.createStubInstance(Components.Linkifier.Linkifier);
     const originNode =
         Elements.StylePropertiesSection.StylePropertiesSection.createRuleOriginNode(matchedStyles, linkifier, rule);
-    assert.strictEqual(originNode.textContent, 'constructed stylesheet');
+    const div = document.createElement('div');
+    render(originNode, div);
+    assert.strictEqual(div.textContent, 'constructed stylesheet');
     sinon.assert.calledOnce(linkifier.linkifyCSSLocation);
     // Since we already asserted that a sourcemap exists for our header, it's sufficient to check that
     // linkifyCSSLocation has been called. Verifying that linkifyCSSLocation applies source mapping is out of scope
@@ -327,5 +332,99 @@ describeWithMockConnection('StylesPropertySection', () => {
         stylesSidebarPane, matchedStyles, declaration1, 1, positionTryRules[1].active);
     assert.isFalse(section1.propertiesTreeOutline.element.classList.contains('no-affect'));
     assert.isTrue(section2.propertiesTreeOutline.element.classList.contains('no-affect'));
+  });
+
+  describe('activeAiSuggestion', () => {
+    let section: Elements.StylePropertiesSection.StylePropertiesSection;
+    let cssProperty: SDK.CSSProperty.CSSProperty;
+    const sourceTreeElement = sinon.createStubInstance(Elements.StylePropertyTreeElement.StylePropertyTreeElement);
+
+    beforeEach(async () => {
+      const matchedStyles = await getMatchedStylesWithBlankRule({cssModel: new SDK.CSSModel.CSSModel(createTarget())});
+      section = new Elements.StylePropertiesSection.StylePropertiesSection(
+          new Elements.StylesSidebarPane.StylesSidebarPane(computedStyleModel), matchedStyles,
+          matchedStyles.nodeStyles()[0], 0, new Map(), new Map(), null);
+      cssProperty = new SDK.CSSProperty.CSSProperty(section.styleInternal, 0, '', '', true, false, true, false);
+      sourceTreeElement.property = cssProperty;
+      sinon.stub(section, 'closestPropertyForEditing').returns(sourceTreeElement);
+    });
+
+    it('setting activeAiSuggestion triggers rendering', async () => {
+      const renderActiveAiSuggestionSpy = sinon.spy(sourceTreeElement, 'renderActiveAiSuggestion');
+      const activeAiSuggestion = {
+        text: 'background-color: white; color: red; font-size: 10px;',
+        properties: [
+          {name: 'background-color', value: 'white'}, {name: 'color', value: 'red'}, {name: 'font-size', value: '10px'}
+        ],
+        cssProperty,
+        cursorPosition: 0,
+      };
+
+      section.activeAiSuggestion = activeAiSuggestion;
+
+      sinon.assert.calledOnce(renderActiveAiSuggestionSpy);
+      assert.deepEqual(renderActiveAiSuggestionSpy.firstCall.args[0], activeAiSuggestion.properties[0]);
+      const ghostElements = section.propertiesTreeOutline.rootElement().children().filter(
+          e => e instanceof Elements.StylePropertyTreeElement.GhostStylePropertyTreeElement);
+      assert.lengthOf(ghostElements, 2);
+      assert.strictEqual(ghostElements[0].property.name, 'color');
+      assert.strictEqual(ghostElements[0].property.value, 'red');
+      assert.strictEqual(ghostElements[1].property.name, 'font-size');
+      assert.strictEqual(ghostElements[1].property.value, '10px');
+    });
+
+    it('clearing activeAiSuggestion triggers cleanup', async () => {
+      const renderActiveAiSuggestionSpy = sinon.spy(sourceTreeElement, 'renderActiveAiSuggestion');
+      const clearActiveAiSuggestionSpy = sinon.spy(sourceTreeElement, 'clearActiveAiSuggestion');
+      const rootElement = section.propertiesTreeOutline.rootElement();
+      const activeAiSuggestion = {
+        text: 'color: red; font-size: 10px;',
+        properties: [{name: 'color', value: 'red'}, {name: 'font-size', value: '10px'}],
+        cssProperty,
+        cursorPosition: 0,
+      };
+
+      section.activeAiSuggestion = activeAiSuggestion;
+
+      sinon.assert.calledOnce(renderActiveAiSuggestionSpy);
+      assert.deepEqual(renderActiveAiSuggestionSpy.firstCall.args[0], activeAiSuggestion.properties[0]);
+      let ghostElements = rootElement.children().filter(
+          e => e instanceof Elements.StylePropertyTreeElement.GhostStylePropertyTreeElement);
+      assert.lengthOf(ghostElements, 1);
+
+      section.activeAiSuggestion = undefined;
+
+      sinon.assert.calledOnce(clearActiveAiSuggestionSpy);
+      ghostElements = rootElement.children().filter(
+          e => e instanceof Elements.StylePropertyTreeElement.GhostStylePropertyTreeElement);
+      assert.lengthOf(ghostElements, 0);
+    });
+
+    it('commitActiveAiSuggestion calls commitAiSuggestion with correct text', async () => {
+      const renderActiveAiSuggestionSpy = sinon.spy(sourceTreeElement, 'renderActiveAiSuggestion');
+      const commitAiSuggestionStub = sinon.stub(sourceTreeElement, 'commitAiSuggestion').resolves();
+      const rootElement = section.propertiesTreeOutline.rootElement();
+      const activeAiSuggestion = {
+        text: 'background-color: white; color: red; font-size: 10px;',
+        properties: [
+          {name: 'background-color', value: 'white'}, {name: 'color', value: 'red'}, {name: 'font-size', value: '10px'}
+        ],
+        cssProperty,
+        cursorPosition: 0,
+      };
+
+      section.activeAiSuggestion = activeAiSuggestion;
+
+      sinon.assert.calledOnce(renderActiveAiSuggestionSpy);
+      assert.deepEqual(renderActiveAiSuggestionSpy.firstCall.args[0], activeAiSuggestion.properties[0]);
+      const ghostElements = rootElement.children().filter(
+          e => e instanceof Elements.StylePropertyTreeElement.GhostStylePropertyTreeElement);
+      assert.lengthOf(ghostElements, 2);
+
+      await section.commitActiveAiSuggestion();
+
+      sinon.assert.calledOnceWithExactly(
+          commitAiSuggestionStub, 'background-color: white; color: red; font-size: 10px;');
+    });
   });
 });

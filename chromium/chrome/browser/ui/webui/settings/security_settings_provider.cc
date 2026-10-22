@@ -5,9 +5,12 @@
 #include "chrome/browser/ui/webui/settings/security_settings_provider.h"
 
 #include "base/feature_list.h"
+#include "chrome/browser/content_settings/generated_javascript_optimizer_pref.h"
 #include "chrome/browser/safe_browsing/generated_safe_browsing_pref.h"
 #include "chrome/browser/ssl/https_upgrades_util.h"
 #include "components/safe_browsing/core/common/features.h"
+#include "components/content_settings/core/common/features.h"
+#include "components/safe_browsing/core/common/hashprefix_realtime/hash_realtime_utils.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "content/public/browser/web_ui_data_source.h"
 
@@ -33,8 +36,35 @@ void AddSecurityData(content::WebUIDataSource* html_source) {
                           static_cast<int>(GetDefaultSafeBrowsingState(
                               SecuritySettingsBundleSetting::ENHANCED)));
 
-  // TODO(http://crbug.com/458521865) Move remainder of
-  // security-related-settings (not the strings) to this function.
+  html_source->AddInteger(
+      "securityStandardBundleJavascriptGuardrailsDefault",
+      static_cast<int>(content_settings::GeneratedJavascriptOptimizerPref::
+                           GetDefaultJsOptimizerSetting(
+                               SecuritySettingsBundleSetting::STANDARD)));
+  html_source->AddInteger(
+      "securityEnhancedBundleJavascriptGuardrailsDefault",
+      static_cast<int>(content_settings::GeneratedJavascriptOptimizerPref::
+                           GetDefaultJsOptimizerSetting(
+                               SecuritySettingsBundleSetting::ENHANCED)));
+
+  html_source->AddBoolean("enableHashPrefixRealTimeLookups",
+                          safe_browsing::hash_realtime_utils::
+                              IsHashRealTimeLookupEligibleInSession());
+
+  html_source->AddBoolean(
+      "extendedReportingRemovePrefDependency",
+      base::FeatureList::IsEnabled(
+          safe_browsing::kExtendedReportingRemovePrefDependency));
+
+  html_source->AddBoolean(
+      "hashPrefixRealTimeLookupsSamplePing",
+      base::FeatureList::IsEnabled(
+          safe_browsing::kHashPrefixRealTimeLookupsSamplePing));
+
+  html_source->AddBoolean("enableBlockV8OptimizerOnUnfamiliarSites",
+                          base::FeatureList::IsEnabled(
+                              content_settings::features::
+                                  kBlockV8OptimizerOnUnfamiliarSitesSetting));
 }
 
 }  // namespace settings

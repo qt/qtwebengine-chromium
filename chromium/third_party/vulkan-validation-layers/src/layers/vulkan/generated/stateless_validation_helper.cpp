@@ -969,6 +969,26 @@ bool Context::ValidatePnextFeatureStructContents(const Location& loc, const VkBa
             }
         } break;
 
+        // Validation code for VkPhysicalDeviceShaderConstantDataFeaturesKHR structure members
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CONSTANT_DATA_FEATURES_KHR: {  // Covers
+                                                                                     // VUID-VkPhysicalDeviceShaderConstantDataFeaturesKHR-sType-sType
+            if (is_const_param) {
+                [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkPhysicalDeviceShaderConstantDataFeaturesKHR);
+                VkPhysicalDeviceShaderConstantDataFeaturesKHR* structure = (VkPhysicalDeviceShaderConstantDataFeaturesKHR*)header;
+                skip |= ValidateBool32(pNext_loc.dot(Field::shaderConstantData), structure->shaderConstantData);
+            }
+        } break;
+
+        // Validation code for VkPhysicalDeviceShaderAbortFeaturesKHR structure members
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ABORT_FEATURES_KHR: {  // Covers
+                                                                             // VUID-VkPhysicalDeviceShaderAbortFeaturesKHR-sType-sType
+            if (is_const_param) {
+                [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkPhysicalDeviceShaderAbortFeaturesKHR);
+                VkPhysicalDeviceShaderAbortFeaturesKHR* structure = (VkPhysicalDeviceShaderAbortFeaturesKHR*)header;
+                skip |= ValidateBool32(pNext_loc.dot(Field::shaderAbort), structure->shaderAbort);
+            }
+        } break;
+
         // Validation code for VkPhysicalDeviceShaderQuadControlFeaturesKHR structure members
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_QUAD_CONTROL_FEATURES_KHR: {  // Covers
                                                                                     // VUID-VkPhysicalDeviceShaderQuadControlFeaturesKHR-sType-sType
@@ -1008,6 +1028,17 @@ bool Context::ValidatePnextFeatureStructContents(const Location& loc, const VkBa
                 [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkPhysicalDevicePresentIdFeaturesKHR);
                 VkPhysicalDevicePresentIdFeaturesKHR* structure = (VkPhysicalDevicePresentIdFeaturesKHR*)header;
                 skip |= ValidateBool32(pNext_loc.dot(Field::presentId), structure->presentId);
+            }
+        } break;
+
+        // Validation code for VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR structure members
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_ADDRESS_COMMANDS_FEATURES_KHR: {  // Covers
+                                                                                        // VUID-VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR-sType-sType
+            if (is_const_param) {
+                [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR);
+                VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR* structure =
+                    (VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR*)header;
+                skip |= ValidateBool32(pNext_loc.dot(Field::deviceAddressCommands), structure->deviceAddressCommands);
             }
         } break;
 
@@ -1281,6 +1312,22 @@ bool Context::ValidatePnextFeatureStructContents(const Location& loc, const VkBa
                 [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkPhysicalDeviceMaintenance7FeaturesKHR);
                 VkPhysicalDeviceMaintenance7FeaturesKHR* structure = (VkPhysicalDeviceMaintenance7FeaturesKHR*)header;
                 skip |= ValidateBool32(pNext_loc.dot(Field::maintenance7), structure->maintenance7);
+            }
+        } break;
+
+        // Validation code for VkPhysicalDeviceFaultFeaturesKHR structure members
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_KHR: {  // Covers VUID-VkPhysicalDeviceFaultFeaturesKHR-sType-sType
+            if (is_const_param) {
+                [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkPhysicalDeviceFaultFeaturesKHR);
+                VkPhysicalDeviceFaultFeaturesKHR* structure = (VkPhysicalDeviceFaultFeaturesKHR*)header;
+                skip |= ValidateBool32(pNext_loc.dot(Field::deviceFault), structure->deviceFault);
+
+                skip |= ValidateBool32(pNext_loc.dot(Field::deviceFaultVendorBinary), structure->deviceFaultVendorBinary);
+
+                skip |= ValidateBool32(pNext_loc.dot(Field::deviceFaultReportMasked), structure->deviceFaultReportMasked);
+
+                skip |=
+                    ValidateBool32(pNext_loc.dot(Field::deviceFaultDeviceLostOnMasked), structure->deviceFaultDeviceLostOnMasked);
             }
         } break;
 
@@ -3277,6 +3324,17 @@ bool Context::ValidatePnextFeatureStructContents(const Location& loc, const VkBa
             }
         } break;
 
+        // Validation code for VkPhysicalDeviceShaderInstrumentationFeaturesARM structure members
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INSTRUMENTATION_FEATURES_ARM: {  // Covers
+                                                                                       // VUID-VkPhysicalDeviceShaderInstrumentationFeaturesARM-sType-sType
+            if (is_const_param) {
+                [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkPhysicalDeviceShaderInstrumentationFeaturesARM);
+                VkPhysicalDeviceShaderInstrumentationFeaturesARM* structure =
+                    (VkPhysicalDeviceShaderInstrumentationFeaturesARM*)header;
+                skip |= ValidateBool32(pNext_loc.dot(Field::shaderInstrumentation), structure->shaderInstrumentation);
+            }
+        } break;
+
         // Validation code for VkPhysicalDeviceVertexAttributeRobustnessFeaturesEXT structure members
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_ROBUSTNESS_FEATURES_EXT: {  // Covers
                                                                                             // VUID-VkPhysicalDeviceVertexAttributeRobustnessFeaturesEXT-sType-sType
@@ -3309,7 +3367,6 @@ bool Context::ValidatePnextFeatureStructContents(const Location& loc, const VkBa
                 skip |= ValidateBool32(pNext_loc.dot(Field::fragmentDensityMapLayered), structure->fragmentDensityMapLayered);
             }
         } break;
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
         // Validation code for VkPhysicalDevicePresentMeteringFeaturesNV structure members
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_METERING_FEATURES_NV: {  // Covers
@@ -3320,7 +3377,6 @@ bool Context::ValidatePnextFeatureStructContents(const Location& loc, const VkBa
                 skip |= ValidateBool32(pNext_loc.dot(Field::presentMetering), structure->presentMetering);
             }
         } break;
-#endif  // VK_ENABLE_BETA_EXTENSIONS
 
         // Validation code for VkPhysicalDeviceZeroInitializeDeviceMemoryFeaturesEXT structure members
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_DEVICE_MEMORY_FEATURES_EXT: {  // Covers
@@ -3418,6 +3474,28 @@ bool Context::ValidatePnextFeatureStructContents(const Location& loc, const VkBa
                 VkPhysicalDeviceShaderSubgroupPartitionedFeaturesEXT* structure =
                     (VkPhysicalDeviceShaderSubgroupPartitionedFeaturesEXT*)header;
                 skip |= ValidateBool32(pNext_loc.dot(Field::shaderSubgroupPartitioned), structure->shaderSubgroupPartitioned);
+            }
+        } break;
+
+        // Validation code for VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE structure members
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MIXED_FLOAT_DOT_PRODUCT_FEATURES_VALVE: {  // Covers
+                                                                                                 // VUID-VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE-sType-sType
+            if (is_const_param) {
+                [[maybe_unused]] const Location pNext_loc =
+                    loc.pNext(Struct::VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE);
+                VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE* structure =
+                    (VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE*)header;
+                skip |= ValidateBool32(pNext_loc.dot(Field::shaderMixedFloatDotProductFloat16AccFloat32),
+                                       structure->shaderMixedFloatDotProductFloat16AccFloat32);
+
+                skip |= ValidateBool32(pNext_loc.dot(Field::shaderMixedFloatDotProductFloat16AccFloat16),
+                                       structure->shaderMixedFloatDotProductFloat16AccFloat16);
+
+                skip |= ValidateBool32(pNext_loc.dot(Field::shaderMixedFloatDotProductBFloat16Acc),
+                                       structure->shaderMixedFloatDotProductBFloat16Acc);
+
+                skip |= ValidateBool32(pNext_loc.dot(Field::shaderMixedFloatDotProductFloat8AccFloat32),
+                                       structure->shaderMixedFloatDotProductFloat8AccFloat32);
             }
         } break;
 
@@ -3528,6 +3606,10 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                                       AllVkPipelineLayoutCreateFlagBits, structure->flags, kOptionalFlags,
                                       "VUID-VkPipelineLayoutCreateInfo-flags-parameter", nullptr, false);
 
+                skip |= ValidateArray(pNext_loc.dot(Field::setLayoutCount), pNext_loc.dot(Field::pSetLayouts),
+                                      structure->setLayoutCount, &structure->pSetLayouts, false, true, kVUIDUndefined,
+                                      "VUID-VkPipelineLayoutCreateInfo-pSetLayouts-parameter");
+
                 skip |= ValidateArray(pNext_loc.dot(Field::pushConstantRangeCount), pNext_loc.dot(Field::pPushConstantRanges),
                                       structure->pushConstantRangeCount, &structure->pPushConstantRanges, false, true,
                                       kVUIDUndefined, "VUID-VkPipelineLayoutCreateInfo-pPushConstantRanges-parameter");
@@ -3633,130 +3715,137 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
             if (is_const_param) {
                 [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkPhysicalDeviceFeatures2);
                 VkPhysicalDeviceFeatures2* structure = (VkPhysicalDeviceFeatures2*)header;
-                skip |= ValidateBool32(pNext_loc.dot(Field::robustBufferAccess), structure->features.robustBufferAccess);
+                [[maybe_unused]] const Location features_loc = pNext_loc.dot(Field::features);
+                skip |= ValidateBool32(features_loc.dot(Field::robustBufferAccess), structure->features.robustBufferAccess);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::fullDrawIndexUint32), structure->features.fullDrawIndexUint32);
+                skip |= ValidateBool32(features_loc.dot(Field::fullDrawIndexUint32), structure->features.fullDrawIndexUint32);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::imageCubeArray), structure->features.imageCubeArray);
+                skip |= ValidateBool32(features_loc.dot(Field::imageCubeArray), structure->features.imageCubeArray);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::independentBlend), structure->features.independentBlend);
+                skip |= ValidateBool32(features_loc.dot(Field::independentBlend), structure->features.independentBlend);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::geometryShader), structure->features.geometryShader);
+                skip |= ValidateBool32(features_loc.dot(Field::geometryShader), structure->features.geometryShader);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::tessellationShader), structure->features.tessellationShader);
+                skip |= ValidateBool32(features_loc.dot(Field::tessellationShader), structure->features.tessellationShader);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::sampleRateShading), structure->features.sampleRateShading);
+                skip |= ValidateBool32(features_loc.dot(Field::sampleRateShading), structure->features.sampleRateShading);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::dualSrcBlend), structure->features.dualSrcBlend);
+                skip |= ValidateBool32(features_loc.dot(Field::dualSrcBlend), structure->features.dualSrcBlend);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::logicOp), structure->features.logicOp);
+                skip |= ValidateBool32(features_loc.dot(Field::logicOp), structure->features.logicOp);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::multiDrawIndirect), structure->features.multiDrawIndirect);
+                skip |= ValidateBool32(features_loc.dot(Field::multiDrawIndirect), structure->features.multiDrawIndirect);
 
-                skip |=
-                    ValidateBool32(pNext_loc.dot(Field::drawIndirectFirstInstance), structure->features.drawIndirectFirstInstance);
+                skip |= ValidateBool32(features_loc.dot(Field::drawIndirectFirstInstance),
+                                       structure->features.drawIndirectFirstInstance);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::depthClamp), structure->features.depthClamp);
+                skip |= ValidateBool32(features_loc.dot(Field::depthClamp), structure->features.depthClamp);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::depthBiasClamp), structure->features.depthBiasClamp);
+                skip |= ValidateBool32(features_loc.dot(Field::depthBiasClamp), structure->features.depthBiasClamp);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::fillModeNonSolid), structure->features.fillModeNonSolid);
+                skip |= ValidateBool32(features_loc.dot(Field::fillModeNonSolid), structure->features.fillModeNonSolid);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::depthBounds), structure->features.depthBounds);
+                skip |= ValidateBool32(features_loc.dot(Field::depthBounds), structure->features.depthBounds);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::wideLines), structure->features.wideLines);
+                skip |= ValidateBool32(features_loc.dot(Field::wideLines), structure->features.wideLines);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::largePoints), structure->features.largePoints);
+                skip |= ValidateBool32(features_loc.dot(Field::largePoints), structure->features.largePoints);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::alphaToOne), structure->features.alphaToOne);
+                skip |= ValidateBool32(features_loc.dot(Field::alphaToOne), structure->features.alphaToOne);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::multiViewport), structure->features.multiViewport);
+                skip |= ValidateBool32(features_loc.dot(Field::multiViewport), structure->features.multiViewport);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::samplerAnisotropy), structure->features.samplerAnisotropy);
+                skip |= ValidateBool32(features_loc.dot(Field::samplerAnisotropy), structure->features.samplerAnisotropy);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::textureCompressionETC2), structure->features.textureCompressionETC2);
+                skip |= ValidateBool32(features_loc.dot(Field::textureCompressionETC2), structure->features.textureCompressionETC2);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::textureCompressionASTC_LDR),
+                skip |= ValidateBool32(features_loc.dot(Field::textureCompressionASTC_LDR),
                                        structure->features.textureCompressionASTC_LDR);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::textureCompressionBC), structure->features.textureCompressionBC);
+                skip |= ValidateBool32(features_loc.dot(Field::textureCompressionBC), structure->features.textureCompressionBC);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::occlusionQueryPrecise), structure->features.occlusionQueryPrecise);
+                skip |= ValidateBool32(features_loc.dot(Field::occlusionQueryPrecise), structure->features.occlusionQueryPrecise);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::pipelineStatisticsQuery), structure->features.pipelineStatisticsQuery);
+                skip |=
+                    ValidateBool32(features_loc.dot(Field::pipelineStatisticsQuery), structure->features.pipelineStatisticsQuery);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::vertexPipelineStoresAndAtomics),
+                skip |= ValidateBool32(features_loc.dot(Field::vertexPipelineStoresAndAtomics),
                                        structure->features.vertexPipelineStoresAndAtomics);
 
                 skip |=
-                    ValidateBool32(pNext_loc.dot(Field::fragmentStoresAndAtomics), structure->features.fragmentStoresAndAtomics);
+                    ValidateBool32(features_loc.dot(Field::fragmentStoresAndAtomics), structure->features.fragmentStoresAndAtomics);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderTessellationAndGeometryPointSize),
+                skip |= ValidateBool32(features_loc.dot(Field::shaderTessellationAndGeometryPointSize),
                                        structure->features.shaderTessellationAndGeometryPointSize);
 
-                skip |=
-                    ValidateBool32(pNext_loc.dot(Field::shaderImageGatherExtended), structure->features.shaderImageGatherExtended);
+                skip |= ValidateBool32(features_loc.dot(Field::shaderImageGatherExtended),
+                                       structure->features.shaderImageGatherExtended);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderStorageImageExtendedFormats),
+                skip |= ValidateBool32(features_loc.dot(Field::shaderStorageImageExtendedFormats),
                                        structure->features.shaderStorageImageExtendedFormats);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderStorageImageMultisample),
+                skip |= ValidateBool32(features_loc.dot(Field::shaderStorageImageMultisample),
                                        structure->features.shaderStorageImageMultisample);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderStorageImageReadWithoutFormat),
+                skip |= ValidateBool32(features_loc.dot(Field::shaderStorageImageReadWithoutFormat),
                                        structure->features.shaderStorageImageReadWithoutFormat);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderStorageImageWriteWithoutFormat),
+                skip |= ValidateBool32(features_loc.dot(Field::shaderStorageImageWriteWithoutFormat),
                                        structure->features.shaderStorageImageWriteWithoutFormat);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderUniformBufferArrayDynamicIndexing),
+                skip |= ValidateBool32(features_loc.dot(Field::shaderUniformBufferArrayDynamicIndexing),
                                        structure->features.shaderUniformBufferArrayDynamicIndexing);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderSampledImageArrayDynamicIndexing),
+                skip |= ValidateBool32(features_loc.dot(Field::shaderSampledImageArrayDynamicIndexing),
                                        structure->features.shaderSampledImageArrayDynamicIndexing);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderStorageBufferArrayDynamicIndexing),
+                skip |= ValidateBool32(features_loc.dot(Field::shaderStorageBufferArrayDynamicIndexing),
                                        structure->features.shaderStorageBufferArrayDynamicIndexing);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderStorageImageArrayDynamicIndexing),
+                skip |= ValidateBool32(features_loc.dot(Field::shaderStorageImageArrayDynamicIndexing),
                                        structure->features.shaderStorageImageArrayDynamicIndexing);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderClipDistance), structure->features.shaderClipDistance);
+                skip |= ValidateBool32(features_loc.dot(Field::shaderClipDistance), structure->features.shaderClipDistance);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderCullDistance), structure->features.shaderCullDistance);
+                skip |= ValidateBool32(features_loc.dot(Field::shaderCullDistance), structure->features.shaderCullDistance);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderFloat64), structure->features.shaderFloat64);
+                skip |= ValidateBool32(features_loc.dot(Field::shaderFloat64), structure->features.shaderFloat64);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderInt64), structure->features.shaderInt64);
+                skip |= ValidateBool32(features_loc.dot(Field::shaderInt64), structure->features.shaderInt64);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderInt16), structure->features.shaderInt16);
-
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderResourceResidency), structure->features.shaderResourceResidency);
-
-                skip |= ValidateBool32(pNext_loc.dot(Field::shaderResourceMinLod), structure->features.shaderResourceMinLod);
-
-                skip |= ValidateBool32(pNext_loc.dot(Field::sparseBinding), structure->features.sparseBinding);
-
-                skip |= ValidateBool32(pNext_loc.dot(Field::sparseResidencyBuffer), structure->features.sparseResidencyBuffer);
-
-                skip |= ValidateBool32(pNext_loc.dot(Field::sparseResidencyImage2D), structure->features.sparseResidencyImage2D);
-
-                skip |= ValidateBool32(pNext_loc.dot(Field::sparseResidencyImage3D), structure->features.sparseResidencyImage3D);
-
-                skip |= ValidateBool32(pNext_loc.dot(Field::sparseResidency2Samples), structure->features.sparseResidency2Samples);
-
-                skip |= ValidateBool32(pNext_loc.dot(Field::sparseResidency4Samples), structure->features.sparseResidency4Samples);
-
-                skip |= ValidateBool32(pNext_loc.dot(Field::sparseResidency8Samples), structure->features.sparseResidency8Samples);
+                skip |= ValidateBool32(features_loc.dot(Field::shaderInt16), structure->features.shaderInt16);
 
                 skip |=
-                    ValidateBool32(pNext_loc.dot(Field::sparseResidency16Samples), structure->features.sparseResidency16Samples);
+                    ValidateBool32(features_loc.dot(Field::shaderResourceResidency), structure->features.shaderResourceResidency);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::sparseResidencyAliased), structure->features.sparseResidencyAliased);
+                skip |= ValidateBool32(features_loc.dot(Field::shaderResourceMinLod), structure->features.shaderResourceMinLod);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::variableMultisampleRate), structure->features.variableMultisampleRate);
+                skip |= ValidateBool32(features_loc.dot(Field::sparseBinding), structure->features.sparseBinding);
 
-                skip |= ValidateBool32(pNext_loc.dot(Field::inheritedQueries), structure->features.inheritedQueries);
+                skip |= ValidateBool32(features_loc.dot(Field::sparseResidencyBuffer), structure->features.sparseResidencyBuffer);
+
+                skip |= ValidateBool32(features_loc.dot(Field::sparseResidencyImage2D), structure->features.sparseResidencyImage2D);
+
+                skip |= ValidateBool32(features_loc.dot(Field::sparseResidencyImage3D), structure->features.sparseResidencyImage3D);
+
+                skip |=
+                    ValidateBool32(features_loc.dot(Field::sparseResidency2Samples), structure->features.sparseResidency2Samples);
+
+                skip |=
+                    ValidateBool32(features_loc.dot(Field::sparseResidency4Samples), structure->features.sparseResidency4Samples);
+
+                skip |=
+                    ValidateBool32(features_loc.dot(Field::sparseResidency8Samples), structure->features.sparseResidency8Samples);
+
+                skip |=
+                    ValidateBool32(features_loc.dot(Field::sparseResidency16Samples), structure->features.sparseResidency16Samples);
+
+                skip |= ValidateBool32(features_loc.dot(Field::sparseResidencyAliased), structure->features.sparseResidencyAliased);
+
+                skip |=
+                    ValidateBool32(features_loc.dot(Field::variableMultisampleRate), structure->features.variableMultisampleRate);
+
+                skip |= ValidateBool32(features_loc.dot(Field::inheritedQueries), structure->features.inheritedQueries);
             }
         } break;
 
@@ -4069,6 +4158,17 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
             }
         } break;
 
+        // Validation code for VkRenderPassAttachmentBeginInfo structure members
+        case VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO: {  // Covers VUID-VkRenderPassAttachmentBeginInfo-sType-sType
+            if (is_const_param) {
+                [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkRenderPassAttachmentBeginInfo);
+                VkRenderPassAttachmentBeginInfo* structure = (VkRenderPassAttachmentBeginInfo*)header;
+                skip |= ValidateArray(pNext_loc.dot(Field::attachmentCount), pNext_loc.dot(Field::pAttachments),
+                                      structure->attachmentCount, &structure->pAttachments, false, true, kVUIDUndefined,
+                                      "VUID-VkRenderPassAttachmentBeginInfo-pAttachments-parameter");
+            }
+        } break;
+
         // Validation code for VkFramebufferAttachmentsCreateInfo structure members
         case VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO: {  // Covers VUID-VkFramebufferAttachmentsCreateInfo-sType-sType
             if (is_const_param) {
@@ -4110,17 +4210,6 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                                                         "VUID-VkFramebufferAttachmentImageInfo-pViewFormats-parameter");
                     }
                 }
-            }
-        } break;
-
-        // Validation code for VkRenderPassAttachmentBeginInfo structure members
-        case VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO: {  // Covers VUID-VkRenderPassAttachmentBeginInfo-sType-sType
-            if (is_const_param) {
-                [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkRenderPassAttachmentBeginInfo);
-                VkRenderPassAttachmentBeginInfo* structure = (VkRenderPassAttachmentBeginInfo*)header;
-                skip |= ValidateArray(pNext_loc.dot(Field::attachmentCount), pNext_loc.dot(Field::pAttachments),
-                                      structure->attachmentCount, &structure->pAttachments, false, true, kVUIDUndefined,
-                                      "VUID-VkRenderPassAttachmentBeginInfo-pAttachments-parameter");
             }
         } break;
 
@@ -5067,6 +5156,9 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
             }
         } break;
 
+        // No Validation code for VkDeviceFaultShaderAbortMessageInfoKHR structure members  -- Covers
+        // VUID-VkDeviceFaultShaderAbortMessageInfoKHR-sType-sType
+
         // No Validation code for VkSurfaceProtectedCapabilitiesKHR structure members  -- Covers
         // VUID-VkSurfaceProtectedCapabilitiesKHR-sType-sType
 
@@ -5169,6 +5261,55 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
         // No Validation code for VkVideoEncodeQualityLevelInfoKHR structure members  -- Covers
         // VUID-VkVideoEncodeQualityLevelInfoKHR-sType-sType
 
+        // Validation code for VkMemoryRangeBarriersInfoKHR structure members
+        case VK_STRUCTURE_TYPE_MEMORY_RANGE_BARRIERS_INFO_KHR: {  // Covers VUID-VkMemoryRangeBarriersInfoKHR-sType-sType
+            if (is_const_param) {
+                [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkMemoryRangeBarriersInfoKHR);
+                VkMemoryRangeBarriersInfoKHR* structure = (VkMemoryRangeBarriersInfoKHR*)header;
+                skip |= ValidateStructTypeArray(pNext_loc.dot(Field::memoryRangeBarrierCount),
+                                                pNext_loc.dot(Field::pMemoryRangeBarriers), structure->memoryRangeBarrierCount,
+                                                structure->pMemoryRangeBarriers, VK_STRUCTURE_TYPE_MEMORY_RANGE_BARRIER_KHR, false,
+                                                true, "VUID-VkMemoryRangeBarrierKHR-sType-sType",
+                                                "VUID-VkMemoryRangeBarriersInfoKHR-pMemoryRangeBarriers-parameter", kVUIDUndefined);
+
+                if (structure->pMemoryRangeBarriers != nullptr) {
+                    for (uint32_t memoryRangeBarrierIndex = 0; memoryRangeBarrierIndex < structure->memoryRangeBarrierCount;
+                         ++memoryRangeBarrierIndex) {
+                        [[maybe_unused]] const Location pMemoryRangeBarriers_loc =
+                            pNext_loc.dot(Field::pMemoryRangeBarriers, memoryRangeBarrierIndex);
+                        skip |= ValidateStructPnext(
+                            pMemoryRangeBarriers_loc, structure->pMemoryRangeBarriers[memoryRangeBarrierIndex].pNext, 0, nullptr,
+                            GeneratedVulkanHeaderVersion, "VUID-VkMemoryRangeBarrierKHR-pNext-pNext", kVUIDUndefined, true);
+
+                        skip |= ValidateFlags(pMemoryRangeBarriers_loc.dot(Field::srcStageMask),
+                                              vvl::FlagBitmask::VkPipelineStageFlagBits2, AllVkPipelineStageFlagBits2,
+                                              structure->pMemoryRangeBarriers[memoryRangeBarrierIndex].srcStageMask, kOptionalFlags,
+                                              "VUID-VkMemoryRangeBarrierKHR-srcStageMask-parameter", nullptr, false);
+
+                        skip |= ValidateFlags(
+                            pMemoryRangeBarriers_loc.dot(Field::srcAccessMask), vvl::FlagBitmask::VkAccessFlagBits2,
+                            AllVkAccessFlagBits2, structure->pMemoryRangeBarriers[memoryRangeBarrierIndex].srcAccessMask,
+                            kOptionalFlags, "VUID-VkMemoryRangeBarrierKHR-srcAccessMask-parameter", nullptr, false);
+
+                        skip |= ValidateFlags(pMemoryRangeBarriers_loc.dot(Field::dstStageMask),
+                                              vvl::FlagBitmask::VkPipelineStageFlagBits2, AllVkPipelineStageFlagBits2,
+                                              structure->pMemoryRangeBarriers[memoryRangeBarrierIndex].dstStageMask, kOptionalFlags,
+                                              "VUID-VkMemoryRangeBarrierKHR-dstStageMask-parameter", nullptr, false);
+
+                        skip |= ValidateFlags(
+                            pMemoryRangeBarriers_loc.dot(Field::dstAccessMask), vvl::FlagBitmask::VkAccessFlagBits2,
+                            AllVkAccessFlagBits2, structure->pMemoryRangeBarriers[memoryRangeBarrierIndex].dstAccessMask,
+                            kOptionalFlags, "VUID-VkMemoryRangeBarrierKHR-dstAccessMask-parameter", nullptr, false);
+
+                        skip |= ValidateFlags(pMemoryRangeBarriers_loc.dot(Field::addressFlags),
+                                              vvl::FlagBitmask::VkAddressCommandFlagBitsKHR, AllVkAddressCommandFlagBitsKHR,
+                                              structure->pMemoryRangeBarriers[memoryRangeBarrierIndex].addressFlags, kOptionalFlags,
+                                              "VUID-VkMemoryRangeBarrierKHR-addressFlags-parameter", nullptr, false);
+                    }
+                }
+            }
+        } break;
+
         // Validation code for VkSurfaceCapabilitiesPresentId2KHR structure members
         case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_ID_2_KHR: {  // Covers
                                                                          // VUID-VkSurfaceCapabilitiesPresentId2KHR-sType-sType
@@ -5263,10 +5404,10 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
             if (is_const_param) {
                 [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkSwapchainPresentFenceInfoKHR);
                 VkSwapchainPresentFenceInfoKHR* structure = (VkSwapchainPresentFenceInfoKHR*)header;
-                skip |= ValidateArray(pNext_loc.dot(Field::swapchainCount), pNext_loc.dot(Field::pFences),
-                                      structure->swapchainCount, &structure->pFences, true, false,
-                                      "VUID-VkSwapchainPresentFenceInfoKHR-swapchainCount-arraylength",
-                                      "VUID-VkSwapchainPresentFenceInfoKHR-pFences-parameter");
+                skip |=
+                    ValidateArray(pNext_loc.dot(Field::swapchainCount), pNext_loc.dot(Field::pFences), structure->swapchainCount,
+                                  &structure->pFences, true, true, "VUID-VkSwapchainPresentFenceInfoKHR-swapchainCount-arraylength",
+                                  "VUID-VkSwapchainPresentFenceInfoKHR-pFences-parameter");
             }
         } break;
 
@@ -6015,17 +6156,20 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                                                    structure->pMappings[mappingIndex].source,
                                                    "VUID-VkDescriptorSetAndBindingMappingEXT-source-parameter");
 
+                        [[maybe_unused]] const Location sourceData_loc = pMappings_loc.dot(Field::sourceData);
                         if (structure->pMappings[mappingIndex].source ==
                             VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_CONSTANT_OFFSET_EXT) {
+                            [[maybe_unused]] const Location constantOffset_loc = sourceData_loc.dot(Field::constantOffset);
                             skip |=
-                                ValidateStructType(pMappings_loc.dot(Field::pEmbeddedSampler),
+                                ValidateStructType(constantOffset_loc.dot(Field::pEmbeddedSampler),
                                                    structure->pMappings[mappingIndex].sourceData.constantOffset.pEmbeddedSampler,
                                                    VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, false,
                                                    "VUID-VkDescriptorMappingSourceConstantOffsetEXT-pEmbeddedSampler-parameter",
                                                    "VUID-VkSamplerCreateInfo-sType-sType");
 
                             if (structure->pMappings[mappingIndex].sourceData.constantOffset.pEmbeddedSampler != nullptr) {
-                                [[maybe_unused]] const Location pEmbeddedSampler_loc = pMappings_loc.dot(Field::pEmbeddedSampler);
+                                [[maybe_unused]] const Location pEmbeddedSampler_loc =
+                                    constantOffset_loc.dot(Field::pEmbeddedSampler);
                                 constexpr std::array<VkStructureType, 9> allowed_structs_VkSamplerCreateInfo = {
                                     VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
                                     VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT,
@@ -6095,14 +6239,15 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                         }
 
                         if (structure->pMappings[mappingIndex].source == VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_PUSH_INDEX_EXT) {
-                            skip |= ValidateStructType(pMappings_loc.dot(Field::pEmbeddedSampler),
+                            [[maybe_unused]] const Location pushIndex_loc = sourceData_loc.dot(Field::pushIndex);
+                            skip |= ValidateStructType(pushIndex_loc.dot(Field::pEmbeddedSampler),
                                                        structure->pMappings[mappingIndex].sourceData.pushIndex.pEmbeddedSampler,
                                                        VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, false,
                                                        "VUID-VkDescriptorMappingSourcePushIndexEXT-pEmbeddedSampler-parameter",
                                                        "VUID-VkSamplerCreateInfo-sType-sType");
 
                             if (structure->pMappings[mappingIndex].sourceData.pushIndex.pEmbeddedSampler != nullptr) {
-                                [[maybe_unused]] const Location pEmbeddedSampler_loc = pMappings_loc.dot(Field::pEmbeddedSampler);
+                                [[maybe_unused]] const Location pEmbeddedSampler_loc = pushIndex_loc.dot(Field::pEmbeddedSampler);
                                 constexpr std::array<VkStructureType, 9> allowed_structs_VkSamplerCreateInfo = {
                                     VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
                                     VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT,
@@ -6171,20 +6316,22 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                             }
 
                             skip |= ValidateBool32(
-                                pMappings_loc.dot(Field::useCombinedImageSamplerIndex),
+                                pushIndex_loc.dot(Field::useCombinedImageSamplerIndex),
                                 structure->pMappings[mappingIndex].sourceData.pushIndex.useCombinedImageSamplerIndex);
                         }
 
                         if (structure->pMappings[mappingIndex].source ==
                             VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_EXT) {
-                            skip |= ValidateStructType(pMappings_loc.dot(Field::pEmbeddedSampler),
+                            [[maybe_unused]] const Location indirectIndex_loc = sourceData_loc.dot(Field::indirectIndex);
+                            skip |= ValidateStructType(indirectIndex_loc.dot(Field::pEmbeddedSampler),
                                                        structure->pMappings[mappingIndex].sourceData.indirectIndex.pEmbeddedSampler,
                                                        VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, false,
                                                        "VUID-VkDescriptorMappingSourceIndirectIndexEXT-pEmbeddedSampler-parameter",
                                                        "VUID-VkSamplerCreateInfo-sType-sType");
 
                             if (structure->pMappings[mappingIndex].sourceData.indirectIndex.pEmbeddedSampler != nullptr) {
-                                [[maybe_unused]] const Location pEmbeddedSampler_loc = pMappings_loc.dot(Field::pEmbeddedSampler);
+                                [[maybe_unused]] const Location pEmbeddedSampler_loc =
+                                    indirectIndex_loc.dot(Field::pEmbeddedSampler);
                                 constexpr std::array<VkStructureType, 9> allowed_structs_VkSamplerCreateInfo = {
                                     VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
                                     VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT,
@@ -6253,21 +6400,23 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                             }
 
                             skip |= ValidateBool32(
-                                pMappings_loc.dot(Field::useCombinedImageSamplerIndex),
+                                indirectIndex_loc.dot(Field::useCombinedImageSamplerIndex),
                                 structure->pMappings[mappingIndex].sourceData.indirectIndex.useCombinedImageSamplerIndex);
                         }
 
                         if (structure->pMappings[mappingIndex].source ==
                             VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_INDIRECT_INDEX_ARRAY_EXT) {
+                            [[maybe_unused]] const Location indirectIndexArray_loc = sourceData_loc.dot(Field::indirectIndexArray);
                             skip |= ValidateStructType(
-                                pMappings_loc.dot(Field::pEmbeddedSampler),
+                                indirectIndexArray_loc.dot(Field::pEmbeddedSampler),
                                 structure->pMappings[mappingIndex].sourceData.indirectIndexArray.pEmbeddedSampler,
                                 VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, false,
                                 "VUID-VkDescriptorMappingSourceIndirectIndexArrayEXT-pEmbeddedSampler-parameter",
                                 "VUID-VkSamplerCreateInfo-sType-sType");
 
                             if (structure->pMappings[mappingIndex].sourceData.indirectIndexArray.pEmbeddedSampler != nullptr) {
-                                [[maybe_unused]] const Location pEmbeddedSampler_loc = pMappings_loc.dot(Field::pEmbeddedSampler);
+                                [[maybe_unused]] const Location pEmbeddedSampler_loc =
+                                    indirectIndexArray_loc.dot(Field::pEmbeddedSampler);
                                 constexpr std::array<VkStructureType, 9> allowed_structs_VkSamplerCreateInfo = {
                                     VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
                                     VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT,
@@ -6337,21 +6486,23 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                             }
 
                             skip |= ValidateBool32(
-                                pMappings_loc.dot(Field::useCombinedImageSamplerIndex),
+                                indirectIndexArray_loc.dot(Field::useCombinedImageSamplerIndex),
                                 structure->pMappings[mappingIndex].sourceData.indirectIndexArray.useCombinedImageSamplerIndex);
                         }
 
                         if (structure->pMappings[mappingIndex].source ==
                             VK_DESCRIPTOR_MAPPING_SOURCE_HEAP_WITH_SHADER_RECORD_INDEX_EXT) {
+                            [[maybe_unused]] const Location shaderRecordIndex_loc = sourceData_loc.dot(Field::shaderRecordIndex);
                             skip |=
-                                ValidateStructType(pMappings_loc.dot(Field::pEmbeddedSampler),
+                                ValidateStructType(shaderRecordIndex_loc.dot(Field::pEmbeddedSampler),
                                                    structure->pMappings[mappingIndex].sourceData.shaderRecordIndex.pEmbeddedSampler,
                                                    VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO, false,
                                                    "VUID-VkDescriptorMappingSourceShaderRecordIndexEXT-pEmbeddedSampler-parameter",
                                                    "VUID-VkSamplerCreateInfo-sType-sType");
 
                             if (structure->pMappings[mappingIndex].sourceData.shaderRecordIndex.pEmbeddedSampler != nullptr) {
-                                [[maybe_unused]] const Location pEmbeddedSampler_loc = pMappings_loc.dot(Field::pEmbeddedSampler);
+                                [[maybe_unused]] const Location pEmbeddedSampler_loc =
+                                    shaderRecordIndex_loc.dot(Field::pEmbeddedSampler);
                                 constexpr std::array<VkStructureType, 9> allowed_structs_VkSamplerCreateInfo = {
                                     VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
                                     VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT,
@@ -6420,7 +6571,7 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                             }
 
                             skip |= ValidateBool32(
-                                pMappings_loc.dot(Field::useCombinedImageSamplerIndex),
+                                shaderRecordIndex_loc.dot(Field::useCombinedImageSamplerIndex),
                                 structure->pMappings[mappingIndex].sourceData.shaderRecordIndex.useCombinedImageSamplerIndex);
                         }
                     }
@@ -6535,9 +6686,11 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                                                VK_STRUCTURE_TYPE_SAMPLE_LOCATIONS_INFO_EXT, false, kVUIDUndefined,
                                                "VUID-VkSampleLocationsInfoEXT-sType-sType");
 
+                        [[maybe_unused]] const Location sampleLocationsInfo_loc =
+                            pAttachmentInitialSampleLocations_loc.dot(Field::sampleLocationsInfo);
                         skip |=
-                            ValidateArray(pAttachmentInitialSampleLocations_loc.dot(Field::sampleLocationsCount),
-                                          pAttachmentInitialSampleLocations_loc.dot(Field::pSampleLocations),
+                            ValidateArray(sampleLocationsInfo_loc.dot(Field::sampleLocationsCount),
+                                          sampleLocationsInfo_loc.dot(Field::pSampleLocations),
                                           structure->pAttachmentInitialSampleLocations[attachmentInitialSampleLocationsIndex]
                                               .sampleLocationsInfo.sampleLocationsCount,
                                           &structure->pAttachmentInitialSampleLocations[attachmentInitialSampleLocationsIndex]
@@ -6563,9 +6716,11 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                             VK_STRUCTURE_TYPE_SAMPLE_LOCATIONS_INFO_EXT, false, kVUIDUndefined,
                             "VUID-VkSampleLocationsInfoEXT-sType-sType");
 
+                        [[maybe_unused]] const Location sampleLocationsInfo_loc =
+                            pPostSubpassSampleLocations_loc.dot(Field::sampleLocationsInfo);
                         skip |=
-                            ValidateArray(pPostSubpassSampleLocations_loc.dot(Field::sampleLocationsCount),
-                                          pPostSubpassSampleLocations_loc.dot(Field::pSampleLocations),
+                            ValidateArray(sampleLocationsInfo_loc.dot(Field::sampleLocationsCount),
+                                          sampleLocationsInfo_loc.dot(Field::pSampleLocations),
                                           structure->pPostSubpassSampleLocations[postSubpassSampleLocationsIndex]
                                               .sampleLocationsInfo.sampleLocationsCount,
                                           &structure->pPostSubpassSampleLocations[postSubpassSampleLocationsIndex]
@@ -6588,10 +6743,11 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                                            VK_STRUCTURE_TYPE_SAMPLE_LOCATIONS_INFO_EXT, false, kVUIDUndefined,
                                            "VUID-VkSampleLocationsInfoEXT-sType-sType");
 
-                skip |= ValidateArray(pNext_loc.dot(Field::sampleLocationsCount), pNext_loc.dot(Field::pSampleLocations),
-                                      structure->sampleLocationsInfo.sampleLocationsCount,
-                                      &structure->sampleLocationsInfo.pSampleLocations, false, true, kVUIDUndefined,
-                                      "VUID-VkSampleLocationsInfoEXT-pSampleLocations-parameter");
+                [[maybe_unused]] const Location sampleLocationsInfo_loc = pNext_loc.dot(Field::sampleLocationsInfo);
+                skip |= ValidateArray(
+                    sampleLocationsInfo_loc.dot(Field::sampleLocationsCount), sampleLocationsInfo_loc.dot(Field::pSampleLocations),
+                    structure->sampleLocationsInfo.sampleLocationsCount, &structure->sampleLocationsInfo.pSampleLocations, false,
+                    true, kVUIDUndefined, "VUID-VkSampleLocationsInfoEXT-pSampleLocations-parameter");
             }
         } break;
 
@@ -6751,7 +6907,7 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                 VkWriteDescriptorSetAccelerationStructureNV* structure = (VkWriteDescriptorSetAccelerationStructureNV*)header;
                 skip |=
                     ValidateArray(pNext_loc.dot(Field::accelerationStructureCount), pNext_loc.dot(Field::pAccelerationStructures),
-                                  structure->accelerationStructureCount, &structure->pAccelerationStructures, true, false,
+                                  structure->accelerationStructureCount, &structure->pAccelerationStructures, true, true,
                                   "VUID-VkWriteDescriptorSetAccelerationStructureNV-accelerationStructureCount-arraylength",
                                   "VUID-VkWriteDescriptorSetAccelerationStructureNV-pAccelerationStructures-parameter");
             }
@@ -6921,7 +7077,9 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
             if (is_const_param) {
                 [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkRenderPassFragmentDensityMapCreateInfoEXT);
                 VkRenderPassFragmentDensityMapCreateInfoEXT* structure = (VkRenderPassFragmentDensityMapCreateInfoEXT*)header;
-                skip |= ValidateRangedEnum(pNext_loc.dot(Field::layout), vvl::Enum::VkImageLayout,
+                [[maybe_unused]] const Location fragmentDensityMapAttachment_loc =
+                    pNext_loc.dot(Field::fragmentDensityMapAttachment);
+                skip |= ValidateRangedEnum(fragmentDensityMapAttachment_loc.dot(Field::layout), vvl::Enum::VkImageLayout,
                                            structure->fragmentDensityMapAttachment.layout,
                                            "VUID-VkAttachmentReference-layout-parameter");
             }
@@ -7601,16 +7759,17 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                 [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkSamplerBorderColorComponentMappingCreateInfoEXT);
                 VkSamplerBorderColorComponentMappingCreateInfoEXT* structure =
                     (VkSamplerBorderColorComponentMappingCreateInfoEXT*)header;
-                skip |= ValidateRangedEnum(pNext_loc.dot(Field::r), vvl::Enum::VkComponentSwizzle, structure->components.r,
+                [[maybe_unused]] const Location components_loc = pNext_loc.dot(Field::components);
+                skip |= ValidateRangedEnum(components_loc.dot(Field::r), vvl::Enum::VkComponentSwizzle, structure->components.r,
                                            "VUID-VkComponentMapping-r-parameter");
 
-                skip |= ValidateRangedEnum(pNext_loc.dot(Field::g), vvl::Enum::VkComponentSwizzle, structure->components.g,
+                skip |= ValidateRangedEnum(components_loc.dot(Field::g), vvl::Enum::VkComponentSwizzle, structure->components.g,
                                            "VUID-VkComponentMapping-g-parameter");
 
-                skip |= ValidateRangedEnum(pNext_loc.dot(Field::b), vvl::Enum::VkComponentSwizzle, structure->components.b,
+                skip |= ValidateRangedEnum(components_loc.dot(Field::b), vvl::Enum::VkComponentSwizzle, structure->components.b,
                                            "VUID-VkComponentMapping-b-parameter");
 
-                skip |= ValidateRangedEnum(pNext_loc.dot(Field::a), vvl::Enum::VkComponentSwizzle, structure->components.a,
+                skip |= ValidateRangedEnum(components_loc.dot(Field::a), vvl::Enum::VkComponentSwizzle, structure->components.a,
                                            "VUID-VkComponentMapping-a-parameter");
 
                 skip |= ValidateBool32(pNext_loc.dot(Field::srgb), structure->srgb);
@@ -7868,7 +8027,7 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                 [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkWriteDescriptorSetTensorARM);
                 VkWriteDescriptorSetTensorARM* structure = (VkWriteDescriptorSetTensorARM*)header;
                 skip |= ValidateArray(pNext_loc.dot(Field::tensorViewCount), pNext_loc.dot(Field::pTensorViews),
-                                      structure->tensorViewCount, &structure->pTensorViews, true, false,
+                                      structure->tensorViewCount, &structure->pTensorViews, true, true,
                                       "VUID-VkWriteDescriptorSetTensorARM-tensorViewCount-arraylength",
                                       "VUID-VkWriteDescriptorSetTensorARM-pTensorViews-parameter");
             }
@@ -8282,7 +8441,7 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                     (VkWriteDescriptorSetPartitionedAccelerationStructureNV*)header;
                 skip |= ValidateArray(
                     pNext_loc.dot(Field::accelerationStructureCount), pNext_loc.dot(Field::pAccelerationStructures),
-                    structure->accelerationStructureCount, &structure->pAccelerationStructures, true, false,
+                    structure->accelerationStructureCount, &structure->pAccelerationStructures, true, true,
                     "VUID-VkWriteDescriptorSetPartitionedAccelerationStructureNV-accelerationStructureCount-arraylength",
                     "VUID-VkWriteDescriptorSetPartitionedAccelerationStructureNV-pAccelerationStructures-parameter");
             }
@@ -8359,24 +8518,24 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                 [[maybe_unused]] const Location pNext_loc = loc.pNext(Struct::VkRenderPassPerformanceCountersByRegionBeginInfoARM);
                 VkRenderPassPerformanceCountersByRegionBeginInfoARM* structure =
                     (VkRenderPassPerformanceCountersByRegionBeginInfoARM*)header;
-                skip |=
-                    ValidateRequiredPointer(pNext_loc.dot(Field::pCounterAddresses), structure->pCounterAddresses,
-                                            "VUID-VkRenderPassPerformanceCountersByRegionBeginInfoARM-pCounterAddresses-parameter");
+                skip |= ValidateArray(pNext_loc.dot(Field::counterAddressCount), pNext_loc.dot(Field::pCounterAddresses),
+                                      structure->counterAddressCount, &structure->pCounterAddresses, true, true,
+                                      "VUID-VkRenderPassPerformanceCountersByRegionBeginInfoARM-counterAddressCount-arraylength",
+                                      "VUID-VkRenderPassPerformanceCountersByRegionBeginInfoARM-pCounterAddresses-parameter");
 
                 skip |= ValidateBool32(pNext_loc.dot(Field::serializeRegions), structure->serializeRegions);
 
-                skip |=
-                    ValidateRequiredPointer(pNext_loc.dot(Field::pCounterIndices), structure->pCounterIndices,
-                                            "VUID-VkRenderPassPerformanceCountersByRegionBeginInfoARM-pCounterIndices-parameter");
+                skip |= ValidateArray(pNext_loc.dot(Field::counterIndexCount), pNext_loc.dot(Field::pCounterIndices),
+                                      structure->counterIndexCount, &structure->pCounterIndices, true, true,
+                                      "VUID-VkRenderPassPerformanceCountersByRegionBeginInfoARM-counterIndexCount-arraylength",
+                                      "VUID-VkRenderPassPerformanceCountersByRegionBeginInfoARM-pCounterIndices-parameter");
             }
         } break;
 
         // No Validation code for VkPipelineFragmentDensityMapLayeredCreateInfoVALVE structure members  -- Covers
         // VUID-VkPipelineFragmentDensityMapLayeredCreateInfoVALVE-sType-sType
-#ifdef VK_ENABLE_BETA_EXTENSIONS
 
         // No Validation code for VkSetPresentConfigNV structure members  -- Covers VUID-VkSetPresentConfigNV-sType-sType
-#endif  // VK_ENABLE_BETA_EXTENSIONS
 
         // Validation code for VkCustomResolveCreateInfoEXT structure members
         case VK_STRUCTURE_TYPE_CUSTOM_RESOLVE_CREATE_INFO_EXT: {  // Covers VUID-VkCustomResolveCreateInfoEXT-sType-sType
@@ -8406,7 +8565,7 @@ bool Context::ValidatePnextStructContents(const Location& loc, const VkBaseOutSt
                 VkWriteDescriptorSetAccelerationStructureKHR* structure = (VkWriteDescriptorSetAccelerationStructureKHR*)header;
                 skip |=
                     ValidateArray(pNext_loc.dot(Field::accelerationStructureCount), pNext_loc.dot(Field::pAccelerationStructures),
-                                  structure->accelerationStructureCount, &structure->pAccelerationStructures, true, false,
+                                  structure->accelerationStructureCount, &structure->pAccelerationStructures, true, true,
                                   "VUID-VkWriteDescriptorSetAccelerationStructureKHR-accelerationStructureCount-arraylength",
                                   "VUID-VkWriteDescriptorSetAccelerationStructureKHR-pAccelerationStructures-parameter");
             }
@@ -8551,7 +8710,7 @@ bool Instance::PreCallValidateCreateDevice(VkPhysicalDevice physicalDevice, cons
                                        "VUID-vkCreateDevice-pCreateInfo-parameter", "VUID-VkDeviceCreateInfo-sType-sType");
     if (pCreateInfo != nullptr) {
         [[maybe_unused]] const Location pCreateInfo_loc = loc.dot(Field::pCreateInfo);
-        constexpr std::array<VkStructureType, 259> allowed_structs_VkDeviceCreateInfo = {
+        constexpr std::array<VkStructureType, 265> allowed_structs_VkDeviceCreateInfo = {
             VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT,
             VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV,
             VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO,
@@ -8611,6 +8770,7 @@ bool Instance::PreCallValidateCreateDevice(VkPhysicalDevice physicalDevice, cons
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_POOL_OVERALLOCATION_FEATURES_NV,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_SET_HOST_MAPPING_FEATURES_VALVE,
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_ADDRESS_COMMANDS_FEATURES_KHR,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_COMPUTE_FEATURES_NV,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_EXT,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_NV,
@@ -8629,6 +8789,7 @@ bool Instance::PreCallValidateCreateDevice(VkPhysicalDevice physicalDevice, cons
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_RDMA_FEATURES_NV,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_SCREEN_BUFFER_FEATURES_QNX,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT,
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_KHR,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FORMAT_PACK_FEATURES_ARM,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_2_FEATURES_EXT,
@@ -8736,12 +8897,14 @@ bool Instance::PreCallValidateCreateDevice(VkPhysicalDevice physicalDevice, cons
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCHEDULING_CONTROLS_FEATURES_ARM,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_64_BIT_INDEXING_FEATURES_EXT,
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ABORT_FEATURES_KHR,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT16_VECTOR_FEATURES_NV,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_2_FEATURES_EXT,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR,
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CONSTANT_DATA_FEATURES_KHR,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_BUILTINS_FEATURES_ARM,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES,
@@ -8754,10 +8917,12 @@ bool Instance::PreCallValidateCreateDevice(VkPhysicalDevice physicalDevice, cons
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FMA_FEATURES_KHR,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_FOOTPRINT_FEATURES_NV,
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INSTRUMENTATION_FEATURES_ARM,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_FUNCTIONS_2_FEATURES_INTEL,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_LONG_VECTOR_FEATURES_EXT,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MAXIMAL_RECONVERGENCE_FEATURES_KHR,
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MIXED_FLOAT_DOT_PRODUCT_FEATURES_VALVE,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MODULE_IDENTIFIER_FEATURES_EXT,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_QUAD_CONTROL_FEATURES_KHR,
@@ -8853,11 +9018,6 @@ bool Instance::PreCallValidateCreateDevice(VkPhysicalDevice physicalDevice, cons
                                               "VUID-VkDeviceQueueCreateInfo-pQueuePriorities-parameter");
             }
         }
-
-        skip |= context.ValidateStringArray(pCreateInfo_loc.dot(Field::enabledLayerCount),
-                                            pCreateInfo_loc.dot(Field::ppEnabledLayerNames), pCreateInfo->enabledLayerCount,
-                                            pCreateInfo->ppEnabledLayerNames, false, true, kVUIDUndefined,
-                                            "VUID-VkDeviceCreateInfo-ppEnabledLayerNames-parameter");
 
         skip |= context.ValidateStringArray(pCreateInfo_loc.dot(Field::enabledExtensionCount),
                                             pCreateInfo_loc.dot(Field::ppEnabledExtensionNames), pCreateInfo->enabledExtensionCount,
@@ -9292,8 +9452,9 @@ bool Device::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindInfoCoun
                         for (uint32_t bindIndex = 0; bindIndex < pBindInfo[bindInfoIndex].pImageBinds[imageBindIndex].bindCount;
                              ++bindIndex) {
                             [[maybe_unused]] const Location pBinds_loc = pImageBinds_loc.dot(Field::pBinds, bindIndex);
+                            [[maybe_unused]] const Location subresource_loc = pBinds_loc.dot(Field::subresource);
                             skip |= context.ValidateFlags(
-                                pBinds_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                                subresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                 AllVkImageAspectFlagBits,
                                 pBindInfo[bindInfoIndex].pImageBinds[imageBindIndex].pBinds[bindIndex].subresource.aspectMask,
                                 kRequiredFlags, "VUID-VkImageSubresource-aspectMask-parameter",
@@ -9732,19 +9893,21 @@ bool Device::PreCallValidateCreateImageView(VkDevice device, const VkImageViewCr
         skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::format), vvl::Enum::VkFormat, pCreateInfo->format,
                                            "VUID-VkImageViewCreateInfo-format-parameter");
 
-        skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::r), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.r,
+        [[maybe_unused]] const Location components_loc = pCreateInfo_loc.dot(Field::components);
+        skip |= context.ValidateRangedEnum(components_loc.dot(Field::r), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.r,
                                            "VUID-VkComponentMapping-r-parameter");
 
-        skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::g), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.g,
+        skip |= context.ValidateRangedEnum(components_loc.dot(Field::g), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.g,
                                            "VUID-VkComponentMapping-g-parameter");
 
-        skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::b), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.b,
+        skip |= context.ValidateRangedEnum(components_loc.dot(Field::b), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.b,
                                            "VUID-VkComponentMapping-b-parameter");
 
-        skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::a), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.a,
+        skip |= context.ValidateRangedEnum(components_loc.dot(Field::a), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.a,
                                            "VUID-VkComponentMapping-a-parameter");
 
-        skip |= context.ValidateFlags(pCreateInfo_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+        [[maybe_unused]] const Location subresourceRange_loc = pCreateInfo_loc.dot(Field::subresourceRange);
+        skip |= context.ValidateFlags(subresourceRange_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                       AllVkImageAspectFlagBits, pCreateInfo->subresourceRange.aspectMask, kRequiredFlags,
                                       "VUID-VkImageSubresourceRange-aspectMask-parameter",
                                       "VUID-VkImageSubresourceRange-aspectMask-requiredbitmask", false);
@@ -9947,12 +10110,14 @@ bool Device::PreCallValidateCmdCopyImage(VkCommandBuffer commandBuffer, VkImage 
     if (pRegions != nullptr) {
         for (uint32_t regionIndex = 0; regionIndex < regionCount; ++regionIndex) {
             [[maybe_unused]] const Location pRegions_loc = loc.dot(Field::pRegions, regionIndex);
-            skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location srcSubresource_loc = pRegions_loc.dot(Field::srcSubresource);
+            skip |= context.ValidateFlags(srcSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pRegions[regionIndex].srcSubresource.aspectMask, kRequiredFlags,
                                           "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
 
-            skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location dstSubresource_loc = pRegions_loc.dot(Field::dstSubresource);
+            skip |= context.ValidateFlags(dstSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pRegions[regionIndex].dstSubresource.aspectMask, kRequiredFlags,
                                           "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
@@ -9977,7 +10142,8 @@ bool Device::PreCallValidateCmdCopyBufferToImage(VkCommandBuffer commandBuffer, 
     if (pRegions != nullptr) {
         for (uint32_t regionIndex = 0; regionIndex < regionCount; ++regionIndex) {
             [[maybe_unused]] const Location pRegions_loc = loc.dot(Field::pRegions, regionIndex);
-            skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location imageSubresource_loc = pRegions_loc.dot(Field::imageSubresource);
+            skip |= context.ValidateFlags(imageSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pRegions[regionIndex].imageSubresource.aspectMask,
                                           kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
@@ -10002,7 +10168,8 @@ bool Device::PreCallValidateCmdCopyImageToBuffer(VkCommandBuffer commandBuffer, 
     if (pRegions != nullptr) {
         for (uint32_t regionIndex = 0; regionIndex < regionCount; ++regionIndex) {
             [[maybe_unused]] const Location pRegions_loc = loc.dot(Field::pRegions, regionIndex);
-            skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location imageSubresource_loc = pRegions_loc.dot(Field::imageSubresource);
+            skip |= context.ValidateFlags(imageSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pRegions[regionIndex].imageSubresource.aspectMask,
                                           kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
@@ -10122,7 +10289,8 @@ bool Device::PreCallValidateCmdPipelineBarrier(VkCommandBuffer commandBuffer, Vk
             skip |= context.ValidateRequiredHandle(pImageMemoryBarriers_loc.dot(Field::image),
                                                    pImageMemoryBarriers[imageMemoryBarrierIndex].image);
 
-            skip |= context.ValidateFlags(pImageMemoryBarriers_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location subresourceRange_loc = pImageMemoryBarriers_loc.dot(Field::subresourceRange);
+            skip |= context.ValidateFlags(subresourceRange_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits,
                                           pImageMemoryBarriers[imageMemoryBarrierIndex].subresourceRange.aspectMask, kRequiredFlags,
                                           "VUID-VkImageSubresourceRange-aspectMask-parameter",
@@ -10458,6 +10626,7 @@ bool Device::PreCallValidateCreateComputePipelines(VkDevice device, VkPipelineCa
                                                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, false, kVUIDUndefined,
                                                "VUID-VkPipelineShaderStageCreateInfo-sType-sType");
 
+            [[maybe_unused]] const Location stage_loc = pCreateInfos_loc.dot(Field::stage);
             constexpr std::array<VkStructureType, 8> allowed_structs_VkPipelineShaderStageCreateInfo = {
                 VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
                 VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO,
@@ -10469,24 +10638,24 @@ bool Device::PreCallValidateCreateComputePipelines(VkDevice device, VkPipelineCa
                 VK_STRUCTURE_TYPE_SHADER_MODULE_VALIDATION_CACHE_CREATE_INFO_EXT};
 
             skip |= context.ValidateStructPnext(
-                pCreateInfos_loc, pCreateInfos[createInfoIndex].stage.pNext, allowed_structs_VkPipelineShaderStageCreateInfo.size(),
+                stage_loc, pCreateInfos[createInfoIndex].stage.pNext, allowed_structs_VkPipelineShaderStageCreateInfo.size(),
                 allowed_structs_VkPipelineShaderStageCreateInfo.data(), GeneratedVulkanHeaderVersion,
                 "VUID-VkPipelineShaderStageCreateInfo-pNext-pNext", "VUID-VkPipelineShaderStageCreateInfo-sType-unique", true);
 
-            skip |= context.ValidateFlags(pCreateInfos_loc.dot(Field::flags), vvl::FlagBitmask::VkPipelineShaderStageCreateFlagBits,
+            skip |= context.ValidateFlags(stage_loc.dot(Field::flags), vvl::FlagBitmask::VkPipelineShaderStageCreateFlagBits,
                                           AllVkPipelineShaderStageCreateFlagBits, pCreateInfos[createInfoIndex].stage.flags,
                                           kOptionalFlags, "VUID-VkPipelineShaderStageCreateInfo-flags-parameter", nullptr, false);
 
-            skip |= context.ValidateFlags(pCreateInfos_loc.dot(Field::stage), vvl::FlagBitmask::VkShaderStageFlagBits,
+            skip |= context.ValidateFlags(stage_loc.dot(Field::stage), vvl::FlagBitmask::VkShaderStageFlagBits,
                                           AllVkShaderStageFlagBits, pCreateInfos[createInfoIndex].stage.stage, kRequiredSingleBit,
                                           "VUID-VkPipelineShaderStageCreateInfo-stage-parameter",
                                           "VUID-VkPipelineShaderStageCreateInfo-stage-parameter", false);
 
-            skip |= context.ValidateRequiredPointer(pCreateInfos_loc.dot(Field::pName), pCreateInfos[createInfoIndex].stage.pName,
+            skip |= context.ValidateRequiredPointer(stage_loc.dot(Field::pName), pCreateInfos[createInfoIndex].stage.pName,
                                                     "VUID-VkPipelineShaderStageCreateInfo-pName-parameter");
 
             if (pCreateInfos[createInfoIndex].stage.pSpecializationInfo != nullptr) {
-                [[maybe_unused]] const Location pSpecializationInfo_loc = pCreateInfos_loc.dot(Field::pSpecializationInfo);
+                [[maybe_unused]] const Location pSpecializationInfo_loc = stage_loc.dot(Field::pSpecializationInfo);
                 skip |= context.ValidateArray(pSpecializationInfo_loc.dot(Field::mapEntryCount),
                                               pSpecializationInfo_loc.dot(Field::pMapEntries),
                                               pCreateInfos[createInfoIndex].stage.pSpecializationInfo->mapEntryCount,
@@ -10540,6 +10709,10 @@ bool Device::PreCallValidateCreatePipelineLayout(VkDevice device, const VkPipeli
         skip |= context.ValidateFlags(pCreateInfo_loc.dot(Field::flags), vvl::FlagBitmask::VkPipelineLayoutCreateFlagBits,
                                       AllVkPipelineLayoutCreateFlagBits, pCreateInfo->flags, kOptionalFlags,
                                       "VUID-VkPipelineLayoutCreateInfo-flags-parameter", nullptr, false);
+
+        skip |= context.ValidateArray(pCreateInfo_loc.dot(Field::setLayoutCount), pCreateInfo_loc.dot(Field::pSetLayouts),
+                                      pCreateInfo->setLayoutCount, &pCreateInfo->pSetLayouts, false, true, kVUIDUndefined,
+                                      "VUID-VkPipelineLayoutCreateInfo-pSetLayouts-parameter");
 
         skip |= context.ValidateArray(pCreateInfo_loc.dot(Field::pushConstantRangeCount),
                                       pCreateInfo_loc.dot(Field::pPushConstantRanges), pCreateInfo->pushConstantRangeCount,
@@ -10922,7 +11095,7 @@ bool Device::PreCallValidateCmdBindDescriptorSets(VkCommandBuffer commandBuffer,
                                        "VUID-vkCmdBindDescriptorSets-pipelineBindPoint-parameter");
     skip |= context.ValidateRequiredHandle(loc.dot(Field::layout), layout);
     skip |= context.ValidateArray(loc.dot(Field::descriptorSetCount), loc.dot(Field::pDescriptorSets), descriptorSetCount,
-                                  &pDescriptorSets, true, false, "VUID-vkCmdBindDescriptorSets-descriptorSetCount-arraylength",
+                                  &pDescriptorSets, true, true, "VUID-vkCmdBindDescriptorSets-descriptorSetCount-arraylength",
                                   "VUID-vkCmdBindDescriptorSets-pDescriptorSets-parameter");
     skip |= context.ValidateArray(loc.dot(Field::dynamicOffsetCount), loc.dot(Field::pDynamicOffsets), dynamicOffsetCount,
                                   &pDynamicOffsets, false, true, kVUIDUndefined,
@@ -11080,7 +11253,8 @@ bool Device::PreCallValidateCmdWaitEvents(VkCommandBuffer commandBuffer, uint32_
             skip |= context.ValidateRequiredHandle(pImageMemoryBarriers_loc.dot(Field::image),
                                                    pImageMemoryBarriers[imageMemoryBarrierIndex].image);
 
-            skip |= context.ValidateFlags(pImageMemoryBarriers_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location subresourceRange_loc = pImageMemoryBarriers_loc.dot(Field::subresourceRange);
+            skip |= context.ValidateFlags(subresourceRange_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits,
                                           pImageMemoryBarriers[imageMemoryBarrierIndex].subresourceRange.aspectMask, kRequiredFlags,
                                           "VUID-VkImageSubresourceRange-aspectMask-parameter",
@@ -11548,7 +11722,7 @@ bool Device::PreCallValidateCmdBindVertexBuffers(VkCommandBuffer commandBuffer, 
     bool skip = false;
     Context context(*this, error_obj, extensions);
     [[maybe_unused]] const Location loc = error_obj.location;
-    skip |= context.ValidateArray(loc.dot(Field::bindingCount), loc.dot(Field::pBuffers), bindingCount, &pBuffers, true, false,
+    skip |= context.ValidateArray(loc.dot(Field::bindingCount), loc.dot(Field::pBuffers), bindingCount, &pBuffers, true, true,
                                   "VUID-vkCmdBindVertexBuffers-bindingCount-arraylength",
                                   "VUID-vkCmdBindVertexBuffers-pBuffers-parameter");
     skip |= context.ValidateArray(loc.dot(Field::bindingCount), loc.dot(Field::pOffsets), bindingCount, &pOffsets, true, true,
@@ -11607,12 +11781,14 @@ bool Device::PreCallValidateCmdBlitImage(VkCommandBuffer commandBuffer, VkImage 
     if (pRegions != nullptr) {
         for (uint32_t regionIndex = 0; regionIndex < regionCount; ++regionIndex) {
             [[maybe_unused]] const Location pRegions_loc = loc.dot(Field::pRegions, regionIndex);
-            skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location srcSubresource_loc = pRegions_loc.dot(Field::srcSubresource);
+            skip |= context.ValidateFlags(srcSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pRegions[regionIndex].srcSubresource.aspectMask, kRequiredFlags,
                                           "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
 
-            skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location dstSubresource_loc = pRegions_loc.dot(Field::dstSubresource);
+            skip |= context.ValidateFlags(dstSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pRegions[regionIndex].dstSubresource.aspectMask, kRequiredFlags,
                                           "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
@@ -11691,12 +11867,14 @@ bool Device::PreCallValidateCmdResolveImage(VkCommandBuffer commandBuffer, VkIma
     if (pRegions != nullptr) {
         for (uint32_t regionIndex = 0; regionIndex < regionCount; ++regionIndex) {
             [[maybe_unused]] const Location pRegions_loc = loc.dot(Field::pRegions, regionIndex);
-            skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location srcSubresource_loc = pRegions_loc.dot(Field::srcSubresource);
+            skip |= context.ValidateFlags(srcSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pRegions[regionIndex].srcSubresource.aspectMask, kRequiredFlags,
                                           "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
 
-            skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location dstSubresource_loc = pRegions_loc.dot(Field::dstSubresource);
+            skip |= context.ValidateFlags(dstSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pRegions[regionIndex].dstSubresource.aspectMask, kRequiredFlags,
                                           "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
@@ -11993,7 +12171,7 @@ bool Instance::PreCallValidateGetPhysicalDeviceProperties2(VkPhysicalDevice phys
                                        "VUID-VkPhysicalDeviceProperties2-sType-sType");
     if (pProperties != nullptr) {
         [[maybe_unused]] const Location pProperties_loc = loc.dot(Field::pProperties);
-        constexpr std::array<VkStructureType, 115> allowed_structs_VkPhysicalDeviceProperties2 = {
+        constexpr std::array<VkStructureType, 118> allowed_structs_VkPhysicalDeviceProperties2 = {
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_PROPERTIES_EXT,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_PROPERTIES_NV,
@@ -12025,6 +12203,7 @@ bool Instance::PreCallValidateGetPhysicalDeviceProperties2(VkPhysicalDevice phys
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_COMPUTE_QUEUE_PROPERTIES_NV,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_PROPERTIES_ANDROID,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT,
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_PROPERTIES_KHR,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT_CONTROLS_PROPERTIES,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_2_PROPERTIES_EXT,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_LAYERED_PROPERTIES_VALVE,
@@ -12082,11 +12261,13 @@ bool Instance::PreCallValidateGetPhysicalDeviceProperties2(VkPhysicalDevice phys
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLE_LOCATIONS_PROPERTIES_EXT,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_FILTER_MINMAX_PROPERTIES,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCHEDULING_CONTROLS_PROPERTIES_ARM,
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ABORT_PROPERTIES_KHR,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_BUILTINS_PROPERTIES_ARM,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_2_AMD,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_AMD,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_ARM,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ENQUEUE_PROPERTIES_AMDX,
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INSTRUMENTATION_PROPERTIES_ARM,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_LONG_VECTOR_PROPERTIES_EXT,
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MODULE_IDENTIFIER_PROPERTIES_EXT,
@@ -12688,16 +12869,17 @@ bool Device::PreCallValidateCreateSamplerYcbcrConversion(VkDevice device, const 
         skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::ycbcrRange), vvl::Enum::VkSamplerYcbcrRange,
                                            pCreateInfo->ycbcrRange, "VUID-VkSamplerYcbcrConversionCreateInfo-ycbcrRange-parameter");
 
-        skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::r), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.r,
+        [[maybe_unused]] const Location components_loc = pCreateInfo_loc.dot(Field::components);
+        skip |= context.ValidateRangedEnum(components_loc.dot(Field::r), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.r,
                                            "VUID-VkComponentMapping-r-parameter");
 
-        skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::g), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.g,
+        skip |= context.ValidateRangedEnum(components_loc.dot(Field::g), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.g,
                                            "VUID-VkComponentMapping-g-parameter");
 
-        skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::b), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.b,
+        skip |= context.ValidateRangedEnum(components_loc.dot(Field::b), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.b,
                                            "VUID-VkComponentMapping-b-parameter");
 
-        skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::a), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.a,
+        skip |= context.ValidateRangedEnum(components_loc.dot(Field::a), vvl::Enum::VkComponentSwizzle, pCreateInfo->components.a,
                                            "VUID-VkComponentMapping-a-parameter");
 
         skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::xChromaOffset), vvl::Enum::VkChromaLocation,
@@ -13370,8 +13552,9 @@ bool Device::PreCallValidateCmdPipelineBarrier2(VkCommandBuffer commandBuffer, c
                                        "VUID-vkCmdPipelineBarrier2-pDependencyInfo-parameter", "VUID-VkDependencyInfo-sType-sType");
     if (pDependencyInfo != nullptr) {
         [[maybe_unused]] const Location pDependencyInfo_loc = loc.dot(Field::pDependencyInfo);
-        constexpr std::array<VkStructureType, 2> allowed_structs_VkDependencyInfo = {VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM,
-                                                                                     VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM};
+        constexpr std::array<VkStructureType, 3> allowed_structs_VkDependencyInfo = {
+            VK_STRUCTURE_TYPE_MEMORY_RANGE_BARRIERS_INFO_KHR, VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM,
+            VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM};
 
         skip |= context.ValidateStructPnext(pDependencyInfo_loc, pDependencyInfo->pNext, allowed_structs_VkDependencyInfo.size(),
                                             allowed_structs_VkDependencyInfo.data(), GeneratedVulkanHeaderVersion,
@@ -13509,9 +13692,9 @@ bool Device::PreCallValidateCmdPipelineBarrier2(VkCommandBuffer commandBuffer, c
                 skip |= context.ValidateRequiredHandle(pImageMemoryBarriers_loc.dot(Field::image),
                                                        pDependencyInfo->pImageMemoryBarriers[imageMemoryBarrierIndex].image);
 
+                [[maybe_unused]] const Location subresourceRange_loc = pImageMemoryBarriers_loc.dot(Field::subresourceRange);
                 skip |= context.ValidateFlags(
-                    pImageMemoryBarriers_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
-                    AllVkImageAspectFlagBits,
+                    subresourceRange_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits, AllVkImageAspectFlagBits,
                     pDependencyInfo->pImageMemoryBarriers[imageMemoryBarrierIndex].subresourceRange.aspectMask, kRequiredFlags,
                     "VUID-VkImageSubresourceRange-aspectMask-parameter", "VUID-VkImageSubresourceRange-aspectMask-requiredbitmask",
                     false);
@@ -13710,14 +13893,16 @@ bool Device::PreCallValidateCmdCopyImage2(VkCommandBuffer commandBuffer, const V
                                                     GeneratedVulkanHeaderVersion, "VUID-VkImageCopy2-pNext-pNext", kVUIDUndefined,
                                                     true);
 
+                [[maybe_unused]] const Location srcSubresource_loc = pRegions_loc.dot(Field::srcSubresource);
                 skip |=
-                    context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                    context.ValidateFlags(srcSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pCopyImageInfo->pRegions[regionIndex].srcSubresource.aspectMask,
                                           kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
 
+                [[maybe_unused]] const Location dstSubresource_loc = pRegions_loc.dot(Field::dstSubresource);
                 skip |=
-                    context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                    context.ValidateFlags(dstSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pCopyImageInfo->pRegions[regionIndex].dstSubresource.aspectMask,
                                           kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
@@ -13767,7 +13952,8 @@ bool Device::PreCallValidateCmdCopyBufferToImage2(VkCommandBuffer commandBuffer,
                     allowed_structs_VkBufferImageCopy2.data(), GeneratedVulkanHeaderVersion, "VUID-VkBufferImageCopy2-pNext-pNext",
                     "VUID-VkBufferImageCopy2-sType-unique", true);
 
-                skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                [[maybe_unused]] const Location imageSubresource_loc = pRegions_loc.dot(Field::imageSubresource);
+                skip |= context.ValidateFlags(imageSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                               AllVkImageAspectFlagBits,
                                               pCopyBufferToImageInfo->pRegions[regionIndex].imageSubresource.aspectMask,
                                               kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
@@ -13818,7 +14004,8 @@ bool Device::PreCallValidateCmdCopyImageToBuffer2(VkCommandBuffer commandBuffer,
                     allowed_structs_VkBufferImageCopy2.data(), GeneratedVulkanHeaderVersion, "VUID-VkBufferImageCopy2-pNext-pNext",
                     "VUID-VkBufferImageCopy2-sType-unique", true);
 
-                skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                [[maybe_unused]] const Location imageSubresource_loc = pRegions_loc.dot(Field::imageSubresource);
+                skip |= context.ValidateFlags(imageSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                               AllVkImageAspectFlagBits,
                                               pCopyImageToBufferInfo->pRegions[regionIndex].imageSubresource.aspectMask,
                                               kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
@@ -14101,8 +14288,9 @@ bool Device::PreCallValidateCmdSetEvent2(VkCommandBuffer commandBuffer, VkEvent 
                                        "VUID-vkCmdSetEvent2-pDependencyInfo-parameter", "VUID-VkDependencyInfo-sType-sType");
     if (pDependencyInfo != nullptr) {
         [[maybe_unused]] const Location pDependencyInfo_loc = loc.dot(Field::pDependencyInfo);
-        constexpr std::array<VkStructureType, 2> allowed_structs_VkDependencyInfo = {VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM,
-                                                                                     VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM};
+        constexpr std::array<VkStructureType, 3> allowed_structs_VkDependencyInfo = {
+            VK_STRUCTURE_TYPE_MEMORY_RANGE_BARRIERS_INFO_KHR, VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM,
+            VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM};
 
         skip |= context.ValidateStructPnext(pDependencyInfo_loc, pDependencyInfo->pNext, allowed_structs_VkDependencyInfo.size(),
                                             allowed_structs_VkDependencyInfo.data(), GeneratedVulkanHeaderVersion,
@@ -14240,9 +14428,9 @@ bool Device::PreCallValidateCmdSetEvent2(VkCommandBuffer commandBuffer, VkEvent 
                 skip |= context.ValidateRequiredHandle(pImageMemoryBarriers_loc.dot(Field::image),
                                                        pDependencyInfo->pImageMemoryBarriers[imageMemoryBarrierIndex].image);
 
+                [[maybe_unused]] const Location subresourceRange_loc = pImageMemoryBarriers_loc.dot(Field::subresourceRange);
                 skip |= context.ValidateFlags(
-                    pImageMemoryBarriers_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
-                    AllVkImageAspectFlagBits,
+                    subresourceRange_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits, AllVkImageAspectFlagBits,
                     pDependencyInfo->pImageMemoryBarriers[imageMemoryBarrierIndex].subresourceRange.aspectMask, kRequiredFlags,
                     "VUID-VkImageSubresourceRange-aspectMask-parameter", "VUID-VkImageSubresourceRange-aspectMask-requiredbitmask",
                     false);
@@ -14279,8 +14467,9 @@ bool Device::PreCallValidateCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32
     if (pDependencyInfos != nullptr) {
         for (uint32_t eventIndex = 0; eventIndex < eventCount; ++eventIndex) {
             [[maybe_unused]] const Location pDependencyInfos_loc = loc.dot(Field::pDependencyInfos, eventIndex);
-            constexpr std::array<VkStructureType, 2> allowed_structs_VkDependencyInfo = {
-                VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM, VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM};
+            constexpr std::array<VkStructureType, 3> allowed_structs_VkDependencyInfo = {
+                VK_STRUCTURE_TYPE_MEMORY_RANGE_BARRIERS_INFO_KHR, VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM,
+                VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM};
 
             skip |= context.ValidateStructPnext(pDependencyInfos_loc, pDependencyInfos[eventIndex].pNext,
                                                 allowed_structs_VkDependencyInfo.size(), allowed_structs_VkDependencyInfo.data(),
@@ -14435,8 +14624,9 @@ bool Device::PreCallValidateCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32
                         pImageMemoryBarriers_loc.dot(Field::image),
                         pDependencyInfos[eventIndex].pImageMemoryBarriers[imageMemoryBarrierIndex].image);
 
+                    [[maybe_unused]] const Location subresourceRange_loc = pImageMemoryBarriers_loc.dot(Field::subresourceRange);
                     skip |= context.ValidateFlags(
-                        pImageMemoryBarriers_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                        subresourceRange_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                         AllVkImageAspectFlagBits,
                         pDependencyInfos[eventIndex].pImageMemoryBarriers[imageMemoryBarrierIndex].subresourceRange.aspectMask,
                         kRequiredFlags, "VUID-VkImageSubresourceRange-aspectMask-parameter",
@@ -14491,14 +14681,16 @@ bool Device::PreCallValidateCmdBlitImage2(VkCommandBuffer commandBuffer, const V
                                                     GeneratedVulkanHeaderVersion, "VUID-VkImageBlit2-pNext-pNext",
                                                     "VUID-VkImageBlit2-sType-unique", true);
 
+                [[maybe_unused]] const Location srcSubresource_loc = pRegions_loc.dot(Field::srcSubresource);
                 skip |=
-                    context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                    context.ValidateFlags(srcSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pBlitImageInfo->pRegions[regionIndex].srcSubresource.aspectMask,
                                           kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
 
+                [[maybe_unused]] const Location dstSubresource_loc = pRegions_loc.dot(Field::dstSubresource);
                 skip |=
-                    context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                    context.ValidateFlags(dstSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pBlitImageInfo->pRegions[regionIndex].dstSubresource.aspectMask,
                                           kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                           "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
@@ -14552,13 +14744,15 @@ bool Device::PreCallValidateCmdResolveImage2(VkCommandBuffer commandBuffer, cons
                                                     GeneratedVulkanHeaderVersion, "VUID-VkImageResolve2-pNext-pNext",
                                                     kVUIDUndefined, true);
 
-                skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                [[maybe_unused]] const Location srcSubresource_loc = pRegions_loc.dot(Field::srcSubresource);
+                skip |= context.ValidateFlags(srcSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                               AllVkImageAspectFlagBits,
                                               pResolveImageInfo->pRegions[regionIndex].srcSubresource.aspectMask, kRequiredFlags,
                                               "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                               "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
 
-                skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                [[maybe_unused]] const Location dstSubresource_loc = pRegions_loc.dot(Field::dstSubresource);
+                skip |= context.ValidateFlags(dstSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                               AllVkImageAspectFlagBits,
                                               pResolveImageInfo->pRegions[regionIndex].dstSubresource.aspectMask, kRequiredFlags,
                                               "VUID-VkImageSubresourceLayers-aspectMask-parameter",
@@ -15018,7 +15212,8 @@ bool Device::PreCallValidateGetDeviceImageSubresourceLayout(VkDevice device, con
                 context.ValidateStructPnext(pSubresource_loc, pInfo->pSubresource->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
                                             "VUID-VkImageSubresource2-pNext-pNext", kVUIDUndefined, true);
 
-            skip |= context.ValidateFlags(pSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location imageSubresource_loc = pSubresource_loc.dot(Field::imageSubresource);
+            skip |= context.ValidateFlags(imageSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pInfo->pSubresource->imageSubresource.aspectMask,
                                           kRequiredFlags, "VUID-VkImageSubresource-aspectMask-parameter",
                                           "VUID-VkImageSubresource-aspectMask-requiredbitmask", false);
@@ -15054,7 +15249,8 @@ bool Device::PreCallValidateGetImageSubresourceLayout2(VkDevice device, VkImage 
         skip |= context.ValidateStructPnext(pSubresource_loc, pSubresource->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
                                             "VUID-VkImageSubresource2-pNext-pNext", kVUIDUndefined, true);
 
-        skip |= context.ValidateFlags(pSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+        [[maybe_unused]] const Location imageSubresource_loc = pSubresource_loc.dot(Field::imageSubresource);
+        skip |= context.ValidateFlags(imageSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                       AllVkImageAspectFlagBits, pSubresource->imageSubresource.aspectMask, kRequiredFlags,
                                       "VUID-VkImageSubresource-aspectMask-parameter",
                                       "VUID-VkImageSubresource-aspectMask-requiredbitmask", false);
@@ -15115,7 +15311,8 @@ bool Device::PreCallValidateCopyMemoryToImage(VkDevice device, const VkCopyMemor
                                                         pCopyMemoryToImageInfo->pRegions[regionIndex].pHostPointer,
                                                         "VUID-VkMemoryToImageCopy-pHostPointer-parameter");
 
-                skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                [[maybe_unused]] const Location imageSubresource_loc = pRegions_loc.dot(Field::imageSubresource);
+                skip |= context.ValidateFlags(imageSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                               AllVkImageAspectFlagBits,
                                               pCopyMemoryToImageInfo->pRegions[regionIndex].imageSubresource.aspectMask,
                                               kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
@@ -15167,7 +15364,8 @@ bool Device::PreCallValidateCopyImageToMemory(VkDevice device, const VkCopyImage
                                                         pCopyImageToMemoryInfo->pRegions[regionIndex].pHostPointer,
                                                         "VUID-VkImageToMemoryCopy-pHostPointer-parameter");
 
-                skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                [[maybe_unused]] const Location imageSubresource_loc = pRegions_loc.dot(Field::imageSubresource);
+                skip |= context.ValidateFlags(imageSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                               AllVkImageAspectFlagBits,
                                               pCopyImageToMemoryInfo->pRegions[regionIndex].imageSubresource.aspectMask,
                                               kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
@@ -15221,13 +15419,15 @@ bool Device::PreCallValidateCopyImageToImage(VkDevice device, const VkCopyImageT
                                                     GeneratedVulkanHeaderVersion, "VUID-VkImageCopy2-pNext-pNext", kVUIDUndefined,
                                                     true);
 
-                skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                [[maybe_unused]] const Location srcSubresource_loc = pRegions_loc.dot(Field::srcSubresource);
+                skip |= context.ValidateFlags(srcSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                               AllVkImageAspectFlagBits,
                                               pCopyImageToImageInfo->pRegions[regionIndex].srcSubresource.aspectMask,
                                               kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
                                               "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
 
-                skip |= context.ValidateFlags(pRegions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                [[maybe_unused]] const Location dstSubresource_loc = pRegions_loc.dot(Field::dstSubresource);
+                skip |= context.ValidateFlags(dstSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                               AllVkImageAspectFlagBits,
                                               pCopyImageToImageInfo->pRegions[regionIndex].dstSubresource.aspectMask,
                                               kRequiredFlags, "VUID-VkImageSubresourceLayers-aspectMask-parameter",
@@ -15265,7 +15465,8 @@ bool Device::PreCallValidateTransitionImageLayout(VkDevice device, uint32_t tran
                                                pTransitions[transitionIndex].newLayout,
                                                "VUID-VkHostImageLayoutTransitionInfo-newLayout-parameter");
 
-            skip |= context.ValidateFlags(pTransitions_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+            [[maybe_unused]] const Location subresourceRange_loc = pTransitions_loc.dot(Field::subresourceRange);
+            skip |= context.ValidateFlags(subresourceRange_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
                                           AllVkImageAspectFlagBits, pTransitions[transitionIndex].subresourceRange.aspectMask,
                                           kRequiredFlags, "VUID-VkImageSubresourceRange-aspectMask-parameter",
                                           "VUID-VkImageSubresourceRange-aspectMask-requiredbitmask", false);
@@ -16851,11 +17052,12 @@ bool Device::PreCallValidateCmdDecodeVideoKHR(VkCommandBuffer commandBuffer, con
                                            VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, false, kVUIDUndefined,
                                            "VUID-VkVideoPictureResourceInfoKHR-sType-sType");
 
-        skip |= context.ValidateStructPnext(pDecodeInfo_loc, pDecodeInfo->dstPictureResource.pNext, 0, nullptr,
+        [[maybe_unused]] const Location dstPictureResource_loc = pDecodeInfo_loc.dot(Field::dstPictureResource);
+        skip |= context.ValidateStructPnext(dstPictureResource_loc, pDecodeInfo->dstPictureResource.pNext, 0, nullptr,
                                             GeneratedVulkanHeaderVersion, "VUID-VkVideoPictureResourceInfoKHR-pNext-pNext",
                                             kVUIDUndefined, true);
 
-        skip |= context.ValidateRequiredHandle(pDecodeInfo_loc.dot(Field::imageViewBinding),
+        skip |= context.ValidateRequiredHandle(dstPictureResource_loc.dot(Field::imageViewBinding),
                                                pDecodeInfo->dstPictureResource.imageViewBinding);
 
         skip |= context.ValidateStructType(pDecodeInfo_loc.dot(Field::pSetupReferenceSlot), pDecodeInfo->pSetupReferenceSlot,
@@ -18552,11 +18754,12 @@ bool Device::PreCallValidateCmdEncodeVideoKHR(VkCommandBuffer commandBuffer, con
                                            VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, false, kVUIDUndefined,
                                            "VUID-VkVideoPictureResourceInfoKHR-sType-sType");
 
-        skip |= context.ValidateStructPnext(pEncodeInfo_loc, pEncodeInfo->srcPictureResource.pNext, 0, nullptr,
+        [[maybe_unused]] const Location srcPictureResource_loc = pEncodeInfo_loc.dot(Field::srcPictureResource);
+        skip |= context.ValidateStructPnext(srcPictureResource_loc, pEncodeInfo->srcPictureResource.pNext, 0, nullptr,
                                             GeneratedVulkanHeaderVersion, "VUID-VkVideoPictureResourceInfoKHR-pNext-pNext",
                                             kVUIDUndefined, true);
 
-        skip |= context.ValidateRequiredHandle(pEncodeInfo_loc.dot(Field::imageViewBinding),
+        skip |= context.ValidateRequiredHandle(srcPictureResource_loc.dot(Field::imageViewBinding),
                                                pEncodeInfo->srcPictureResource.imageViewBinding);
 
         skip |= context.ValidateStructType(pEncodeInfo_loc.dot(Field::pSetupReferenceSlot), pEncodeInfo->pSetupReferenceSlot,
@@ -18701,6 +18904,681 @@ bool Device::PreCallValidateQueueSubmit2KHR(VkQueue queue, uint32_t submitCount,
     if (!IsExtEnabled(extensions.vk_khr_synchronization2))
         skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_synchronization2});
     skip |= PreCallValidateQueueSubmit2(queue, submitCount, pSubmits, fence, error_obj);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdBindIndexBuffer3KHR(VkCommandBuffer commandBuffer, const VkBindIndexBuffer3InfoKHR* pInfo,
+                                                   const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |=
+        context.ValidateStructType(loc.dot(Field::pInfo), pInfo, VK_STRUCTURE_TYPE_BIND_INDEX_BUFFER_3_INFO_KHR, true,
+                                   "VUID-vkCmdBindIndexBuffer3KHR-pInfo-parameter", "VUID-VkBindIndexBuffer3InfoKHR-sType-sType");
+    if (pInfo != nullptr) {
+        [[maybe_unused]] const Location pInfo_loc = loc.dot(Field::pInfo);
+        skip |= context.ValidateStructPnext(pInfo_loc, pInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkBindIndexBuffer3InfoKHR-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->addressFlags, kOptionalFlags,
+                                      "VUID-VkBindIndexBuffer3InfoKHR-addressFlags-parameter", nullptr, false);
+
+        skip |= context.ValidateRangedEnum(pInfo_loc.dot(Field::indexType), vvl::Enum::VkIndexType, pInfo->indexType,
+                                           "VUID-VkBindIndexBuffer3InfoKHR-indexType-parameter");
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdBindIndexBuffer3KHR(commandBuffer, pInfo, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdBindVertexBuffers3KHR(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount,
+                                                     const VkBindVertexBuffer3InfoKHR* pBindingInfos,
+                                                     const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructTypeArray(
+        loc.dot(Field::bindingCount), loc.dot(Field::pBindingInfos), bindingCount, pBindingInfos,
+        VK_STRUCTURE_TYPE_BIND_VERTEX_BUFFER_3_INFO_KHR, true, true, "VUID-VkBindVertexBuffer3InfoKHR-sType-sType",
+        "VUID-vkCmdBindVertexBuffers3KHR-pBindingInfos-parameter", "VUID-vkCmdBindVertexBuffers3KHR-bindingCount-arraylength");
+    if (pBindingInfos != nullptr) {
+        for (uint32_t bindingIndex = 0; bindingIndex < bindingCount; ++bindingIndex) {
+            [[maybe_unused]] const Location pBindingInfos_loc = loc.dot(Field::pBindingInfos, bindingIndex);
+            skip |= context.ValidateStructPnext(pBindingInfos_loc, pBindingInfos[bindingIndex].pNext, 0, nullptr,
+                                                GeneratedVulkanHeaderVersion, "VUID-VkBindVertexBuffer3InfoKHR-pNext-pNext",
+                                                kVUIDUndefined, true);
+
+            skip |= context.ValidateBool32(pBindingInfos_loc.dot(Field::setStride), pBindingInfos[bindingIndex].setStride);
+
+            skip |= context.ValidateFlags(pBindingInfos_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                          AllVkAddressCommandFlagBitsKHR, pBindingInfos[bindingIndex].addressFlags, kOptionalFlags,
+                                          "VUID-VkBindVertexBuffer3InfoKHR-addressFlags-parameter", nullptr, false);
+        }
+    }
+    if (!skip)
+        skip |= manual_PreCallValidateCmdBindVertexBuffers3KHR(commandBuffer, firstBinding, bindingCount, pBindingInfos, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdDrawIndirect2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo,
+                                                const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructType(loc.dot(Field::pInfo), pInfo, VK_STRUCTURE_TYPE_DRAW_INDIRECT_2_INFO_KHR, true,
+                                       "VUID-vkCmdDrawIndirect2KHR-pInfo-parameter", "VUID-VkDrawIndirect2InfoKHR-sType-sType");
+    if (pInfo != nullptr) {
+        [[maybe_unused]] const Location pInfo_loc = loc.dot(Field::pInfo);
+        skip |= context.ValidateStructPnext(pInfo_loc, pInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkDrawIndirect2InfoKHR-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->addressFlags, kOptionalFlags,
+                                      "VUID-VkDrawIndirect2InfoKHR-addressFlags-parameter", nullptr, false);
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdDrawIndirect2KHR(commandBuffer, pInfo, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdDrawIndexedIndirect2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo,
+                                                       const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |=
+        context.ValidateStructType(loc.dot(Field::pInfo), pInfo, VK_STRUCTURE_TYPE_DRAW_INDIRECT_2_INFO_KHR, true,
+                                   "VUID-vkCmdDrawIndexedIndirect2KHR-pInfo-parameter", "VUID-VkDrawIndirect2InfoKHR-sType-sType");
+    if (pInfo != nullptr) {
+        [[maybe_unused]] const Location pInfo_loc = loc.dot(Field::pInfo);
+        skip |= context.ValidateStructPnext(pInfo_loc, pInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkDrawIndirect2InfoKHR-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->addressFlags, kOptionalFlags,
+                                      "VUID-VkDrawIndirect2InfoKHR-addressFlags-parameter", nullptr, false);
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdDrawIndexedIndirect2KHR(commandBuffer, pInfo, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdDispatchIndirect2KHR(VkCommandBuffer commandBuffer, const VkDispatchIndirect2InfoKHR* pInfo,
+                                                    const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |=
+        context.ValidateStructType(loc.dot(Field::pInfo), pInfo, VK_STRUCTURE_TYPE_DISPATCH_INDIRECT_2_INFO_KHR, true,
+                                   "VUID-vkCmdDispatchIndirect2KHR-pInfo-parameter", "VUID-VkDispatchIndirect2InfoKHR-sType-sType");
+    if (pInfo != nullptr) {
+        [[maybe_unused]] const Location pInfo_loc = loc.dot(Field::pInfo);
+        skip |= context.ValidateStructPnext(pInfo_loc, pInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkDispatchIndirect2InfoKHR-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->addressFlags, kOptionalFlags,
+                                      "VUID-VkDispatchIndirect2InfoKHR-addressFlags-parameter", nullptr, false);
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdDispatchIndirect2KHR(commandBuffer, pInfo, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdCopyMemoryKHR(VkCommandBuffer commandBuffer, const VkCopyDeviceMemoryInfoKHR* pCopyMemoryInfo,
+                                             const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructType(
+        loc.dot(Field::pCopyMemoryInfo), pCopyMemoryInfo, VK_STRUCTURE_TYPE_COPY_DEVICE_MEMORY_INFO_KHR, false,
+        "VUID-vkCmdCopyMemoryKHR-pCopyMemoryInfo-parameter", "VUID-VkCopyDeviceMemoryInfoKHR-sType-sType");
+    if (pCopyMemoryInfo != nullptr) {
+        [[maybe_unused]] const Location pCopyMemoryInfo_loc = loc.dot(Field::pCopyMemoryInfo);
+        skip |= context.ValidateStructPnext(pCopyMemoryInfo_loc, pCopyMemoryInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkCopyDeviceMemoryInfoKHR-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateStructTypeArray(
+            pCopyMemoryInfo_loc.dot(Field::regionCount), pCopyMemoryInfo_loc.dot(Field::pRegions), pCopyMemoryInfo->regionCount,
+            pCopyMemoryInfo->pRegions, VK_STRUCTURE_TYPE_DEVICE_MEMORY_COPY_KHR, true, true,
+            "VUID-VkDeviceMemoryCopyKHR-sType-sType", "VUID-VkCopyDeviceMemoryInfoKHR-pRegions-parameter",
+            "VUID-VkCopyDeviceMemoryInfoKHR-regionCount-arraylength");
+
+        if (pCopyMemoryInfo->pRegions != nullptr) {
+            for (uint32_t regionIndex = 0; regionIndex < pCopyMemoryInfo->regionCount; ++regionIndex) {
+                [[maybe_unused]] const Location pRegions_loc = pCopyMemoryInfo_loc.dot(Field::pRegions, regionIndex);
+                skip |= context.ValidateStructPnext(pRegions_loc, pCopyMemoryInfo->pRegions[regionIndex].pNext, 0, nullptr,
+                                                    GeneratedVulkanHeaderVersion, "VUID-VkDeviceMemoryCopyKHR-pNext-pNext",
+                                                    kVUIDUndefined, true);
+
+                skip |= context.ValidateFlags(pRegions_loc.dot(Field::srcFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                              AllVkAddressCommandFlagBitsKHR, pCopyMemoryInfo->pRegions[regionIndex].srcFlags,
+                                              kOptionalFlags, "VUID-VkDeviceMemoryCopyKHR-srcFlags-parameter", nullptr, false);
+
+                skip |= context.ValidateFlags(pRegions_loc.dot(Field::dstFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                              AllVkAddressCommandFlagBitsKHR, pCopyMemoryInfo->pRegions[regionIndex].dstFlags,
+                                              kOptionalFlags, "VUID-VkDeviceMemoryCopyKHR-dstFlags-parameter", nullptr, false);
+            }
+        }
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdCopyMemoryKHR(commandBuffer, pCopyMemoryInfo, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdCopyMemoryToImageKHR(VkCommandBuffer commandBuffer,
+                                                    const VkCopyDeviceMemoryImageInfoKHR* pCopyMemoryInfo,
+                                                    const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructType(
+        loc.dot(Field::pCopyMemoryInfo), pCopyMemoryInfo, VK_STRUCTURE_TYPE_COPY_DEVICE_MEMORY_IMAGE_INFO_KHR, false,
+        "VUID-vkCmdCopyMemoryToImageKHR-pCopyMemoryInfo-parameter", "VUID-VkCopyDeviceMemoryImageInfoKHR-sType-sType");
+    if (pCopyMemoryInfo != nullptr) {
+        [[maybe_unused]] const Location pCopyMemoryInfo_loc = loc.dot(Field::pCopyMemoryInfo);
+        skip |= context.ValidateStructPnext(pCopyMemoryInfo_loc, pCopyMemoryInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkCopyDeviceMemoryImageInfoKHR-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateRequiredHandle(pCopyMemoryInfo_loc.dot(Field::image), pCopyMemoryInfo->image);
+
+        skip |= context.ValidateStructTypeArray(
+            pCopyMemoryInfo_loc.dot(Field::regionCount), pCopyMemoryInfo_loc.dot(Field::pRegions), pCopyMemoryInfo->regionCount,
+            pCopyMemoryInfo->pRegions, VK_STRUCTURE_TYPE_DEVICE_MEMORY_IMAGE_COPY_KHR, true, true,
+            "VUID-VkDeviceMemoryImageCopyKHR-sType-sType", "VUID-VkCopyDeviceMemoryImageInfoKHR-pRegions-parameter",
+            "VUID-VkCopyDeviceMemoryImageInfoKHR-regionCount-arraylength");
+
+        if (pCopyMemoryInfo->pRegions != nullptr) {
+            for (uint32_t regionIndex = 0; regionIndex < pCopyMemoryInfo->regionCount; ++regionIndex) {
+                [[maybe_unused]] const Location pRegions_loc = pCopyMemoryInfo_loc.dot(Field::pRegions, regionIndex);
+                constexpr std::array<VkStructureType, 1> allowed_structs_VkDeviceMemoryImageCopyKHR = {
+                    VK_STRUCTURE_TYPE_COPY_COMMAND_TRANSFORM_INFO_QCOM};
+
+                skip |= context.ValidateStructPnext(
+                    pRegions_loc, pCopyMemoryInfo->pRegions[regionIndex].pNext, allowed_structs_VkDeviceMemoryImageCopyKHR.size(),
+                    allowed_structs_VkDeviceMemoryImageCopyKHR.data(), GeneratedVulkanHeaderVersion,
+                    "VUID-VkDeviceMemoryImageCopyKHR-pNext-pNext", "VUID-VkDeviceMemoryImageCopyKHR-sType-unique", true);
+
+                skip |=
+                    context.ValidateFlags(pRegions_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                          AllVkAddressCommandFlagBitsKHR, pCopyMemoryInfo->pRegions[regionIndex].addressFlags,
+                                          kOptionalFlags, "VUID-VkDeviceMemoryImageCopyKHR-addressFlags-parameter", nullptr, false);
+
+                [[maybe_unused]] const Location imageSubresource_loc = pRegions_loc.dot(Field::imageSubresource);
+                skip |= context.ValidateFlags(imageSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                                              AllVkImageAspectFlagBits,
+                                              pCopyMemoryInfo->pRegions[regionIndex].imageSubresource.aspectMask, kRequiredFlags,
+                                              "VUID-VkImageSubresourceLayers-aspectMask-parameter",
+                                              "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
+
+                skip |= context.ValidateRangedEnum(pRegions_loc.dot(Field::imageLayout), vvl::Enum::VkImageLayout,
+                                                   pCopyMemoryInfo->pRegions[regionIndex].imageLayout,
+                                                   "VUID-VkDeviceMemoryImageCopyKHR-imageLayout-parameter");
+            }
+        }
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdCopyMemoryToImageKHR(commandBuffer, pCopyMemoryInfo, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdCopyImageToMemoryKHR(VkCommandBuffer commandBuffer,
+                                                    const VkCopyDeviceMemoryImageInfoKHR* pCopyMemoryInfo,
+                                                    const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructType(
+        loc.dot(Field::pCopyMemoryInfo), pCopyMemoryInfo, VK_STRUCTURE_TYPE_COPY_DEVICE_MEMORY_IMAGE_INFO_KHR, false,
+        "VUID-vkCmdCopyImageToMemoryKHR-pCopyMemoryInfo-parameter", "VUID-VkCopyDeviceMemoryImageInfoKHR-sType-sType");
+    if (pCopyMemoryInfo != nullptr) {
+        [[maybe_unused]] const Location pCopyMemoryInfo_loc = loc.dot(Field::pCopyMemoryInfo);
+        skip |= context.ValidateStructPnext(pCopyMemoryInfo_loc, pCopyMemoryInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkCopyDeviceMemoryImageInfoKHR-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateRequiredHandle(pCopyMemoryInfo_loc.dot(Field::image), pCopyMemoryInfo->image);
+
+        skip |= context.ValidateStructTypeArray(
+            pCopyMemoryInfo_loc.dot(Field::regionCount), pCopyMemoryInfo_loc.dot(Field::pRegions), pCopyMemoryInfo->regionCount,
+            pCopyMemoryInfo->pRegions, VK_STRUCTURE_TYPE_DEVICE_MEMORY_IMAGE_COPY_KHR, true, true,
+            "VUID-VkDeviceMemoryImageCopyKHR-sType-sType", "VUID-VkCopyDeviceMemoryImageInfoKHR-pRegions-parameter",
+            "VUID-VkCopyDeviceMemoryImageInfoKHR-regionCount-arraylength");
+
+        if (pCopyMemoryInfo->pRegions != nullptr) {
+            for (uint32_t regionIndex = 0; regionIndex < pCopyMemoryInfo->regionCount; ++regionIndex) {
+                [[maybe_unused]] const Location pRegions_loc = pCopyMemoryInfo_loc.dot(Field::pRegions, regionIndex);
+                constexpr std::array<VkStructureType, 1> allowed_structs_VkDeviceMemoryImageCopyKHR = {
+                    VK_STRUCTURE_TYPE_COPY_COMMAND_TRANSFORM_INFO_QCOM};
+
+                skip |= context.ValidateStructPnext(
+                    pRegions_loc, pCopyMemoryInfo->pRegions[regionIndex].pNext, allowed_structs_VkDeviceMemoryImageCopyKHR.size(),
+                    allowed_structs_VkDeviceMemoryImageCopyKHR.data(), GeneratedVulkanHeaderVersion,
+                    "VUID-VkDeviceMemoryImageCopyKHR-pNext-pNext", "VUID-VkDeviceMemoryImageCopyKHR-sType-unique", true);
+
+                skip |=
+                    context.ValidateFlags(pRegions_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                          AllVkAddressCommandFlagBitsKHR, pCopyMemoryInfo->pRegions[regionIndex].addressFlags,
+                                          kOptionalFlags, "VUID-VkDeviceMemoryImageCopyKHR-addressFlags-parameter", nullptr, false);
+
+                [[maybe_unused]] const Location imageSubresource_loc = pRegions_loc.dot(Field::imageSubresource);
+                skip |= context.ValidateFlags(imageSubresource_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
+                                              AllVkImageAspectFlagBits,
+                                              pCopyMemoryInfo->pRegions[regionIndex].imageSubresource.aspectMask, kRequiredFlags,
+                                              "VUID-VkImageSubresourceLayers-aspectMask-parameter",
+                                              "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
+
+                skip |= context.ValidateRangedEnum(pRegions_loc.dot(Field::imageLayout), vvl::Enum::VkImageLayout,
+                                                   pCopyMemoryInfo->pRegions[regionIndex].imageLayout,
+                                                   "VUID-VkDeviceMemoryImageCopyKHR-imageLayout-parameter");
+            }
+        }
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdCopyImageToMemoryKHR(commandBuffer, pCopyMemoryInfo, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdUpdateMemoryKHR(VkCommandBuffer commandBuffer, const VkDeviceAddressRangeKHR* pDstRange,
+                                               VkAddressCommandFlagsKHR dstFlags, VkDeviceSize dataSize, const void* pData,
+                                               const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateRequiredPointer(loc.dot(Field::pDstRange), pDstRange, "VUID-vkCmdUpdateMemoryKHR-pDstRange-parameter");
+    skip |= context.ValidateFlags(loc.dot(Field::dstFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                  AllVkAddressCommandFlagBitsKHR, dstFlags, kOptionalFlags,
+                                  "VUID-vkCmdUpdateMemoryKHR-dstFlags-parameter", nullptr, false);
+    skip |= context.ValidateArray(loc.dot(Field::dataSize), loc.dot(Field::pData), dataSize, &pData, true, true,
+                                  "VUID-vkCmdUpdateMemoryKHR-dataSize-arraylength", "VUID-vkCmdUpdateMemoryKHR-pData-parameter");
+    if (!skip) skip |= manual_PreCallValidateCmdUpdateMemoryKHR(commandBuffer, pDstRange, dstFlags, dataSize, pData, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdFillMemoryKHR(VkCommandBuffer commandBuffer, const VkDeviceAddressRangeKHR* pDstRange,
+                                             VkAddressCommandFlagsKHR dstFlags, uint32_t data, const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateRequiredPointer(loc.dot(Field::pDstRange), pDstRange, "VUID-vkCmdFillMemoryKHR-pDstRange-parameter");
+    skip |= context.ValidateFlags(loc.dot(Field::dstFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                  AllVkAddressCommandFlagBitsKHR, dstFlags, kOptionalFlags,
+                                  "VUID-vkCmdFillMemoryKHR-dstFlags-parameter", nullptr, false);
+    if (!skip) skip |= manual_PreCallValidateCmdFillMemoryKHR(commandBuffer, pDstRange, dstFlags, data, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdCopyQueryPoolResultsToMemoryKHR(VkCommandBuffer commandBuffer, VkQueryPool queryPool,
+                                                               uint32_t firstQuery, uint32_t queryCount,
+                                                               const VkStridedDeviceAddressRangeKHR* pDstRange,
+                                                               VkAddressCommandFlagsKHR dstFlags,
+                                                               VkQueryResultFlags queryResultFlags,
+                                                               const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateRequiredHandle(loc.dot(Field::queryPool), queryPool);
+    skip |= context.ValidateRequiredPointer(loc.dot(Field::pDstRange), pDstRange,
+                                            "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-pDstRange-parameter");
+    skip |= context.ValidateFlags(loc.dot(Field::dstFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                  AllVkAddressCommandFlagBitsKHR, dstFlags, kOptionalFlags,
+                                  "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-dstFlags-parameter", nullptr, false);
+    skip |= context.ValidateFlags(loc.dot(Field::queryResultFlags), vvl::FlagBitmask::VkQueryResultFlagBits,
+                                  AllVkQueryResultFlagBits, queryResultFlags, kOptionalFlags,
+                                  "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-queryResultFlags-parameter", nullptr, false);
+    if (!skip)
+        skip |= manual_PreCallValidateCmdCopyQueryPoolResultsToMemoryKHR(commandBuffer, queryPool, firstQuery, queryCount,
+                                                                         pDstRange, dstFlags, queryResultFlags, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdDrawIndirectCount2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirectCount2InfoKHR* pInfo,
+                                                     const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructType(loc.dot(Field::pInfo), pInfo, VK_STRUCTURE_TYPE_DRAW_INDIRECT_COUNT_2_INFO_KHR, true,
+                                       "VUID-vkCmdDrawIndirectCount2KHR-pInfo-parameter",
+                                       "VUID-VkDrawIndirectCount2InfoKHR-sType-sType");
+    if (pInfo != nullptr) {
+        [[maybe_unused]] const Location pInfo_loc = loc.dot(Field::pInfo);
+        skip |= context.ValidateStructPnext(pInfo_loc, pInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkDrawIndirectCount2InfoKHR-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->addressFlags, kOptionalFlags,
+                                      "VUID-VkDrawIndirectCount2InfoKHR-addressFlags-parameter", nullptr, false);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::countAddressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->countAddressFlags, kOptionalFlags,
+                                      "VUID-VkDrawIndirectCount2InfoKHR-countAddressFlags-parameter", nullptr, false);
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdDrawIndirectCount2KHR(commandBuffer, pInfo, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdDrawIndexedIndirectCount2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirectCount2InfoKHR* pInfo,
+                                                            const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructType(loc.dot(Field::pInfo), pInfo, VK_STRUCTURE_TYPE_DRAW_INDIRECT_COUNT_2_INFO_KHR, true,
+                                       "VUID-vkCmdDrawIndexedIndirectCount2KHR-pInfo-parameter",
+                                       "VUID-VkDrawIndirectCount2InfoKHR-sType-sType");
+    if (pInfo != nullptr) {
+        [[maybe_unused]] const Location pInfo_loc = loc.dot(Field::pInfo);
+        skip |= context.ValidateStructPnext(pInfo_loc, pInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkDrawIndirectCount2InfoKHR-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->addressFlags, kOptionalFlags,
+                                      "VUID-VkDrawIndirectCount2InfoKHR-addressFlags-parameter", nullptr, false);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::countAddressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->countAddressFlags, kOptionalFlags,
+                                      "VUID-VkDrawIndirectCount2InfoKHR-countAddressFlags-parameter", nullptr, false);
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdDrawIndexedIndirectCount2KHR(commandBuffer, pInfo, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdBeginConditionalRendering2EXT(VkCommandBuffer commandBuffer,
+                                                             const VkConditionalRenderingBeginInfo2EXT* pConditionalRenderingBegin,
+                                                             const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructType(loc.dot(Field::pConditionalRenderingBegin), pConditionalRenderingBegin,
+                                       VK_STRUCTURE_TYPE_CONDITIONAL_RENDERING_BEGIN_INFO_2_EXT, true,
+                                       "VUID-vkCmdBeginConditionalRendering2EXT-pConditionalRenderingBegin-parameter",
+                                       "VUID-VkConditionalRenderingBeginInfo2EXT-sType-sType");
+    if (pConditionalRenderingBegin != nullptr) {
+        [[maybe_unused]] const Location pConditionalRenderingBegin_loc = loc.dot(Field::pConditionalRenderingBegin);
+        skip |= context.ValidateStructPnext(pConditionalRenderingBegin_loc, pConditionalRenderingBegin->pNext, 0, nullptr,
+                                            GeneratedVulkanHeaderVersion, "VUID-VkConditionalRenderingBeginInfo2EXT-pNext-pNext",
+                                            kVUIDUndefined, true);
+
+        skip |= context.ValidateFlags(pConditionalRenderingBegin_loc.dot(Field::addressFlags),
+                                      vvl::FlagBitmask::VkAddressCommandFlagBitsKHR, AllVkAddressCommandFlagBitsKHR,
+                                      pConditionalRenderingBegin->addressFlags, kOptionalFlags,
+                                      "VUID-VkConditionalRenderingBeginInfo2EXT-addressFlags-parameter", nullptr, false);
+
+        skip |= context.ValidateFlags(pConditionalRenderingBegin_loc.dot(Field::flags),
+                                      vvl::FlagBitmask::VkConditionalRenderingFlagBitsEXT, AllVkConditionalRenderingFlagBitsEXT,
+                                      pConditionalRenderingBegin->flags, kOptionalFlags,
+                                      "VUID-VkConditionalRenderingBeginInfo2EXT-flags-parameter", nullptr, false);
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdBeginConditionalRendering2EXT(commandBuffer, pConditionalRenderingBegin, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdBindTransformFeedbackBuffers2EXT(VkCommandBuffer commandBuffer, uint32_t firstBinding,
+                                                                uint32_t bindingCount,
+                                                                const VkBindTransformFeedbackBuffer2InfoEXT* pBindingInfos,
+                                                                const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructTypeArray(loc.dot(Field::bindingCount), loc.dot(Field::pBindingInfos), bindingCount,
+                                            pBindingInfos, VK_STRUCTURE_TYPE_BIND_TRANSFORM_FEEDBACK_BUFFER_2_INFO_EXT, true, false,
+                                            "VUID-VkBindTransformFeedbackBuffer2InfoEXT-sType-sType", kVUIDUndefined,
+                                            "VUID-vkCmdBindTransformFeedbackBuffers2EXT-bindingCount-arraylength");
+    if (pBindingInfos != nullptr) {
+        for (uint32_t bindingIndex = 0; bindingIndex < bindingCount; ++bindingIndex) {
+            [[maybe_unused]] const Location pBindingInfos_loc = loc.dot(Field::pBindingInfos, bindingIndex);
+            skip |= context.ValidateStructPnext(pBindingInfos_loc, pBindingInfos[bindingIndex].pNext, 0, nullptr,
+                                                GeneratedVulkanHeaderVersion,
+                                                "VUID-VkBindTransformFeedbackBuffer2InfoEXT-pNext-pNext", kVUIDUndefined, true);
+
+            skip |= context.ValidateFlags(pBindingInfos_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                          AllVkAddressCommandFlagBitsKHR, pBindingInfos[bindingIndex].addressFlags, kOptionalFlags,
+                                          "VUID-VkBindTransformFeedbackBuffer2InfoEXT-addressFlags-parameter", nullptr, false);
+        }
+    }
+    if (!skip)
+        skip |= manual_PreCallValidateCmdBindTransformFeedbackBuffers2EXT(commandBuffer, firstBinding, bindingCount, pBindingInfos,
+                                                                          context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdBeginTransformFeedback2EXT(VkCommandBuffer commandBuffer, uint32_t firstCounterRange,
+                                                          uint32_t counterRangeCount,
+                                                          const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfos,
+                                                          const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |=
+        context.ValidateStructTypeArray(loc.dot(Field::counterRangeCount), loc.dot(Field::pCounterInfos), counterRangeCount,
+                                        pCounterInfos, VK_STRUCTURE_TYPE_BIND_TRANSFORM_FEEDBACK_BUFFER_2_INFO_EXT, false, false,
+                                        "VUID-VkBindTransformFeedbackBuffer2InfoEXT-sType-sType", kVUIDUndefined, kVUIDUndefined);
+    if (pCounterInfos != nullptr) {
+        for (uint32_t counterRangeIndex = 0; counterRangeIndex < counterRangeCount; ++counterRangeIndex) {
+            [[maybe_unused]] const Location pCounterInfos_loc = loc.dot(Field::pCounterInfos, counterRangeIndex);
+            skip |= context.ValidateStructPnext(pCounterInfos_loc, pCounterInfos[counterRangeIndex].pNext, 0, nullptr,
+                                                GeneratedVulkanHeaderVersion,
+                                                "VUID-VkBindTransformFeedbackBuffer2InfoEXT-pNext-pNext", kVUIDUndefined, true);
+
+            skip |=
+                context.ValidateFlags(pCounterInfos_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pCounterInfos[counterRangeIndex].addressFlags, kOptionalFlags,
+                                      "VUID-VkBindTransformFeedbackBuffer2InfoEXT-addressFlags-parameter", nullptr, false);
+        }
+    }
+    if (!skip)
+        skip |= manual_PreCallValidateCmdBeginTransformFeedback2EXT(commandBuffer, firstCounterRange, counterRangeCount,
+                                                                    pCounterInfos, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdEndTransformFeedback2EXT(VkCommandBuffer commandBuffer, uint32_t firstCounterRange,
+                                                        uint32_t counterRangeCount,
+                                                        const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfos,
+                                                        const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |=
+        context.ValidateStructTypeArray(loc.dot(Field::counterRangeCount), loc.dot(Field::pCounterInfos), counterRangeCount,
+                                        pCounterInfos, VK_STRUCTURE_TYPE_BIND_TRANSFORM_FEEDBACK_BUFFER_2_INFO_EXT, false, false,
+                                        "VUID-VkBindTransformFeedbackBuffer2InfoEXT-sType-sType", kVUIDUndefined, kVUIDUndefined);
+    if (pCounterInfos != nullptr) {
+        for (uint32_t counterRangeIndex = 0; counterRangeIndex < counterRangeCount; ++counterRangeIndex) {
+            [[maybe_unused]] const Location pCounterInfos_loc = loc.dot(Field::pCounterInfos, counterRangeIndex);
+            skip |= context.ValidateStructPnext(pCounterInfos_loc, pCounterInfos[counterRangeIndex].pNext, 0, nullptr,
+                                                GeneratedVulkanHeaderVersion,
+                                                "VUID-VkBindTransformFeedbackBuffer2InfoEXT-pNext-pNext", kVUIDUndefined, true);
+
+            skip |=
+                context.ValidateFlags(pCounterInfos_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pCounterInfos[counterRangeIndex].addressFlags, kOptionalFlags,
+                                      "VUID-VkBindTransformFeedbackBuffer2InfoEXT-addressFlags-parameter", nullptr, false);
+        }
+    }
+    if (!skip)
+        skip |= manual_PreCallValidateCmdEndTransformFeedback2EXT(commandBuffer, firstCounterRange, counterRangeCount,
+                                                                  pCounterInfos, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdDrawIndirectByteCount2EXT(VkCommandBuffer commandBuffer, uint32_t instanceCount,
+                                                         uint32_t firstInstance,
+                                                         const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfo,
+                                                         uint32_t counterOffset, uint32_t vertexStride,
+                                                         const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructType(
+        loc.dot(Field::pCounterInfo), pCounterInfo, VK_STRUCTURE_TYPE_BIND_TRANSFORM_FEEDBACK_BUFFER_2_INFO_EXT, true,
+        "VUID-vkCmdDrawIndirectByteCount2EXT-pCounterInfo-parameter", "VUID-VkBindTransformFeedbackBuffer2InfoEXT-sType-sType");
+    if (pCounterInfo != nullptr) {
+        [[maybe_unused]] const Location pCounterInfo_loc = loc.dot(Field::pCounterInfo);
+        skip |= context.ValidateStructPnext(pCounterInfo_loc, pCounterInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkBindTransformFeedbackBuffer2InfoEXT-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateFlags(pCounterInfo_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pCounterInfo->addressFlags, kOptionalFlags,
+                                      "VUID-VkBindTransformFeedbackBuffer2InfoEXT-addressFlags-parameter", nullptr, false);
+    }
+    if (!skip)
+        skip |= manual_PreCallValidateCmdDrawIndirectByteCount2EXT(commandBuffer, instanceCount, firstInstance, pCounterInfo,
+                                                                   counterOffset, vertexStride, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdDrawMeshTasksIndirect2EXT(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo,
+                                                         const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructType(loc.dot(Field::pInfo), pInfo, VK_STRUCTURE_TYPE_DRAW_INDIRECT_2_INFO_KHR, true,
+                                       "VUID-vkCmdDrawMeshTasksIndirect2EXT-pInfo-parameter",
+                                       "VUID-VkDrawIndirect2InfoKHR-sType-sType");
+    if (pInfo != nullptr) {
+        [[maybe_unused]] const Location pInfo_loc = loc.dot(Field::pInfo);
+        skip |= context.ValidateStructPnext(pInfo_loc, pInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkDrawIndirect2InfoKHR-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->addressFlags, kOptionalFlags,
+                                      "VUID-VkDrawIndirect2InfoKHR-addressFlags-parameter", nullptr, false);
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdDrawMeshTasksIndirect2EXT(commandBuffer, pInfo, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdDrawMeshTasksIndirectCount2EXT(VkCommandBuffer commandBuffer,
+                                                              const VkDrawIndirectCount2InfoKHR* pInfo,
+                                                              const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |= context.ValidateStructType(loc.dot(Field::pInfo), pInfo, VK_STRUCTURE_TYPE_DRAW_INDIRECT_COUNT_2_INFO_KHR, true,
+                                       "VUID-vkCmdDrawMeshTasksIndirectCount2EXT-pInfo-parameter",
+                                       "VUID-VkDrawIndirectCount2InfoKHR-sType-sType");
+    if (pInfo != nullptr) {
+        [[maybe_unused]] const Location pInfo_loc = loc.dot(Field::pInfo);
+        skip |= context.ValidateStructPnext(pInfo_loc, pInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkDrawIndirectCount2InfoKHR-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->addressFlags, kOptionalFlags,
+                                      "VUID-VkDrawIndirectCount2InfoKHR-addressFlags-parameter", nullptr, false);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::countAddressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->countAddressFlags, kOptionalFlags,
+                                      "VUID-VkDrawIndirectCount2InfoKHR-countAddressFlags-parameter", nullptr, false);
+    }
+    if (!skip) skip |= manual_PreCallValidateCmdDrawMeshTasksIndirectCount2EXT(commandBuffer, pInfo, context);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdWriteMarkerToMemoryAMD(VkCommandBuffer commandBuffer, const VkMemoryMarkerInfoAMD* pInfo,
+                                                      const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+    skip |=
+        context.ValidateStructType(loc.dot(Field::pInfo), pInfo, VK_STRUCTURE_TYPE_MEMORY_MARKER_INFO_AMD, true,
+                                   "VUID-vkCmdWriteMarkerToMemoryAMD-pInfo-parameter", "VUID-VkMemoryMarkerInfoAMD-sType-sType");
+    if (pInfo != nullptr) {
+        [[maybe_unused]] const Location pInfo_loc = loc.dot(Field::pInfo);
+        skip |= context.ValidateStructPnext(pInfo_loc, pInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkMemoryMarkerInfoAMD-pNext-pNext", kVUIDUndefined, true);
+
+        skip |= context.ValidateFlags(pInfo_loc.dot(Field::dstFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pInfo->dstFlags, kOptionalFlags,
+                                      "VUID-VkMemoryMarkerInfoAMD-dstFlags-parameter", nullptr, false);
+    }
+    return skip;
+}
+
+bool Device::PreCallValidateCreateAccelerationStructure2KHR(VkDevice device,
+                                                            const VkAccelerationStructureCreateInfo2KHR* pCreateInfo,
+                                                            const VkAllocationCallbacks* pAllocator,
+                                                            VkAccelerationStructureKHR* pAccelerationStructure,
+                                                            const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_address_commands))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_address_commands});
+
+    if (has_zero_queues) {
+        skip |= LogError("VUID-vkCreateAccelerationStructure2KHR-device-queuecount", device, error_obj.location,
+                         "device was created with queueCreateInfoCount of zero.");
+    }
+    skip |= context.ValidateStructType(
+        loc.dot(Field::pCreateInfo), pCreateInfo, VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_2_KHR, true,
+        "VUID-vkCreateAccelerationStructure2KHR-pCreateInfo-parameter", "VUID-VkAccelerationStructureCreateInfo2KHR-sType-sType");
+    if (pCreateInfo != nullptr) {
+        [[maybe_unused]] const Location pCreateInfo_loc = loc.dot(Field::pCreateInfo);
+        constexpr std::array<VkStructureType, 1> allowed_structs_VkAccelerationStructureCreateInfo2KHR = {
+            VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT};
+
+        skip |= context.ValidateStructPnext(pCreateInfo_loc, pCreateInfo->pNext,
+                                            allowed_structs_VkAccelerationStructureCreateInfo2KHR.size(),
+                                            allowed_structs_VkAccelerationStructureCreateInfo2KHR.data(),
+                                            GeneratedVulkanHeaderVersion, "VUID-VkAccelerationStructureCreateInfo2KHR-pNext-pNext",
+                                            "VUID-VkAccelerationStructureCreateInfo2KHR-sType-unique", true);
+
+        skip |= context.ValidateFlags(pCreateInfo_loc.dot(Field::createFlags),
+                                      vvl::FlagBitmask::VkAccelerationStructureCreateFlagBitsKHR,
+                                      AllVkAccelerationStructureCreateFlagBitsKHR, pCreateInfo->createFlags, kOptionalFlags,
+                                      "VUID-VkAccelerationStructureCreateInfo2KHR-createFlags-parameter", nullptr, false);
+
+        skip |= context.ValidateFlags(pCreateInfo_loc.dot(Field::addressFlags), vvl::FlagBitmask::VkAddressCommandFlagBitsKHR,
+                                      AllVkAddressCommandFlagBitsKHR, pCreateInfo->addressFlags, kOptionalFlags,
+                                      "VUID-VkAccelerationStructureCreateInfo2KHR-addressFlags-parameter", nullptr, false);
+
+        skip |= context.ValidateRangedEnum(pCreateInfo_loc.dot(Field::type), vvl::Enum::VkAccelerationStructureTypeKHR,
+                                           pCreateInfo->type, "VUID-VkAccelerationStructureCreateInfo2KHR-type-parameter");
+    }
+    if (pAllocator != nullptr) {
+        [[maybe_unused]] const Location pAllocator_loc = loc.dot(Field::pAllocator);
+        skip |= context.ValidateAllocationCallbacks(*pAllocator, pAllocator_loc);
+    }
+    skip |= context.ValidateRequiredPointer(loc.dot(Field::pAccelerationStructure), pAccelerationStructure,
+                                            "VUID-vkCreateAccelerationStructure2KHR-pAccelerationStructure-parameter");
+    if (!skip)
+        skip |=
+            manual_PreCallValidateCreateAccelerationStructure2KHR(device, pCreateInfo, pAllocator, pAccelerationStructure, context);
     return skip;
 }
 
@@ -19369,6 +20247,49 @@ bool Device::PreCallValidateCmdCopyMemoryToImageIndirectKHR(
                                               "VUID-VkImageSubresourceLayers-aspectMask-requiredbitmask", false);
             }
         }
+    }
+    return skip;
+}
+
+bool Device::PreCallValidateGetDeviceFaultReportsKHR(VkDevice device, uint64_t timeout, uint32_t* pFaultCounts,
+                                                     VkDeviceFaultInfoKHR* pFaultInfo, const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_fault)) skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_fault});
+    skip |= context.ValidateStructTypeArray(
+        loc.dot(Field::pFaultCounts), loc.dot(Field::pFaultInfo), pFaultCounts, pFaultInfo, VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_KHR,
+        true, true, false, "VUID-VkDeviceFaultInfoKHR-sType-sType", kVUIDUndefined,
+        "VUID-vkGetDeviceFaultReportsKHR-pFaultCounts-parameter", "VUID-vkGetDeviceFaultReportsKHR-pFaultCounts-arraylength");
+    if (pFaultInfo != nullptr) {
+        for (uint32_t pFaultIndexs = 0; pFaultIndexs < *pFaultCounts; ++pFaultIndexs) {
+            [[maybe_unused]] const Location pFaultInfo_loc = loc.dot(Field::pFaultInfo, pFaultIndexs);
+            skip |= context.ValidateStructPnext(pFaultInfo_loc, pFaultInfo[pFaultIndexs].pNext, 0, nullptr,
+                                                GeneratedVulkanHeaderVersion, "VUID-VkDeviceFaultInfoKHR-pNext-pNext",
+                                                kVUIDUndefined, false);
+        }
+    }
+    return skip;
+}
+
+bool Device::PreCallValidateGetDeviceFaultDebugInfoKHR(VkDevice device, VkDeviceFaultDebugInfoKHR* pDebugInfo,
+                                                       const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_khr_device_fault)) skip |= OutputExtensionError(loc, {vvl::Extension::_VK_KHR_device_fault});
+    skip |= context.ValidateStructType(loc.dot(Field::pDebugInfo), pDebugInfo, VK_STRUCTURE_TYPE_DEVICE_FAULT_DEBUG_INFO_KHR, true,
+                                       "VUID-vkGetDeviceFaultDebugInfoKHR-pDebugInfo-parameter",
+                                       "VUID-VkDeviceFaultDebugInfoKHR-sType-sType");
+    if (pDebugInfo != nullptr) {
+        [[maybe_unused]] const Location pDebugInfo_loc = loc.dot(Field::pDebugInfo);
+        constexpr std::array<VkStructureType, 1> allowed_structs_VkDeviceFaultDebugInfoKHR = {
+            VK_STRUCTURE_TYPE_DEVICE_FAULT_SHADER_ABORT_MESSAGE_INFO_KHR};
+
+        skip |= context.ValidateStructPnext(pDebugInfo_loc, pDebugInfo->pNext, allowed_structs_VkDeviceFaultDebugInfoKHR.size(),
+                                            allowed_structs_VkDeviceFaultDebugInfoKHR.data(), GeneratedVulkanHeaderVersion,
+                                            "VUID-VkDeviceFaultDebugInfoKHR-pNext-pNext",
+                                            "VUID-VkDeviceFaultDebugInfoKHR-sType-unique", false);
     }
     return skip;
 }
@@ -21014,17 +21935,18 @@ bool Device::PreCallValidateWriteResourceDescriptorsEXT(VkDevice device, uint32_
             skip |= context.ValidateRangedEnum(pResources_loc.dot(Field::type), vvl::Enum::VkDescriptorType,
                                                pResources[resourceIndex].type, "VUID-VkResourceDescriptorInfoEXT-type-parameter");
 
+            [[maybe_unused]] const Location data_loc = pResources_loc.dot(Field::data);
             if (pResources[resourceIndex].type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE ||
                 pResources[resourceIndex].type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
                 pResources[resourceIndex].type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ||
                 pResources[resourceIndex].type == VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM ||
                 pResources[resourceIndex].type == VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM) {
-                skip |= context.ValidateStructType(pResources_loc.dot(Field::pImage), pResources[resourceIndex].data.pImage,
+                skip |= context.ValidateStructType(data_loc.dot(Field::pImage), pResources[resourceIndex].data.pImage,
                                                    VK_STRUCTURE_TYPE_IMAGE_DESCRIPTOR_INFO_EXT, false, kVUIDUndefined,
                                                    "VUID-VkImageDescriptorInfoEXT-sType-sType");
 
                 if (pResources[resourceIndex].data.pImage != nullptr) {
-                    [[maybe_unused]] const Location pImage_loc = pResources_loc.dot(Field::pImage);
+                    [[maybe_unused]] const Location pImage_loc = data_loc.dot(Field::pImage);
                     skip |= context.ValidateStructPnext(pImage_loc, pResources[resourceIndex].data.pImage->pNext, 0, nullptr,
                                                         GeneratedVulkanHeaderVersion, "VUID-VkImageDescriptorInfoEXT-pNext-pNext",
                                                         kVUIDUndefined, true);
@@ -21068,24 +21990,26 @@ bool Device::PreCallValidateWriteResourceDescriptorsEXT(VkDevice device, uint32_
                                                            pResources[resourceIndex].data.pImage->pView->format,
                                                            "VUID-VkImageViewCreateInfo-format-parameter");
 
-                        skip |= context.ValidateRangedEnum(pView_loc.dot(Field::r), vvl::Enum::VkComponentSwizzle,
+                        [[maybe_unused]] const Location components_loc = pView_loc.dot(Field::components);
+                        skip |= context.ValidateRangedEnum(components_loc.dot(Field::r), vvl::Enum::VkComponentSwizzle,
                                                            pResources[resourceIndex].data.pImage->pView->components.r,
                                                            "VUID-VkComponentMapping-r-parameter");
 
-                        skip |= context.ValidateRangedEnum(pView_loc.dot(Field::g), vvl::Enum::VkComponentSwizzle,
+                        skip |= context.ValidateRangedEnum(components_loc.dot(Field::g), vvl::Enum::VkComponentSwizzle,
                                                            pResources[resourceIndex].data.pImage->pView->components.g,
                                                            "VUID-VkComponentMapping-g-parameter");
 
-                        skip |= context.ValidateRangedEnum(pView_loc.dot(Field::b), vvl::Enum::VkComponentSwizzle,
+                        skip |= context.ValidateRangedEnum(components_loc.dot(Field::b), vvl::Enum::VkComponentSwizzle,
                                                            pResources[resourceIndex].data.pImage->pView->components.b,
                                                            "VUID-VkComponentMapping-b-parameter");
 
-                        skip |= context.ValidateRangedEnum(pView_loc.dot(Field::a), vvl::Enum::VkComponentSwizzle,
+                        skip |= context.ValidateRangedEnum(components_loc.dot(Field::a), vvl::Enum::VkComponentSwizzle,
                                                            pResources[resourceIndex].data.pImage->pView->components.a,
                                                            "VUID-VkComponentMapping-a-parameter");
 
-                        skip |= context.ValidateFlags(pView_loc.dot(Field::aspectMask), vvl::FlagBitmask::VkImageAspectFlagBits,
-                                                      AllVkImageAspectFlagBits,
+                        [[maybe_unused]] const Location subresourceRange_loc = pView_loc.dot(Field::subresourceRange);
+                        skip |= context.ValidateFlags(subresourceRange_loc.dot(Field::aspectMask),
+                                                      vvl::FlagBitmask::VkImageAspectFlagBits, AllVkImageAspectFlagBits,
                                                       pResources[resourceIndex].data.pImage->pView->subresourceRange.aspectMask,
                                                       kRequiredFlags, "VUID-VkImageSubresourceRange-aspectMask-parameter",
                                                       "VUID-VkImageSubresourceRange-aspectMask-requiredbitmask", false);
@@ -21099,13 +22023,12 @@ bool Device::PreCallValidateWriteResourceDescriptorsEXT(VkDevice device, uint32_
 
             if (pResources[resourceIndex].type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER ||
                 pResources[resourceIndex].type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
-                skip |=
-                    context.ValidateStructType(pResources_loc.dot(Field::pTexelBuffer), pResources[resourceIndex].data.pTexelBuffer,
-                                               VK_STRUCTURE_TYPE_TEXEL_BUFFER_DESCRIPTOR_INFO_EXT, false, kVUIDUndefined,
-                                               "VUID-VkTexelBufferDescriptorInfoEXT-sType-sType");
+                skip |= context.ValidateStructType(data_loc.dot(Field::pTexelBuffer), pResources[resourceIndex].data.pTexelBuffer,
+                                                   VK_STRUCTURE_TYPE_TEXEL_BUFFER_DESCRIPTOR_INFO_EXT, false, kVUIDUndefined,
+                                                   "VUID-VkTexelBufferDescriptorInfoEXT-sType-sType");
 
                 if (pResources[resourceIndex].data.pTexelBuffer != nullptr) {
-                    [[maybe_unused]] const Location pTexelBuffer_loc = pResources_loc.dot(Field::pTexelBuffer);
+                    [[maybe_unused]] const Location pTexelBuffer_loc = data_loc.dot(Field::pTexelBuffer);
                     skip |= context.ValidateStructPnext(pTexelBuffer_loc, pResources[resourceIndex].data.pTexelBuffer->pNext, 0,
                                                         nullptr, GeneratedVulkanHeaderVersion,
                                                         "VUID-VkTexelBufferDescriptorInfoEXT-pNext-pNext", kVUIDUndefined, true);
@@ -21117,12 +22040,12 @@ bool Device::PreCallValidateWriteResourceDescriptorsEXT(VkDevice device, uint32_
             }
 
             if (pResources[resourceIndex].type == VK_DESCRIPTOR_TYPE_TENSOR_ARM) {
-                skip |= context.ValidateStructType(pResources_loc.dot(Field::pTensorARM), pResources[resourceIndex].data.pTensorARM,
+                skip |= context.ValidateStructType(data_loc.dot(Field::pTensorARM), pResources[resourceIndex].data.pTensorARM,
                                                    VK_STRUCTURE_TYPE_TENSOR_VIEW_CREATE_INFO_ARM, false, kVUIDUndefined,
                                                    "VUID-VkTensorViewCreateInfoARM-sType-sType");
 
                 if (pResources[resourceIndex].data.pTensorARM != nullptr) {
-                    [[maybe_unused]] const Location pTensorARM_loc = pResources_loc.dot(Field::pTensorARM);
+                    [[maybe_unused]] const Location pTensorARM_loc = data_loc.dot(Field::pTensorARM);
                     constexpr std::array<VkStructureType, 1> allowed_structs_VkTensorViewCreateInfoARM = {
                         VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT};
 
@@ -21216,9 +22139,9 @@ bool Device::PreCallValidateCmdPushDataEXT(VkCommandBuffer commandBuffer, const 
                                             allowed_structs_VkPushDataInfoEXT.data(), GeneratedVulkanHeaderVersion,
                                             "VUID-VkPushDataInfoEXT-pNext-pNext", "VUID-VkPushDataInfoEXT-sType-unique", true);
 
-        skip |= context.ValidateArray(pPushDataInfo_loc.dot(Field::size), pPushDataInfo_loc.dot(Field::address),
-                                      pPushDataInfo->data.size, &pPushDataInfo->data.address, true, true,
-                                      "VUID-VkHostAddressRangeConstEXT-size-arraylength",
+        [[maybe_unused]] const Location data_loc = pPushDataInfo_loc.dot(Field::data);
+        skip |= context.ValidateArray(data_loc.dot(Field::size), data_loc.dot(Field::address), pPushDataInfo->data.size,
+                                      &pPushDataInfo->data.address, true, true, "VUID-VkHostAddressRangeConstEXT-size-arraylength",
                                       "VUID-VkHostAddressRangeConstEXT-address-parameter");
     }
     return skip;
@@ -21569,17 +22492,18 @@ bool Device::PreCallValidateCreateAccelerationStructureNV(VkDevice device, const
                                            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV, false, kVUIDUndefined,
                                            "VUID-VkAccelerationStructureInfoNV-sType-sType");
 
-        skip |= context.ValidateStructPnext(pCreateInfo_loc, pCreateInfo->info.pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+        [[maybe_unused]] const Location info_loc = pCreateInfo_loc.dot(Field::info);
+        skip |= context.ValidateStructPnext(info_loc, pCreateInfo->info.pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
                                             "VUID-VkAccelerationStructureInfoNV-pNext-pNext", kVUIDUndefined, true);
 
-        skip |= context.ValidateStructTypeArray(pCreateInfo_loc.dot(Field::geometryCount), pCreateInfo_loc.dot(Field::pGeometries),
+        skip |= context.ValidateStructTypeArray(info_loc.dot(Field::geometryCount), info_loc.dot(Field::pGeometries),
                                                 pCreateInfo->info.geometryCount, pCreateInfo->info.pGeometries,
                                                 VK_STRUCTURE_TYPE_GEOMETRY_NV, false, true, "VUID-VkGeometryNV-sType-sType",
                                                 "VUID-VkAccelerationStructureInfoNV-pGeometries-parameter", kVUIDUndefined);
 
         if (pCreateInfo->info.pGeometries != nullptr) {
             for (uint32_t geometryIndex = 0; geometryIndex < pCreateInfo->info.geometryCount; ++geometryIndex) {
-                [[maybe_unused]] const Location pGeometries_loc = pCreateInfo_loc.dot(Field::pGeometries, geometryIndex);
+                [[maybe_unused]] const Location pGeometries_loc = info_loc.dot(Field::pGeometries, geometryIndex);
                 skip |= context.ValidateStructPnext(pGeometries_loc, pCreateInfo->info.pGeometries[geometryIndex].pNext, 0, nullptr,
                                                     GeneratedVulkanHeaderVersion, "VUID-VkGeometryNV-pNext-pNext", kVUIDUndefined,
                                                     true);
@@ -21588,29 +22512,32 @@ bool Device::PreCallValidateCreateAccelerationStructureNV(VkDevice device, const
                                                    pCreateInfo->info.pGeometries[geometryIndex].geometryType,
                                                    "VUID-VkGeometryNV-geometryType-parameter");
 
+                [[maybe_unused]] const Location geometry_loc = pGeometries_loc.dot(Field::geometry);
                 skip |= context.ValidateStructType(
-                    pGeometries_loc.dot(Field::triangles), &(pCreateInfo->info.pGeometries[geometryIndex].geometry.triangles),
+                    geometry_loc.dot(Field::triangles), &(pCreateInfo->info.pGeometries[geometryIndex].geometry.triangles),
                     VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV, false, kVUIDUndefined, "VUID-VkGeometryTrianglesNV-sType-sType");
 
+                [[maybe_unused]] const Location triangles_loc = geometry_loc.dot(Field::triangles);
                 skip |= context.ValidateStructPnext(
-                    pGeometries_loc, pCreateInfo->info.pGeometries[geometryIndex].geometry.triangles.pNext, 0, nullptr,
+                    triangles_loc, pCreateInfo->info.pGeometries[geometryIndex].geometry.triangles.pNext, 0, nullptr,
                     GeneratedVulkanHeaderVersion, "VUID-VkGeometryTrianglesNV-pNext-pNext", kVUIDUndefined, true);
 
-                skip |= context.ValidateRangedEnum(pGeometries_loc.dot(Field::vertexFormat), vvl::Enum::VkFormat,
+                skip |= context.ValidateRangedEnum(triangles_loc.dot(Field::vertexFormat), vvl::Enum::VkFormat,
                                                    pCreateInfo->info.pGeometries[geometryIndex].geometry.triangles.vertexFormat,
                                                    "VUID-VkGeometryTrianglesNV-vertexFormat-parameter");
 
-                skip |= context.ValidateRangedEnum(pGeometries_loc.dot(Field::indexType), vvl::Enum::VkIndexType,
+                skip |= context.ValidateRangedEnum(triangles_loc.dot(Field::indexType), vvl::Enum::VkIndexType,
                                                    pCreateInfo->info.pGeometries[geometryIndex].geometry.triangles.indexType,
                                                    "VUID-VkGeometryTrianglesNV-indexType-parameter");
 
                 skip |= context.ValidateStructType(
-                    pGeometries_loc.dot(Field::aabbs), &(pCreateInfo->info.pGeometries[geometryIndex].geometry.aabbs),
+                    geometry_loc.dot(Field::aabbs), &(pCreateInfo->info.pGeometries[geometryIndex].geometry.aabbs),
                     VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV, false, kVUIDUndefined, "VUID-VkGeometryAABBNV-sType-sType");
 
-                skip |= context.ValidateStructPnext(
-                    pGeometries_loc, pCreateInfo->info.pGeometries[geometryIndex].geometry.aabbs.pNext, 0, nullptr,
-                    GeneratedVulkanHeaderVersion, "VUID-VkGeometryAABBNV-pNext-pNext", kVUIDUndefined, true);
+                [[maybe_unused]] const Location aabbs_loc = geometry_loc.dot(Field::aabbs);
+                skip |= context.ValidateStructPnext(aabbs_loc, pCreateInfo->info.pGeometries[geometryIndex].geometry.aabbs.pNext, 0,
+                                                    nullptr, GeneratedVulkanHeaderVersion, "VUID-VkGeometryAABBNV-pNext-pNext",
+                                                    kVUIDUndefined, true);
 
                 skip |= context.ValidateFlags(pGeometries_loc.dot(Field::flags), vvl::FlagBitmask::VkGeometryFlagBitsKHR,
                                               AllVkGeometryFlagBitsKHR, pCreateInfo->info.pGeometries[geometryIndex].flags,
@@ -21750,28 +22677,31 @@ bool Device::PreCallValidateCmdBuildAccelerationStructureNV(VkCommandBuffer comm
                                                    pInfo->pGeometries[geometryIndex].geometryType,
                                                    "VUID-VkGeometryNV-geometryType-parameter");
 
+                [[maybe_unused]] const Location geometry_loc = pGeometries_loc.dot(Field::geometry);
                 skip |= context.ValidateStructType(
-                    pGeometries_loc.dot(Field::triangles), &(pInfo->pGeometries[geometryIndex].geometry.triangles),
+                    geometry_loc.dot(Field::triangles), &(pInfo->pGeometries[geometryIndex].geometry.triangles),
                     VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV, false, kVUIDUndefined, "VUID-VkGeometryTrianglesNV-sType-sType");
 
-                skip |= context.ValidateStructPnext(pGeometries_loc, pInfo->pGeometries[geometryIndex].geometry.triangles.pNext, 0,
+                [[maybe_unused]] const Location triangles_loc = geometry_loc.dot(Field::triangles);
+                skip |= context.ValidateStructPnext(triangles_loc, pInfo->pGeometries[geometryIndex].geometry.triangles.pNext, 0,
                                                     nullptr, GeneratedVulkanHeaderVersion, "VUID-VkGeometryTrianglesNV-pNext-pNext",
                                                     kVUIDUndefined, true);
 
-                skip |= context.ValidateRangedEnum(pGeometries_loc.dot(Field::vertexFormat), vvl::Enum::VkFormat,
+                skip |= context.ValidateRangedEnum(triangles_loc.dot(Field::vertexFormat), vvl::Enum::VkFormat,
                                                    pInfo->pGeometries[geometryIndex].geometry.triangles.vertexFormat,
                                                    "VUID-VkGeometryTrianglesNV-vertexFormat-parameter");
 
-                skip |= context.ValidateRangedEnum(pGeometries_loc.dot(Field::indexType), vvl::Enum::VkIndexType,
+                skip |= context.ValidateRangedEnum(triangles_loc.dot(Field::indexType), vvl::Enum::VkIndexType,
                                                    pInfo->pGeometries[geometryIndex].geometry.triangles.indexType,
                                                    "VUID-VkGeometryTrianglesNV-indexType-parameter");
 
                 skip |= context.ValidateStructType(
-                    pGeometries_loc.dot(Field::aabbs), &(pInfo->pGeometries[geometryIndex].geometry.aabbs),
+                    geometry_loc.dot(Field::aabbs), &(pInfo->pGeometries[geometryIndex].geometry.aabbs),
                     VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV, false, kVUIDUndefined, "VUID-VkGeometryAABBNV-sType-sType");
 
-                skip |= context.ValidateStructPnext(pGeometries_loc, pInfo->pGeometries[geometryIndex].geometry.aabbs.pNext, 0,
-                                                    nullptr, GeneratedVulkanHeaderVersion, "VUID-VkGeometryAABBNV-pNext-pNext",
+                [[maybe_unused]] const Location aabbs_loc = geometry_loc.dot(Field::aabbs);
+                skip |= context.ValidateStructPnext(aabbs_loc, pInfo->pGeometries[geometryIndex].geometry.aabbs.pNext, 0, nullptr,
+                                                    GeneratedVulkanHeaderVersion, "VUID-VkGeometryAABBNV-pNext-pNext",
                                                     kVUIDUndefined, true);
 
                 skip |= context.ValidateFlags(pGeometries_loc.dot(Field::flags), vvl::FlagBitmask::VkGeometryFlagBitsKHR,
@@ -24047,6 +24977,7 @@ bool Device::PreCallValidateSetBufferCollectionImageConstraintsFUCHSIA(VkDevice 
                     &(pImageConstraintsInfo->pFormatConstraints[formatConstraintsIndex].imageCreateInfo),
                     VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, false, kVUIDUndefined, "VUID-VkImageCreateInfo-sType-sType");
 
+                [[maybe_unused]] const Location imageCreateInfo_loc = pFormatConstraints_loc.dot(Field::imageCreateInfo);
                 constexpr std::array<VkStructureType, 21> allowed_structs_VkImageCreateInfo = {
                     VK_STRUCTURE_TYPE_BUFFER_COLLECTION_IMAGE_CREATE_INFO_FUCHSIA,
                     VK_STRUCTURE_TYPE_DEDICATED_ALLOCATION_IMAGE_CREATE_INFO_NV,
@@ -24071,48 +25002,48 @@ bool Device::PreCallValidateSetBufferCollectionImageConstraintsFUCHSIA(VkDevice 
                     VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR};
 
                 skip |= context.ValidateStructPnext(
-                    pFormatConstraints_loc, pImageConstraintsInfo->pFormatConstraints[formatConstraintsIndex].imageCreateInfo.pNext,
+                    imageCreateInfo_loc, pImageConstraintsInfo->pFormatConstraints[formatConstraintsIndex].imageCreateInfo.pNext,
                     allowed_structs_VkImageCreateInfo.size(), allowed_structs_VkImageCreateInfo.data(),
                     GeneratedVulkanHeaderVersion, "VUID-VkImageCreateInfo-pNext-pNext", "VUID-VkImageCreateInfo-sType-unique",
                     true);
 
                 skip |= context.ValidateFlags(
-                    pFormatConstraints_loc.dot(Field::flags), vvl::FlagBitmask::VkImageCreateFlagBits, AllVkImageCreateFlagBits,
+                    imageCreateInfo_loc.dot(Field::flags), vvl::FlagBitmask::VkImageCreateFlagBits, AllVkImageCreateFlagBits,
                     pImageConstraintsInfo->pFormatConstraints[formatConstraintsIndex].imageCreateInfo.flags, kOptionalFlags,
                     "VUID-VkImageCreateInfo-flags-parameter", nullptr, false);
 
                 skip |= context.ValidateRangedEnum(
-                    pFormatConstraints_loc.dot(Field::imageType), vvl::Enum::VkImageType,
+                    imageCreateInfo_loc.dot(Field::imageType), vvl::Enum::VkImageType,
                     pImageConstraintsInfo->pFormatConstraints[formatConstraintsIndex].imageCreateInfo.imageType,
                     "VUID-VkImageCreateInfo-imageType-parameter");
 
                 skip |= context.ValidateRangedEnum(
-                    pFormatConstraints_loc.dot(Field::format), vvl::Enum::VkFormat,
+                    imageCreateInfo_loc.dot(Field::format), vvl::Enum::VkFormat,
                     pImageConstraintsInfo->pFormatConstraints[formatConstraintsIndex].imageCreateInfo.format,
                     "VUID-VkImageCreateInfo-format-parameter");
 
                 skip |= context.ValidateFlags(
-                    pFormatConstraints_loc.dot(Field::samples), vvl::FlagBitmask::VkSampleCountFlagBits, AllVkSampleCountFlagBits,
+                    imageCreateInfo_loc.dot(Field::samples), vvl::FlagBitmask::VkSampleCountFlagBits, AllVkSampleCountFlagBits,
                     pImageConstraintsInfo->pFormatConstraints[formatConstraintsIndex].imageCreateInfo.samples, kRequiredSingleBit,
                     "VUID-VkImageCreateInfo-samples-parameter", "VUID-VkImageCreateInfo-samples-parameter", false);
 
                 skip |= context.ValidateRangedEnum(
-                    pFormatConstraints_loc.dot(Field::tiling), vvl::Enum::VkImageTiling,
+                    imageCreateInfo_loc.dot(Field::tiling), vvl::Enum::VkImageTiling,
                     pImageConstraintsInfo->pFormatConstraints[formatConstraintsIndex].imageCreateInfo.tiling,
                     "VUID-VkImageCreateInfo-tiling-parameter");
 
                 skip |= context.ValidateFlags(
-                    pFormatConstraints_loc.dot(Field::usage), vvl::FlagBitmask::VkImageUsageFlagBits, AllVkImageUsageFlagBits,
+                    imageCreateInfo_loc.dot(Field::usage), vvl::FlagBitmask::VkImageUsageFlagBits, AllVkImageUsageFlagBits,
                     pImageConstraintsInfo->pFormatConstraints[formatConstraintsIndex].imageCreateInfo.usage, kRequiredFlags,
                     "VUID-VkImageCreateInfo-usage-parameter", "VUID-VkImageCreateInfo-usage-requiredbitmask", false);
 
                 skip |= context.ValidateRangedEnum(
-                    pFormatConstraints_loc.dot(Field::sharingMode), vvl::Enum::VkSharingMode,
+                    imageCreateInfo_loc.dot(Field::sharingMode), vvl::Enum::VkSharingMode,
                     pImageConstraintsInfo->pFormatConstraints[formatConstraintsIndex].imageCreateInfo.sharingMode,
                     "VUID-VkImageCreateInfo-sharingMode-parameter");
 
                 skip |= context.ValidateRangedEnum(
-                    pFormatConstraints_loc.dot(Field::initialLayout), vvl::Enum::VkImageLayout,
+                    imageCreateInfo_loc.dot(Field::initialLayout), vvl::Enum::VkImageLayout,
                     pImageConstraintsInfo->pFormatConstraints[formatConstraintsIndex].imageCreateInfo.initialLayout,
                     "VUID-VkImageCreateInfo-initialLayout-parameter");
 
@@ -24156,9 +25087,11 @@ bool Device::PreCallValidateSetBufferCollectionImageConstraintsFUCHSIA(VkDevice 
                                            VK_STRUCTURE_TYPE_BUFFER_COLLECTION_CONSTRAINTS_INFO_FUCHSIA, false, kVUIDUndefined,
                                            "VUID-VkBufferCollectionConstraintsInfoFUCHSIA-sType-sType");
 
-        skip |= context.ValidateStructPnext(pImageConstraintsInfo_loc, pImageConstraintsInfo->bufferCollectionConstraints.pNext, 0,
-                                            nullptr, GeneratedVulkanHeaderVersion,
-                                            "VUID-VkBufferCollectionConstraintsInfoFUCHSIA-pNext-pNext", kVUIDUndefined, true);
+        [[maybe_unused]] const Location bufferCollectionConstraints_loc =
+            pImageConstraintsInfo_loc.dot(Field::bufferCollectionConstraints);
+        skip |= context.ValidateStructPnext(
+            bufferCollectionConstraints_loc, pImageConstraintsInfo->bufferCollectionConstraints.pNext, 0, nullptr,
+            GeneratedVulkanHeaderVersion, "VUID-VkBufferCollectionConstraintsInfoFUCHSIA-pNext-pNext", kVUIDUndefined, true);
 
         skip |= context.ValidateFlags(pImageConstraintsInfo_loc.dot(Field::flags),
                                       vvl::FlagBitmask::VkImageConstraintsInfoFlagBitsFUCHSIA,
@@ -24191,6 +25124,7 @@ bool Device::PreCallValidateSetBufferCollectionBufferConstraintsFUCHSIA(
                                            VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, false, kVUIDUndefined,
                                            "VUID-VkBufferCreateInfo-sType-sType");
 
+        [[maybe_unused]] const Location createInfo_loc = pBufferConstraintsInfo_loc.dot(Field::createInfo);
         constexpr std::array<VkStructureType, 8> allowed_structs_VkBufferCreateInfo = {
             VK_STRUCTURE_TYPE_BUFFER_COLLECTION_BUFFER_CREATE_INFO_FUCHSIA,
             VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_CREATE_INFO_EXT,
@@ -24201,16 +25135,16 @@ bool Device::PreCallValidateSetBufferCollectionBufferConstraintsFUCHSIA(
             VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT,
             VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR};
 
-        skip |= context.ValidateStructPnext(pBufferConstraintsInfo_loc, pBufferConstraintsInfo->createInfo.pNext,
+        skip |= context.ValidateStructPnext(createInfo_loc, pBufferConstraintsInfo->createInfo.pNext,
                                             allowed_structs_VkBufferCreateInfo.size(), allowed_structs_VkBufferCreateInfo.data(),
                                             GeneratedVulkanHeaderVersion, "VUID-VkBufferCreateInfo-pNext-pNext",
                                             "VUID-VkBufferCreateInfo-sType-unique", true);
 
-        skip |= context.ValidateFlags(pBufferConstraintsInfo_loc.dot(Field::flags), vvl::FlagBitmask::VkBufferCreateFlagBits,
+        skip |= context.ValidateFlags(createInfo_loc.dot(Field::flags), vvl::FlagBitmask::VkBufferCreateFlagBits,
                                       AllVkBufferCreateFlagBits, pBufferConstraintsInfo->createInfo.flags, kOptionalFlags,
                                       "VUID-VkBufferCreateInfo-flags-parameter", nullptr, false);
 
-        skip |= context.ValidateRangedEnum(pBufferConstraintsInfo_loc.dot(Field::sharingMode), vvl::Enum::VkSharingMode,
+        skip |= context.ValidateRangedEnum(createInfo_loc.dot(Field::sharingMode), vvl::Enum::VkSharingMode,
                                            pBufferConstraintsInfo->createInfo.sharingMode,
                                            "VUID-VkBufferCreateInfo-sharingMode-parameter");
 
@@ -24224,9 +25158,11 @@ bool Device::PreCallValidateSetBufferCollectionBufferConstraintsFUCHSIA(
                                            VK_STRUCTURE_TYPE_BUFFER_COLLECTION_CONSTRAINTS_INFO_FUCHSIA, false, kVUIDUndefined,
                                            "VUID-VkBufferCollectionConstraintsInfoFUCHSIA-sType-sType");
 
-        skip |= context.ValidateStructPnext(pBufferConstraintsInfo_loc, pBufferConstraintsInfo->bufferCollectionConstraints.pNext,
-                                            0, nullptr, GeneratedVulkanHeaderVersion,
-                                            "VUID-VkBufferCollectionConstraintsInfoFUCHSIA-pNext-pNext", kVUIDUndefined, true);
+        [[maybe_unused]] const Location bufferCollectionConstraints_loc =
+            pBufferConstraintsInfo_loc.dot(Field::bufferCollectionConstraints);
+        skip |= context.ValidateStructPnext(
+            bufferCollectionConstraints_loc, pBufferConstraintsInfo->bufferCollectionConstraints.pNext, 0, nullptr,
+            GeneratedVulkanHeaderVersion, "VUID-VkBufferCollectionConstraintsInfoFUCHSIA-pNext-pNext", kVUIDUndefined, true);
     }
     return skip;
 }
@@ -25044,6 +25980,7 @@ bool Device::PreCallValidateGetPipelineIndirectMemoryRequirementsNV(VkDevice dev
                                            VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, false, kVUIDUndefined,
                                            "VUID-VkPipelineShaderStageCreateInfo-sType-sType");
 
+        [[maybe_unused]] const Location stage_loc = pCreateInfo_loc.dot(Field::stage);
         constexpr std::array<VkStructureType, 8> allowed_structs_VkPipelineShaderStageCreateInfo = {
             VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
             VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO,
@@ -25055,24 +25992,24 @@ bool Device::PreCallValidateGetPipelineIndirectMemoryRequirementsNV(VkDevice dev
             VK_STRUCTURE_TYPE_SHADER_MODULE_VALIDATION_CACHE_CREATE_INFO_EXT};
 
         skip |= context.ValidateStructPnext(
-            pCreateInfo_loc, pCreateInfo->stage.pNext, allowed_structs_VkPipelineShaderStageCreateInfo.size(),
+            stage_loc, pCreateInfo->stage.pNext, allowed_structs_VkPipelineShaderStageCreateInfo.size(),
             allowed_structs_VkPipelineShaderStageCreateInfo.data(), GeneratedVulkanHeaderVersion,
             "VUID-VkPipelineShaderStageCreateInfo-pNext-pNext", "VUID-VkPipelineShaderStageCreateInfo-sType-unique", true);
 
-        skip |= context.ValidateFlags(pCreateInfo_loc.dot(Field::flags), vvl::FlagBitmask::VkPipelineShaderStageCreateFlagBits,
+        skip |= context.ValidateFlags(stage_loc.dot(Field::flags), vvl::FlagBitmask::VkPipelineShaderStageCreateFlagBits,
                                       AllVkPipelineShaderStageCreateFlagBits, pCreateInfo->stage.flags, kOptionalFlags,
                                       "VUID-VkPipelineShaderStageCreateInfo-flags-parameter", nullptr, false);
 
-        skip |= context.ValidateFlags(pCreateInfo_loc.dot(Field::stage), vvl::FlagBitmask::VkShaderStageFlagBits,
+        skip |= context.ValidateFlags(stage_loc.dot(Field::stage), vvl::FlagBitmask::VkShaderStageFlagBits,
                                       AllVkShaderStageFlagBits, pCreateInfo->stage.stage, kRequiredSingleBit,
                                       "VUID-VkPipelineShaderStageCreateInfo-stage-parameter",
                                       "VUID-VkPipelineShaderStageCreateInfo-stage-parameter", false);
 
-        skip |= context.ValidateRequiredPointer(pCreateInfo_loc.dot(Field::pName), pCreateInfo->stage.pName,
+        skip |= context.ValidateRequiredPointer(stage_loc.dot(Field::pName), pCreateInfo->stage.pName,
                                                 "VUID-VkPipelineShaderStageCreateInfo-pName-parameter");
 
         if (pCreateInfo->stage.pSpecializationInfo != nullptr) {
-            [[maybe_unused]] const Location pSpecializationInfo_loc = pCreateInfo_loc.dot(Field::pSpecializationInfo);
+            [[maybe_unused]] const Location pSpecializationInfo_loc = stage_loc.dot(Field::pSpecializationInfo);
             skip |= context.ValidateArray(
                 pSpecializationInfo_loc.dot(Field::mapEntryCount), pSpecializationInfo_loc.dot(Field::pMapEntries),
                 pCreateInfo->stage.pSpecializationInfo->mapEntryCount, &pCreateInfo->stage.pSpecializationInfo->pMapEntries, false,
@@ -27503,19 +28440,19 @@ bool Device::PreCallValidateCmdBuildClusterAccelerationStructureIndirectNV(
                                            VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV, false, kVUIDUndefined,
                                            "VUID-VkClusterAccelerationStructureInputInfoNV-sType-sType");
 
-        skip |= context.ValidateStructPnext(pCommandInfos_loc, pCommandInfos->input.pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+        [[maybe_unused]] const Location input_loc = pCommandInfos_loc.dot(Field::input);
+        skip |= context.ValidateStructPnext(input_loc, pCommandInfos->input.pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
                                             "VUID-VkClusterAccelerationStructureInputInfoNV-pNext-pNext", kVUIDUndefined, true);
 
-        skip |=
-            context.ValidateFlags(pCommandInfos_loc.dot(Field::flags), vvl::FlagBitmask::VkBuildAccelerationStructureFlagBitsKHR,
-                                  AllVkBuildAccelerationStructureFlagBitsKHR, pCommandInfos->input.flags, kOptionalFlags,
-                                  "VUID-VkClusterAccelerationStructureInputInfoNV-flags-parameter", nullptr, false);
+        skip |= context.ValidateFlags(input_loc.dot(Field::flags), vvl::FlagBitmask::VkBuildAccelerationStructureFlagBitsKHR,
+                                      AllVkBuildAccelerationStructureFlagBitsKHR, pCommandInfos->input.flags, kOptionalFlags,
+                                      "VUID-VkClusterAccelerationStructureInputInfoNV-flags-parameter", nullptr, false);
 
-        skip |= context.ValidateRangedEnum(pCommandInfos_loc.dot(Field::opType), vvl::Enum::VkClusterAccelerationStructureOpTypeNV,
+        skip |= context.ValidateRangedEnum(input_loc.dot(Field::opType), vvl::Enum::VkClusterAccelerationStructureOpTypeNV,
                                            pCommandInfos->input.opType,
                                            "VUID-VkClusterAccelerationStructureInputInfoNV-opType-parameter");
 
-        skip |= context.ValidateRangedEnum(pCommandInfos_loc.dot(Field::opMode), vvl::Enum::VkClusterAccelerationStructureOpModeNV,
+        skip |= context.ValidateRangedEnum(input_loc.dot(Field::opMode), vvl::Enum::VkClusterAccelerationStructureOpModeNV,
                                            pCommandInfos->input.opMode,
                                            "VUID-VkClusterAccelerationStructureInputInfoNV-opMode-parameter");
 
@@ -27593,16 +28530,17 @@ bool Device::PreCallValidateCmdBuildPartitionedAccelerationStructuresNV(
                                            VK_STRUCTURE_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_INSTANCES_INPUT_NV, false,
                                            kVUIDUndefined, "VUID-VkPartitionedAccelerationStructureInstancesInputNV-sType-sType");
 
+        [[maybe_unused]] const Location input_loc = pBuildInfo_loc.dot(Field::input);
         constexpr std::array<VkStructureType, 1> allowed_structs_VkPartitionedAccelerationStructureInstancesInputNV = {
             VK_STRUCTURE_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_FLAGS_NV};
 
         skip |= context.ValidateStructPnext(
-            pBuildInfo_loc, pBuildInfo->input.pNext, allowed_structs_VkPartitionedAccelerationStructureInstancesInputNV.size(),
+            input_loc, pBuildInfo->input.pNext, allowed_structs_VkPartitionedAccelerationStructureInstancesInputNV.size(),
             allowed_structs_VkPartitionedAccelerationStructureInstancesInputNV.data(), GeneratedVulkanHeaderVersion,
             "VUID-VkPartitionedAccelerationStructureInstancesInputNV-pNext-pNext",
             "VUID-VkPartitionedAccelerationStructureInstancesInputNV-sType-unique", true);
 
-        skip |= context.ValidateFlags(pBuildInfo_loc.dot(Field::flags), vvl::FlagBitmask::VkBuildAccelerationStructureFlagBitsKHR,
+        skip |= context.ValidateFlags(input_loc.dot(Field::flags), vvl::FlagBitmask::VkBuildAccelerationStructureFlagBitsKHR,
                                       AllVkBuildAccelerationStructureFlagBitsKHR, pBuildInfo->input.flags, kOptionalFlags,
                                       "VUID-VkPartitionedAccelerationStructureInstancesInputNV-flags-parameter", nullptr, false);
 
@@ -28056,6 +28994,126 @@ bool Instance::PreCallValidateEnumeratePhysicalDeviceQueueFamilyPerformanceCount
     return skip;
 }
 
+bool Instance::PreCallValidateEnumeratePhysicalDeviceShaderInstrumentationMetricsARM(
+    VkPhysicalDevice physicalDevice, uint32_t* pDescriptionCount, VkShaderInstrumentationMetricDescriptionARM* pDescriptions,
+    const ErrorObject& error_obj) const {
+    bool skip = false;
+
+    const auto& physdev_extensions = physical_device_extensions.at(physicalDevice);
+    Context context(*this, error_obj, physdev_extensions, IsExtEnabled(physdev_extensions.vk_khr_maintenance5));
+    [[maybe_unused]] const Location loc = error_obj.location;
+    skip |= context.ValidateStructTypeArray(
+        loc.dot(Field::pDescriptionCount), loc.dot(Field::pDescriptions), pDescriptionCount, pDescriptions,
+        VK_STRUCTURE_TYPE_SHADER_INSTRUMENTATION_METRIC_DESCRIPTION_ARM, true, false, false,
+        "VUID-VkShaderInstrumentationMetricDescriptionARM-sType-sType", kVUIDUndefined,
+        "VUID-vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM-pDescriptionCount-parameter", kVUIDUndefined);
+    if (pDescriptions != nullptr) {
+        for (uint32_t pDescriptionIndex = 0; pDescriptionIndex < *pDescriptionCount; ++pDescriptionIndex) {
+            [[maybe_unused]] const Location pDescriptions_loc = loc.dot(Field::pDescriptions, pDescriptionIndex);
+            skip |= context.ValidateStructPnext(
+                pDescriptions_loc, pDescriptions[pDescriptionIndex].pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                "VUID-VkShaderInstrumentationMetricDescriptionARM-pNext-pNext", kVUIDUndefined, false);
+        }
+    }
+    return skip;
+}
+
+bool Device::PreCallValidateCreateShaderInstrumentationARM(VkDevice device, const VkShaderInstrumentationCreateInfoARM* pCreateInfo,
+                                                           const VkAllocationCallbacks* pAllocator,
+                                                           VkShaderInstrumentationARM* pInstrumentation,
+                                                           const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_arm_shader_instrumentation))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_ARM_shader_instrumentation});
+
+    if (has_zero_queues) {
+        skip |= LogError("VUID-vkCreateShaderInstrumentationARM-device-queuecount", device, error_obj.location,
+                         "device was created with queueCreateInfoCount of zero.");
+    }
+    skip |= context.ValidateStructType(
+        loc.dot(Field::pCreateInfo), pCreateInfo, VK_STRUCTURE_TYPE_SHADER_INSTRUMENTATION_CREATE_INFO_ARM, true,
+        "VUID-vkCreateShaderInstrumentationARM-pCreateInfo-parameter", "VUID-VkShaderInstrumentationCreateInfoARM-sType-sType");
+    if (pCreateInfo != nullptr) {
+        [[maybe_unused]] const Location pCreateInfo_loc = loc.dot(Field::pCreateInfo);
+        skip |= context.ValidateStructPnext(pCreateInfo_loc, pCreateInfo->pNext, 0, nullptr, GeneratedVulkanHeaderVersion,
+                                            "VUID-VkShaderInstrumentationCreateInfoARM-pNext-pNext", kVUIDUndefined, true);
+    }
+    if (pAllocator != nullptr) {
+        [[maybe_unused]] const Location pAllocator_loc = loc.dot(Field::pAllocator);
+        skip |= context.ValidateAllocationCallbacks(*pAllocator, pAllocator_loc);
+    }
+    skip |= context.ValidateRequiredPointer(loc.dot(Field::pInstrumentation), pInstrumentation,
+                                            "VUID-vkCreateShaderInstrumentationARM-pInstrumentation-parameter");
+    return skip;
+}
+
+bool Device::PreCallValidateDestroyShaderInstrumentationARM(VkDevice device, VkShaderInstrumentationARM instrumentation,
+                                                            const VkAllocationCallbacks* pAllocator,
+                                                            const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_arm_shader_instrumentation))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_ARM_shader_instrumentation});
+    if (pAllocator != nullptr) {
+        [[maybe_unused]] const Location pAllocator_loc = loc.dot(Field::pAllocator);
+        skip |= context.ValidateAllocationCallbacks(*pAllocator, pAllocator_loc);
+    }
+    return skip;
+}
+
+bool Device::PreCallValidateCmdBeginShaderInstrumentationARM(VkCommandBuffer commandBuffer,
+                                                             VkShaderInstrumentationARM instrumentation,
+                                                             const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_arm_shader_instrumentation))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_ARM_shader_instrumentation});
+    skip |= context.ValidateRequiredHandle(loc.dot(Field::instrumentation), instrumentation);
+    return skip;
+}
+
+bool Device::PreCallValidateCmdEndShaderInstrumentationARM(VkCommandBuffer commandBuffer, const ErrorObject& error_obj) const {
+    bool skip = false;
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_arm_shader_instrumentation))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_ARM_shader_instrumentation});
+    return skip;
+}
+
+bool Device::PreCallValidateGetShaderInstrumentationValuesARM(VkDevice device, VkShaderInstrumentationARM instrumentation,
+                                                              uint32_t* pMetricBlockCount, void* pMetricValues,
+                                                              VkShaderInstrumentationValuesFlagsARM flags,
+                                                              const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_arm_shader_instrumentation))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_ARM_shader_instrumentation});
+    skip |= context.ValidateRequiredHandle(loc.dot(Field::instrumentation), instrumentation);
+    skip |= context.ValidateRequiredPointer(loc.dot(Field::pMetricBlockCount), pMetricBlockCount,
+                                            "VUID-vkGetShaderInstrumentationValuesARM-pMetricBlockCount-parameter");
+    skip |= context.ValidateRequiredPointer(loc.dot(Field::pMetricValues), pMetricValues,
+                                            "VUID-vkGetShaderInstrumentationValuesARM-pMetricValues-parameter");
+    skip |=
+        context.ValidateReservedFlags(loc.dot(Field::flags), flags, "VUID-vkGetShaderInstrumentationValuesARM-flags-zerobitmask");
+    return skip;
+}
+
+bool Device::PreCallValidateClearShaderInstrumentationMetricsARM(VkDevice device, VkShaderInstrumentationARM instrumentation,
+                                                                 const ErrorObject& error_obj) const {
+    bool skip = false;
+    Context context(*this, error_obj, extensions);
+    [[maybe_unused]] const Location loc = error_obj.location;
+    if (!IsExtEnabled(extensions.vk_arm_shader_instrumentation))
+        skip |= OutputExtensionError(loc, {vvl::Extension::_VK_ARM_shader_instrumentation});
+    skip |= context.ValidateRequiredHandle(loc.dot(Field::instrumentation), instrumentation);
+    return skip;
+}
+
 bool Device::PreCallValidateCmdEndRendering2EXT(VkCommandBuffer commandBuffer, const VkRenderingEndInfoKHR* pRenderingEndInfo,
                                                 const ErrorObject& error_obj) const {
     bool skip = false;
@@ -28128,7 +29186,7 @@ bool Instance::PreCallValidateCreateUbmSurfaceSEC(VkInstance instance, const VkU
 }
 
 bool Instance::PreCallValidateGetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
-                                                                         struct ubm_device* ubm_device,
+                                                                         struct ubm_device* device,
                                                                          const ErrorObject& error_obj) const {
     bool skip = false;
 
@@ -28136,8 +29194,8 @@ bool Instance::PreCallValidateGetPhysicalDeviceUbmPresentationSupportSEC(VkPhysi
     Context context(*this, error_obj, physdev_extensions, IsExtEnabled(physdev_extensions.vk_khr_maintenance5));
     [[maybe_unused]] const Location loc = error_obj.location;
     if (!IsExtEnabled(extensions.vk_sec_ubm_surface)) skip |= OutputExtensionError(loc, {vvl::Extension::_VK_SEC_ubm_surface});
-    skip |= context.ValidateRequiredPointer(loc.dot(Field::ubm_device), ubm_device,
-                                            "VUID-vkGetPhysicalDeviceUbmPresentationSupportSEC-ubm_device-parameter");
+    skip |= context.ValidateRequiredPointer(loc.dot(Field::device), device,
+                                            "VUID-vkGetPhysicalDeviceUbmPresentationSupportSEC-device-parameter");
     return skip;
 }
 #endif  // VK_USE_PLATFORM_UBM_SEC
@@ -29381,28 +30439,30 @@ bool Device::ValidatePipelineDepthStencilStateCreateInfo(const Context& context,
 
     skip |= context.ValidateBool32(loc.dot(Field::stencilTestEnable), info.stencilTestEnable);
 
-    skip |= context.ValidateRangedEnum(loc.dot(Field::failOp), vvl::Enum::VkStencilOp, info.front.failOp,
+    [[maybe_unused]] const Location front_loc = loc.dot(Field::front);
+    skip |= context.ValidateRangedEnum(front_loc.dot(Field::failOp), vvl::Enum::VkStencilOp, info.front.failOp,
                                        "VUID-VkStencilOpState-failOp-parameter");
 
-    skip |= context.ValidateRangedEnum(loc.dot(Field::passOp), vvl::Enum::VkStencilOp, info.front.passOp,
+    skip |= context.ValidateRangedEnum(front_loc.dot(Field::passOp), vvl::Enum::VkStencilOp, info.front.passOp,
                                        "VUID-VkStencilOpState-passOp-parameter");
 
-    skip |= context.ValidateRangedEnum(loc.dot(Field::depthFailOp), vvl::Enum::VkStencilOp, info.front.depthFailOp,
+    skip |= context.ValidateRangedEnum(front_loc.dot(Field::depthFailOp), vvl::Enum::VkStencilOp, info.front.depthFailOp,
                                        "VUID-VkStencilOpState-depthFailOp-parameter");
 
-    skip |= context.ValidateRangedEnum(loc.dot(Field::compareOp), vvl::Enum::VkCompareOp, info.front.compareOp,
+    skip |= context.ValidateRangedEnum(front_loc.dot(Field::compareOp), vvl::Enum::VkCompareOp, info.front.compareOp,
                                        "VUID-VkStencilOpState-compareOp-parameter");
 
-    skip |= context.ValidateRangedEnum(loc.dot(Field::failOp), vvl::Enum::VkStencilOp, info.back.failOp,
+    [[maybe_unused]] const Location back_loc = loc.dot(Field::back);
+    skip |= context.ValidateRangedEnum(back_loc.dot(Field::failOp), vvl::Enum::VkStencilOp, info.back.failOp,
                                        "VUID-VkStencilOpState-failOp-parameter");
 
-    skip |= context.ValidateRangedEnum(loc.dot(Field::passOp), vvl::Enum::VkStencilOp, info.back.passOp,
+    skip |= context.ValidateRangedEnum(back_loc.dot(Field::passOp), vvl::Enum::VkStencilOp, info.back.passOp,
                                        "VUID-VkStencilOpState-passOp-parameter");
 
-    skip |= context.ValidateRangedEnum(loc.dot(Field::depthFailOp), vvl::Enum::VkStencilOp, info.back.depthFailOp,
+    skip |= context.ValidateRangedEnum(back_loc.dot(Field::depthFailOp), vvl::Enum::VkStencilOp, info.back.depthFailOp,
                                        "VUID-VkStencilOpState-depthFailOp-parameter");
 
-    skip |= context.ValidateRangedEnum(loc.dot(Field::compareOp), vvl::Enum::VkCompareOp, info.back.compareOp,
+    skip |= context.ValidateRangedEnum(back_loc.dot(Field::compareOp), vvl::Enum::VkCompareOp, info.back.compareOp,
                                        "VUID-VkStencilOpState-compareOp-parameter");
     return skip;
 }

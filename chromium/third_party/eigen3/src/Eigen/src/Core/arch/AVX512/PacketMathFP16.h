@@ -878,19 +878,17 @@ EIGEN_STRONG_INLINE Packet8h pnmsub(const Packet8h& a, const Packet8h& b, const 
 
 template <>
 EIGEN_STRONG_INLINE Packet32h pnegate<Packet32h>(const Packet32h& a) {
-  return _mm512_castsi512_ph(
-      _mm512_xor_si512(_mm512_castph_si512(a), _mm512_set1_epi16(static_cast<std::uint16_t>(0x8000u))));
+  return _mm512_castsi512_ph(_mm512_xor_si512(_mm512_castph_si512(a), _mm512_set1_epi16(static_cast<short>(0x8000u))));
 }
 
 template <>
 EIGEN_STRONG_INLINE Packet16h pnegate<Packet16h>(const Packet16h& a) {
-  return _mm256_castsi256_ph(
-      _mm256_xor_si256(_mm256_castph_si256(a), _mm256_set1_epi16(static_cast<std::uint16_t>(0x8000u))));
+  return _mm256_castsi256_ph(_mm256_xor_si256(_mm256_castph_si256(a), _mm256_set1_epi16(static_cast<short>(0x8000u))));
 }
 
 template <>
 EIGEN_STRONG_INLINE Packet8h pnegate<Packet8h>(const Packet8h& a) {
-  return _mm_castsi128_ph(_mm_xor_si128(_mm_castph_si128(a), _mm_set1_epi16(static_cast<std::uint16_t>(0x8000u))));
+  return _mm_castsi128_ph(_mm_xor_si128(_mm_castph_si128(a), _mm_set1_epi16(static_cast<short>(0x8000u))));
 }
 
 // pconj

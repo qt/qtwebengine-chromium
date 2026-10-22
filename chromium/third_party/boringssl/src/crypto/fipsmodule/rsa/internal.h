@@ -21,6 +21,7 @@
 #include <openssl/rsa.h>
 
 #include "../../internal.h"
+#include "../../mem_internal.h"
 
 
 DECLARE_OPAQUE_STRUCT(rsa_st, RSAImpl)
@@ -44,53 +45,54 @@ enum rsa_pss_params_t {
   rsa_pss_sha512,
 };
 
-class RSAImpl : public rsa_st {
+class RSAImpl : public rsa_st, public RefCounted<RSAImpl> {
  public:
-  static constexpr bool kAllowUniquePtr = true;
+  explicit RSAImpl(const ENGINE *engine);
 
-  ~RSAImpl();
+  RSA_METHOD *meth = nullptr;
 
-  RSA_METHOD *meth;
-
-  BIGNUM *n;
-  BIGNUM *e;
-  BIGNUM *d;
-  BIGNUM *p;
-  BIGNUM *q;
-  BIGNUM *dmp1;
-  BIGNUM *dmq1;
-  BIGNUM *iqmp;
+  UniquePtr<BIGNUM> n;
+  UniquePtr<BIGNUM> e;
+  UniquePtr<BIGNUM> d;
+  UniquePtr<BIGNUM> p;
+  UniquePtr<BIGNUM> q;
+  UniquePtr<BIGNUM> dmp1;
+  UniquePtr<BIGNUM> dmq1;
+  UniquePtr<BIGNUM> iqmp;
 
   // be careful using this if the RSA structure is shared
-  CRYPTO_EX_DATA ex_data;
-  bssl::CRYPTO_refcount_t references;
-  int flags;
+  CRYPTO_EX_DATA ex_data = {};
+  int flags = 0;
 
-  bssl::CRYPTO_MUTEX lock;
+  Mutex lock;
 
   // Used to cache montgomery values. The creation of these values is protected
   // by |lock|.
-  BN_MONT_CTX *mont_n;
-  BN_MONT_CTX *mont_p;
-  BN_MONT_CTX *mont_q;
+  UniquePtr<BN_MONT_CTX> mont_n;
+  UniquePtr<BN_MONT_CTX> mont_p;
+  UniquePtr<BN_MONT_CTX> mont_q;
 
   // The following fields are copies of |d|, |dmp1|, and |dmq1|, respectively,
   // but with the correct widths to prevent side channels. These must use
   // separate copies due to threading concerns caused by OpenSSL's API
   // mistakes. See https://github.com/openssl/openssl/issues/5158 and
   // the |freeze_private_key| implementation.
-  BIGNUM *d_fixed, *dmp1_fixed, *dmq1_fixed;
+  UniquePtr<BIGNUM> d_fixed, dmp1_fixed, dmq1_fixed;
 
   // iqmp_mont is q^-1 mod p in Montgomery form, using |mont_p|.
-  BIGNUM *iqmp_mont;
+  UniquePtr<BIGNUM> iqmp_mont;
 
   // pss_params is the RSA-PSS parameters associated with the key. This is not
   // used by the low-level RSA implementation, just the EVP layer.
-  bssl::rsa_pss_params_t pss_params;
+  bssl::rsa_pss_params_t pss_params = bssl::rsa_pss_none;
 
   // private_key_frozen is one if the key has been used for a private key
   // operation and may no longer be mutated.
-  unsigned private_key_frozen : 1;
+  unsigned private_key_frozen = 0;
+
+ private:
+  friend RefCounted;
+  ~RSAImpl();
 };
 
 #define RSA_PKCS1_PADDING_SIZE 11

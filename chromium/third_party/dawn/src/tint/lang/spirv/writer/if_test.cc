@@ -53,7 +53,8 @@ TEST_F(SpirvWriterTest, If_TrueEmpty_FalseEmpty) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                OpSelectionMerge %5 None
                OpBranchConditional %true %6 %5
@@ -85,7 +86,8 @@ TEST_F(SpirvWriterTest, If_FalseEmpty) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                OpSelectionMerge %5 None
                OpBranchConditional %true %6 %5
@@ -121,7 +123,8 @@ TEST_F(SpirvWriterTest, If_TrueEmpty) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %4 = OpLabel
                OpSelectionMerge %5 None
@@ -157,7 +160,8 @@ TEST_F(SpirvWriterTest, If_BothBranchesReturn) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                OpSelectionMerge %5 None
                OpBranchConditional %true %6 %5
@@ -189,7 +193,8 @@ TEST_F(SpirvWriterTest, If_Phi_SingleValue) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %4 = OpLabel
                OpSelectionMerge %5 None
@@ -225,7 +230,8 @@ TEST_F(SpirvWriterTest, If_Phi_SingleValue_TrueReturn) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%16 = OpUndef %int");
     EXPECT_INST(R"(
                OpSelectionMerge %12 None
@@ -271,7 +277,8 @@ TEST_F(SpirvWriterTest, If_Phi_SingleValue_FalseReturn) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%17 = OpUndef %int");
     EXPECT_INST(R"(
                OpSelectionMerge %12 None
@@ -314,7 +321,8 @@ TEST_F(SpirvWriterTest, If_Phi_SingleValue_ImplicitFalse) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%12 = OpUndef %int");
     EXPECT_INST(R"(
           %4 = OpLabel
@@ -351,7 +359,8 @@ TEST_F(SpirvWriterTest, If_Phi_MultipleValue_0) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %4 = OpLabel
                OpSelectionMerge %5 None
@@ -388,7 +397,8 @@ TEST_F(SpirvWriterTest, If_Phi_MultipleValue_1) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %4 = OpLabel
                OpSelectionMerge %5 None
@@ -433,7 +443,8 @@ TEST_F(SpirvWriterTest, If_Phi_Nested) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %4 = OpLabel
                OpSelectionMerge %5 None

@@ -39,6 +39,8 @@
 #include "dawn/common/ityp_array.h"
 #include "dawn/common/ityp_bitset.h"
 #include "dawn/native/BlockInfo.h"
+#include "dawn/native/ChainUtils.h"
+#include "dawn/native/DeviceGuard.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/Format.h"
 #include "dawn/native/Forward.h"
@@ -80,7 +82,7 @@ wgpu::TextureComponentSwizzle ComposeSwizzle(wgpu::TextureComponentSwizzle first
                                              wgpu::TextureComponentSwizzle secondSwizzle);
 
 // The default swizzle as defined by the WebGPU specification.
-static constexpr wgpu::TextureComponentSwizzle kRGBASwizzle = {
+inline constexpr wgpu::TextureComponentSwizzle kRGBASwizzle = {
     wgpu::ComponentSwizzle::R,
     wgpu::ComponentSwizzle::G,
     wgpu::ComponentSwizzle::B,
@@ -88,28 +90,28 @@ static constexpr wgpu::TextureComponentSwizzle kRGBASwizzle = {
 };
 
 // The swizzle typically used for depth and stencil textures.
-static constexpr wgpu::TextureComponentSwizzle kR001Swizzle = {
+inline constexpr wgpu::TextureComponentSwizzle kR001Swizzle = {
     wgpu::ComponentSwizzle::R,
     wgpu::ComponentSwizzle::Zero,
     wgpu::ComponentSwizzle::Zero,
     wgpu::ComponentSwizzle::One,
 };
 
-static constexpr wgpu::TextureUsage kReadOnlyTextureUsages =
+inline constexpr wgpu::TextureUsage kReadOnlyTextureUsages =
     wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::TextureBinding | kReadOnlyRenderAttachment |
     kReadOnlyStorageTexture;
 
 // Valid texture usages for a resolve texture that are loaded from at the beginning of a render
 // pass.
-static constexpr wgpu::TextureUsage kResolveTextureLoadAndStoreUsages =
+inline constexpr wgpu::TextureUsage kResolveTextureLoadAndStoreUsages =
     kResolveAttachmentLoadingUsage | wgpu::TextureUsage::RenderAttachment;
 
-static constexpr wgpu::TextureUsage kShaderTextureUsages =
+inline constexpr wgpu::TextureUsage kShaderTextureUsages =
     wgpu::TextureUsage::TextureBinding | kReadOnlyStorageTexture |
     wgpu::TextureUsage::StorageBinding | kWriteOnlyStorageTexture;
 
 // Usages that are used to validate operations that act on texture views.
-static constexpr wgpu::TextureUsage kTextureViewOnlyUsages =
+inline constexpr wgpu::TextureUsage kTextureViewOnlyUsages =
     kShaderTextureUsages | kResolveTextureLoadAndStoreUsages |
     wgpu::TextureUsage::TransientAttachment | wgpu::TextureUsage::StorageAttachment;
 
@@ -133,6 +135,8 @@ struct TextureViewQuery {
     wgpu::ComponentSwizzle swizzleGreen = wgpu::ComponentSwizzle::G;
     wgpu::ComponentSwizzle swizzleBlue = wgpu::ComponentSwizzle::B;
     wgpu::ComponentSwizzle swizzleAlpha = wgpu::ComponentSwizzle::A;
+
+    // Doesn't contain Vulkan YCbCr members as these views skip the cache.
 };
 
 static const size_t kDefaultTextureViewCacheCapacity = 4;
@@ -288,6 +292,10 @@ class TextureBase : public RefCountedWithExternalCount<SharedResource> {
     void WillAddFirstExternalRef() override;
     void WillDropLastExternalRef() override;
 
+    // TODO(crbug.com/481211676): Remove this once all backends' DestroyImpl methods are
+    // thread-safe.
+    virtual std::optional<DeviceGuard> UseDeviceGuardForDestroy();
+
     wgpu::TextureDimension mDimension;
     // Only used for compatibility mode
     wgpu::TextureViewDimension mCompatibilityTextureBindingViewDimension =
@@ -341,7 +349,9 @@ ResultOrError<Ref<TextureViewBase>> TextureBase::GetOrCreateViewFromCache(
     CreateFn createFn) {
     TextureViewQuery query(desc);
 
-    if (!mTextureViewCache) {
+    // Skip the cache when not present, but also for Vulkan YCbCr textures that don't have all their
+    // info unpacked in the TextureViewQuery.
+    if (!mTextureViewCache || desc.Has<YCbCrVkDescriptor>()) {
         return createFn(query);
     }
 
@@ -382,9 +392,10 @@ class TextureViewBase : public ApiObjectBase {
     wgpu::TextureComponentSwizzle GetSwizzle() const;
     bool IsSwizzleIdentity() const;
 
-    virtual bool IsYCbCr() const;
+    bool IsYCbCr() const;
     // Valid to call only if `IsYCbCr()` is true.
-    virtual YCbCrVkDescriptor GetYCbCrVkDescriptor() const;
+    bool HasYCbCrDescriptor() const;
+    virtual bool IsYCbCrFilterable() const;
 
   protected:
     void DestroyImpl(DestroyReason reason) override;
@@ -406,6 +417,7 @@ class TextureViewBase : public ApiObjectBase {
     wgpu::ComponentSwizzle mSwizzleBlue = wgpu::ComponentSwizzle::B;
     wgpu::ComponentSwizzle mSwizzleAlpha = wgpu::ComponentSwizzle::A;
     bool mIsSwizzleIdentity = false;
+    bool mHasYCbCrDescriptor = false;
 };
 
 }  // namespace dawn::native

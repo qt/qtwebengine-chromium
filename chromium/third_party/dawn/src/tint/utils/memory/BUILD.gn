@@ -49,10 +49,12 @@ libtint_source_set("memory") {
     "bitcast.h",
     "block_allocator.h",
     "bump_allocator.h",
+    "copy.h",
     "memory.cc",
   ]
   deps = [
     "${dawn_root}/src/utils",
+    "${tint_src_dir}/utils/ice",
     "${tint_src_dir}/utils/macros",
     "${tint_src_dir}/utils/math",
   ]

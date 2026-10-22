@@ -35,18 +35,7 @@ NEON_HALF_TO_FLOAT_FUNCTIONS(pbessel_y1)
 #undef NEON_HALF_TO_FLOAT_FUNCTIONS
 #endif
 
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_i0)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_i0e)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_i1)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_i1e)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_j0)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_j1)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_k0)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_k0e)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_k1)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_k1e)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_y0)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pbessel_y1)
+EIGEN_INSTANTIATE_BESSEL_FUNCS_BF16(Packet4f, Packet4bf)
 
 }  // namespace internal
 }  // namespace Eigen

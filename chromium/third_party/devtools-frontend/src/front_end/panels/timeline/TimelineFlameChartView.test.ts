@@ -9,7 +9,7 @@ import * as Trace from '../../models/trace/trace.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as TraceBounds from '../../services/trace_bounds/trace_bounds.js';
 import {assertScreenshot, dispatchClickEvent, doubleRaf, raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
+import {createTarget, describeWithEnvironment} from '../../testing/EnvironmentHelpers.js';
 import {
   allThreadEntriesInTrace,
   microsecondsTraceWindow,
@@ -95,10 +95,13 @@ describeWithEnvironment('TimelineFlameChartView', function() {
       const max = Trace.Types.Timing.Micro(min + interestingRange);
       const newBounds = microsecondsTraceWindow(min, max);
       TraceBounds.TraceBounds.BoundsManager.instance().setTimelineVisibleWindow(newBounds);
-      await raf();
 
+      await flameChartView.updateComplete;
+      await raf();
       await assertScreenshot('timeline/flamechart_view_network_collapsed.png');
+
       flameChartView.getNetworkFlameChart().toggleGroupExpand(0);
+      await flameChartView.updateComplete;
       await raf();
       await assertScreenshot('timeline/flamechart_view_network_expanded.png');
     });
@@ -111,6 +114,7 @@ describeWithEnvironment('TimelineFlameChartView', function() {
       flameChartView.setModel(parsedTrace, new Map());
       await raf();
       flameChartView.updateCountersGraphToggle(false);
+      await flameChartView.updateComplete;
       await raf();
       await assertScreenshot('timeline/flamechart_view_no_network_events.png');
     });
@@ -147,11 +151,13 @@ describeWithEnvironment('TimelineFlameChartView', function() {
       assert.isOk(networkRequest);
       const selection = Timeline.TimelineSelection.selectionFromEvent(networkRequest);
       await flameChartView.setSelectionAndReveal(selection);
+      await flameChartView.updateComplete;
       await raf();
       await assertScreenshot('timeline/timeline_with_network_selection.png');
     });
 
     it('shows the details for a selected main thread event', async function() {
+      createTarget();  // TimelineUIUtils will pick this up as the "root" target to translate stack traces.
       const parsedTrace = await TraceLoader.traceEngine(this, 'web-dev-with-commit.json.gz');
       const mockViewDelegate = new MockViewDelegate();
 
@@ -185,6 +191,7 @@ describeWithEnvironment('TimelineFlameChartView', function() {
       assert.isOk(event);
       const selection = Timeline.TimelineSelection.selectionFromEvent(event);
       await flameChartView.setSelectionAndReveal(selection);
+      await flameChartView.updateComplete;
       await raf();
 
       await assertScreenshot('timeline/timeline_with_main_thread_selection.png');

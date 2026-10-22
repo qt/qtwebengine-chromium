@@ -87,6 +87,8 @@ struct default_packet_traits {
     HasATanh = 0,
     HasSinh = 0,
     HasCosh = 0,
+    HasASinh = 0,
+    HasACosh = 0,
     HasTanh = 0,
     HasLGamma = 0,
     HasDiGamma = 0,
@@ -610,7 +612,7 @@ EIGEN_DEVICE_FUNC inline bool pselect<bool>(const bool& cond, const bool& a, con
   return cond ? a : b;
 }
 
-/** \internal \returns the min or of \a a and \a b (coeff-wise)
+/** \internal \returns the min or max of \a a and \a b (coeff-wise)
     If either \a a or \a b are NaN, the result is implementation defined. */
 template <int NaNPropagation, bool IsInteger>
 struct pminmax_impl {
@@ -648,7 +650,7 @@ struct pminmax_impl<PropagateNumbers, false> {
 #define EIGEN_BINARY_OP_NAN_PROPAGATION(Type, Func) [](const Type& aa, const Type& bb) { return Func(aa, bb); }
 
 /** \internal \returns the min of \a a and \a b  (coeff-wise).
-    If \a a or \b b is NaN, the return value is implementation defined. */
+    If \a a or \a b is NaN, the return value is implementation defined. */
 template <typename Packet>
 EIGEN_DEVICE_FUNC inline Packet pmin(const Packet& a, const Packet& b) {
   return numext::mini(a, b);
@@ -663,7 +665,7 @@ EIGEN_DEVICE_FUNC inline Packet pmin(const Packet& a, const Packet& b) {
 }
 
 /** \internal \returns the max of \a a and \a b  (coeff-wise)
-    If \a a or \b b is NaN, the return value is implementation defined. */
+    If \a a or \a b is NaN, the return value is implementation defined. */
 template <typename Packet>
 EIGEN_DEVICE_FUNC inline Packet pmax(const Packet& a, const Packet& b) {
   return numext::maxi(a, b);
@@ -821,10 +823,24 @@ EIGEN_DEVICE_FUNC inline Packet pset1(const typename unpacket_traits<Packet>::ty
 template <typename Packet, typename BitsType>
 EIGEN_DEVICE_FUNC inline Packet pset1frombits(BitsType a);
 
+template <typename Scalar, std::enable_if_t<std::is_trivially_copyable<Scalar>::value, int> = 0>
+EIGEN_DEVICE_FUNC inline Scalar pload1_scalar(const Scalar* a) {
+  Scalar scalar;
+  EIGEN_USING_STD(memcpy)
+  memcpy(&scalar, a, sizeof(Scalar));
+  return scalar;
+}
+
+template <typename Scalar, std::enable_if_t<!std::is_trivially_copyable<Scalar>::value, int> = 0>
+EIGEN_DEVICE_FUNC inline Scalar pload1_scalar(const Scalar* a) {
+  return Scalar(*a);
+}
+
 /** \internal \returns a packet with constant coefficients \a a[0], e.g.: (a[0],a[0],a[0],a[0]) */
 template <typename Packet>
 EIGEN_DEVICE_FUNC inline Packet pload1(const typename unpacket_traits<Packet>::type* a) {
-  return pset1<Packet>(*a);
+  using Scalar = typename unpacket_traits<Packet>::type;
+  return pset1<Packet>(pload1_scalar<Scalar>(a));
 }
 
 /** \internal \returns a packet with elements of \a *from duplicated.
@@ -834,7 +850,7 @@ EIGEN_DEVICE_FUNC inline Packet pload1(const typename unpacket_traits<Packet>::t
  */
 template <typename Packet>
 EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Packet ploaddup(const typename unpacket_traits<Packet>::type* from) {
-  return *from;
+  return pload1<Packet>(from);
 }
 
 /** \internal \returns a packet with elements of \a *from quadrupled.
@@ -1118,6 +1134,20 @@ EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet patanh(const Packet&
   return atanh(a);
 }
 
+/** \internal \returns the inverse hyperbolic sine of \a a (coeff-wise) */
+template <typename Packet>
+EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pasinh(const Packet& a) {
+  EIGEN_USING_STD(asinh);
+  return asinh(a);
+}
+
+/** \internal \returns the inverse hyperbolic cosine of \a a (coeff-wise) */
+template <typename Packet>
+EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pacosh(const Packet& a) {
+  EIGEN_USING_STD(acosh);
+  return acosh(a);
+}
+
 /** \internal \returns the exp of \a a (coeff-wise) */
 template <typename Packet>
 EIGEN_DECLARE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS Packet pexp(const Packet& a) {
@@ -1329,9 +1359,7 @@ EIGEN_DEVICE_FUNC inline typename unpacket_traits<Packet>::type predux_max(const
 /** \internal \returns true if all coeffs of \a a means "true"
  * It is supposed to be called on values returned by pcmp_*.
  */
-// not needed yet
-// template<typename Packet> EIGEN_DEVICE_FUNC inline bool predux_all(const Packet& a)
-// { return bool(a); }
+// TODO: implement predux_all when needed.
 
 /** \internal \returns true if any coeffs of \a a means "true"
  * It is supposed to be called on values returned by pcmp_*.

@@ -90,7 +90,7 @@ struct ThreadLocalNoOpRelease {
 //
 //   Eigen::ThreadLocal<Counter> counter(10);
 //
-//   // Each thread will have access to it's own counter object.
+//   // Each thread will have access to its own counter object.
 //   Counter& cnt = counter.local();
 //   cnt++;
 //

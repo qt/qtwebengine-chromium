@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
@@ -58,6 +59,25 @@ WebView::ScopedWebContentsCreatorForTesting::
   *GetCreatorForTesting() = WebView::WebContentsCreator();
 }
 
+WebView::ScopedAxDisconnectLock::ScopedAxDisconnectLock(
+    base::WeakPtr<WebView> web_view)
+    : web_view_(web_view) {
+  CHECK(web_view_);
+  web_view_->UpdateAccessibilityDisconnectState(/*disconnect=*/true);
+}
+
+WebView::ScopedAxDisconnectLock::~ScopedAxDisconnectLock() {
+  if (web_view_) {
+    web_view_->UpdateAccessibilityDisconnectState(/*disconnect=*/false);
+  }
+}
+
+std::unique_ptr<WebView::ScopedAxDisconnectLock>
+WebView::DisconnectWebContentsAccessibility() {
+  return base::WrapUnique(
+      new ScopedAxDisconnectLock(weak_ptr_factory_.GetWeakPtr()));
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // WebView, public:
 
@@ -101,7 +121,7 @@ void WebView::SetWebContents(content::WebContents* replacement) {
   if (replacement == web_contents()) {
     return;
   }
-  SetCrashedOverlayView(nullptr);
+  TakeCrashedOverlayView(nullptr);
   DetachWebContentsNativeView();
   WebContentsObserver::Observe(replacement);
 
@@ -175,29 +195,54 @@ void WebView::EnableSizingFromWebContents(const gfx::Size& min_size,
   }
 }
 
-void WebView::SetCrashedOverlayView(View* crashed_overlay_view) {
-  if (crashed_overlay_view_.view() == crashed_overlay_view) {
-    return;
+void WebView::TakeCrashedOverlayViewImpl(
+    std::unique_ptr<View> crashed_overlay_view,
+    ReturnCrashOverlayToOwnerCallback return_to_owner) {
+  if (crashed_overlay_view.get()) {
+    CHECK(!crashed_overlay_view->owned_by_client());
   }
 
   if (crashed_overlay_view_.view()) {
-    RemoveChildView(crashed_overlay_view_.view());
+    View* old_view = crashed_overlay_view_.view();
+    std::move(return_crashed_overlay_to_owner_).Run(RemoveChildViewT(old_view));
     // Show the hosted web contents view iff the crashed
     // overlay is NOT showing, to ensure hit testing is
     // correct on Mac. See https://crbug.com/896508
     holder_->SetVisible(true);
   }
 
-  crashed_overlay_view_.SetView(crashed_overlay_view);
-
-  if (crashed_overlay_view_.view()) {
-    CHECK(crashed_overlay_view_.view()->owned_by_client());
-    AddChildViewRaw(crashed_overlay_view_.view());
+  if (crashed_overlay_view) {
+    crashed_overlay_view_.SetView(
+        AddChildView(std::move(crashed_overlay_view)));
+    return_crashed_overlay_to_owner_ = std::move(return_to_owner);
     holder_->SetVisible(false);
     crashed_overlay_view_.view()->SetBoundsRect(GetLocalBounds());
+  } else {
+    crashed_overlay_view_.SetView(nullptr);
   }
 
   UpdateCrashedOverlayView();
+}
+
+std::nullptr_t WebView::TakeCrashedOverlayView(std::nullptr_t) {
+  TakeCrashedOverlayView(std::unique_ptr<View>());
+  return nullptr;
+}
+
+std::unique_ptr<View> WebView::DetachCrashedOverlayViewImpl() {
+  if (!crashed_overlay_view_) {
+    return nullptr;
+  }
+  std::unique_ptr<View> old_view =
+      RemoveChildViewT(crashed_overlay_view_.view());
+  crashed_overlay_view_.SetView(nullptr);
+  return_crashed_overlay_to_owner_.Reset();
+  // Show the hosted web contents view iff the crashed
+  // overlay is NOT showing, to ensure hit testing is
+  // correct on Mac. See https://crbug.com/896508
+  holder_->SetVisible(true);
+  UpdateCrashedOverlayView();
+  return old_view;
 }
 
 base::CallbackListSubscription WebView::AddWebContentsAttachedCallback(
@@ -371,6 +416,13 @@ void WebView::RemovedFromWidget() {
   }
 
   widget_ax_manager_observation_.Reset();
+}
+
+View::FocusBehavior WebView::GetFocusBehavior() const {
+  if (ax_disconnect_count_ > 0) {
+    return FocusBehavior::NEVER;
+  }
+  return View::GetFocusBehavior();
 }
 
 gfx::NativeViewAccessible WebView::GetNativeViewAccessible() {
@@ -584,6 +636,51 @@ void WebView::NotifyAccessibilityWebContentsChanged() {
                                               : ui::AXTreeIDUnknown());
   }
   NotifyAccessibilityEventDeprecated(ax::mojom::Event::kChildrenChanged, false);
+}
+
+void WebView::UpdateAccessibilityDisconnectState(bool disconnect) {
+  if (disconnect) {
+    CHECK_GE(ax_disconnect_count_, 0);
+    ax_disconnect_count_++;
+    if (ax_disconnect_count_ > 1) {
+      // Already disconnected.
+      return;
+    }
+
+    // We set the WebView to be not accessible while disconnected, so that it
+    // won't receive screen reader focus or be navigable by keyboard. We achieve
+    // this by marking it as ignored, and also as a leaf, because the children
+    // of an ignored view still may be accessible if the parent is not marked as
+    // a leaf.
+    GetViewAccessibility().SetIsIgnored(true);
+    GetViewAccessibility().SetIsLeaf(true);
+
+    // The accessibility architecture bridges the native views tree to the
+    // WebContents tree using a ChildTreeID. Setting the WebView as ignored/leaf
+    // is not enough to stop screen readers from accessing the WebContents tree
+    // if the ChildTreeID bridge is still intact. We explicitly sever the
+    // connection by removing the ChildTreeID.
+    GetViewAccessibility().RemoveChildTreeID();
+
+    // The WebView listens for WebContents updates and automatically
+    // reattaches the ChildTreeID when properties change. We must lock it to
+    // prevent it from restoring the bridge while disconnected.
+    set_lock_child_ax_tree_id_override(true);
+  } else {
+    CHECK_GT(ax_disconnect_count_, 0);
+    ax_disconnect_count_--;
+    if (ax_disconnect_count_ > 0) {
+      // Still disconnected.
+      return;
+    }
+
+    set_lock_child_ax_tree_id_override(false);
+    GetViewAccessibility().SetIsIgnored(false);
+    GetViewAccessibility().SetIsLeaf(false);
+
+    // Restore the ChildTreeID connection to the WebContents tree.
+    NotifyAccessibilityWebContentsChanged();
+  }
 }
 
 void WebView::OnWidgetAXManagerEnabled() {

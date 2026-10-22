@@ -7,12 +7,14 @@
 #include <optional>
 #include <string_view>
 
+#include "base/check_deref.h"
 #include "base/json/values_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "components/metrics/profile_metrics_service.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
@@ -26,11 +28,6 @@
 #include "components/signin/public/identity_manager/tribool.h"
 #include "google_apis/gaia/core_account_id.h"
 #include "google_apis/gaia/gaia_id.h"
-
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-const char kExplicitSigninMigrationHistogramName[] =
-    "Signin.ExplicitSigninMigration";
-#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
 namespace {
 
@@ -92,9 +89,12 @@ void RecordPendingResolutionTime(const char* histogram_base_name,
                                 base::Days(14), 50);
 }
 
-void RecordSigninPendingResolution(PendingResolutionSource resolution,
-                                   base::Time signin_pending_start_time) {
-  base::UmaHistogramEnumeration("Signin.SigninPending.Resolution", resolution);
+void RecordSigninPendingResolution(
+    PendingResolutionSource resolution,
+    base::Time signin_pending_start_time,
+    metrics::ProfileMetricsService& profile_metrics_service) {
+  profile_metrics_service.UmaHistogramEnumeration(
+      "Signin.SigninPending.Resolution", resolution);
 
   RecordPendingResolutionTime(kSigingPendingResolutionTimeBaseHistogram,
                               resolution, signin_pending_start_time);
@@ -131,7 +131,6 @@ void MaybeRecordWebSigninToChromeSigninTimes(
     case signin_metrics::AccessPoint::kUserManager:
     case signin_metrics::AccessPoint::kFullscreenSigninPromo:
     case signin_metrics::AccessPoint::kRecentTabs:
-    case signin_metrics::AccessPoint::kUnknown:
     case signin_metrics::AccessPoint::kAutofillDropdown:
     case signin_metrics::AccessPoint::kResigninInfobar:
     case signin_metrics::AccessPoint::kMachineLogon:
@@ -157,7 +156,6 @@ void MaybeRecordWebSigninToChromeSigninTimes(
     case signin_metrics::AccessPoint::kSaveToPhotosIos:
     case signin_metrics::AccessPoint::kChromeSigninInterceptBubble:
     case signin_metrics::AccessPoint::kRestorePrimaryAccountOnProfileLoad:
-    case signin_metrics::AccessPoint::kTabOrganization:
     case signin_metrics::AccessPoint::kSaveToDriveIos:
     case signin_metrics::AccessPoint::kTipsNotification:
     case signin_metrics::AccessPoint::kNotificationsOptInScreenContentToggle:
@@ -193,6 +191,12 @@ void MaybeRecordWebSigninToChromeSigninTimes(
     case signin_metrics::AccessPoint::kCredentialExchangeImport:
     case signin_metrics::AccessPoint::kSetSyncConsentFromSyncInternals:
     case signin_metrics::AccessPoint::kIosChromeWebView:
+    case signin_metrics::AccessPoint::kAshUserSessionManager:
+    case signin_metrics::AccessPoint::kAshChromeSessionManager:
+    case signin_metrics::AccessPoint::kAvatarPillExpandPromo:
+    case signin_metrics::AccessPoint::kSearchAIModeBubble:
+    case signin_metrics::AccessPoint::kIosAppBar:
+    case signin_metrics::AccessPoint::kIosPageActionMenu:
       return;
   }
 
@@ -232,17 +236,15 @@ SigninMetricsService::SigninMetricsService(
     signin::IdentityManager& identity_manager,
     PrefService& pref_service,
     signin::ActivePrimaryAccountsMetricsRecorder*
-        active_primary_accounts_metrics_recorder)
+        active_primary_accounts_metrics_recorder,
+    metrics::ProfileMetricsService* profile_metrics_service)
     : identity_manager_(identity_manager),
       pref_service_(pref_service),
       active_primary_accounts_metrics_recorder_(
           active_primary_accounts_metrics_recorder),
+      profile_metrics_service_(CHECK_DEREF(profile_metrics_service)),
       management_type_recorder_(identity_manager) {
   identity_manager_scoped_observation_.Observe(&identity_manager_.get());
-
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  RecordExplicitSigninMigrationStatus();
-#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
   UpdateIsManagedForAllAccounts();
 }
@@ -301,7 +303,8 @@ void SigninMetricsService::OnPrimaryAccountChanged(
       if (pref_service_->HasPrefPath(kSigninPendingStartTimePref)) {
         RecordSigninPendingResolution(
             PendingResolutionSource::kSignout,
-            pref_service_->GetTime(kSigninPendingStartTimePref));
+            pref_service_->GetTime(kSigninPendingStartTimePref),
+            profile_metrics_service_.get());
         pref_service_->ClearPref(kSigninPendingStartTimePref);
       }
       break;
@@ -420,13 +423,14 @@ void SigninMetricsService::HandleSigninErrors(
           token_operation_source)) {
     RecordSigninPendingResolution(
         PendingResolutionSource::kReauth,
-        pref_service_->GetTime(kSigninPendingStartTimePref));
+        pref_service_->GetTime(kSigninPendingStartTimePref),
+        profile_metrics_service_.get());
     pref_service_->ClearPref(kSigninPendingStartTimePref);
 
     AccountInfo account_info = identity_manager_->FindExtendedAccountInfo(
         identity_manager_->GetPrimaryAccountInfo(
             signin::ConsentLevel::kSignin));
-    if (account_info.access_point != signin_metrics::AccessPoint::kUnknown) {
+    if (account_info.access_point.has_value()) {
       // Only record `Started` from WEB_SIGNIN, since there is no way to
       // know that a WebSignin resolution has started until it was
       // completed. Other access points are client access points which can
@@ -435,12 +439,11 @@ void SigninMetricsService::HandleSigninErrors(
           signin_metrics::AccessPoint::kWebSignin) {
         base::UmaHistogramEnumeration(
             "Signin.SigninPending.ResolutionSourceStarted",
-            account_info.access_point);
+            account_info.access_point.value());
       }
-
       base::UmaHistogramEnumeration(
           "Signin.SigninPending.ResolutionSourceCompleted",
-          account_info.access_point);
+          account_info.access_point.value());
     }
   }
 }
@@ -480,26 +483,6 @@ void SigninMetricsService::OnRefreshTokensLoaded() {
 }
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-
-void SigninMetricsService::RecordExplicitSigninMigrationStatus() {
-  ExplicitSigninMigration explicit_signin_migration =
-      ExplicitSigninMigration::kMigratedSignedOut;
-  const bool explicit_signin_pref =
-      pref_service_->GetBoolean(prefs::kExplicitBrowserSignin);
-  if (identity_manager_->HasPrimaryAccount(signin::ConsentLevel::kSync)) {
-    explicit_signin_migration =
-        explicit_signin_pref ? ExplicitSigninMigration::kMigratedSyncing
-                             : ExplicitSigninMigration::kNotMigratedSyncing;
-  } else if (identity_manager_->HasPrimaryAccount(
-                 signin::ConsentLevel::kSignin)) {
-    explicit_signin_migration =
-        explicit_signin_pref ? ExplicitSigninMigration::kMigratedSignedIn
-                             : ExplicitSigninMigration::kNotMigratedSignedIn;
-  }
-
-  base::UmaHistogramEnumeration(kExplicitSigninMigrationHistogramName,
-                                explicit_signin_migration);
-}
 
 void SigninMetricsService::MaybeRecordMetricsForPromoShowCountAtSignin(
     const CoreAccountInfo& account_info,

@@ -49,7 +49,8 @@ TEST_F(SpirvWriterTest, Constant_Bool) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%true = OpConstantTrue %bool");
     EXPECT_INST("%false = OpConstantFalse %bool");
 }
@@ -69,7 +70,8 @@ TEST_F(SpirvWriterTest, Constant_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%int_42 = OpConstant %int 42");
     EXPECT_INST("%int_n1 = OpConstant %int -1");
 }
@@ -89,7 +91,8 @@ TEST_F(SpirvWriterTest, Constant_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%uint_42 = OpConstant %uint 42");
     EXPECT_INST("%uint_4000000000 = OpConstant %uint 4000000000");
 }
@@ -109,7 +112,8 @@ TEST_F(SpirvWriterTest, Constant_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%float_42 = OpConstant %float 42");
     EXPECT_INST("%float_n1 = OpConstant %float -1");
 }
@@ -129,7 +133,8 @@ TEST_F(SpirvWriterTest, Constant_F16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%half_0x1_5p_5 = OpConstant %half 0x1.5p+5");
     EXPECT_INST("%half_n0x1p_0 = OpConstant %half -0x1p+0");
 }
@@ -146,7 +151,8 @@ TEST_F(SpirvWriterTest, Constant_Vec4Bool) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(" = OpConstantComposite %v4bool %true %false %false %true");
 }
 
@@ -161,7 +167,8 @@ TEST_F(SpirvWriterTest, Constant_Vec2i) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(" = OpConstantComposite %v2int %int_42 %int_n1");
 }
 
@@ -177,7 +184,8 @@ TEST_F(SpirvWriterTest, Constant_Vec3u) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(" = OpConstantComposite %v3uint %uint_42 %uint_0 %uint_4000000000");
 }
 
@@ -193,7 +201,8 @@ TEST_F(SpirvWriterTest, Constant_Vec4f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(" = OpConstantComposite %v4float %float_42 %float_0 %float_0_25 %float_n1");
 }
 
@@ -208,7 +217,8 @@ TEST_F(SpirvWriterTest, Constant_Vec2h) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(" = OpConstantComposite %v2half %half_0x1_5p_5 %half_0x1pn2");
 }
 
@@ -227,7 +237,8 @@ TEST_F(SpirvWriterTest, Constant_Mat2x3f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
    %float_42 = OpConstant %float 42
    %float_n1 = OpConstant %float -1
@@ -257,7 +268,8 @@ TEST_F(SpirvWriterTest, Constant_Mat4x2h) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
 %half_0x1_5p_5 = OpConstant %half 0x1.5p+5
 %half_n0x1p_0 = OpConstant %half -0x1p+0
@@ -286,7 +298,8 @@ TEST_F(SpirvWriterTest, Constant_Array_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(" = OpConstantComposite %_arr_int_uint_4 %int_1 %int_2 %int_3 %int_4");
 }
 
@@ -304,7 +317,8 @@ TEST_F(SpirvWriterTest, Constant_Array_Array_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %9 = OpConstantComposite %_arr_int_uint_4 %int_1 %int_2 %int_3 %int_4
           %8 = OpConstantComposite %_arr__arr_int_uint_4_uint_4 %9 %9 %9 %9
@@ -322,7 +336,8 @@ TEST_F(SpirvWriterTest, Constant_Array_LargeAllZero) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(" = OpConstantNull %_arr_int_uint_65535");
 }
 
@@ -342,7 +357,8 @@ TEST_F(SpirvWriterTest, Constant_Struct) {
         b.Let("x", v1);
         b.Return(eb);
     });
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(" = OpConstantComposite %MyStruct %int_1 %uint_2 %float_3");
 }
 
@@ -365,7 +381,8 @@ TEST_F(SpirvWriterTest, Constant_Deduplicate) {
         b.Let("z", v3);
         b.Return(eb);
     });
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%int_42 = OpConstant %int 42");
 }
 

@@ -28,6 +28,7 @@
 #include <unistd.h>
 #endif
 
+#include "libavutil/attributes_internal.h"
 #include "libavutil/avassert.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/avstring.h"
@@ -1211,9 +1212,9 @@ static int parse_playlist(AVFormatContext *s, const char *url, VariantStream *vs
             }
         } else if (av_strstart(line, "#EXT-X-PROGRAM-DATE-TIME:", &ptr)) {
             struct tm program_date_time;
-            int y,M,d,h,m,s;
+            int y,M,d,h,m,sec;
             double ms;
-            if (sscanf(ptr, "%d-%d-%dT%d:%d:%d.%lf", &y, &M, &d, &h, &m, &s, &ms) != 7) {
+            if (sscanf(ptr, "%d-%d-%dT%d:%d:%d.%lf", &y, &M, &d, &h, &m, &sec, &ms) != 7) {
                 ret = AVERROR_INVALIDDATA;
                 goto fail;
             }
@@ -1223,7 +1224,7 @@ static int parse_playlist(AVFormatContext *s, const char *url, VariantStream *vs
             program_date_time.tm_mday = d;
             program_date_time.tm_hour = h;
             program_date_time.tm_min = m;
-            program_date_time.tm_sec = s;
+            program_date_time.tm_sec = sec;
             program_date_time.tm_isdst = -1;
 
             discont_program_date_time = mktime(&program_date_time);
@@ -1242,13 +1243,13 @@ static int parse_playlist(AVFormatContext *s, const char *url, VariantStream *vs
                 if (vs->has_subtitle) {
                     int vtt_index = extract_segment_number(line);
                     const char *vtt_basename = av_basename(vs->vtt_basename);
-                    int len = strlen(vtt_basename) + 11;
-                    char *vtt_file = av_mallocz(len);
-                    if (!vtt_file) {
+                    char *vtt_file = NULL;
+                    ret = replace_int_data_in_filename(&vtt_file, vtt_basename, 'd', vtt_index);
+                    if (ret < 0 || !vtt_file) {
                         ret = AVERROR(ENOMEM);
                         goto fail;
                     }
-                    snprintf(vtt_file, len, vtt_basename, vtt_index);
+
                     ff_format_set_url(vs->vtt_avf, vtt_file);
                 }
 
@@ -2749,18 +2750,17 @@ static int hls_write_trailer(struct AVFormatContext *s)
         }
 
         if (hls->segment_type == SEGMENT_TYPE_FMP4) {
-            int range_length = 0;
             if (!vs->init_range_length) {
                 uint8_t *buffer = NULL;
                 av_write_frame(oc, NULL); /* Flush any buffered data */
 
-                range_length = avio_close_dyn_buf(oc->pb, &buffer);
-                avio_write(vs->out, buffer, range_length);
+                int init_range_length = avio_close_dyn_buf(oc->pb, &buffer);
+                avio_write(vs->out, buffer, init_range_length);
                 av_freep(&buffer);
-                vs->init_range_length = range_length;
+                vs->init_range_length = init_range_length;
                 avio_open_dyn_buf(&oc->pb);
                 vs->packets_written = 0;
-                vs->start_pos = range_length;
+                vs->start_pos = init_range_length;
                 byterange_mode = (hls->flags & HLS_SINGLE_FILE) || (hls->max_seg_size > 0);
                 if (!byterange_mode) {
                     ff_format_io_close(s, &vs->out);
@@ -2859,7 +2859,6 @@ static int hls_init(AVFormatContext *s)
     const char *pattern;
     VariantStream *vs = NULL;
     const char *vtt_pattern = hls->flags & HLS_SINGLE_FILE ? ".vtt" : "%d.vtt";
-    char *p = NULL;
     int http_base_proto = ff_is_http_proto(s->url);
     int fmp4_init_filename_len = strlen(hls->fmp4_init_filename) + 1;
     double initial_program_date_time = av_gettime() / 1000000.0;
@@ -2972,19 +2971,19 @@ static int hls_init(AVFormatContext *s)
         if (vs->has_video > 1)
             av_log(s, AV_LOG_WARNING, "More than a single video stream present, expect issues decoding it.\n");
         if (hls->segment_type == SEGMENT_TYPE_FMP4) {
-            vs->oformat = av_guess_format("mp4", NULL, NULL);
+            EXTERN const FFOutputFormat ff_mp4_muxer;
+            vs->oformat = &ff_mp4_muxer.p;
         } else {
-            vs->oformat = av_guess_format("mpegts", NULL, NULL);
+            EXTERN const FFOutputFormat ff_mpegts_muxer;
+            vs->oformat = &ff_mpegts_muxer.p;
         }
-        if (!vs->oformat)
-            return AVERROR_MUXER_NOT_FOUND;
 
         if (hls->segment_filename) {
             ret = format_name(hls->segment_filename, &vs->basename, i, vs->varname);
             if (ret < 0)
                 return ret;
         } else {
-            p = strrchr(vs->m3u8_name, '.');
+            char *p = strrchr(vs->m3u8_name, '.');
             if (p)
                 *p = '\0';
 
@@ -3034,7 +3033,7 @@ static int hls_init(AVFormatContext *s)
                     vs->fmp4_init_filename = expanded;
                 }
 
-                p = strrchr(vs->m3u8_name, '/');
+                char *p = strrchr(vs->m3u8_name, '/');
                 if (p) {
                     char tmp = *(++p);
                     *p = '\0';
@@ -3054,11 +3053,10 @@ static int hls_init(AVFormatContext *s)
             return ret;
 
         if (vs->has_subtitle) {
-            vs->vtt_oformat = av_guess_format("webvtt", NULL, NULL);
-            if (!vs->vtt_oformat)
-                return AVERROR_MUXER_NOT_FOUND;
+            EXTERN const FFOutputFormat ff_webvtt_muxer;
+            vs->vtt_oformat = &ff_webvtt_muxer.p;
 
-            p = strrchr(vs->m3u8_name, '.');
+            char *p = strrchr(vs->m3u8_name, '.');
             if (p)
                 *p = '\0';
 

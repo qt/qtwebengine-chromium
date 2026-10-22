@@ -11,9 +11,9 @@
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/auth.h"
 #include "net/base/features.h"
@@ -762,10 +762,10 @@ void URLRequestJob::RecordBytesRead(int bytes_read) {
   if (request_->context()->network_quality_estimator()) {
     if (prefilter_bytes_read() == bytes_read) {
       request_->context()->network_quality_estimator()->NotifyHeadersReceived(
-          *request_, prefilter_bytes_read());
+          *request_);
     } else {
       request_->context()->network_quality_estimator()->NotifyBytesRead(
-          *request_, prefilter_bytes_read());
+          *request_);
     }
   }
 

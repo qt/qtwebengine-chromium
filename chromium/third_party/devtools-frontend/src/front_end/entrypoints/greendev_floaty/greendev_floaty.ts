@@ -186,7 +186,7 @@ class GreenDevFloaty {
             aiContent.textContent = result.text;
             break;
           case ResponseType.ERROR:
-            aiContent.textContent = `Error: ${result.error}`;
+            aiContent.textContent = `Error: '${result.error}' - Protip: to use AI features you need to be signed in.`;
             break;
           case ResponseType.THOUGHT:
             if (aiDetails) {

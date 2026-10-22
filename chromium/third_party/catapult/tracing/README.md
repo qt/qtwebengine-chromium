@@ -3,20 +3,20 @@
      Use of this source code is governed by a BSD-style license that can be
      found in the LICENSE file.
 -->
-![Trace Viewer Logo](https://raw.githubusercontent.com/catapult-project/catapult/master/tracing/images/trace-viewer-circle-blue.png)
+![Trace Viewer Logo](images/trace-viewer-circle-blue.png)
 
 Trace-Viewer is the javascript frontend for Chrome [about:tracing](http://dev.chromium.org/developers/how-tos/trace-event-profiling-tool) and [Android
 systrace](http://developer.android.com/tools/help/systrace.html).
 
 It provides rich analysis and visualization capabilities for many types of trace
 files. Its particularly good at viewing linux kernel traces (aka [ftrace](https://www.kernel.org/doc/Documentation/trace/ftrace.txt)) and Chrome's
-[trace_event format](https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview). Trace viewer can be [embedded](https://github.com/catapult-project/catapult/blob/master/tracing/docs/embedding-trace-viewer.md) as a component in your own code, or used from a plain checkout to turn trace files into standalone, emailable HTML files from the commandline:
+[trace_event format](https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview). Trace viewer can be [embedded](https://chromium.googlesource.com/catapult/+/refs/heads/main/tracing/docs/embedding-trace-viewer.md) as a component in your own code, or used from a plain checkout to turn trace files into standalone, emailable HTML files from the commandline:
 
 ```
 $CATAPULT/tracing/bin/trace2html my_trace.json --output=my_trace.html && open my_trace.html
 ```
 
-Its easy to [extend trace viewer](https://github.com/catapult-project/catapult/blob/master/tracing/docs/extending-and-customizing-trace-viewer.md) to support your favorite trace format, or add domain specific visualizations to the UI to simplify drilling down into complex data.
+Its easy to [extend trace viewer](https://chromium.googlesource.com/catapult/+/refs/heads/main/tracing/docs/extending-and-customizing-trace-viewer.md) to support your favorite trace format, or add domain specific visualizations to the UI to simplify drilling down into complex data.
 
 Contributing, quick version
 ===
@@ -44,7 +44,7 @@ All tracing tests in d8 environment | `$CATAPULT/tracing/bin/run_vinn_tests`
 All tracing tests in devserver environment | `$CATAPULT/tracing/bin/run_devserver_tests`
 All tests | `$CATAPULT/tracing/bin/run_tests`
 
-Make sure tests pass before sending us changelist. **We use Gerrit for codereview**. For more details, esp on Gerrit, [read our contributing guide](https://github.com/catapult-project/catapult/blob/master/CONTRIBUTING.md) or check out the [Getting Started guide](https://github.com/catapult-project/catapult/blob/master/tracing/docs/getting-started.md).
+Make sure tests pass before sending us changelist. **We use Gerrit for codereview**. For more details, esp on Gerrit, [read our contributing guide](https://chromium.googlesource.com/catapult/+/refs/heads/main/CONTRIBUTING.md) or check out the [Getting Started guide](https://chromium.googlesource.com/catapult/+/refs/heads/main/tracing/docs/getting-started.md).
 
 Contact Us
 ===

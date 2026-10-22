@@ -26,6 +26,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "src/tint/lang/core/type/type.h"
+
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/type/binding_array.h"
 #include "src/tint/lang/core/type/bool.h"
@@ -51,7 +52,8 @@ TEST_F(SpirvWriterTest, Type_Void) {
     auto* fn = b.ComputeFunction("main");
     b.Append(fn->Block(), [&] { b.Return(fn); });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%void = OpTypeVoid");
 }
 
@@ -67,7 +69,8 @@ TEST_F(SpirvWriterTest, Type_Bool) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%bool = OpTypeBool");
 }
 
@@ -83,7 +86,8 @@ TEST_F(SpirvWriterTest, Type_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%int = OpTypeInt 32 1");
 }
 
@@ -99,7 +103,8 @@ TEST_F(SpirvWriterTest, Type_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%uint = OpTypeInt 32 0");
 }
 
@@ -115,7 +120,8 @@ TEST_F(SpirvWriterTest, Type_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%float = OpTypeFloat 32");
 }
 
@@ -131,7 +137,8 @@ TEST_F(SpirvWriterTest, Type_F16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpCapability Float16");
     EXPECT_INST("OpCapability StorageBuffer16BitAccess");
     EXPECT_INST("%half = OpTypeFloat 16");
@@ -152,7 +159,8 @@ TEST_F(SpirvWriterTest, Type_F16_WithoutDecomposeUniformBuffers) {
     Options options;
     options.extensions.use_uniform_buffers = true;
 
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpCapability Float16");
     EXPECT_INST("OpCapability UniformAndStorageBuffer16BitAccess");
     EXPECT_INST("OpCapability StorageBuffer16BitAccess");
@@ -171,7 +179,8 @@ TEST_F(SpirvWriterTest, Type_Vec2i) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%v2int = OpTypeVector %int 2");
 }
 
@@ -187,7 +196,8 @@ TEST_F(SpirvWriterTest, Type_Vec3u) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%v3uint = OpTypeVector %uint 3");
 }
 
@@ -203,7 +213,8 @@ TEST_F(SpirvWriterTest, Type_Vec4f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%v4float = OpTypeVector %float 4");
 }
 
@@ -219,7 +230,8 @@ TEST_F(SpirvWriterTest, Type_Vec2h) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%v2half = OpTypeVector %half 2");
 }
 
@@ -235,7 +247,8 @@ TEST_F(SpirvWriterTest, Type_Vec4Bool) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%v4bool = OpTypeVector %bool 4");
 }
 
@@ -251,7 +264,8 @@ TEST_F(SpirvWriterTest, Type_Mat2x3f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%mat2v3float = OpTypeMatrix %v3float 2");
 }
 
@@ -267,7 +281,8 @@ TEST_F(SpirvWriterTest, Type_Mat4x2h) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%mat4v2half = OpTypeMatrix %v2half 4");
 }
 
@@ -283,7 +298,8 @@ TEST_F(SpirvWriterTest, Type_Array_NoExplicitLayout) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%_arr_float_uint_4 = OpTypeArray %float %uint_4");
     EXPECT_THAT(output_, testing::Not(testing::HasSubstr("OpDecorate %_arr_float_uint_4")));
 }
@@ -301,7 +317,8 @@ TEST_F(SpirvWriterTest, Type_Array_DefaultStride) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpDecorate %_arr_float_uint_4 ArrayStride 4");
     EXPECT_INST("%_arr_float_uint_4 = OpTypeArray %float %uint_4");
 }
@@ -324,7 +341,8 @@ TEST_F(SpirvWriterTest, Type_Array_ExplicitStride) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpDecorate %_arr_MyStruct_uint_4 ArrayStride 32");
     EXPECT_INST("%_arr_MyStruct_uint_4 = OpTypeArray %MyStruct %uint_4");
 }
@@ -342,7 +360,8 @@ TEST_F(SpirvWriterTest, Type_Array_NestedArray) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpDecorate %_arr_float_uint_64 ArrayStride 4");
     EXPECT_INST("OpDecorate %_arr__arr_float_uint_64_uint_4 ArrayStride 256");
     EXPECT_INST("%_arr_float_uint_64 = OpTypeArray %float %uint_64");
@@ -362,7 +381,8 @@ TEST_F(SpirvWriterTest, Type_RuntimeArray_DefaultStride) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpDecorate %_runtimearr_float ArrayStride 4");
     EXPECT_INST("%_runtimearr_float = OpTypeRuntimeArray %float");
 }
@@ -385,7 +405,8 @@ TEST_F(SpirvWriterTest, Type_RuntimeArray_ExplicitStride) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpDecorate %_runtimearr_MyStruct ArrayStride 32");
     EXPECT_INST("%_runtimearr_MyStruct = OpTypeRuntimeArray %MyStruct");
 }
@@ -404,7 +425,8 @@ TEST_F(SpirvWriterTest, Type_BindingArray_SampledTexture) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpTypeImage %float 2D 0 0 0 1 Unknown");
     EXPECT_INST("OpTypeInt 32 0");
     EXPECT_INST("OpConstant %uint 4");
@@ -428,7 +450,8 @@ TEST_F(SpirvWriterTest, Type_Struct_NoExplicitLayout) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpMemberName %MyStruct 0 \"a\"");
     EXPECT_INST("OpMemberName %MyStruct 1 \"b\"");
     EXPECT_INST("OpName %MyStruct \"MyStruct\"");
@@ -453,7 +476,8 @@ TEST_F(SpirvWriterTest, Type_Struct) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpMemberName %MyStruct 0 \"a\"");
     EXPECT_INST("OpMemberName %MyStruct 1 \"b\"");
     EXPECT_INST("OpName %MyStruct \"MyStruct\"");
@@ -482,7 +506,8 @@ TEST_F(SpirvWriterTest, Type_Struct_MatrixLayout) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpMemberDecorate %MyStruct_tint_explicit_layout 0 ColMajor");
     EXPECT_INST("OpMemberDecorate %MyStruct_tint_explicit_layout 0 MatrixStride 16");
     EXPECT_INST("OpMemberDecorate %MyStruct_tint_explicit_layout 1 ColMajor");
@@ -503,7 +528,8 @@ TEST_F(SpirvWriterTest, Type_Atomic) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%int = OpTypeInt 32 1");
 }
 
@@ -520,7 +546,8 @@ TEST_F(SpirvWriterTest, Type_Sampler) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(" = OpTypeSampler");
 }
 
@@ -537,7 +564,8 @@ TEST_F(SpirvWriterTest, Type_SamplerComparison) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(" = OpTypeSampler");
 }
 
@@ -558,7 +586,8 @@ TEST_F(SpirvWriterTest, Type_Samplers_Dedup) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%3 = OpTypeSampler");
     EXPECT_INST("%_ptr_UniformConstant_3 = OpTypePointer UniformConstant %3");
     EXPECT_INST("%v1 = OpVariable %_ptr_UniformConstant_3 UniformConstant");
@@ -587,7 +616,8 @@ TEST_F(SpirvWriterTest, Type_StorageTexture_Dedup) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%3 = OpTypeImage %uint 2D 0 1 0 2 R32ui");
     EXPECT_INST("%_ptr_UniformConstant_3 = OpTypePointer UniformConstant %3");
     EXPECT_INST("%v1 = OpVariable %_ptr_UniformConstant_3 UniformConstant");
@@ -618,7 +648,8 @@ TEST_P(Type_SampledTexture, Emit) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(params.result);
 }
 INSTANTIATE_TEST_SUITE_P(
@@ -660,7 +691,8 @@ TEST_P(Type_MultisampledTexture, Emit) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(params.result);
 }
 INSTANTIATE_TEST_SUITE_P(
@@ -685,7 +717,8 @@ TEST_P(Type_DepthTexture, Emit) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(params.result);
 }
 INSTANTIATE_TEST_SUITE_P(
@@ -714,13 +747,14 @@ TEST_F(SpirvWriterTest, Type_DepthTexture_DedupWithSampledTexture) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(      %float = OpTypeFloat 32
           %3 = OpTypeImage %float 2D 0 0 0 1 Unknown
 %_ptr_UniformConstant_3 = OpTypePointer UniformConstant %3
-         %v1 = OpVariable %_ptr_UniformConstant_3 UniformConstant   ; DescriptorSet 0, Binding 1
+         %v1 = OpVariable %_ptr_UniformConstant_3 UniformConstant   ; DescriptorSet 0, Binding 1, RelaxedPrecision
 %_ptr_UniformConstant_3_0 = OpTypePointer UniformConstant %3
-         %v2 = OpVariable %_ptr_UniformConstant_3_0 UniformConstant     ; DescriptorSet 0, Binding 2
+         %v2 = OpVariable %_ptr_UniformConstant_3_0 UniformConstant     ; DescriptorSet 0, Binding 2, RelaxedPrecision
        %void = OpTypeVoid
           %9 = OpTypeFunction %void
 )");
@@ -740,7 +774,8 @@ TEST_F(SpirvWriterTest, Type_DepthMultiSampledTexture) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(" = OpTypeImage %float 2D 0 0 1 1 Unknown");
 }
 
@@ -763,13 +798,14 @@ TEST_F(SpirvWriterTest, Type_DepthMultisampledTexture_DedupWithMultisampledTextu
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(      %float = OpTypeFloat 32
           %3 = OpTypeImage %float 2D 0 0 1 1 Unknown
 %_ptr_UniformConstant_3 = OpTypePointer UniformConstant %3
-         %v1 = OpVariable %_ptr_UniformConstant_3 UniformConstant   ; DescriptorSet 0, Binding 1
+         %v1 = OpVariable %_ptr_UniformConstant_3 UniformConstant   ; DescriptorSet 0, Binding 1, RelaxedPrecision
 %_ptr_UniformConstant_3_0 = OpTypePointer UniformConstant %3
-         %v2 = OpVariable %_ptr_UniformConstant_3_0 UniformConstant     ; DescriptorSet 0, Binding 2
+         %v2 = OpVariable %_ptr_UniformConstant_3_0 UniformConstant     ; DescriptorSet 0, Binding 2, RelaxedPrecision
        %void = OpTypeVoid
           %9 = OpTypeFunction %void
 )");
@@ -797,7 +833,8 @@ TEST_P(Type_StorageTexture, Emit) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(params.result);
     if (params.format == core::TexelFormat::kRg32Uint ||
         params.format == core::TexelFormat::kRg32Sint ||
@@ -872,7 +909,8 @@ TEST_P(Type_TexelBuffer, Emit) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(params.result);
     EXPECT_INST("OpCapability ImageBuffer");
 }
@@ -924,7 +962,8 @@ TEST_F(SpirvWriterTest, Type_SubgroupMatrix) {
 
     Options options;
     options.extensions.use_vulkan_memory_model = true;
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpCapability CooperativeMatrixKHR");
     EXPECT_INST("OpExtension \"SPV_KHR_cooperative_matrix\"");
     EXPECT_INST("%7 = OpTypeCooperativeMatrixKHR %float %uint_3 %uint_4 %uint_8 %uint_0");
@@ -948,7 +987,8 @@ TEST_F(SpirvWriterTest, SubgroupMatrix_ConfigReturned) {
                 .use_vulkan_memory_model = true,
             },
     };
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_EQ(3u, subgroup_matrix_info.configs.size());
 }
 
@@ -975,7 +1015,8 @@ TEST_F(SpirvWriterTest, Type_Multiple) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%int = OpTypeInt 32 1");
     EXPECT_INST("%uint = OpTypeInt 32 0");
     EXPECT_INST("%float = OpTypeFloat 32");
@@ -1001,7 +1042,8 @@ TEST_F(SpirvWriterTest, Type_Deduplicate) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%_ptr_Private_int = OpTypePointer Private %int");
     EXPECT_INST("%v1 = OpVariable %_ptr_Private_int Private %4");
     EXPECT_INST("%v2 = OpVariable %_ptr_Private_int Private %4");

@@ -54,8 +54,9 @@ bool HTMLBodyElement::IsPresentationAttribute(const QualifiedName& name) const {
       name == html_names::kLeftmarginAttr ||
       name == html_names::kMarginheightAttr ||
       name == html_names::kTopmarginAttr || name == html_names::kBgcolorAttr ||
-      name == html_names::kTextAttr)
+      name == html_names::kTextAttr) {
     return true;
+  }
   return HTMLElement::IsPresentationAttribute(name);
 }
 
@@ -260,10 +261,12 @@ void HTMLBodyElement::DidNotifySubtreeInsertionsToDocument() {
   if (GetDocument().GetFrame() && GetDocument().GetFrame()->Owner()) {
     int margin_width = GetDocument().GetFrame()->Owner()->MarginWidth();
     int margin_height = GetDocument().GetFrame()->Owner()->MarginHeight();
-    if (margin_width != -1)
+    if (margin_width != -1) {
       SetIntegralAttribute(html_names::kMarginwidthAttr, margin_width);
-    if (margin_height != -1)
+    }
+    if (margin_height != -1) {
       SetIntegralAttribute(html_names::kMarginheightAttr, margin_height);
+    }
   }
 }
 

@@ -9,26 +9,25 @@
 #include <immintrin.h>
 
 #include "ynnpack/base/base.h"
-#include "ynnpack/base/simd/multi_vec.h"
+#include "ynnpack/base/simd/vec.h"
 #include "ynnpack/base/simd/x86_avx.h"  // IWYU pragma: export
 
 namespace ynn {
 
 namespace simd {
 
-YNN_ALWAYS_INLINE f32x8 convert(f16x8 a, float) {
+YNN_ALWAYS_INLINE f32x8 cast(f16x8 a, float) {
   return f32x8{_mm256_cvtph_ps(a.v)};
 }
 
-YNN_ALWAYS_INLINE f32x16 convert(f16x16 a, float) {
-  return {
-      convert(extract<0>(a, f16x8{}), float{}),
-      convert(extract<1>(a, f16x8{}), float{}),
-  };
+YNN_ALWAYS_INLINE f16x8 cast(f32x8 a, half) {
+  return f16x8{_mm256_cvtps_ph(a.v, _MM_FROUND_TO_NEAREST_INT)};
 }
 
 }  // namespace simd
 
 }  // namespace ynn
+
+#include "ynnpack/base/simd/generic.inc"  // IWYU pragma: export
 
 #endif  // XNNPACK_YNNPACK_BASE_SIMD_X86_F16C_H_

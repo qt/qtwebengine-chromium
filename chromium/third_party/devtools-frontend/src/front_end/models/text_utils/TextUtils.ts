@@ -107,14 +107,11 @@ export class FilterParser {
         if (this.keys.indexOf((parsedKey as string)) !== -1) {
           parsedFilters.push({
             key: parsedKey,
-            regex: undefined,
             text: parsedValue,
             negative: Boolean(startsWithMinus),
           });
         } else {
           parsedFilters.push({
-            key: undefined,
-            regex: undefined,
             text: `${parsedKey}:${parsedValue}`,
             negative: Boolean(startsWithMinus),
           });
@@ -124,15 +121,11 @@ export class FilterParser {
         const parsedRegex = captureGroups[1];
         try {
           parsedFilters.push({
-            key: undefined,
             regex: new RegExp((parsedRegex as string), 'im'),
-            text: undefined,
             negative: Boolean(startsWithMinus),
           });
         } catch {
           parsedFilters.push({
-            key: undefined,
-            regex: undefined,
             text: `/${parsedRegex}/`,
             negative: Boolean(startsWithMinus),
           });
@@ -141,8 +134,6 @@ export class FilterParser {
         const startsWithMinus = captureGroups[0];
         const parsedText = captureGroups[1];
         parsedFilters.push({
-          key: undefined,
-          regex: undefined,
           text: parsedText,
           negative: Boolean(startsWithMinus),
         });

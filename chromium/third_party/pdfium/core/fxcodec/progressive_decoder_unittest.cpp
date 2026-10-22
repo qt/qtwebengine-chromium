@@ -15,8 +15,8 @@
 
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcodec/fx_codec_def.h"
+#include "core/fxcrt/cfx_read_only_container_stream.h"
 #include "core/fxcrt/cfx_read_only_span_stream.h"
-#include "core/fxcrt/cfx_read_only_vector_stream.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/span.h"
@@ -275,7 +275,8 @@ TEST_F(ProgressiveDecoderTest, LargeBmp) {
 
   ProgressiveDecoder decoder;
 
-  auto source = pdfium::MakeRetain<CFX_ReadOnlyVectorStream>(std::move(input));
+  auto source =
+      pdfium::MakeRetain<CFX_ReadOnlyDataVectorStream>(std::move(input));
   CFX_DIBAttribute attr;
   FXCODEC_STATUS status =
       decoder.LoadImageInfo(std::move(source), FXCODEC_IMAGE_BMP, &attr, true);

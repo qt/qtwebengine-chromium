@@ -213,8 +213,8 @@ void ResourceLoadObserverForFrame::DidReceiveResponse(
                                                            response);
       frame->GetLocalFrameHostRemote().DidLoadResourceFromMemoryCache(
           resource_request.Url(),
-          String::FromUTF8(resource_request.HttpMethod().Utf8()),
-          String::FromUTF8(response.MimeType().Utf8()),
+          String::FromUtf8(resource_request.HttpMethod().Utf8()),
+          String::FromUtf8(response.MimeType().Utf8()),
           resource_request.GetRequestDestination(),
           response.RequestIncludeCredentials());
     }
@@ -251,7 +251,7 @@ void ResourceLoadObserverForFrame::DidReceiveResponse(
   // Count usage of Content-Disposition header in SVGUse resources.
   if (resource->Options().initiator_info.name ==
           fetch_initiator_type_names::kUse &&
-      request.Url().ProtocolIsInHTTPFamily() && response.IsAttachment()) {
+      request.Url().ProtocolIsInHttpFamily() && response.IsAttachment()) {
     CountUsage(WebFeature::kContentDispositionInSvgUse);
   }
 

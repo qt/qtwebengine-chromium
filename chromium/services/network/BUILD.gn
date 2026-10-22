@@ -12,8 +12,6 @@ component("network_service") {
   sources = [
     "accept_ch_frame_interceptor.cc",
     "accept_ch_frame_interceptor.h",
-    "ad_heuristic_cookie_overrides.cc",
-    "ad_heuristic_cookie_overrides.h",
     "chunked_data_pipe_upload_data_stream.cc",
     "chunked_data_pipe_upload_data_stream.h",
     "conditional_cache_deletion_helper.cc",
@@ -420,7 +418,10 @@ component("network_service") {
   }
 
   if (is_p2p_enabled) {
-    deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
+    deps += [
+      "//services/network/public/cpp:cpp_p2p",
+      "//third_party/webrtc_overrides:webrtc_component",
+    ]
   }
 
   if (is_android) {
@@ -572,7 +573,7 @@ source_set("tests") {
 
     data = [
       "//net/tools/testserver/",
-      "//services/test/data",
+      "//services/test/data/",
       "//third_party/pywebsocket3/src/mod_pywebsocket/",
     ]
   }

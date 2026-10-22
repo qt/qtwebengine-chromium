@@ -18,14 +18,16 @@ import android.view.inputmethod.InputMethodManager;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.robolectric.annotation.LooperMode;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 import org.chromium.base.test.BaseRobolectricTestRunner;
+import org.chromium.base.test.RobolectricUtil;
 import org.chromium.content_public.browser.InputMethodManagerWrapper;
 import org.chromium.ui.base.WindowAndroid;
 
@@ -33,8 +35,8 @@ import java.lang.ref.WeakReference;
 
 /** A robolectric test for {@link InputMethodManagerWrapperImpl} class. */
 @RunWith(BaseRobolectricTestRunner.class)
-@LooperMode(LooperMode.Mode.LEGACY)
 public class InputMethodManagerWrapperImplTest {
+    @Rule public MockitoRule mMockitoRule = MockitoJUnit.rule();
     private static final boolean DEBUG = false;
 
     private class TestInputMethodManagerWrapperImpl extends InputMethodManagerWrapperImpl {
@@ -76,7 +78,6 @@ public class InputMethodManagerWrapperImplTest {
 
     @Before
     public void setUp() throws Exception {
-        MockitoAnnotations.initMocks(this);
         mImmw = new TestInputMethodManagerWrapperImpl(mContext, mWindowAndroid, mDelegate);
         when(mContext.getSystemService(Context.INPUT_METHOD_SERVICE))
                 .thenReturn(mInputMethodManager);
@@ -147,6 +148,7 @@ public class InputMethodManagerWrapperImplTest {
         mInOrder.verifyNoMoreInteractions();
 
         mImmw.onInputConnectionCreated();
+        RobolectricUtil.runAllBackgroundAndUi();
 
         // Post task: note that PostTask actually does not require
         // Robolectric.getForegroundThreadScheduler().runOneTask() to be called.
@@ -177,6 +179,7 @@ public class InputMethodManagerWrapperImplTest {
         mImmw.hideSoftInputFromWindow(null, 0, null);
 
         mImmw.onInputConnectionCreated();
+        RobolectricUtil.runAllBackgroundAndUi();
 
         mInOrder.verify(mInputMethodManager).hideSoftInputFromWindow(null, 0, null);
         // Do not call showSoftInput.
@@ -201,6 +204,7 @@ public class InputMethodManagerWrapperImplTest {
         mImmw.showSoftInput(mView, 1, null);
 
         mImmw.onInputConnectionCreated();
+        RobolectricUtil.runAllBackgroundAndUi();
 
         // Post task: note that PostTask actually does not require
         // Robolectric.getForegroundThreadScheduler().runOneTask() to be called.
@@ -230,6 +234,7 @@ public class InputMethodManagerWrapperImplTest {
         mImmw.showSoftInput(mView, 1, null);
 
         mImmw.onInputConnectionCreated();
+        RobolectricUtil.runAllBackgroundAndUi();
 
         // Post task: note that PostTask actually does not require
         // Robolectric.getForegroundThreadScheduler().runOneTask() to be called.

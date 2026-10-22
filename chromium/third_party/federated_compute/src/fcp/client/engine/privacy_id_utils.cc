@@ -52,24 +52,6 @@ using ::google::internal::federated::plan::PrivacyIdConfig;
 
 constexpr int kPrivacyIdLength = 16;
 
-// Remove the timezone modifier from the event time. Event_time must be in the
-// format YYYY-MM-DDTHH:MM:SS[+-]HH:MM, and the result will be in the format
-// YYYY-MM-DDTHH:MM:SS.
-absl::StatusOr<std::string> RemoveTimezoneFromEventTime(
-    absl::string_view event_time) {
-  if (event_time.length() != 25) {
-    return absl::InvalidArgumentError(
-        "Invalid event time format: incorrect length");
-  }
-  // Basic check for the presence of 'T' and timezone sign.
-  if (event_time[10] != 'T' ||
-      (event_time[19] != '+' && event_time[19] != '-')) {
-    return absl::InvalidArgumentError(
-        "Invalid event time format: missing T or timezone modifier");
-  }
-  return std::string(event_time.substr(0, 19));
-}
-
 absl::StatusOr<WindowingSchedule::CivilTimeWindowSchedule>
 VerifyConfigHasCivilTimeWindowSchedule(
     const PrivacyIdConfig& privacy_id_config) {
@@ -169,30 +151,6 @@ absl::StatusOr<ExampleQueryResult> CreateExampleQueryResultFromSelection(
   }
   return new_result;
 }
-
-absl::StatusOr<absl::CivilSecond> ConvertEventTimeToCivilSecond(
-    absl::string_view event_time) {
-  FCP_ASSIGN_OR_RETURN(std::string event_time_without_timezone,
-                       RemoveTimezoneFromEventTime(event_time));
-  absl::CivilSecond event_civil_second;
-  if (!absl::ParseCivilTime(event_time_without_timezone, &event_civil_second)) {
-    return absl::InvalidArgumentError("Invalid event time format");
-  }
-  return event_civil_second;
-}
-
-// Loads a uint64_t from the given buffer in big-endian order.
-// TODO: b/439902489 - Replace this with the CFC version once it's available.
-uint64_t Load64BigEndian(const char* buf) {
-  return (static_cast<uint64_t>(static_cast<unsigned char>(buf[0])) << 56) |
-         (static_cast<uint64_t>(static_cast<unsigned char>(buf[1])) << 48) |
-         (static_cast<uint64_t>(static_cast<unsigned char>(buf[2])) << 40) |
-         (static_cast<uint64_t>(static_cast<unsigned char>(buf[3])) << 32) |
-         (static_cast<uint64_t>(static_cast<unsigned char>(buf[4])) << 24) |
-         (static_cast<uint64_t>(static_cast<unsigned char>(buf[5])) << 16) |
-         (static_cast<uint64_t>(static_cast<unsigned char>(buf[6])) << 8) |
-         static_cast<uint64_t>(static_cast<unsigned char>(buf[7]));
-}
 }  // namespace
 
 absl::StatusOr<std::string> GetPrivacyId(absl::string_view source_id,
@@ -248,8 +206,9 @@ absl::StatusOr<SplitResults> SplitResultsByPrivacyId(
   for (int i = 0; i < event_time_values->string_values().value_size(); ++i) {
     const std::string& event_time_str =
         event_time_values->string_values().value(i);
-    FCP_ASSIGN_OR_RETURN(absl::CivilSecond event_civil_second,
-                         ConvertEventTimeToCivilSecond(event_time_str));
+    FCP_ASSIGN_OR_RETURN(
+        absl::CivilSecond event_civil_second,
+        confidentialcompute::ConvertEventTimeToCivilSecond(event_time_str));
 
     FCP_ASSIGN_OR_RETURN(
         WindowingSchedule::CivilTimeWindowSchedule schedule,
@@ -282,37 +241,6 @@ absl::StatusOr<SplitResults> SplitResultsByPrivacyId(
         std::move(per_privacy_id_result));
   }
   return split_results;
-}
-
-absl::StatusOr<int32_t> GetNumPrefixBits(int32_t num_partitions) {
-  if (num_partitions <= 0) {
-    return absl::InvalidArgumentError("num_partitions must be positive.");
-  }
-  return static_cast<int32_t>(std::ceil(std::log2(num_partitions)));
-}
-
-absl::StatusOr<uint64_t> GetPartitionKey(int32_t num_prefix_bits,
-                                         absl::string_view privacy_id) {
-  if (num_prefix_bits > 64) {
-    return absl::InvalidArgumentError("num_prefix_bits must be <= 64.");
-  }
-  if (num_prefix_bits < 0) {
-    return absl::InvalidArgumentError("num_prefix_bits must be non-negative.");
-  }
-  if (num_prefix_bits == 0) {
-    // If no bits are preserved, the key is all zeros.
-    return 0;
-  }
-
-  int32_t num_bits_to_zero = 64 - num_prefix_bits;
-  // Hash the privacy ID to ensure partition keys are uniformly distributed.
-  std::string partition_key = ComputeSHA256(privacy_id);
-  partition_key = partition_key.substr(0, 8);
-
-  uint64_t partition_key_uint64 = Load64BigEndian(partition_key.data());
-  // Create a mask with the top num_prefix_bits set to 1.
-  uint64_t mask = ~0ULL << num_bits_to_zero;
-  return partition_key_uint64 & mask;
 }
 
 }  // namespace engine

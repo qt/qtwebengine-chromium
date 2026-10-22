@@ -40,22 +40,22 @@ export function getReleaseNote(): ReleaseNote {
 }
 
 let releaseNote: ReleaseNote = {
-  version: 146,
-  header: 'What\'s new in DevTools 146',
+  version: 148,
+  header: 'What\'s new in DevTools 148',
   markdownLinks: [
     {
-      key: 'mcp-server',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-146/#mcp-server',
+      key: 'extension-debugging',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-148/#extension-debugging',
     },
     {
-      key: 'console-history',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-146/#console-history',
+      key: 'sort-network-requests',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-148/#sort-network-requests',
     },
     {
-      key: 'adopted-stylesheets',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-146/#adopted-stylesheets',
-    },
+      key: 'accessibility-tree',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-148/#accessibility-tree',
+    }
   ],
   videoLinks: [],
-  link: 'https://developer.chrome.com/blog/new-in-devtools-146/',
+  link: 'https://developer.chrome.com/blog/new-in-devtools-148/',
 };

@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,8 +21,11 @@
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/thread_pool.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "components/crx_file/crx_verifier.h"
+#include "components/update_client/task_traits.h"
 #include "components/update_client/unzipper.h"
 #include "components/update_client/update_client.h"
 #include "components/update_client/update_client_errors.h"
@@ -49,14 +53,19 @@ Unpacker::Unpacker(const std::string& app_id,
                    const std::string& prod_id,
                    const base::FilePath& path,
                    std::unique_ptr<Unzipper> unzipper,
+                   bool is_foreground,
                    base::OnceCallback<void(const Result& result)> callback)
     : app_id_(app_id),
       prod_id_(update_client::UTF8ToStringType(prod_id)),
       path_(path),
       unzipper_(std::move(unzipper)),
+      is_foreground_(is_foreground),
       callback_(std::move(callback)) {}
 
-Unpacker::~Unpacker() = default;
+Unpacker::~Unpacker() {
+  TRACE_EVENT("update_client", "Unpacker::~Unpacker",
+              perfetto::TerminatingFlow::FromPointer(this));
+}
 
 void Unpacker::Unpack(const std::string& app_id,
                       const std::string& prod_id,
@@ -64,14 +73,17 @@ void Unpacker::Unpack(const std::string& app_id,
                       const base::FilePath& path,
                       std::unique_ptr<Unzipper> unzipper,
                       crx_file::VerifierFormat crx_format,
+                      bool is_foreground,
                       base::OnceCallback<void(const Result& result)> callback) {
   base::WrapRefCounted(new Unpacker(app_id, prod_id, path, std::move(unzipper),
-                                    std::move(callback)))
+                                    is_foreground, std::move(callback)))
       ->Verify(pk_hash, crx_format);
 }
 
 void Unpacker::Verify(const std::vector<uint8_t>& pk_hash,
                       crx_file::VerifierFormat crx_format) {
+  TRACE_EVENT("update_client", "Unpacker::Verify",
+              perfetto::Flow::FromPointer(this));
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   VLOG(1) << "Verifying component: " << path_.value();
   if (path_.empty()) {
@@ -94,6 +106,8 @@ void Unpacker::Verify(const std::vector<uint8_t>& pk_hash,
 }
 
 void Unpacker::BeginUnzipping() {
+  TRACE_EVENT("update_client", "Unpacker::Unpack",
+              perfetto::Flow::FromPointer(this));
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   unzip_begin_time_ = base::TimeTicks::Now();
@@ -112,6 +126,8 @@ void Unpacker::BeginUnzipping() {
 }
 
 void Unpacker::EndUnzipping(bool result) {
+  TRACE_EVENT("update_client", "Unpacker::EndUnzipping",
+              perfetto::Flow::FromPointer(this));
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (result) {
     metrics::RecordCRXUnzipTime(base::TimeTicks::Now() - unzip_begin_time_,
@@ -135,19 +151,39 @@ void Unpacker::EndUnzipping(bool result) {
 }
 
 void Unpacker::UncompressVerifiedContents() {
-  std::string verified_contents;
-  if (!compression::GzipUncompress(compressed_verified_contents_,
-                                   &verified_contents)) {
-    VLOG(1) << "Decompressing verified contents from header failed";
-    EndUnpacking(UnpackerError::kNone);
-    return;
-  }
+  TRACE_EVENT("update_client", "Unpacker::UncompressVerifiedContents",
+              perfetto::Flow::FromPointer(this));
 
-  StoreVerifiedContentsInExtensionDir(verified_contents);
+  base::ThreadPool::PostTask(
+      FROM_HERE,
+      is_foreground_ ? kTaskTraits : kTaskTraitsBackgroundDecompression,
+      base::BindOnce(
+          [](scoped_refptr<Unpacker> unpacker,
+             scoped_refptr<base::SequencedTaskRunner> current_default) {
+            std::string verified_contents;
+            if (!compression::GzipUncompress(
+                    unpacker->compressed_verified_contents_,
+                    &verified_contents)) {
+              VLOG(1) << "Decompressing verified contents from header failed";
+              current_default->PostTask(
+                  FROM_HERE, base::BindOnce(&Unpacker::EndUnpacking, unpacker,
+                                            UnpackerError::kNone, 0));
+              return;
+            }
+
+            current_default->PostTask(
+                FROM_HERE,
+                base::BindOnce(&Unpacker::StoreVerifiedContentsInExtensionDir,
+                               unpacker, verified_contents));
+          },
+          base::WrapRefCounted(this),
+          base::SequencedTaskRunner::GetCurrentDefault()));
 }
 
 void Unpacker::StoreVerifiedContentsInExtensionDir(
     const std::string& verified_contents) {
+  TRACE_EVENT("update_client", "Unpacker::StoreVerifiedContentsInExtensionDir",
+              perfetto::Flow::FromPointer(this));
   base::FilePath metadata_path = unpack_path_.Append(kMetadataFolder);
   if (!base::CreateDirectory(metadata_path)) {
     VLOG(1) << "Could not create metadata directory " << metadata_path;
@@ -169,6 +205,8 @@ void Unpacker::StoreVerifiedContentsInExtensionDir(
 }
 
 void Unpacker::EndUnpacking(UnpackerError error, int extended_error) {
+  TRACE_EVENT("update_client", "Unpacker::EndUnpacking",
+              perfetto::Flow::FromPointer(this));
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (error != UnpackerError::kNone && !unpack_path_.empty()) {
     RetryFileOperation(&base::DeletePathRecursively, unpack_path_);

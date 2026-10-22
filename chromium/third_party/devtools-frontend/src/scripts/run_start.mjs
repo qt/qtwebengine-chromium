@@ -41,6 +41,9 @@ DEFAULT_FEATURE_SET.enable('DevToolsWellKnown');
 DEFAULT_FEATURE_SET.enable('DevToolsVerticalDrawer');
 DEFAULT_FEATURE_SET.enable('DevToolsAiPromptApi');
 DEFAULT_FEATURE_SET.enable('DevToolsAiAssistanceContextSelectionAgent');
+DEFAULT_FEATURE_SET.enable('DevToolsAiAssistanceAccessibilityAgent');
+DEFAULT_FEATURE_SET.enable('DevToolsAiAssistanceV2');
+DEFAULT_FEATURE_SET.enable('DevToolsUseGcaApi');
 
 // The unstable feature set (can be enabled via `--enable-unstable-features`).
 const UNSTABLE_FEATURE_SET = new FeatureSet();
@@ -66,6 +69,12 @@ const argv = yargs(hideBin(process.argv))
 
       throw new Error(`Unsupported channel "${arg}"`);
     },
+  })
+  .option('watch', {
+    alias: 'w',
+    type: 'boolean',
+    default: true,
+    description: 'Enable watch mode to auto rebuild'
   })
   .option('unstable-features', {
     alias: 'u',
@@ -290,14 +299,16 @@ async function start() {
 
 // Run build watcher in the background to automatically rebuild
 // devtools-frontend whenever there are changes detected.
-const watcher = childProcess.spawn(
+const watcher = argv.watch ? childProcess.spawn(
   process.argv[0],
   [runBuildPath, '--skip-initial-build', `--target=${target}`, '--watch'],
   { cwd, env, stdio: 'inherit' },
-);
+) : null;
 try {
   // Launch chrome.
   await start();
 } finally {
-  watcher.kill();
+  if(watcher) {
+    watcher.kill();
+  }
 }

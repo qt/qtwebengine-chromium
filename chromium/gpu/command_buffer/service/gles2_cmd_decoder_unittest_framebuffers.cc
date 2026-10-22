@@ -14,6 +14,9 @@
 #include "base/containers/heap_array.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/string_number_conversions.h"
+#if defined(ADDRESS_SANITIZER)
+#include <sanitizer/asan_interface.h>
+#endif
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/context_group.h"
@@ -26,6 +29,7 @@
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_mock.h"
 #include "ui/gl/gl_surface_stub.h"
@@ -870,6 +874,93 @@ TEST_P(GLES3DecoderTest, ReadPixelsPixelPackBufferMapped) {
            false);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
+}
+
+TEST_P(GLES3DecoderManualInitTest, ReadPixelsR16ExtZeroSizeValidationOOB) {
+  InitState init;
+  init.extensions = "GL_EXT_texture_norm16";
+  init.gl_version = "OpenGL ES 3.0";
+  init.context_type = CONTEXT_TYPE_OPENGLES3;
+  InitDecoder(init);
+
+  // Step 1: directly demonstrate the validator/size-calculator desync.
+  uint32_t computed = 0xdeadbeef;
+  EXPECT_TRUE(GLES2Util::ComputeImageDataSizes(64, 64, 1, GL_R16_EXT,
+                                               GL_UNSIGNED_SHORT, 4, &computed,
+                                               nullptr, nullptr));
+  EXPECT_EQ(8192u, computed);
+
+  // Step 2: send a hostile ReadPixels that a compromised renderer could craft.
+  // pixels_shm_offset = end-of-buffer; the decoder validates 0 bytes so this
+  // passes and returns base + kSharedBufferSize (one-past-end).
+  surface_->SetSize(gfx::Size(INT_MAX, INT_MAX));
+  const GLsizei kWidth = 32;
+  const GLsizei kHeight = 32;
+  // Native R16 + UNSIGNED_SHORT = 2 bytes/pixel -> 32*32*2 = 2048 bytes
+  // written by the driver, all of it past the validated buffer end.
+  const uint32_t kPixelsOffset = kSharedBufferSize;  // one-past-end
+
+#if defined(ADDRESS_SANITIZER)
+  // The transfer buffer is mmap'd shared memory (no ASAN redzones). Poison the
+  // page slack past the logical buffer end so ASAN deterministically reports
+  // the OOB write instead of relying on whatever mapping happens to follow.
+  // kSharedBufferSize = 2048; the mapping is at least one 4096-byte page, so
+  // [base+2048, base+4096) is mapped slack we can safely poison.
+
+  // SAFETY: this is the only feasible way to get the pointer we need.
+  // This test is temporary regardless and will be removed along with
+  // the validating command decoder.
+  uint8_t* poison_at = UNSAFE_BUFFERS(
+      static_cast<uint8_t*>(shared_memory_base_.get()) + kSharedBufferSize);
+  static_assert(kSharedBufferSize == 2048);
+  const size_t kPoisonLen = 2048;
+  ASAN_POISON_MEMORY_REGION(poison_at, kPoisonLen);
+  absl::Cleanup unpoison = [poison_at] {
+    ASAN_UNPOISON_MEMORY_REGION(poison_at, kPoisonLen);
+  };
+#endif
+
+  // The decoder falls through to the native-driver IMPLEMENTATION_COLOR_READ_*
+  // query because (GL_R16_EXT, GL_UNSIGNED_SHORT) is not in the hardcoded
+  // accepted list. Simulate an Android native driver that returns the sized
+  // enum (the precondition documented in the report).
+  EXPECT_CALL(*gl_, GetIntegerv(GL_IMPLEMENTATION_COLOR_READ_FORMAT, _))
+      .Times(AnyNumber())
+      .WillRepeatedly(SetArgPointee<1>(GL_R16_EXT));
+  EXPECT_CALL(*gl_, GetIntegerv(GL_IMPLEMENTATION_COLOR_READ_TYPE, _))
+      .Times(AnyNumber())
+      .WillRepeatedly(SetArgPointee<1>(GL_UNSIGNED_SHORT));
+  EXPECT_CALL(*gl_, GetError())
+      .Times(AnyNumber())
+      .WillRepeatedly(Return(GL_NO_ERROR));
+
+  // The "native driver" computes its own write size for R16 + UNSIGNED_SHORT
+  // (2 bytes/pixel) and writes into the pointer the decoder validated for 0
+  // bytes. With kWidth*kHeight*2 = 8192 bytes starting at one-past-end of a
+  // 2048-byte transfer buffer, this is a hard OOB write past the shm mapping.
+  EXPECT_CALL(
+      *gl_, ReadPixels(0, 0, kWidth, kHeight, GL_R16_EXT, GL_UNSIGNED_SHORT, _))
+      .Times(AnyNumber())
+      .WillRepeatedly([](GLint, GLint, GLsizei w, GLsizei h, GLenum, GLenum,
+                         void* pixels) {
+        // What a native R16 glReadPixels does: write w*h*2 bytes.
+
+        // SAFETY: taking a shortcut to fill this memory since this
+        // test is temporary and will be removed soon along with the
+        // validating command decoder.
+        UNSAFE_BUFFERS(memset(pixels, 0xAB, static_cast<size_t>(w) * h * 2u));
+      });
+
+  cmds::ReadPixels cmd;
+  cmd.Init(0, 0, kWidth, kHeight, GL_R16_EXT, GL_UNSIGNED_SHORT,
+           shared_memory_id_, kPixelsOffset, /*result_shm_id=*/0,
+           /*result_shm_offset=*/0, /*async=*/false);
+  // OOB write fires inside this call: ASAN reports a 2048-byte write past the
+  // end of the transfer buffer (the region the decoder validated for 0 bytes).
+  // After the bandaid fix, the command is rejected with GL_INVALID_OPERATION
+  // before reaching glReadPixelsFn.
+  ExecuteCmd(cmd);
+  GetGLError();  // Consume the INVALID_OPERATION emitted by the fixed decoder.
 }
 
 TEST_P(GLES3DecoderTest, ReadPixelsPixelPackBufferIsNotLargeEnough) {
@@ -3155,6 +3246,83 @@ TEST_P(GLES2DecoderManualInitTest, DiscardFramebufferEXT) {
   EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd, sizeof(attachments)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
   EXPECT_FALSE(framebuffer->IsCleared());
+}
+
+TEST_P(GLES2DecoderManualInitTest,
+       InvalidateFramebufferIncompleteFBOMarkUncleared) {
+  InitState init;
+  init.gl_version = "OpenGL ES 3.0";
+  init.context_type = CONTEXT_TYPE_OPENGLES3;
+
+  gpu::GpuDriverBugWorkarounds workarounds;
+  workarounds.dont_invalidate_incomplete_fbos = true;
+  InitDecoderWithWorkarounds(init, workarounds);
+
+  const GLenum target = GL_FRAMEBUFFER;
+  const GLsizei count = 1;
+  const GLenum attachments[] = {GL_COLOR_ATTACHMENT0};
+
+  // Setup texture 1 (1x1)
+  SetupTexture();
+
+  // Setup texture 2 (2x2)
+  const GLuint kAnotherClientTextureId = 200;
+  const GLuint kAnotherServiceTextureId = 201;
+  EXPECT_CALL(*gl_, GenTextures(1, _))
+      .WillOnce(SetArgPointee<1>(kAnotherServiceTextureId))
+      .RetiresOnSaturation();
+  GenHelper<cmds::GenTexturesImmediate>(kAnotherClientTextureId);
+
+  DoBindTexture(GL_TEXTURE_2D, kAnotherClientTextureId,
+                kAnotherServiceTextureId);
+  DoTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+               shared_memory_id_, kSharedMemoryOffset);
+
+  DoBindFramebuffer(GL_FRAMEBUFFER, client_framebuffer_id_,
+                    kServiceFramebufferId);
+
+  // Attach 1x1 to COLOR_ATTACHMENT0
+  DoFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                         client_texture_id_, kServiceTextureId, 0, GL_NO_ERROR);
+  // Attach 2x2 to COLOR_ATTACHMENT1 -> makes it incomplete
+  // (INCOMPLETE_DIMENSIONS)
+  DoFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D,
+                         kAnotherClientTextureId, kAnotherServiceTextureId, 0,
+                         GL_NO_ERROR);
+
+  FramebufferManager* framebuffer_manager = GetFramebufferManager();
+  Framebuffer* framebuffer =
+      framebuffer_manager->GetFramebuffer(client_framebuffer_id_);
+  ASSERT_TRUE(framebuffer != nullptr);
+
+  // Ensure it is incomplete
+  EXPECT_EQ(static_cast<GLenum>(GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS),
+            DoCheckFramebufferStatus(GL_FRAMEBUFFER));
+
+  // Mark attachments as cleared initially
+  GetFramebufferManager()->MarkAttachmentsAsCleared(
+      framebuffer, group().renderbuffer_manager(), group().texture_manager());
+  EXPECT_TRUE(framebuffer->IsCleared());
+
+  // We expect the driver call to be skipped (Times(0)) because FBO is
+  // incomplete
+  EXPECT_CALL(*gl_, InvalidateFramebuffer(target, count, _)).Times(0);
+
+  auto& cmd = *GetImmediateAs<cmds::InvalidateFramebufferImmediate>();
+  cmd.Init(target, count, attachments);
+
+  EXPECT_EQ(error::kNoError, ExecuteImmediateCmd(cmd, sizeof(attachments)));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+
+  // BUT we expect the attachment to be marked as uncleared!
+  EXPECT_FALSE(framebuffer->IsCleared());
+  const Framebuffer::Attachment* attachment =
+      framebuffer->GetAttachment(GL_COLOR_ATTACHMENT0);
+  ASSERT_TRUE(attachment != nullptr);
+  EXPECT_FALSE(attachment->cleared());
+
+  // Clean up texture 2
+  DoDeleteTexture(kAnotherClientTextureId, kAnotherServiceTextureId);
 }
 
 TEST_P(GLES2DecoderManualInitTest, ClearBackbufferBitsOnDiscardFramebufferEXT) {

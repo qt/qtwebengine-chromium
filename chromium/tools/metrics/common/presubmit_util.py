@@ -10,12 +10,10 @@ import os
 import shutil
 import sys
 
-sys.path.append(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                 os.pardir, os.pardir, 'python', 'google'))
-import path_utils
+import setup_modules  # pylint: disable=unused-import
 
-import diff_util
+import chromium_src.tools.metrics.common.diff_util as diff_util
+import chromium_src.tools.python.google.path_utils as path_utils
 
 
 def DoPresubmit(argv,
@@ -73,7 +71,7 @@ def DoPresubmit(argv,
 
   try:
     pretty = prettyFn(original_xml)
-  except Exception as e:
+  except Exception:
     logging.exception('Aborting parsing due to fatal errors:')
     return 1
 

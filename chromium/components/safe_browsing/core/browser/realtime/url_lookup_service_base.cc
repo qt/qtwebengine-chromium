@@ -12,7 +12,6 @@
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "base/strings/strcat.h"
 #include "base/task/sequenced_task_runner.h"
@@ -797,9 +796,6 @@ void RealTimeUrlLookupServiceBase::OnRequestProtoFilled(
 
   auto resource_request = GetResourceRequest();
   if (!access_token_string.empty()) {
-    LogAuthenticatedCookieResets(
-        *resource_request,
-        SafeBrowsingAuthenticatedEndpoint::kRealtimeUrlLookup);
     SetAccessToken(resource_request.get(), access_token_string);
   }
   RecordBooleanWithAndWithoutSuffix("SafeBrowsing.RT.HasTokenInRequest",

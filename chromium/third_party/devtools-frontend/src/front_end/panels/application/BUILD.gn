@@ -29,6 +29,7 @@ generate_css("css_files") {
     "serviceWorkersView.css",
     "sharedStorageEventsView.css",
     "storageView.css",
+    "webMCPView.css",
   ]
 }
 
@@ -42,6 +43,7 @@ devtools_ui_module("application") {
     "BackgroundServiceView.ts",
     "BounceTrackingMitigationsTreeElement.ts",
     "CookieItemsView.ts",
+    "CrashReportContextView.ts",
     "DOMStorageItemsView.ts",
     "DOMStorageModel.ts",
     "DeviceBoundSessionsModel.ts",
@@ -75,6 +77,8 @@ devtools_ui_module("application") {
     "StorageItemsToolbar.ts",
     "StorageView.ts",
     "TrustTokensTreeElement.ts",
+    "WebMCPTreeElement.ts",
+    "WebMCPView.ts",
     "preloading/PreloadingView.ts",
   ]
 
@@ -92,6 +96,7 @@ devtools_ui_module("application") {
     "../../models/issues_manager:bundle",
     "../../models/stack_trace:bundle",
     "../../models/text_utils:bundle",
+    "../../models/web_mcp:bundle",
     "../../models/workspace:bundle",
     "../../panels/mobile_throttling:bundle",
     "../../panels/network:bundle",
@@ -102,6 +107,7 @@ devtools_ui_module("application") {
     "../../ui/components/buttons:bundle",
     "../../ui/components/expandable_list:bundle",
     "../../ui/components/legacy_wrapper:bundle",
+    "../../ui/components/lists:bundle",
     "../../ui/components/report_view:bundle",
     "../../ui/components/tree_outline:bundle",
     "../../ui/i18n:bundle",
@@ -164,6 +170,7 @@ devtools_ui_module("unittests") {
     "AppManifestView.test.ts",
     "ApplicationPanelSidebar.test.ts",
     "BackgroundServiceView.test.ts",
+    "CrashReportContextView.test.ts",
     "DOMStorageModel.test.ts",
     "DeviceBoundSessionsModel.test.ts",
     "DeviceBoundSessionsTreeElement.test.ts",
@@ -178,7 +185,9 @@ devtools_ui_module("unittests") {
     "KeyValueStorageItemsView.test.ts",
     "OriginTrialTreeView.test.ts",
     "PreloadingTreeElement.test.ts",
+    "ReportingApiTreeElement.test.ts",
     "ReportingApiView.test.ts",
+    "ServiceWorkerCacheViews.test.ts",
     "ServiceWorkerUpdateCycleView.test.ts",
     "ServiceWorkersView.test.ts",
     "SharedStorageEventsView.test.ts",
@@ -188,6 +197,7 @@ devtools_ui_module("unittests") {
     "SharedStorageTreeElement.test.ts",
     "StorageBucketsTreeElement.test.ts",
     "StorageView.test.ts",
+    "WebMCPView.test.ts",
     "preloading/PreloadingView.test.ts",
   ]
 
@@ -197,6 +207,7 @@ devtools_ui_module("unittests") {
     "../../testing",
     "../../ui/components/render_coordinator:bundle",
     "../../ui/legacy:bundle",
+    "../../ui/legacy/components/object_ui:bundle",
     "./components",
     "./preloading/components",
   ]

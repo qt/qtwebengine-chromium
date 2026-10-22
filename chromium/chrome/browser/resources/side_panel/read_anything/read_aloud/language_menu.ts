@@ -19,6 +19,8 @@ import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 
 import {ToolbarEvent} from '../content/read_anything_types.js';
+import {ReadAloudSettingsChange} from '../shared/metrics_browser_proxy.js';
+import {ReadAnythingLogger} from '../shared/read_anything_logger.js';
 
 import {getCss} from './language_menu.css.js';
 import {getHtml} from './language_menu.html.js';
@@ -128,8 +130,9 @@ export class LanguageMenuElement extends LanguageMenuElementBase implements
       {[language: string]: NotificationType} = {};
   private notificationManager_: VoiceNotificationManager =
       VoiceNotificationManager.getInstance();
+  private logger_: ReadAnythingLogger = ReadAnythingLogger.getInstance();
 
-  protected closeLanguageMenu_() {
+  protected onClose_() {
     this.notificationManager_.removeListener(this);
     this.notificationManager_.removeListener(this.getToast_());
     this.$.languageMenu.close();
@@ -145,6 +148,8 @@ export class LanguageMenuElement extends LanguageMenuElementBase implements
         Number.parseInt((e.currentTarget as HTMLElement).dataset['index']!);
     const language = this.availableLanguages_[index]!.languageCode;
 
+    this.logger_.logSpeechSettingsChange(
+        ReadAloudSettingsChange.LANGUAGE_TOGGLE);
     this.fire(ToolbarEvent.LANGUAGE_TOGGLE, {language});
   }
 
@@ -174,7 +179,7 @@ export class LanguageMenuElement extends LanguageMenuElementBase implements
       return [];
     }
 
-    const selectedLangLowerCase = this.selectedLang?.toLowerCase();
+    const selectedLangLowerCase = this.selectedLang.toLowerCase();
 
     const availableLangs: string[] = [...new Set([
       ...this.localesOfLangPackVoices,
@@ -264,7 +269,7 @@ export class LanguageMenuElement extends LanguageMenuElementBase implements
     this.languageSearchValue_ = e.detail.value;
   }
 
-  protected onKeyDown_(e: KeyboardEvent) {
+  protected onKeydown_(e: KeyboardEvent) {
     e.stopPropagation();
   }
 }

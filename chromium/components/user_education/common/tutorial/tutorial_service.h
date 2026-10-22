@@ -71,6 +71,11 @@ class TutorialService {
   virtual void LogStartedFromWhatsNewPage(TutorialIdentifier id,
                                           bool iph_link_was_clicked);
 
+  // This can be used to dismiss a help bubble in a region where it could cause
+  // z-fighting. It does not end the tutorial; if the user performs the correct
+  // step the tutorial may still continue.
+  void DismissBubbleInRegion(const gfx::Rect& screen_region);
+
   // Accessors for registries.
   TutorialRegistry* tutorial_registry() { return tutorial_registry_; }
   HelpBubbleFactoryRegistry* bubble_factory_registry() {
@@ -113,7 +118,7 @@ class TutorialService {
 
   // Called when a non-final bubble is closed. Used to trigger the broken
   // tutorial timeout.
-  void OnNonFinalBubbleClosed(HelpBubble* bubble,
+  void OnNonFinalBubbleClosed(base::WeakPtr<HelpBubble> bubble,
                               HelpBubble::CloseReason reason);
 
   // Calls the completion code for the running tutorial.

@@ -29,6 +29,7 @@
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "services/webnn/public/cpp/context_properties.h"
 #include "services/webnn/public/cpp/operand_descriptor.h"
+#include "services/webnn/public/cpp/webnn_buildflags.h"
 #include "services/webnn/public/mojom/features.mojom-blink.h"
 #include "services/webnn/public/mojom/webnn_context_provider.mojom-blink.h"
 #include "services/webnn/public/mojom/webnn_device.mojom-blink-forward.h"
@@ -64,7 +65,6 @@
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer_view.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_typed_array.h"
-#include "third_party/blink/renderer/modules/ml/buildflags.h"
 #include "third_party/blink/renderer/modules/ml/ml.h"
 #include "third_party/blink/renderer/modules/ml/ml_context.h"
 #include "third_party/blink/renderer/modules/ml/webnn/ml_graph_builder.h"
@@ -426,11 +426,12 @@ class FakeWebNNTensor : public blink_mojom::WebNNTensor {
     base::span(buffer_).copy_prefix_from(src_buffer);
   }
 
-  void ExportTensor(ExportTensorCallback callback) override {
+  void ExportTensor(uint64_t flow_id, ExportTensorCallback callback) override {
     NOTIMPLEMENTED();
   }
 
-  void ImportTensor(const gpu::SyncToken& sync_token_fence) override {
+  void ImportTensor(uint64_t flow_id,
+                    const gpu::SyncToken& sync_token_fence) override {
     NOTIMPLEMENTED();
   }
 
@@ -611,8 +612,6 @@ class FakeWebNNContextProvider : public blink_mojom::WebNNContextProvider {
          /*dequantize_linear_input=*/
          {webnn::SupportedDataTypes::All(), kMaxRank},
          /*dequantize_linear_scale=*/
-         {webnn::SupportedDataTypes::All(), kMaxRank},
-         /*dequantize_linear_zero_point=*/
          {webnn::SupportedDataTypes::All(), kMaxRank},
          /*add_input=*/{webnn::SupportedDataTypes::All(), kMaxRank},
          /*sub_input=*/{webnn::SupportedDataTypes::All(), kMaxRank},

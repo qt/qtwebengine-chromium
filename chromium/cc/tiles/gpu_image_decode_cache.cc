@@ -10,7 +10,6 @@
 #include <limits>
 #include <string>
 
-#include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/containers/span.h"
 #include "base/debug/alias.h"
@@ -315,44 +314,6 @@ bool DrawAndScaleImageYUV(
   }
   return true;
 }
-
-// We use this below, instead of just a std::unique_ptr, so that we can run
-// a Finch experiment to check the impact of not using discardable memory on the
-// GPU decode path.
-class HeapDiscardableMemory : public base::DiscardableMemory {
- public:
-  explicit HeapDiscardableMemory(size_t size)
-      : memory_(base::HeapArray<char>::Uninit(size)), size_(size) {}
-  ~HeapDiscardableMemory() override = default;
-  [[nodiscard]] bool Lock() override {
-    // Locking only succeeds when we have not yet discarded the memory (i.e. if
-    // we have never called |Unlock()|.)
-    return !memory_.empty();
-  }
-  void Unlock() override { Discard(); }
-  void* data() const override {
-    DCHECK(!memory_.empty());
-    return const_cast<char*>(memory_.data());
-  }
-  void DiscardForTesting() override { Discard(); }
-  base::trace_event::MemoryAllocatorDump* CreateMemoryAllocatorDump(
-      const char* name,
-      base::trace_event::ProcessMemoryDump* pmd) const override {
-    auto* dump = pmd->CreateAllocatorDump(name);
-    dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
-                    base::trace_event::MemoryAllocatorDump::kUnitsBytes, size_);
-    return dump;
-  }
-
- private:
-  void Discard() {
-    memory_ = base::HeapArray<char>();
-    size_ = 0;
-  }
-
-  base::HeapArray<char> memory_;
-  size_t size_;
-};
 
 std::optional<SkYUVAPixmapInfo> GetYUVADecodeInfo(
     const DrawImage& draw_image,
@@ -893,11 +854,6 @@ GpuImageDecodeCache::ImageData::ImageData(
       info(std::move(image_info[kAuxImageIndexDefault])),
       gainmap_info(std::move(image_info[kAuxImageIndexGainmap])),
       decode(is_bitmap_backed) {
-  if (info.yuva.has_value()) {
-    // This is the only plane config supported by non-OOP raster.
-    DCHECK_EQ(info.yuva->yuvaInfo().planeConfig(),
-              SkYUVAInfo::PlaneConfig::kY_U_V);
-  }
   if (base::FeatureList::IsEnabled(features::kInitImageDecodeLastUseTime)) {
     last_use = base::TimeTicks::Now();
   }
@@ -1001,10 +957,6 @@ GpuImageDecodeCache::GpuImageDecodeCache(
         this, "cc::GpuImageDecodeCache",
         base::SingleThreadTaskRunner::GetCurrentDefault());
   }
-  memory_pressure_listener_registration_ =
-      std::make_unique<base::AsyncMemoryPressureListenerRegistration>(
-          FROM_HERE, base::MemoryPressureListenerTag::kGpuImageDecodeCache,
-          this);
 
   TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
                "GpuImageDecodeCache::DarkModeFilter", "dark_mode_filter",
@@ -1351,10 +1303,8 @@ void GpuImageDecodeCache::RecordStats() {
 
 void GpuImageDecodeCache::AddToPersistentCache(const DrawImage& draw_image,
                                                scoped_refptr<ImageData> data) {
-  if (features::EnablePurgeGpuImageDecodeCache()) {
-    DCHECK(persistent_cache_.empty() || has_pending_purge_task());
-    PostPurgeOldCacheEntriesTask();
-  }
+  DCHECK(persistent_cache_.empty() || has_pending_purge_task());
+  PostPurgeOldCacheEntriesTask();
 
   WillAddCacheEntry(draw_image);
   persistent_cache_memory_size_ += data->GetTotalSize();
@@ -1434,9 +1384,7 @@ bool GpuImageDecodeCache::TryFlushPendingWork() {
   // fully static, then no flush will come, and no entries will actually be
   // deleted. We only need a shallow flush because no glFlush() is required, we
   // merely need the deletion commands to be processed service-side.
-  if (features::EnablePurgeGpuImageDecodeCache()) {
-    context_->RasterInterface()->ShallowFlushCHROMIUM();
-  }
+  context_->RasterInterface()->ShallowFlushCHROMIUM();
   if (context_->GetLock()) {
     CheckContextLockAcquiredIfNecessary();
     context_->GetLock()->Release();
@@ -2044,17 +1992,11 @@ void GpuImageDecodeCache::DecodeImageIfNecessary(
       const auto info = image_data->GetImageInfo(aux_image);
 
       // Allocate the backing memory for the decode.
-      std::unique_ptr<base::DiscardableMemory> backing_memory;
-      if (base::FeatureList::IsEnabled(
-              features::kNoDiscardableMemoryForGpuDecodePath)) {
-        backing_memory = std::make_unique<HeapDiscardableMemory>(info.size);
-      } else {
-        auto* allocator = base::DiscardableMemoryAllocator::GetInstance();
-        backing_memory =
-            allocator->AllocateLockedDiscardableMemoryWithRetryOrDie(
-                info.size, base::BindOnce(&GpuImageDecodeCache::ClearCache,
-                                          base::Unretained(this)));
-      }
+      auto* allocator = base::DiscardableMemoryAllocator::GetInstance();
+      std::unique_ptr<base::DiscardableMemory> backing_memory =
+          allocator->AllocateLockedDiscardableMemoryWithRetryOrDie(
+              info.size, base::BindOnce(&GpuImageDecodeCache::ClearCache,
+                                        base::Unretained(this)));
 
       // Do the decode.
       if (info.yuva.has_value()) {
@@ -2698,15 +2640,6 @@ void GpuImageDecodeCache::TouchCacheEntryForTesting(
   ImageData* image_data = GetImageDataForDrawImage(
       draw_image, InUseCacheKeyFromDrawImage(draw_image));
   image_data->last_use = base::TimeTicks::Now();
-}
-
-void GpuImageDecodeCache::OnMemoryPressure(base::MemoryPressureLevel level) {
-  if (!ImageDecodeCacheUtils::ShouldEvictCaches(level))
-    return;
-
-  base::AutoLock lock(lock_);
-  base::AutoReset<bool> reset(&aggressively_freeing_resources_, true);
-  ReduceCacheUsageLocked();
 }
 
 bool GpuImageDecodeCache::AcquireContextLockForTesting() {

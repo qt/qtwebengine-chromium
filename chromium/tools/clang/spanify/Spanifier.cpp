@@ -18,6 +18,7 @@
 #include "RawPtrHelpers.h"
 #include "SeparateRepositoryPaths.h"
 #include "SpanifyManualPathsToIgnore.h"
+#include "chrome_project.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Basic/SourceLocation.h"
@@ -28,10 +29,40 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/TargetSelect.h"
+#include "partition_alloc_project.h"
+#include "project.h"
+#include "skia_project.h"
+
+namespace {
 
 using namespace clang::ast_matchers;
 
-namespace {
+enum class ProjectName {
+  kChrome,
+  kPartitionAlloc,
+  kDawn,
+  kSkia,
+  kAngle,
+};
+
+ProjectName g_project;
+
+// This does a switch on g_project and returns the correct global.
+const Project* GetProject() {
+  static constexpr ChromeProject kChromeProject;
+  static constexpr PartitionAllocProject kPartitionAllocProject;
+  static constexpr SkiaProject kSkiaProject;
+  switch (g_project) {
+    case ProjectName::kChrome:
+      return &kChromeProject;
+    case ProjectName::kPartitionAlloc:
+      return &kPartitionAllocProject;
+    case ProjectName::kSkia:
+      return &kSkiaProject;
+    default:
+      llvm_unreachable("Unhandled project type in GetProject()");
+  }
+}
 
 // Specifies how `EmitContainerPointerRewrites()` should behave.
 enum class ContainerPointerRewritesMode {
@@ -68,15 +99,6 @@ void DumpMatchResult(const MatchFinder::MatchResult& result) {
   }
 }
 
-const char kBaseSpanIncludePath[] = "base/containers/span.h";
-
-// Include path that needs to be added to all the files where
-// base::raw_span<...> replaces a raw_ptr<...>.
-const char kBaseRawSpanIncludePath[] = "base/memory/raw_span.h";
-
-const char kBaseAutoSpanificationHelperIncludePath[] =
-    "base/containers/auto_spanification_helper.h";
-
 const char kArrayIncludePath[] = "array";
 
 const char kStringViewIncludePath[] = "string_view";
@@ -108,7 +130,7 @@ enum Precedence {
 // Returns true if the `loc` is inside a macro expansion, except for the case
 // that the `loc` is at a macro argument of the exceptional macros (EXPECT_ and
 // ASSERT_ family).
-// Tests are in: gtest-macro-original.cc
+// Tests are in: tests/chrome/gtest-macro-original.cc
 bool IsInExcludedMacro(clang::SourceLocation loc,
                        const clang::ASTContext& ast_context,
                        const clang::SourceManager& source_manager) {
@@ -165,7 +187,7 @@ bool IsInExcludedMacro(clang::SourceLocation loc,
 // Returns true if the Node is inside a macro expansion, except for the case
 // that the Node is inside a macro argument of the exceptional macros (EXPECT_
 // and ASSERT_ family).
-// Tests are in: gtest-macro-original.cc
+// Tests are in: tests/chrome/gtest-macro-original.cc
 AST_POLYMORPHIC_MATCHER(isInExcludedMacroLocation,
                         AST_POLYMORPHIC_SUPPORTED_TYPES(clang::Decl,
                                                         clang::Stmt,
@@ -542,10 +564,11 @@ std::string GetReplacementDirective(const clang::SourceRange& replacement_range,
                        precedence, replacement_text);
 }
 
-std::string GetIncludeDirective(const clang::SourceRange replacement_range,
-                                const clang::SourceManager& source_manager,
-                                const char* include_path = kBaseSpanIncludePath,
-                                bool is_system_include_path = false) {
+std::string GetIncludeDirective(
+    const clang::SourceRange replacement_range,
+    const clang::SourceManager& source_manager,
+    std::string_view include_path = GetProject()->GetSpanIncludePath(),
+    bool is_system_include_path = false) {
   return llvm::formatv(
       "{0}:::{1}:::-1:::-1:::{2}",
       is_system_include_path ? "include-system-header" : "include-user-header",
@@ -575,7 +598,7 @@ const T* GetNodeOrCrash(const MatchFinder::MatchResult& result,
 // Note that `source_manager` and `lang_opts` arguments must outlive the
 // returned function because the returned function references them.
 //
-// Tests are in: gtest-macro-original.cc
+// Tests are in: tests/chrome/gtest-macro-original.cc
 std::function<clang::SourceLocation(clang::SourceLocation)> GetSpellingLocFunc(
     const clang::SourceManager& source_manager [[clang::lifetimebound]],
     const clang::LangOptions& lang_opts [[clang::lifetimebound]]) {
@@ -836,7 +859,8 @@ std::string getNodeFromPointerTypeLoc(const clang::PointerTypeLoc* type_loc,
           source_manager, lang_opts)
           .str();
   initial_text.pop_back();
-  std::string replacement_text = "base::span<" + initial_text + ">";
+  std::string replacement_text = llvm::formatv(
+      "{0}<{1}>", GetProject()->GetSpanRelativePath(result), initial_text);
 
   const std::string key = NodeKey(type_loc, source_manager);
   EmitReplacement(key,
@@ -854,11 +878,15 @@ std::string getNodeFromRawPtrTypeLoc(
                                               raw_ptr_type_loc->getLAngleLoc());
 
   const std::string key = NodeKey(raw_ptr_type_loc, source_manager);
+  EmitReplacement(
+      key,
+      GetReplacementDirective(
+          replacement_range,
+          llvm::formatv("{0}", GetProject()->GetRawSpanRelativePath(result)),
+          source_manager));
   EmitReplacement(key,
-                  GetReplacementDirective(replacement_range, "base::raw_span",
-                                          source_manager));
-  EmitReplacement(key, GetIncludeDirective(replacement_range, source_manager,
-                                           kBaseRawSpanIncludePath));
+                  GetIncludeDirective(replacement_range, source_manager,
+                                      GetProject()->GetRawSpanIncludePath()));
   return key;
 }
 
@@ -891,11 +919,14 @@ std::string getNodeFromFunctionArrayParameter(
       GetArraySize(array_type_loc, source_manager, ast_context);
   std::string span_type;
   if (array_size_as_string.empty()) {
-    span_type = llvm::formatv("base::span<{0}> ", type).str();
+    span_type = llvm::formatv("{0}<{1}> ",
+                              GetProject()->GetSpanRelativePath(result), type)
+                    .str();
   } else {
-    span_type =
-        llvm::formatv("base::span<{0}, {1}> ", type, array_size_as_string)
-            .str();
+    span_type = llvm::formatv("{0}<{1}, {2}> ",
+                              GetProject()->GetSpanRelativePath(result), type,
+                              array_size_as_string)
+                    .str();
   }
   // In case of array types, replacement_range is expanded to include the
   // brackets, and replacement_text includes the identifier accordingly.
@@ -940,12 +971,14 @@ std::string getNodeFromDecl(const clang::DeclaratorDecl* decl,
   std::string type = GetTypeAsString(qual_type->getPointeeType(), ast_context);
 
   std::string replacement_text =
-      qualifiers.str() + llvm::formatv("base::span<{0}>", type).str();
+      qualifiers.str() +
+      llvm::formatv("{0}<{1}>", GetProject()->GetSpanRelativePath(result), type)
+          .str();
 
   // Since the `type` might be clang deduced type, this node is keyed by the
   // type because it could be different depending on the context. This
   // effectively prevents deduced types from being rewritten.
-  // See test: 'span-template-original.cc' for an example.
+  // See test: 'tests/chrome/span-template-original.cc' for an example.
   const std::string key =
       NodeKeyFromRange(replacement_range, source_manager, type);
   EmitReplacement(key,
@@ -1055,8 +1088,9 @@ SubspanExprReplacement GetSubspanExprReplacement(
     return RangedReplacement{.range = range.getEnd(), .text = "u"};
   }
 
-  EmitReplacement(key, GetIncludeDirective(range, source_manager,
-                                           "base/numerics/safe_conversions.h"));
+  EmitReplacement(
+      key, GetIncludeDirective(range, source_manager,
+                               GetProject()->GetSafeConversionsIncludePath()));
   EmitReplacement(key, GetIncludeDirective(range, source_manager, "cstdint",
                                            /*is_system_include_path=*/true));
   return CheckedCastReplacement{
@@ -1076,7 +1110,7 @@ SubspanExprReplacement GetSubspanExprReplacement(
 // macro argument, and cannot handle the following case appropriately.
 //     #define MACRO() (will_be_span + offset)
 //
-// See test: 'span-frontier-macro-original.cc'
+// See test: 'tests/chrome/span-frontier-macro-original.cc'
 void AdaptBinaryOpInMacro(const MatchFinder::MatchResult& result,
                           const std::string& key) {
   const clang::SourceManager& source_manager = *result.SourceManager;
@@ -1177,7 +1211,8 @@ void AdaptBinaryOperation(const MatchFinder::MatchResult& result) {
     EmitReplacement(
         key, GetReplacementDirective(
                  concrete_binary_operation->getLHS()->getBeginLoc(),
-                 llvm::formatv("base::span<{0}>(",
+                 llvm::formatv("{0}<{1}>(",
+                               GetProject()->GetSpanRelativePath(result),
                                GetTypeAsString(rhs_array_type->getInnerType(),
                                                *result.Context)),
                  source_manager, kAdaptBinaryOperationPrecedence));
@@ -1279,7 +1314,7 @@ void AdaptBinaryPlusEqOperation(const MatchFinder::MatchResult& result) {
 // Handles boolean operations that need to be adapted after a span rewrite.
 //   if(expr) => if(!expr.empty())
 //   if(!expr) => if(expr.empty())
-// Tests are in: operator-bool-original.cc
+// Tests are in: tests/chrome/operator-bool-original.cc
 void DecaySpanToBooleanOp(const MatchFinder::MatchResult& result) {
   const clang::SourceManager& source_manager = *result.SourceManager;
   const std::string& key = GetRHS(result);
@@ -1503,12 +1538,12 @@ clang::SourceLocation EmitContainerPointerRewrites(
     const auto& contained_type = *GetNodeOrCrash<clang::QualType>(
         result, "contained_type", __FUNCTION__);
     EmitReplacement(
-        key,
-        GetReplacementDirective(
-            replacement_range,
-            llvm::formatv("base::span<{0}>(",
-                          GetTypeAsString(contained_type, *result.Context)),
-            source_manager));
+        key, GetReplacementDirective(
+                 replacement_range,
+                 llvm::formatv(
+                     "{0}<{1}>(", GetProject()->GetSpanRelativePath(result),
+                     GetTypeAsString(contained_type, *result.Context)),
+                 source_manager));
   } else {
     // Just delete the `&`.
     EmitReplacement(key,
@@ -1562,9 +1597,12 @@ void EmitSingleVariableSpan(const std::string& key,
       ampersand_loc, clang::Lexer::getLocForEndOfToken(
                          ampersand_loc, 0u, source_manager, lang_opts)};
 
-  EmitReplacement(key, GetReplacementDirective(
-                           ampersand_range, "base::span_from_ref(",
-                           source_manager, kEmitSingleVariableSpanPrecedence));
+  EmitReplacement(
+      key, GetReplacementDirective(
+               ampersand_range,
+               llvm::formatv("{0}(",
+                             GetProject()->GetSpanFromRefRelativePath(result)),
+               source_manager, kEmitSingleVariableSpanPrecedence));
   EmitReplacement(
       key, GetReplacementDirective(
                GetExprRange(*operand_expr, source_manager, lang_opts).getEnd(),
@@ -1585,7 +1623,7 @@ void EmitSingleVariableSpan(const std::string& key,
 //     int tmp_width = sk_bitmap.width();
 //     base::span<uint32_t> image_row(tmp_row, tmp_width - x);
 //
-// Tests are in: unsafe-function-to-macro-original.cc and
+// Tests are in: tests/chrome/unsafe-function-to-macro-original.cc and
 // //base/containers/auto_spanification_helper_unittest.cc
 void EmitUnsafeCxxMethodCall(const std::string& key,
                              const clang::CXXMemberCallExpr* member_call_expr,
@@ -1642,9 +1680,10 @@ void EmitUnsafeCxxMethodCall(const std::string& key,
                                  : member_call_expr->getRParenLoc()),
           has_arg ? ", " : "", source_manager));
 
-  EmitReplacement(key, GetIncludeDirective(
-                           member_call_expr->getSourceRange(), source_manager,
-                           kBaseAutoSpanificationHelperIncludePath));
+  EmitReplacement(key,
+                  GetIncludeDirective(
+                      member_call_expr->getSourceRange(), source_manager,
+                      GetProject()->GetAutoSpanificationHelperIncludePath()));
 }
 
 // Rewrites unsafe third-party free function calls to helper macro calls.
@@ -1660,7 +1699,7 @@ void EmitUnsafeCxxMethodCall(const std::string& key,
 //         hb_buffer_get_glyph_positions(&buffer, &length);
 //     base::span<hb_glyph_position_t> positions(tmp_pos, length);
 //
-// Tests are in: unsafe-function-to-macro-original.cc and
+// Tests are in: tests/chrome/unsafe-function-to-macro-original.cc and
 // //base/containers/auto_spanification_helper_unittest.cc
 void EmitUnsafeFreeFuncCall(const std::string& key,
                             const clang::CallExpr* call_expr,
@@ -1684,9 +1723,10 @@ void EmitUnsafeFreeFuncCall(const std::string& key,
                                                 entry.function_name.length())),
                std::string(entry.macro_name), source_manager));
 
-  EmitReplacement(
-      key, GetIncludeDirective(call_expr->getSourceRange(), source_manager,
-                               kBaseAutoSpanificationHelperIncludePath));
+  EmitReplacement(key,
+                  GetIncludeDirective(
+                      call_expr->getSourceRange(), source_manager,
+                      GetProject()->GetAutoSpanificationHelperIncludePath()));
 }
 
 void EmitUnsafeFunctionCall(const std::string& key,
@@ -1710,7 +1750,7 @@ void EmitUnsafeFunctionCall(const std::string& key,
 // Note that `auto it = ...` is rewritten to `base::span<T> it = ...`
 // separately.
 //
-// Tests are in: array-tests-original.cc
+// Tests are in: tests/chrome/array-tests-original.cc
 void EmitCArrayIterCallExpr(const std::string& key,
                             const clang::CallExpr* call_expr,
                             const MatchFinder::MatchResult& result) {
@@ -1722,16 +1762,8 @@ void EmitCArrayIterCallExpr(const std::string& key,
   assert(func_decl);
   const std::string& function_name = func_decl->getQualifiedNameAsString();
 
-  struct FuncMapping {
-    const std::string_view function_name;
-    const std::string_view replacement_function_name;
-  };
-  static constexpr FuncMapping func_mapping_table[] = {
-      {"std::begin", "base::SpanificationArrayBegin"},
-      {"std::end", "base::SpanificationArrayEnd"},
-      {"std::cbegin", "base::SpanificationArrayCBegin"},
-      {"std::cend", "base::SpanificationArrayCEnd"},
-  };
+  const std::vector<FuncMapping>& func_mapping_table =
+      GetProject()->GetFuncMappingTable();
   std::string replacement_function_name;
   for (const auto& entry : func_mapping_table) {
     if (function_name == entry.function_name) {
@@ -1749,8 +1781,9 @@ void EmitCArrayIterCallExpr(const std::string& key,
       key, GetReplacementDirective(replacement_range, replacement_function_name,
                                    source_manager));
   EmitReplacement(key,
-                  GetIncludeDirective(replacement_range, source_manager,
-                                      kBaseAutoSpanificationHelperIncludePath));
+                  GetIncludeDirective(
+                      replacement_range, source_manager,
+                      GetProject()->GetAutoSpanificationHelperIncludePath()));
 }
 
 std::string GetNodeFromSizeExpr(const clang::Expr* size_expr,
@@ -1848,6 +1881,12 @@ void RewriteUnaryOperation(const MatchFinder::MatchResult& result) {
 
   assert(operator_loc.isValid());
 
+  // Exclude macros because spanifier will generate closing parenthesis in
+  // unexpected locations.
+  if (IsInExcludedMacro(operator_loc, *result.Context, source_manager)) {
+    return;
+  }
+
   // Get the source range of the operand (the 'ptr' part).
   clang::SourceRange operand_range =
       GetExprRange(*operand->IgnoreParenImpCasts(), source_manager, lang_opts);
@@ -1892,15 +1931,16 @@ void RewriteUnaryOperation(const MatchFinder::MatchResult& result) {
                                    -kRewriteUnaryOperationPrecedence));
 
   EmitReplacement(key,
-                  GetIncludeDirective(operand_range, source_manager,
-                                      kBaseAutoSpanificationHelperIncludePath));
+                  GetIncludeDirective(
+                      operand_range, source_manager,
+                      GetProject()->GetAutoSpanificationHelperIncludePath()));
 }
 
 // Rewrite:
 //   `sizeof(c_array)`
 // Into:
 //   `base::SpanificationSizeofForStdArray(std_array)`
-// Tests are in: array-tests-original.cc
+// Tests are in: tests/chrome/array-tests-original.cc
 void RewriteArraySizeof(const MatchFinder::MatchResult& result) {
   clang::SourceManager& source_manager = *result.SourceManager;
 
@@ -1936,8 +1976,9 @@ void RewriteArraySizeof(const MatchFinder::MatchResult& result) {
                                     array_decl_as_string),
                       source_manager));
   EmitReplacement(key,
-                  GetIncludeDirective(replacement_range, source_manager,
-                                      kBaseAutoSpanificationHelperIncludePath));
+                  GetIncludeDirective(
+                      replacement_range, source_manager,
+                      GetProject()->GetAutoSpanificationHelperIncludePath()));
 }
 
 // Add `.data()` at the frontier of a span change. This is applied if the node
@@ -2643,7 +2684,7 @@ std::string getArrayNode(bool is_lhs, const MatchFinder::MatchResult& result) {
 // iterator.
 //   it == std::begin(c_array)
 //   it != std::end(c_array)
-// Tests are in: array-tests-original.cc
+// Tests are in: tests/chrome/array-tests-original.cc
 void RewriteComparisonWithCArrayIter(const MatchFinder::MatchResult& result) {
   const clang::SourceManager& source_manager = *result.SourceManager;
   const clang::CallExpr* call_expr = GetNodeOrCrash<clang::CallExpr>(
@@ -2667,7 +2708,7 @@ void RewriteComparisonWithCArrayIter(const MatchFinder::MatchResult& result) {
 // In the following implementation, `var` is called LHS and `func` is called
 // RHS.
 //
-// Tests are in: func-ptr-var-original.cc
+// Tests are in: tests/chrome/func-ptr-var-original.cc
 void RewriteFunctionPointerType(const MatchFinder::MatchResult& result) {
   const clang::VarDecl* lhs_var_decl = GetNodeOrCrash<clang::VarDecl>(
       result, "lhs_funcptrvardecl",
@@ -2742,7 +2783,7 @@ void RewriteFunctionPointerType(const MatchFinder::MatchResult& result) {
 // function declarations (forward declarations and overridden methods) to each
 // other bidirectionally per the matched function parameter/return type. Note
 // that a function definition is a function declaration by definition.
-// Tests are in: fct-decl-tests-original.cc
+// Tests are in: tests/chrome/fct-decl-tests-original.cc
 //
 // Example) Given the following C++ code,
 //
@@ -2946,13 +2987,15 @@ void RemoveReinterpretCastExpr(const MatchFinder::MatchResult& result,
         GetNodeOrCrash<clang::QualType>(
             result, "target_type", "`reinterpret_cast` implies `target_type`")
             ->isConstQualified();
-    std::string replacement = target_type_is_const
-                                  ? "base::as_byte_span"
-                                  : "base::as_writable_byte_span";
+    std::string_view replacement =
+        (target_type_is_const
+             ? GetProject()->GetAsByteSpanRelativePath(result)
+             : GetProject()->GetAsWritableByteSpanRelativePath(result));
 
     return EmitReplacement(
-        node_key, GetReplacementDirective(replacement_range, replacement,
-                                          *result.SourceManager));
+        node_key,
+        GetReplacementDirective(replacement_range, std::string(replacement),
+                                *result.SourceManager));
   }
 }
 
@@ -3032,17 +3075,6 @@ void MatchAdjacency(const MatchFinder::MatchResult& result) {
   EmitEdge(lhs, rhs);
 }
 
-raw_ptr_plugin::FilterFile PathsToExclude() {
-  std::vector<std::string> paths_to_exclude_lines;
-  paths_to_exclude_lines.insert(paths_to_exclude_lines.end(),
-                                kSpanifyManualPathsToIgnore.begin(),
-                                kSpanifyManualPathsToIgnore.end());
-  paths_to_exclude_lines.insert(paths_to_exclude_lines.end(),
-                                kSeparateRepositoryPaths.begin(),
-                                kSeparateRepositoryPaths.end());
-  return raw_ptr_plugin::FilterFile(paths_to_exclude_lines);
-}
-
 class ExprVisitor
     : public clang::ast_matchers::internal::BoundNodesTreeBuilder::Visitor {
  public:
@@ -3085,16 +3117,29 @@ AST_MATCHER_P(clang::Expr,
   return InnerMatcher.matches(Node, Finder, Builder);
 }
 
+AST_MATCHER_P(clang::Decl,
+              isExcludedFromProject,
+              const raw_ptr_plugin::FilterFile*,
+              excluded_paths) {
+  using namespace clang::ast_matchers;
+  return GetProject()->IsExcludedFromProject(Node, Finder, Builder,
+                                             excluded_paths);
+}
+
 class Spanifier {
  public:
   explicit Spanifier(MatchFinder& finder) : match_finder_(finder) {
     // `raw_ptr` or `span` should not have `.data()` applied.
     auto frontier_exclusions = anyOf(
-        isExpansionInSystemHeader(), raw_ptr_plugin::isInExternCContext(),
+        // 1. Common exclusions that aren't project specific:
+        isExpansionInSystemHeader(), isInExcludedMacroLocation(),
         raw_ptr_plugin::isInThirdPartyLocation(),
         raw_ptr_plugin::isInGeneratedLocation(),
-        raw_ptr_plugin::ImplicitFieldDeclaration(), isInExcludedMacroLocation(),
-        raw_ptr_plugin::isInLocationListedInFilterFile(&paths_to_exclude_));
+        raw_ptr_plugin::ImplicitFieldDeclaration(),
+        raw_ptr_plugin::isInExternCContext(),
+
+        // 2. Project-Specific Exclusions
+        isExcludedFromProject(&paths_to_exclude_));
 
     // Standard exclusions include `raw_ptr` and `span`.
     auto exclusions = anyOf(
@@ -3485,7 +3530,7 @@ class Spanifier {
 
     // When passing now-span buffers to third_party functions as parameters, we
     // need to add `.data()` to extract the pointer and keep things compiling.
-    // See test: 'array-external-call-original.cc'
+    // See test: 'tests/chrome/array-external-call-original.cc'
     //
     // TODO(crbug.com/419598098): we had trouble exercising the "add
     // `.data()` to frontier calls" logic in our test harness. This
@@ -3813,24 +3858,40 @@ class Spanifier {
     match_callbacks_.push_back(std::move(match_callback));
   }
 
-  raw_ptr_plugin::FilterFile paths_to_exclude_ = PathsToExclude();
+  raw_ptr_plugin::FilterFile paths_to_exclude_ = GetProject()->PathsToExclude();
   MatchFinder& match_finder_;
   std::vector<std::unique_ptr<MatchCallback>> match_callbacks_;
 };
 
 }  // namespace
 
+static llvm::cl::OptionCategory g_spanifier_category(
+    "spanifier: changes"
+    " 1- |T* var| to |base::span<T> var|."
+    " 2- |raw_ptr<T> var| to |base::raw_span<T> var|");
+
+static llvm::cl::opt<ProjectName> g_project_opt(
+    "project",
+    llvm::cl::desc("The project to run on."),
+    llvm::cl::values(
+        clEnumValN(ProjectName::kChrome, "chrome", "The Chrome browser."),
+        clEnumValN(ProjectName::kPartitionAlloc,
+                   "partition_alloc",
+                   "The PartitionAlloc project."),
+        clEnumValN(ProjectName::kDawn, "dawn", "The Dawn project."),
+        clEnumValN(ProjectName::kSkia, "skia", "The Skia project."),
+        clEnumValN(ProjectName::kAngle, "angle", "The Angle project.")),
+    llvm::cl::init(ProjectName::kChrome),
+    llvm::cl::cat(g_spanifier_category));
+
 int main(int argc, const char* argv[]) {
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmParser();
-  llvm::cl::OptionCategory category(
-      "spanifier: changes"
-      " 1- |T* var| to |base::span<T> var|."
-      " 2- |raw_ptr<T> var| to |base::raw_span<T> var|");
-
   llvm::Expected<clang::tooling::CommonOptionsParser> options =
-      clang::tooling::CommonOptionsParser::create(argc, argv, category);
+      clang::tooling::CommonOptionsParser::create(argc, argv,
+                                                  g_spanifier_category);
   assert(static_cast<bool>(options));  // Should not return an error.
+  g_project = g_project_opt;
   clang::tooling::ClangTool tool(options->getCompilations(),
                                  options->getSourcePathList());
 

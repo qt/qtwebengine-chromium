@@ -35,7 +35,8 @@ class CONTENT_EXPORT NavigationInterceptor
     ~RequestBuilder() = default;
     CONTENT_EXPORT std::optional<
         std::vector<blink::mojom::IdentityProviderGetParametersPtr>>
-    Build(const net::structured_headers::Dictionary& dictionary);
+    Build(const GURL& base_url,
+          const net::structured_headers::Dictionary& dictionary);
   };
 
   class ResponseBuilder {
@@ -68,6 +69,8 @@ class CONTENT_EXPORT NavigationInterceptor
   ThrottleCheckResult ProcessRequest();
 
   void OnHeaderParsed(
+      base::expected<net::structured_headers::Dictionary, std::string> result);
+  void OnConnectionStatusHeaderParsed(
       base::expected<net::structured_headers::Dictionary, std::string> result);
   void OnTokenResponse(
       blink::mojom::RequestTokenStatus status,

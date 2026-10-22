@@ -48,6 +48,7 @@ namespace tint::core::ir::transform {
 /// them.
 const Capabilities kBindingRemapperCapabilities{
     Capability::kAllow8BitIntegers,
+    Capability::kAllow16BitIntegers,
 };
 
 /// BindingRemapper is a transform that remaps binding point indices and access controls.

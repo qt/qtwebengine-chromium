@@ -10,15 +10,17 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/types/expected.h"
-#include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "chrome/browser/autocomplete/aim_eligibility_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_stats.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/contextual_search/searchbox_context_data.h"
+#include "chrome/browser/ui/location_bar/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_controller.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_next_features.h"
@@ -32,6 +34,7 @@
 #include "chrome/browser/ui/webui/cr_components/searchbox/searchbox_omnibox_client.h"
 #include "chrome/browser/ui/webui/metrics_reporter/metrics_reporter.h"
 #include "chrome/browser/ui/webui/omnibox_popup/omnibox_popup_ui.h"
+#include "chrome/browser/ui/webui/omnibox_popup/omnibox_popup_web_contents_helper.h"
 #include "chrome/browser/ui/webui/webui_embedding_context.h"
 #include "chrome/grit/new_tab_page_resources.h"
 #include "components/contextual_search/contextual_search_service.h"
@@ -58,6 +61,7 @@
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/strings/grit/components_strings.h"
+#include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "net/cookies/cookie_util.h"
@@ -93,11 +97,13 @@ searchbox::mojom::SelectionLineState ConvertLineState(
 
 WebuiOmniboxHandler::WebuiOmniboxHandler(
     mojo::PendingReceiver<searchbox::mojom::PageHandler> pending_page_handler,
+    mojo::PendingRemote<searchbox::mojom::Page> pending_page,
     MetricsReporter* metrics_reporter,
     OmniboxController* omnibox_controller,
     content::WebUI* web_ui,
     GetSessionHandleCallback get_session_callback)
     : ContextualSearchboxHandler(std::move(pending_page_handler),
+                                 std::move(pending_page),
                                  Profile::FromWebUI(web_ui),
                                  web_ui->GetWebContents(),
                                  /*controller=*/nullptr,
@@ -128,6 +134,17 @@ WebuiOmniboxHandler::WebuiOmniboxHandler(
       contextual_search::kSearchContentSharingSettings,
       base::BindRepeating(&WebuiOmniboxHandler::OnContentSharingPolicyChanged,
                           base::Unretained(this)));
+
+  if (tabs::TabInterface* tab =
+          tabs::TabInterface::MaybeGetFromContents(web_ui->GetWebContents())) {
+    tab_will_detach_subscription_ = tab->RegisterWillDetach(base::BindRepeating(
+        &WebuiOmniboxHandler::OnTabWillDetach, base::Unretained(this)));
+    tab_did_insert_subscription_ = tab->RegisterDidInsert(base::BindRepeating(
+        &WebuiOmniboxHandler::OnTabDidInsert, base::Unretained(this)));
+  }
+
+  OnAimPopupEligibilityChanged();
+  OnContentSharingPolicyChanged();
 }
 
 WebuiOmniboxHandler::~WebuiOmniboxHandler() = default;
@@ -173,7 +190,7 @@ void WebuiOmniboxHandler::AddTabContext(int32_t tab_id,
   tabs::TabInterface* const tab = handle.Get();
   if (!tab) {
     std::move(callback).Run(base::unexpected(
-        contextual_search::FileUploadErrorType::kBrowserProcessingError));
+        contextual_search::ContextUploadErrorType::kBrowserProcessingError));
     return;
   }
 
@@ -181,7 +198,7 @@ void WebuiOmniboxHandler::AddTabContext(int32_t tab_id,
       browser_window_interface->GetFeatures().searchbox_context_data();
   if (!searchbox_context_data) {
     std::move(callback).Run(base::unexpected(
-        contextual_search::FileUploadErrorType::kBrowserProcessingError));
+        contextual_search::ContextUploadErrorType::kBrowserProcessingError));
     return;
   }
   auto context = searchbox_context_data->TakePendingContext();
@@ -201,13 +218,6 @@ void WebuiOmniboxHandler::AddTabContext(int32_t tab_id,
 
   edit_model()->OpenAiMode(false, /*via_context_menu=*/false);
   std::move(callback).Run(base::ok(base::UnguessableToken::Create()));
-}
-
-void WebuiOmniboxHandler::SetPage(
-    mojo::PendingRemote<searchbox::mojom::Page> pending_page) {
-  ContextualSearchboxHandler::SetPage(std::move(pending_page));
-  OnAimPopupEligibilityChanged();
-  OnContentSharingPolicyChanged();
 }
 void WebuiOmniboxHandler::StepSelection(
     OmniboxPopupSelection::Direction direction,
@@ -388,13 +398,40 @@ void WebuiOmniboxHandler::OnCharTyped(base::TimeTicks timestamp) {
   }
 }
 
-void WebuiOmniboxHandler::OnTabStripModelChanged(
-    TabStripModel* tab_strip_model,
-    const TabStripModelChange& change,
-    const TabStripSelectionChange& selection) {
-  web_contents_observer_.ScopedObserve(selection.new_contents);
-  ContextualSearchboxHandler::OnTabStripModelChanged(tab_strip_model, change,
-                                                     selection);
+void WebuiOmniboxHandler::OnActiveTabChanged(TabListInterface& tab_list,
+                                             tabs::TabInterface* tab) {
+  web_contents_observer_.ScopedObserve(tab->GetContents());
+  ContextualSearchboxHandler::OnActiveTabChanged(tab_list, tab);
+}
+
+void WebuiOmniboxHandler::OnTabWillDetach(
+    tabs::TabInterface* tab,
+    tabs::TabInterface::DetachReason reason) {
+  edit_model_observation_.Reset();
+  autocomplete_controller_observation_.Reset();
+  controller_ = nullptr;
+  UpdateTabListObservation(nullptr);
+}
+
+void WebuiOmniboxHandler::OnTabDidInsert(tabs::TabInterface* tab) {
+  if (auto* browser_window_interface = tab->GetBrowserWindowInterface()) {
+    if (auto* location_bar =
+            browser_window_interface->GetFeatures().location_bar()) {
+      if (auto* omnibox_controller = location_bar->GetOmniboxController()) {
+        edit_model_observation_.Reset();
+        autocomplete_controller_observation_.Reset();
+        controller_ = omnibox_controller;
+        autocomplete_controller_observation_.Observe(autocomplete_controller());
+        edit_model_observation_.Observe(omnibox_controller->edit_model());
+        if (auto* helper = OmniboxPopupWebContentsHelper::FromWebContents(
+                web_contents_.get())) {
+          helper->set_omnibox_controller(omnibox_controller);
+        }
+        UpdateTabListObservation(
+            TabListInterface::From(browser_window_interface));
+      }
+    }
+  }
 }
 
 WebuiOmniboxHandler::WebContentsObserver::WebContentsObserver(
@@ -404,8 +441,11 @@ WebuiOmniboxHandler::WebContentsObserver::WebContentsObserver(
   auto* browser_window_interface =
       webui::GetBrowserWindowInterface(web_contents);
   if (browser_window_interface) {
-    Observe(
-        browser_window_interface->GetTabStripModel()->GetActiveWebContents());
+    if (auto* tab_list = TabListInterface::From(browser_window_interface)) {
+      if (auto* active_tab = tab_list->GetActiveTab()) {
+        Observe(active_tab->GetContents());
+      }
+    }
   }
 }
 
@@ -420,6 +460,12 @@ void WebuiOmniboxHandler::WebContentsObserver::DidFinishNavigation(
 }
 
 int WebuiOmniboxHandler::GetContextMenuMaxTabSuggestions() {
+  omnibox::InputState input_state = GetInputState();
+  if (auto it = input_state.max_inputs_by_type.find(
+          omnibox::InputType::INPUT_TYPE_BROWSER_TAB);
+      it != input_state.max_inputs_by_type.end()) {
+    return it->second;
+  }
   return omnibox::kContextMenuMaxTabSuggestions.Get();
 }
 

@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_gc_controller.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_microtasks_scope.h"
 #include "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -43,7 +44,6 @@
 #include "third_party/blink/renderer/platform/audio/audio_bus.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/source_location.h"
-#include "third_party/blink/renderer/platform/bindings/v8_binding_macros.h"
 #include "third_party/blink/renderer/platform/bindings/v8_object_constructor.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
@@ -85,9 +85,10 @@ class AudioWorkletGlobalScopeTest : public PageTestBase, public ModuleTestBase {
             nullptr /* web_worker_fetch_context */,
             Vector<network::mojom::blink::ContentSecurityPolicyPtr>(),
             Vector<network::mojom::blink::ContentSecurityPolicyPtr>(),
-            window->GetReferrerPolicy(), window->GetSecurityOrigin(),
-            window->IsSecureContext(), window->GetHttpsState(),
-            nullptr /* worker_clients */, nullptr /* content_settings_client */,
+            window->GetReferrerPolicy(), DocumentPolicy::DocumentPolicyBundle{},
+            window->GetSecurityOrigin(), window->IsSecureContext(),
+            window->GetHttpsState(), nullptr /* worker_clients */,
+            nullptr /* content_settings_client */,
             OriginTrialContext::GetInheritedTrialFeatures(window).get(),
             base::UnguessableToken::Create(), nullptr /* worker_settings */,
             mojom::blink::V8CacheOptions::kDefault,
@@ -289,9 +290,7 @@ class AudioWorkletGlobalScopeTest : public PageTestBase, public ModuleTestBase {
     ScriptState::Scope scope(script_state);
     v8::Isolate* isolate = script_state->GetIsolate();
     EXPECT_TRUE(isolate);
-    v8::MicrotasksScope microtasks_scope(
-        isolate, ToMicrotaskQueue(script_state),
-        v8::MicrotasksScope::kDoNotRunMicrotasks);
+    V8DoNotRunMicrotasksScope microtasks_scope(script_state);
 
     String source_code =
         R"JS(
@@ -334,16 +333,14 @@ class AudioWorkletGlobalScopeTest : public PageTestBase, public ModuleTestBase {
     output_buses.push_back(output_bus.get());
 
     // Fill `input_channel` with 1 and zero out `output_bus`.
-    std::fill(
-        input_channel->MutableData(),
-        UNSAFE_TODO(input_channel->MutableData() + input_channel->length()), 1);
+    std::ranges::fill(input_channel->MutableSpan(), 1);
     output_bus->Zero();
 
     // Then invoke the process() method to perform JS buffer manipulation. The
     // output buffer should contain a constant value of 2.
     processor->Process(input_buses, output_buses, param_data_map);
     for (unsigned i = 0; i < output_channel->length(); ++i) {
-      UNSAFE_TODO(EXPECT_EQ(output_channel->Data()[i], 2));
+      EXPECT_EQ(output_channel->Span()[i], 2);
     }
 
     wait_event->Signal();

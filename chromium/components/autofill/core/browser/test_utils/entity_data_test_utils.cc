@@ -8,6 +8,7 @@
 #include "base/i18n/time_formatting.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/autofill_field.h"
+#include "components/autofill/core/browser/autofill_format_string.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance_test_api.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
@@ -137,6 +138,12 @@ EntityInstance GetKnownTravelerNumberInstance(
     KnownTravelerNumberOptions options) {
   using enum AttributeTypeName;
   std::vector<AttributeInstance> attributes;
+  if (options.name) {
+    attributes.emplace_back(AttributeType(kKnownTravelerNumberName));
+    attributes.back().SetInfo(
+        NAME_FULL, options.name, std::string(options.app_locale),
+        /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
+  }
   if (options.number) {
     attributes.emplace_back(AttributeType(kKnownTravelerNumberNumber));
     attributes.back().SetInfo(
@@ -157,6 +164,12 @@ EntityInstance GetKnownTravelerNumberInstance(
 EntityInstance GetRedressNumberEntityInstance(RedressNumberOptions options) {
   using enum AttributeTypeName;
   std::vector<AttributeInstance> attributes;
+  if (options.name) {
+    attributes.emplace_back(AttributeType(kRedressNumberName));
+    attributes.back().SetInfo(
+        NAME_FULL, options.name, std::string(options.app_locale),
+        /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
+  }
   if (options.number) {
     attributes.emplace_back(AttributeType(kRedressNumberNumber));
     attributes.back().SetInfo(
@@ -224,6 +237,12 @@ EntityInstance GetVehicleEntityInstanceWithRandomGuid(VehicleOptions options) {
 EntityInstance GetNationalIdCardEntityInstance(NationalIdCardOptions options) {
   using enum AttributeTypeName;
   std::vector<AttributeInstance> attributes;
+  if (options.name) {
+    attributes.emplace_back(AttributeType(kNationalIdCardName));
+    attributes.back().SetInfo(
+        NAME_FULL, options.name, std::string(options.app_locale),
+        /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
+  }
   if (options.number) {
     attributes.emplace_back(AttributeType(kNationalIdCardNumber));
     attributes.back().SetInfo(NATIONAL_ID_CARD_NUMBER, options.number,
@@ -240,17 +259,19 @@ EntityInstance GetNationalIdCardEntityInstance(NationalIdCardOptions options) {
   }
   if (options.issue_date) {
     attributes.emplace_back(AttributeType(kNationalIdCardIssueDate));
-    attributes.back().SetInfo(NATIONAL_ID_CARD_ISSUE_DATE, options.issue_date,
-                              std::string(options.app_locale),
-                              /*format_string=*/std::nullopt,
-                              VerificationStatus::kNoStatus);
+    attributes.back().SetInfo(
+        NATIONAL_ID_CARD_ISSUE_DATE, options.issue_date,
+        std::string(options.app_locale),
+        AutofillFormatString(u"YYYY-MM-DD", FormatString_Type_DATE),
+        VerificationStatus::kNoStatus);
   }
   if (options.expiry_date) {
     attributes.emplace_back(AttributeType(kNationalIdCardExpirationDate));
     attributes.back().SetInfo(
         NATIONAL_ID_CARD_EXPIRATION_DATE, options.expiry_date,
         std::string(options.app_locale),
-        /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
+        AutofillFormatString(u"YYYY-MM-DD", FormatString_Type_DATE),
+        VerificationStatus::kNoStatus);
   }
   return GetEntityInstance(std::move(attributes), ToEntityOptions(options));
 }
@@ -289,16 +310,15 @@ EntityInstance GetFlightReservationEntityInstance(
   }
   if (options.departure_airport) {
     attributes.emplace_back(AttributeType(kFlightReservationDepartureAirport));
-    attributes.back().SetInfo(
-        FLIGHT_RESERVATION_DEPARTURE_AIRPORT, options.departure_airport,
-        std::string(options.app_locale),
-        /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
+    attributes.back().SetInfo(UNKNOWN_TYPE, options.departure_airport,
+                              std::string(options.app_locale),
+                              /*format_string=*/std::nullopt,
+                              VerificationStatus::kNoStatus);
   }
   if (options.arrival_airport) {
     attributes.emplace_back(AttributeType(kFlightReservationArrivalAirport));
     attributes.back().SetInfo(
-        FLIGHT_RESERVATION_ARRIVAL_AIRPORT, options.arrival_airport,
-        std::string(options.app_locale),
+        UNKNOWN_TYPE, options.arrival_airport, std::string(options.app_locale),
         /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
   }
 
@@ -331,6 +351,90 @@ EntityInstance GetFlightReservationEntityInstanceWithRandomGuid(
   return GetFlightReservationEntityInstance(options);
 }
 
+EntityInstance GetOrderEntityInstance(OrderOptions options) {
+  using enum AttributeTypeName;
+  std::vector<AttributeInstance> attributes;
+  if (options.id) {
+    attributes.emplace_back(AttributeType(kOrderId));
+    attributes.back().SetInfo(
+        ORDER_ID, options.id, std::string(options.app_locale),
+        /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
+  }
+  if (options.account) {
+    attributes.emplace_back(AttributeType(kOrderAccount));
+    attributes.back().SetInfo(
+        UNKNOWN_TYPE, options.account, std::string(options.app_locale),
+        /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
+  }
+  if (options.date) {
+    attributes.emplace_back(AttributeType(kOrderDate));
+    attributes.back().SetInfo(
+        ORDER_DATE, options.date, std::string(options.app_locale),
+        AutofillFormatString(u"YYYY-MM-DD", FormatString_Type_DATE),
+        VerificationStatus::kNoStatus);
+  }
+  if (options.merchant_name) {
+    attributes.emplace_back(AttributeType(kOrderMerchantName));
+    attributes.back().SetInfo(ORDER_MERCHANT_NAME, options.merchant_name,
+                              std::string(options.app_locale),
+                              /*format_string=*/std::nullopt,
+                              VerificationStatus::kNoStatus);
+  }
+  if (options.merchant_domain) {
+    attributes.emplace_back(AttributeType(kOrderMerchantDomain));
+    attributes.back().SetInfo(
+        UNKNOWN_TYPE, options.merchant_domain, std::string(options.app_locale),
+        /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
+  }
+  if (options.product_names) {
+    attributes.emplace_back(AttributeType(kOrderProductNames));
+    attributes.back().SetInfo(
+        UNKNOWN_TYPE, options.product_names, std::string(options.app_locale),
+        /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
+  }
+  return GetEntityInstance(std::move(attributes), ToEntityOptions(options));
+}
+
+EntityInstance GetShipmentEntityInstance(ShipmentOptions options) {
+  using enum AttributeTypeName;
+  std::vector<AttributeInstance> attributes;
+  if (options.tracking_number) {
+    attributes.emplace_back(AttributeType(kShipmentTrackingNumber));
+    attributes.back().SetInfo(SHIPMENT_TRACKING_NUMBER, options.tracking_number,
+                              std::string(options.app_locale),
+                              /*format_string=*/std::nullopt,
+                              VerificationStatus::kNoStatus);
+  }
+  if (options.delivery_zip_code) {
+    attributes.emplace_back(AttributeType(kShipmentDeliveryZipCode));
+    attributes.back().SetInfo(UNKNOWN_TYPE, options.delivery_zip_code,
+                              std::string(options.app_locale),
+                              /*format_string=*/std::nullopt,
+                              VerificationStatus::kNoStatus);
+  }
+  if (options.carrier_name) {
+    attributes.emplace_back(AttributeType(kShipmentCarrierName));
+    attributes.back().SetInfo(
+        UNKNOWN_TYPE, options.carrier_name, std::string(options.app_locale),
+        /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
+  }
+  if (options.carrier_domain) {
+    attributes.emplace_back(AttributeType(kShipmentCarrierDomain));
+    attributes.back().SetInfo(
+        UNKNOWN_TYPE, options.carrier_domain, std::string(options.app_locale),
+        /*format_string=*/std::nullopt, VerificationStatus::kNoStatus);
+  }
+  if (options.estimated_delivery_date) {
+    attributes.emplace_back(AttributeType(kShipmentEstimatedDeliveryDate));
+    attributes.back().SetInfo(
+        UNKNOWN_TYPE, options.estimated_delivery_date,
+        std::string(options.app_locale),
+        AutofillFormatString(u"YYYY-MM-DD", FormatString_Type_DATE),
+        VerificationStatus::kNoStatus);
+  }
+  return GetEntityInstance(std::move(attributes), ToEntityOptions(options));
+}
+
 EntityInstance GetEntityInstance(std::vector<AttributeInstance> attributes,
                                  EntityOptions options) {
   CHECK(!attributes.empty()) << "Attributes must be non-empty.";
@@ -359,7 +463,7 @@ EntityInstance MaskEntityInstance(const EntityInstance& entity_instance) {
     if (!attribute.type().is_obfuscated()) {
       continue;
     }
-    const FieldType field_type = attribute.type().field_type();
+    const std::optional<FieldType> field_type = attribute.type().field_type();
     const std::u16string full_value =
         attribute.GetInfo(field_type, "en-US", /*format_string=*/std::nullopt);
     // Do some simple masking to simulate what the server might do.

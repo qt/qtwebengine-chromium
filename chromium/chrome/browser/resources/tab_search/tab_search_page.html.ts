@@ -4,13 +4,16 @@
 
 import {html, nothing} from '//resources/lit/v3_0/lit.rollup.js';
 
+import type {TabData, TabGroupData} from './tab_data.js';
+import {tokenToString} from './tab_data.js';
 import type {TabSearchPageElement} from './tab_search_page.js';
+import type {TitleItem} from './title_item.js';
 
 // clang-format off
 export function getHtml(this: TabSearchPageElement) {
   return html`<!--_html_template_start_-->
 <div id="tabSearchPage">
-  <div id="searchField" @keydown="${this.onSearchKeyDown_}"
+  <div id="searchField" @keydown="${this.onSearchKeydown_}"
       clear-label="$i18n{clearSearch}">
     <cr-icon id="searchIcon" icon="tab-search:search"></cr-icon>
     <div id="searchWrapper">
@@ -35,15 +38,16 @@ export function getHtml(this: TabSearchPageElement) {
         max-height="${this.listMaxHeight_}"
         item-size="${this.listItemSize_}"
         .items="${this.filteredItems_}"
-        @selected-change="${this.onSelectedChanged_}"
+        @selected-change="${this.onSelectedChange_}"
         role="listbox"
-        .isSelectable="${(item: any) => {
+        .isSelectable="${(item: TitleItem|TabData|TabGroupData) => {
           return item.constructor.name === 'TabData' ||
               item.constructor.name === 'TabGroupData';
         }}"
-        .template="${(item: any, index: number) => {
+        .template="${(item: TitleItem|TabData|TabGroupData, index: number) => {
       switch (item.constructor.name) {
        case 'TitleItem':
+        this.assertIsTitleItem_(item);
         return html`
           <div class="list-section-title">
             <div>${item.title}</div>
@@ -56,11 +60,12 @@ export function getHtml(this: TabSearchPageElement) {
                   ?expanded="${item.expanded}"
                   expand-title="$i18n{expandRecentlyClosed}"
                   collapse-title="$i18n{collapseRecentlyClosed}"
-                  @expanded-changed="${this.onTitleExpandChanged_}"
+                  @expanded-changed="${this.onTitleExpandedChanged_}"
                   no-hover>
               </cr-expand-button>` : ''}
           </div>`;
        case 'TabData':
+        this.assertIsTabData_(item);
         return html`<tab-search-item id="${item.tab.tabId}"
             aria-label="${this.ariaLabel_(item)}"
             class="mwb-list-item selectable" .data="${item}"
@@ -68,28 +73,30 @@ export function getHtml(this: TabSearchPageElement) {
             @click="${this.onItemClick_}"
             @close="${this.onItemClose_}"
             @focus="${this.onItemFocus_}"
-            @keydown="${this.onItemKeyDown_}"
+            @keydown="${this.onItemKeydown_}"
             role="option"
             tabindex="0">
         </tab-search-item>`;
        case 'TabGroupData':
-        return html`<tab-search-group-item id="${item.tabGroup.id}"
+        this.assertIsTabGroupData_(item);
+        return html`<tab-search-group-item
+            id="${tokenToString(item.tabGroup.id)}"
             class="mwb-list-item selectable"
             .data="${item}"
             data-index="${index}"
             aria-label="${this.ariaLabel_(item)}"
             @click="${this.onItemClick_}"
             @focus="${this.onItemFocus_}"
-            @keydown="${this.onItemKeyDown_}"
+            @keydown="${this.onItemKeydown_}"
             role="option" tabindex="0">
         </tab-search-group-item>`;
        default:
-        return '';
+        return html``;
       }
     }}">
     </selectable-lazy-list>
   </div>
-  <div id="no-results" ?hidden="${this.filteredItems_.length}">
+  <div id="no-results" ?hidden="${this.filteredItems_.length > 0}">
     $i18n{noResultsFound}
   </div>
 </div>

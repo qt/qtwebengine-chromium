@@ -42,8 +42,6 @@
 #include "dawn/common/Ref.h"
 #include "dawn/common/StackAllocated.h"
 #include "dawn/common/Time.h"
-#include "partition_alloc/pointers/raw_ptr.h"
-#include "partition_alloc/pointers/raw_ptr_exclusion.h"
 
 namespace dawn {
 
@@ -172,11 +170,8 @@ class DAWN_SCOPED_LOCKABLE Guard : public NonMovable, StackAllocated {
     friend class CondVarGuard<T, Traits, NotifyType::None>;
 
     typename Traits::LockType mLock;
-    // RAW_PTR_EXCLUSION: This pointer is created/destroyed on each access to a MutexProtected.
-    // The pointer is always transiently used while the MutexProtected is in scope so it is
-    // unlikely to be used after it is freed.
-    RAW_PTR_EXCLUSION T* mObj = nullptr;
-    raw_ptr<class Defer> mDefer = nullptr;
+    T* mObj = nullptr;
+    class Defer* mDefer = nullptr;
 };
 
 // CondVarGuard is a different guard class that internally holds a Guard, but provides additional
@@ -210,7 +205,7 @@ class CondVarGuard : public NonMovable, StackAllocated {
 
   protected:
     CondVarGuard(T* obj, Traits::MutexType& mutex, std::condition_variable* cv)
-        : mNotifyScope(cv), mGuard(obj, mutex) {}
+        : mGuard(obj, mutex), mNotifyScope(cv) {}
 
     auto* Get() const { return mGuard.Get(); }
 
@@ -218,9 +213,9 @@ class CondVarGuard : public NonMovable, StackAllocated {
     using NonConstT = typename std::remove_const<T>::type;
     friend class MutexCondVarProtected<NonConstT, CondVarGuard, Traits>;
 
-    struct NotifyScopeBase {
+    struct NotifyScopeBase : public StackAllocated {
         explicit NotifyScopeBase(std::condition_variable* cv) : cv(cv) { DAWN_ASSERT(cv); }
-        raw_ptr<std::condition_variable> cv = nullptr;
+        std::condition_variable* cv = nullptr;
     };
 
     template <NotifyType U>
@@ -237,10 +232,11 @@ class CondVarGuard : public NonMovable, StackAllocated {
         }
     };
 
-    NotifyScope<NotifyT> mNotifyScope;
-    // Note that this class needs to hold a Guard member instead of extending it because we want the
-    // lock to be released before we notify.
+    // Note that the Guard must be before the NotifyScope so that the C++ member destruction order
+    // signals the condition variable before unlocking the mutex. This keeps all uses of the
+    // condition variable guarded by the mutex.
     Guard<T, Traits> mGuard;
+    NotifyScope<NotifyT> mNotifyScope;
 };
 
 }  // namespace detail

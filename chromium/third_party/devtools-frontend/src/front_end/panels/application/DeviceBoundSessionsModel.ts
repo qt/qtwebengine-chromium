@@ -146,7 +146,6 @@ export class DeviceBoundSessionsModel extends Common.ObjectWrapper.ObjectWrapper
     let sessionAndEvent = sessionIdToSessionMap.get(sessionId);
     if (!sessionAndEvent) {
       sessionAndEvent = {
-        session: undefined,
         isSessionTerminated: false,
         hasErrors: false,
         eventsById: new Map<string, EventWithTimestamp>()

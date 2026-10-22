@@ -8,12 +8,12 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -109,6 +109,9 @@ type Archive struct {
 	NegotiatedProtocol map[string]string
 	// The time seed that was used to initialize deterministic.js.
 	DeterministicTimeSeedMs int64
+	// The constant value that Math.random() returns, if specified and
+	// deterministic.js is injected.
+	ConstantMathRandomResult *float64
 	// When an incoming request matches multiple recorded responses, whether to
 	// serve the responses in the chronological sequence in which wpr_go
 	// recorded them.
@@ -121,12 +124,19 @@ type Archive struct {
 	// If an incoming URL doesn't exactly match an entry in the archive,
 	// skip fuzzy matching and return nothing.
 	DisableFuzzyURLMatching bool
+	// Metadata contains arbitrary text about the archive.
+	Metadata string
+	// Scripts to inject in all pages. Map from name to contents.
+	InjectedScripts map[string]string
 }
 
 // LINT.ThenChange(archive.go:archive_clone)
 
 func newArchive() Archive {
-	return Archive{Requests: make(map[string]map[string][]*ArchivedRequest)}
+	return Archive{
+		Requests:        make(map[string]map[string][]*ArchivedRequest),
+		InjectedScripts: make(map[string]string),
+	}
 }
 
 func prepareArchiveForReplay(a *Archive) {
@@ -171,7 +181,8 @@ func (a *Archive) ForEach(f func(req *http.Request, resp *http.Response) error) 
 			for index, archivedRequest := range requests {
 				req, resp, err := archivedRequest.unmarshal(fullURL.Scheme)
 				if err != nil {
-					log.Printf("Error unmarshaling request #%d for %s: %v", index, urlString, err)
+					Log().Error("Error unmarshaling request", "index", index,
+						"url", urlString, "error", err)
 					continue
 				}
 				if err := f(req, resp); err != nil {
@@ -200,7 +211,8 @@ func (a *Archive) FindHostNegotiatedProtocol(host string) (string, error) {
 
 func assertCompleteURL(url *url.URL) {
 	if url.Host == "" || url.Scheme == "" {
-		log.Printf("Missing host and scheme: %v\n", url)
+		// TODO: Handle this more gracefully.
+		Log().Error("Missing host and scheme", "url", url)
 		os.Exit(1)
 	}
 }
@@ -208,15 +220,46 @@ func assertCompleteURL(url *url.URL) {
 // Returns a new archive with all fields cloned, apart from requests.
 // LINT.IfChange(archive_clone)
 func (a *Archive) cloneFieldsExceptRequests() Archive {
-	return Archive{
+	// Clone elements that do NOT require a deep-copy. (Other than Requests.)
+	clone := Archive{
 		Requests:                             make(map[string]map[string][]*ArchivedRequest),
-		Certs:                                a.Certs,
-		NegotiatedProtocol:                   a.NegotiatedProtocol,
 		DeterministicTimeSeedMs:              a.DeterministicTimeSeedMs,
 		ServeResponseInChronologicalSequence: a.ServeResponseInChronologicalSequence,
 		CurrentSessionId:                     a.CurrentSessionId,
 		DisableFuzzyURLMatching:              a.DisableFuzzyURLMatching,
+		Metadata:                             a.Metadata,
 	}
+
+	// Clone elements that DO require a deep-copy.
+	if a.Certs != nil {
+		clone.Certs = make(map[string][]byte, len(a.Certs))
+		for k, v := range a.Certs {
+			if v != nil {
+				clone.Certs[k] = make([]byte, len(v))
+				copy(clone.Certs[k], v)
+			} else {
+				clone.Certs[k] = nil
+			}
+		}
+	}
+	if a.NegotiatedProtocol != nil {
+		clone.NegotiatedProtocol = make(map[string]string, len(a.NegotiatedProtocol))
+		for k, v := range a.NegotiatedProtocol {
+			clone.NegotiatedProtocol[k] = v
+		}
+	}
+	if a.ConstantMathRandomResult != nil {
+		val := *a.ConstantMathRandomResult
+		clone.ConstantMathRandomResult = &val
+	}
+	if a.InjectedScripts != nil {
+		clone.InjectedScripts = make(map[string]string, len(a.InjectedScripts))
+		for k, v := range a.InjectedScripts {
+			clone.InjectedScripts[k] = v
+		}
+	}
+
+	return clone
 }
 
 // LINT.ThenChange(archive.go:archive_struct)
@@ -242,8 +285,8 @@ func (a *Archive) FindRequest(req *http.Request) (*http.Request, *http.Response,
 		req.ContentLength > 2<<20 {
 		buf := make([]byte, 1024)
 		for {
-			_, read_err := req.Body.Read(buf)
-			if read_err == io.EOF {
+			_, readErr := req.Body.Read(buf)
+			if readErr == io.EOF {
 				break
 			}
 		}
@@ -305,12 +348,11 @@ func (a *Archive) FindRequest(req *http.Request) (*http.Request, *http.Response,
 
 	if bestURL != "" && !a.DisableFuzzyURLMatching {
 		return a.findBestMatchInArchivedRequestSet(req, hostMap[bestURL])
-	} else if a.DisableFuzzyURLMatching {
-		logStr := "No exact match found for %s.\nFuzzy matching would have returned one of the following %d matches:\n%v\n"
-		if len(bestURLs) > 0 {
-			logStr += "\n"
-		}
-		log.Printf(logStr, reqUrl, len(bestURLs), strings.Join(bestURLs[:], "\n"))
+	}
+
+	if a.DisableFuzzyURLMatching {
+		Log().Debug("No exact match found", "url", reqUrl,
+			"num_matches", len(bestURLs), "matches", strings.Join(bestURLs, ","))
 	}
 
 	return nil, nil, ErrNotFound
@@ -329,7 +371,7 @@ func (a *Archive) findBestMatchInArchivedRequestSet(
 	} else if len(archivedReqs) == 1 {
 		archivedReq, archivedResp, err := archivedReqs[0].unmarshal(scheme)
 		if err != nil {
-			log.Println("Error unmarshaling request")
+			Log().Error("Error unmarshaling request", "error", err)
 			return nil, nil, err
 		}
 		return archivedReq, archivedResp, err
@@ -343,7 +385,7 @@ func (a *Archive) findBestMatchInArchivedRequestSet(
 	for _, r := range archivedReqs {
 		archivedReq, archivedResp, err := r.unmarshal(scheme)
 		if err != nil {
-			log.Println("Error unmarshaling request")
+			Log().Error("Error unmarshaling request", "error", err)
 			continue
 		}
 
@@ -412,11 +454,11 @@ func (a *Archive) AddArchivedRequest(req *http.Request, resp *http.Response, mod
 	if mode == AddModeAppend {
 		requests = append(requests, archivedRequest)
 	} else if mode == AddModeOverwriteExisting {
-		log.Printf("Overwriting existing request")
+		Log().Warn("Overwriting existing request")
 		requests = []*ArchivedRequest{archivedRequest}
 	} else if mode == AddModeSkipExisting {
 		if requests != nil {
-			log.Printf("Skipping existing request: %s", urlStr)
+			Log().Warn("Skipping existing request", "url", urlStr)
 			return nil
 		}
 		requests = append(requests, archivedRequest)
@@ -476,7 +518,8 @@ func (a *Archive) Merge(other *Archive, keepDuplicates bool) error {
 		}
 		return nil
 	})
-	log.Printf("Merged requests: added=%d duplicates=%d \n", numAddedRequests, numSkippedRequests)
+	Log().Info("Merged requests", "added", numAddedRequests,
+		"duplicates", numSkippedRequests)
 	return err
 }
 
@@ -498,7 +541,7 @@ func (a *Archive) Trim(trimMatch func(req *http.Request, resp *http.Response) (b
 		}
 		return nil
 	})
-	log.Printf("Trimmed requests: removed=%d", numRemovedRequests)
+	Log().Info("Trimmed requests", "removed", numRemovedRequests)
 	if err != nil {
 		return nil, err
 	}
@@ -519,10 +562,12 @@ func (a *Archive) Add(method string, urlString string, mode AddMode) error {
 		if foundReq, _, notFoundErr := a.FindRequest(req); notFoundErr != ErrNotFound {
 			if foundReq.URL.String() == url.String() {
 				if mode == AddModeSkipExisting {
-					log.Printf("Skipping existing request: %s %s", req.Method, urlString)
+					Log().Warn("Skipping existing request", "method", req.Method,
+						"url", urlString)
 					return nil
 				}
-				log.Printf("Adding duplicate request:")
+				Log().Warn("Adding duplicate request", "method", req.Method,
+					"url", urlString)
 			}
 		}
 	}
@@ -536,7 +581,8 @@ func (a *Archive) Add(method string, urlString string, mode AddMode) error {
 		return err
 	}
 
-	fmt.Printf("Added request: (%s %s) %s\n", req.Method, resp.Status, urlString)
+	Log().Info("Added request", "method", req.Method, "status", resp.Status,
+		"url", urlString)
 	return nil
 }
 
@@ -575,17 +621,64 @@ func (a *WritableArchive) RecordRequest(req *http.Request, resp *http.Response) 
 }
 
 // Must only be called if FindHostCertificate() returned ErrNotFound.
-func (a *WritableArchive) RecordHostCertificate(host string, der_bytes []byte) {
+func (a *WritableArchive) RecordHostCertificate(host string, derBytes []byte) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.Certs == nil {
 		a.Certs = make(map[string][]byte)
 	}
-	_, ok := a.Certs[host]
+	prevDerBytes, ok := a.Certs[host]
 	if ok {
-		panic("must not record a host certificate when there's an existing one")
+		if !areEquivalentCertChains(prevDerBytes, derBytes) {
+			panic("must not record a host certificate when there's an existing one")
+		}
+		return
 	}
-	a.Certs[host] = der_bytes
+	a.Certs[host] = derBytes
+}
+
+// Check whether two certificate chains are similar enough that we can consider
+// them as equivalent.
+//
+// Note that this code is quite relaxed about security, as this is never
+// expected to be used in contexts where security matters.
+func areEquivalentCertChains(der1, der2 []byte) bool {
+	if bytes.Equal(der1, der2) {
+		return true
+	}
+
+	certs1, err1 := x509.ParseCertificates(der1)
+	if err1 != nil {
+		return false
+	}
+
+	certs2, err2 := x509.ParseCertificates(der2)
+	if err2 != nil {
+		return false
+	}
+
+	if len(certs1) != len(certs2) {
+		return false
+	}
+
+	for i := range certs1 {
+		c1, c2 := certs1[i], certs2[i]
+		// We intentionally skip such fields as `SerialNumber`.
+		if c1.SignatureAlgorithm != c2.SignatureAlgorithm ||
+			c1.Issuer.String() != c2.Issuer.String() ||
+			c1.Subject.String() != c2.Subject.String() ||
+			!c1.NotBefore.Equal(c2.NotBefore) ||
+			!c1.NotAfter.Equal(c2.NotAfter) ||
+			!reflect.DeepEqual(c1.PublicKey, c2.PublicKey) ||
+			!reflect.DeepEqual(c1.DNSNames, c2.DNSNames) ||
+			!reflect.DeepEqual(c1.IPAddresses, c2.IPAddresses) ||
+			!reflect.DeepEqual(c1.ExtKeyUsage, c2.ExtKeyUsage) ||
+			c1.KeyUsage != c2.KeyUsage {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Must only be called if FindHostNegotiatedProtocol() returned ErrNotFound.
@@ -595,9 +688,9 @@ func (a *WritableArchive) RecordHostNegotiatedProtocol(host string, negotiatedPr
 	if a.NegotiatedProtocol == nil {
 		a.NegotiatedProtocol = make(map[string]string)
 	}
-	_, ok := a.NegotiatedProtocol[host]
-	if ok {
-		panic("must not record a protocol when there's an existing one")
+	protocol, ok := a.NegotiatedProtocol[host]
+	if ok && protocol != negotiatedProtocol {
+		panic("Must not rewrite the protocol with a different one.")
 	}
 	a.NegotiatedProtocol[host] = negotiatedProtocol
 }

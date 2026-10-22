@@ -29,9 +29,9 @@
 #define SRC_TINT_LANG_HLSL_WRITER_RAISE_ARRAY_OFFSET_FROM_UNIFORM_H_
 
 #include <unordered_map>
-#include "src/tint/lang/core/ir/validator.h"
 
 #include "src/tint/api/common/binding_point.h"
+#include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/utils/result.h"
 
 // Forward declarations.
@@ -43,6 +43,7 @@ namespace tint::hlsl::writer::raise {
 
 /// The capabilities that the transform can support.
 const core::ir::Capabilities kArrayOffsetFromUniformCapabilities{
+    core::ir::Capability::kAllow16BitIntegers,
     core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
     core::ir::Capability::kAllowDuplicateBindings,
     core::ir::Capability::kAllowNonCoreTypes,

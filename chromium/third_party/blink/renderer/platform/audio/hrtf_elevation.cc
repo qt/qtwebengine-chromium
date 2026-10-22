@@ -38,11 +38,10 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ptr_util.h"
 #include "base/synchronization/lock.h"
-#include "media/base/audio_bus.h"
 #include "third_party/blink/renderer/platform/audio/audio_bus.h"
 #include "third_party/blink/renderer/platform/audio/hrtf_database.h"
 #include "third_party/blink/renderer/platform/audio/hrtf_panner.h"
-#include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
+#include "third_party/blink/renderer/platform/wtf/hash_map.h"
 
 namespace blink {
 
@@ -117,7 +116,7 @@ constexpr auto kMaxElevations = std::to_array<int>({
 // local hash table to ensure quick efficient future retrievals.
 scoped_refptr<AudioBus> GetConcatenatedImpulseResponsesForSubject(
     int subject_resource_id) {
-  typedef HashMap<int, scoped_refptr<AudioBus>> AudioBusMap;
+  using AudioBusMap = HashMap<int, scoped_refptr<AudioBus>>;
   DEFINE_THREAD_SAFE_STATIC_LOCAL(AudioBusMap, audio_bus_map, ());
   DEFINE_THREAD_SAFE_STATIC_LOCAL(base::Lock, lock, ());
 
@@ -204,8 +203,14 @@ bool HRTFElevation::CalculateKernelsForAzimuthElevation(
   unsigned stop_frame = start_frame + kResponseFrameSize;
   scoped_refptr<AudioBus> pre_sample_rate_converted_response(
       AudioBus::CreateBufferFromRange(bus.get(), start_frame, stop_frame));
-  scoped_refptr<AudioBus> response(AudioBus::CreateBySampleRateConverting(
+  if (!pre_sample_rate_converted_response) {
+    return false;
+  }
+  scoped_refptr<AudioBus> response(AudioBus::TryCreateBySampleRateConverting(
       pre_sample_rate_converted_response.get(), false, sample_rate));
+  if (!response) {
+    return false;
+  }
 
   // Note that depending on the fftSize returned by the panner, we may be
   // truncating the impulse response we just loaded in, or we might zero-pad it.
@@ -216,12 +221,16 @@ bool HRTFElevation::CalculateKernelsForAzimuthElevation(
     // Create a new response of the right length and copy over the current
     // response.
     scoped_refptr<AudioBus> padded_response(
-        AudioBus::Create(response->NumberOfChannels(), fft_size / 2));
+        AudioBus::TryCreate(response->NumberOfChannels(), fft_size / 2));
+    if (!padded_response) {
+      return false;
+    }
     for (unsigned channel = 0; channel < response->NumberOfChannels();
          ++channel) {
-      UNSAFE_TODO(memcpy(padded_response->Channel(channel)->MutableData(),
-                         response->Channel(channel)->Data(),
-                         response->length() * sizeof(float)));
+      padded_response->Channel(channel)
+          ->MutableSpan()
+          .first(response->length())
+          .copy_from(response->Channel(channel)->Span());
     }
     response = padded_response;
   }

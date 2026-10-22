@@ -5,16 +5,29 @@
 #ifndef COMPONENTS_ONE_TIME_TOKENS_CORE_BROWSER_GMAIL_OTP_BACKEND_H_
 #define COMPONENTS_ONE_TIME_TOKENS_CORE_BROWSER_GMAIL_OTP_BACKEND_H_
 
+#include <string>
+
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/types/expected.h"
+#include "base/types/strong_alias.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/one_time_tokens/core/browser/one_time_token.h"
 #include "components/one_time_tokens/core/browser/one_time_token_retrieval_error.h"
 #include "components/one_time_tokens/core/browser/util/expiring_subscription.h"
 #include "components/one_time_tokens/core/browser/util/expiring_subscription_manager.h"
 
+namespace network {
+class SharedURLLoaderFactory;
+}  // namespace network
+
+namespace signin {
+class IdentityManager;
+}  // namespace signin
+
 namespace one_time_tokens {
+
+class EmailOneTimeTokenFetcher;
 
 // Abstract interface for fetching OTPs from Gmail.
 class GmailOtpBackend : public KeyedService {
@@ -23,14 +36,23 @@ class GmailOtpBackend : public KeyedService {
       void(base::expected<OneTimeToken, OneTimeTokenRetrievalError>);
   using Callback = base::RepeatingCallback<CallbackSignature>;
 
+  using EncryptedMessageReference =
+      base::StrongAlias<class EncryptedMessageReferenceTag, std::string>;
+
   ~GmailOtpBackend() override;
 
   // Creates a new instance of the backend.
-  static std::unique_ptr<GmailOtpBackend> Create();
+  static std::unique_ptr<GmailOtpBackend> Create(
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      signin::IdentityManager& identity_manager);
 
   // Creates a subscription for new incoming OTPs.
   [[nodiscard]] virtual ExpiringSubscription Subscribe(base::Time expiration,
                                                        Callback callback) = 0;
+
+  // Called when a new OTP is received via the OneTimeToken notification.
+  virtual void OnIncomingOneTimeTokenBackendTickle(
+      const EncryptedMessageReference& encrypted_message_reference) = 0;
 };
 
 // Concrete implementation of GmailOtpBackend that provides a fake OTP
@@ -38,18 +60,29 @@ class GmailOtpBackend : public KeyedService {
 // where a real backend is not available.
 class GmailOtpBackendImpl : public GmailOtpBackend {
  public:
-  GmailOtpBackendImpl();
+  GmailOtpBackendImpl(
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      signin::IdentityManager& identity_manager);
   ~GmailOtpBackendImpl() override;
 
-  // GmailOtpBackend:
   ExpiringSubscription Subscribe(base::Time expiration,
                                  Callback callback) override;
 
+  void OnIncomingOneTimeTokenBackendTickle(
+      const GmailOtpBackend::EncryptedMessageReference&
+          encrypted_message_reference) override;
+
  private:
-  // Queries the backend for recently received OTPs.
-  void RetrieveGmailOtpIfNeeded();
+  void RetrieveGmailOtp(const GmailOtpBackendImpl::EncryptedMessageReference&
+                            encrypted_message_reference);
+
   void OnResponseFromGmailOtpBackend(
+      std::unique_ptr<EmailOneTimeTokenFetcher> request,
       base::expected<OneTimeToken, OneTimeTokenRetrievalError> reply);
+
+  scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
+
+  raw_ref<signin::IdentityManager> identity_manager_;
 
   // Handles subscriptions to the `GmailOtpBackend`.
   ExpiringSubscriptionManager<CallbackSignature> subscription_manager_;

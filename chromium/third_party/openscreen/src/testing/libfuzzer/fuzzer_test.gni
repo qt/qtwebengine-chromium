@@ -16,7 +16,7 @@ import("../../gni/openscreen.gni")  #
 # - additional_configs - additional configs to be used for compilation
 # - dict - a dictionary file for the fuzzer.
 # - environment_variables - certain environment variables allowed for the
-# fuzzer (AFL_DRIVER_DONT_DEFER is the only one allowed currently).
+# fuzzer.
 # - libfuzzer_options - options for the fuzzer (e.g. -close_fd_mask=N).
 # - asan_options - AddressSanitizer options (e.g. allow_user_segv_handler=1).
 # - msan_options - MemorySanitizer options.
@@ -24,9 +24,9 @@ import("../../gni/openscreen.gni")  #
 # - seed_corpus - a directory with seed corpus.
 # - seed_corpus_deps - dependencies for generating the seed corpus.
 #
-# If use_libfuzzer gn flag is defined, then proper fuzzer would be build.
-# Without use_libfuzzer or use_afl a unit-test style binary would be built on
-# linux and the whole target is a no-op otherwise.
+# If use_libfuzzer is true, the actual fuzzer is built. Otherwise, the binary
+# is compiled as a "unit test"-style binary on Linux, or a no-op on other
+# platforms.
 #
 # The template wraps test() target with appropriate dependencies.
 # If any test run-time options are present (dict or libfuzzer_options), then a

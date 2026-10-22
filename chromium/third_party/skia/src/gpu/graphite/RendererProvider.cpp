@@ -9,7 +9,6 @@
 
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkVertices.h"
-#include "src/gpu/AtlasTypes.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/InternalDrawTypeFlags.h"
 #include "src/gpu/graphite/UniformManager.h"
@@ -59,6 +58,12 @@ bool RendererProvider::IsSupported(PathRendererStrategy strategy, const Caps* ca
             // The Vello compute strategies are supported if included in the build and has compute.
 #if defined(SK_ENABLE_VELLO_SHADERS)
             return caps->computeSupport();
+#else
+            return false;
+#endif
+        case PathRendererStrategy::kCPUSparseStripsMSAA8:
+#if defined(SK_ENABLE_SPARSE_STRIPS)
+            return true;
 #else
             return false;
 #endif

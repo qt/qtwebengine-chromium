@@ -189,7 +189,8 @@ class QuicChromiumClientStreamTest
         quic::test::GetNthClientInitiatedBidirectionalStreamId(
             version_.transport_version, 0),
         &session_, quic::QuicServerId(), quic::BIDIRECTIONAL,
-        NetLogWithSource(), TRAFFIC_ANNOTATION_FOR_TESTS);
+        NetLogWithSource(), TRAFFIC_ANNOTATION_FOR_TESTS,
+        /*max_stream_limit_pending_delay=*/base::TimeDelta());
     session_.ActivateStream(base::WrapUnique(stream_.get()));
     handle_ = stream_->CreateHandle();
     helper_.AdvanceTime(quic::QuicTime::Delta::FromSeconds(1));
@@ -427,8 +428,8 @@ TEST_P(QuicChromiumClientStreamTest, OnDataAvailable) {
   InitializeHeaders();
   ProcessHeadersFull(headers_);
 
-  const char data[] = "hello world!";
-  int data_len = strlen(data);
+  constexpr char data[] = "hello world!";
+  constexpr size_t data_len = std::string_view(data).size();
   size_t offset = 0;
   std::string header = ConstructDataHeader(data_len);
   stream_->OnStreamFrame(quic::QuicStreamFrame(
@@ -455,8 +456,8 @@ TEST_P(QuicChromiumClientStreamTest, OnDataAvailableAfterReadBody) {
   InitializeHeaders();
   ProcessHeadersFull(headers_);
 
-  const char data[] = "hello world!";
-  int data_len = strlen(data);
+  constexpr char data[] = "hello world!";
+  constexpr size_t data_len = std::string_view(data).size();
 
   // Start to read the body.
   TestCompletionCallback callback;
@@ -506,8 +507,8 @@ TEST_P(QuicChromiumClientStreamTest, OnDataAvailableWithError) {
   auto headers = quic::test::AsHeaderList(headers_);
   ProcessHeadersFull(headers_);
 
-  const char data[] = "hello world!";
-  int data_len = strlen(data);
+  constexpr char data[] = "hello world!";
+  constexpr size_t data_len = std::string_view(data).size();
 
   // Start to read the body.
   TestCompletionCallback callback;
@@ -554,8 +555,8 @@ TEST_P(QuicChromiumClientStreamTest, OnTrailers) {
   InitializeHeaders();
   ProcessHeadersFull(headers_);
 
-  const char data[] = "hello world!";
-  int data_len = strlen(data);
+  constexpr char data[] = "hello world!";
+  constexpr size_t data_len = std::string_view(data).size();
   size_t offset = 0;
   std::string header = ConstructDataHeader(data_len);
   stream_->OnStreamFrame(quic::QuicStreamFrame(
@@ -601,8 +602,8 @@ TEST_P(QuicChromiumClientStreamTest, MarkTrailersConsumedWhenNotifyDelegate) {
   InitializeHeaders();
   ProcessHeadersFull(headers_);
 
-  const char data[] = "hello world!";
-  int data_len = strlen(data);
+  constexpr char data[] = "hello world!";
+  constexpr size_t data_len = std::string_view(data).size();
   size_t offset = 0;
   std::string header = ConstructDataHeader(data_len);
   stream_->OnStreamFrame(quic::QuicStreamFrame(
@@ -655,8 +656,8 @@ TEST_P(QuicChromiumClientStreamTest, ReadAfterTrailersReceivedButNotDelivered) {
   InitializeHeaders();
   ProcessHeadersFull(headers_);
 
-  const char data[] = "hello world!";
-  int data_len = strlen(data);
+  constexpr char data[] = "hello world!";
+  constexpr size_t data_len = std::string_view(data).size();
   size_t offset = 0;
   std::string header = ConstructDataHeader(data_len);
   stream_->OnStreamFrame(quic::QuicStreamFrame(
@@ -857,7 +858,8 @@ TEST_P(QuicChromiumClientStreamTest, HeadersBeforeHandle) {
   quic::QuicStreamId stream_id = GetNthServerInitiatedUnidirectionalStreamId(0);
   QuicChromiumClientStream* stream2 = new QuicChromiumClientStream(
       stream_id, &session_, quic::QuicServerId(), quic::READ_UNIDIRECTIONAL,
-      NetLogWithSource(), TRAFFIC_ANNOTATION_FOR_TESTS);
+      NetLogWithSource(), TRAFFIC_ANNOTATION_FOR_TESTS,
+      /*max_stream_limit_pending_delay=*/base::TimeDelta());
   session_.ActivateStream(base::WrapUnique(stream2));
 
   InitializeHeaders();
@@ -881,7 +883,8 @@ TEST_P(QuicChromiumClientStreamTest, HeadersAndDataBeforeHandle) {
   quic::QuicStreamId stream_id = GetNthServerInitiatedUnidirectionalStreamId(0);
   QuicChromiumClientStream* stream2 = new QuicChromiumClientStream(
       stream_id, &session_, quic::QuicServerId(), quic::READ_UNIDIRECTIONAL,
-      NetLogWithSource(), TRAFFIC_ANNOTATION_FOR_TESTS);
+      NetLogWithSource(), TRAFFIC_ANNOTATION_FOR_TESTS,
+      /*max_stream_limit_pending_delay=*/base::TimeDelta());
   session_.ActivateStream(base::WrapUnique(stream2));
 
   InitializeHeaders();
@@ -890,10 +893,11 @@ TEST_P(QuicChromiumClientStreamTest, HeadersAndDataBeforeHandle) {
   quic::QuicHeaderList header_list = quic::test::AsHeaderList(headers_);
   stream2->OnStreamHeaderList(false, header_list.uncompressed_header_bytes(),
                               header_list);
-  const char data[] = "hello world!";
+  constexpr char data[] = "hello world!";
+  constexpr size_t data_len = std::string_view(data).size();
 
   size_t offset = 0;
-  std::string header = ConstructDataHeader(strlen(data));
+  std::string header = ConstructDataHeader(data_len);
   stream2->OnStreamFrame(quic::QuicStreamFrame(stream_id,
                                                /*fin=*/false,
                                                /*offset=*/offset, header));
@@ -911,7 +915,7 @@ TEST_P(QuicChromiumClientStreamTest, HeadersAndDataBeforeHandle) {
   base::RunLoop().RunUntilIdle();
 
   // Now explicitly read the data.
-  int data_len = std::size(data) - 1;
+  static_assert(data_len + 1 == std::size(data));
   auto buffer = base::MakeRefCounted<IOBufferWithSize>(data_len + 1);
   ASSERT_EQ(data_len, stream2->Read(buffer.get(), data_len + 1));
   EXPECT_EQ(std::string_view(data), std::string_view(buffer->data(), data_len));

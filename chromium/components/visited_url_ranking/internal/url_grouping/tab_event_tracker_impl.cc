@@ -97,8 +97,9 @@ void TabEventTrackerImpl::OnDidFinishNavigation(
       (page_transition & ui::PAGE_TRANSITION_FROM_ADDRESS_BAR) == 0) {
     return;
   }
-  DCHECK(current_selection_.has_value());
-  if (current_selection_->tab_id == tab_id && !current_selection_->committed) {
+
+  if (current_selection_.has_value() && current_selection_->tab_id == tab_id &&
+      !current_selection_->committed) {
     current_selection_->committed = true;
     tab_id_selection_map_[tab_id].emplace_back(*current_selection_);
   }
@@ -114,13 +115,16 @@ void TabEventTrackerImpl::DidEnterTabSwitcher() {
 }
 
 int TabEventTrackerImpl::GetSelectedCount(int tab_id) const {
-  if (!closing_tabs_.contains(tab_id) &&
-      tab_id_selection_map_.contains(tab_id)) {
-    std::vector<TabSelection> selection_list = tab_id_selection_map_.at(tab_id);
-    std::erase_if(selection_list, [&](TabSelection selection) {
-      return base::Time::Now() - selection.time > kSelectionTimeWindow;
-    });
-    return selection_list.size();
+  if (!closing_tabs_.contains(tab_id)) {
+    if (auto it = tab_id_selection_map_.find(tab_id);
+        it != tab_id_selection_map_.end()) {
+      const std::vector<TabSelection>& selection_list = it->second;
+      const auto time_now = base::Time::Now();
+      return std::ranges::count_if(
+          selection_list, [=](const TabSelection selection) {
+            return time_now - selection.time <= kSelectionTimeWindow;
+          });
+    }
   }
   return 0;
 }

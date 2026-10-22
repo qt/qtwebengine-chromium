@@ -33,7 +33,8 @@
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 #include "third_party/blink/renderer/platform/scheduler/test/fake_task_runner.h"
-#include "third_party/blink/renderer/platform/testing/testing_platform_support_with_mock_scheduler.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
+#include "third_party/blink/renderer/platform/testing/testing_platform_support.h"
 #include "ui/gfx/geometry/point_f.h"
 
 namespace blink {
@@ -103,6 +104,8 @@ class MockAnchorElementInteractionHost
 
 class AnchorElementInteractionTest : public SimTest {
  protected:
+  AnchorElementInteractionTest()
+      : SimTest(base::test::TaskEnvironment::TimeSource::MOCK_TIME) {}
   void SetUp() override {
     SimTest::SetUp();
 
@@ -791,10 +794,12 @@ class AnchorElementInteractionViewportHeuristicsTest
   }
 
   void ProcessPositionUpdates() {
-    platform_->RunForPeriodSeconds(ConvertDOMHighResTimeStampToSeconds(
-        AnchorElementViewportPositionTracker::MaybeGetOrCreateFor(GetDocument())
-            ->GetIntersectionObserverForTesting()
-            ->delay()));
+    task_environment().FastForwardBy(
+        base::Seconds(ConvertDOMHighResTimeStampToSeconds(
+            AnchorElementViewportPositionTracker::MaybeGetOrCreateFor(
+                GetDocument())
+                ->GetIntersectionObserverForTesting()
+                ->delay())));
     GetDocument().View()->UpdateAllLifecyclePhasesForTest();
     base::RunLoop().RunUntilIdle();
   }
@@ -818,19 +823,19 @@ class AnchorElementInteractionViewportHeuristicsTest
     main_resource.Complete(params.main_resource_body);
 
     GetDocument().GetAnchorElementInteractionTracker()->SetTaskRunnerForTesting(
-        platform_->test_task_runner(),
-        platform_->test_task_runner()->GetMockTickClock());
+        task_environment().GetMainThreadTaskRunner(),
+        task_environment().GetMockTickClock());
 
     Compositor().BeginFrame();
     // The 10ms matches the "post_fcp_observation_delay" param set for
     // kNavigationPredictor.
-    platform_->RunForPeriod(base::Milliseconds(10));
+    task_environment().FastForwardBy(base::Milliseconds(10));
     DispatchPointerDownAndVerticalScroll(params.pointer_down_location,
                                          params.scroll_delta);
     ProcessPositionUpdates();
 
     // Wait for all activation of viewport heuristics.
-    platform_->RunForPeriod(EnoughWaitTimeForAllViewportHeuristics());
+    task_environment().FastForwardBy(EnoughWaitTimeForAllViewportHeuristics());
     base::RunLoop().RunUntilIdle();
   }
 
@@ -839,7 +844,7 @@ class AnchorElementInteractionViewportHeuristicsTest
     AnchorElementInteractionTest::SetUp();
 
     // Allows WidgetInputHandlerManager::InitOnInputHandlingThread() to run.
-    platform_->RunForPeriod(base::Milliseconds(1));
+    task_environment().FastForwardBy(base::Milliseconds(1));
   }
 
   frame_test_helpers::TestWebFrameWidget* CreateWebFrameWidget(
@@ -872,8 +877,7 @@ class AnchorElementInteractionViewportHeuristicsTest
     return test_web_frame_widget;
   }
 
-  ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
-      platform_;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform_;
 
  private:
   base::test::ScopedFeatureList feature_list_;
@@ -881,6 +885,12 @@ class AnchorElementInteractionViewportHeuristicsTest
 };
 
 TEST_F(AnchorElementInteractionViewportHeuristicsTest, BasicTest) {
+  // When this is enabled, host receives an additional PointerOver call that it
+  // does not expect. This test should account for mouse hover over both active
+  // and inactive pages. https://issues.chromium.org/issues/488090081
+  ScopedSyntheticMouseHoverOverInactivePageForTest
+      disable_synthetic_mouse_hover_over_inactive_page(false);
+
   String body = R"HTML(
     <body style="margin: 0px">
       <div style="height: 200px"></div>
@@ -1033,6 +1043,12 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest, MultipleAnchors) {
 
 TEST_F(AnchorElementInteractionViewportHeuristicsTest,
        PointerDownImmediatelyAfterScroll) {
+  // When this is enabled, host receives an additional PointerOver call that it
+  // does not expect. This test should account for mouse hover over both active
+  // and inactive pages. https://issues.chromium.org/issues/488090081
+  ScopedSyntheticMouseHoverOverInactivePageForTest
+      disable_synthetic_mouse_hover_over_inactive_page(false);
+
   String source(KURL("https://example.com"));
   SimRequest main_resource(source, "text/html");
   LoadURL(source);
@@ -1044,22 +1060,22 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest,
   )HTML");
 
   GetDocument().GetAnchorElementInteractionTracker()->SetTaskRunnerForTesting(
-      platform_->test_task_runner(),
-      platform_->test_task_runner()->GetMockTickClock());
+      task_environment().GetMainThreadTaskRunner(),
+      task_environment().GetMockTickClock());
 
   Compositor().BeginFrame();
   // The 10ms matches the "post_fcp_observation_delay" param set for
   // kNavigationPredictor.
-  platform_->RunForPeriod(base::Milliseconds(10));
+  task_environment().FastForwardBy(base::Milliseconds(10));
   DispatchPointerDownAndVerticalScroll(gfx::PointF(100, 200), -100);
   ProcessPositionUpdates();
 
-  platform_->RunForPeriod(base::Milliseconds(10));
+  task_environment().FastForwardBy(base::Milliseconds(10));
   // Second pointerdown happens 10ms after the scroll end, which is within the
   // configured delay period of 100ms.
   DispatchPointerDown(gfx::PointF(200, 375));
   // Ensure we go past the configured delay period.
-  platform_->RunForPeriodSeconds(0.1);
+  task_environment().FastForwardBy(base::Seconds(0.1));
   base::RunLoop().RunUntilIdle();
 
   // Second pointerdown happening during the delay period should prevent the
@@ -1074,6 +1090,12 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest,
 
 TEST_F(AnchorElementInteractionViewportHeuristicsTest,
        EagerHeuristicsTriggerForAnchorsInViewport) {
+  // When this is enabled, host receives an additional PointerOver call that it
+  // does not expect. This test should account for mouse hover over both active
+  // and inactive pages. https://issues.chromium.org/issues/488090081
+  ScopedSyntheticMouseHoverOverInactivePageForTest
+      disable_synthetic_mouse_hover_over_inactive_page(false);
+
   String body = R"HTML(
     <body style="margin: 0px">
       <div style="height: 50px"></div>
@@ -1107,6 +1129,12 @@ TEST_F(AnchorElementInteractionViewportHeuristicsTest,
 
 TEST_F(AnchorElementInteractionViewportHeuristicsTest,
        PredictorDisabledIfAllAnchorsNotSampledIn) {
+  // When this is enabled, host receives an additional PointerOver call that it
+  // does not expect. This test should account for mouse hover over both active
+  // and inactive pages. https://issues.chromium.org/issues/488090081
+  ScopedSyntheticMouseHoverOverInactivePageForTest
+      disable_synthetic_mouse_hover_over_inactive_page(false);
+
   std::map<std::string, std::string> params = GetParamsForNavigationPredictor();
   params["random_anchor_sampling_period"] = "2";
   base::test::ScopedFeatureList feature_list;

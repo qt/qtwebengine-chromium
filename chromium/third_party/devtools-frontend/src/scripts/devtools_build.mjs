@@ -4,8 +4,9 @@
 
 import childProcess from 'node:child_process';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import {performance} from 'node:perf_hooks';
+import { performance } from 'node:perf_hooks';
 
 import {
   autoninjaPyPath,
@@ -48,10 +49,16 @@ class SpawnError extends Error {
  */
 function spawn(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = childProcess.spawn(command, args, {
-      ...options,
-      shell: true,
-    });
+    let child;
+    if (os.platform() === 'win32') {
+      child = childProcess.spawn(
+        process.env.ComSpec ?? 'cmd.exe',
+        ['/c', command, ...args],
+        options,
+      );
+    } else {
+      child = childProcess.spawn(command, args, options);
+    }
 
     let stdout = '';
     let stderr = '';
@@ -67,18 +74,18 @@ function spawn(command, args, options = {}) {
     child.on('exit', (code, signal) => {
       if (signal) {
         reject(
-            new SpawnError(
-                `Process terminated due to signal ${signal}`,
-                stderr,
-                stdout,
-                ),
+          new SpawnError(
+            `Process terminated due to signal ${signal}`,
+            stderr,
+            stdout,
+          ),
         );
       } else if (code) {
         reject(
-            new SpawnError(`Process exited with code ${code}`, stderr, stdout),
+          new SpawnError(`Process exited with code ${code}`, stderr, stdout),
         );
       } else {
-        resolve({stdout, stderr});
+        resolve({ stdout, stderr });
       }
     });
 
@@ -148,7 +155,7 @@ export class FeatureSet {
    * Yields the command line parameters to pass to the invocation of
    * a Chrome binary for achieving the state of the feature set.
    */
-  * [Symbol.iterator]() {
+  *[Symbol.iterator]() {
     const disabledFeatures = [...this.#disabled];
     if (disabledFeatures.length) {
       yield `--disable-features=${disabledFeatures.sort().join(',')}`;
@@ -182,7 +189,7 @@ export class FeatureSet {
         const args = parts[1].split('/');
         if (args.length % 2 !== 0) {
           throw new Error(
-              `Invalid parameters '${parts[1]}' for feature ${feature}`,
+            `Invalid parameters '${parts[1]}' for feature ${feature}`,
           );
         }
         for (let i = 0; i < args.length; i += 2) {
@@ -191,7 +198,7 @@ export class FeatureSet {
           parameters[key] = value;
         }
       }
-      features.push({feature, parameters});
+      features.push({ feature, parameters });
     }
     return features;
   }
@@ -206,7 +213,7 @@ export class FeatureSet {
  * @returns the human readable error message.
  */
 function buildErrorMessageForNinja(error, outDir, target) {
-  const {message, stderr, stdout} = error;
+  const { message, stderr, stdout } = error;
   if (stderr) {
     // Anything that went to stderr has precedence.
     return `Failed to build \`${target}' in \`${outDir}'
@@ -225,11 +232,11 @@ ${stderr}
       // we can report all TypeScript errors consistently in `tsc` format (which
       // is well-known and understood by tools).
       const esbuildErrors = stdout.matchAll(
-          /^✘ \[ERROR\] ([^\n]+)\n\n\s+\.\.\/\.\.\/(.+):(\d+):(\d+):/gm,
+        /^✘ \[ERROR\] ([^\n]+)\n\n\s+\.\.\/\.\.\/(.+):(\d+):(\d+):/gm,
       );
       for (const [, message, filename, line, column] of esbuildErrors) {
         tscErrors.push(
-            `${filename}(${line},${column}): error TS0000: ${message}`,
+          `${filename}(${line},${column}): error TS0000: ${message}`,
         );
       }
     }
@@ -251,7 +258,7 @@ ${output}
   return `Failed to build \`${target}' in \`${outDir}' (${message})`;
 }
 
-/** @enum */
+/** @enum {string} */
 export const BuildStep = {
   GN: 'gn',
   AUTONINJA: 'autoninja',
@@ -268,10 +275,12 @@ export class BuildError extends Error {
    * @param options.target the target relative to `//out`.
    */
   constructor(step, options) {
-    const {cause, outDir, target} = options;
-    const message = step === BuildStep.GN ? `\`gn' failed to initialize out directory ${outDir}` :
-                                            buildErrorMessageForNinja(cause, outDir, target);
-    super(message, {cause});
+    const { cause, outDir, target } = options;
+    const message =
+      step === BuildStep.GN
+        ? `\`gn' failed to initialize out directory ${outDir}`
+        : buildErrorMessageForNinja(cause, outDir, target);
+    super(message, { cause });
     this.step = step;
     this.name = 'BuildError';
     this.target = target;
@@ -301,7 +310,7 @@ export async function prepareBuild(target) {
       const gnArgs = [gnPyPath(), '-q', 'gen', outDir];
       await spawn(gnExe, gnArgs);
     } catch (cause) {
-      throw new BuildError(BuildStep.GN, {cause, outDir, target});
+      throw new BuildError(BuildStep.GN, { cause, outDir, target });
     }
   }
 
@@ -331,13 +340,12 @@ export function gnArgsForTarget(target) {
           '--list',
           '--short',
         ];
-        const {stdout} = await spawn(gnExe, gnArgs, {cwd});
+        const { stdout } = await spawn(gnExe, gnArgs, { cwd });
         return new Map(
-            JSON.parse(stdout).map(
-                arg =>
-                    [arg.name,
-                     arg.current?.value ?? arg.default?.value,
-        ]),
+          JSON.parse(stdout).map(arg => [
+            arg.name,
+            arg.current?.value ?? arg.default?.value,
+          ]),
         );
       } catch {
         return new Map();
@@ -364,7 +372,7 @@ function gnRefsForTarget(target, filename) {
       const outDir = path.join(rootPath(), 'out', target);
       const gnExe = vpython3ExecutablePath();
       const gnArgs = [gnPyPath(), 'refs', outDir, '--as=output', filename];
-      const {stdout} = await spawn(gnExe, gnArgs, {cwd});
+      const { stdout } = await spawn(gnExe, gnArgs, { cwd });
       return stdout.trim().split('\n');
     })();
     gnRefsPerTarget.set(filename, gnRef);
@@ -380,22 +388,26 @@ function gnRefsForTarget(target, filename) {
  */
 async function computeBuildTargetsForFiles(target, filenames) {
   const SUPPORTED_EXTENSIONS = ['.css', '.ts'];
-  if (filenames && filenames.length &&
-      filenames.every(
-          filename => SUPPORTED_EXTENSIONS.includes(path.extname(filename)),
-          )) {
+  if (
+    filenames &&
+    filenames.length &&
+    filenames.every(filename =>
+      SUPPORTED_EXTENSIONS.includes(path.extname(filename)),
+    )
+  ) {
     if (isInChromiumDirectory().isInChromium) {
-      filenames = filenames.map(
-          filename => path.join('third_party', 'devtools-frontend', 'src', filename),
+      filenames = filenames.map(filename =>
+        path.join('third_party', 'devtools-frontend', 'src', filename),
       );
     }
     const gnArgs = await gnArgsForTarget(target);
     if (gnArgs.get('devtools_bundle') === 'false') {
       try {
-        const gnRefs = (await Promise.all(
-                            filenames.map(filename => gnRefsForTarget(target, filename)),
-                            ))
-                           .flat();
+        const gnRefs = (
+          await Promise.all(
+            filenames.map(filename => gnRefsForTarget(target, filename)),
+          )
+        ).flat();
         if (gnRefs.length) {
           // If there are any changes to TypeScript files, we need to also rebuild the
           // `en-US.json`, as otherwise the changes to `UIStrings` aren't picked up.
@@ -426,24 +438,23 @@ export async function build(target, options = {}) {
   // since we might be running in a full Chromium checkout and certainly don't
   // want to build all of Chromium first.
   const buildTargets = await computeBuildTargetsForFiles(
-      target,
-      options.filenames,
+    target,
+    options.filenames,
   );
   try {
     const autoninjaExe = vpython3ExecutablePath();
     const autoninjaArgs = [autoninjaPyPath(), '-C', outDir, ...buildTargets];
     await spawn(autoninjaExe, autoninjaArgs, {
-      shell: true,
       signal: options.signal,
     });
   } catch (cause) {
     if (cause.name === 'AbortError') {
       throw cause;
     }
-    throw new BuildError(BuildStep.AUTONINJA, {cause, outDir, target});
+    throw new BuildError(BuildStep.AUTONINJA, { cause, outDir, target });
   }
 
   // Report the build result.
   const time = (performance.now() - startTime) / 1000;
-  return {time};
+  return { time };
 }

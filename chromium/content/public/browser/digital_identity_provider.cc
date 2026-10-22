@@ -6,8 +6,8 @@
 
 namespace content {
 DigitalIdentityProvider::DigitalCredential::DigitalCredential(
-    std::optional<std::string> protocol,
-    std::optional<base::Value> data)
+    std::string protocol,
+    base::Value data)
     : protocol(std::move(protocol)), data(std::move(data)) {}
 DigitalIdentityProvider::DigitalCredential::DigitalCredential(
     DigitalCredential&& other) = default;
@@ -15,6 +15,11 @@ DigitalIdentityProvider::DigitalCredential&
 DigitalIdentityProvider::DigitalCredential::operator=(
     DigitalCredential&& other) = default;
 DigitalIdentityProvider::DigitalCredential::~DigitalCredential() = default;
+
+DigitalIdentityProvider::DigitalCredential
+DigitalIdentityProvider::DigitalCredential::Clone() const {
+  return DigitalCredential(protocol, data.Clone());
+}
 
 DigitalIdentityProvider::DigitalIdentityProvider() = default;
 DigitalIdentityProvider::~DigitalIdentityProvider() = default;

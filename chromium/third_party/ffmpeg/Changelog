@@ -2,6 +2,11 @@ Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
 version <next>:
+- Extend AMF Color Converter (vf_vpp_amf) HDR capabilities
+- LCEVC track muxing support in MP4 muxer
+
+
+version 8.1:
 - ffprobe -codec option
 - EXIF Metadata Parsing
 - gfxcapture: Windows.Graphics.Capture based window/monitor capture
@@ -20,6 +25,16 @@ version <next>:
 - JPEG-XS raw bitstream muxer and demuxer
 - IAMF Projection mode Ambisonic Audio Elements muxing and demuxing
 - Add vf_mestimate_d3d12 filter
+- xHE-AAC Mps212 decoding support (experimental)
+- Remove the old HLS protocol handler
+- Vulkan compute codec optimizations
+- swscale Vulkan support
+- LCEVC metadata bitstream filter
+- Add vf_deinterlace_d3d12 filter
+- ffprobe: only show refs field in stream section when reading frames
+- ProRes Vulkan encoder
+- LCEVC parser
+- LCEVC enhancement layer exporting in MPEG-TS
 
 
 version 8.0:

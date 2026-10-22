@@ -25,12 +25,11 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "gtest/gtest.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/function.h"
 #include "src/tint/lang/core/number.h"
 #include "src/tint/lang/hlsl/writer/helper_test.h"
-
-#include "gtest/gtest.h"
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -46,7 +45,8 @@ TEST_F(HlslWriterTest, BitcastIdentityNumeric) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 void main() {
   int a = int(1);
@@ -64,7 +64,8 @@ TEST_F(HlslWriterTest, BitcastIdentityVec) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 void main() {
   float2 a = float2(1.0f, 2.0f);
@@ -82,7 +83,8 @@ TEST_F(HlslWriterTest, BitcastToFloat) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 void main() {
   int a = int(1);
@@ -100,7 +102,8 @@ TEST_F(HlslWriterTest, BitcastToInt) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 void main() {
   uint a = 1u;
@@ -118,7 +121,8 @@ TEST_F(HlslWriterTest, BitcastToUint) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 void main() {
   int a = int(1);
@@ -139,7 +143,8 @@ TEST_F(HlslWriterTest, BitcastFromVec2F16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 uint tint_bitcast_from_f16_2(vector<float16_t, 2> src) {
   uint2 r = f32tof16(float2(src));
@@ -181,7 +186,8 @@ TEST_F(HlslWriterTest, BitcastToVec2F16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 vector<float16_t, 2> tint_bitcast_to_f16_2(uint src) {
   uint v = src;
@@ -230,7 +236,8 @@ TEST_F(HlslWriterTest, BitcastFromVec4F16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 uint2 tint_bitcast_from_f16_2(vector<float16_t, 4> src) {
   uint4 r = f32tof16(float4(src));
@@ -272,7 +279,8 @@ TEST_F(HlslWriterTest, BitcastToVec4F16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 vector<float16_t, 4> tint_bitcast_to_f16_2(uint2 src) {
   uint2 v = src;

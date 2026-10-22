@@ -33,66 +33,73 @@ WriteLockGuard Device::WriteLock() { return WriteLockGuard(validation_object_mut
 // ObjectTracker undestroyed objects validation function
 bool Instance::ReportUndestroyedObjects(const Location& loc) const {
     bool skip = false;
-    const std::string error_code = "VUID-vkDestroyInstance-instance-00629";
-    skip |= ReportLeakedObjects(kVulkanObjectTypeSurfaceKHR, error_code, loc);
-    // No destroy API or implicitly freed/destroyed -- do not report: skip |= ReportLeakedObjects(kVulkanObjectTypeDisplayKHR,
-    // error_code, loc); No destroy API or implicitly freed/destroyed -- do not report: skip |=
-    // ReportLeakedObjects(kVulkanObjectTypeDisplayModeKHR, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeDebugReportCallbackEXT, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeDebugUtilsMessengerEXT, error_code, loc);
+    std::vector<VulkanTypedHandle> leaked_list;
+    FindLeakedObjects(kVulkanObjectTypeSurfaceKHR, leaked_list);
+    // No destroy API or implicitly freed/destroyed -- do not report: FindLeakedObjects(kVulkanObjectTypeDisplayKHR, leaked_list);
+    // No destroy API or implicitly freed/destroyed -- do not report: FindLeakedObjects(kVulkanObjectTypeDisplayModeKHR,
+    // leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeDebugReportCallbackEXT, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeDebugUtilsMessengerEXT, leaked_list);
+    if (!leaked_list.empty()) {
+        skip |= ReportLeakedObjects(leaked_list, loc);
+    }
     return skip;
 }
 
 bool Device::ReportUndestroyedObjects(const Location& loc) const {
     bool skip = false;
-    const std::string error_code = "VUID-vkDestroyDevice-device-05137";
-    skip |= ReportLeakedObjects(kVulkanObjectTypeCommandBuffer, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeBuffer, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeImage, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeSemaphore, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeFence, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeDeviceMemory, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeQueryPool, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeImageView, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeCommandPool, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeRenderPass, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeFramebuffer, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeEvent, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeBufferView, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeShaderModule, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypePipelineCache, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypePipelineLayout, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypePipeline, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeDescriptorSetLayout, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeSampler, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeDescriptorSet, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeDescriptorPool, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeDescriptorUpdateTemplate, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeSamplerYcbcrConversion, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypePrivateDataSlot, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeSwapchainKHR, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeVideoSessionKHR, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeVideoSessionParametersKHR, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeDeferredOperationKHR, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypePipelineBinaryKHR, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeCuModuleNVX, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeCuFunctionNVX, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeTensorARM, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeValidationCacheEXT, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeAccelerationStructureNV, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypePerformanceConfigurationINTEL, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeIndirectCommandsLayoutNV, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeCudaModuleNV, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeCudaFunctionNV, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeAccelerationStructureKHR, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeBufferCollectionFUCHSIA, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeMicromapEXT, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeTensorViewARM, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeOpticalFlowSessionNV, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeShaderEXT, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeDataGraphPipelineSessionARM, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeIndirectExecutionSetEXT, error_code, loc);
-    skip |= ReportLeakedObjects(kVulkanObjectTypeIndirectCommandsLayoutEXT, error_code, loc);
+    std::vector<VulkanTypedHandle> leaked_list;
+    FindLeakedObjects(kVulkanObjectTypeCommandBuffer, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeSemaphore, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeFence, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeDeviceMemory, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeBuffer, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeImage, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeQueryPool, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeImageView, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeCommandPool, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeRenderPass, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeFramebuffer, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeEvent, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeBufferView, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeShaderModule, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypePipelineCache, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypePipeline, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypePipelineLayout, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeDescriptorSetLayout, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeSampler, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeDescriptorSet, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeDescriptorPool, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeDescriptorUpdateTemplate, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeSamplerYcbcrConversion, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypePrivateDataSlot, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeSwapchainKHR, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeVideoSessionKHR, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeVideoSessionParametersKHR, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeDeferredOperationKHR, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeAccelerationStructureKHR, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypePipelineBinaryKHR, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeCuModuleNVX, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeCuFunctionNVX, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeTensorARM, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeValidationCacheEXT, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeAccelerationStructureNV, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypePerformanceConfigurationINTEL, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeIndirectCommandsLayoutNV, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeCudaModuleNV, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeCudaFunctionNV, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeBufferCollectionFUCHSIA, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeMicromapEXT, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeTensorViewARM, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeOpticalFlowSessionNV, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeShaderEXT, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeDataGraphPipelineSessionARM, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeIndirectExecutionSetEXT, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeIndirectCommandsLayoutEXT, leaked_list);
+    FindLeakedObjects(kVulkanObjectTypeShaderInstrumentationARM, leaked_list);
+    if (!leaked_list.empty()) {
+        skip |= ReportLeakedObjects(leaked_list, loc);
+    }
     return skip;
 }
 
@@ -108,11 +115,11 @@ void Instance::DestroyLeakedObjects() {
 void Device::DestroyLeakedObjects() {
     const Location loc = Func::vkDestroyDevice;
     DestroyUndestroyedObjects(kVulkanObjectTypeCommandBuffer, loc);
-    DestroyUndestroyedObjects(kVulkanObjectTypeBuffer, loc);
-    DestroyUndestroyedObjects(kVulkanObjectTypeImage, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeSemaphore, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeFence, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeDeviceMemory, loc);
+    DestroyUndestroyedObjects(kVulkanObjectTypeBuffer, loc);
+    DestroyUndestroyedObjects(kVulkanObjectTypeImage, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeQueryPool, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeImageView, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeCommandPool, loc);
@@ -122,8 +129,8 @@ void Device::DestroyLeakedObjects() {
     DestroyUndestroyedObjects(kVulkanObjectTypeBufferView, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeShaderModule, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypePipelineCache, loc);
-    DestroyUndestroyedObjects(kVulkanObjectTypePipelineLayout, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypePipeline, loc);
+    DestroyUndestroyedObjects(kVulkanObjectTypePipelineLayout, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeDescriptorSetLayout, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeSampler, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeDescriptorSet, loc);
@@ -135,6 +142,7 @@ void Device::DestroyLeakedObjects() {
     DestroyUndestroyedObjects(kVulkanObjectTypeVideoSessionKHR, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeVideoSessionParametersKHR, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeDeferredOperationKHR, loc);
+    DestroyUndestroyedObjects(kVulkanObjectTypeAccelerationStructureKHR, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypePipelineBinaryKHR, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeCuModuleNVX, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeCuFunctionNVX, loc);
@@ -145,7 +153,6 @@ void Device::DestroyLeakedObjects() {
     DestroyUndestroyedObjects(kVulkanObjectTypeIndirectCommandsLayoutNV, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeCudaModuleNV, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeCudaFunctionNV, loc);
-    DestroyUndestroyedObjects(kVulkanObjectTypeAccelerationStructureKHR, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeBufferCollectionFUCHSIA, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeMicromapEXT, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeTensorViewARM, loc);
@@ -154,6 +161,7 @@ void Device::DestroyLeakedObjects() {
     DestroyUndestroyedObjects(kVulkanObjectTypeDataGraphPipelineSessionARM, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeIndirectExecutionSetEXT, loc);
     DestroyUndestroyedObjects(kVulkanObjectTypeIndirectCommandsLayoutEXT, loc);
+    DestroyUndestroyedObjects(kVulkanObjectTypeShaderInstrumentationARM, loc);
 }
 
 // vkEnumeratePhysicalDevices:
@@ -4467,6 +4475,119 @@ bool Device::PreCallValidateQueueSubmit2KHR(VkQueue queue, uint32_t submitCount,
     return PreCallValidateQueueSubmit2(queue, submitCount, pSubmits, fence, error_obj);
 }
 
+// vkCmdBindIndexBuffer3KHR:
+// Checked by chassis: commandBuffer: "VUID-vkCmdBindIndexBuffer3KHR-commandBuffer-parameter"
+
+// vkCmdBindVertexBuffers3KHR:
+// Checked by chassis: commandBuffer: "VUID-vkCmdBindVertexBuffers3KHR-commandBuffer-parameter"
+
+// vkCmdDrawIndirect2KHR:
+// Checked by chassis: commandBuffer: "VUID-vkCmdDrawIndirect2KHR-commandBuffer-parameter"
+
+// vkCmdDrawIndexedIndirect2KHR:
+// Checked by chassis: commandBuffer: "VUID-vkCmdDrawIndexedIndirect2KHR-commandBuffer-parameter"
+
+// vkCmdDispatchIndirect2KHR:
+// Checked by chassis: commandBuffer: "VUID-vkCmdDispatchIndirect2KHR-commandBuffer-parameter"
+
+// vkCmdCopyMemoryKHR:
+// Checked by chassis: commandBuffer: "VUID-vkCmdCopyMemoryKHR-commandBuffer-parameter"
+
+bool Device::PreCallValidateCmdCopyMemoryToImageKHR(VkCommandBuffer commandBuffer,
+                                                    const VkCopyDeviceMemoryImageInfoKHR* pCopyMemoryInfo,
+                                                    const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: commandBuffer: "VUID-vkCmdCopyMemoryToImageKHR-commandBuffer-parameter"
+    if (pCopyMemoryInfo) {
+        [[maybe_unused]] const Location pCopyMemoryInfo_loc = error_obj.location.dot(Field::pCopyMemoryInfo);
+        skip |= ValidateObject(pCopyMemoryInfo->image, kVulkanObjectTypeImage, false,
+                               "VUID-VkCopyDeviceMemoryImageInfoKHR-image-parameter",
+                               "UNASSIGNED-VkCopyDeviceMemoryImageInfoKHR-image-parent", pCopyMemoryInfo_loc.dot(Field::image));
+    }
+
+    return skip;
+}
+
+bool Device::PreCallValidateCmdCopyImageToMemoryKHR(VkCommandBuffer commandBuffer,
+                                                    const VkCopyDeviceMemoryImageInfoKHR* pCopyMemoryInfo,
+                                                    const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: commandBuffer: "VUID-vkCmdCopyImageToMemoryKHR-commandBuffer-parameter"
+    if (pCopyMemoryInfo) {
+        [[maybe_unused]] const Location pCopyMemoryInfo_loc = error_obj.location.dot(Field::pCopyMemoryInfo);
+        skip |= ValidateObject(pCopyMemoryInfo->image, kVulkanObjectTypeImage, false,
+                               "VUID-VkCopyDeviceMemoryImageInfoKHR-image-parameter",
+                               "UNASSIGNED-VkCopyDeviceMemoryImageInfoKHR-image-parent", pCopyMemoryInfo_loc.dot(Field::image));
+    }
+
+    return skip;
+}
+
+// vkCmdUpdateMemoryKHR:
+// Checked by chassis: commandBuffer: "VUID-vkCmdUpdateMemoryKHR-commandBuffer-parameter"
+
+// vkCmdFillMemoryKHR:
+// Checked by chassis: commandBuffer: "VUID-vkCmdFillMemoryKHR-commandBuffer-parameter"
+
+bool Device::PreCallValidateCmdCopyQueryPoolResultsToMemoryKHR(VkCommandBuffer commandBuffer, VkQueryPool queryPool,
+                                                               uint32_t firstQuery, uint32_t queryCount,
+                                                               const VkStridedDeviceAddressRangeKHR* pDstRange,
+                                                               VkAddressCommandFlagsKHR dstFlags,
+                                                               VkQueryResultFlags queryResultFlags,
+                                                               const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: commandBuffer: "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-commandBuffer-parameter"
+    // Checked by chassis: commandBuffer: "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-commonparent"
+    skip |= ValidateObject(queryPool, kVulkanObjectTypeQueryPool, false,
+                           "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-queryPool-parameter",
+                           "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-commonparent", error_obj.location.dot(Field::queryPool));
+
+    return skip;
+}
+
+// vkCmdDrawIndirectCount2KHR:
+// Checked by chassis: commandBuffer: "VUID-vkCmdDrawIndirectCount2KHR-commandBuffer-parameter"
+
+// vkCmdDrawIndexedIndirectCount2KHR:
+// Checked by chassis: commandBuffer: "VUID-vkCmdDrawIndexedIndirectCount2KHR-commandBuffer-parameter"
+
+// vkCmdBeginConditionalRendering2EXT:
+// Checked by chassis: commandBuffer: "VUID-vkCmdBeginConditionalRendering2EXT-commandBuffer-parameter"
+
+// vkCmdBindTransformFeedbackBuffers2EXT:
+// Checked by chassis: commandBuffer: "VUID-vkCmdBindTransformFeedbackBuffers2EXT-commandBuffer-parameter"
+
+// vkCmdBeginTransformFeedback2EXT:
+// Checked by chassis: commandBuffer: "VUID-vkCmdBeginTransformFeedback2EXT-commandBuffer-parameter"
+
+// vkCmdEndTransformFeedback2EXT:
+// Checked by chassis: commandBuffer: "VUID-vkCmdEndTransformFeedback2EXT-commandBuffer-parameter"
+
+// vkCmdDrawIndirectByteCount2EXT:
+// Checked by chassis: commandBuffer: "VUID-vkCmdDrawIndirectByteCount2EXT-commandBuffer-parameter"
+
+// vkCmdDrawMeshTasksIndirect2EXT:
+// Checked by chassis: commandBuffer: "VUID-vkCmdDrawMeshTasksIndirect2EXT-commandBuffer-parameter"
+
+// vkCmdDrawMeshTasksIndirectCount2EXT:
+// Checked by chassis: commandBuffer: "VUID-vkCmdDrawMeshTasksIndirectCount2EXT-commandBuffer-parameter"
+
+// vkCmdWriteMarkerToMemoryAMD:
+// Checked by chassis: commandBuffer: "VUID-vkCmdWriteMarkerToMemoryAMD-commandBuffer-parameter"
+
+// vkCreateAccelerationStructure2KHR:
+// Checked by chassis: device: "VUID-vkCreateAccelerationStructure2KHR-device-parameter"
+
+void Device::PostCallRecordCreateAccelerationStructure2KHR(VkDevice device,
+                                                           const VkAccelerationStructureCreateInfo2KHR* pCreateInfo,
+                                                           const VkAllocationCallbacks* pAllocator,
+                                                           VkAccelerationStructureKHR* pAccelerationStructure,
+                                                           const RecordObject& record_obj) {
+    if (record_obj.result < VK_SUCCESS) return;
+    tracker.CreateObject(*pAccelerationStructure, kVulkanObjectTypeAccelerationStructureKHR, pAllocator, record_obj.location,
+                         device);
+}
+
 bool Device::PreCallValidateCmdCopyBuffer2KHR(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo,
                                               const ErrorObject& error_obj) const {
     return PreCallValidateCmdCopyBuffer2(commandBuffer, pCopyBufferInfo, error_obj);
@@ -4735,6 +4856,12 @@ bool Device::PreCallValidateCmdCopyMemoryToImageIndirectKHR(
 
     return skip;
 }
+
+// vkGetDeviceFaultReportsKHR:
+// Checked by chassis: device: "VUID-vkGetDeviceFaultReportsKHR-device-parameter"
+
+// vkGetDeviceFaultDebugInfoKHR:
+// Checked by chassis: device: "VUID-vkGetDeviceFaultDebugInfoKHR-device-parameter"
 
 // vkCmdEndRendering2KHR:
 // Checked by chassis: commandBuffer: "VUID-vkCmdEndRendering2KHR-commandBuffer-parameter"
@@ -6206,8 +6333,8 @@ bool Device::PreCallValidateReleaseFullScreenExclusiveModeEXT(VkDevice device, V
     bool skip = false;
     // Checked by chassis: device: "VUID-vkReleaseFullScreenExclusiveModeEXT-device-parameter"
     skip |= ValidateObject(swapchain, kVulkanObjectTypeSwapchainKHR, false,
-                           "VUID-vkReleaseFullScreenExclusiveModeEXT-swapchain-parameter", kVUIDUndefined,
-                           error_obj.location.dot(Field::swapchain));
+                           "VUID-vkReleaseFullScreenExclusiveModeEXT-swapchain-parameter",
+                           "VUID-vkReleaseFullScreenExclusiveModeEXT-swapchain-parent", error_obj.location.dot(Field::swapchain));
 
     return skip;
 }
@@ -8030,11 +8157,12 @@ bool Device::PreCallValidateCreateDataGraphPipelinesARM(VkDevice device, VkDefer
     bool skip = false;
     // Checked by chassis: device: "VUID-vkCreateDataGraphPipelinesARM-device-parameter"
     skip |= ValidateObject(deferredOperation, kVulkanObjectTypeDeferredOperationKHR, true,
-                           "VUID-vkCreateDataGraphPipelinesARM-deferredOperation-parameter", kVUIDUndefined,
+                           "VUID-vkCreateDataGraphPipelinesARM-deferredOperation-parameter",
+                           "VUID-vkCreateDataGraphPipelinesARM-deferredOperation-parent",
                            error_obj.location.dot(Field::deferredOperation));
     skip |= ValidateObject(pipelineCache, kVulkanObjectTypePipelineCache, true,
-                           "VUID-vkCreateDataGraphPipelinesARM-pipelineCache-parameter", kVUIDUndefined,
-                           error_obj.location.dot(Field::pipelineCache));
+                           "VUID-vkCreateDataGraphPipelinesARM-pipelineCache-parameter",
+                           "VUID-vkCreateDataGraphPipelinesARM-pipelineCache-parent", error_obj.location.dot(Field::pipelineCache));
     if (pCreateInfos) {
         for (uint32_t index0 = 0; index0 < createInfoCount; ++index0) {
             [[maybe_unused]] const Location index0_loc = error_obj.location.dot(Field::pCreateInfos, index0);
@@ -8602,6 +8730,82 @@ bool Device::PreCallValidateGetMemoryMetalHandleEXT(VkDevice device, const VkMem
 // vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM:
 // Checked by chassis: physicalDevice:
 // "VUID-vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM-physicalDevice-parameter"
+
+// vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM:
+// Checked by chassis: physicalDevice: "VUID-vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM-physicalDevice-parameter"
+
+// vkCreateShaderInstrumentationARM:
+// Checked by chassis: device: "VUID-vkCreateShaderInstrumentationARM-device-parameter"
+
+void Device::PostCallRecordCreateShaderInstrumentationARM(VkDevice device, const VkShaderInstrumentationCreateInfoARM* pCreateInfo,
+                                                          const VkAllocationCallbacks* pAllocator,
+                                                          VkShaderInstrumentationARM* pInstrumentation,
+                                                          const RecordObject& record_obj) {
+    if (record_obj.result < VK_SUCCESS) return;
+    tracker.CreateObject(*pInstrumentation, kVulkanObjectTypeShaderInstrumentationARM, pAllocator, record_obj.location, device);
+}
+
+bool Device::PreCallValidateDestroyShaderInstrumentationARM(VkDevice device, VkShaderInstrumentationARM instrumentation,
+                                                            const VkAllocationCallbacks* pAllocator,
+                                                            const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: device: "VUID-vkDestroyShaderInstrumentationARM-device-parameter"
+    skip |= ValidateObject(instrumentation, kVulkanObjectTypeShaderInstrumentationARM, true,
+                           "VUID-vkDestroyShaderInstrumentationARM-instrumentation-parameter",
+                           "VUID-vkDestroyShaderInstrumentationARM-instrumentation-parent",
+                           error_obj.location.dot(Field::instrumentation));
+    skip |= ValidateDestroyObject(instrumentation, kVulkanObjectTypeShaderInstrumentationARM, pAllocator, kVUIDUndefined,
+                                  kVUIDUndefined, error_obj.location);
+
+    return skip;
+}
+
+void Device::PreCallRecordDestroyShaderInstrumentationARM(VkDevice device, VkShaderInstrumentationARM instrumentation,
+                                                          const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {
+    RecordDestroyObject(instrumentation, kVulkanObjectTypeShaderInstrumentationARM, record_obj.location);
+}
+
+bool Device::PreCallValidateCmdBeginShaderInstrumentationARM(VkCommandBuffer commandBuffer,
+                                                             VkShaderInstrumentationARM instrumentation,
+                                                             const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: commandBuffer: "VUID-vkCmdBeginShaderInstrumentationARM-commandBuffer-parameter"
+    // Checked by chassis: commandBuffer: "VUID-vkCmdBeginShaderInstrumentationARM-commonparent"
+    skip |= ValidateObject(instrumentation, kVulkanObjectTypeShaderInstrumentationARM, false,
+                           "VUID-vkCmdBeginShaderInstrumentationARM-instrumentation-parameter",
+                           "VUID-vkCmdBeginShaderInstrumentationARM-commonparent", error_obj.location.dot(Field::instrumentation));
+
+    return skip;
+}
+
+// vkCmdEndShaderInstrumentationARM:
+// Checked by chassis: commandBuffer: "VUID-vkCmdEndShaderInstrumentationARM-commandBuffer-parameter"
+
+bool Device::PreCallValidateGetShaderInstrumentationValuesARM(VkDevice device, VkShaderInstrumentationARM instrumentation,
+                                                              uint32_t* pMetricBlockCount, void* pMetricValues,
+                                                              VkShaderInstrumentationValuesFlagsARM flags,
+                                                              const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: device: "VUID-vkGetShaderInstrumentationValuesARM-device-parameter"
+    skip |= ValidateObject(instrumentation, kVulkanObjectTypeShaderInstrumentationARM, false,
+                           "VUID-vkGetShaderInstrumentationValuesARM-instrumentation-parameter",
+                           "VUID-vkGetShaderInstrumentationValuesARM-instrumentation-parent",
+                           error_obj.location.dot(Field::instrumentation));
+
+    return skip;
+}
+
+bool Device::PreCallValidateClearShaderInstrumentationMetricsARM(VkDevice device, VkShaderInstrumentationARM instrumentation,
+                                                                 const ErrorObject& error_obj) const {
+    bool skip = false;
+    // Checked by chassis: device: "VUID-vkClearShaderInstrumentationMetricsARM-device-parameter"
+    skip |= ValidateObject(instrumentation, kVulkanObjectTypeShaderInstrumentationARM, false,
+                           "VUID-vkClearShaderInstrumentationMetricsARM-instrumentation-parameter",
+                           "VUID-vkClearShaderInstrumentationMetricsARM-instrumentation-parent",
+                           error_obj.location.dot(Field::instrumentation));
+
+    return skip;
+}
 
 // vkCmdEndRendering2EXT:
 // Checked by chassis: commandBuffer: "VUID-vkCmdEndRendering2KHR-commandBuffer-parameter"

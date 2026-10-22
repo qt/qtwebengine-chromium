@@ -53,7 +53,7 @@
 // Forward declarations
 namespace tint {
 class Program;
-class InternalCompilerError;
+class StyledTextPrinter;
 }  // namespace tint
 
 namespace tint::cmd {
@@ -122,6 +122,10 @@ std::string TextureDimensionToString(tint::inspector::ResourceBinding::TextureDi
 /// @param kind the sample kind
 /// @returns the text name
 std::string SampledKindToString(tint::inspector::ResourceBinding::SampledKind kind);
+
+/// @param type the sampler type
+/// @returns the text name
+std::string SamplerTypeToString(tint::inspector::ResourceBinding::SamplerType type);
 
 /// @param format the texel format
 /// @returns the text name

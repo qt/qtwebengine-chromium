@@ -41,6 +41,7 @@
 #include "third_party/blink/renderer/core/dom/events/simulated_click_options.h"
 #include "third_party/blink/renderer/core/dom/mutation_observer_options.h"
 #include "third_party/blink/renderer/core/dom/tree_scope.h"
+#include "third_party/blink/renderer/core/element_type_enum.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/graphics/dom_node_id.h"
@@ -89,6 +90,7 @@ class Part;
 class QualifiedName;
 class RegisteredEventListener;
 class ScrollTimeline;
+class SetHTMLOptions;
 class SVGQualifiedName;
 class ShadowRoot;
 template <typename NodeType>
@@ -97,9 +99,11 @@ using StaticNodeList = StaticNodeTypeList<Node>;
 class StyleChangeReasonForTracing;
 class TextVisitor;
 class V8UnionNodeOrStringOrTrustedScript;
+class V8UnionStringOrTrustedHTML;
 class V8UnionStringOrTrustedScript;
+class V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions;
 class WebPluginContainerImpl;
-
+class WritableStream;
 struct PhysicalRect;
 
 using PartsList = HeapDeque<Member<Part>>;
@@ -268,6 +272,41 @@ class CORE_EXPORT Node : public EventTarget {
   void remove(ExceptionState&);
   void remove();
 
+  void beforeHTML(const String& html, SetHTMLOptions* options, ExceptionState&);
+  void beforeHTMLUnsafe(const V8UnionStringOrTrustedHTML* html,
+                        V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions*,
+                        ExceptionState&);
+  void afterHTML(const String& html, SetHTMLOptions* options, ExceptionState&);
+  void afterHTMLUnsafe(const V8UnionStringOrTrustedHTML* html,
+                       V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions*,
+                       ExceptionState&);
+  void replaceWithHTML(const String& html,
+                       SetHTMLOptions* options,
+                       ExceptionState&);
+  void replaceWithHTMLUnsafe(const V8UnionStringOrTrustedHTML* html,
+                             V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions*,
+                             ExceptionState&);
+  WritableStream* streamBeforeHTMLUnsafe(
+      ScriptState*,
+      V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions*,
+      ExceptionState&);
+  WritableStream* streamBeforeHTML(ScriptState*,
+                                   SetHTMLOptions*,
+                                   ExceptionState&);
+  WritableStream* streamAfterHTMLUnsafe(
+      ScriptState*,
+      V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions*,
+      ExceptionState&);
+  WritableStream* streamAfterHTML(ScriptState*,
+                                  SetHTMLOptions*,
+                                  ExceptionState&);
+  WritableStream* streamReplaceWithHTMLUnsafe(
+      ScriptState*,
+      V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions*,
+      ExceptionState&);
+  WritableStream* streamReplaceWithHTML(ScriptState*,
+                                        SetHTMLOptions*,
+                                        ExceptionState&);
   // NonDocumentTypeChildNode interface. These functions are only actually
   // web-exposed on  interfaces that include NonDocumentTypeChildNode in their
   // idl.
@@ -323,7 +362,7 @@ class CORE_EXPORT Node : public EventTarget {
                      TextVisitor* visitor = nullptr,
                      unsigned int max_length = UINT_MAX) const;
   virtual void setTextContent(const String&);
-  V8UnionStringOrTrustedScript* textContentForBinding() const;
+  String textContentForBinding() const;
   virtual void setTextContentForBinding(
       const V8UnionStringOrTrustedScript* value,
       ExceptionState& exception_state);
@@ -345,6 +384,9 @@ class CORE_EXPORT Node : public EventTarget {
   }
   ALWAYS_INLINE bool IsDocumentFragment() const {
     return getNodeType() == kDocumentFragmentNode;
+  }
+  ALWAYS_INLINE bool IsProcessingInstruction() const {
+    return getNodeType() == kProcessingInstructionNode;
   }
   ALWAYS_INLINE bool IsHTMLElement() const {
     return GetElementNamespaceType() == ElementNamespaceType::kHTML;
@@ -418,6 +460,14 @@ class CORE_EXPORT Node : public EventTarget {
     return GetCustomElementState() != CustomElementState::kUncustomized;
   }
   void SetCustomElementState(CustomElementState);
+
+  // Used in the IsA<> implementation; every HTMLElement must override this
+  // so that callers can ask for the type. We rely on Clang in LTO mode
+  // to optimize this so that calls become a simple getter (the value is
+  // stored before or after the vtable) instead of an actual virtual call.
+  virtual ElementType GetElementType() const {
+    return ElementType::kIsNotElement;
+  }
 
   virtual bool IsPseudoElement() const { return false; }
   virtual bool IsColumnPseudoElement() const { return false; }
@@ -1089,9 +1139,6 @@ class CORE_EXPORT Node : public EventTarget {
   void UnregisterScrollTimeline(ScrollTimeline*);
 
   // Defined in node-inl.h.
-  inline void AddDOMPart(Part& part);
-  inline void RemoveDOMPart(Part& part);
-  inline PartsList* GetDOMParts() const;
   inline DOMNodeId NodeID(base::PassKey<DOMNodeIds>) const;
   inline DOMNodeId& EnsureNodeID(base::PassKey<DOMNodeIds>);
 

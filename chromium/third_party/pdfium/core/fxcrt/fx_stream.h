@@ -51,9 +51,6 @@ class IFX_SeekableWriteStream : virtual public IFX_StreamWithSize,
 class IFX_SeekableReadStream : virtual public Retainable,
                                virtual public IFX_StreamWithSize {
  public:
-  static RetainPtr<IFX_SeekableReadStream> CreateFromFilename(
-      const char* filename);
-
   virtual bool IsEOF();
   virtual FX_FILESIZE GetPosition();
   [[nodiscard]] virtual bool ReadBlockAtOffset(pdfium::span<uint8_t> buffer,

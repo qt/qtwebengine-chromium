@@ -11,6 +11,11 @@
 namespace features {
 
 BASE_DECLARE_FEATURE(kSkillsEnabled);
+BASE_DECLARE_FEATURE(kSkillsMetricsProviderEnabled);
+BASE_DECLARE_FEATURE(kSkillsRefinementEnabled);
+BASE_DECLARE_FEATURE(kSkillsAutocomplete);
+BASE_DECLARE_FEATURE(kSkillsPartnerPicks);
+BASE_DECLARE_FEATURE(kSkills1PDisabledForNonEnLocales);
 
 }  // namespace features
 

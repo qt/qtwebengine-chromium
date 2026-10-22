@@ -65,9 +65,15 @@ BASE_DECLARE_FEATURE(kApiUserScriptsMultipleWorlds);
 // Controls the availability of the odfsConfigPrivate API.
 BASE_DECLARE_FEATURE(kApiOdfsConfigPrivate);
 
+// Controls the availability of the glicPrivate API.
+BASE_DECLARE_FEATURE(kApiGlicPrivate);
+
 // Controls the availability of the
 // `enterprise.reportingPrivate.onDataMaskingRulesTriggered` API.
 BASE_DECLARE_FEATURE(kApiEnterpriseReportingPrivateOnDataMaskingRulesTriggered);
+
+// Controls the availability of Glic access from Google webpages.
+BASE_DECLARE_FEATURE(kApiGlicAccessFromGoogleWebpage);
 
 // Controls the availability of the new `proxyOverrideRulesPrivate` API.
 BASE_DECLARE_FEATURE(kApiProxyOverrideRulesPrivate);
@@ -92,12 +98,6 @@ BASE_DECLARE_FEATURE(kAllowWithholdingExtensionPermissionsOnInstall);
 // process things that renderer process never run content scripts from the
 // extension).
 BASE_DECLARE_FEATURE(kCheckingNoExtensionIdInExtensionIpcs);
-
-// If enabled, `ResetURLLoaderFactories()` will not reset extensions'
-// service workers URLLoaderFactories used for fetching scripts and
-// sub-resources. This avoids disrupting the worker(s) registration(s)
-// when they are in flight.
-BASE_DECLARE_FEATURE(kSkipResetServiceWorkerURLLoaderFactories);
 
 // If enabled, <webview>s will be allowed to request permission from an
 // embedding Chrome App to request access to Human Interface Devices.
@@ -248,15 +248,14 @@ BASE_DECLARE_FEATURE(kDeclarativeNetRequestHeaderSubstitution);
 // line switch.
 BASE_DECLARE_FEATURE(kDisableDisableExtensionsExceptCommandLineSwitch);
 
-
 // Disables the `--extensions-on-chrome-urls` flag's functionality on
 // `chrome://` URLs. Extension can still run on extension URLs using the new
 // flag `--extensions-on-extension-urls` flag.
 BASE_DECLARE_FEATURE(kDisableExtensionsOnChromeUrlsSwitch);
 
-// Changes the chrome.userScript API to be enabled by a per-extension toggle
-// rather than the developer mode toggle on chrome://extensions.
-BASE_DECLARE_FEATURE(kUserScriptUserExtensionToggle);
+// If enabled, high-risk extension DOM activity is collected and reported
+// for enterprise auditing.
+BASE_DECLARE_FEATURE(kEnterpriseExtensionDOMActivityTelemetry);
 
 // Forces the debugger API/feature to always be restricted by developer mode.
 // This ensures we're always testing the developer mode API/feature restriction
@@ -273,10 +272,6 @@ BASE_DECLARE_FEATURE(kDebuggerAPIRestrictedToDevMode);
 // during execution) the error is passed back to the sender.
 BASE_DECLARE_FEATURE(kExtensionBrowserNamespaceAndPolyfillSupport);
 
-// Optimizes service worker start requests by checking readiness before
-// initiating a start.
-BASE_DECLARE_FEATURE(kOptimizeServiceWorkerStartRequests);
-
 // When enabled, a call to base::ListValue::Clone is avoided when dispatching an
 // extension function. Behind a feature to assess impact
 // (go/chrome-performance-work-should-be-finched).
@@ -292,18 +287,6 @@ BASE_DECLARE_FEATURE(kAvoidCloneArgsOnExtensionFunctionDispatch);
 // memory leaks from stale cache entries and false-positive corruption reports.
 BASE_DECLARE_FEATURE(kExtensionContentVerificationUsesExtensionRoot);
 
-// Addresses content verification race conditions during extension updates. When
-// an extension updates, a content verification job for a previous version can
-// sometimes run *after* the new version has been loaded. This can lead to two
-// issues:
-//   1) the old job might be given the hashes for the new version, or
-//   2) it might unnecessarily re-create hashes for the old version.
-//
-// When this feature is enabled, the verification job will strictly use its
-// original extension version for all hash lookups and creations, preventing
-// these inconsistencies.
-BASE_DECLARE_FEATURE(kContentVerifyJobUseJobVersionForHashing);
-
 // Enables the shouldShowPromotion API to determine which promotion to show for
 // Chrome Enterprise on CWS.
 BASE_DECLARE_FEATURE(kEnableShouldShowPromotion);
@@ -313,6 +296,7 @@ BASE_DECLARE_FEATURE(kEnableShouldShowPromotion);
 // must be used to confirm the choice of using the new search engine, or
 // returning to the previous provider.
 BASE_DECLARE_FEATURE(kSearchEngineExplicitChoiceDialog);
+BASE_DECLARE_FEATURE_PARAM(bool, kSearchEngineExplicitChoiceDialogEscapable);
 
 // When enabled, all search extensions will unconditionally get the search
 // engine override dialog.
@@ -323,15 +307,18 @@ BASE_DECLARE_FEATURE(kSearchEngineUnconditionalDialog);
 BASE_DECLARE_FEATURE(kWebRequestSecurityInfo);
 
 // When enabled, filtered webRequest event listeners for service worker-based
-// extensions are persisted to ExtensionPrefs. This allows the browser to know
-// about the listeners before starting the extension service worker (e.g. on
-// browser startup).
-BASE_DECLARE_FEATURE(kWebRequestPersistFilteredEvents);
+// extensions are persisted to ExtensionPrefs by the general mechanism in
+// EventRouter. If disabled, they're instead persisted by the custom mechanism
+// in WebRequestEventRouter.
+BASE_DECLARE_FEATURE(kWebRequestPersistFilteredEventsViaEventRouter);
 
-// When enabled, use an alternative way to add listeners for the webRequest API,
-// which uses the standard `addListener` only, rather than using
-// WebRequestInternal's custom API.
-BASE_DECLARE_FEATURE(kWebRequestAlternativeAddListener);
+// When enabled, optimizes WebRequest proxying by strictly limiting it to
+// requests that are subject to interception. This ensures that the 'webview'
+// permission only triggers proxying for its own guest frames (e.g., <webview>
+// or Controlled Frame), rather than globally proxying all requests. This
+// avoids unnecessary performance overhead and restores navigation
+// optimizations like preconnect.
+BASE_DECLARE_FEATURE(kOptimizeWebRequestProxy);
 
 }  // namespace extensions_features
 

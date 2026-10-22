@@ -31,7 +31,7 @@ Content:
   "function_declarations": [
     {
       "name": "listNetworkRequests",
-      "description": "Gives a list of network requests including URL, status code, and duration in ms",
+      "description": "Gives a list of network requests including URL, status code, and duration.",
       "parameters": {
         "type": 6,
         "description": "",
@@ -42,18 +42,18 @@ Content:
     },
     {
       "name": "selectNetworkRequest",
-      "description": "From the list of selected request select one to debug",
+      "description": "Selects a specific network request to further provide information about. Use this when asked about network requests issues.",
       "parameters": {
         "type": 6,
         "description": "",
         "nullable": true,
         "required": [
-          "url"
+          "id"
         ],
         "properties": {
-          "url": {
+          "id": {
             "type": 1,
-            "description": "The url of the requests",
+            "description": "The id of the network request",
             "nullable": false
           }
         }
@@ -72,18 +72,18 @@ Content:
     },
     {
       "name": "selectSourceFile",
-      "description": "Returns a list of all files in the project.",
+      "description": "Selects a source file. Use this when asked about files on the page. Use listSourceFiles to find the file ID.",
       "parameters": {
         "type": 6,
         "description": "",
         "nullable": true,
         "required": [
-          "name"
+          "id"
         ],
         "properties": {
-          "name": {
-            "type": 1,
-            "description": "The name of the file",
+          "id": {
+            "type": 3,
+            "description": "The id (URL) of the file you want to select.",
             "nullable": false
           }
         }
@@ -91,7 +91,18 @@ Content:
     },
     {
       "name": "performanceRecordAndReload",
-      "description": "Start a new performance recording and reload the page.",
+      "description": "Records a new performance trace. Use this to measure and debug performance metrics and Core Web Vitals like Largest Contentful Paint (LCP), Interaction to Next Paint (INP), and Cumulative Layout Shift (CLS).",
+      "parameters": {
+        "type": 6,
+        "description": "",
+        "nullable": true,
+        "required": [],
+        "properties": {}
+      }
+    },
+    {
+      "name": "runLighthouseAudits",
+      "description": "Records a Lighthouse audit on the current page. Use this to debug accessibility, SEO, and best practices. (For performance metrics like LCP, use performanceRecordAndReload instead).",
       "parameters": {
         "type": 6,
         "description": "",
@@ -102,7 +113,7 @@ Content:
     },
     {
       "name": "inspectDom",
-      "description": "Prompts user to select a DOM element from the page.",
+      "description": "Prompts user to select a DOM element from the page. Use this when you don't know which element is selected.",
       "parameters": {
         "type": 6,
         "description": "",
@@ -120,6 +131,6 @@ Content:
     "client_version": "unit_test"
   },
   "functionality_type": 5,
-  "client_feature": 9
+  "client_feature": 25
 }
 === end content

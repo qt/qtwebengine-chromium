@@ -31,6 +31,7 @@
 #include "cc/trees/latency_info_swap_promise.h"
 #include "cc/trees/layer_tree_frame_sink.h"
 #include "cc/trees/layer_tree_host.h"
+#include "cc/trees/layer_tree_mutator.h"
 #include "cc/trees/mutator_host.h"
 #include "cc/trees/paint_holding_reason.h"
 #include "cc/trees/proxy_impl.h"
@@ -416,27 +417,29 @@ void ProxyMain::BeginMainFrame(
   }
 
   // If updating the layers resulted in a content update, we need a commit.
-  if (updated)
+  if (updated) {
     final_pipeline_stage_ = COMMIT_PIPELINE_STAGE;
+  }
+  bool has_updates = (final_pipeline_stage_ == COMMIT_PIPELINE_STAGE);
+
+  // At this point, the contents of the commit are locked (minus intentional
+  // carve-outs for canvas). We need to begin handling invalidations for the
+  // *next* main frame -- which may happen during the execution of
+  // LTH::WillCommit() -- and that requires resetting current_pipeline_stage_.
+  current_pipeline_stage_ = NO_PIPELINE_STAGE;
 
   auto completion_event_ptr = std::make_unique<CompletionEvent>(
       base::WaitableEvent::ResetPolicy::MANUAL);
   auto* completion_event = completion_event_ptr.get();
-  bool has_updates = (final_pipeline_stage_ == COMMIT_PIPELINE_STAGE);
   // Must get unsafe_state before calling WillCommit() to avoid deadlock.
   auto& unsafe_state = layer_tree_host_->GetUnsafeStateForCommit();
   std::unique_ptr<CommitState> commit_state = layer_tree_host_->WillCommit(
       std::move(completion_event_ptr), has_updates);
 
-  DCHECK_EQ(has_updates, (bool)commit_state.get());
   if (commit_state.get()) {
     commit_state->trace_id = begin_main_frame_state->trace_id;
-  }
-  current_pipeline_stage_ = COMMIT_PIPELINE_STAGE;
-
-  if (!has_updates) {
+  } else {
     completion_event->Signal();
-    current_pipeline_stage_ = NO_PIPELINE_STAGE;
     layer_tree_host_->DidBeginMainFrame();
     TRACE_EVENT_INSTANT0("cc,raf_investigation", "EarlyOut_NoUpdates",
                          TRACE_EVENT_SCOPE_THREAD);
@@ -480,6 +483,8 @@ void ProxyMain::BeginMainFrame(
     return;
   }
 
+  current_pipeline_stage_ = COMMIT_PIPELINE_STAGE;
+
   if (synchronous_composite_for_test_callback_) {
     commit_state->pending_presentation_callbacks.push_back(base::BindOnce(
         [](base::OnceClosure callback, const gfx::PresentationFeedback&) {
@@ -487,8 +492,6 @@ void ProxyMain::BeginMainFrame(
         },
         std::move(synchronous_composite_for_test_callback_)));
   }
-
-  current_pipeline_stage_ = NO_PIPELINE_STAGE;
 
   // Notify the impl thread that the main thread is ready to commit. This will
   // begin the commit process, which is blocking from the main thread's
@@ -518,14 +521,17 @@ void ProxyMain::BeginMainFrame(
                                   scroll_and_viewport_changes_synced,
                                   (blocking ? &commit_timestamps : nullptr),
                                   commit_timeout));
+    current_pipeline_stage_ = NO_PIPELINE_STAGE;
     if (blocking)
       layer_tree_host_->WaitForProtectedSequenceCompletion();
   }
 
-  // For Blink implementations, this updates frame throttling and
-  // delivers IntersectionObserver events for Chromium-internal customers
-  // but *not* script-created IntersectionObserver. See
+  // For Blink implementations, this is the typical hook that will deliver
+  // intersection observer events for chromium-internal customers, see:
   // blink::LocalFrameView::RunPostLifecycleSteps.
+  // Canvas.onpaint requires running post lifecycle steps before the commit, so
+  // there are some scenarios where the post lifecycle steps are run above, via
+  // WillBeginImplCommit.
   layer_tree_host_->DidBeginMainFrame();
   if (blocking)
     layer_tree_host_->CommitComplete(source_frame_number, commit_timestamps);
@@ -1016,20 +1022,10 @@ bool ProxyMain::ShouldBeginMainFrameNotExpectedSoon() const {
   return true;
 }
 
-// When kMainIdleBypassScheduler is enabled, requesting
-// BeginMainFrameNotExpected bypasses updating scheduler state and performs the
-// calculation in place.
 void ProxyMain::RequestBeginMainFrameNotExpected(bool new_state) {
   TRACE_EVENT("cc", "ProxyMain::RequestBeginMainFrameNotExpected", "paused",
               new_state);
   DCHECK(IsMainThread());
-  if (!base::FeatureList::IsEnabled(features::kMainIdleBypassScheduler)) {
-    ImplThreadTaskRunner()->PostTask(
-        FROM_HERE,
-        base::BindOnce(&ProxyImpl::RequestBeginMainFrameNotExpectedOnImpl,
-                       base::Unretained(proxy_impl_.get()), new_state));
-    return;
-  }
   request_begin_main_frame_not_expected_ = new_state;
   did_notify_begin_main_frame_not_expected_until_ = false;
 
@@ -1073,15 +1069,6 @@ void ProxyMain::SetSourceURL(ukm::SourceId source_id, const GURL& url) {
       FROM_HERE, base::BindOnce(&ProxyImpl::SetSourceURL,
                                 base::Unretained(proxy_impl_.get()),
                                 source_id, url));
-}
-
-void ProxyMain::SetUkmDroppedFramesDestination(
-    base::WritableSharedMemoryMapping ukm_dropped_frames_data) {
-  DCHECK(IsMainThread());
-  ImplThreadTaskRunner()->PostTask(
-      FROM_HERE, base::BindOnce(&ProxyImpl::SetUkmDroppedFramesDestination,
-                                base::Unretained(proxy_impl_.get()),
-                                std::move(ukm_dropped_frames_data)));
 }
 
 void ProxyMain::SetRenderFrameObserver(

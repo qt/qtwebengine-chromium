@@ -4,14 +4,15 @@
 
 import {html} from '//resources/lit/v3_0/lit.rollup.js';
 
-import {SettingsItemType, type SettingsMenuElement} from './settings_menu.js';
+import {SettingsItemType} from './settings_menu.js';
+import type {SettingsMenuElement} from './settings_menu.js';
 
 
 export function getHtml(this: SettingsMenuElement) {
   // clang-format off
   return html`
 <cr-lazy-render-lit id="lazyMenu" .template='${() => html`
-  <cr-action-menu id="settings-menu-dialog" @close="${this.close}" non-modal>
+  <cr-action-menu id="settings-menu-dialog" @close="${this.onClose_}" non-modal>
     ${this.options_.map((item, index) => html`
       ${item.showSeparator ? html`<hr class="separator" aria-hidden="true">` : ``}
       <button class="menu-row dropdown-item"
@@ -20,8 +21,12 @@ export function getHtml(this: SettingsMenuElement) {
           data-index="${index}"
           title="${item.ariaLabel || item.title}"
           aria-label="${item.ariaLabel || item.title}"
-          @pointerenter="${this.onMenuItemHover_}"
-          @pointerleave="${this.onMenuItemLeave_}"
+          ?disabled="${!!item.disabled}"
+          aria-haspopup="${item.itemType === SettingsItemType.MENU ?
+             'menu' : 'false'}"
+          aria-expanded="${this.getAriaExpanded_(item)}"
+          @pointerenter="${this.onPointerenter_}"
+          @pointerleave="${this.onPointerleave_}"
           @click="${this.onMenuItemClick_}">
 
         <div class="start-container">
@@ -36,8 +41,9 @@ export function getHtml(this: SettingsMenuElement) {
             <cr-toggle
               title="${item.ariaLabel || item.title}"
               aria-label="${item.ariaLabel || item.title}"
+              ?disabled="${!!item.disabled}"
               @click="${this.onMenuItemClick_}"
-              ?checked="${item.enabled || false}"
+              ?checked="${item.checked || false}"
               data-index="${index}">
             </cr-toggle>
         ` : html`

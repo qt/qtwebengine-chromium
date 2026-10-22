@@ -1,22 +1,22 @@
 // Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as LighthouseModel from '../../models/lighthouse/lighthouse.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as LighthouseReport from '../../third_party/lighthouse/report/report.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
+import {html, nothing, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as PanelsCommon from '../common/common.js';
-
-import type {
-  NodeDetailsJSON, ReportJSON, RunnerResultArtifacts, SourceLocationDetailsJSON} from './LighthouseReporterTypes.js';
 
 const MaxLengthForLinks = 40;
 
@@ -26,8 +26,9 @@ interface RenderReportOpts {
 }
 
 export class LighthouseReportRenderer {
-  static renderLighthouseReport(lhr: ReportJSON, artifacts?: RunnerResultArtifacts, opts?: RenderReportOpts):
-      HTMLElement {
+  static renderLighthouseReport(
+      lhr: LighthouseModel.ReporterTypes.ReportJSON, artifacts?: LighthouseModel.ReporterTypes.RunnerResultArtifacts,
+      opts?: RenderReportOpts): HTMLElement {
     let onViewTrace: (() => Promise<void>)|undefined = undefined;
     if (artifacts) {
       onViewTrace = async () => {
@@ -134,7 +135,7 @@ export class LighthouseReportRenderer {
 
     for (const origElement of el.getElementsByClassName('lh-node')) {
       const origHTMLElement = origElement as HTMLElement;
-      const detailsItem = origHTMLElement.dataset as unknown as NodeDetailsJSON;
+      const detailsItem = origHTMLElement.dataset as unknown as LighthouseModel.ReporterTypes.NodeDetailsJSON;
       if (!detailsItem.path) {
         continue;
       }
@@ -155,24 +156,25 @@ export class LighthouseReportRenderer {
 
       const screenshotElement = origHTMLElement.querySelector('.lh-element-screenshot');
       origHTMLElement.textContent = '';
-      if (screenshotElement) {
-        origHTMLElement.append(screenshotElement);
-      }
-      origHTMLElement.appendChild(element);
+      render(html`${screenshotElement ?? nothing}${element}`, origHTMLElement);
     }
   }
 
   static async linkifySourceLocationDetails(el: Element): Promise<void> {
     for (const origElement of el.getElementsByClassName('lh-source-location')) {
       const origHTMLElement = origElement as HTMLElement;
-      const detailsItem = origHTMLElement.dataset as SourceLocationDetailsJSON;
+      const detailsItem = origHTMLElement.dataset as {
+        sourceUrl?: Platform.DevToolsPath.UrlString,
+        sourceLine?: string,
+        sourceColumn?: string,
+      };
       if (!detailsItem.sourceUrl || !detailsItem.sourceLine || !detailsItem.sourceColumn) {
         continue;
       }
       const url = detailsItem.sourceUrl;
       const line = Number(detailsItem.sourceLine);
       const column = Number(detailsItem.sourceColumn);
-      const element = await Components.Linkifier.Linkifier.linkifyURL(url, {
+      const element = Components.Linkifier.Linkifier.linkifyURL(url, {
         lineNumber: line,
         columnNumber: column,
         showColumnNumber: false,
@@ -197,7 +199,7 @@ export class LighthouseReportRenderer {
         continue;
       }
 
-      auditEl.setAttribute('jslog', `${VisualLogging.item(`lighthouse.audit.${id}`)}`);
+      auditEl.setAttribute('jslog', `${VisualLogging.item(`lighthouse.audit.${id}`).track({resize: true})}`);
 
       let state: string|undefined;
       for (const className of auditEl.classList) {

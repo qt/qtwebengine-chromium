@@ -46,12 +46,12 @@ export class CrInputDemoElement extends CrLitElement {
   }
 
   protected accessor autogrowTextarea_ = false;
-  protected accessor emailValue_: string|undefined;
-  protected accessor numberValue_: string|undefined;
-  protected accessor pinValue_: string|undefined;
-  protected accessor searchValue_: string|undefined;
-  protected accessor textValue_: string|undefined;
-  protected accessor textareaValue_: string|undefined;
+  protected accessor emailValue_: string = '';
+  protected accessor numberValue_: string = '';
+  protected accessor pinValue_: string = '';
+  protected accessor searchValue_: string = '';
+  protected accessor textValue_: string = '';
+  protected accessor textareaValue_: string = '';
 
   protected onClearSearchClick_() {
     this.searchValue_ = '';
@@ -85,7 +85,8 @@ export class CrInputDemoElement extends CrLitElement {
     this.textareaValue_ = e.detail.value;
   }
 
-  protected onAutogrowTextareaChanged_(e: CustomEvent<{value: boolean}>) {
+  protected onAutogrowTextareaCheckedChanged_(
+      e: CustomEvent<{value: boolean}>) {
     this.autogrowTextarea_ = e.detail.value;
   }
 }

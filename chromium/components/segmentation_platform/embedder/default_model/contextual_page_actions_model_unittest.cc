@@ -42,10 +42,7 @@ class ContextualPageActionsModelTest : public DefaultModelTestBase {
       bool has_price_tracking,
       bool has_reader_mode,
       bool has_discounts = false,
-      bool has_tab_grouping_suggestions = false,
-      float non_contextual_click_count = 0,
-      float tab_group_shown_count = 0,
-      float tab_group_clicked_count = 0) {
+      bool has_tab_grouping_suggestions = false) {
     ModelProvider::Response response;
     response.push_back(has_discounts ? 1 : 0);
     response.push_back(has_price_insights ? 1 : 0);

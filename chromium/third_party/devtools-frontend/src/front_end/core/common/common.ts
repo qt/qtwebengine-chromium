@@ -29,10 +29,12 @@ import * as SegmentedRange from './SegmentedRange.js';
 import * as SettingRegistration from './SettingRegistration.js';
 import * as Settings from './Settings.js';
 import * as SimpleHistoryManager from './SimpleHistoryManager.js';
+import * as Srcset from './Srcset.js';
 import * as StringOutputStream from './StringOutputStream.js';
 import * as TextDictionary from './TextDictionary.js';
 import * as Throttler from './Throttler.js';
 import * as Trie from './Trie.js';
+import * as VersionController from './VersionController.js';
 
 /*
  * This is re-exported here because we moved UIString into platform from
@@ -68,8 +70,10 @@ export {
   SettingRegistration,
   Settings,
   SimpleHistoryManager,
+  Srcset,
   StringOutputStream,
   TextDictionary,
   Throttler,
   Trie,
+  VersionController,
 };

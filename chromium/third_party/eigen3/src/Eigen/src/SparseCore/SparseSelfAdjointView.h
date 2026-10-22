@@ -126,7 +126,7 @@ class SparseSelfAdjointView : public EigenBase<SparseSelfAdjointView<MatrixType,
   SparseSelfAdjointView& rankUpdate(const SparseMatrixBase<DerivedU>& u, const Scalar& alpha = Scalar(1));
 
   /** \returns an expression of P H P^-1 */
-  // TODO implement twists in a more evaluator friendly fashion
+  // TODO: implement twists in a more evaluator friendly fashion
   SparseSymmetricPermutationProduct<MatrixTypeNested_, Mode> twistedBy(
       const PermutationMatrix<Dynamic, Dynamic, StorageIndex>& perm) const {
     return SparseSymmetricPermutationProduct<MatrixTypeNested_, Mode>(m_matrix, perm);
@@ -161,8 +161,7 @@ class SparseSelfAdjointView : public EigenBase<SparseSelfAdjointView<MatrixType,
 
  protected:
   MatrixTypeNested m_matrix;
-  // mutable VectorI m_countPerRow;
-  // mutable VectorI m_countPerCol;
+
  private:
   template <typename Dest>
   void evalTo(Dest&) const;
@@ -205,7 +204,7 @@ SparseSelfAdjointView<MatrixType, Mode>& SparseSelfAdjointView<MatrixType, Mode>
 
 namespace internal {
 
-// TODO currently a selfadjoint expression has the form SelfAdjointView<.,.>
+// TODO: currently a selfadjoint expression has the form SelfAdjointView<.,.>
 //      in the future selfadjoint-ness should be defined by the expression traits
 //      such that Transpose<SelfAdjointView<.,.> > is valid. (currently TriangularBase::transpose() is overloaded to
 //      make it work)

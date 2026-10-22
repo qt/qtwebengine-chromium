@@ -5,10 +5,12 @@
 #include "third_party/blink/renderer/modules/device_orientation/device_motion_controller.h"
 
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+#include "third_party/blink/public/mojom/permissions/permission_status.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_permission_state.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/modules/device_orientation/device_motion_data.h"
 #include "third_party/blink/renderer/modules/device_orientation/device_motion_event.h"
@@ -141,23 +143,12 @@ ScriptPromise<V8PermissionState> DeviceMotionController::RequestPermission(
           script_state);
   auto promise = resolver->Promise();
 
-  permission_service_->HasPermission(
+  permission_service_->RequestPermission(
       CreatePermissionDescriptor(mojom::blink::PermissionName::SENSORS),
       resolver->WrapCallbackInScriptScope(
           BindOnce([](ScriptPromiseResolver<V8PermissionState>* resolver,
-                      mojom::blink::PermissionStatus status) {
-            switch (status) {
-              case mojom::blink::PermissionStatus::GRANTED:
-              case mojom::blink::PermissionStatus::DENIED:
-                resolver->Resolve(ToV8PermissionState(status));
-                break;
-              case mojom::blink::PermissionStatus::ASK:
-                // At the moment, this state is not reachable because there
-                // is no "ask" or "prompt" state in the Chromium
-                // permissions UI for sensors, so HasPermissionStatus() will
-                // always return GRANTED or DENIED.
-                NOTREACHED();
-            }
+                      mojom::blink::PermissionStatusWithDetailsPtr status) {
+            resolver->Resolve(ToV8PermissionState(status->status));
           })));
 
   return promise;

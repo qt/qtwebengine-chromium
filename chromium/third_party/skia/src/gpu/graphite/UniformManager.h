@@ -273,6 +273,7 @@ public:
     // scalars
     void write(float f)     { this->write<SkSLType::kFloat>(&f); }
     void write(int32_t i)   { this->write<SkSLType::kInt  >(&i); }
+    void write(uint32_t u)  { this->write<SkSLType::kUInt >(&u); }
     void writeHalf(float f) { this->write<SkSLType::kHalf >(&f); }
 
     // [i|h]vec4 and arrays thereof (just add overloads as needed)
@@ -481,13 +482,13 @@ struct LayoutTraits {
 
     static constexpr int kElemSize = Half ? sizeof(SkHalf) : sizeof(float);
     static constexpr int kSize     = N * kElemSize;
-    static constexpr int kAlign    = SkNextPow2_portable(N) * kElemSize;
+    static constexpr int kAlign    = SkNextPow2(N) * kElemSize;
 
     // Reads kSize bytes from 'src' and copies or converts (float->half) the N values
     // into 'dst'. Does not add any other padding that may depend on usage and Layout.
     static void Copy(const void* src, void* dst) {
         if constexpr (Half) {
-            using VecF = skvx::Vec<SkNextPow2_portable(N), float>;
+            using VecF = skvx::Vec<SkNextPow2(N), float>;
             VecF srcData;
             if constexpr (N == 3) {
                 // Load the 3 values into a float4 to take advantage of vectorized conversion.

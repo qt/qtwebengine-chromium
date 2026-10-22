@@ -1,0 +1,99 @@
+/* Copyright 2026 The Chromium Authors
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+/* #css_wrapper_metadata_start
+ * #type=style-lit
+ * #scheme=relative
+ * #css_wrapper_metadata_end */
+
+:host {
+  color: var(--cr-primary-text-color);
+}
+
+a {
+  color: var(--cr-link-color);
+}
+
+.dialog-title {
+  font-size: var(--cr-dialog-title-font-size, calc(15 / 13 * 100%));
+  margin-bottom: 8px;
+}
+
+.url-input-container {
+  display: block;
+  padding-top: 16px;
+}
+
+.url-input-container cr-input {
+  --cr-input-error-display: none;
+  box-sizing: border-box;
+  display: block;
+  padding-top: 8px;
+  width: 100%;
+}
+
+.two-cols {
+  align-items: center;
+  display: flex;
+  margin-top: 24px;
+}
+
+#screenshot-placeholder,
+#screenshot-image {
+  align-items: center;
+  border: 1px solid var(--google-grey-700);
+  border-radius: var(--cr-card-border-radius);
+  flex-shrink: 0;
+  margin-inline-end: 24px;
+  width: 120px;
+  height: 90px;
+}
+
+#screenshot-placeholder {
+  background: var(--google-grey-300);
+  display: flex;
+  justify-content: center;
+}
+
+#screenshot-image {
+  object-fit: cover;
+  object-position: center center;
+}
+
+.main-content {
+  margin: 20px 20px 0;
+  width: 448px;
+}
+
+.button-container {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 0 20px;
+}
+
+#cancel-button {
+  margin-inline-end: 8px;
+}
+
+.footer {
+  background-color: var(--google-grey-100);
+  border-top: 1px solid var(--google-grey-400);
+  padding: 16px 20px 20px;
+}
+
+@media (prefers-color-scheme: dark) {
+  #screenshot-image,
+  #screenshot-placeholder {
+    border: 1px solid var(--google-grey-600);
+  }
+
+  #screenshot-placeholder {
+    background: var(--google-grey-800);
+  }
+
+  .footer {
+    background: var(--google-grey-800);
+    border-color: var(--google-grey-600);
+  }
+}

@@ -170,7 +170,9 @@ enum class PixFlowExitedReason {
   kStaticCode = 19,
   // Pix code was copied within an iframe whose URL is not in the allowlist.
   kIframeUrlNotAllowlisted = 20,
-  kMaxValue = kIframeUrlNotAllowlisted
+  // Pix code was copied when a payflow has already started.
+  kFlowAlreadyStarted = 21,
+  kMaxValue = kFlowAlreadyStarted
 };
 // LINT.ThenChange(/tools/metrics/histograms/metadata/facilitated_payments/enums.xml:FacilitatedPayments.PixFlowExitedReason)
 
@@ -229,12 +231,36 @@ enum class PixCodeValidationResult {
 };
 // LINT.ThenChange(/tools/metrics/histograms/metadata/facilitated_payments/enums.xml:FacilitatedPayments.PixCodeValidationResult)
 
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+//
+// LINT.IfChange(PixIframeUrlType)
+enum class PixIframeUrlType {
+  kOtherNonEmptyUrl = 0,
+  kAboutBlank = 1,
+  kEmpty = 2,
+  kAboutSrcDoc = 3,
+  kNonEmptyAndSameOriginAsMainFrame = 4,
+  kMaxValue = kNonEmptyAndSameOriginAsMainFrame
+};
+// LINT.ThenChange(/tools/metrics/histograms/metadata/facilitated_payments/enums.xml:FacilitatedPayments.Pix.IframeUrlType)
+
 // Converts `PaymentLinkValidator::Scheme` to a string for logging.
 std::string SchemeToString(PaymentLinkValidator::Scheme scheme);
 
-// Log when a Pix code is copied to the clippboard on an allowlisted merchant
-// website.
-void LogPixCodeCopied(ukm::SourceId ukm_source_id);
+// Log when a Pix code is copied to the clipboard on any merchant
+// website. It includes whether the copy event occurred within an iframe.
+void LogPixCodeCopied(ukm::SourceId ukm_source_id, bool has_iframe);
+
+// Log that a Pix code is copied to the clipboard within any iframe.
+void LogPixCodeCopiedInIframe();
+
+// Log the URL type of the iframe when a Pix code is copied in an iframe.
+void LogPixIframeUrlType(PixIframeUrlType url_type);
+
+// Log if the iframe is same-origin with the main frame when a Pix code is
+// copied in an iframe.
+void LogPixIframeIsSameOriginAsMainFrame(bool is_same_origin);
 
 // Log when a given payment link in a certain page for an eWallet push payment
 // flow is detected.
@@ -373,6 +399,11 @@ void LogPixInitiatePurchaseActionResultAndLatency(PurchaseActionResult result,
 // Chrome receives `PurchaseActionResult` from the payments backend.
 void LogPixTransactionResultAndLatency(PurchaseActionResult result,
                                        base::TimeDelta duration);
+
+// Logs the result of the Pix transaction, broken down by whether the purchase
+// action was invoked in the iframe or main frame.
+void LogPixTransactionResultPerFrameType(bool pix_code_is_in_iframe,
+                                         PurchaseActionResult result);
 
 // Log the result and latency for the InitiatePurchaseAction call made to the
 // payments platform (client) during eWallet payflow.

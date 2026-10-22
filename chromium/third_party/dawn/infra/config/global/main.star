@@ -133,7 +133,7 @@ chromium_luci.configure_try(
 chromium_luci.configure_builders(
     os_dimension_overrides = {
         os.LINUX_DEFAULT: os.LINUX_JAMMY,
-        os.MAC_DEFAULT: os.MAC_15,
+        os.MAC_DEFAULT: "Mac-15|Mac-26",
         os.WINDOWS_DEFAULT: os.WINDOWS_10,
     },
 )
@@ -354,3 +354,4 @@ exec("//cmake_try.star")
 exec("//legacy_builders.star")
 exec("//gn_standalone_ci.star")
 exec("//gn_standalone_try.star")
+exec("//trusted_robots.star")

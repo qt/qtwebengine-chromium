@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/feature_list.h"
+#include "base/logging.h"
 #include "base/notreached.h"
 #include "base/supports_user_data.h"
 #include "base/types/expected.h"
@@ -42,6 +43,9 @@ BASE_FEATURE(kAnnotatedPageContentAutofillCreditCardRedactions,
 }  // namespace features
 
 namespace {
+
+// This is the same as `kInvalidDOMNodeId` defined in blink.
+constexpr int kInvalidDOMNodeId = 0;
 
 std::optional<AutofillFieldMetadata> GetAutofillFieldData(
     std::optional<content::GlobalRenderFrameHostToken> source_frame_token,
@@ -141,6 +145,10 @@ optimization_guide::proto::ClickabilityReason ConvertClickabilityReason(
       return optimization_guide::proto::CLICKABILITY_REASON_MOUSE_HOVER;
     case blink::mojom::AIPageContentClickabilityReason::kHoverPseudoClass:
       return optimization_guide::proto::CLICKABILITY_REASON_HOVER_PSEUDO_CLASS;
+    case blink::mojom::AIPageContentClickabilityReason::kAriaToggle:
+      return optimization_guide::proto::CLICKABILITY_REASON_ARIA_TOGGLE;
+    case blink::mojom::AIPageContentClickabilityReason::kAriaSelectable:
+      return optimization_guide::proto::CLICKABILITY_REASON_ARIA_SELECTABLE;
   }
   NOTREACHED();
 }
@@ -291,6 +299,14 @@ void ConvertNodeInteractionInfo(
   }
   proto_interaction_info->set_is_focusable(
       mojom_node_interaction_info.is_focusable);
+  proto_interaction_info->set_is_tabbable(
+      mojom_node_interaction_info.is_tabbable);
+  proto_interaction_info->set_has_aria_activedescendant(
+      mojom_node_interaction_info.has_aria_activedescendant);
+  for (int32_t dom_node_id :
+       mojom_node_interaction_info.aria_action_target_node_ids) {
+    proto_interaction_info->add_aria_action_target_node_ids(dom_node_id);
+  }
 
   if (mojom_node_interaction_info.document_scoped_z_order) {
     proto_interaction_info->set_document_scoped_z_order(
@@ -336,6 +352,14 @@ void ConvertFrameInteractionInfo(
   if (mojom_frame_interaction_info.selection) {
     ConvertSelection(*mojom_frame_interaction_info.selection,
                      proto_frame_interaction_info->mutable_selection());
+  }
+  if (mojom_frame_interaction_info.focused_dom_node_id) {
+    proto_frame_interaction_info->set_focused_node_id(
+        *mojom_frame_interaction_info.focused_dom_node_id);
+  }
+  if (mojom_frame_interaction_info.accessibility_focused_dom_node_id) {
+    proto_frame_interaction_info->set_accessibility_focused_node_id(
+        *mojom_frame_interaction_info.accessibility_focused_dom_node_id);
   }
 }
 
@@ -568,12 +592,14 @@ optimization_guide::proto::RedactionDecision ConvertRedactionDecision(
 
 void ConvertFormControlData(
     const blink::mojom::AIPageContentFormControlData& mojom_form_control_data,
+    blink::mojom::AIPageContentRedactionDecision redaction_decision,
     const std::optional<AutofillFieldMetadata>& autofill_metadata,
     optimization_guide::proto::FormControlData* proto_form_control_data) {
   proto_form_control_data->set_form_control_type(
       ConvertFormControlType(mojom_form_control_data.form_control_type));
   proto_form_control_data->set_is_checked(mojom_form_control_data.is_checked);
   proto_form_control_data->set_is_required(mojom_form_control_data.is_required);
+  proto_form_control_data->set_is_readonly(mojom_form_control_data.is_readonly);
   if (mojom_form_control_data.field_name) {
     proto_form_control_data->set_field_name(
         *mojom_form_control_data.field_name);
@@ -596,8 +622,11 @@ void ConvertFormControlData(
     }
     proto_select_option->set_is_selected(select_option->is_selected);
   }
+  // Set the deprecated proto field for compatibility. The canonical redaction
+  // decision now lives on `ContentAttributes.redaction_decision`.
+  // TODO(crbug.com/480135178): Remove when consumers are migrated.
   proto_form_control_data->set_redaction_decision(
-      ConvertRedactionDecision(mojom_form_control_data.redaction_decision));
+      ConvertRedactionDecision(redaction_decision));
 
   // Incorporate any information received from Autofill.
   if (autofill_metadata) {
@@ -664,6 +693,7 @@ base::expected<void, std::string> ConvertAttributes(
     std::optional<content::GlobalRenderFrameHostToken> source_frame_token,
     ConvertAIPageContentToProtoSession& session,
     const blink::mojom::AIPageContentAttributes& mojom_attributes,
+    bool should_populate_geometry,
     optimization_guide::proto::ContentAttributes* proto_attributes) {
   if (mojom_attributes.dom_node_id.has_value()) {
     proto_attributes->set_common_ancestor_dom_node_id(
@@ -672,8 +702,14 @@ base::expected<void, std::string> ConvertAttributes(
 
   proto_attributes->set_attribute_type(
       ConvertAttributeType(mojom_attributes.attribute_type));
+  proto_attributes->set_redaction_decision(
+      ConvertRedactionDecision(mojom_attributes.redaction_decision));
 
-  if (mojom_attributes.geometry) {
+  // When sensitive payment redaction is enabled, we populate
+  // `mojom_attributes.geometry` for form controls that may contain
+  // sensitive payments to allow for client-side screenshot redaction for
+  // sensitive payment fields, but still omit it from the proto here.
+  if (mojom_attributes.geometry && should_populate_geometry) {
     ConvertGeometry(*mojom_attributes.geometry,
                     proto_attributes->mutable_geometry());
   }
@@ -687,7 +723,9 @@ base::expected<void, std::string> ConvertAttributes(
       mojom_attributes.form_control_data->is_readonly) {
     // Temporarily map readonly to disabled. This is a lossy workaround that
     // preserves "do not edit" intent for consumers that only read proto data.
-    // TODO(crbug.com/481361478): Add readonly field to FormControlData proto.
+    //
+    // TODO(linnan): Remove when consumers are migrated to
+    // FormControlData.is_readonly.
     proto_attributes->mutable_interaction_info()->set_is_disabled(true);
   }
 
@@ -748,6 +786,7 @@ base::expected<void, std::string> ConvertAttributes(
     }
     ConvertFormControlData(
         *mojom_attributes.form_control_data,
+        mojom_attributes.redaction_decision,
         GetAutofillFieldData(source_frame_token, session, *proto_attributes),
         proto_attributes->mutable_form_control_data());
   } else if (mojom_attributes.table_data) {
@@ -897,6 +936,16 @@ void ConvertRedactedIframeData(
                          proto_iframe_data->mutable_redacted_frame_metadata());
 }
 
+int GetAccessibilityFocusedNodeId(
+    const blink::mojom::AIPageContentFrameData& frame_data) {
+  if (!frame_data.frame_interaction_info) {
+    return kInvalidDOMNodeId;
+  }
+
+  return frame_data.frame_interaction_info->accessibility_focused_dom_node_id
+      .value_or(kInvalidDOMNodeId);
+}
+
 // Contains the information that remains the same throughout the tree
 // recursion for ConvertAIPageContentToProto.
 class Converter {
@@ -916,11 +965,18 @@ class Converter {
   base::expected<void, std::string> ConvertNode(
       content::GlobalRenderFrameHostToken source_frame_token,
       const blink::mojom::AIPageContentNode& mojom_node,
+      int accessibility_focused_node_id,
       optimization_guide::proto::ContentNode* proto_node) {
     const auto& mojom_attributes = *mojom_node.content_attributes;
-    RETURN_IF_ERROR(
-        ConvertAttributes(source_frame_token, session_, mojom_attributes,
-                          proto_node->mutable_content_attributes()));
+    RETURN_IF_ERROR(ConvertAttributes(
+        source_frame_token, session_, mojom_attributes,
+        ShouldPopulateGeometry(mojom_attributes, accessibility_focused_node_id),
+        proto_node->mutable_content_attributes()));
+    MaybeAddSensitivePaymentData(mojom_attributes,
+                                 proto_node->content_attributes());
+
+    int accessibility_focused_node_id_for_children =
+        accessibility_focused_node_id;
 
     std::optional<RenderFrameInfo> render_frame_info;
     if (mojom_attributes.attribute_type ==
@@ -943,6 +999,19 @@ class Converter {
           return base::ok();
         }
         return base::unexpected("could not find render_frame_info for iframe");
+      }
+
+      // Security check: Verify that the child frame is a child of the current
+      // frame.
+      content::RenderFrameHost* child_rfh =
+          content::RenderFrameHost::FromFrameToken(
+              render_frame_info->global_frame_token);
+      content::RenderFrameHost* parent_rfh =
+          content::RenderFrameHost::FromFrameToken(source_frame_token);
+      if (child_rfh && parent_rfh &&
+          child_rfh->GetParentOrOuterDocument() != parent_rfh) {
+        return base::unexpected(
+            "compromised renderer: iframe is not a child of the current frame");
       }
 
       auto* proto_iframe_data =
@@ -986,7 +1055,9 @@ class Converter {
 
                   RETURN_IF_ERROR(ConvertNode(
                       render_frame_info->global_frame_token,
-                      *page_content->root_node, proto_child_frame_node));
+                      *page_content->root_node,
+                      GetAccessibilityFocusedNodeId(*page_content->frame_data),
+                      proto_child_frame_node));
 
                   ConvertIframeData(*render_frame_info, iframe_data,
                                     /*mojom_local_frame_data=*/
@@ -1022,6 +1093,9 @@ class Converter {
                               /*mojom_local_frame_data=*/
                               *iframe_data.content->get_local_frame_data(),
                               proto_iframe_data);
+            accessibility_focused_node_id_for_children =
+                GetAccessibilityFocusedNodeId(
+                    *iframe_data.content->get_local_frame_data());
             // Breaking instead of returning so we get to copy the child nodes.
             break;
           case blink::mojom::AIPageContentIframeContent::Tag::
@@ -1056,8 +1130,9 @@ class Converter {
                           : source_frame_token;
     for (const auto& mojom_child : mojom_node.children_nodes) {
       auto* proto_child = proto_node->add_children_nodes();
-      RETURN_IF_ERROR(
-          ConvertNode(source_frame_for_children, *mojom_child, proto_child));
+      RETURN_IF_ERROR(ConvertNode(source_frame_for_children, *mojom_child,
+                                  accessibility_focused_node_id_for_children,
+                                  proto_child));
     }
 
     return base::ok();
@@ -1074,9 +1149,14 @@ class Converter {
       return base::unexpected("iframe is unexpected in popup");
     }
 
-    RETURN_IF_ERROR(
-        ConvertAttributes(std::nullopt, session_, mojom_attributes,
-                          proto_node->mutable_content_attributes()));
+    RETURN_IF_ERROR(ConvertAttributes(
+        std::nullopt, session_, mojom_attributes,
+        ShouldPopulateGeometry(
+            mojom_attributes,
+            /*accessibility_focused_node_id=*/kInvalidDOMNodeId),
+        proto_node->mutable_content_attributes()));
+    MaybeAddSensitivePaymentData(mojom_attributes,
+                                 proto_node->content_attributes());
 
     for (const auto& mojom_child : mojom_node.children_nodes) {
       auto* proto_child = proto_node->add_children_nodes();
@@ -1094,6 +1174,17 @@ class Converter {
       return base::ok();
     }
 
+    if (page_content_proto().has_popup_window()) {
+      return base::ok();
+    }
+
+    if (!opener_frame_info.has_active_popup) {
+      // This could be a race condition where the popup was closed between the
+      // start of extraction and the renderer's response. We skip the popup
+      // but continue with the rest of the page content.
+      return base::ok();
+    }
+
     optimization_guide::proto::PopupWindow* popup_window =
         page_content_proto().mutable_popup_window();
 
@@ -1103,8 +1194,7 @@ class Converter {
 
     // Set the document ID to the frame which opened the popup (might be wrong,
     // because we treat a main page and its same-site iframes as the same
-    // document id). Also we don't need browser-side security check as the data
-    // all come from the same renderer.
+    // document id). We verify that the the popup is owned by the iframe.
     popup_window->mutable_opener_document_id()->set_serialized_token(
         opener_frame_info.serialized_server_token);
 
@@ -1117,8 +1207,9 @@ class Converter {
     return base::ok();
   }
 
-  const blink::mojom::AIPageContentOptionsPtr& options() const LIFETIME_BOUND {
-    return options_;
+  bool actionable_mode() const LIFETIME_BOUND {
+    return options_->mode ==
+           blink::mojom::AIPageContentMode::kActionableElements;
   }
 
   void AddPasswordRedactionData(
@@ -1147,6 +1238,36 @@ class Converter {
     ConvertFrameData(render_frame_info, mojom_local_frame_data,
                      proto_iframe_data->mutable_frame_data(), page_metadata(),
                      *frame_token_set_);
+  }
+
+  void MaybeAddSensitivePaymentData(
+      const blink::mojom::AIPageContentAttributes& mojom_attributes,
+      const optimization_guide::proto::ContentAttributes& proto_attributes) {
+    if (!options_->include_sensitive_payments_for_redaction) {
+      return;
+    }
+
+    if (proto_attributes.has_form_control_data() &&
+        proto_attributes.form_control_data().redaction_decision() ==
+            proto::REDACTION_DECISION_REDACTED_IS_SENSITIVE_PAYMENT_FIELD) {
+      if (mojom_attributes.geometry) {
+        page_content_result_
+            ->visible_bounding_boxes_for_sensitive_payment_redaction.push_back(
+                mojom_attributes.geometry->visible_bounding_box);
+      } else {
+        LOG(ERROR) << "Missing geometry for the sensitive payment field";
+      }
+    }
+  }
+
+  // See `AIPageContentAgent::ContentBuilder::AddNodeGeometry()`. When in
+  // non-actionable mode, we only want to add geometry for the accessibility
+  // focused node.
+  bool ShouldPopulateGeometry(
+      const blink::mojom::AIPageContentAttributes& mojom_attributes,
+      int accessibility_focused_node_id) const {
+    return actionable_mode() ||
+           mojom_attributes.dom_node_id == accessibility_focused_node_id;
   }
 
   blink::mojom::PageMetadata& page_metadata() {
@@ -1249,8 +1370,16 @@ base::expected<void, std::string> ConvertAIPageContentToProto(
                       page_content_result);
   converter.AddPasswordRedactionData(*main_frame_page_content);
 
+  // Claim the singleton popup before walking child frames so the main frame
+  // wins if multiple verified frames report popup data.
+  if (main_frame_page_content->frame_data->popup) {
+    RETURN_IF_ERROR(converter.ConvertPopup(
+        *main_frame_page_content->frame_data->popup, *render_frame_info));
+  }
+
   RETURN_IF_ERROR(converter.ConvertNode(
       main_frame_token, *main_frame_page_content->root_node,
+      GetAccessibilityFocusedNodeId(*main_frame_page_content->frame_data),
       page_content_result.proto.mutable_root_node()));
 
   if (main_frame_page_content->page_interaction_info) {
@@ -1261,8 +1390,7 @@ base::expected<void, std::string> ConvertAIPageContentToProto(
 
   auto version = optimization_guide::proto::ANNOTATED_PAGE_CONTENT_VERSION_1_0;
   auto mode = optimization_guide::proto::ANNOTATED_PAGE_CONTENT_MODE_DEFAULT;
-  if (converter.options()->mode ==
-      blink::mojom::AIPageContentMode::kActionableElements) {
+  if (converter.actionable_mode()) {
     version = optimization_guide::proto::
         ANNOTATED_PAGE_CONTENT_VERSION_ONLY_ACTIONABLE_ELEMENTS_1_0;
     mode = optimization_guide::proto::
@@ -1271,18 +1399,15 @@ base::expected<void, std::string> ConvertAIPageContentToProto(
   page_content_result.proto.set_version(version);
   page_content_result.proto.set_mode(mode);
 
-  // If the page had a popup open, provide that popup to APC as well.
-  if (main_frame_page_content->frame_data->popup) {
-    RETURN_IF_ERROR(converter.ConvertPopup(
-        *main_frame_page_content->frame_data->popup, *render_frame_info));
-  }
-
   return base::ok();
 }
 
 bool IsCoordinateInNode(
     const gfx::Point& coordinate,
     const optimization_guide::proto::ContentAttributes& node_attributes) {
+  // `coordinate` is expected to be in the same coordinate space as the APC
+  // geometry in `node_attributes`. See FindNodeAtPoint() in the header for
+  // the canonical coordinate space contract.
   if (!node_attributes.geometry().has_visible_bounding_box()) {
     return false;
   }

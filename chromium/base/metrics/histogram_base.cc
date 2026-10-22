@@ -14,7 +14,6 @@
 #include "base/check_op.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/metrics/histogram.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/metrics/statistics_recorder.h"
@@ -49,28 +48,6 @@ std::string HistogramTypeToString(HistogramType type) {
   NOTREACHED();
 }
 
-HistogramBase* DeserializeHistogramInfo(PickleIterator* iter) {
-  int type;
-  if (!iter->ReadInt(&type)) {
-    return nullptr;
-  }
-
-  switch (type) {
-    case HISTOGRAM:
-      return Histogram::DeserializeInfoImpl(iter);
-    case LINEAR_HISTOGRAM:
-      return LinearHistogram::DeserializeInfoImpl(iter);
-    case BOOLEAN_HISTOGRAM:
-      return BooleanHistogram::DeserializeInfoImpl(iter);
-    case CUSTOM_HISTOGRAM:
-      return CustomHistogram::DeserializeInfoImpl(iter);
-    case SPARSE_HISTOGRAM:
-      return SparseHistogram::DeserializeInfoImpl(iter);
-    default:
-      return nullptr;
-  }
-}
-
 HistogramBase::CountAndBucketData::CountAndBucketData(Count32 count,
                                                       int64_t sum,
                                                       ListValue buckets)
@@ -85,6 +62,46 @@ HistogramBase::CountAndBucketData& HistogramBase::CountAndBucketData::operator=(
     CountAndBucketData&& other) = default;
 
 const HistogramBase::Sample32 HistogramBase::kSampleType_MAX = INT_MAX;
+
+// static
+HistogramBase* HistogramBase::DeserializeInfo(
+    PickleIterator* iter,
+    HistogramBase::NameMapper mapper) {
+  int type;
+  if (!iter->ReadInt(&type)) {
+    return nullptr;
+  }
+
+  HistogramBase* result;
+  switch (type) {
+    case HISTOGRAM:
+      result = Histogram::DeserializeInfoImpl(iter, mapper);
+      break;
+    case LINEAR_HISTOGRAM:
+      result = LinearHistogram::DeserializeInfoImpl(iter, mapper);
+      break;
+    case BOOLEAN_HISTOGRAM:
+      result = BooleanHistogram::DeserializeInfoImpl(iter, mapper);
+      break;
+    case CUSTOM_HISTOGRAM:
+      result = CustomHistogram::DeserializeInfoImpl(iter, mapper);
+      break;
+    case SPARSE_HISTOGRAM:
+      result = SparseHistogram::DeserializeInfoImpl(iter, mapper);
+      break;
+    default:
+      return nullptr;
+  }
+
+  if (result != nullptr &&
+      result->GetHistogramType() != static_cast<HistogramType>(type)) {
+    // If there's a type mismatch, this could be a DummyHistogram returned by
+    // FactoryGetInternal() due to invalid arguments. In this case, return
+    // nullptr to indicate an error.
+    return nullptr;
+  }
+  return result;
+}
 
 HistogramBase::HistogramBase(DurableStringView name)
     : histogram_name_(name->data()),

@@ -16,8 +16,10 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
+#include "base/numerics/checked_math.h"
 #include "base/task/thread_pool.h"
 #include "base/trace_event/trace_event.h"
+#include "base/types/expected.h"
 #include "components/file_access/scoped_file_access.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -424,15 +426,17 @@ bool BlobReader::ResolveFileItemLength(const BlobDataItem& item,
   return true;
 }
 
-void BlobReader::DidGetFileItemLength(size_t index, int64_t result) {
+void BlobReader::DidGetFileItemLength(
+    size_t index,
+    base::expected<int64_t, net::Error> result) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // Do nothing if we have encountered an error.
   if (net_error_)
     return;
 
-  if (result < 0) {
-    InvalidateCallbacksAndDone(result, std::move(size_callback_));
+  if (!result.has_value()) {
+    InvalidateCallbacksAndDone(result.error(), std::move(size_callback_));
     return;
   }
 
@@ -440,7 +444,7 @@ void BlobReader::DidGetFileItemLength(size_t index, int64_t result) {
   DCHECK_LT(index, items.size());
   const BlobDataItem& item = *items.at(index);
   uint64_t length;
-  if (!ResolveFileItemLength(item, result, &length)) {
+  if (!ResolveFileItemLength(item, result.value(), &length)) {
     InvalidateCallbacksAndDone(net::ERR_FAILED, std::move(size_callback_));
     return;
   }
@@ -553,9 +557,11 @@ void BlobReader::ReadBytesItem(const BlobDataItem& item, int bytes_to_read) {
   TRACE_EVENT1("Blob", "BlobReader::ReadBytesItem", "uuid", blob_data_->uuid());
   DCHECK_GE(read_buf_->BytesRemaining(), bytes_to_read);
 
-  UNSAFE_TODO(memcpy(read_buf_->data(),
-                     item.bytes().data() + item.offset() + current_item_offset_,
-                     bytes_to_read));
+  const size_t begin =
+      base::checked_cast<size_t>(item.offset() + current_item_offset_);
+  const size_t count = base::checked_cast<size_t>(bytes_to_read);
+
+  read_buf_->first(count).copy_from(item.bytes().subspan(begin, count));
 
   AdvanceBytesRead(bytes_to_read);
 }
@@ -728,10 +734,14 @@ std::unique_ptr<FileStreamReader> BlobReader::CreateFileStreamReader(
           item.offset() + additional_offset, item.expected_modification_time(),
           item.file_access());
     case BlobDataItem::Type::kFileFilesystem: {
-      int64_t max_bytes_to_read =
-          item.length() == std::numeric_limits<uint64_t>::max()
-              ? kMaximumLength
-              : item.length() - additional_offset;
+      int64_t max_bytes_to_read;
+      if (item.length() == std::numeric_limits<uint64_t>::max()) {
+        max_bytes_to_read = kMaximumLength;
+      } else {
+        max_bytes_to_read = base::CheckSub(item.length(), additional_offset)
+                                .ValueOrDie<int64_t>();
+        CHECK_GE(max_bytes_to_read, 0);
+      }
       if (file_stream_provider_for_testing_) {
         return file_stream_provider_for_testing_->CreateFileStreamReader(
             item.filesystem_url().ToGURL(), item.offset() + additional_offset,

@@ -76,6 +76,16 @@
 #include "partition_alloc/thread_cache.h"
 #include "partition_alloc/thread_isolation/thread_isolation.h"
 
+// When a memory tool is replacing malloc to keep aligned behaviour working we
+// use window's aligned_malloc and aligned_free, but otherwise we need memalign.
+#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#if PA_BUILDFLAG(PA_COMPILER_MSVC)
+#include <malloc.h>
+#else
+#include <stdlib.h>
+#endif  // PA_BUILDFLAG(PA_COMPILER_MSVC)
+#endif  // defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+
 namespace partition_alloc::internal {
 
 // We want this size to be big enough that we have time to start up other
@@ -569,6 +579,19 @@ class alignas(64) PA_COMPONENT_EXPORT(PARTITION_ALLOC) PartitionRoot {
   }
 
   template <FreeFlags flags = FreeFlags::kNone>
+  PA_NOINLINE void AlignedFree(void* object) {
+    // Normally kAlignedFree is a no-op call into Free, but with memory tools it
+    // will instead remap to the appropriate system aligned free call.
+    constexpr FreeFlags kMaybeAlignedFreeForMemoryTool =
+#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+        FreeFlags::kAlignedFreeForMemoryTool;
+#else
+        FreeFlags::kNone;
+#endif  // defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+    FreeInline<flags | kMaybeAlignedFreeForMemoryTool>(object);
+  }
+
+  template <FreeFlags flags = FreeFlags::kNone>
   PA_ALWAYS_INLINE void FreeInline(void* object);
   template <FreeFlags flags = FreeFlags::kNone>
   PA_ALWAYS_INLINE void FreeWithSizeInline(void* object, size_t size);
@@ -677,6 +700,7 @@ class alignas(64) PA_COMPONENT_EXPORT(PARTITION_ALLOC) PartitionRoot {
 
   void DumpStats(const char* partition_name,
                  bool is_light_dump,
+                 bool populate_discardable_bytes,
                  PartitionStatsDumper* partition_stats_dumper);
 
   static void DeleteForTesting(PartitionRoot* partition_root);
@@ -1127,135 +1151,6 @@ class ScopedSyscallTimer {
 #endif
 };
 
-#if PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
-
-struct SlotAddressAndSize {
-  UntaggedSlotStart slot_start;
-  size_t size;
-};
-
-PA_ALWAYS_INLINE SlotAddressAndSize
-PartitionAllocGetDirectMapSlotStartAndSizeInBRPPool(uintptr_t address) {
-  PA_DCHECK(IsManagedByPartitionAllocBRPPool(address));
-  uintptr_t reservation_start =
-      ReservationOffsetTable::Get(pool_handle::kBRPPoolHandle)
-          .GetDirectMapReservationStart(address);
-  if (!reservation_start) {
-    return SlotAddressAndSize{.slot_start = UntaggedSlotStart(),
-                              .size = size_t(0)};
-  }
-
-#if PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE)
-  std::ptrdiff_t metadata_offset =
-      PartitionAddressSpace::MetadataOffset(pool_handle::kBRPPoolHandle);
-#else
-  constexpr std::ptrdiff_t metadata_offset = 0;
-#endif
-  // The direct map allocation may not start exactly from the first page, as
-  // there may be padding for alignment. The first page metadata holds an offset
-  // to where direct map metadata, and thus direct map start, are located.
-  auto* first_page_metadata = PartitionPageMetadata::FromAddr(
-      reservation_start + PartitionPageSize(), metadata_offset);
-  auto* page_metadata = PA_UNSAFE_TODO(
-      first_page_metadata + first_page_metadata->slot_span_metadata_offset);
-  PA_DCHECK(page_metadata->is_valid);
-  PA_DCHECK(!page_metadata->slot_span_metadata_offset);
-  auto* slot_span = &page_metadata->slot_span_metadata;
-  SlotSpanStart slot_span_start =
-      SlotSpanMetadata::ToSlotSpanStart(slot_span, metadata_offset);
-#if PA_BUILDFLAG(DCHECKS_ARE_ON)
-  auto* direct_map_metadata =
-      PartitionDirectMapMetadata::FromSlotSpanMetadata(slot_span);
-  size_t padding_for_alignment =
-      direct_map_metadata->direct_map_extent.padding_for_alignment;
-  PA_DCHECK(padding_for_alignment ==
-            static_cast<size_t>(page_metadata - first_page_metadata) *
-                PartitionPageSize());
-  PA_DCHECK(slot_span_start ==
-            reservation_start + PartitionPageSize() + padding_for_alignment);
-#endif  // PA_BUILDFLAG(DCHECKS_ARE_ON)
-  return SlotAddressAndSize{.slot_start = slot_span_start.AsSlotStart(),
-                            .size = slot_span->bucket->slot_size};
-}
-
-// Gets the start address and size of the allocated slot. The input |address|
-// can point anywhere in the slot, including the slot start as well as
-// immediately past the slot.
-//
-// This isn't a general purpose function, it is used specifically for obtaining
-// BackupRefPtr's in-slot metadata. The caller is responsible for ensuring that
-// the in-slot metadata is in place for this allocation.
-PA_ALWAYS_INLINE SlotAddressAndSize
-PartitionAllocGetSlotStartAndSizeInBRPPool(uintptr_t address) {
-  PA_DCHECK(
-      ReservationOffsetTable::Get(address).IsManagedByNormalBucketsOrDirectMap(
-          address));
-  DCheckIfManagedByPartitionAllocBRPPool(address);
-
-  auto directmap_slot_info =
-      PartitionAllocGetDirectMapSlotStartAndSizeInBRPPool(address);
-  if (directmap_slot_info.slot_start) [[unlikely]] {
-    return directmap_slot_info;
-  }
-
-#if PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE)
-  std::ptrdiff_t metadata_offset =
-      PartitionAddressSpace::MetadataOffset(pool_handle::kBRPPoolHandle);
-#else
-  constexpr std::ptrdiff_t metadata_offset = 0;
-#endif
-  auto* slot_span = SlotSpanMetadata::FromAddr(address, metadata_offset);
-
-#if PA_BUILDFLAG(DCHECKS_ARE_ON)
-  auto* root = PartitionRoot::FromSlotSpanMetadata(slot_span);
-  // Double check that in-slot metadata is indeed present. Currently that's the
-  // case only when BRP is used.
-  PA_DCHECK(root->brp_enabled());
-#endif  // PA_BUILDFLAG(DCHECKS_ARE_ON)
-
-  // Get the offset from the beginning of the slot span.
-  SlotSpanStart slot_span_start =
-      SlotSpanMetadata::ToSlotSpanStart(slot_span, metadata_offset);
-  size_t offset_in_slot_span = address - slot_span_start.value();
-
-  auto* bucket = slot_span->bucket;
-  return SlotAddressAndSize{
-      .slot_start = UntaggedSlotStart::Unchecked(
-          slot_span_start.value() +
-          bucket->slot_size * bucket->GetSlotNumber(offset_in_slot_span)),
-      .size = bucket->slot_size};
-}
-
-// Return values to indicate where a pointer is pointing relative to the bounds
-// of an allocation.
-enum class PtrPosWithinAlloc {
-  // When BACKUP_REF_PTR_POISON_OOB_PTR is disabled, end-of-allocation pointers
-  // are also considered in-bounds.
-  kInBounds,
-#if PA_BUILDFLAG(BACKUP_REF_PTR_POISON_OOB_PTR)
-  kAllocEnd,
-#endif
-  kFarOOB
-};
-
-// Checks whether `test_address` is in the same allocation slot as
-// `orig_address`.
-//
-// This can be called after adding or subtracting from the `orig_address`
-// to produce a different pointer which must still stay in the same allocation.
-//
-// The `type_size` is the size of the type that the raw_ptr is pointing to,
-// which may be the type the allocation is holding or a compatible pointer type
-// such as a base class or char*. It is used to detect pointers near the end of
-// the allocation but not strictly beyond it.
-//
-// This isn't a general purpose function. The caller is responsible for ensuring
-// that the in-slot metadata is in place for this allocation.
-PA_COMPONENT_EXPORT(PARTITION_ALLOC)
-PtrPosWithinAlloc IsPtrWithinSameAlloc(uintptr_t orig_address,
-                                       uintptr_t test_address,
-                                       size_t type_size);
-#endif  // PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
 
 }  // namespace internal
 
@@ -1370,9 +1265,21 @@ PA_ALWAYS_INLINE bool PartitionRoot::FreeProlog(void* object,
   static_assert(AreValidFlags(flags));
 #if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
   if constexpr (!ContainsFlags(flags, FreeFlags::kNoMemoryToolOverride)) {
+#if PA_BUILDFLAG(PA_COMPILER_MSVC)
+    if (ContainsFlags(flags, FreeFlags::kAlignedFreeForMemoryTool)) {
+      _aligned_free(object);
+    } else {
+      free(object);
+    }
+#else   // !PA_BUILDFLAG(PA_COMPILER_MSVC)
     free(object);
+#endif  // PA_BUILDFLAG(PA_COMPILER_MSVC)
     return true;
   }
+#else   // !defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+  // If the memory tool is not replacing the allocator, then the
+  // kAlignedFreeForMemoryTool flag is unused and should not be passed.
+  static_assert(!ContainsFlags(flags, FreeFlags::kAlignedFreeForMemoryTool));
 #endif  // defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
 
   if (!object) [[unlikely]] {
@@ -1495,18 +1402,19 @@ PA_ALWAYS_INLINE std::pair<internal::SlotStart, internal::SlotSpanMetadata*>
 PartitionRoot::GetSlotStartAndSlotSpanFromAddress(void* object) {
   PA_DCHECK(object);
 
-  // On Android, malloc() interception is more fragile than on other
-  // platforms, as we use wrapped symbols. However, the pools allow us to
-  // quickly tell that a pointer was allocated with PartitionAlloc.
+  // On some platforms, malloc() interception is fragile. For example, on
+  // Android, malloc() interception is more fragile than on other platforms,
+  // as we use wrapped symbols. However, the pools allow us to quickly tell
+  // that a pointer was allocated with PartitionAlloc.
   //
   // This is a crash to detect imperfect symbol interception. However, we can
   // forward allocations we don't own to the system malloc() implementation in
   // these rare cases, assuming that some remain.
   //
-  // On Android Chromecast devices, this is already checked in PartitionFree()
-  // in the shim.
+  // On platforms with ENABLE_SYSTEM_FREE_FALLBACK, this is already checked in
+  // PartitionFree() in the shim.
 #if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC) && \
-    (PA_BUILDFLAG(IS_ANDROID) && !PA_BUILDFLAG(IS_CAST_ANDROID))
+    !PA_BUILDFLAG(ENABLE_SYSTEM_FREE_FALLBACK)
   uintptr_t object_addr =
       internal::SlotStart::Unchecked(object).Untag().value();
   PA_CHECK(IsManagedByPartitionAlloc(object_addr));
@@ -1946,13 +1854,8 @@ PA_ALWAYS_INLINE PartitionRoot* PartitionRoot::FromFirstSuperPage(
     uintptr_t super_page) {
   PA_DCHECK(internal::ReservationOffsetTable::Get(super_page)
                 .IsReservationStart(super_page));
-#if PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE)
   // Slow
-  std::ptrdiff_t offset =
-      internal::PartitionAddressSpace::MetadataOffsetFromAddr(super_page);
-#else
-  std::ptrdiff_t offset = 0;
-#endif
+  const std::ptrdiff_t offset = internal::GetMetadataOffsetFromAddr(super_page);
   auto* extent_entry = internal::PartitionSuperPageToExtent(super_page, offset);
   PartitionRoot* root = extent_entry->root;
   PA_DCHECK(root->inverted_self_ == ~reinterpret_cast<uintptr_t>(root));
@@ -2138,13 +2041,8 @@ PA_ALWAYS_INLINE size_t PartitionRoot::GetUsableSize(const void* ptr) {
   if (!ptr) {
     return 0;
   }
-#if PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE)
-  std::ptrdiff_t offset =
-      internal::PartitionAddressSpace::MetadataOffsetFromAddr(
-          internal::ObjectInnerPtr2Addr(ptr));
-#else
-  constexpr std::ptrdiff_t offset = 0;
-#endif
+  const std::ptrdiff_t offset =
+      internal::GetMetadataOffsetFromAddr(internal::ObjectInnerPtr2Addr(ptr));
   auto* slot_span = SlotSpanMetadata::FromObjectInnerPtr(ptr, offset);
   auto* root = FromSlotSpanMetadata(slot_span);
   return root->GetSlotUsableSize(slot_span);
@@ -2278,14 +2176,47 @@ PA_ALWAYS_INLINE void* PartitionRoot::AllocInternal(size_t requested_size,
       // Early return if AllocWithMemoryToolProlog returns false
       return nullptr;
     }
-    constexpr bool zero_fill = ContainsFlags(flags, AllocFlags::kZeroFill);
-    void* result =
-        zero_fill ? calloc(1, requested_size) : malloc(requested_size);
+    void* result = nullptr;
+    // Taken from base::AlignedAlloc implementation.
+    if constexpr (ContainsFlags(flags,
+                                AllocFlags::kAlignedAllocForMemoryTool)) {
+#if PA_BUILDFLAG(PA_COMPILER_MSVC)
+      result = _aligned_malloc(requested_size, slot_span_alignment);
+#elif PA_BUILDFLAG(IS_ANDROID)
+      // Android technically supports posix_memalign(), but does not expose it
+      // in the current version of the library headers used by Chromium.
+      // Luckily, memalign() on Android returns pointers which can safely be
+      // used with free(), so we can use it instead.  Issue filed to document
+      // this: http://code.google.com/p/android/issues/detail?id=35391
+      result = memalign(slot_span_alignment, requested_size);
+#else
+      int ret = posix_memalign(&result, slot_span_alignment, requested_size);
+      if (ret != 0) {
+        result = nullptr;
+      }
+#endif  // PA_BUILDFLAG(PA_COMPILER_MSVC)
+      // Aligned alloc functions don't have the `calloc` behavior of zeroing
+      // the allocated memory, so we need to do it manually.
+      if constexpr (ContainsFlags(flags, AllocFlags::kZeroFill)) {
+        if (result) {
+          // SAFETY: `result` is non-null and `requested_size` is the size of
+          // the allocation, so this is a valid range to zero out.
+          PA_UNSAFE_BUFFERS(memset(result, 0, requested_size));
+        }
+      }
+    } else {
+      constexpr bool zero_fill = ContainsFlags(flags, AllocFlags::kZeroFill);
+      result = zero_fill ? calloc(1, requested_size) : malloc(requested_size);
+    }
     if constexpr (!ContainsFlags(flags, AllocFlags::kReturnNull)) {
       PA_CHECK(result);
     }
     return result;
   }
+#else   // !defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+  // If `MEMORY_TOOL_REPLACES_ALLOCATOR` is not defined,
+  // `kAlignedAllocForMemoryTool` should not be passed to `AllocInternal`.
+  static_assert(!ContainsFlags(flags, AllocFlags::kAlignedAllocForMemoryTool));
 #endif  // defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
 
   constexpr bool no_hooks = ContainsFlags(flags, AllocFlags::kNoHooks);
@@ -2603,8 +2534,14 @@ PA_ALWAYS_INLINE void* PartitionRoot::AlignedAllocInline(
   // don't pass anything less, because it'll mess up callee's calculations.
   size_t slot_span_alignment =
       std::max(alignment, internal::PartitionPageSize());
-  void* object =
-      AllocInternal<flags>(adjusted_size, slot_span_alignment, nullptr);
+  constexpr AllocFlags kMaybeAlignedAllocForMemoryTool =
+#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+      AllocFlags::kAlignedAllocForMemoryTool;
+#else
+      AllocFlags::kNone;
+#endif
+  void* object = AllocInternal<flags | kMaybeAlignedAllocForMemoryTool>(
+      adjusted_size, slot_span_alignment, nullptr);
 
   // |alignment| is a power of two, but the compiler doesn't necessarily know
   // that. A regular % operation is very slow, make sure to use the equivalent,
@@ -2809,12 +2746,6 @@ PartitionRoot::Realloc<AllocFlags::kReturnNull, FreeFlags::kNone>(void*,
 EXPORT_TEMPLATE void* PartitionRoot::AlignedAlloc<AllocFlags::kNone>(size_t,
                                                                      size_t);
 #undef EXPORT_TEMPLATE
-
-#if PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
-// Usage in `raw_ptr_backup_ref_impl.cc` is notable enough to merit a
-// non-internal alias.
-using ::partition_alloc::internal::PartitionAllocGetSlotStartAndSizeInBRPPool;
-#endif  // PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
 
 #if PA_BUILDFLAG(IS_APPLE) && PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 PA_COMPONENT_EXPORT(PARTITION_ALLOC)

@@ -32,7 +32,20 @@ export class ProfileFlameChartDataProvider implements PerfUI.FlameChart.FlameCha
   static colorGenerator(): Common.Color.Generator {
     if (!colorGeneratorInstance) {
       colorGeneratorInstance = new Common.Color.Generator(
-          {min: 30, max: 330, count: undefined}, {min: 50, max: 80, count: 5}, {min: 80, max: 90, count: 3});
+          {
+            min: 30,
+            max: 330,
+          },
+          {
+            min: 50,
+            max: 80,
+            count: 5,
+          },
+          {
+            min: 80,
+            max: 90,
+            count: 3,
+          });
 
       colorGeneratorInstance.setColorForID('(idle)', 'hsl(0, 0%, 94%)');
       colorGeneratorInstance.setColorForID('(program)', 'hsl(0, 0%, 80%)');

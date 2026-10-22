@@ -25,8 +25,7 @@ NEON_HALF_TO_FLOAT_FUNCTIONS(pndtri)
 #undef NEON_HALF_TO_FLOAT_FUNCTIONS
 #endif
 
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, perf)
-BF16_PACKET_FUNCTION(Packet4f, Packet4bf, pndtri)
+EIGEN_INSTANTIATE_SPECIAL_FUNCS_BF16(Packet4f, Packet4bf)
 
 }  // namespace internal
 }  // namespace Eigen

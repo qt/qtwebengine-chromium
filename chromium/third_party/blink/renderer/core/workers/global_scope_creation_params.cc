@@ -28,6 +28,7 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
     Vector<network::mojom::blink::ContentSecurityPolicyPtr>
         response_content_security_policies,
     network::mojom::ReferrerPolicy referrer_policy,
+    DocumentPolicy::DocumentPolicyBundle document_policy,
     const SecurityOrigin* starter_origin,
     bool starter_secure_context,
     HttpsState starter_https_state,
@@ -49,6 +50,7 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
     const std::optional<ExecutionContextToken>& parent_context_token,
     bool cross_origin_isolated_capability,
     bool parent_is_isolated_context,
+    bool direct_sockets_force_enabled_in_parent,
     InterfaceRegistry* interface_registry,
     scoped_refptr<base::SingleThreadTaskRunner>
         agent_group_scheduler_compositor_task_runner,
@@ -71,6 +73,7 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
       response_content_security_policies(
           std::move(response_content_security_policies)),
       referrer_policy(referrer_policy),
+      document_policy(std::move(document_policy)),
       starter_origin(starter_origin ? starter_origin->IsolatedCopy() : nullptr),
       origin_to_use(std::move(origin_to_use)),
       starter_secure_context(starter_secure_context),
@@ -103,6 +106,8 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
       parent_context_token(parent_context_token),
       cross_origin_isolated_capability(cross_origin_isolated_capability),
       parent_is_isolated_context(parent_is_isolated_context),
+      direct_sockets_force_enabled_in_parent(
+          direct_sockets_force_enabled_in_parent),
       interface_registry(interface_registry),
       agent_group_scheduler_compositor_task_runner(
           std::move(agent_group_scheduler_compositor_task_runner)),

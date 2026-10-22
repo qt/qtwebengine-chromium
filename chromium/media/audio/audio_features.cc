@@ -47,6 +47,9 @@ BASE_FEATURE(kAndroidAudioDeviceListener, base::FEATURE_ENABLED_BY_DEFAULT);
 // TODO(crbug.com/440210010): Remove when the experiment is done.
 BASE_FEATURE(kAudioStereoInputStreamParameters,
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Enables support for variable sized callbacks in AAudio.
+BASE_FEATURE(kAAudioVariableSizedCallbacks, base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
 // This feature flag controls whether the WebAudio destination resampler is
@@ -77,6 +80,12 @@ BASE_FEATURE(kMacAVFoundationPlayback, base::FEATURE_DISABLED_BY_DEFAULT);
 // keep capturing the same device when default output device is changed, and
 // will report an error if the sample rate is changed.
 BASE_FEATURE(kMacCatapRestartOnDeviceChange, base::FEATURE_ENABLED_BY_DEFAULT);
+
+// If this feature is enabled, the audio process is restarted if the
+// AudioDeviceCreateIOProcID call times out. This is used to recover from
+// permission dialogs that are not responded to.
+BASE_FEATURE(kMacCatapRestartAudioProcessOnTimeout,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 #endif
 

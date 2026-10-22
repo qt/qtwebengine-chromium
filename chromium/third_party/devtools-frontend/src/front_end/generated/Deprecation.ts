@@ -55,6 +55,14 @@ export const UIStrings = {
    */
   DataUrlInSvgUse: "Support for data: URLs in SVGUseElement is deprecated and it will be removed in the future.",
   /**
+   * @description Warning displayed to developers when document.createEvent() is called with 'KeyboardEvents', which is a non-standard event interface that will be removed.
+   */
+  DocumentCreateEventKeyboardEvents: "document.createEvent('KeyboardEvents') is deprecated and will be removed. Use `new KeyboardEvent()` instead.",
+  /**
+   * @description Warning displayed to developers when document.createEvent() is called with 'TransitionEvent', which is a non-standard event interface that will be removed.
+   */
+  DocumentCreateEventTransitionEvent: "document.createEvent('TransitionEvent') is deprecated and will be removed. Use `new TransitionEvent()` instead.",
+  /**
    * @description Translation is not needed, this will never be exposed in production code.
    */
   ExampleBrowserProcessDeprecation: "This is an example for showing the code required for a browser process reported deprecation.",
@@ -94,6 +102,34 @@ export const UIStrings = {
    * @description Warning displayed to developers that instead of calling the `Intl.v8BreakIterator` constructor, which is not a standard JavaScript API, use ECMA402 standard API Intl.Segmenter shipped in end of 2020 instead.
    */
   IntlV8BreakIterator: "`Intl.v8BreakIterator` is deprecated. Please use `Intl.Segmenter` instead.",
+  /**
+   * @description Warning for using deprecated 'inputQuota' attribute.
+   */
+  LanguageModel_InputQuota: "LanguageModel.inputQuota is deprecated. Please use LanguageModel.contextWindow instead. This alias is only available in extensions.",
+  /**
+   * @description Warning for using deprecated 'inputUsage' attribute.
+   */
+  LanguageModel_InputUsage: "LanguageModel.inputUsage is deprecated. Please use LanguageModel.contextUsage instead. This alias is only available in extensions.",
+  /**
+   * @description Warning for using deprecated 'measureInputUsage' method.
+   */
+  LanguageModel_MeasureInputUsage: "LanguageModel.measureInputUsage() is deprecated. Please use LanguageModel.measureContextUsage() instead. This alias is only available in extensions.",
+  /**
+   * @description Warning for using deprecated 'onquotaoverflow' event handler.
+   */
+  LanguageModel_OnQuotaOverflow: "LanguageModel.onquotaoverflow is deprecated. Please use LanguageModel.oncontextoverflow instead. The LanguageModel.onquotaoverflow alias is only available in extensions.",
+  /**
+   * @description Warning message for web developers when they call the deprecated LanguageModel.params() method.
+   */
+  LanguageModelParams: "LanguageModel.params() is deprecated and now only available in extension contexts. The topK and temperature related fields within its result are also deprecated.",
+  /**
+   * @description Warning message for web developers when they use the deprecated 'temperature' option in LanguageModel.create() or access the .temperature attribute.
+   */
+  LanguageModelTemperature: "The 'temperature' parameter/attribute for LanguageModel is deprecated. It is only functional within extensions and may be removed in the future.",
+  /**
+   * @description Warning message for web developers when they use the deprecated 'topK' option in LanguageModel.create() or access the .topK attribute.
+   */
+  LanguageModelTopK: "The 'topK' parameter/attribute for LanguageModel is deprecated. It is only functional within extensions and may be removed in the future.",
   /**
    * @description This warning occurs when a stylesheet loaded from a local file directive does not end in the file type `.css`.
    */
@@ -285,12 +321,41 @@ export const DEPRECATIONS_METADATA: Partial<Record<string, DeprecationDescriptor
     "chromeStatusFeature": 5128825141198848,
     "milestone": 119
   },
+  "DocumentCreateEventKeyboardEvents": {
+    "chromeStatusFeature": 5095987863486464,
+    "milestone": 151
+  },
+  "DocumentCreateEventTransitionEvent": {
+    "chromeStatusFeature": 5095987863486464,
+    "milestone": 151
+  },
   "IdentityInCanMakePaymentEvent": {
     "chromeStatusFeature": 5190978431352832
   },
   "InsecurePrivateNetworkSubresourceRequest": {
     "chromeStatusFeature": 5436853517811712,
     "milestone": 92
+  },
+  "LanguageModelParams": {
+    "chromeStatusFeature": 5134603979063296
+  },
+  "LanguageModelTemperature": {
+    "chromeStatusFeature": 5134603979063296
+  },
+  "LanguageModelTopK": {
+    "chromeStatusFeature": 5134603979063296
+  },
+  "LanguageModel_InputQuota": {
+    "chromeStatusFeature": 5134603979063296
+  },
+  "LanguageModel_InputUsage": {
+    "chromeStatusFeature": 5134603979063296
+  },
+  "LanguageModel_MeasureInputUsage": {
+    "chromeStatusFeature": 5134603979063296
+  },
+  "LanguageModel_OnQuotaOverflow": {
+    "chromeStatusFeature": 5134603979063296
   },
   "LocalCSSFileExtensionRejected": {
     "milestone": 64

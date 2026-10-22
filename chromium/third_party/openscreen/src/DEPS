@@ -413,7 +413,13 @@ deps = {
     'url': Var('quiche_git') + '/googleurl.git' +
       '@' + '94ff147fe0b96b4cca5d6d316b9af6210c0b8051',  #2025-11-11
     'condition': 'not build_with_chromium',
-  }
+  },
+
+  'third_party/perfetto/src': {
+    'url': Var('chromium_git') + '/external/github.com/google/perfetto.git' +
+      '@' + '1d9994a93c6ada2fb261dc72984fa07683a6c86e',
+    'condition': 'not build_with_chromium',
+  },
 }
 
 hooks = [
@@ -453,14 +459,9 @@ include_rules = [
   '+discovery/mdns/public',
   '+discovery/public',
 
-  # Don't include abseil from the root so the path can change via include_dirs
-  # rules when in Chromium.
+  # Don't include Abseil.
   '-third_party/abseil',
-
-  # Abseil allowed headers.
-  # IMPORTANT: Do not add new entries; abseil is being removed from the library.
-  # See https://issuetracker.google.com/158433927
-  '+absl/types/variant.h',
+  '-absl',
 
   # Similar to abseil, don't include boringssl using root path.  Instead,
   # explicitly allow 'openssl' where needed.

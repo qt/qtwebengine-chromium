@@ -34,6 +34,7 @@
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/html/blocking_attribute.h"
 #include "third_party/blink/renderer/core/html/html_style_element.h"
 #include "third_party/blink/renderer/core/loader/modulescript/module_script_creation_params.h"
@@ -46,6 +47,7 @@
 #include "third_party/blink/renderer/core/url/dom_url.h"
 #include "third_party/blink/renderer/platform/bindings/script_forbidden_scope.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
+#include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/json/json_values.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -55,11 +57,11 @@ namespace blink {
 
 namespace {
 bool IsCSS(const AtomicString& type) {
-  return type.empty() || EqualIgnoringASCIICase(type, keywords::kTextCss);
+  return type.empty() || EqualIgnoringAsciiCase(type, keywords::kTextCss);
 }
 
 bool IsCSSModule(const AtomicString& type) {
-  return EqualIgnoringASCIICase(type, keywords::kModule);
+  return EqualIgnoringAsciiCase(type, keywords::kModule);
 }
 }  // namespace
 
@@ -90,7 +92,8 @@ StyleElement::ProcessingResult StyleElement::ProcessStyleSheet(
   // Module type is static based upon when it's first connected.
   // TODO(crbug.com/448174611): Confirm this with the WHATWG and update behavior
   // according to WHATWG resolutions.
-  if (RuntimeEnabledFeatures::DeclarativeCSSModulesEnabled()) {
+  if (RuntimeEnabledFeatures::DeclarativeCSSModulesStyleTagEnabled(
+          document.GetExecutionContext())) {
     if ((element_type_ == StyleType::kPending) && element.isConnected()) {
       // TODO(crbug.com/448174611): For consistency with Import Maps, should we
       // mimic passing "Already Started" state when cloneNode is called? This
@@ -103,11 +106,11 @@ StyleElement::ProcessingResult StyleElement::ProcessStyleSheet(
     }
 
     // Sheet should always be empty for modules.
-    DCHECK(!IsModule() || !sheet_);
+    DCHECK(!IsModule(document) || !sheet_);
   }
   // Classic <style> tags may have an associated stylesheet and need to added as
   // a candidate node.
-  if (!IsModule()) {
+  if (!IsModule(document)) {
     DCHECK(!sheet_);
     registered_as_candidate_ = true;
     document.GetStyleEngine().AddStyleSheetCandidateNode(element);
@@ -138,6 +141,11 @@ void StyleElement::RemovedFrom(Element& element,
 
 StyleElement::ProcessingResult StyleElement::ChildrenChanged(Element& element) {
   if (!has_finished_parsing_children_) {
+    return kProcessingSuccessful;
+  }
+  // CSS module content is static at parse time. Content changes should not
+  // re-process on the new content.
+  if (IsModule(element.GetDocument())) {
     return kProcessingSuccessful;
   }
   probe::WillChangeStyleElement(&element);
@@ -200,12 +208,14 @@ StyleElement::ProcessingResult StyleElement::CreateSheetOrModule(
 
   // TODO(crbug.com/448174611) - should Declarative CSS Modules continue
   // respecting CSP? Need to confirm with WHATWG.
-  if (passes_content_security_policy_checks && IsModule()) {
-    CHECK(RuntimeEnabledFeatures::DeclarativeCSSModulesEnabled());
+  if (passes_content_security_policy_checks && IsModule(document)) {
+    CHECK(RuntimeEnabledFeatures::DeclarativeCSSModulesStyleTagEnabled(
+        document.GetExecutionContext()));
+    UseCounter::Count(document, WebFeature::kStyleTypeModule);
     AddImportMapEntry(element, text);
 
-    // Return early, since we explicitly *don't* want to create a CSSStyleSheet
-    // for CSS modules.
+    // Return early, since we explicitly *don't* want to create a
+    // CSSStyleSheet for CSS modules.
     return kProcessingSuccessful;
   }
 
@@ -289,7 +299,7 @@ void StyleElement::AddImportMapEntry(Element& element, const String& text) {
   if (use_data_uri) {
     // TODO(crbug.com/448174611) - consider encoding in base64 to decrease
     // string size in memory (at the expense of decoding on the CPU).
-    url_string = StrCat({"data:text/css,", EncodeWithURLEscapeSequences(text)});
+    url_string = StrCat({"data:text/css,", EncodeWithUrlEscapeSequences(text)});
   } else {
     StringUtf8Adaptor utf8(text, Utf8ConversionMode::kLenient);
     auto* blob = Blob::Create(base::as_byte_span(utf8), "text/css");
@@ -348,24 +358,25 @@ void StyleElement::AddImportMapEntry(Element& element, const String& text) {
   }
 }
 
-bool StyleElement::IsLoading() const {
-  DCHECK(!IsModule());
+bool StyleElement::IsLoading(const Document& document) const {
+  DCHECK(!IsModule(document));
   if (loading_) {
     return true;
   }
   return sheet_ && sheet_->IsLoading();
 }
 
-bool StyleElement::IsModule() const {
+bool StyleElement::IsModule(const Document& document) const {
   // It's only possible to set the type to module when the flag is enabled.
   DCHECK(element_type_ != StyleType::kModule ||
-         RuntimeEnabledFeatures::DeclarativeCSSModulesEnabled());
+         RuntimeEnabledFeatures::DeclarativeCSSModulesStyleTagEnabled(
+             document.GetExecutionContext()));
   return element_type_ == StyleType::kModule;
 }
 
 bool StyleElement::SheetLoaded(Document& document) {
-  DCHECK(!IsModule());
-  if (IsLoading()) {
+  DCHECK(!IsModule(document));
+  if (IsLoading(document)) {
     return false;
   }
 
@@ -381,7 +392,7 @@ bool StyleElement::SheetLoaded(Document& document) {
 }
 
 void StyleElement::SetToPendingState(Document& document, Element& element) {
-  DCHECK(!IsModule());
+  DCHECK(!IsModule(document));
   DCHECK(IsSameObject(element));
   DCHECK_LT(pending_sheet_type_, PendingSheetType::kBlocking);
   pending_sheet_type_ = PendingSheetType::kBlocking;

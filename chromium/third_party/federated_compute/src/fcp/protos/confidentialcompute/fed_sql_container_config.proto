@@ -19,6 +19,7 @@ package fcp.confidentialcompute;
 import "google/protobuf/any.proto";
 import "fcp/protos/confidentialcompute/access_policy.proto";
 import "fcp/protos/confidentialcompute/private_inference.proto";
+import "fcp/protos/confidentialcompute/private_logger_uploads_config.proto";
 import "tensorflow_federated/cc/core/impl/aggregation/protocol/configuration.proto";
 
 // Configures the FedSQL container initialization. This configuration will last
@@ -26,41 +27,27 @@ import "tensorflow_federated/cc/core/impl/aggregation/protocol/configuration.pro
 message FedSqlContainerInitializeConfiguration {
   tensorflow_federated.aggregation.Configuration agg_configuration = 1;
 
-  // The numerical identifier for the result of serializing the FedSQL session.
-  // This field is only used by trusted services. If this field is empty then
-  // the trusted FedSQL service will not encrypt its outputs that are created
-  // with FINALIZATION_TYPE_SERIALIZE.
-  // This field is only required when using Ledger API, it is ignored when using
-  // the KeyManagementService API since outputs are always encrypted.
-  uint32 serialize_output_access_policy_node_id = 2;
-
-  // The numerical identifier for the reported result of the FedSQL session.
-  // This field is only used by trusted services. If this field is empty then
-  // the trusted FedSQL service will not encrypt its outputs that are created
-  // with FINALIZATION_TYPE_REPORT.
-  // This field is only required when using Ledger API, it is ignored when using
-  // the KeyManagementService API since outputs are always encrypted.
-  uint32 report_output_access_policy_node_id = 3;
-
-  // The table schema for the data that can be joined with the device uploaded
-  // data by the per-client query. This is an `Any` because using a TableSchema
-  // would require using the `tf_proto_library` build rule for
-  // fed_sql_container_config.proto and all its dependencies.
-  google.protobuf.Any joiner_table_schema = 4;
-
-  // The data that can be joined with the device uploaded data by the per-client
-  // query. The FedSQL container expects this data to be in the Federated
-  // Compute client wire format.
-  bytes joiner_data = 5;
-
   // Configuration for running private inference in FedSQL container.
   InferenceInitializeConfiguration inference_init_config = 6;
+
+  // Configuration for processing PrivateLogger uploads.
+  PrivateLoggerUploadsConfig private_logger_uploads_config = 10;
+
+  reserved 2, 3, 4, 5, 7, 8, 9;
 }
 
+// TODO: b/452043727 - Consider removing the `AggCore` prefix from this enum.
 enum AggCoreAggregationType {
   AGGREGATION_TYPE_UNSPECIFIED = 0;
+  // Accumulates the results in memory which are applied during `Commit`.
   AGGREGATION_TYPE_ACCUMULATE = 1;
+  // Merges the serialized checkpoint.
   AGGREGATION_TYPE_MERGE = 2;
+  // Accumulates the private state produced as a result of
+  // `FINALIZATION_TYPE_REPORT_PARTITION`.
+  AGGREGATION_TYPE_ACCUMULATE_PRIVATE_STATE = 3;
+  // Merges the serialized private state.
+  AGGREGATION_TYPE_MERGE_PRIVATE_STATE = 4;
 }
 
 // Configures how a blob should be aggregated by the trusted AggCore container.
@@ -80,12 +67,23 @@ message FedSqlContainerCommitConfiguration {
   Range range = 1;
 }
 
+// TODO: b/452043727 - Consider removing the `AggCore` prefix from this enum.
 enum AggCoreFinalizationType {
   FINALIZATION_TYPE_UNSPECIFIED = 0;
   // Return noised results from the checkpoint aggregator.
   FINALIZATION_TYPE_REPORT = 1;
   // Return the serialized internal state of the checkpoint aggregator.
   FINALIZATION_TYPE_SERIALIZE = 2;
+  // The below enums are used when output partitioning is enabled.
+  // Return the partitioned internal state of the checkpoint aggregator.
+  FINALIZATION_TYPE_PARTITION = 3;
+  // Returns the noised results for the partitioned checkpoint aggregator.
+  FINALIZATION_TYPE_REPORT_PARTITION = 4;
+  // Returns the serialized private state.
+  FINALIZATION_TYPE_SERIALIZE_PRIVATE_STATE = 5;
+  // Returns the final private state generating a release token that can be
+  // passed to KMS for releasing the results.
+  FINALIZATION_TYPE_REPORT_PRIVATE_STATE = 6;
 }
 
 // Configures how a result should be output by the trusted AggCore container.
@@ -93,7 +91,28 @@ enum AggCoreFinalizationType {
 message FedSqlContainerFinalizeConfiguration {
   AggCoreFinalizationType type = 1;
 
+  // The number of partitions to use for the partitioned output. This is only
+  // used when `type` is `FINALIZATION_TYPE_PARTITION`.
+  uint64 num_partitions = 3;
+
   reserved 2;
+}
+
+// The configuration for a partitioned output. This is specified through
+// `ReadResponse.first_response_configuration` for each partition.
+message FedSqlContainerPartitionedOutputConfiguration {
+  // The index of the partition that this output corresponds to.
+  uint64 partition_index = 1;
+}
+
+// The symmetric keys used to encrypt each output partition.
+message FedSqlContainerPartitionKeys {
+  repeated PartitionKey keys = 1;
+
+  message PartitionKey {
+    uint64 partition_index = 1;
+    bytes symmetric_key = 2;
+  }
 }
 
 // Config constraints for the FedSQL container that must be validated before any
@@ -102,6 +121,9 @@ message FedSqlContainerFinalizeConfiguration {
 // using the Ledger API.
 message FedSqlContainerConfigConstraints {
   // DP parameters for the FedSQL container.
+  // The epsilon and delta parameters represent an upper bound on the privacy
+  // usage. It should be fine to define server workloads that consume less than
+  // this budget, but not more.
   double epsilon = 1;
   double delta = 2;
   // The column names that are part of the DP unit.

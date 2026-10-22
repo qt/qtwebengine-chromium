@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/byte_size.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -88,7 +89,15 @@ int BidirectionalStreamSpdyImpl::ReadData(IOBuffer* buf, int buf_len) {
 
   // If there is data buffered, complete the IO immediately.
   if (!read_data_queue_.IsEmpty()) {
-    return read_data_queue_.Dequeue(buf->first(buf_len));
+    // Dequeueing can fire consume callbacks that trigger session
+    // teardown and destroy `this`.
+    base::WeakPtr<BidirectionalStreamSpdyImpl> self =
+        weak_factory_.GetWeakPtr();
+    int rv = read_data_queue_.Dequeue(buf->first(buf_len));
+    if (!self) {
+      return ERR_CONNECTION_CLOSED;
+    }
+    return rv;
   } else if (stream_closed_) {
     return closed_stream_status_;
   }
@@ -152,7 +161,7 @@ int64_t BidirectionalStreamSpdyImpl::GetTotalReceivedBytes() const {
   if (!stream_)
     return 0;
 
-  return stream_->raw_received_bytes();
+  return stream_->raw_received_bytes().InBytes();
 }
 
 int64_t BidirectionalStreamSpdyImpl::GetTotalSentBytes() const {
@@ -162,7 +171,7 @@ int64_t BidirectionalStreamSpdyImpl::GetTotalSentBytes() const {
   if (!stream_)
     return 0;
 
-  return stream_->raw_sent_bytes();
+  return stream_->raw_sent_bytes().InBytes();
 }
 
 bool BidirectionalStreamSpdyImpl::GetLoadTimingInfo(
@@ -251,8 +260,8 @@ void BidirectionalStreamSpdyImpl::OnClose(int status) {
 
   stream_closed_ = true;
   closed_stream_status_ = status;
-  closed_stream_received_bytes_ = stream_->raw_received_bytes();
-  closed_stream_sent_bytes_ = stream_->raw_sent_bytes();
+  closed_stream_received_bytes_ = stream_->raw_received_bytes().InBytes();
+  closed_stream_sent_bytes_ = stream_->raw_sent_bytes().InBytes();
   closed_has_load_timing_info_ =
       stream_->GetLoadTimingInfo(&closed_load_timing_info_);
 
@@ -369,12 +378,20 @@ void BidirectionalStreamSpdyImpl::DoBufferedRead() {
 
   int rv = 0;
   if (read_buffer_) {
+    // ReadData() can fire consume callbacks that trigger session
+    // teardown and destroy `this`.
+    base::WeakPtr<BidirectionalStreamSpdyImpl> self =
+        weak_factory_.GetWeakPtr();
     rv = ReadData(read_buffer_.get(), read_buffer_len_);
+    if (!self) {
+      return;
+    }
     DCHECK_NE(ERR_IO_PENDING, rv);
     read_buffer_ = nullptr;
     read_buffer_len_ = 0;
-    if (delegate_)
+    if (delegate_) {
       delegate_->OnDataRead(rv);
+    }
   }
 }
 

@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/node.h"
+#include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/scroll_marker_group_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/scroll_marker_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/slot_assignment_engine.h"
@@ -96,7 +97,15 @@ Element* NearestLockedExclusiveAncestor(const Node& node) {
   }
   // TODO(crbug.com/924550): Once we figure out a more efficient way to
   // determine whether we're inside a locked subtree or not, change this.
-  for (Node& ancestor : AncestorTraversal(&node)) {
+  const Node* start_node = &node;
+  if (node.IsPseudoElement() &&
+      To<PseudoElement>(node).GetPseudoId() == kPseudoIdBackdrop) {
+    // ::backdrop is rendered outside of its originating element's layout
+    // hierarchy. Therefore, it is not affected by the originating element's
+    // display lock.
+    start_node = node.parentElement();
+  }
+  for (Node& ancestor : AncestorTraversal(start_node)) {
     auto* ancestor_element = DynamicTo<Element>(ancestor);
     if (!ancestor_element)
       continue;
@@ -908,7 +917,7 @@ bool LegacyRevealHiddenUntilFoundAncestors(const Node& node) {
 
   for (Node& parent : AncestorTraversal<FlatTreeTraversal>(&node, true)) {
     if (HTMLElement* element = DynamicTo<HTMLElement>(parent)) {
-      if (EqualIgnoringASCIICase(
+      if (EqualIgnoringAsciiCase(
               element->FastGetAttribute(html_names::kHiddenAttr),
               keywords::kUntilFound)) {
         elements_to_reveal.push_back(element);
@@ -950,7 +959,7 @@ DisplayLockUtilities::RevealAutoExpandableAncestors(const Node& target) {
 
   for (Node& ancestor : AncestorTraversal<FlatTreeTraversal>(&target, true)) {
     if (HTMLElement* element = DynamicTo<HTMLElement>(ancestor)) {
-      if (EqualIgnoringASCIICase(
+      if (EqualIgnoringAsciiCase(
               element->FastGetAttribute(html_names::kHiddenAttr),
               keywords::kUntilFound)) {
         ancestors_to_reveal.push_back(
@@ -974,7 +983,7 @@ DisplayLockUtilities::RevealAutoExpandableAncestors(const Node& target) {
       return reveal_result;
     }
     if (reveal_pair.second == AncestorType::kHiddenUntilFound) {
-      if (!EqualIgnoringASCIICase(
+      if (!EqualIgnoringAsciiCase(
               reveal_pair.first->FastGetAttribute(html_names::kHiddenAttr),
               keywords::kUntilFound)) {
         return reveal_result;
@@ -983,7 +992,7 @@ DisplayLockUtilities::RevealAutoExpandableAncestors(const Node& target) {
       reveal_pair.first->DispatchEvent(
           *Event::CreateBubble(event_type_names::kBeforematch));
       if (!reveal_pair.first->isConnected() ||
-          !EqualIgnoringASCIICase(
+          !EqualIgnoringAsciiCase(
               reveal_pair.first->FastGetAttribute(html_names::kHiddenAttr),
               keywords::kUntilFound)) {
         return reveal_result;

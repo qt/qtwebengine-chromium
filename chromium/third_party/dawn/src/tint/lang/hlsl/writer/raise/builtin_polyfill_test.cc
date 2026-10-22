@@ -32,6 +32,7 @@
 #include "gtest/gtest.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/transform/helper_test.h"
+#include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/number.h"
 #include "src/tint/lang/core/type/builtin_structs.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
@@ -42,6 +43,7 @@
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
+using Capability = tint::core::ir::Capability;
 
 namespace tint::hlsl::writer::raise {
 namespace {
@@ -57,7 +59,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastIdentity) {
     auto* src = R"(
 %foo = func(%a:i32):i32 {
   $B1: {
-    %3:i32 = bitcast %a
+    %3:i32 = bitcast<i32> %a
     ret %3
   }
 }
@@ -85,7 +87,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Asuint) {
     auto* src = R"(
 %foo = func(%a:i32):u32 {
   $B1: {
-    %3:u32 = bitcast %a
+    %3:u32 = bitcast<u32> %a
     ret %3
   }
 }
@@ -114,7 +116,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Asint) {
     auto* src = R"(
 %foo = func(%a:u32):i32 {
   $B1: {
-    %3:i32 = bitcast %a
+    %3:i32 = bitcast<i32> %a
     ret %3
   }
 }
@@ -143,7 +145,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, Asfloat) {
     auto* src = R"(
 %foo = func(%a:i32):f32 {
   $B1: {
-    %3:f32 = bitcast %a
+    %3:f32 = bitcast<f32> %a
     ret %3
   }
 }
@@ -172,7 +174,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, AsfloatVec) {
     auto* src = R"(
 %foo = func(%a:vec3<i32>):vec3<f32> {
   $B1: {
-    %3:vec3<f32> = bitcast %a
+    %3:vec3<f32> = bitcast<vec3<f32>> %a
     ret %3
   }
 }
@@ -201,7 +203,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastFromF16) {
     auto* src = R"(
 %foo = func(%a:vec2<f16>):f32 {
   $B1: {
-    %3:f32 = bitcast %a
+    %3:f32 = bitcast<f32> %a
     ret %3
   }
 }
@@ -245,7 +247,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastToF16) {
     auto* src = R"(
 %foo = func(%a:f32):vec2<f16> {
   $B1: {
-    %3:vec2<f16> = bitcast %a
+    %3:vec2<f16> = bitcast<vec2<f16>> %a
     ret %3
   }
 }
@@ -297,7 +299,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastFromVec2F16) {
     %2:vec2<f16> = construct 1.0h, 2.0h
     %a:ptr<function, vec2<f16>, read_write> = var %2
     %4:vec2<f16> = load %a
-    %5:i32 = bitcast %4
+    %5:i32 = bitcast<i32> %4
     %b:i32 = let %5
     ret
   }
@@ -351,7 +353,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastToVec4F16) {
     %2:vec2<i32> = construct 1i, 2i
     %a:ptr<function, vec2<i32>, read_write> = var %2
     %4:vec2<i32> = load %a
-    %5:vec4<f16> = bitcast %4
+    %5:vec4<f16> = bitcast<vec4<f16>> %4
     %b:vec4<f16> = let %5
     ret
   }
@@ -393,6 +395,190 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastToVec4F16) {
     %27:f16 = convert %26
     %28:vec4<f16> = construct %22, %23, %25, %27
     ret %28
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expect, str());
+}
+
+// Test bitcast from f16 to u16 scalar — should use asuint16.
+TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastF16ToU16) {
+    capabilities.Add(Capability::kAllow16BitIntegers);
+    auto* a = b.FunctionParam("a", ty.f16());
+    auto* func = b.Function("foo", ty.u16());
+    func->SetParams({a});
+    b.Append(func->Block(), [&] { b.Return(func, b.Bitcast(ty.u16(), a)); });
+
+    auto* src = R"(
+%foo = func(%a:f16):u16 {
+  $B1: {
+    %3:u16 = bitcast<u16> %a
+    ret %3
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%a:f16):u16 {
+  $B1: {
+    %3:u16 = hlsl.asuint16 %a
+    ret %3
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expect, str());
+}
+
+// Test bitcast from u16 to f16 scalar — should use asfloat16.
+TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastU16ToF16) {
+    capabilities.Add(Capability::kAllow16BitIntegers);
+    auto* a = b.FunctionParam("a", ty.u16());
+    auto* func = b.Function("foo", ty.f16());
+    func->SetParams({a});
+    b.Append(func->Block(), [&] { b.Return(func, b.Bitcast(ty.f16(), a)); });
+
+    auto* src = R"(
+%foo = func(%a:u16):f16 {
+  $B1: {
+    %3:f16 = bitcast<f16> %a
+    ret %3
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%a:u16):f16 {
+  $B1: {
+    %3:f16 = hlsl.asfloat16 %a
+    ret %3
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastVec2U16ToVec2F16) {
+    capabilities.Add(Capability::kAllow16BitIntegers);
+    auto* a = b.FunctionParam<vec2<u16>>("a");
+    auto* func = b.Function("foo", ty.vec2h());
+    func->SetParams({a});
+    b.Append(func->Block(), [&] { b.Return(func, b.Bitcast(ty.vec2h(), a)); });
+
+    auto* src = R"(
+%foo = func(%a:vec2<u16>):vec2<f16> {
+  $B1: {
+    %3:vec2<f16> = bitcast<vec2<f16>> %a
+    ret %3
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%a:vec2<u16>):vec2<f16> {
+  $B1: {
+    %3:vec2<f16> = hlsl.asfloat16 %a
+    ret %3
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastVec2U16ToU32) {
+    capabilities.Add(Capability::kAllow16BitIntegers);
+    auto* a = b.FunctionParam<vec2<u16>>("a");
+    auto* func = b.Function("foo", ty.u32());
+    func->SetParams({a});
+    b.Append(func->Block(), [&] { b.Return(func, b.Bitcast(ty.u32(), a)); });
+
+    auto* src = R"(
+%foo = func(%a:vec2<u16>):u32 {
+  $B1: {
+    %3:u32 = bitcast<u32> %a
+    ret %3
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%a:vec2<u16>):u32 {
+  $B1: {
+    %3:u32 = call %tint_bitcast_from_u16, %a
+    ret %3
+  }
+}
+%tint_bitcast_from_u16 = func(%src:vec2<u16>):u32 {
+  $B2: {
+    %6:vec2<f16> = hlsl.asfloat16 %src
+    %7:vec2<f32> = convert %6
+    %8:vec2<u32> = hlsl.f32tof16 %7
+    %r:vec2<u32> = let %8
+    %10:u32 = swizzle %r, x
+    %11:u32 = and %10, 65535u
+    %12:u32 = swizzle %r, y
+    %13:u32 = and %12, 65535u
+    %14:u32 = shl %13, 16u
+    %15:u32 = or %11, %14
+    ret %15
+  }
+}
+)";
+
+    Run(BuiltinPolyfill);
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(HlslWriter_BuiltinPolyfillTest, BitcastU32ToVec2U16) {
+    capabilities.Add(Capability::kAllow16BitIntegers);
+    auto* a = b.FunctionParam<u32>("a");
+    auto* func = b.Function("foo", ty.vec(ty.u16(), 2));
+    func->SetParams({a});
+    b.Append(func->Block(), [&] { b.Return(func, b.Bitcast(ty.vec(ty.u16(), 2), a)); });
+
+    auto* src = R"(
+%foo = func(%a:u32):vec2<u16> {
+  $B1: {
+    %3:vec2<u16> = bitcast<vec2<u16>> %a
+    ret %3
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%a:u32):vec2<u16> {
+  $B1: {
+    %3:vec2<u16> = call %tint_bitcast_to_u16, %a
+    ret %3
+  }
+}
+%tint_bitcast_to_u16 = func(%src:u32):vec2<u16> {
+  $B2: {
+    %v:u32 = let %src
+    %7:u32 = and %v, 65535u
+    %8:f32 = hlsl.f16tof32 %7
+    %t_low:f32 = let %8
+    %10:u32 = shr %v, 16u
+    %11:u32 = and %10, 65535u
+    %12:f32 = hlsl.f16tof32 %11
+    %t_high:f32 = let %12
+    %14:f16 = convert %t_low
+    %15:f16 = convert %t_high
+    %16:vec2<f16> = construct %14, %15
+    %17:vec2<u16> = hlsl.asuint16 %16
+    ret %17
   }
 }
 )";
@@ -5699,7 +5885,7 @@ TEST_P(HlslBuiltinPolyfillWorkgroupAtomic, Access) {
     auto* var = b.Var("v", workgroup, ty.atomic<i32>(), core::Access::kReadWrite);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(ty.i32(), param.fn, var, 123_i));
         b.Return(func);
@@ -5710,7 +5896,7 @@ $B1: {  # root
   %v:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:i32 = )" + std::string(param.atomic) +
                       R"( %v, 123i
@@ -5726,7 +5912,7 @@ $B1: {  # root
   %v:ptr<workgroup, atomic<i32>, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:ptr<function, i32, read_write> = var 0i
     %4:void = hlsl.)" + std::string(param.interlock) +
@@ -5763,7 +5949,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BuiltinWorkgroupAtomicStore) {
     auto* var = b.Var("v", workgroup, sb, core::Access::kReadWrite);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Call(ty.void_(), core::BuiltinFn::kAtomicStore,
                b.Access(ty.ptr<workgroup, atomic<i32>, read_write>(), var, 1_u), 123_i);
@@ -5781,7 +5967,7 @@ $B1: {  # root
   %v:ptr<workgroup, SB, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:ptr<workgroup, atomic<i32>, read_write> = access %v, 1u
     %4:void = atomicStore %3, 123i
@@ -5802,7 +5988,7 @@ $B1: {  # root
   %v:ptr<workgroup, SB, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:ptr<workgroup, atomic<i32>, read_write> = access %v, 1u
     %4:ptr<function, i32, read_write> = var 0i
@@ -5825,7 +6011,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BuiltinWorkgroupAtomicLoad) {
     auto* var = b.Var("v", workgroup, sb, core::Access::kReadWrite);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(ty.i32(), core::BuiltinFn::kAtomicLoad,
                           b.Access(ty.ptr<workgroup, atomic<i32>, read_write>(), var, 1_u)));
@@ -5843,7 +6029,7 @@ $B1: {  # root
   %v:ptr<workgroup, SB, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:ptr<workgroup, atomic<i32>, read_write> = access %v, 1u
     %4:i32 = atomicLoad %3
@@ -5865,7 +6051,7 @@ $B1: {  # root
   %v:ptr<workgroup, SB, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:ptr<workgroup, atomic<i32>, read_write> = access %v, 1u
     %4:ptr<function, i32, read_write> = var 0i
@@ -5890,7 +6076,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BuiltinWorkgroupAtomicSub) {
     auto* var = b.Var("v", workgroup, sb, core::Access::kReadWrite);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(ty.i32(), core::BuiltinFn::kAtomicSub,
                           b.Access(ty.ptr<workgroup, atomic<i32>, read_write>(), var, 1_u), 123_i));
@@ -5910,7 +6096,7 @@ $B1: {  # root
   %v:ptr<workgroup, SB, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:ptr<workgroup, atomic<i32>, read_write> = access %v, 1u
     %4:i32 = atomicSub %3, 123i
@@ -5935,7 +6121,7 @@ $B1: {  # root
   %v:ptr<workgroup, SB, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:ptr<workgroup, atomic<i32>, read_write> = access %v, 1u
     %4:ptr<function, i32, read_write> = var 0i
@@ -5967,7 +6153,7 @@ TEST_F(HlslWriter_BuiltinPolyfillTest, BuiltinWorkgroupAtomicCompareExchangeWeak
     auto* var = b.Var("v", workgroup, sb, core::Access::kReadWrite);
     b.ir.root_block->Append(var);
 
-    auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
+    auto* func = b.ComputeFunction("foo");
     b.Append(func->Block(), [&] {
         b.Let("x", b.Call(core::type::CreateAtomicCompareExchangeResult(ty, mod.symbols, ty.i32()),
                           core::BuiltinFn::kAtomicCompareExchangeWeak,
@@ -5992,7 +6178,7 @@ $B1: {  # root
   %v:ptr<workgroup, SB, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:ptr<workgroup, atomic<i32>, read_write> = access %v, 1u
     %4:__atomic_compare_exchange_result_i32 = atomicCompareExchangeWeak %3, 123i, 345i
@@ -6019,7 +6205,7 @@ $B1: {  # root
   %v:ptr<workgroup, SB, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %3:ptr<workgroup, atomic<i32>, read_write> = access %v, 1u
     %4:ptr<function, i32, read_write> = var 0i

@@ -120,10 +120,17 @@ void SVGResource::NotifyContentChanged() {
     client->ResourceContentChanged(this);
 }
 
+Element* SVGResource::Target() const {
+  UpdateContentLifecycleForUse();
+  return target_.Get();
+}
+
 LayoutSVGResourceContainer* SVGResource::ResourceContainerNoCycleCheck() const {
-  if (!target_)
+  Element* target = Target();
+  if (!target) {
     return nullptr;
-  return DynamicTo<LayoutSVGResourceContainer>(target_->GetLayoutObject());
+  }
+  return DynamicTo<LayoutSVGResourceContainer>(target->GetLayoutObject());
 }
 
 LayoutSVGResourceContainer* SVGResource::ResourceContainer(
@@ -314,9 +321,16 @@ Element* ExternalSVGResourceDocumentContent::ResolveTarget() {
   Document* external_document = document_content_->GetDocument();
   if (!external_document)
     return nullptr;
-  AtomicString decoded_fragment(DecodeURLEscapeSequences(
-      url_.FragmentIdentifier(), DecodeURLMode::kUTF8OrIsomorphic));
+  AtomicString decoded_fragment(DecodeUrlEscapeSequences(
+      url_.FragmentIdentifier(), DecodeUrlMode::kUtf8OrIsomorphic));
   return external_document->getElementById(decoded_fragment);
+}
+
+void ExternalSVGResourceDocumentContent::UpdateContentLifecycleForUse() const {
+  if (!document_content_) {
+    return;
+  }
+  document_content_->UpdateLifecycleForUse();
 }
 
 void ExternalSVGResourceDocumentContent::Trace(Visitor* visitor) const {
@@ -352,8 +366,18 @@ Element* ExternalSVGResourceImageContent::ResolveTarget() {
     return nullptr;
   }
   AtomicString decoded_fragment(
-      DecodeURLEscapeSequences(fragment_, DecodeURLMode::kUTF8OrIsomorphic));
-  return svg_image->GetResourceElement(decoded_fragment);
+      DecodeUrlEscapeSequences(fragment_, DecodeUrlMode::kUtf8OrIsomorphic));
+  return svg_image->GetResourceElement(
+      base::PassKey<ExternalSVGResourceImageContent>(), decoded_fragment);
+}
+
+void ExternalSVGResourceImageContent::UpdateContentLifecycleForUse() const {
+  auto* svg_image = DynamicTo<SVGImage>(image_content_->GetImage());
+  if (!svg_image) {
+    return;
+  }
+  svg_image->UpdateLifecycleForUse(
+      base::PassKey<ExternalSVGResourceImageContent>());
 }
 
 void ExternalSVGResourceImageContent::ImageNotifyFinished(

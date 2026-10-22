@@ -162,7 +162,9 @@ export class NetworkManageCustomHeadersView extends UI.Widget.VBox implements UI
       if (this.columnConfigs.has(headerId) && item.header !== headerId) {
         valid = false;
       }
-      return {valid, errorMessage: undefined};
+      return {
+        valid,
+      };
     }
   }
 }

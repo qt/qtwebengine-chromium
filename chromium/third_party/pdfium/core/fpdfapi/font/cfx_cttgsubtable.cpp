@@ -33,7 +33,8 @@ CFX_CTTGSUBTable::CFX_CTTGSUBTable(pdfium::span<const uint8_t> gsub) {
   for (const auto& script : script_list_) {
     for (const auto& record : script) {
       for (uint16_t index : record) {
-        if (IsVerticalFeatureTag(feature_list_[index].feature_tag)) {
+        if (index < feature_list_.size() &&
+            IsVerticalFeatureTag(feature_list_[index].feature_tag)) {
           feature_set_.insert(index);
         }
       }

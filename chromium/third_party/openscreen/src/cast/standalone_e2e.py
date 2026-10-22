@@ -31,7 +31,7 @@ LIBAOM_ENVVAR = 'OPENSCREEN_HAVE_LIBAOM'
 
 TEST_VIDEO_NAME = 'ForBiggerBlazes.mp4'
 TEST_VIDEO_URL = (
-    'http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/'
+    'http://storage.googleapis.com/cast-integration-test-content/sample/'
     + TEST_VIDEO_NAME
 )
 

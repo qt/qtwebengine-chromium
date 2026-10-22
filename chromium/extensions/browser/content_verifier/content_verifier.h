@@ -114,7 +114,7 @@ class ContentVerifier : public base::RefCountedThreadSafe<
   // TODO(lazyboy): `force_missing_computed_hashes_creation` should always be
   // true, handing its behavior adds extra complexity in HashHelper and this
   // param should be removed when we can unify/fix computed_hashes.json
-  // treatment, see https://crbug.com/819832 for details.
+  // treatment, see https://crbug.com/40566167 for details.
   void CreateContentHash(const ExtensionId& extension_id,
                          const base::FilePath& extension_root,
                          const base::Version& extension_version,
@@ -149,7 +149,8 @@ class ContentVerifier : public base::RefCountedThreadSafe<
 
   // Test helper to recompute `io_data_` for `extension` without having to
   // call `OnExtensionLoaded`.
-  void ResetIODataForTesting(const Extension* extension);
+  void ResetIODataForTesting(const Extension* extension,
+                             base::OnceClosure callback);
 
   // Test helper to clear all cached ContentHash entries from `cache_`.
   void ClearCacheForTesting();

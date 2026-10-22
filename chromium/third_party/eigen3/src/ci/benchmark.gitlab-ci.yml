@@ -1,0 +1,239 @@
+# Benchmark pipeline for performance regression detection.
+#
+# Runs nightly (core subset) or weekly (all benchmarks) on scheduled
+# pipelines, with separate jobs per ISA target.  Results are analyzed
+# using Welch's t-test against the last 30 runs stored on the perf-data
+# branch.
+
+# ============================================================================
+# Variables
+# ============================================================================
+
+variables:
+  EIGEN_BENCH_BUILDDIR: .bench-build
+  EIGEN_BENCH_REPETITIONS: "5"
+  # Scope: "nightly" runs core subset, "weekly" runs all benchmarks.
+  # The run script auto-promotes to "weekly" on Sundays so the full suite
+  # runs once a week without a separate schedule.  Override via web UI or
+  # a dedicated GitLab schedule with EIGEN_BENCH_SCOPE=weekly.
+  EIGEN_BENCH_SCOPE: "nightly"
+
+# ============================================================================
+# Abstract bases
+# ============================================================================
+
+.bench:linux:base:
+  image: ubuntu:22.04
+  variables:
+    EIGEN_CI_BUILDDIR: ${EIGEN_BENCH_BUILDDIR}
+    EIGEN_CI_TARGET_ARCH: ""
+    EIGEN_BENCH_ISA_FLAGS: ""
+    EIGEN_BENCH_TARGET: ""
+  before_script:
+    - . ci/scripts/common.linux.before_script.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
+
+.bench:linux:build:
+  extends: .bench:linux:base
+  stage: benchmark
+  needs: []
+  script:
+    - . ci/scripts/build.benchmark.sh
+  artifacts:
+    when: always
+    name: "$CI_JOB_NAME_SLUG-$CI_COMMIT_REF_SLUG"
+    paths:
+      - ${EIGEN_BENCH_BUILDDIR}/
+    exclude:
+      - ${EIGEN_BENCH_BUILDDIR}/**/*.o
+    expire_in: 2 days
+  tags:
+    - saas-linux-2xlarge-amd64
+
+.bench:linux:run:
+  extends: .bench:linux:base
+  stage: benchmark
+  script:
+    - . ci/scripts/run.benchmark.sh
+  artifacts:
+    when: always
+    name: "$CI_JOB_NAME_SLUG-$CI_COMMIT_REF_SLUG"
+    paths:
+      - ${EIGEN_BENCH_BUILDDIR}/results/
+    expire_in: 30 days
+
+# ============================================================================
+# Build jobs (one per ISA target, all run in parallel)
+# ============================================================================
+
+bench:build:x86-64:sse:
+  extends: .bench:linux:build
+  variables:
+    EIGEN_CI_C_COMPILER: gcc-10
+    EIGEN_CI_CXX_COMPILER: g++-10
+    EIGEN_CI_INSTALL: g++-10
+    EIGEN_CI_TARGET_ARCH: x86_64
+    EIGEN_BENCH_TARGET: x86-64-sse
+
+bench:build:x86-64:avx2:
+  extends: .bench:linux:build
+  variables:
+    EIGEN_CI_C_COMPILER: gcc-10
+    EIGEN_CI_CXX_COMPILER: g++-10
+    EIGEN_CI_INSTALL: g++-10
+    EIGEN_CI_TARGET_ARCH: x86_64
+    EIGEN_BENCH_TARGET: x86-64-avx2
+    EIGEN_BENCH_ISA_FLAGS: "-mavx2 -mfma"
+
+bench:build:x86-64:avx512dq:
+  extends: .bench:linux:build
+  variables:
+    EIGEN_CI_C_COMPILER: gcc-10
+    EIGEN_CI_CXX_COMPILER: g++-10
+    EIGEN_CI_INSTALL: g++-10
+    EIGEN_CI_TARGET_ARCH: x86_64
+    EIGEN_BENCH_TARGET: x86-64-avx512dq
+    EIGEN_BENCH_ISA_FLAGS: "-mavx512dq -mfma"
+
+bench:build:aarch64:neon:
+  extends: .bench:linux:build
+  variables:
+    EIGEN_CI_C_COMPILER: gcc-10
+    EIGEN_CI_CXX_COMPILER: g++-10
+    EIGEN_CI_INSTALL: g++-10
+    EIGEN_CI_TARGET_ARCH: aarch64
+    EIGEN_BENCH_TARGET: aarch64-neon
+    EIGEN_BENCH_ISA_FLAGS: "-march=armv8.2-a+fp16"
+  tags:
+    - saas-linux-large-arm64
+
+# ============================================================================
+# Run jobs (one per ISA target, each depends on its build)
+# ============================================================================
+
+bench:run:x86-64:sse:
+  extends: .bench:linux:run
+  needs: [bench:build:x86-64:sse]
+  variables:
+    EIGEN_BENCH_TARGET: x86-64-sse
+  tags:
+    - saas-linux-2xlarge-amd64
+
+bench:run:x86-64:avx2:
+  extends: .bench:linux:run
+  needs: [bench:build:x86-64:avx2]
+  variables:
+    EIGEN_BENCH_TARGET: x86-64-avx2
+  tags:
+    - saas-linux-2xlarge-amd64
+
+bench:run:x86-64:avx512dq:
+  extends: .bench:linux:run
+  needs: [bench:build:x86-64:avx512dq]
+  variables:
+    EIGEN_BENCH_TARGET: x86-64-avx512dq
+  tags:
+    - saas-linux-2xlarge-amd64
+  allow_failure: true
+
+bench:run:aarch64:neon:
+  extends: .bench:linux:run
+  needs: [bench:build:aarch64:neon]
+  variables:
+    EIGEN_BENCH_TARGET: aarch64-neon
+  tags:
+    - saas-linux-large-arm64
+
+# ============================================================================
+# Analysis: compare against historical data using Welch's t-test
+# ============================================================================
+
+bench:analyze:
+  stage: benchmark
+  image: python:3.11-slim
+  needs:
+    - job: bench:run:x86-64:sse
+      artifacts: true
+    - job: bench:run:x86-64:avx2
+      artifacts: true
+    - job: bench:run:x86-64:avx512dq
+      artifacts: true
+      optional: true
+    - job: bench:run:aarch64:neon
+      artifacts: true
+  variables:
+    EIGEN_CI_BUILDDIR: ${EIGEN_BENCH_BUILDDIR}
+  before_script:
+    - export DEBIAN_FRONTEND=noninteractive
+    - apt-get update -qq && apt-get install -y --no-install-recommends git
+    - pip install --quiet scipy
+  script:
+    - |
+      status=0
+      python3 ci/scripts/detect_regressions.py \
+        --results-dir "${EIGEN_BENCH_BUILDDIR}/results/" \
+        --perf-branch perf-data \
+        --history-count 30 \
+        --significance 0.01 \
+        --min-change-pct 5.0 \
+        --output-report "${EIGEN_BENCH_BUILDDIR}/results/regression_report.txt" || status=$?
+      case "${status}" in
+        0|1) ;;
+        *) exit "${status}" ;;
+      esac
+      printf '%s\n' "${status}" > "${EIGEN_BENCH_BUILDDIR}/results/regression_exit_code.txt"
+  artifacts:
+    when: always
+    paths:
+      - ${EIGEN_BENCH_BUILDDIR}/results/
+    reports:
+      junit: ${EIGEN_BENCH_BUILDDIR}/results/regression_report.xml
+    expire_in: 90 days
+  tags:
+    - saas-linux-small-amd64
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
+
+# ============================================================================
+# Storage and gating
+# ============================================================================
+
+bench:store-results:
+  stage: deploy
+  image: alpine:edge
+  needs:
+    - job: bench:analyze
+      artifacts: true
+  before_script:
+    - apk add --no-cache git python3
+  script:
+    - . ci/scripts/push_perf_data.sh
+  variables:
+    EIGEN_CI_BUILDDIR: ${EIGEN_BENCH_BUILDDIR}
+  tags:
+    - saas-linux-small-amd64
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+bench:regression-gate:
+  stage: deploy
+  image: alpine:edge
+  needs:
+    - job: bench:analyze
+      artifacts: true
+    - job: bench:store-results
+      optional: true
+  script:
+    - code=$(cat "${EIGEN_BENCH_BUILDDIR}/results/regression_exit_code.txt")
+    - test "${code}" != "1"
+  variables:
+    EIGEN_CI_BUILDDIR: ${EIGEN_BENCH_BUILDDIR}
+  tags:
+    - saas-linux-small-amd64
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"

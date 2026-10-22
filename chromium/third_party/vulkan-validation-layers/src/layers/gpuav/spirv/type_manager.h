@@ -1,4 +1,4 @@
-/* Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ static constexpr bool ConstantOperation(uint32_t opcode) {
 // trade-off to doing complex logic to resolve more complex types). The class also takes advantage that while Instrumenting we are
 // always aware of our types we are adding or just explictly found.
 struct Type {
-    Type(SpvType spv_type, const Instruction& inst) : spv_type_(spv_type), inst_(inst) {}
+    Type(SpvType spv_type, const Instruction& inst, const TypeManager& type_manager);
 
     bool operator==(Type const& other) const;
     uint32_t Id() const { return inst_.ResultId(); }
@@ -69,6 +69,31 @@ struct Type {
 
     const SpvType spv_type_;
     const Instruction& inst_;
+
+    // Some metadata depending on the type. Some things can't be detected without full view of the module, instead of passing in
+    // TypeManager as an argument to helper functions, it can just get the information once at construction time Want to keep this
+    // *simple* and at most 8 bytes (since Type is aligned up to 24 bytes currently)
+    struct VectorMeta {
+        uint32_t component_count;
+    };
+    struct MatrixMeta {
+        uint32_t component_count;
+    };
+    struct ArrayMeta {
+        uint32_t length;
+    };
+    struct ScalarMeta {
+        uint32_t bit_width;
+        bool is_signed;
+    };
+    union Meta {
+        VectorMeta vector;
+        MatrixMeta matrix;
+        ArrayMeta array;
+        ScalarMeta scalar;
+    };
+    const Meta meta_;
+    static Meta SetMeta(SpvType spv_type, const Instruction& inst, const TypeManager& type_manager);
 };
 
 static bool IsSpecConstant(uint32_t opcode) {
@@ -77,7 +102,7 @@ static bool IsSpecConstant(uint32_t opcode) {
 }
 
 // Represents a OpConstant* or OpSpecConstant*
-// (Currently doesn't handle OpSpecConstantComposite or OpSpecConstantOp)
+// (Currently doesn't handle OpSpecConstantOp)
 struct Constant {
     Constant(const Type& type, const Instruction& inst)
         : type_(type), inst_(inst), is_spec_constant_(IsSpecConstant(inst.Opcode())) {}
@@ -86,11 +111,12 @@ struct Constant {
 
     // Only for cases where we know the constant value
     uint32_t GetValueUint32() const;
+    uint64_t GetValueUint64(bool is_signed) const;
 
     const Type& type_;
     const Instruction& inst_;
-    // Most times we just need Constant to get type or id, so being a spec const doesn't matter.
-    // This boolean is here incase we do care about the value of the constant.
+    // We currently freeze spec constants and do our own constant folding, but we have this here as a way to catch any edge cases we
+    // have missed in constant folding
     const bool is_spec_constant_;
 };
 
@@ -130,14 +156,16 @@ class TypeManager {
     const Type& GetTypeAccelerationStructure();
     const Type& GetTypeInt(uint32_t bit_width, bool is_signed);
     const Type& GetTypeFloat(uint32_t bit_width);
-    const Type& GetTypeArray(const Type& element_type, const Constant& length);
-    const Type& GetTypeRuntimeArray(const Type& element_type);
+    const Type& GetTypeArray(const Type& element_type, const Constant& length, bool get_explicit_layout = true);
+    const Type& GetTypeRuntimeArray(const Type& element_type, bool get_explicit_layout = true);
     const Type& GetTypeVector(const Type& component_type, uint32_t component_count);
     const Type& GetTypeMatrix(const Type& column_type, uint32_t column_count);
     const Type& GetTypeSampledImage(const Type& image_type);
-    const Type& GetTypePointer(spv::StorageClass storage_class, const Type& pointer_type);
+    const Type& GetTypePointer(spv::StorageClass storage_class, const Type& pointer_type, bool get_explicit_layout = true);
     const Type& GetTypePointerBuiltInInput(spv::BuiltIn built_in);
-    uint32_t TypeLength(const Type& type);
+
+    // Returns the total size in 'bytes' of any OpType*
+    uint32_t GetTypeBytesSize(const Type& type);
 
     // Special struct type helpers for Linking
     void AddStructTypeForLinking(const Type* new_type);
@@ -150,7 +178,9 @@ class TypeManager {
     const Constant* FindConstantFloat32(uint32_t type_id, uint32_t value) const;
     // most constants are uint
     const Constant& CreateConstantUInt32(uint32_t value);
+    const Constant& CreateConstantScalar(uint64_t value, const Type& type, uint32_t result_id = 0);
     const Constant& GetConstantUInt32(uint32_t value);
+    uint32_t GetConstantUInt32FromId(uint32_t id);  // get a uint32 constant from an integer constant of any type
     const Constant& GetConstantZeroUint32();
     const Constant& GetConstantOneUint32();
     const Constant& GetConstantZeroFloat16();
@@ -163,9 +193,19 @@ class TypeManager {
     const Variable& AddVariable(std::unique_ptr<Instruction> new_inst, const Type& type);
     const Variable* FindVariableById(uint32_t id) const;
     const Variable* FindPushConstantVariable() const;
+    const std::vector<const Variable*>& GetSharedMemoryVariables() const { return shared_memory_variables_; }
+    const std::vector<const Variable*>& GetTaskPayloadVariables() const { return task_payload_variables_; }
+
+    const Type* FindChildType(const Type& type, uint32_t idx) const;
+
+    uint32_t GetNumScalarElements(const Type& type) const;
+    uint32_t GetNumScalarElementsBeforeCompositeMember(const Type& type, uint32_t idx) const;
 
     void AddUndef(std::unique_ptr<Instruction> new_inst);
     bool IsUndef(uint32_t id) const;
+
+    void AddUntypedVariable(uint32_t id) { untyped_variable_set_.insert(id); };
+    bool IsUntypedVariable(uint32_t id) const { return untyped_variable_set_.find(id) != untyped_variable_set_.end(); }
 
   private:
     Module& module_;
@@ -175,6 +215,10 @@ class TypeManager {
     vvl::unordered_map<uint32_t, std::unique_ptr<Type>> id_to_type_;
     vvl::unordered_map<uint32_t, std::unique_ptr<Constant>> id_to_constant_;
     vvl::unordered_map<uint32_t, std::unique_ptr<Variable>> id_to_variable_;
+
+    // Currently don't fully support untyped pointers, but to allow things not to break, start tracking them so when searching for
+    // Variable, we can assert if not found, it is an OpUntypedVariableKHR
+    vvl::unordered_set<uint32_t> untyped_variable_set_;
 
     // Create faster lookups for specific types
     // some types are base types and only will be one
@@ -213,6 +257,8 @@ class TypeManager {
     std::vector<const Variable*> output_variables_;
     // There is invalid to have more than 1 push constant variable per entrypoint
     const Variable* push_constant_variable_ = nullptr;
+    std::vector<const Variable*> shared_memory_variables_;
+    std::vector<const Variable*> task_payload_variables_;
 
     // Save the length of a struct so we don't have to look it up everytime
     // <struct_id, struct size>
@@ -220,6 +266,8 @@ class TypeManager {
 
     // The use of OpUndef is sometime misused, we store all OpUndef here as way to check if we have it one by accident
     vvl::unordered_set<uint32_t> undef_ids_;
+
+    bool IsExplicitLayoutType(const Type& type) const;
 };
 
 }  // namespace spirv

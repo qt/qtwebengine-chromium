@@ -45,6 +45,9 @@ default_args = {
 
   # Use Siso instead of Ninja.
   use_siso = true
+
+  # Adds -Wexit-time-destructors check to match Chromium.
+  is_wexit_time_destructors_default = true
 }
 
 no_check_targets = [

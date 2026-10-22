@@ -13,6 +13,8 @@ export const enum ConversationType {
   FILE = 'drjones-file',
   NETWORK = 'drjones-network-request',
   PERFORMANCE = 'drjones-performance-full',
+  BREAKPOINT = 'breakpoint',
+  ACCESSIBILITY = 'accessibility',
 }
 
 export interface SerializedConversation {

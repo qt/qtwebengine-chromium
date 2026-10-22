@@ -105,36 +105,6 @@ public:
     }
 #endif
 
-    /**
-     * TODO(b/390473370): Once backends initialize a Caps-level format table, these will not need
-     * to be virtual anymore:
-     */
-    virtual bool isSampleCountSupported(TextureFormat, SampleCount) const = 0;
-    /* Return the TextureFormat that satisfies `dsFlags`. */
-    virtual TextureFormat getDepthStencilFormat(SkEnumBitMask<DepthStencilFlags>) const = 0;
-
-    virtual TextureInfo getDefaultAttachmentTextureInfo(AttachmentDesc,
-                                                        Protected,
-                                                        Discardable) const = 0;
-
-    virtual TextureInfo getDefaultSampledTextureInfo(SkColorType,
-                                                     Mipmapped,
-                                                     Protected,
-                                                     Renderable) const = 0;
-
-    virtual TextureInfo getTextureInfoForSampledCopy(const TextureInfo&,
-                                                     Mipmapped) const = 0;
-
-    virtual TextureInfo getDefaultCompressedTextureInfo(SkTextureCompressionType,
-                                                        Mipmapped,
-                                                        Protected) const = 0;
-
-    virtual TextureInfo getDefaultStorageTextureInfo(SkColorType) const = 0;
-
-    /* Get required depth attachment dimensions for a givin color attachment info and dimensions. */
-    virtual SkISize getDepthAttachmentDimensions(const TextureInfo&,
-                                                 const SkISize colorAttachmentDimensions) const;
-
     virtual UniqueKey makeGraphicsPipelineKey(const GraphicsPipelineDesc&,
                                               const RenderPassDesc&) const = 0;
     virtual UniqueKey makeComputePipelineKey(const ComputePipelineDesc&) const = 0;
@@ -145,8 +115,52 @@ public:
                                       RenderPassDesc*,
                                       const RendererProvider*) const { return false; }
 
-    SkColorType getDefaultColorType(const TextureInfo&) const;
-    bool areColorTypeAndTextureInfoCompatible(SkColorType, const TextureInfo&) const;
+    virtual bool loadOpAffectsMSAAPipelines() const { return false; }
+
+    bool avoidMSAA() const {
+        // Publicly, treat avoiding MSAA due to device issues or due to client option equivalently.
+        return fAvoidMSAA || fMaxInternalSampleCount == SampleCount::k1;
+    }
+
+    /* Returns whether multisampled render to single sampled is supported. */
+    bool msaaRenderToSingleSampledSupport() const { return fMSAARenderToSingleSampledSupport; }
+
+    /**
+     * Returns whether a render pass can have MSAA/depth/stencil attachments and a resolve
+     * attachment with mismatched sizes. Note: the MSAA attachment and the depth/stencil attachment
+     * still need to match their sizes.
+     * This also implies supporting partial load/resolve.
+     */
+    bool differentResolveAttachmentSizeSupport() const {
+        return fDifferentResolveAttachmentSizeSupport;
+    }
+
+    /* Get required depth attachment dimensions for a givin color attachment info and dimensions. */
+    virtual SkISize getDepthAttachmentDimensions(const TextureInfo&,
+                                                 const SkISize colorAttachmentDimensions) const {
+        return colorAttachmentDimensions;
+    }
+
+    bool isSampleCountSupported(TextureFormat, SampleCount) const;
+    /* Return the TextureFormat that satisfies `dsFlags`. */
+    TextureFormat getDepthStencilFormat(SkEnumBitMask<DepthStencilFlags>) const;
+
+    TextureInfo getDefaultAttachmentTextureInfo(AttachmentDesc,
+                                                Protected,
+                                                Discardable) const;
+
+    TextureInfo getDefaultSampledTextureInfo(SkColorType,
+                                             Mipmapped,
+                                             Protected,
+                                             Renderable) const;
+
+    TextureInfo getTextureInfoForSampledCopy(const TextureInfo&,  Mipmapped) const;
+
+    TextureInfo getDefaultCompressedTextureInfo(SkTextureCompressionType,
+                                                Mipmapped,
+                                                Protected) const;
+
+    TextureInfo getDefaultStorageTextureInfo(SkColorType) const;
 
     // Tries to return a sample count > 1 if needing MSAA to render into the target specification.
     // If the target is already multisampled, it will be that count; otherwise it will be the
@@ -157,24 +171,38 @@ public:
     // sampled targets to show MSAA isn't supported.
     SampleCount getCompatibleMSAASampleCount(const TextureInfo&) const;
 
-    bool isTexturable(const TextureInfo&) const;
-    virtual bool isRenderable(const TextureInfo&) const = 0;
-    virtual bool isStorage(const TextureInfo&) const = 0;
+    // If true, the texture can be sampled within a shader (possibly with MSAA, although by default
+    // we consider multisampled textures not to be sampleable because that requires backend-specific
+    // shader code not exposed in SkSL).
+    bool isTexturable(const TextureInfo&, bool allowMSAA=false) const;
+    // If true, the texture can be rasterized and/or resolved to (possibly with MSAA)
+    bool isRenderable(const TextureInfo&) const;
+    // If true, the texture can be rasterized using multisample-render-to-single-sample features.
+    bool isRenderableWithMSRTSS(const TextureInfo&) const;
+    // If true, the texture can be the source of data copied to another texture or to a buffer.
+    // If false, the texture can only be copied via drawing (which requires isTexturable()).
+    bool isCopyableSrc(const TextureInfo&) const;
+    // If true, the texture can be the destination of data copied from another texture or buffer.
+    // If false, the texture can only be updated by drawing (which requires isRenderable()).
+    bool isCopyableDst(const TextureInfo&) const;
+    // If true, the texture can be used as a storage texture in compute shaders.
+    bool isStorage(const TextureInfo&) const;
 
-    virtual bool loadOpAffectsMSAAPipelines() const { return false; }
-
-    int maxTextureSize() const { return fMaxTextureSize; }
-
-    bool avoidMSAA() const {
-        // Publicly, treat avoiding MSAA due to device issues or due to client option equivalently.
-        return fAvoidMSAA || fMaxInternalSampleCount == SampleCount::k1;
+     /**
+     * Backends can optionally override this method to return meaningful sampler conversion info.
+     * By default, simply return a default ImmutableSamplerInfo (e.g. no immutable sampler).
+     */
+    virtual ImmutableSamplerInfo getImmutableSamplerInfo(const TextureInfo&) const {
+        return {};
     }
 
-    /**
-     * Returns the maximum number of varyings allowed in a render pipeline. Note that this is the
-     * number of varying variables, not the total number of varying scalars.
-     */
-    int maxVaryings() const { return fMaxVaryings; }
+    /* Returns a compressed label describing the immutable sampler for the Pipeline label */
+    virtual std::string toString(const ImmutableSamplerInfo&) const { return ""; }
+
+    // If true, uses experimental drawListLayer ordering.
+    bool useDrawListLayer() const { return fDrawListLayer; }
+
+    int maxTextureSize() const { return fMaxTextureSize; }
 
     virtual void buildKeyForTexture(SkISize dimensions,
                                     const TextureInfo&,
@@ -184,6 +212,12 @@ public:
     const ResourceBindingRequirements& resourceBindingRequirements() const {
         return fResourceBindingReqs;
     }
+
+    /**
+     * Returns the maximum number of varyings allowed in a render pipeline. Note that this is the
+     * number of varying variables, not the total number of varying scalars.
+     */
+    int maxVaryings() const { return fMaxVaryings; }
 
     /**
      * Returns the required alignment in bytes for the offset into a uniform buffer when binding it
@@ -208,53 +242,12 @@ public:
     }
 
     /**
-     * Backends can optionally override this method to return meaningful sampler conversion info.
-     * By default, simply return a default ImmutableSamplerInfo (e.g. no immutable sampler).
+     * When uploading to a full compressed texture do we need to pad the size out to a multiple of
+     * the block width and height.
      */
-    virtual ImmutableSamplerInfo getImmutableSamplerInfo(const TextureInfo&) const {
-        return {};
+    bool fullCompressedUploadSizeMustAlignToBlockDims() const {
+        return fFullCompressedUploadSizeMustAlignToBlockDims;
     }
-
-    /* Returns a compressed label describing the immutable sampler for the Pipeline label */
-    virtual std::string toString(const ImmutableSamplerInfo&) const { return ""; }
-
-    /**
-     * Backends may have restrictions on what types of textures support Device::writePixels().
-     * If this returns false then the caller should implement a fallback where a temporary texture
-     * is created, pixels are written to it, and then that is copied or drawn into the surface.
-     */
-    virtual bool supportsWritePixels(const TextureInfo&) const = 0;
-
-    /**
-     * Backends may have restrictions on what types of textures support Device::readPixels().
-     * If this returns false then the caller should implement a fallback where a temporary texture
-     * is created, the original texture is copied or drawn into it, and then pixels read from
-     * the temporary texture.
-     */
-    virtual bool supportsReadPixels(const TextureInfo&) const = 0;
-
-    /**
-     * Given a texture config and its color type interpretation, returns the color type that matches
-     * the texture's layout after a copy (i.e. does not have any of the automatic swizzling that
-     * occurs during regular sampling). The returned colortype either represents the color type that
-     * source data must be coaxed into for writePixels(), or it represents the color type after a
-     * readPixels() operation.
-     *
-     * We currently don't have an SkColorType for a 3 channel RGB format. Additionally the current
-     * implementation of raster pipeline requires power of 2 channels, so it is not easy to add such
-     * an SkColorType. Thus we need to check for data that is 3 channels using the isRGBFormat
-     * return value and handle it manually.
-     */
-    std::pair<SkColorType, bool /*isRGB888Format*/> supportedTransferColorType(
-            SkColorType colorType,
-            const TextureInfo& textureInfo) const;
-
-    /**
-     * Checks whether the passed color type is renderable. If so, the same color type is passed
-     * back. If not, provides an alternative (perhaps lower bit depth and/or unorm instead of float)
-     * color type that is supported or kUnknown if there no renderable fallback format.
-     */
-    SkColorType getRenderableColorType(SkColorType) const;
 
     /**
      * Determines the orientation of the NDC coordinates emitted by the vertex stage relative to
@@ -309,24 +302,6 @@ public:
      */
     bool bufferMapsAreAsync() const { return fBufferMapsAreAsync; }
 
-    /* Returns whether multisampled render to single sampled is supported. */
-    bool msaaRenderToSingleSampledSupport() const { return fMSAARenderToSingleSampledSupport; }
-
-    /* Returns whether multisampled render to single sampled is supported for a given texture. */
-    virtual bool msaaTextureRenderToSingleSampledSupport(const TextureInfo& info) const {
-        return this->msaaRenderToSingleSampledSupport();
-    }
-
-    /**
-     * Returns whether a render pass can have MSAA/depth/stencil attachments and a resolve
-     * attachment with mismatched sizes. Note: the MSAA attachment and the depth/stencil attachment
-     * still need to match their sizes.
-     * This also implies supporting partial load/resolve.
-     */
-    bool differentResolveAttachmentSizeSupport() const {
-        return fDifferentResolveAttachmentSizeSupport;
-    }
-
     /* Returns whether compute shaders are supported. */
     bool computeSupport() const { return fComputeSupport; }
 
@@ -358,18 +333,6 @@ public:
     bool supportsHardwareAdvancedBlending() const {
         return fBlendEqSupport > BlendEquationSupport::kBasic;
     }
-
-    /**
-     * Returns the skgpu::Swizzle to use when sampling or reading back from a texture with the
-     * passed in SkColorType and TextureInfo.
-     */
-    skgpu::Swizzle getReadSwizzle(SkColorType, const TextureInfo&) const;
-
-    /**
-     * Returns the skgpu::Swizzle to use when writing colors to a surface with the passed in
-     * SkColorType and TextureInfo.
-     */
-    skgpu::Swizzle getWriteSwizzle(SkColorType, const TextureInfo&) const;
 
     /**
      * Includes the following dynamic state:
@@ -433,14 +396,6 @@ public:
     bool supportBilerpFromGlyphAtlas() const { return fSupportBilerpFromGlyphAtlas; }
 
     bool requireOrderedRecordings() const { return fRequireOrderedRecordings; }
-
-    /**
-     * When uploading to a full compressed texture do we need to pad the size out to a multiple of
-     * the block width and height.
-     */
-    bool fullCompressedUploadSizeMustAlignToBlockDims() const {
-        return fFullCompressedUploadSizeMustAlignToBlockDims;
-    }
 
     sktext::gpu::SubRunControl getSubRunControl(bool useSDFTForSmallText) const;
 
@@ -512,6 +467,7 @@ protected:
     bool fMSAARenderToSingleSampledSupport = false;
     bool fDifferentResolveAttachmentSizeSupport = false;
     bool fAvoidMSAA = false;
+    bool fDrawListLayer = false;
 
     bool fComputeSupport = false;
     bool fSupportsAHardwareBufferImages = false;
@@ -573,10 +529,49 @@ protected:
     bool fSetBackendLabels = false;
 
 private:
-    virtual bool onIsTexturable(const TextureInfo&) const = 0;
-    virtual SkSpan<const ColorTypeInfo> getColorTypeInfos(const TextureInfo&) const = 0;
+    // Validates format support and calls onGetDefaultTextureInfo if it would be valid, returning
+    // a TextureInfo for the first format that is supported.
+    TextureInfo getDefaultTextureInfo(SkEnumBitMask<TextureUsage> usage,
+                                      SkSpan<const TextureFormat>,
+                                      SampleCount,
+                                      Mipmapped,
+                                      Protected,
+                                      Discardable) const;
 
-    const ColorTypeInfo* getColorTypeInfo(SkColorType, const TextureInfo&) const;
+    // Return a TextureInfo that is configured to support the given usages with the requested format
+    // and other properties. This is only called if getTextureSupport() matches for kOptimal tiling.
+    virtual TextureInfo onGetDefaultTextureInfo(SkEnumBitMask<TextureUsage> usage,
+                                                TextureFormat,
+                                                SampleCount,
+                                                Mipmapped,
+                                                Protected,
+                                                Discardable) const = 0;
+
+    // Return the supported TextureUsages and SampleCounts for a texture of the given format and
+    // tiling, assuming the textures are created with the requisite usages.
+    virtual std::pair<SkEnumBitMask<TextureUsage>, SkEnumBitMask<SampleCount>> getTextureSupport(
+            TextureFormat format, Tiling) const = 0;
+
+    // Return the mask of TextureUsages supported by the described texture, as well as its tiling
+    // representation. Subclasses can assume that this will only be called on valid TextureInfos
+    // and do not need to account for TextureFormat supported features; Caps will combine the usage
+    // and format support automatically.
+    virtual std::pair<SkEnumBitMask<TextureUsage>, Tiling> getTextureUsage(
+            const TextureInfo&) const = 0;
+
+    // Returns true if the texture supports all usages in `test`, checking its declared usages
+    // against its format's supported usages and its sample count against its format's supported
+    // sample counts.
+    //
+    // `allowMSAA=false` forces false to be returned for any info with a sample count > 1. The other
+    // allow flags are validation checks that are asserted against (and presumably implicit in the
+    // usages that a format supports).
+    bool isSupported(const TextureInfo&,
+                     SkEnumBitMask<TextureUsage> test,
+                     bool allowMSAA,
+                     bool allowExternal,
+                     bool allowCompressed,
+                     bool allowProtected) const;
 
     sk_sp<SkCapabilities> fCapabilities;
 };

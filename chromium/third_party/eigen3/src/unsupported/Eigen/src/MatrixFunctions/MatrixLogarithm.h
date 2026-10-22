@@ -135,7 +135,7 @@ void matrix_log_compute_pade(MatrixType& result, const MatrixType& T, int degree
   const int minPadeDegree = 3;
   const int maxPadeDegree = 11;
   eigen_assert(degree >= minPadeDegree && degree <= maxPadeDegree);
-  // FIXME this creates float-conversion-warnings if these are enabled.
+  // FIXME: This creates float-conversion warnings if these are enabled.
   // Either manually convert each value, or disable the warning locally
   const RealScalar nodes[][maxPadeDegree] = {
       {0.1127016653792583114820734600217600L, 0.5000000000000000000000000000000000L,  // degree 3
@@ -257,7 +257,7 @@ void matrix_log_compute_big(const MatrixType& A, MatrixType& result) {
   }
 
   matrix_log_compute_pade(result, T, degree);
-  result *= pow(RealScalar(2), RealScalar(numberOfSquareRoots));  // TODO replace by bitshift if possible
+  result *= pow(RealScalar(2), RealScalar(numberOfSquareRoots));  // TODO: Replace by bitshift if possible.
 }
 
 /** \ingroup MatrixFunctions_Module

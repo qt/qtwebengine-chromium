@@ -100,6 +100,7 @@ class CORE_EXPORT DocumentAnimations final
                             Member<const StyleTriggerAttachment>>>;
   static void FindRelevantTriggerAttachments(
       CSSAnimation& animation,
+      TriggerScopedNameMap& global_trigger_map,
       TriggerAttachmentMap& relevant_attachments_out);
   static void UpdateTriggerAttachments(
       CSSAnimation& animation,
@@ -113,15 +114,12 @@ class CORE_EXPORT DocumentAnimations final
   // names declared in the trigger-instantiating property with the names
   // declared in the animation-trigger property.
   void UpdateAnimationTriggerAttachments();
-  // These two functions serve the same purpose as
-  // UpdateAnimationTriggerAttachments above but restricts the updates to
-  // animations with animation-trigger declarations, which is more efficient.
-  // They are only used behind a flag while the renderer hang in
-  // crbug.com/447174988 is investigated.
-  // TODO(crbug.com/447174988): Remove UpdateAnimationTriggerAttachments when
-  // the bug is resolved.
-  void ExecuteTriggerAttachmentUpdates();
   void AddTriggeredAnimation(CSSAnimation* animation);
+
+  const HeapHashSet<WeakMember<CSSAnimation>>& TriggeredAnimationsForTesting()
+      const {
+    return triggered_animations_;
+  }
 
   void UpdateCompositorAnimationTriggers(
       const PaintArtifactCompositor* paint_artifact_compositor);

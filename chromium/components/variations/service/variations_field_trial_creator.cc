@@ -5,13 +5,9 @@
 #include "components/variations/service/variations_field_trial_creator.h"
 
 #include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 #include <cstdint>
 #include <memory>
-#include <set>
 #include <utility>
 
 #include "base/base64.h"
@@ -21,10 +17,9 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_file_value_serializer.h"
-#include "base/memory/scoped_refptr.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/process/process.h"
-#include "base/rand_util.h"
 #include "base/sequence_checker.h"
 #include "base/strings/pattern.h"
 #include "base/strings/strcat.h"
@@ -57,7 +52,6 @@
 #include "components/variations/variations_seed_processor.h"
 #include "components/variations/variations_switches.h"
 #include "components/version_info/version_info.h"
-#include "ui/base/device_form_factor.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace variations {
@@ -142,8 +136,7 @@ Study::CpuArchitecture GetCurrentCpuArchitecture() {
 bool ShouldUseFieldTrialTestingConfig(const base::CommandLine* command_line) {
   bool is_enable_switch_set =
       command_line->HasSwitch(switches::kEnableFieldTrialTestingConfig) ||
-      command_line->GetSwitchValueASCII(
-          variations::switches::kEnableBenchmarking) ==
+      command_line->GetSwitchValueASCII(::switches::kEnableBenchmarking) ==
           switches::kEnableFieldTrialTestingConfig;
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   return is_enable_switch_set;
@@ -194,38 +187,8 @@ Study::Channel ConvertProductChannelToStudyChannel(
   NOTREACHED();
 }
 
-void MaybeActivateMetricsNoopTrial() {
-  if (base::FieldTrial* trial =
-          base::FieldTrialList::Find("MetricsNoopRegressionAutoAdvance")) {
-    // The original plan was to randomly activate the field trial half the time,
-    // but the rand() function was not seeded resulting in none of the Enabled
-    // group was activated. Nevertheles, this is an interesting edge case for
-    // us to test so keep this around for now. The replacement is
-    // MetricsNoopRegressionAutoAdvance2 below.
-    if (trial->GetGroupNameWithoutActivation() == "Enabled") {
-      if (rand() % 2 == 0) {
-        trial->Activate();
-      }
-    } else {
-      trial->Activate();
-    }
-  }
-}
-
-void MaybeActivateMetricsNoopTrial2() {
-  if (base::FieldTrial* trial =
-          base::FieldTrialList::Find("MetricsNoopRegressionAutoAdvance2")) {
-    // If the user is in the Enabled group, we want to randomly activate the
-    // field trial half the time.
-    if (trial->GetGroupNameWithoutActivation() == "Enabled") {
-      if (base::RandBool()) {
-        trial->Activate();
-      }
-    } else {
-      trial->Activate();
-    }
-  }
-}
+// No-op feature used to test sticky activation functionality.
+BASE_FEATURE(kVariationsStickyNoopTest, base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace
 
@@ -261,7 +224,6 @@ std::string VariationsFieldTrialCreator::GetLatestCountry() const {
 
 bool VariationsFieldTrialCreator::SetUpFieldTrials(
     const std::vector<std::string>& variation_ids,
-    const std::string& command_line_variation_ids,
     const std::vector<base::FeatureList::FeatureOverrideInfo>& extra_overrides,
     std::unique_ptr<base::FeatureList> feature_list,
     metrics::MetricsStateManager* metrics_state_manager,
@@ -283,11 +245,14 @@ bool VariationsFieldTrialCreator::SetUpFieldTrials(
   VariationsIdsProvider* http_header_provider =
       VariationsIdsProvider::GetInstance();
 
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
+
   // Force the variation ids selected in chrome://flags and/or specified using
   // the command-line flag.
   auto result = http_header_provider->ForceVariationIds(
-      base::PassKey<VariationsFieldTrialCreator>(),
-      variation_ids, command_line_variation_ids);
+      base::PassKey<VariationsFieldTrialCreator>(), variation_ids,
+      command_line->GetSwitchValueASCII(switches::kForceVariationIds));
 
   switch (result) {
     case VariationsIdsProvider::ForceIdsResult::INVALID_SWITCH_ENTRY:
@@ -302,8 +267,7 @@ bool VariationsFieldTrialCreator::SetUpFieldTrials(
       break;
   }
 
-  const base::CommandLine* command_line =
-      base::CommandLine::ForCurrentProcess();
+  variations_source_.type = VariationsSourceType::kDefaultSeed;
   bool success = http_header_provider->ForceDisableVariationIds(
       command_line->GetSwitchValueASCII(switches::kForceDisableVariationIds));
   if (!success) {
@@ -322,12 +286,25 @@ bool VariationsFieldTrialCreator::SetUpFieldTrials(
   // instance is set.
   feature_list->RegisterExtraFeatureOverrides(extra_overrides);
 
+  if (!variation_ids.empty() ||
+      command_line->HasSwitch(switches::kForceVariationIds) ||
+      command_line->HasSwitch(switches::kForceDisableVariationIds) ||
+      command_line->HasSwitch(variations::switches::kForceFieldTrialParams) ||
+      command_line->HasSwitch(::switches::kForceFieldTrials) ||
+      command_line->HasSwitch(::switches::kEnableFeatures) ||
+      command_line->HasSwitch(::switches::kDisableFeatures)) {
+    // Set the default source to kCommandLineOrAboutFlags,
+    // might be overridden later.
+    variations_source_.type = VariationsSourceType::kCommandLineOrAboutFlags;
+    variations_source_.forced_via_command_line_or_about_flags = true;
+  }
+
   bool used_testing_config = false;
-  // TODO(crbug.com/40230862): Remove this code path.
 #if BUILDFLAG(FIELDTRIAL_TESTING_ENABLED)
   if (ShouldUseFieldTrialTestingConfig(command_line)) {
     ApplyFieldTrialTestingConfig(feature_list.get());
     used_testing_config = true;
+    variations_source_.type = VariationsSourceType::kFieldTrialConfig;
   }
 #else
   if (command_line->HasSwitch(switches::kEnableFieldTrialTestingConfig)) {
@@ -340,6 +317,7 @@ bool VariationsFieldTrialCreator::SetUpFieldTrials(
   if (command_line->HasSwitch(switches::kVariationsTestSeedJsonPath)) {
     LoadSeedFromJsonFile(command_line->GetSwitchValuePath(
         switches::kVariationsTestSeedJsonPath));
+    variations_source_.type = VariationsSourceType::kManualConfigFile;
   }
 
   // Get client filterable state to be used by CreateTrialsFromSeed()
@@ -360,6 +338,7 @@ bool VariationsFieldTrialCreator::SetUpFieldTrials(
   if (create_trials_result.applied_seed) {
     FieldTrialsProvider::UpdateAppliedSeedHasActiveLimitedLayer(
         create_trials_result.seed_has_active_limited_layer.value_or(false));
+    variations_source_.type = VariationsSourceType::kVariationsServer;
   }
 
   if (add_entropy_source_to_variations_ids &&
@@ -386,9 +365,8 @@ bool VariationsFieldTrialCreator::SetUpFieldTrials(
     base::Process::TerminateCurrentProcessImmediately(0x7E57C0D3);
   }
 
-  // TODO(crbug.com/458408055): Remove these once the experiments are over.
-  MaybeActivateMetricsNoopTrial();
-  MaybeActivateMetricsNoopTrial2();
+  // TODO(crbug.com/467929965): Remove this once the experiment is over.
+  base::FeatureList::IsEnabled(kVariationsStickyNoopTest);
 
   // This must be called after |local_state_| is initialized.
   platform_field_trials->OnVariationsSetupComplete();
@@ -733,11 +711,6 @@ CreateTrialsResult VariationsFieldTrialCreator::CreateTrialsFromSeed(
 
   VariationsLayers layers(seed, entropy_providers);
 
-  // Use the VariationsIdsProvider's clock to get the current time. This is
-  // the timestamp used for entropy evaluation.
-  base::Time current_time =
-      VariationsIdsProvider::GetInstance()->GetCurrentTime();
-
   // The server is not expected to send a seed with misconfigured entropy. Just
   // in case there is an unexpected server-side bug and the entropy is
   // misconfigured, return early to skip assigning any trials from the seed.
@@ -751,8 +724,7 @@ CreateTrialsResult VariationsFieldTrialCreator::CreateTrialsFromSeed(
   // `SeedHasMisconfiguredEntropy()`is always false.
   const MisconfiguredEntropyResult result =
       SeedHasMisconfiguredEntropy(*client_state, seed,
-                                  GetGoogleWebEntropyLimitInBits(),
-                                  current_time);
+                                  GetGoogleWebEntropyLimitInBits());
   if (result.is_misconfigured) {
     RecordVariationsSeedUsage(
         run_in_safe_mode ? SeedUsage::kMisconfiguredSafeSeedNotUsed
@@ -840,6 +812,7 @@ void VariationsFieldTrialCreator::LoadSeedFromJsonFile(
   }
   seed_store_->StoreSeedData(/*done_callback=*/base::DoNothing(), decoded_seed,
                              seed_signature->GetString(), /*country_code=*/"",
+                             /*geo_level1=*/"",
                              /*date_fetched=*/base::Time(),
                              /*is_delta_compressed=*/false,
                              /*is_gzip_compressed=*/true,

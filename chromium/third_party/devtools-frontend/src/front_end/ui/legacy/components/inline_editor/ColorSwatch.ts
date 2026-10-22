@@ -53,37 +53,37 @@ export class ClickEvent extends Event {
 }
 
 export class ColorSwatch extends HTMLElement {
-  readonly #shadow = this.attachShadow({mode: 'open'});
-  #tooltip: string = i18nString(UIStrings.shiftclickToChangeColorFormat);
+  private readonly shadow = this.attachShadow({mode: 'open'});
+  private tooltip: string = i18nString(UIStrings.shiftclickToChangeColorFormat);
   #color: Common.Color.Color|null = null;
-  #readonly = false;
+  private readonly = false;
 
   constructor(tooltip?: string) {
     super();
     if (tooltip) {
-      this.#tooltip = tooltip;
+      this.tooltip = tooltip;
     }
     this.tabIndex = -1;
-    this.addEventListener('keydown', e => this.#onActivate(e));
+    this.addEventListener('keydown', e => this.onActivate(e));
   }
 
   static isColorSwatch(element: Element): element is ColorSwatch {
     return element.localName === 'devtools-color-swatch';
   }
 
-  get readonly(): boolean {
-    return this.#readonly;
-  }
-
-  set readonly(readonly: boolean) {
-    if (this.#readonly === readonly) {
+  setReadonly(readonly: boolean): void {
+    if (this.readonly === readonly) {
       return;
     }
 
-    this.#readonly = readonly;
+    this.readonly = readonly;
     if (this.#color) {
-      this.color = this.#color;
+      this.renderColor(this.#color);
     }
+  }
+
+  set color(color: Common.Color.Color) {
+    this.renderColor(color);
   }
 
   get color(): Common.Color.Color|null {
@@ -91,7 +91,7 @@ export class ColorSwatch extends HTMLElement {
   }
 
   get anchorBox(): AnchorBox|null {
-    const swatch = this.#shadow.querySelector('.color-swatch');
+    const swatch = this.shadow.querySelector('.color-swatch');
     return swatch ? swatch.boxInWindow() : null;
   }
 
@@ -103,12 +103,12 @@ export class ColorSwatch extends HTMLElement {
    * Render this swatch given a color object or text to be parsed as a color.
    * @param color The color object or string to use for this swatch.
    */
-  set color(color: Common.Color.Color) {
+  renderColor(color: Common.Color.Color): void {
     this.#color = color;
 
     const colorSwatchClasses = Lit.Directives.classMap({
       'color-swatch': true,
-      readonly: this.#readonly,
+      readonly: this.readonly,
     });
 
     // Disabled until https://crbug.com/1079231 is fixed.
@@ -120,20 +120,19 @@ export class ColorSwatch extends HTMLElement {
     Lit.render(
       html`<style>${colorSwatchStyles}</style><span
           class=${colorSwatchClasses}
-          title=${this.#tooltip}><span
+          title=${this.tooltip}><span
             class="color-swatch-inner"
             style="background-color: ${color.asString()};"
             jslog=${VisualLogging.showStyleEditor('color').track({click: true})}
-            @click=${this.#onActivate}
-            @mousedown=${this.#consume}
-            @dblclick=${this.#consume}></span></span>`,
-      this.#shadow, {host: this});
+            @click=${this.onActivate}
+            @mousedown=${this.consume}
+            @dblclick=${this.consume}></span></span>`,
+      this.shadow, {host: this});
     // clang-format on
-    this.dispatchEvent(new ColorChangedEvent(color));
   }
 
-  #onActivate(e: KeyboardEvent|MouseEvent): void {
-    if (this.#readonly) {
+  private onActivate(e: KeyboardEvent|MouseEvent): void {
+    if (this.readonly) {
       return;
     }
 
@@ -144,19 +143,24 @@ export class ColorSwatch extends HTMLElement {
 
     if (e.shiftKey) {
       e.stopPropagation();
-      this.#showFormatPicker(e);
+      this.showFormatPicker(e);
       return;
     }
 
     this.dispatchEvent(new ClickEvent());
-    this.#consume(e);
+    this.consume(e);
   }
 
-  #consume(e: Event): void {
+  private consume(e: Event): void {
     e.stopPropagation();
   }
 
-  #showFormatPicker(e: Event): void {
+  setColor(color: Common.Color.Color): void {
+    this.renderColor(color);
+    this.dispatchEvent(new ColorChangedEvent(color));
+  }
+
+  private showFormatPicker(e: Event): void {
     if (!this.#color) {
       return;
     }

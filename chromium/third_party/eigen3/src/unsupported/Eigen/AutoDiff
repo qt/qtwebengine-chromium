@@ -17,7 +17,7 @@ namespace Eigen {
 /**
  * \defgroup AutoDiff_Module Auto Diff module
  *
- * This module features forward automatic differentation via a simple
+ * This module features forward automatic differentiation via a simple
  * templated scalar type wrapper AutoDiffScalar.
  *
  * Warning : this should NOT be confused with numerical differentiation, which
@@ -35,7 +35,6 @@ namespace Eigen {
 // IWYU pragma: begin_exports
 #include "src/AutoDiff/CoherentPadOp.h"
 #include "src/AutoDiff/AutoDiffScalar.h"
-// #include "src/AutoDiff/AutoDiffVector.h"
 #include "src/AutoDiff/AutoDiffJacobian.h"
 // IWYU pragma: end_exports
 

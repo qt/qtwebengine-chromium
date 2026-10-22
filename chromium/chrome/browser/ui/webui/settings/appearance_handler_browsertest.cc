@@ -6,13 +6,15 @@
 #include <memory>
 
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/actions/chrome_action_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/chrome_pages.h"
-#include "chrome/browser/ui/tab_search_feature.h"
+#include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
+#include "chrome/browser/ui/side_panel/side_panel_ui.h"
+#include "chrome/browser/ui/tabs/features.h"
+#include "chrome/browser/ui/tabs/tab_strip_prefs.h"
 #include "chrome/browser/ui/toolbar/pinned_toolbar/pinned_toolbar_actions_model.h"
-#include "chrome/browser/ui/views/side_panel/side_panel_entry_key.h"
-#include "chrome/browser/ui/views/side_panel/side_panel_ui.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -30,13 +32,17 @@ class AppearanceHandlerTest : public InProcessBrowserTest {
   AppearanceHandlerTest& operator=(const AppearanceHandlerTest&) = delete;
 
   void SetUpOnMainThread() override {
+#if BUILDFLAG(IS_CHROMEOS)
+    // Not enabled by default on ChromeOS due to Glic flags
+    PinnedToolbarActionsModel::Get(browser()->profile())
+        ->UpdatePinnedState(kActionTabSearch, true);
+#endif  // BUILDFLAG(IS_CHROMEOS)
     EXPECT_TRUE(ui_test_utils::NavigateToURL(
         browser(), GURL(chrome::GetSettingsUrl(chrome::kAppearanceSubPage))));
     EXPECT_TRUE(content::WaitForLoadStop(
         browser()->tab_strip_model()->GetActiveWebContents()));
   }
 };
-
 IN_PROC_BROWSER_TEST_F(AppearanceHandlerTest,
                        OpenCustomizeChromeToolbarSection) {
   base::ListValue args;
@@ -63,7 +69,9 @@ IN_PROC_BROWSER_TEST_F(AppearanceHandlerTest, ResetPinnedToolbarActions) {
 
   EXPECT_TRUE(prefs->GetBoolean(prefs::kShowHomeButton));
   EXPECT_FALSE(prefs->GetBoolean(prefs::kShowForwardButton));
-  if (features::HasTabSearchToolbarButton()) {
+  if (tabs::GetTabSearchPosition(browser()) ==
+          tabs::TabSearchPosition::kToolbarButton ||
+      base::FeatureList::IsEnabled(tabs::kHorizontalTabStripComboButton)) {
     EXPECT_EQ(3u, actions_model->PinnedActionIds().size());
   } else {
     EXPECT_EQ(2u, actions_model->PinnedActionIds().size());
@@ -77,9 +85,17 @@ IN_PROC_BROWSER_TEST_F(AppearanceHandlerTest, ResetPinnedToolbarActions) {
       ->ProcessWebUIMessage(GURL(), "resetPinnedToolbarActions",
                             std::move(args));
 
+#if BUILDFLAG(IS_CHROMEOS)
+  // Not enabled by default on ChromeOS due to Glic flags
+  PinnedToolbarActionsModel::Get(browser()->profile())
+      ->UpdatePinnedState(kActionTabSearch, true);
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
   EXPECT_FALSE(prefs->GetBoolean(prefs::kShowHomeButton));
   EXPECT_TRUE(prefs->GetBoolean(prefs::kShowForwardButton));
-  if (features::HasTabSearchToolbarButton()) {
+  if (tabs::GetTabSearchPosition(browser()) ==
+          tabs::TabSearchPosition::kToolbarButton ||
+      base::FeatureList::IsEnabled(tabs::kHorizontalTabStripComboButton)) {
     ASSERT_EQ(2u, actions_model->PinnedActionIds().size());
     EXPECT_EQ(kActionShowChromeLabs, actions_model->PinnedActionIds()[0]);
     EXPECT_EQ(kActionTabSearch, actions_model->PinnedActionIds()[1]);

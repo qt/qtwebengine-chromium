@@ -150,7 +150,7 @@ void InlineItem::ComputeBoxProperties() {
   is_empty_item_ = true;
 }
 
-const char* InlineItem::InlineItemTypeToString(InlineItemType val) const {
+const char* InlineItem::InlineItemTypeToString(InlineItemType val) {
   switch (val) {
     case kText:
       return "Text";
@@ -298,9 +298,8 @@ String InlineItem::ToString() const {
   } else if (GetLayoutObject()) {
     object_info = GetLayoutObject()->ToString();
   }
-  return UNSAFE_TODO(String::Format("InlineItem %s. %s",
-                                    InlineItemTypeToString(Type()),
-                                    object_info.Ascii().c_str()));
+  return StrCat(
+      {"InlineItem ", InlineItemTypeToString(Type()), ". ", object_info});
 }
 
 // Split |items[index]| to 2 items at |offset|.

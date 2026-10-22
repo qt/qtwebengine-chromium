@@ -90,10 +90,6 @@ impl Pixels {
         Ok(())
     }
 
-    pub(crate) fn is_pointer(&self) -> bool {
-        matches!(self, Pixels::Pointer(_) | Pixels::Pointer16(_))
-    }
-
     // This function may not be used in all configurations.
     #[allow(dead_code)]
     pub(crate) fn ptr(&self) -> *const u8 {
@@ -149,29 +145,6 @@ impl Pixels {
             Pixels::Pointer16(ptr) => ptr.ptr_mut() as *mut u8,
             Pixels::Buffer(buffer) => buffer.as_mut_ptr(),
             Pixels::Buffer16(buffer) => buffer.as_mut_ptr() as *mut u8,
-        }
-    }
-
-    pub(crate) fn try_clone(&self) -> AvifResult<Pixels> {
-        match self {
-            Pixels::Pointer(ptr) => Ok(Pixels::Pointer(*ptr)),
-            Pixels::Pointer16(ptr) => Ok(Pixels::Pointer16(*ptr)),
-            Pixels::Buffer(buffer) => {
-                let mut cloned_buffer: Vec<u8> = vec![];
-                cloned_buffer
-                    .try_reserve_exact(buffer.len())
-                    .map_err(AvifError::map_out_of_memory)?;
-                cloned_buffer.extend_from_slice(buffer);
-                Ok(Pixels::Buffer(cloned_buffer))
-            }
-            Pixels::Buffer16(buffer16) => {
-                let mut cloned_buffer16: Vec<u16> = vec![];
-                cloned_buffer16
-                    .try_reserve_exact(buffer16.len())
-                    .map_err(AvifError::map_out_of_memory)?;
-                cloned_buffer16.extend_from_slice(buffer16);
-                Ok(Pixels::Buffer16(cloned_buffer16))
-            }
         }
     }
 

@@ -556,7 +556,10 @@ angle::Result FramebufferVk::invalidateSub(const gl::Context *context,
     // glCopyTex[Sub]Image, shader storage image, etc).
     restageDeferredClears(contextVk);
 
-    if (contextVk->hasActiveRenderPass() &&
+    // If robust resource initialization is enabled, do not invalidate sub-regions of the
+    // framebuffer.  This is because otherwise the contents of that region becomes undefined and
+    // ANGLE doesn't clear it back to black.
+    if (!contextVk->isRobustResourceInitEnabled() && contextVk->hasActiveRenderPass() &&
         rotatedInvalidateArea.encloses(contextVk->getStartedRenderPassCommands().getRenderArea()))
     {
         // Because the render pass's render area is within the invalidated area, it is fine for
@@ -568,7 +571,10 @@ angle::Result FramebufferVk::invalidateSub(const gl::Context *context,
     {
         ANGLE_VK_PERF_WARNING(
             contextVk, GL_DEBUG_SEVERITY_LOW,
-            "InvalidateSubFramebuffer ignored due to area not covering the render area");
+            contextVk->isRobustResourceInitEnabled()
+                ? "InvalidateSubFramebuffer ignored due to area not covering the entire "
+                  "framebuffer while robust resource initialization is enabled"
+                : "InvalidateSubFramebuffer ignored due to area not covering the render area");
     }
 
     return angle::Result::Continue;
@@ -756,8 +762,15 @@ angle::Result FramebufferVk::clearImpl(const gl::Context *context,
             contextVk->handleGraphicsEventLog(rx::GraphicsEventCmdBuf::InOutsideCmdBufQueryCmd));
     }
 
-    const bool preferDrawOverClearAttachments =
+    bool preferDrawOverClearAttachments =
         contextVk->getFeatures().preferDrawClearOverVkCmdClearAttachments.enabled;
+
+    // https://issuetracker.google.com/490503954. Temporary workaround the driver bug.
+    if (contextVk->getFeatures().supportsTileMemoryHeap.enabled && (clearDepth || clearStencil) &&
+        getDepthStencilRenderTarget()->getImageForRenderPass().useTileMemory())
+    {
+        preferDrawOverClearAttachments = true;
+    }
 
     // Merge current clears with the deferred clears, then proceed with only processing deferred
     // clears.  This simplifies the clear paths such that they don't need to consider both the
@@ -2275,7 +2288,6 @@ angle::Result FramebufferVk::invalidateImpl(ContextVk *contextVk,
             mDeferredClears.reset(vk::kUnpackedStencilIndex);
         }
     }
-
     // Limit invalidateColorBuffers to enabled draw buffers
     invalidateColorBuffers &= mState.getEnabledDrawBuffers();
     for (size_t colorIndexGL : invalidateColorBuffers)
@@ -2291,6 +2303,12 @@ angle::Result FramebufferVk::invalidateImpl(ContextVk *contextVk,
 
     // If not a partial invalidate, mark the contents of the invalidated attachments as undefined,
     // so their loadOp can be set to DONT_CARE in the following render pass.
+
+    // If robust resource initialization is enabled, restage clears on the invalidated resources.
+    // This way, STORE_OP_DONT_CARE can be used, but the application can still not observe garbage
+    // data in the image.
+    const bool isRobustResourceInitEnabled = contextVk->isRobustResourceInitEnabled();
+    ASSERT(!(isRobustResourceInitEnabled && isSubInvalidate));
     if (!isSubInvalidate)
     {
         for (size_t colorIndexGL : invalidateColorBuffers)
@@ -2303,6 +2321,13 @@ angle::Result FramebufferVk::invalidateImpl(ContextVk *contextVk,
             if (preferToKeepContentsDefined)
             {
                 invalidateColorBuffers.reset(colorIndexGL);
+            }
+            else if (isRobustResourceInitEnabled)
+            {
+                gl::ImageIndex imageIndex = colorRenderTarget->getImageIndexForClear(
+                    mCurrentFramebufferDesc.getLayerCount());
+                colorRenderTarget->getImageForWrite().stageRobustResourceClear(
+                    imageIndex, VK_IMAGE_ASPECT_COLOR_BIT);
             }
         }
 
@@ -2329,6 +2354,26 @@ angle::Result FramebufferVk::invalidateImpl(ContextVk *contextVk,
                     invalidateStencilBuffer = false;
                 }
             }
+
+            if (isRobustResourceInitEnabled)
+            {
+                VkImageAspectFlags dsAspectFlags = 0;
+                if (invalidateDepthBuffer)
+                {
+                    dsAspectFlags |= VK_IMAGE_ASPECT_DEPTH_BIT;
+                }
+                if (invalidateStencilBuffer)
+                {
+                    dsAspectFlags |= VK_IMAGE_ASPECT_STENCIL_BIT;
+                }
+                if (dsAspectFlags)
+                {
+                    gl::ImageIndex imageIndex = depthStencilRenderTarget->getImageIndexForClear(
+                        mCurrentFramebufferDesc.getLayerCount());
+                    depthStencilRenderTarget->getImageForWrite().stageRobustResourceClear(
+                        imageIndex, dsAspectFlags);
+                }
+            }
         }
     }
 
@@ -2340,7 +2385,10 @@ angle::Result FramebufferVk::invalidateImpl(ContextVk *contextVk,
     // to invalidate the D/S of FBO 2 since it would be the currently active renderpass.
     if (contextVk->hasStartedRenderPassWithQueueSerial(mLastRenderPassQueueSerial))
     {
-        bool closeRenderPass = false;
+        // When robust-resource init is enabled, a clear is stashed in the image after invalidating
+        // it.  The render pass is closed for the same reason as with images with emulated alpha
+        // channel as described below.
+        bool closeRenderPass = isRobustResourceInitEnabled;
 
         // Mark the invalidated attachments in the render pass for loadOp and storeOp determination
         // at its end.
@@ -3256,7 +3304,8 @@ angle::Result FramebufferVk::getFramebuffer(ContextVk *contextVk,
                 contextVk,
                 mRenderPassDesc.hasColorFramebufferFetch() ? vk::FramebufferFetchMode::Color
                                                            : vk::FramebufferFetchMode::None,
-                *compatibleRenderPass, &framebufferHandle));
+                mCurrentFramebufferDesc.getWriteControlMode(), *compatibleRenderPass,
+                &framebufferHandle));
         }
     }
 
@@ -4099,7 +4148,7 @@ angle::Result FramebufferVk::flushDepthStencilDeferredClear(ContextVk *contextVk
 
     vk::CommandResources resources;
     resources.onImageTransferWrite(renderTarget->getLevelIndex(), 1, renderTarget->getLayerIndex(),
-                                   1, image.getAspectFlags(), &image);
+                                   renderTarget->getLayerCount(), image.getAspectFlags(), &image);
     vk::OutsideRenderPassCommandBuffer *commandBuffer;
     ANGLE_TRY(contextVk->getOutsideRenderPassCommandBuffer(resources, &commandBuffer));
 
@@ -4108,7 +4157,7 @@ angle::Result FramebufferVk::flushDepthStencilDeferredClear(ContextVk *contextVk
     range.baseMipLevel            = image.toVkLevel(renderTarget->getLevelIndex()).get();
     range.levelCount              = 1;
     range.baseArrayLayer          = renderTarget->getLayerIndex();
-    range.layerCount              = 1;
+    range.layerCount              = renderTarget->getLayerCount();
 
     VkClearDepthStencilValue clearValue = {};
 

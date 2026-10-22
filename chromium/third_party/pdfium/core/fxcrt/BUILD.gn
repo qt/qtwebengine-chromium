@@ -34,12 +34,12 @@ source_set("fxcrt") {
     "cfx_bitstream.h",
     "cfx_datetime.cpp",
     "cfx_datetime.h",
+    "cfx_fileaccess_stream.cpp",
+    "cfx_fileaccess_stream.h",
+    "cfx_read_only_container_stream.cpp",
+    "cfx_read_only_container_stream.h",
     "cfx_read_only_span_stream.cpp",
     "cfx_read_only_span_stream.h",
-    "cfx_read_only_string_stream.cpp",
-    "cfx_read_only_string_stream.h",
-    "cfx_read_only_vector_stream.cpp",
-    "cfx_read_only_vector_stream.h",
     "cfx_seekablestreamproxy.cpp",
     "cfx_seekablestreamproxy.h",
     "cfx_timer.cpp",
@@ -119,6 +119,7 @@ source_set("fxcrt") {
     "string_template.cpp",
     "string_template.h",
     "string_view_template.h",
+    "to_underlying.h",
     "tree_node.h",
     "unowned_ptr.h",
     "utf16.h",
@@ -164,6 +165,8 @@ source_set("fxcrt") {
       "cfx_fileaccess_posix.cpp",
       "cfx_fileaccess_posix.h",
       "fx_folder_posix.cpp",
+      "mapped_data_bytes.cpp",
+      "mapped_data_bytes.h",
     ]
   }
   if (is_win) {
@@ -219,6 +222,7 @@ pdfium_unittest_source_set("unittests") {
     "bytestring_unittest.cpp",
     "cfx_bitstream_unittest.cpp",
     "cfx_datetime_unittest.cpp",
+    "cfx_read_only_container_stream_unittest.cpp",
     "cfx_seekablestreamproxy_unittest.cpp",
     "cfx_timer_unittest.cpp",
     "code_point_view_unittest.cpp",
@@ -245,6 +249,7 @@ pdfium_unittest_source_set("unittests") {
     "span_util_unittest.cpp",
     "stl_util_unittest.cpp",
     "string_pool_template_unittest.cpp",
+    "to_underlying_unittest.cpp",
     "tree_node_unittest.cpp",
     "unowned_ptr_unittest.cpp",
     "utf16_unittest.cpp",
@@ -271,5 +276,8 @@ pdfium_unittest_source_set("unittests") {
   if (pdf_enable_xfa) {
     sources += [ "cfx_memorystream_unittest.cpp" ]
     deps += [ "../fpdfapi/parser" ]
+  }
+  if (is_posix) {
+    sources += [ "mapped_data_bytes_unittest.cpp" ]
   }
 }

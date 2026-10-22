@@ -204,6 +204,24 @@ bool H264Decoder::ModifyReferencePicLists(const H264SliceHeader* slice_hdr,
   return true;
 }
 
+void H264Decoder::StoreDPBPicForTesting(scoped_refptr<H264Picture> p) {
+  dpb_.set_max_num_pics(dpb_.max_num_pics() + 1);
+  dpb_.StorePic(p);
+}
+
+bool H264Decoder::ModifyReferencePicListsForTesting(
+    const H264SliceHeader* slice_hdr,
+    H264Picture::Vector* ref_pic_list0,
+    H264Picture::Vector* ref_pic_list1) {
+  if (slice_hdr->IsPSlice() || slice_hdr->IsSPSlice()) {
+    ref_pic_list_p0_ = *ref_pic_list0;
+  } else {
+    ref_pic_list_b0_ = *ref_pic_list0;
+    ref_pic_list_b1_ = *ref_pic_list1;
+  }
+  return ModifyReferencePicLists(slice_hdr, ref_pic_list0, ref_pic_list1);
+}
+
 H264Decoder::H264Accelerator::Status H264Decoder::DecodePicture() {
   DCHECK(curr_pic_.get());
 
@@ -678,8 +696,9 @@ bool H264Decoder::ModifyReferencePicList(const H264SliceHeader* slice_hdr,
 
         for (int src = ref_idx_lx, dst = ref_idx_lx;
              src <= num_ref_idx_lX_active_minus1 + 1; ++src) {
-          if (LongTermPicNumF(*(*ref_pic_listx)[src]) !=
-              static_cast<int>(mod.long_term_pic_num)) {
+          auto* picptr = (*ref_pic_listx)[src].get();
+          if (!picptr || (LongTermPicNumF(*picptr) !=
+                          static_cast<int>(mod.long_term_pic_num))) {
             (*ref_pic_listx)[dst++] = (*ref_pic_listx)[src];
           }
         }
@@ -1611,9 +1630,8 @@ H264Decoder::DecodeResult H264Decoder::Decode() {
               return kRanOutOfSurfaces;
             if (current_decrypt_config_)
               curr_pic_->set_decrypt_config(current_decrypt_config_->Clone());
-            if (!hdr_metadata_.IsEmpty()) {
-              curr_pic_->set_hdr_metadata(hdr_metadata_);
-            }
+            curr_pic_->SetDynamicHdrMetadata(hdr_metadata_bitstream_,
+                                             decoder_buffer_.get());
 
             state_ = State::kTryNewFrame;
           }
@@ -1730,17 +1748,11 @@ H264Decoder::DecodeResult H264Decoder::Decode() {
                         return true;
                       },
                       [this](const H264SEIContentLightLevelInfo& info) {
-                        // H264 HDR metadata may appears in the below places:
-                        // 1. Container.
-                        // 2. Bitstream.
-                        // 3. Both container and bitstream.
-                        // Thus we should also extract HDR metadata here in case
-                        // we miss the information.
-                        hdr_metadata_.cta_861_3 = info.ToGfx();
+                        hdr_metadata_bitstream_.SetCLLI(info.ToSkHdr());
                         return true;
                       },
                       [this](const H264SEIMasteringDisplayInfo& info) {
-                        hdr_metadata_.smpte_st_2086 = info.ToGfx();
+                        hdr_metadata_bitstream_.SetMDCV(info.ToSkHdr());
                         return true;
                       },
                       [](const std::monostate) { return true; }},
@@ -1784,10 +1796,6 @@ VideoChromaSampling H264Decoder::GetChromaSampling() const {
 
 VideoColorSpace H264Decoder::GetVideoColorSpace() const {
   return picture_color_space_;
-}
-
-gfx::HDRMetadata H264Decoder::GetHDRMetadata() const {
-  return hdr_metadata_;
 }
 
 size_t H264Decoder::GetRequiredNumOfPictures() const {

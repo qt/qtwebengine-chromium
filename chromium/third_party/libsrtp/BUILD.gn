@@ -166,8 +166,8 @@ if (build_libsrtp_tests) {
       configs += [ ":srtp_test_config" ]
       deps = [ ":libsrtp" ]
       sources = [
-                  "test/getopt_s.h",
                   "test/getopt_s.c",
+                  "test/getopt_s.h",
                   "test/ut_sim.c",
                   "test/ut_sim.h",
                   "test/util.c",
@@ -210,10 +210,13 @@ if (build_libsrtp_tests) {
     configs += [ "//build/config/compiler:no_chromium_code" ]
     configs += [ ":srtp_test_config" ]
     output_dir = "${root_out_dir}/srtp_tests"
-    deps = [ ":libsrtp" ]
+    deps = [
+      ":libsrtp",
+      ":cipher_driver"
+    ]
     sources = [
-      "include/getopt_s.h",
       "test/getopt_s.c",
+      "test/getopt_s.h",
       "test/rtp.c",
       "test/rtp.h",
       "test/rtpw.c",

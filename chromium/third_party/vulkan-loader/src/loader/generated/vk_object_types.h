@@ -39,16 +39,16 @@
 // Object Type enum for validation layer internal object handling
 typedef enum VulkanObjectType {
     kVulkanObjectTypeUnknown = 0,
-    kVulkanObjectTypeBuffer = 1,
-    kVulkanObjectTypeImage = 2,
-    kVulkanObjectTypeInstance = 3,
-    kVulkanObjectTypePhysicalDevice = 4,
-    kVulkanObjectTypeDevice = 5,
-    kVulkanObjectTypeQueue = 6,
-    kVulkanObjectTypeSemaphore = 7,
-    kVulkanObjectTypeCommandBuffer = 8,
-    kVulkanObjectTypeFence = 9,
-    kVulkanObjectTypeDeviceMemory = 10,
+    kVulkanObjectTypeInstance = 1,
+    kVulkanObjectTypePhysicalDevice = 2,
+    kVulkanObjectTypeDevice = 3,
+    kVulkanObjectTypeQueue = 4,
+    kVulkanObjectTypeSemaphore = 5,
+    kVulkanObjectTypeCommandBuffer = 6,
+    kVulkanObjectTypeFence = 7,
+    kVulkanObjectTypeDeviceMemory = 8,
+    kVulkanObjectTypeBuffer = 9,
+    kVulkanObjectTypeImage = 10,
     kVulkanObjectTypeQueryPool = 11,
     kVulkanObjectTypeImageView = 12,
     kVulkanObjectTypeCommandPool = 13,
@@ -58,8 +58,8 @@ typedef enum VulkanObjectType {
     kVulkanObjectTypeBufferView = 17,
     kVulkanObjectTypeShaderModule = 18,
     kVulkanObjectTypePipelineCache = 19,
-    kVulkanObjectTypePipelineLayout = 20,
-    kVulkanObjectTypePipeline = 21,
+    kVulkanObjectTypePipeline = 20,
+    kVulkanObjectTypePipelineLayout = 21,
     kVulkanObjectTypeDescriptorSetLayout = 22,
     kVulkanObjectTypeSampler = 23,
     kVulkanObjectTypeDescriptorSet = 24,
@@ -74,19 +74,19 @@ typedef enum VulkanObjectType {
     kVulkanObjectTypeVideoSessionKHR = 33,
     kVulkanObjectTypeVideoSessionParametersKHR = 34,
     kVulkanObjectTypeDeferredOperationKHR = 35,
-    kVulkanObjectTypePipelineBinaryKHR = 36,
-    kVulkanObjectTypeDebugReportCallbackEXT = 37,
-    kVulkanObjectTypeCuModuleNVX = 38,
-    kVulkanObjectTypeCuFunctionNVX = 39,
-    kVulkanObjectTypeDebugUtilsMessengerEXT = 40,
-    kVulkanObjectTypeTensorARM = 41,
-    kVulkanObjectTypeValidationCacheEXT = 42,
-    kVulkanObjectTypeAccelerationStructureNV = 43,
-    kVulkanObjectTypePerformanceConfigurationINTEL = 44,
-    kVulkanObjectTypeIndirectCommandsLayoutNV = 45,
-    kVulkanObjectTypeCudaModuleNV = 46,
-    kVulkanObjectTypeCudaFunctionNV = 47,
-    kVulkanObjectTypeAccelerationStructureKHR = 48,
+    kVulkanObjectTypeAccelerationStructureKHR = 36,
+    kVulkanObjectTypePipelineBinaryKHR = 37,
+    kVulkanObjectTypeDebugReportCallbackEXT = 38,
+    kVulkanObjectTypeCuModuleNVX = 39,
+    kVulkanObjectTypeCuFunctionNVX = 40,
+    kVulkanObjectTypeDebugUtilsMessengerEXT = 41,
+    kVulkanObjectTypeTensorARM = 42,
+    kVulkanObjectTypeValidationCacheEXT = 43,
+    kVulkanObjectTypeAccelerationStructureNV = 44,
+    kVulkanObjectTypePerformanceConfigurationINTEL = 45,
+    kVulkanObjectTypeIndirectCommandsLayoutNV = 46,
+    kVulkanObjectTypeCudaModuleNV = 47,
+    kVulkanObjectTypeCudaFunctionNV = 48,
     kVulkanObjectTypeBufferCollectionFUCHSIA = 49,
     kVulkanObjectTypeMicromapEXT = 50,
     kVulkanObjectTypeTensorViewARM = 51,
@@ -96,7 +96,8 @@ typedef enum VulkanObjectType {
     kVulkanObjectTypeExternalComputeQueueNV = 55,
     kVulkanObjectTypeIndirectExecutionSetEXT = 56,
     kVulkanObjectTypeIndirectCommandsLayoutEXT = 57,
-    kVulkanObjectTypeMax = 58,
+    kVulkanObjectTypeShaderInstrumentationARM = 58,
+    kVulkanObjectTypeMax = 59,
     // Aliases for backwards compatibility of "promoted" types
     kVulkanObjectTypeDescriptorUpdateTemplateKHR = kVulkanObjectTypeDescriptorUpdateTemplate,
     kVulkanObjectTypeSamplerYcbcrConversionKHR = kVulkanObjectTypeSamplerYcbcrConversion,
@@ -106,8 +107,6 @@ typedef enum VulkanObjectType {
 // Array of object name strings for OBJECT_TYPE enum conversion
 static const char * const object_string[kVulkanObjectTypeMax] = {
     "Unknown",
-    "Buffer",
-    "Image",
     "Instance",
     "PhysicalDevice",
     "Device",
@@ -116,6 +115,8 @@ static const char * const object_string[kVulkanObjectTypeMax] = {
     "CommandBuffer",
     "Fence",
     "DeviceMemory",
+    "Buffer",
+    "Image",
     "QueryPool",
     "ImageView",
     "CommandPool",
@@ -125,8 +126,8 @@ static const char * const object_string[kVulkanObjectTypeMax] = {
     "BufferView",
     "ShaderModule",
     "PipelineCache",
-    "PipelineLayout",
     "Pipeline",
+    "PipelineLayout",
     "DescriptorSetLayout",
     "Sampler",
     "DescriptorSet",
@@ -141,6 +142,7 @@ static const char * const object_string[kVulkanObjectTypeMax] = {
     "VideoSessionKHR",
     "VideoSessionParametersKHR",
     "DeferredOperationKHR",
+    "AccelerationStructureKHR",
     "PipelineBinaryKHR",
     "DebugReportCallbackEXT",
     "CuModuleNVX",
@@ -153,7 +155,6 @@ static const char * const object_string[kVulkanObjectTypeMax] = {
     "IndirectCommandsLayoutNV",
     "CudaModuleNV",
     "CudaFunctionNV",
-    "AccelerationStructureKHR",
     "BufferCollectionFUCHSIA",
     "MicromapEXT",
     "TensorViewARM",
@@ -163,13 +164,12 @@ static const char * const object_string[kVulkanObjectTypeMax] = {
     "ExternalComputeQueueNV",
     "IndirectExecutionSetEXT",
     "IndirectCommandsLayoutEXT",
+    "ShaderInstrumentationARM",
 };
 
 // Helper array to get Vulkan VK_EXT_debug_report object type enum from the internal layers version
 const VkDebugReportObjectTypeEXT get_debug_report_enum[] = {
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, // kVulkanObjectTypeUnknown
-    VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT,   // kVulkanObjectTypeBuffer
-    VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT,   // kVulkanObjectTypeImage
     VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,   // kVulkanObjectTypeInstance
     VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT,   // kVulkanObjectTypePhysicalDevice
     VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,   // kVulkanObjectTypeDevice
@@ -178,6 +178,8 @@ const VkDebugReportObjectTypeEXT get_debug_report_enum[] = {
     VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT,   // kVulkanObjectTypeCommandBuffer
     VK_DEBUG_REPORT_OBJECT_TYPE_FENCE_EXT,   // kVulkanObjectTypeFence
     VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT,   // kVulkanObjectTypeDeviceMemory
+    VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT,   // kVulkanObjectTypeBuffer
+    VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT,   // kVulkanObjectTypeImage
     VK_DEBUG_REPORT_OBJECT_TYPE_QUERY_POOL_EXT,   // kVulkanObjectTypeQueryPool
     VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT,   // kVulkanObjectTypeImageView
     VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_POOL_EXT,   // kVulkanObjectTypeCommandPool
@@ -187,8 +189,8 @@ const VkDebugReportObjectTypeEXT get_debug_report_enum[] = {
     VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_VIEW_EXT,   // kVulkanObjectTypeBufferView
     VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT,   // kVulkanObjectTypeShaderModule
     VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_CACHE_EXT,   // kVulkanObjectTypePipelineCache
-    VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT,   // kVulkanObjectTypePipelineLayout
     VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT,   // kVulkanObjectTypePipeline
+    VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT,   // kVulkanObjectTypePipelineLayout
     VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT_EXT,   // kVulkanObjectTypeDescriptorSetLayout
     VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT,   // kVulkanObjectTypeSampler
     VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT,   // kVulkanObjectTypeDescriptorSet
@@ -203,6 +205,7 @@ const VkDebugReportObjectTypeEXT get_debug_report_enum[] = {
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeVideoSessionKHR
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeVideoSessionParametersKHR
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeDeferredOperationKHR
+    VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR_EXT,   // kVulkanObjectTypeAccelerationStructureKHR
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypePipelineBinaryKHR
     VK_DEBUG_REPORT_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT_EXT,   // kVulkanObjectTypeDebugReportCallbackEXT
     VK_DEBUG_REPORT_OBJECT_TYPE_CU_MODULE_NVX_EXT,   // kVulkanObjectTypeCuModuleNVX
@@ -215,7 +218,6 @@ const VkDebugReportObjectTypeEXT get_debug_report_enum[] = {
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeIndirectCommandsLayoutNV
     VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_MODULE_NV_EXT,   // kVulkanObjectTypeCudaModuleNV
     VK_DEBUG_REPORT_OBJECT_TYPE_CUDA_FUNCTION_NV_EXT,   // kVulkanObjectTypeCudaFunctionNV
-    VK_DEBUG_REPORT_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR_EXT,   // kVulkanObjectTypeAccelerationStructureKHR
     VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA_EXT,   // kVulkanObjectTypeBufferCollectionFUCHSIA
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeMicromapEXT
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeTensorViewARM
@@ -225,13 +227,12 @@ const VkDebugReportObjectTypeEXT get_debug_report_enum[] = {
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeExternalComputeQueueNV
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeIndirectExecutionSetEXT
     VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeIndirectCommandsLayoutEXT
+    VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT,   // kVulkanObjectTypeShaderInstrumentationARM
 };
 
 // Helper array to get Official Vulkan VkObjectType enum from the internal layers version
 const VkObjectType get_object_type_enum[] = {
     VK_OBJECT_TYPE_UNKNOWN, // kVulkanObjectTypeUnknown
-    VK_OBJECT_TYPE_BUFFER,   // kVulkanObjectTypeBuffer
-    VK_OBJECT_TYPE_IMAGE,   // kVulkanObjectTypeImage
     VK_OBJECT_TYPE_INSTANCE,   // kVulkanObjectTypeInstance
     VK_OBJECT_TYPE_PHYSICAL_DEVICE,   // kVulkanObjectTypePhysicalDevice
     VK_OBJECT_TYPE_DEVICE,   // kVulkanObjectTypeDevice
@@ -240,6 +241,8 @@ const VkObjectType get_object_type_enum[] = {
     VK_OBJECT_TYPE_COMMAND_BUFFER,   // kVulkanObjectTypeCommandBuffer
     VK_OBJECT_TYPE_FENCE,   // kVulkanObjectTypeFence
     VK_OBJECT_TYPE_DEVICE_MEMORY,   // kVulkanObjectTypeDeviceMemory
+    VK_OBJECT_TYPE_BUFFER,   // kVulkanObjectTypeBuffer
+    VK_OBJECT_TYPE_IMAGE,   // kVulkanObjectTypeImage
     VK_OBJECT_TYPE_QUERY_POOL,   // kVulkanObjectTypeQueryPool
     VK_OBJECT_TYPE_IMAGE_VIEW,   // kVulkanObjectTypeImageView
     VK_OBJECT_TYPE_COMMAND_POOL,   // kVulkanObjectTypeCommandPool
@@ -249,8 +252,8 @@ const VkObjectType get_object_type_enum[] = {
     VK_OBJECT_TYPE_BUFFER_VIEW,   // kVulkanObjectTypeBufferView
     VK_OBJECT_TYPE_SHADER_MODULE,   // kVulkanObjectTypeShaderModule
     VK_OBJECT_TYPE_PIPELINE_CACHE,   // kVulkanObjectTypePipelineCache
-    VK_OBJECT_TYPE_PIPELINE_LAYOUT,   // kVulkanObjectTypePipelineLayout
     VK_OBJECT_TYPE_PIPELINE,   // kVulkanObjectTypePipeline
+    VK_OBJECT_TYPE_PIPELINE_LAYOUT,   // kVulkanObjectTypePipelineLayout
     VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,   // kVulkanObjectTypeDescriptorSetLayout
     VK_OBJECT_TYPE_SAMPLER,   // kVulkanObjectTypeSampler
     VK_OBJECT_TYPE_DESCRIPTOR_SET,   // kVulkanObjectTypeDescriptorSet
@@ -265,6 +268,7 @@ const VkObjectType get_object_type_enum[] = {
     VK_OBJECT_TYPE_VIDEO_SESSION_KHR,   // kVulkanObjectTypeVideoSessionKHR
     VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR,   // kVulkanObjectTypeVideoSessionParametersKHR
     VK_OBJECT_TYPE_DEFERRED_OPERATION_KHR,   // kVulkanObjectTypeDeferredOperationKHR
+    VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR,   // kVulkanObjectTypeAccelerationStructureKHR
     VK_OBJECT_TYPE_PIPELINE_BINARY_KHR,   // kVulkanObjectTypePipelineBinaryKHR
     VK_OBJECT_TYPE_DEBUG_REPORT_CALLBACK_EXT,   // kVulkanObjectTypeDebugReportCallbackEXT
     VK_OBJECT_TYPE_CU_MODULE_NVX,   // kVulkanObjectTypeCuModuleNVX
@@ -277,7 +281,6 @@ const VkObjectType get_object_type_enum[] = {
     VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_NV,   // kVulkanObjectTypeIndirectCommandsLayoutNV
     VK_OBJECT_TYPE_CUDA_MODULE_NV,   // kVulkanObjectTypeCudaModuleNV
     VK_OBJECT_TYPE_CUDA_FUNCTION_NV,   // kVulkanObjectTypeCudaFunctionNV
-    VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR,   // kVulkanObjectTypeAccelerationStructureKHR
     VK_OBJECT_TYPE_BUFFER_COLLECTION_FUCHSIA,   // kVulkanObjectTypeBufferCollectionFUCHSIA
     VK_OBJECT_TYPE_MICROMAP_EXT,   // kVulkanObjectTypeMicromapEXT
     VK_OBJECT_TYPE_TENSOR_VIEW_ARM,   // kVulkanObjectTypeTensorViewARM
@@ -287,6 +290,7 @@ const VkObjectType get_object_type_enum[] = {
     VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV,   // kVulkanObjectTypeExternalComputeQueueNV
     VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT,   // kVulkanObjectTypeIndirectExecutionSetEXT
     VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT,   // kVulkanObjectTypeIndirectCommandsLayoutEXT
+    VK_OBJECT_TYPE_SHADER_INSTRUMENTATION_ARM,   // kVulkanObjectTypeShaderInstrumentationARM
 };
 
 // Helper function to convert from VkDebugReportObjectTypeEXT to VkObjectType

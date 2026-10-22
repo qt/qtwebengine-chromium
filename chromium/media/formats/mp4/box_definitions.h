@@ -36,7 +36,9 @@ namespace mp4 {
 // Size in bytes needed to store largest IV.
 const int kInitializationVectorSize = 16;
 
-enum TrackType { kInvalid = 0, kVideo, kAudio, kText, kHint };
+enum TrackType { kInvalid = 0, kVideo, kAudio, kMetadata, kText, kHint };
+
+MEDIA_EXPORT const char* TrackTypeName(TrackType);
 
 enum SampleFlags {
   kSampleIsNonSyncSample = 0x10000
@@ -335,6 +337,11 @@ struct MEDIA_EXPORT ContentLightLevel : ContentLightLevelInformation {
   FourCC BoxType() const override;
 };
 
+struct MEDIA_EXPORT DolbyVisionInfo {
+  CodecProfileLevel codec_info;
+  VideoColorSpace color_space;
+};
+
 struct MEDIA_EXPORT VideoSampleEntry : Box {
   DECLARE_BOX_METHODS(VideoSampleEntry);
 
@@ -353,7 +360,7 @@ struct MEDIA_EXPORT VideoSampleEntry : Box {
   // When set and found on a Dolby Vision source buffer, `dv_info`
   // will be used to upgrade `video_info` from its backwards
   // compatible codec (e.g., H.264, H.265) to a Dolby Vision codec.
-  std::optional<CodecProfileLevel> dv_info;
+  std::optional<DolbyVisionInfo> dv_info;
   gfx::HDRMetadata hdr_metadata;
 
   bool IsFormatValid() const;
@@ -363,6 +370,18 @@ struct MEDIA_EXPORT VideoSampleEntry : Box {
   // Static method for testing.
   static VideoColorSpace ConvertColorParameterInformationToColorSpace(
       const ColorParameterInformation& info);
+};
+
+struct MEDIA_EXPORT MetadataIT35SampleEntry : Box {
+  DECLARE_BOX_METHODS(MetadataIT35SampleEntry);
+
+  uint16_t data_reference_index = 0;
+
+  enum class IT35PrefixType {
+    kUnknown,
+    kSmpteSt2094App5,
+  };
+  IT35PrefixType it35_prefix_type = IT35PrefixType::kUnknown;
 };
 
 struct MEDIA_EXPORT ElementaryStreamDescriptor : Box {
@@ -486,6 +505,7 @@ struct MEDIA_EXPORT SampleDescription : Box {
   TrackType type;
   std::vector<VideoSampleEntry> video_entries;
   std::vector<AudioSampleEntry> audio_entries;
+  std::vector<MetadataIT35SampleEntry> metadata_t35_entries;
 };
 
 struct MEDIA_EXPORT CencSampleEncryptionInfoEntry {
@@ -547,12 +567,25 @@ struct MEDIA_EXPORT Media : Box {
   MediaInformation information;
 };
 
+struct MEDIA_EXPORT TrackReferenceType : Box {
+  DECLARE_BOX_METHODS(TrackReferenceType);
+  FourCC reference_type;
+  std::vector<uint32_t> track_ids;
+};
+
+struct MEDIA_EXPORT TrackReference : Box {
+  DECLARE_BOX_METHODS(TrackReference);
+  std::vector<TrackReferenceType> types;
+};
+
 struct MEDIA_EXPORT Track : Box {
   DECLARE_BOX_METHODS(Track);
 
   TrackHeader header;
   Media media;
   Edit edit;
+  // References are only parsed for metadata tracks.
+  TrackReference references;
 };
 
 struct MEDIA_EXPORT MovieExtendsHeader : Box {

@@ -26,10 +26,10 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/test/mock_web_contents_observer.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/public/test/test_content_browser_client.h"
 #include "content/public/test/test_navigation_throttle.h"
 #include "content/test/fenced_frame_test_utils.h"
 #include "content/test/navigation_simulator_impl.h"
-#include "content/test/test_content_browser_client.h"
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_web_contents.h"
 #include "net/base/features.h"
@@ -149,6 +149,7 @@ class NavigationRequestTest : public RenderViewHostImplTestHarness {
         base::BindOnce(&NavigationRequestTest::UpdateThrottleCheckResult,
                        base::Unretained(this)));
 
+    GetNavigationRequest()->ComputePoliciesToCommit();
     GetNavigationRequest()->WillCommitWithoutUrlLoader();
   }
 
@@ -331,6 +332,20 @@ TEST_F(NavigationRequestTest, SimpleDataChecksFailure) {
                 ->request_context_type());
   EXPECT_EQ(net::ERR_CERT_DATE_INVALID,
             navigation->GetNavigationHandle()->GetNetErrorCode());
+}
+
+// Checks that `ShouldRecordNavigationTimelineUkm` returns true for `chrome://`
+// URLs.
+TEST_F(NavigationRequestTest, ShouldRecordNavigationTimelineUkmForChromeUI) {
+  const GURL kUrl = GURL("chrome://webui-toolbar.top-chrome/");
+  auto navigation =
+      NavigationSimulator::CreateBrowserInitiated(kUrl, web_contents());
+  navigation->Start();
+
+  NavigationRequest* request =
+      NavigationRequest::From(navigation->GetNavigationHandle());
+
+  EXPECT_TRUE(request->ShouldRecordNavigationTimelineUkm());
 }
 
 // Checks that a navigation deferred during WillStartRequest can be properly
@@ -873,6 +888,39 @@ TEST_F(NavigationRequestTest, SanitizeRedirectsForCommit) {
   EXPECT_EQ(GURL("https://a.com"), commit_params->redirects[0]);
   EXPECT_EQ(GURL("https://b.com"), commit_params->redirects[1]);
   EXPECT_EQ(GURL("https://c.com"), commit_params->redirects[2]);
+}
+
+// Test to ensure that SanitizeRedirectsForCommit is called when a navigation
+// fails and commits an error page.
+TEST_F(NavigationRequestTest, SanitizeRedirectsForCommitErrorPage) {
+  const GURL start_url("https://a.com?param=1");
+  const GURL url_2("https://b.com?param=2#foo");
+  const GURL final_url("https://d.com?param=4");
+
+  std::unique_ptr<NavigationSimulator> navigation =
+      NavigationSimulator::CreateRendererInitiated(start_url, main_test_rfh());
+  navigation->Start();
+  navigation->Redirect(url_2);
+  navigation->Redirect(final_url);
+  navigation->Fail(net::ERR_CONNECTION_RESET);
+
+  NavigationRequest* request =
+      NavigationRequest::From(navigation->GetNavigationHandle());
+
+  // We expect the redirects in the NavigationRequest's commit_params_ to be
+  // sanitized.
+  const auto& commit_params = request->commit_params();
+
+  // redirects contains entries for A and B.
+  EXPECT_EQ(2u, commit_params.redirects.size());
+  EXPECT_EQ(GURL("https://a.com"), commit_params.redirects[0]);
+  EXPECT_EQ(GURL("https://b.com"), commit_params.redirects[1]);
+
+  // redirect_infos contains entries for B and D.
+  // The last entry (D) should NOT be sanitized.
+  EXPECT_EQ(2u, commit_params.redirect_infos.size());
+  EXPECT_EQ(GURL("https://b.com"), commit_params.redirect_infos[0].new_url);
+  EXPECT_EQ(final_url, commit_params.redirect_infos[1].new_url);
 }
 
 TEST_F(NavigationRequestTest, AbortsDeletedNavigationInProgress) {

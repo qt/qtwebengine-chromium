@@ -20,6 +20,7 @@
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 #include "third_party/abseil-cpp/absl/container/node_hash_map.h"
 #include "ui/accessibility/platform/ax_node_id_delegate.h"
+#include "ui/accessibility/platform/ax_unique_id.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace ui {
@@ -60,19 +61,10 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
     : public WebContentsAccessibility,
       public ui::AXNodeIdDelegate {
  public:
+  explicit WebContentsAccessibilityAndroid(WebContents* web_contents);
+  explicit WebContentsAccessibilityAndroid(int64_t ax_tree_update_ptr);
   WebContentsAccessibilityAndroid(
       JNIEnv* env,
-      const base::android::JavaRef<jobject>& obj,
-      WebContents* web_contents,
-      const base::android::JavaRef<jobject>& jaccessibility_node_info_builder);
-  WebContentsAccessibilityAndroid(
-      JNIEnv* env,
-      const base::android::JavaRef<jobject>& obj,
-      int64_t ax_tree_update_ptr,
-      const base::android::JavaRef<jobject>& jaccessibility_node_info_builder);
-  WebContentsAccessibilityAndroid(
-      JNIEnv* env,
-      const base::android::JavaRef<jobject>& obj,
       const base::android::JavaRef<jobject>& jassist_data_builder,
       WebContents* web_contents);
 
@@ -153,6 +145,7 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
 
   // Tree methods.
   int32_t GetRootId(JNIEnv* env);
+  size_t GetAccessibilityTreeSizeForExperiment(JNIEnv* env);
   bool IsNodeValid(JNIEnv* env, int32_t id);
 
   void HitTest(JNIEnv* env, int32_t x, int32_t y);
@@ -160,7 +153,9 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
   // Methods to get information about a specific node.
   bool IsEditableText(JNIEnv* env, int32_t id);
   bool IsFocused(JNIEnv* env, int32_t id);
+  // Returns ui::kAXAndroidUndefinedSelectionIndex if no selection.
   int32_t GetEditableTextSelectionStart(JNIEnv* env, int32_t id);
+  // Returns ui::kAXAndroidUndefinedSelectionIndex if no selection.
   int32_t GetEditableTextSelectionEnd(JNIEnv* env, int32_t id);
   base::android::ScopedJavaLocalRef<jintArray> GetAbsolutePositionForNode(
       JNIEnv* env,
@@ -184,12 +179,14 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
   void Click(JNIEnv* env, int32_t id);
   void Focus(JNIEnv* env, int32_t id);
   void Blur(JNIEnv* env);
+  void Expand(JNIEnv* env, int32_t id);
+  void Collapse(JNIEnv* env, int32_t id);
   void ScrollToMakeNodeVisible(JNIEnv* env, int32_t id);
   void SetTextFieldValue(JNIEnv* env,
                          int32_t id,
                          const base::android::JavaRef<jstring>& value);
   void SetSelection(JNIEnv* env, int32_t id, int32_t start, int32_t end);
-  void SetExtendedSelection(JNIEnv* env,
+  bool SetExtendedSelection(JNIEnv* env,
                             int32_t id,
                             int32_t start_node_id,
                             int32_t start_node_offset,
@@ -222,18 +219,13 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
   // of our own selection in BrowserAccessibilityManager.java for static
   // text, but if this is an editable text node, updates the selected text
   // in Blink, too, and either way calls
-  // Java_BrowserAccessibilityManager_finishGranularityMove[NEXT/PREVIOUS]
-  // with the result.
-  bool NextAtGranularity(JNIEnv* env,
+  // Java_BrowserAccessibilityManager_finishGranularityMove with the result.
+  bool MoveAtGranularity(JNIEnv* env,
                          int32_t granularity,
                          bool extend_selection,
                          int32_t id,
-                         int32_t cursor_index);
-  bool PreviousAtGranularity(JNIEnv* env,
-                             int32_t granularity,
-                             bool extend_selection,
-                             int32_t id,
-                             int32_t cursor_index);
+                         int32_t cursor_index,
+                         bool forwards);
 
   // Move accessibility focus. This sends a message to the renderer to
   // clear accessibility focus on the previous node and set accessibility
@@ -317,6 +309,8 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
 
   void UpdateFrameInfo(float page_scale);
 
+  bool IsNodeLikelyKnownByAndroidFrameworkForExperiment(int32_t unique_id);
+
   // Set a new max for TYPE_WINDOW_CONTENT_CHANGED events to fire.
   void SetMaxContentChangedEventsToFireForTesting(JNIEnv* env,
                                                   int32_t maxEvents) {
@@ -343,6 +337,8 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
   // Note: This cache is only meant for common strings that might be shared
   //       across many nodes (e.g. role or role description), which have a
   //       finite number of possibilities. Do not use it for page content.
+  base::android::ScopedJavaLocalRef<jobject> GetJavaObject(JNIEnv* env) const;
+
   const base::android::ScopedJavaGlobalRef<jstring>& GetCanonicalJNIString(
       JNIEnv* env,
       std::string_view str) {
@@ -403,7 +399,9 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
   BrowserAccessibilityAndroid* GetAccessibilityFocus() const;
 
   void HandlePageLoaded(int32_t unique_id);
-  void HandleContentChanged(int32_t unique_id);
+  // If |set_subtree_changed| is true, the TYPE_WINDOW_CONTENT_CHANGED event
+  // will signal that this change is affecting its underlying subtree.
+  void HandleContentChanged(int32_t unique_id, bool set_subtree_changed);
   void HandleFocusChanged(int32_t unique_id, bool is_root_or_frame_root);
   void HandleCheckStateChanged(int32_t unique_id);
   void HandleClicked(int32_t unique_id);
@@ -421,14 +419,19 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
   void AnnounceLiveRegionText(const std::u16string& text);
   void HandleActiveDescendantChanged(int32_t unique_id);
   void HandleTextSelectionChanged(int32_t unique_id);
+  void HandleExtendedSelectionChanged(int32_t unique_id,
+                                      int32_t focus_unique_id,
+                                      int32_t focus_offset);
   void HandleEditableTextChanged(int32_t unique_id, int32_t subType);
   void HandleSliderChanged(int32_t unique_id);
   void SendDelayedWindowContentChangedEvent();
   bool OnHoverEvent(const ui::MotionEventAndroid& event);
   void HandleHover(int32_t unique_id);
   void HandleNavigate(int32_t root_id);
+  void HandleInitialLoadComplete(int32_t root_id);
   void UpdateMaxNodesInCache();
   void ClearNodeInfoCacheForGivenId(int32_t unique_id);
+  void ValidateA11yCacheForExperiment();
   void HandleEndOfTestSignal();
   std::u16string GenerateAccessibilityNodeInfoString(int32_t unique_id);
 
@@ -438,9 +441,17 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
       JNIEnv* env,
       int32_t unique_id);
 
+  base::android::ScopedJavaLocalRef<jintArray> GetChildIdsForExperiment(
+      JNIEnv* env,
+      int32_t unique_id);
+
   jint GetParentIdForTesting(JNIEnv* env, int32_t unique_id);
 
   base::android::ScopedJavaLocalRef<jintArray> GetLabeledByNodeIdsForTesting(
+      JNIEnv* env,
+      int32_t unique_id);
+
+  base::android::ScopedJavaLocalRef<jintArray> GetExtendedSelection(
       JNIEnv* env,
       int32_t unique_id);
 
@@ -548,10 +559,6 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
           absl::flat_hash_map<std::string, AXStyleData::RangePairs>>& attrs,
       int* ranges_count);
 
-  // A weak reference to the Java WebContentsAccessibilityAndroid object.
-  JavaObjectWeakGlobalRef java_ref_;
-  JavaObjectWeakGlobalRef java_anib_ref_;
-
   // A weak reference to the AssistData tree builder which will only be
   // instantiated after a request from the Android framework.
   JavaObjectWeakGlobalRef java_adb_ref_;
@@ -590,6 +597,11 @@ class CONTENT_EXPORT WebContentsAccessibilityAndroid
   // Owns itself, and destroyed upon WebContentsObserver::WebContentsDestroyed.
   class Connector;
   raw_ptr<Connector> connector_ = nullptr;
+
+  // A mapping of each AXNodeID managed by `snapshot_root_manager_`, which is
+  // only unique within its renderer, to an AXUniqueId, which is unique within
+  // the scope of the web contents.
+  absl::flat_hash_map<ui::AXNodeID, ui::AXUniqueId> ax_unique_ids_;
 
   // This isn't associated with a real WebContents and is only populated when
   // this class is constructed with a ui::AXTreeUpdate.

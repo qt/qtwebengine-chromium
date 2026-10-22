@@ -45,6 +45,7 @@ const core::ir::Capabilities kDemoteToHelperCapabilities{
     core::ir::Capability::kAllowDuplicateBindings,
     core::ir::Capability::kAllowNonCoreTypes,
     core::ir::Capability::kAllow8BitIntegers,
+    core::ir::Capability::kAllow16BitIntegers,
 };
 
 /// DemoteToHelper is a transform that emulates demote-to-helper semantics for discard instructions.

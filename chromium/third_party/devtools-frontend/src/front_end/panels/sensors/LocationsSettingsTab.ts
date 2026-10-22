@@ -339,7 +339,9 @@ export class LocationsSettingsTab extends UI.Widget.VBox implements UI.ListWidge
       if (errorMessage) {
         return {valid: false, errorMessage};
       }
-      return {valid: true, errorMessage: undefined};
+      return {
+        valid: true,
+      };
     }
 
     function latValidator(
@@ -350,7 +352,9 @@ export class LocationsSettingsTab extends UI.Widget.VBox implements UI.ListWidge
       const parsedValue = Number(value);
 
       if (!value) {
-        return {valid: true, errorMessage: undefined};
+        return {
+          valid: true,
+        };
       }
 
       let errorMessage;
@@ -365,7 +369,9 @@ export class LocationsSettingsTab extends UI.Widget.VBox implements UI.ListWidge
       if (errorMessage) {
         return {valid: false, errorMessage};
       }
-      return {valid: true, errorMessage: undefined};
+      return {
+        valid: true,
+      };
     }
 
     function longValidator(
@@ -376,7 +382,9 @@ export class LocationsSettingsTab extends UI.Widget.VBox implements UI.ListWidge
       const parsedValue = Number(value);
 
       if (!value) {
-        return {valid: true, errorMessage: undefined};
+        return {
+          valid: true,
+        };
       }
 
       let errorMessage;
@@ -391,7 +399,9 @@ export class LocationsSettingsTab extends UI.Widget.VBox implements UI.ListWidge
       if (errorMessage) {
         return {valid: false, errorMessage};
       }
-      return {valid: true, errorMessage: undefined};
+      return {
+        valid: true,
+      };
     }
 
     function timezoneIdValidator(
@@ -405,7 +415,9 @@ export class LocationsSettingsTab extends UI.Widget.VBox implements UI.ListWidge
       // alphabetic character. The empty string resets the override,
       // and is accepted as well.
       if (value === '' || /[a-zA-Z]/.test(value)) {
-        return {valid: true, errorMessage: undefined};
+        return {
+          valid: true,
+        };
       }
       const errorMessage = i18nString(UIStrings.timezoneIdMustContainAlphabetic);
       return {valid: false, errorMessage};
@@ -421,7 +433,9 @@ export class LocationsSettingsTab extends UI.Widget.VBox implements UI.ListWidge
       // The empty string resets the override, and is accepted as
       // well.
       if (value === '' || /[a-zA-Z]{2}/.test(value)) {
-        return {valid: true, errorMessage: undefined};
+        return {
+          valid: true,
+        };
       }
       const errorMessage = i18nString(UIStrings.localeMustContainAlphabetic);
       return {valid: false, errorMessage};
@@ -434,7 +448,9 @@ export class LocationsSettingsTab extends UI.Widget.VBox implements UI.ListWidge
       const parsedValue = Number(value);
 
       if (!value) {
-        return {valid: true, errorMessage: undefined};
+        return {
+          valid: true,
+        };
       }
 
       let errorMessage;
@@ -447,7 +463,9 @@ export class LocationsSettingsTab extends UI.Widget.VBox implements UI.ListWidge
       if (errorMessage) {
         return {valid: false, errorMessage};
       }
-      return {valid: true, errorMessage: undefined};
+      return {
+        valid: true,
+      };
     }
   }
 }

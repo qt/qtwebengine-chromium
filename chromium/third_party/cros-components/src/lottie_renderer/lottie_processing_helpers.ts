@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {hexToRgb} from '../helpers/helpers';
+import {hexToRgb} from '../helpers/helpers.js';
 
 /**
  * The list of Sparkle illustration tokens. See the documentation comment for

@@ -593,6 +593,9 @@
   "core/sdk/sdk-meta.ts | disableJavascript": {
     "message": "JavaScript പ്രവർത്തനരഹിതമാക്കുക"
   },
+  "core/sdk/sdk-meta.ts | disableJpegXlFormat": {
+    "message": "JPEG XL ഫോർമാറ്റ് പ്രവർത്തനരഹിതമാക്കുക"
+  },
   "core/sdk/sdk-meta.ts | disableLocalFonts": {
     "message": "ലോക്കൽ ഫോണ്ടുകൾ പ്രവർത്തനരഹിതമാക്കുക"
   },
@@ -701,6 +704,9 @@
   "core/sdk/sdk-meta.ts | enableJavascript": {
     "message": "JavaScript പ്രവർത്തനക്ഷമമാക്കുക"
   },
+  "core/sdk/sdk-meta.ts | enableJpegXlFormat": {
+    "message": "JPEG XL ഫോർമാറ്റ് പ്രവർത്തനക്ഷമമാക്കുക"
+  },
   "core/sdk/sdk-meta.ts | enableLocalFonts": {
     "message": "ലോക്കൽ ഫോണ്ടുകൾ പ്രവർത്തനക്ഷമമാക്കുക"
   },
@@ -797,6 +803,9 @@
   "core/sdk/sdk-meta.ts | remoteFileLoadingInfo": {
     "message": "സോഴ്‌സ് മാപ്പുകളാണ് ഉറവിടത്തിന്റെ ഉദാഹരണം. സുരക്ഷാ കാരണങ്ങളാൽ ഡിഫോൾട്ടായി പ്രവർത്തനരഹിതമാക്കി."
   },
+  "core/sdk/sdk-meta.ts | rulersOnHover": {
+    "message": "ഹോവർ ചെയ്യുമ്പോൾ റൂളറുകൾ"
+  },
   "core/sdk/sdk-meta.ts | screen": {
     "message": "സ്‌ക്രീൻ"
   },
@@ -862,6 +871,9 @@
   },
   "entrypoints/inspector_main/RenderingOptions.ts | disableAvifImageFormat": {
     "message": "AVIF ഇമേജ് ഫോര്‍മാറ്റ് പ്രവർത്തനരഹിതമാക്കുക"
+  },
+  "entrypoints/inspector_main/RenderingOptions.ts | disableJpegXlImageFormat": {
+    "message": "JPEG XL ഇമേജ് ഫോർമാറ്റ് പ്രവർത്തനരഹിതമാക്കുക"
   },
   "entrypoints/inspector_main/RenderingOptions.ts | disableLocalFonts": {
     "message": "ലോക്കൽ ഫോണ്ടുകൾ പ്രവർത്തനരഹിതമാക്കുക"
@@ -1049,9 +1061,6 @@
   "entrypoints/main/MainImpl.ts | dockToRight": {
     "message": "വലതുവശത്തേയ്‌ക്ക് ഡോക്ക് ചെയ്യുക"
   },
-  "entrypoints/main/MainImpl.ts | externalRequestReceived": {
-    "message": "DevTools എന്നതിന് ഒരു ബാഹ്യ അഭ്യർത്ഥന ലഭിച്ചു"
-  },
   "entrypoints/main/MainImpl.ts | focusDebuggee": {
     "message": "ഫോക്കസ് പേജ്"
   },
@@ -1116,10 +1125,10 @@
     "message": "ബാഡ്‌ജുകൾ നേടുക"
   },
   "entrypoints/main/main-meta.ts | enableCtrlShortcutToSwitchPanels": {
-    "message": "പാനലുകൾക്കിടയിൽ മാറാൻ Ctrl + 1-9 കുറുക്കുവഴി പ്രവർത്തനക്ഷമമാക്കുക"
+    "message": "പാനലുകൾക്കിടയിൽ മാറാൻ Ctrl + 1-9 ഉപയോഗിക്കുക"
   },
   "entrypoints/main/main-meta.ts | enableShortcutToSwitchPanels": {
-    "message": "പാനലുകൾക്കിടയിൽ മാറാൻ ⌘ + 1-9 കുറുക്കുവഴി പ്രവർത്തനക്ഷമമാക്കുക"
+    "message": "പാനലുകൾക്കിടയിൽ മാറാൻ ⌘ + 1-9 ഉപയോഗിക്കുക"
   },
   "entrypoints/main/main-meta.ts | findNextResult": {
     "message": "അടുത്ത ഫലം കണ്ടെത്തുക"
@@ -1256,6 +1265,9 @@
   "entrypoints/node_app/app/NodeMain.ts | nodejsS": {
     "message": "Node.js: {PH1}"
   },
+  "entrypoints/node_app/node_app.ts | application": {
+    "message": "ആപ്പ്"
+  },
   "entrypoints/node_app/node_app.ts | connection": {
     "message": "കണക്ഷൻ"
   },
@@ -1264,6 +1276,9 @@
   },
   "entrypoints/node_app/node_app.ts | node": {
     "message": "നോഡ്"
+  },
+  "entrypoints/node_app/node_app.ts | showApplication": {
+    "message": "ആപ്പ് കാണിക്കുക"
   },
   "entrypoints/node_app/node_app.ts | showConnection": {
     "message": "കണക്ഷൻ കാണിക്കുക"
@@ -1310,6 +1325,12 @@
   "generated/Deprecation.ts | DataUrlInSvgUse": {
     "message": "ഡാറ്റയ്ക്കുള്ള പിന്തുണ: SVGUseElement എലമെന്റിലെ URL-കൾ അവസാനിപ്പിച്ചു, ഭാവിയിൽ അവ നീക്കം ചെയ്യും."
   },
+  "generated/Deprecation.ts | DocumentCreateEventKeyboardEvents": {
+    "message": "document.createEvent('KeyboardEvents') അവസാനിപ്പിച്ചു, ഇത് നീക്കം ചെയ്യും. പകരം new KeyboardEvent() ഉപയോഗിക്കുക."
+  },
+  "generated/Deprecation.ts | DocumentCreateEventTransitionEvent": {
+    "message": "document.createEvent('TransitionEvent') അവസാനിപ്പിച്ചു, ഇത് നീക്കം ചെയ്യും. പകരം new TransitionEvent() ഉപയോഗിക്കുക."
+  },
   "generated/Deprecation.ts | ExampleBrowserProcessDeprecation": {
     "message": "This is an example for showing the code required for a browser process reported deprecation."
   },
@@ -1339,6 +1360,27 @@
   },
   "generated/Deprecation.ts | IntlV8BreakIterator": {
     "message": "Intl.v8BreakIterator അവസാനിപ്പിച്ചു. പകരം Intl.Segmenter ഉപയോഗിക്കുക."
+  },
+  "generated/Deprecation.ts | LanguageModelParams": {
+    "message": "LanguageModel.params() അവസാനിപ്പിച്ചിരിക്കുന്നു, ഇപ്പോൾ വിപുലീകരണ സന്ദർഭങ്ങളിൽ മാത്രമേ ലഭ്യമാകൂ. അതിന്റെ ഫലത്തിനുള്ളിലെ topK, temperature എന്നിവയുമായി ബന്ധപ്പെട്ട ഫീൽഡുകളും അവസാനിപ്പിച്ചു."
+  },
+  "generated/Deprecation.ts | LanguageModelTemperature": {
+    "message": "LanguageModel-നുള്ള 'temperature' പാരാമീറ്റർ/ആട്രിബ്യൂട്ട് അവസാനിപ്പിച്ചു. ഇത് വിപുലീകരണങ്ങൾക്കുള്ളിൽ മാത്രമേ പ്രവർത്തിക്കൂ, ഭാവിയിൽ ഇത് നീക്കം ചെയ്തേക്കാം."
+  },
+  "generated/Deprecation.ts | LanguageModelTopK": {
+    "message": "LanguageModel-നുള്ള 'topK' പാരാമീറ്റർ/ആട്രിബ്യൂട്ട് അവസാനിപ്പിച്ചു. ഇത് വിപുലീകരണങ്ങൾക്കുള്ളിൽ മാത്രമേ പ്രവർത്തിക്കൂ, ഭാവിയിൽ ഇത് നീക്കം ചെയ്തേക്കാം."
+  },
+  "generated/Deprecation.ts | LanguageModel_InputQuota": {
+    "message": "LanguageModel.inputQuota അവസാനിപ്പിച്ചു. പകരം LanguageModel.contextWindow ഉപയോഗിക്കുക. വിപുലീകരണങ്ങളിൽ മാത്രമേ ഈ അപരനാമം ലഭ്യമാകൂ."
+  },
+  "generated/Deprecation.ts | LanguageModel_InputUsage": {
+    "message": "LanguageModel.inputUsage അവസാനിപ്പിച്ചു. പകരം LanguageModel.contextUsage ഉപയോഗിക്കുക. വിപുലീകരണങ്ങളിൽ മാത്രമേ ഈ അപരനാമം ലഭ്യമാകൂ."
+  },
+  "generated/Deprecation.ts | LanguageModel_MeasureInputUsage": {
+    "message": "LanguageModel.measureInputUsage() അവസാനിപ്പിച്ചു. പകരം LanguageModel.measureContextUsage() ഉപയോഗിക്കുക. വിപുലീകരണങ്ങളിൽ മാത്രമേ ഈ അപരനാമം ലഭ്യമാകൂ."
+  },
+  "generated/Deprecation.ts | LanguageModel_OnQuotaOverflow": {
+    "message": "LanguageModel.onquotaoverflow അവസാനിപ്പിച്ചു. പകരം LanguageModel.oncontextoverflow ഉപയോഗിക്കുക. LanguageModel.onquotaoverflow എന്ന അപരനാമം വിപുലീകരണങ്ങളിൽ മാത്രമേ ലഭ്യമാകൂ."
   },
   "generated/Deprecation.ts | LocalCSSFileExtensionRejected": {
     "message": ".css ഫയൽ എക്സ്റ്റൻഷനിൽ അവസാനിക്കാത്ത പക്ഷം, file: URL-കളിൽ നിന്ന് CSS ലോഡ് ചെയ്യാനാകില്ല."
@@ -1550,6 +1592,9 @@
   "models/issues_manager/ClientHintIssue.ts | clientHintsInfrastructure": {
     "message": "ക്ലയന്റ് സൂചനകളുടെ ഇൻഫ്രാസ്‌ട്രക്‌ചർ"
   },
+  "models/issues_manager/ConnectionAllowlistIssue.ts | connectionAllowlistHeader": {
+    "message": "കണക്ഷൻ-വൈറ്റ്‌ലിസ്റ്റ് സ്പെസിഫിക്കേഷൻ"
+  },
   "models/issues_manager/ContentSecurityPolicyIssue.ts | contentSecurityPolicyEval": {
     "message": "ഉള്ളടക്ക സുരക്ഷാ നയം - Eval"
   },
@@ -1646,9 +1691,6 @@
   "models/issues_manager/Issue.ts | pageErrors": {
     "message": "പേജ് പിശകുകൾ"
   },
-  "models/issues_manager/LowTextContrastIssue.ts | colorAndContrastAccessibility": {
-    "message": "നിറം, ദൃശ്യതീവ്രത ഉപയോഗസഹായി"
-  },
   "models/issues_manager/MixedContentIssue.ts | preventingMixedContent": {
     "message": "മിക്‌സഡ് ഉള്ളടക്കം തടയുന്നു"
   },
@@ -1666,6 +1708,9 @@
   },
   "models/issues_manager/SRIMessageSignatureIssue.ts | signatureBasedIntegrity": {
     "message": "ഒപ്പ് അടിസ്ഥാനമാക്കിയുള്ള സമഗ്രത"
+  },
+  "models/issues_manager/SelectivePermissionsInterventionIssue.ts | selectivePermissionsIntervention": {
+    "message": "സെലക്ടീവ് പെർമിഷൻസ് ഇന്റർവെൻഷൻ"
   },
   "models/issues_manager/SharedArrayBufferIssue.ts | enablingSharedArrayBuffer": {
     "message": "SharedArrayBuffer പ്രവർത്തനക്ഷമമാക്കുന്നു"
@@ -1751,14 +1796,14 @@
   "models/persistence/persistence-meta.ts | disableOverrideNetworkRequests": {
     "message": "ഓവർറൈഡ് നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനകൾ പ്രവർത്തനരഹിതമാക്കുക"
   },
-  "models/persistence/persistence-meta.ts | enableLocalOverrides": {
-    "message": "ലോക്കൽ ഓവർറൈഡുകൾ പ്രവർത്തനക്ഷമമാക്കുക"
-  },
   "models/persistence/persistence-meta.ts | enableOverrideNetworkRequests": {
     "message": "നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനകൾ അസാധുവാക്കൽ പ്രവർത്തനക്ഷമമാക്കുക"
   },
   "models/persistence/persistence-meta.ts | interception": {
     "message": "ഇന്റർസെപ്ഷൻ"
+  },
+  "models/persistence/persistence-meta.ts | localOverrides": {
+    "message": "പ്രാദേശിക ഓവർറൈഡുകൾ"
   },
   "models/persistence/persistence-meta.ts | network": {
     "message": "നെറ്റ്‌വർക്ക്"
@@ -2204,6 +2249,30 @@
   "models/trace/insights/Cache.ts | title": {
     "message": "കാഷെ കാലയളവ് കാര്യക്ഷമമായി ഉപയോഗിക്കുക"
   },
+  "models/trace/insights/CharacterSet.ts | description": {
+    "message": "ക്യാരക്‌ടർ എൻകോഡിംഗ് സംബന്ധിച്ച പ്രസ്താവന ആവശ്യമാണ്. HTML-ന്റെ ആദ്യത്തെ 1024 ബൈറ്റുകളിൽ മെറ്റാ ക്യാരക്‌ടർ സെറ്റ് ടാഗ് ഉപയോഗിച്ചോ Content-Type HTTP റെസ്പോൺസ് ഹെഡ്ഡറിലോ ഇത് ചെയ്യാം. [ക്യാരക്‌ടർ എൻകോഡിംഗ് പ്രസ്താവിക്കുന്നതിനെ കുറിച്ച് കൂടുതലറിയുക](https://developer.chrome.com/docs/insights/charset/)."
+  },
+  "models/trace/insights/CharacterSet.ts | failedHttpHeader": {
+    "message": "HTTP ഹെഡ്ഡറിൽ ക്യാരക്‌ടർ സെറ്റ് പ്രസ്താവിക്കുന്നില്ല"
+  },
+  "models/trace/insights/CharacterSet.ts | failedMetaCharsetLate": {
+    "message": "ആദ്യത്തെ 1024 ബൈറ്റുകൾക്ക് ശേഷം ഒരു മെറ്റാ ടാഗ് ഉപയോഗിച്ച് ക്യാരക്‌ടർ സെറ്റ് പ്രസ്താവിക്കുന്നു"
+  },
+  "models/trace/insights/CharacterSet.ts | failedMetaCharsetMissing": {
+    "message": "ഒരു മെറ്റാ ടാഗ് ഉപയോഗിച്ച് ക്യാരക്‌ടർ സെറ്റ് പ്രസ്താവിക്കുന്നില്ല"
+  },
+  "models/trace/insights/CharacterSet.ts | failedMetaCharsetUnknown": {
+    "message": "ട്രേസിൽ നിന്നുള്ള മെറ്റാ ക്യാരക്‌ടർ സെറ്റ് ഡിക്ലറേഷൻ നിർണ്ണയിക്കാനായില്ല"
+  },
+  "models/trace/insights/CharacterSet.ts | passingHttpHeader": {
+    "message": "HTTP ഹെഡ്ഡറിൽ ക്യാരക്‌ടർ സെറ്റ് പ്രസ്താവിക്കുന്നു"
+  },
+  "models/trace/insights/CharacterSet.ts | passingMetaCharsetEarly": {
+    "message": "ആദ്യത്തെ 1024 ബൈറ്റുകളിൽ മെറ്റാ ടാഗ് ഉപയോഗിച്ച് ക്യാരക്‌ടർ സെറ്റ് പ്രസ്താവിക്കുന്നു"
+  },
+  "models/trace/insights/CharacterSet.ts | title": {
+    "message": "ക്യാരക്‌ടർ എൻകോഡിംഗ് പ്രസ്താവിക്കുക"
+  },
   "models/trace/insights/DOMSize.ts | description": {
     "message": "ഒരു വലിയ DOM-ന് സ്റ്റൈൽ കാൽക്കുലേഷനുകളുടെയും ലേഔട്ട് റീഫ്ലോകളുടെയും ദൈർഘ്യം വർദ്ധിപ്പിക്കാൻ കഴിയും, ഇത് പേജ് റെസ്പോൺസീവ്നെസിനെ സ്വാധീനിക്കും. വലിയ DOM, മെമ്മറി ഉപയോഗം വർദ്ധിപ്പിക്കുകയും ചെയ്യുന്നു. [അമിതമായ DOM വലുപ്പം ഒഴിവാക്കുന്നത് എങ്ങനെയെന്ന് അറിയുക](https://developer.chrome.com/docs/performance/insights/dom-size)."
   },
@@ -2411,8 +2480,11 @@
   "models/trace/insights/LCPDiscovery.ts | fetchPriorityShouldBeApplied": {
     "message": "fetchpriority=high ബാധകമാക്കണം"
   },
+  "models/trace/insights/LCPDiscovery.ts | fetchPriorityShouldBeAppliedToImagePreload": {
+    "message": "ഇമേജ് പ്രീലോഡ് അഭ്യർത്ഥനയിൽ fetchpriority=high പ്രയോഗിക്കണം"
+  },
   "models/trace/insights/LCPDiscovery.ts | lazyLoadNotApplied": {
-    "message": "ലേസി ലോഡ് ബാധകമാക്കിയിട്ടില്ല"
+    "message": "LCP ഉറവിടങ്ങൾ loading=lazy ഉപയോഗിക്കരുത്"
   },
   "models/trace/insights/LCPDiscovery.ts | lcpLoadDelay": {
     "message": "ആദ്യ സ്റ്റാർട്ട് പോയിന്റിന് ശേഷം {PH1} കഴിഞ്ഞ് LCP ചിത്രം ലോഡ് ചെയ്തു."
@@ -2615,24 +2687,6 @@
   "panels/accessibility/ARIAAttributesView.ts | noAriaAttributes": {
     "message": "ARIA ആട്രിബ്യൂട്ടുകൾ ഒന്നുമില്ല"
   },
-  "panels/accessibility/AXBreadcrumbsPane.ts | accessibilityTree": {
-    "message": "ഉപയോഗസഹായി ട്രീ"
-  },
-  "panels/accessibility/AXBreadcrumbsPane.ts | fullTreeExperimentDescription": {
-    "message": "DOM ട്രീയുടെ മുകളിൽ വലത് കോണിലേക്ക് ഉപയോഗസഹായി ട്രീ നീക്കി."
-  },
-  "panels/accessibility/AXBreadcrumbsPane.ts | fullTreeExperimentName": {
-    "message": "പൂർണ്ണ പേജിലുള്ള ഉപയോഗസഹായി ട്രീ പ്രവർത്തനക്ഷമമാക്കുക"
-  },
-  "panels/accessibility/AXBreadcrumbsPane.ts | ignored": {
-    "message": "അവഗണിച്ചു"
-  },
-  "panels/accessibility/AXBreadcrumbsPane.ts | reloadRequired": {
-    "message": "മാറ്റം പ്രാബല്യത്തിൽ വരാൻ റീലോഡ് ചെയ്യേണ്ടതുണ്ട്"
-  },
-  "panels/accessibility/AXBreadcrumbsPane.ts | scrollIntoView": {
-    "message": "കാണാൻ സ്ക്രോൾ ചെയ്യുക"
-  },
   "panels/accessibility/AccessibilityNodeView.ts | accessibilityNodeNotExposed": {
     "message": "ഉപയോഗസഹായി നോഡ് വെളിപ്പെടുത്തിയിട്ടില്ല"
   },
@@ -2701,6 +2755,9 @@
   },
   "panels/accessibility/AccessibilityNodeView.ts | placeholderIsPlaceholderOnAncestor": {
     "message": "{PH1} എന്നത്, ആൻസെസ്‌റ്ററിൽ {PH2} ആണ്: "
+  },
+  "panels/accessibility/AccessibilitySidebarView.ts | showAccessibilityTree": {
+    "message": "ആക്‌സസിബിലിറ്റി ട്രീ കാണിക്കുക"
   },
   "panels/accessibility/AccessibilityStrings.ts | aHumanreadableVersionOfTheValue": {
     "message": "ഒരു ശ്രേണീ വിജറ്റ് മൂല്യത്തിന്റെ മനുഷ്യർക്ക് വായിക്കാനാവുന്ന പതിപ്പ് (ആവശ്യമായ സാഹചര്യത്തിൽ)."
@@ -3133,6 +3190,48 @@
   },
   "panels/ai_assistance/components/DisabledWidget.ts | turnOnForStylesRequestsPerformanceAndFiles": {
     "message": "സ്റ്റൈലുകൾ, നെറ്റ്‌വർക്ക് അഭ്യർത്ഥനകൾ, പ്രകടനം, ഫയലുകൾ എന്നിവ സംബന്ധിച്ച് സഹായം ലഭിക്കുന്നതിന് {PH1} ഓണാക്കുക"
+  },
+  "panels/ai_assistance/components/ExportForAgentsDialog.ts | asMarkdown": {
+    "message": "മാർക്ക്ഡൗൺ ആയി"
+  },
+  "panels/ai_assistance/components/ExportForAgentsDialog.ts | asPrompt": {
+    "message": "പ്രോംപ്റ്റ് ആയി"
+  },
+  "panels/ai_assistance/components/ExportForAgentsDialog.ts | copiedToClipboard": {
+    "message": "ക്ലിപ്പ്ബോർഡിലേക്ക് പകർത്തി"
+  },
+  "panels/ai_assistance/components/ExportForAgentsDialog.ts | copyToClipboard": {
+    "message": "ക്ലിപ്പ്ബോർഡിലേക്ക് പകർത്തുക"
+  },
+  "panels/ai_assistance/components/ExportForAgentsDialog.ts | disclaimer": {
+    "message": "ഇതൊരു പരീക്ഷണാത്മക AI ഫീച്ചറാണ്, എല്ലായ്‌പ്പോഴും ശരിയായിരിക്കണമെന്നില്ല. മറ്റൊരു ടൂളിലേക്ക് ഒട്ടിക്കുന്നതിന് മുമ്പ് ഈ ടെക്സ്റ്റ് വീണ്ടും പരിശോധിക്കുക."
+  },
+  "panels/ai_assistance/components/ExportForAgentsDialog.ts | exportForAgents": {
+    "message": "നിങ്ങളുടെ കോഡിംഗ് ഏജന്റിനായി പകർത്തുക"
+  },
+  "panels/ai_assistance/components/ExportForAgentsDialog.ts | generatingSummary": {
+    "message": "സംഗ്രഹം ജനറേറ്റ് ചെയ്യുന്നു…"
+  },
+  "panels/ai_assistance/components/ExportForAgentsDialog.ts | saveAsMarkdown": {
+    "message": "ഇനിപ്പറയുന്നതായി സംരക്ഷിക്കുക…"
+  },
+  "panels/ai_assistance/components/WalkthroughView.ts | close": {
+    "message": "അടയ്ക്കുക"
+  },
+  "panels/ai_assistance/components/WalkthroughView.ts | hideAgentWalkthrough": {
+    "message": "ഏജന്റ് വാക്ക്ത്രൂ മറയ്ക്കുക"
+  },
+  "panels/ai_assistance/components/WalkthroughView.ts | hideThinking": {
+    "message": "ചിന്തിക്കുന്നത് മറയ്ക്കുക"
+  },
+  "panels/ai_assistance/components/WalkthroughView.ts | showAgentWalkthrough": {
+    "message": "ഏജന്റ് വാക്ക്ത്രൂ കാണിക്കുക"
+  },
+  "panels/ai_assistance/components/WalkthroughView.ts | showThinking": {
+    "message": "ചിന്തിക്കുന്നത് കാണിക്കുക"
+  },
+  "panels/ai_assistance/components/WalkthroughView.ts | title": {
+    "message": "ഏജന്റ് വാക്ക്ത്രൂ"
   },
   "panels/animation/AnimationTimeline.ts | animationDescription": {
     "message": "ഈ പേജിൽ, നിങ്ങൾക്ക് ആനിമേഷനുകൾ പരിശോധിക്കുകയും പരിഷ്‌കരിക്കുകയും ചെയ്യാം."
@@ -3710,6 +3809,18 @@
   "panels/application/CookieItemsView.ts | showUrlDecoded": {
     "message": "ഡീകോഡ് ചെയ്ത URL കാണിക്കുക"
   },
+  "panels/application/CrashReportContextView.ts | filterByText": {
+    "message": "കീ അല്ലെങ്കിൽ മൂല്യം പ്രകാരം ഫിൽട്ടർ ചെയ്യുക"
+  },
+  "panels/application/CrashReportContextView.ts | noContext": {
+    "message": "ഫ്രെയിമുകളിലുടനീളം സന്ദർഭ എൻട്രികളൊന്നും കണ്ടെത്തിയില്ല."
+  },
+  "panels/application/CrashReportContextView.ts | refresh": {
+    "message": "റീഫ്രഷ് ചെയ്യുക"
+  },
+  "panels/application/CrashReportContextView.ts | unknownFrame": {
+    "message": "അജ്ഞാത ഫ്രെയിം"
+  },
   "panels/application/DOMStorageItemsView.ts | domStorageItemDeleted": {
     "message": "സ്റ്റോറേജ് ഇനം ഇല്ലാതാക്കി."
   },
@@ -3796,6 +3907,18 @@
   },
   "panels/application/DeviceBoundSessionsView.ts | expiryDate": {
     "message": "കാലഹരണപ്പെടുന്ന തീയതി"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedRequestNetError": {
+    "message": "നെറ്റ് പിശക്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedRequestResponseBody": {
+    "message": "പ്രതികരണ ബോഡി"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedRequestResponseCode": {
+    "message": "പ്രതികരണ പിശക് കോഡ്"
+  },
+  "panels/application/DeviceBoundSessionsView.ts | failedRequestUrl": {
+    "message": "പരാജയപ്പെട്ട അഭ്യർത്ഥനാ URL"
   },
   "panels/application/DeviceBoundSessionsView.ts | failedToRestoreKey": {
     "message": "ഡിസ്കിൽ നിന്ന് കീ പുനഃസ്ഥാപിക്കാനായില്ല"
@@ -3936,7 +4059,7 @@
     "message": "ഇല്ല"
   },
   "panels/application/DeviceBoundSessionsView.ts | noCredentials": {
-    "message": "ക്രെഡന്‍ഷ്യലുകളൊന്നുമില്ല."
+    "message": "ക്രെഡന്‍ഷ്യലുകളൊന്നുമില്ല"
   },
   "panels/application/DeviceBoundSessionsView.ts | noEvents": {
     "message": "ഇതുവരെ ഇവന്റുകളൊന്നും ലോഗ് ചെയ്തിട്ടില്ല."
@@ -4472,6 +4595,9 @@
   "panels/application/PreloadingTreeElement.ts | speculativeLoads": {
     "message": "സ്‌പെക്യുലേറ്റിവ് ലോഡുകൾ"
   },
+  "panels/application/ReportingApiTreeElement.ts | crashReportContext": {
+    "message": "ക്രാഷ് റിപ്പോർട്ട് പശ്ചാത്തലം"
+  },
   "panels/application/ReportingApiTreeElement.ts | reportingApi": {
     "message": "റിപ്പോർട്ടിംഗ് API"
   },
@@ -4795,6 +4921,93 @@
   },
   "panels/application/TrustTokensTreeElement.ts | trustTokens": {
     "message": "പ്രൈവെറ്റ് സ്റ്റേറ്റ് ടോക്കണുകൾ"
+  },
+  "panels/application/WebMCPView.ts | canceled": {
+    "message": "റദ്ദാക്കി"
+  },
+  "panels/application/WebMCPView.ts | canceledCount": {
+    "message": "{PH1} റദ്ദാക്കി"
+  },
+  "panels/application/WebMCPView.ts | clearFilters": {
+    "message": "ഫിൽട്ടറുകൾ മായ്‌ക്കുക"
+  },
+  "panels/application/WebMCPView.ts | clearLog": {
+    "message": "ലോഗ് മായ്ക്കുക"
+  },
+  "panels/application/WebMCPView.ts | close": {
+    "message": "അടയ്ക്കുക"
+  },
+  "panels/application/WebMCPView.ts | declarative": {
+    "message": "ഡിക്ലറേറ്റീവ്"
+  },
+  "panels/application/WebMCPView.ts | error": {
+    "message": "പിശക്"
+  },
+  "panels/application/WebMCPView.ts | failed": {
+    "message": "{PH1} പരാജയപ്പെട്ടു"
+  },
+  "panels/application/WebMCPView.ts | filter": {
+    "message": "ഫിൽട്ടർ"
+  },
+  "panels/application/WebMCPView.ts | frame": {
+    "message": "ഫ്രെയിം"
+  },
+  "panels/application/WebMCPView.ts | imperative": {
+    "message": "അനിവാര്യം"
+  },
+  "panels/application/WebMCPView.ts | inProgress": {
+    "message": "പുരോഗമിക്കുന്നു"
+  },
+  "panels/application/WebMCPView.ts | inProgressCount": {
+    "message": "{PH1} പുരോഗമിക്കുന്നു"
+  },
+  "panels/application/WebMCPView.ts | input": {
+    "message": "ഇൻപുട്ട്"
+  },
+  "panels/application/WebMCPView.ts | name": {
+    "message": "പേര്"
+  },
+  "panels/application/WebMCPView.ts | noCallsPlaceholder": {
+    "message": "തത്സമയ ടൂൾ കോളുകളും നിർവ്വഹണങ്ങളും ഇവിടെ കാണാൻ നിങ്ങളുടെ WebMCP ഏജന്റുമായി ഇടപഴകാൻ ആരംഭിക്കുക."
+  },
+  "panels/application/WebMCPView.ts | noCallsPlaceholderTitle": {
+    "message": "ടൂൾ ആക്റ്റിവിറ്റി"
+  },
+  "panels/application/WebMCPView.ts | noToolsPlaceholder": {
+    "message": "ഈ പേജിനായി രജിസ്റ്റർ ചെയ്ത WebMCP ടൂളുകൾ ഇവിടെ ദൃശ്യമാകും. ഇതുവരെ ടൂളുകളൊന്നും രജിസ്റ്റർ ചെയ്തിട്ടില്ല അല്ലെങ്കിൽ കണ്ടെത്തിയിട്ടില്ല."
+  },
+  "panels/application/WebMCPView.ts | noToolsPlaceholderTitle": {
+    "message": "ലഭ്യമായ WebMCP ടൂളുകൾ"
+  },
+  "panels/application/WebMCPView.ts | output": {
+    "message": "ഔട്ട്പുട്ട്"
+  },
+  "panels/application/WebMCPView.ts | pending": {
+    "message": "പുരോഗമിക്കുന്നു"
+  },
+  "panels/application/WebMCPView.ts | status": {
+    "message": "നില"
+  },
+  "panels/application/WebMCPView.ts | statusTypes": {
+    "message": "സ്റ്റാറ്റസ് തരങ്ങൾ"
+  },
+  "panels/application/WebMCPView.ts | success": {
+    "message": "വിജയകരം"
+  },
+  "panels/application/WebMCPView.ts | toolDetails": {
+    "message": "വിശദാംശങ്ങൾ"
+  },
+  "panels/application/WebMCPView.ts | toolRegistry": {
+    "message": "ലഭ്യമായ ടൂളുകൾ"
+  },
+  "panels/application/WebMCPView.ts | toolTypes": {
+    "message": "ടൂൾ തരങ്ങൾ"
+  },
+  "panels/application/WebMCPView.ts | totalCalls": {
+    "message": "മൊത്തം {PH1} കോളുകൾ"
+  },
+  "panels/application/WebMCPView.ts | viewInElementsPanel": {
+    "message": "എലമെന്റുകളുടെ പാനലിൽ കാണുക"
   },
   "panels/application/application-meta.ts | application": {
     "message": "ആപ്പ്"
@@ -5279,6 +5492,18 @@
   "panels/application/components/BounceTrackingMitigationsView.ts | stateDeletedFor": {
     "message": "ഇനിപ്പറയുന്ന സൈറ്റുകൾക്കായി നില ഇല്ലാതാക്കി:"
   },
+  "panels/application/components/CrashReportContextGrid.ts | copyKey": {
+    "message": "കീ പകർത്തുക"
+  },
+  "panels/application/components/CrashReportContextGrid.ts | copyValue": {
+    "message": "മൂല്യം പകർത്തുക"
+  },
+  "panels/application/components/CrashReportContextGrid.ts | key": {
+    "message": "കീ"
+  },
+  "panels/application/components/CrashReportContextGrid.ts | value": {
+    "message": "മൂല്യം"
+  },
   "panels/application/components/EndpointsGrid.ts | endpointsDescription": {
     "message": "റിപ്പോർട്ടുകൾ സ്വീകരിക്കുന്ന എൻഡ്‌പോയിന്റുകളുടെ ലിസ്റ്റ് നിങ്ങൾക്ക് ഇവിടെ കാണാം"
   },
@@ -5747,6 +5972,9 @@
   "panels/application/preloading/components/PreloadingString.ts | PrefetchFailedNon2XX": {
     "message": "2xx അല്ലാത്ത HTTP റെസ്പോൺസ് സ്റ്റാറ്റസ് കോഡ് കാരണം പ്രീഫെച്ച് പരാജയപ്പെട്ടു."
   },
+  "panels/application/preloading/components/PreloadingString.ts | PrefetchFailedNon2XXWithStatusCode": {
+    "message": "2xx അല്ലാത്ത HTTP റെസ്പോൺസ് സ്റ്റാറ്റസ് കോഡ് ({PH1}) കാരണം പ്രീഫെച്ച് പരാജയപ്പെട്ടു."
+  },
   "panels/application/preloading/components/PreloadingString.ts | PrefetchIneligibleRetryAfter": {
     "message": "ഒറിജിന്റെ മുമ്പത്തെ പ്രീഫെച്ചിന് \"പിന്നീട് വീണ്ടും ശ്രമിക്കുക\" ഹെഡ്ഡർ ഉള്ള ഒരു HTTP 503 പ്രതികരണം ലഭിച്ചു, അത് ഇതുവരെ കാലഹരണപ്പെട്ടിട്ടില്ല."
   },
@@ -5896,6 +6124,9 @@
   },
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusNavigationBadHttpStatus": {
     "message": "2xx അല്ലാത്ത HTTP റെസ്പോൺസ് സ്റ്റാറ്റസ് കോഡ് കാരണം പ്രീറെൻഡറിംഗ് നാവിഗേഷൻ പരാജയപ്പെട്ടു."
+  },
+  "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusNavigationBadHttpStatusWithStatusCode": {
+    "message": "2xx അല്ലാത്ത HTTP റെസ്പോൺസ് സ്റ്റാറ്റസ് കോഡ് കാരണം പ്രീറെൻഡറിംഗ് നാവിഗേഷൻ പരാജയപ്പെട്ടു ({PH1})."
   },
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusNavigationRequestBlockedByCsp": {
     "message": "ഉള്ളടക്ക സുരക്ഷാ നയം പ്രകാരം പ്രീറെൻഡറിംഗ് നാവിഗേഷൻ ബ്ലോക്ക് ചെയ്തു."
@@ -6398,9 +6629,6 @@
   "panels/common/BadgeNotification.ts | viewProfile": {
     "message": "പ്രൊഫൈൽ കാണുക"
   },
-  "panels/common/CopyChangesToPrompt.ts | responseCopiedToClipboard": {
-    "message": "പ്രതികരണം ക്ലിപ്പ്ബോർഡിലേക്ക് പകർത്തി"
-  },
   "panels/common/DOMLinkifier.ts | node": {
     "message": "<നോഡ്>"
   },
@@ -6612,7 +6840,7 @@
     "message": "ലോഗുകളിലെ സ്‌ട്രിംഗ് കണ്ടെത്തുക"
   },
   "panels/console/ConsoleView.ts | groupSimilarMessagesInConsole": {
-    "message": "സമാന സന്ദേശങ്ങൾ കൺസോളിൽ ഗ്രൂപ്പ് ചെയ്യുക"
+    "message": "സമാന സന്ദേശങ്ങൾ ഗ്രൂപ്പ് ചെയ്യുക"
   },
   "panels/console/ConsoleView.ts | hideAll": {
     "message": "എല്ലാം മറയ്ക്കുക"
@@ -6622,9 +6850,6 @@
   },
   "panels/console/ConsoleView.ts | hideMessagesFromS": {
     "message": "{PH1} എന്നതിൽ നിന്നുള്ള സന്ദേശങ്ങൾ മറയ്ക്കുക"
-  },
-  "panels/console/ConsoleView.ts | hideNetwork": {
-    "message": "നെറ്റ്‌വർക്ക് മറയ്ക്കുക"
   },
   "panels/console/ConsoleView.ts | info": {
     "message": "വിവരങ്ങൾ"
@@ -6646,6 +6871,9 @@
   },
   "panels/console/ConsoleView.ts | logXMLHttpRequests": {
     "message": "XMLHttpRequests ലോഗ് ചെയ്യൽ"
+  },
+  "panels/console/ConsoleView.ts | networkMessages": {
+    "message": "നെറ്റ്‌വർക്ക് സന്ദേശങ്ങൾ"
   },
   "panels/console/ConsoleView.ts | onlyShowMessagesFromTheCurrentContext": {
     "message": "നിലവിലെ സന്ദർഭത്തിൽ നിന്നുള്ള സന്ദേശങ്ങൾ മാത്രം കാണിക്കുക (top, iframe, worker, വിപുലീകരണം)"
@@ -6678,7 +6906,7 @@
     "message": "കൺസോൾ സൈഡ്‌ബാർ കാണിക്കുക"
   },
   "panels/console/ConsoleView.ts | showCorsErrorsInConsole": {
-    "message": "കൺസോളിൽ CORS പിശകുകൾ കാണിക്കുക"
+    "message": "കൺസോളിലെ CORS പിശകുകൾ"
   },
   "panels/console/ConsoleView.ts | treatEvaluationAsUserActivation": {
     "message": "മൂല്യനിർണ്ണയത്തെ ഉപയോക്തൃ സജീവമാക്കലായി കണക്കാക്കുക"
@@ -6818,6 +7046,12 @@
   "panels/console/console-meta.ts | console": {
     "message": "കൺസോൾ"
   },
+  "panels/console/console-meta.ts | consoleInsightTeasers": {
+    "message": "കൺസോൾ സന്ദേശങ്ങൾക്കുള്ള AI സംഗ്രഹങ്ങൾ"
+  },
+  "panels/console/console-meta.ts | corsErrorsInConsole": {
+    "message": "കൺസോളിലെ CORS പിശകുകൾ"
+  },
   "panels/console/console-meta.ts | createLiveExpression": {
     "message": "തത്സമയ എക്‌സ്പ്രഷൻ സൃഷ്‌ടിക്കുക"
   },
@@ -6830,8 +7064,8 @@
   "panels/console/console-meta.ts | doNotEagerlyEvaluateConsole": {
     "message": "കൺസോൾ പ്രോംപ്റ്റ് ടെക്സ്റ്റ് ശ്രദ്ധാപൂർവ്വം വിലയിരുത്തരുത്"
   },
-  "panels/console/console-meta.ts | doNotGroupSimilarMessagesIn": {
-    "message": "കൺസോളിൽ സമാനമായ സന്ദേശങ്ങൾ ഗ്രൂപ്പ് ചെയ്യരുത്"
+  "panels/console/console-meta.ts | doNotGroupSimilarMessages": {
+    "message": "സമാന സന്ദേശങ്ങൾ ഗ്രൂപ്പ് ചെയ്യരുത്"
   },
   "panels/console/console-meta.ts | doNotShowCorsErrorsIn": {
     "message": "കൺസോളിൽ CORS പിശകുകൾ കാണിക്കരുത്"
@@ -6851,14 +7085,17 @@
   "panels/console/console-meta.ts | expandConsoleTraceMessagesByDefault": {
     "message": "console.trace() സന്ദേശങ്ങൾ സ്വയമേവ വികസിപ്പിക്കുക"
   },
-  "panels/console/console-meta.ts | groupSimilarMessagesInConsole": {
-    "message": "സമാന സന്ദേശങ്ങൾ കൺസോളിൽ ഗ്രൂപ്പ് ചെയ്യുക"
+  "panels/console/console-meta.ts | groupSimilarMessages": {
+    "message": "സമാന സന്ദേശങ്ങൾ ഗ്രൂപ്പ് ചെയ്യുക"
   },
   "panels/console/console-meta.ts | hideNetworkMessages": {
     "message": "നെറ്റ്‌വർക്ക് സന്ദേശങ്ങൾ മറയ്ക്കുക"
   },
   "panels/console/console-meta.ts | hideTimestamps": {
     "message": "ടൈംസ്റ്റാമ്പുകൾ മറയ്ക്കുക"
+  },
+  "panels/console/console-meta.ts | networkMessages": {
+    "message": "നെറ്റ്‌വർക്ക് സന്ദേശങ്ങൾ"
   },
   "panels/console/console-meta.ts | onlyShowMessagesFromTheCurrent": {
     "message": "നിലവിലെ സന്ദർഭത്തിൽ നിന്നുള്ള സന്ദേശങ്ങൾ മാത്രം കാണിക്കുക (top, iframe, worker, വിപുലീകരണം)"
@@ -6868,9 +7105,6 @@
   },
   "panels/console/console-meta.ts | showConsole": {
     "message": "കൺസോൾ കാണിക്കുക"
-  },
-  "panels/console/console-meta.ts | showConsoleInsightTeasers": {
-    "message": "കൺസോൾ സന്ദേശങ്ങൾക്കുള്ള AI സംഗ്രഹങ്ങൾ കാണിക്കുക"
   },
   "panels/console/console-meta.ts | showCorsErrorsInConsole": {
     "message": "കൺസോളിൽ CORS പിശകുകൾ കാണിക്കുക"
@@ -7454,12 +7688,6 @@
   "panels/elements/ElementsPanel.ts | styles": {
     "message": "സ്റ്റൈലുകൾ"
   },
-  "panels/elements/ElementsPanel.ts | switchToAccessibilityTreeView": {
-    "message": "ആക്സസിബിലിറ്റി ട്രീ കാഴ്‌ചയിലേക്ക് മാറുക"
-  },
-  "panels/elements/ElementsPanel.ts | switchToDomTreeView": {
-    "message": "DOM ട്രീ കാഴ്‌ചയിലേക്ക് മാറുക"
-  },
   "panels/elements/ElementsPanel.ts | theDeferredDomNodeCouldNotBe": {
     "message": "ഡെഫേർഡ് DOM നോഡ് സാധുവായ ഒരു നോഡിലേക്ക് റിസോൾവ് ചെയ്യാനായില്ല."
   },
@@ -7517,6 +7745,9 @@
   "panels/elements/ElementsTreeElement.ts | copyXpath": {
     "message": "XPath പകർത്തുക"
   },
+  "panels/elements/ElementsTreeElement.ts | creatorAdScriptAncestry": {
+    "message": "സ്രഷ്ടാവിന്റെ പരസ്യ സ്ക്രിപ്റ്റ് ചരിത്രം"
+  },
   "panels/elements/ElementsTreeElement.ts | cut": {
     "message": "മുറിക്കുക"
   },
@@ -7552,6 +7783,9 @@
   },
   "panels/elements/ElementsTreeElement.ts | editAttribute": {
     "message": "ആട്രിബ്യൂട്ട് എഡിറ്റ് ചെയ്യുക"
+  },
+  "panels/elements/ElementsTreeElement.ts | editData": {
+    "message": "ഡാറ്റ എഡിറ്റ് ചെയ്യുക"
   },
   "panels/elements/ElementsTreeElement.ts | editText": {
     "message": "ടെക്‌സ്റ്റ് എഡിറ്റ് ചെയ്യുക"
@@ -7601,6 +7835,9 @@
   "panels/elements/ElementsTreeElement.ts | explainSubgrids": {
     "message": "സബ് ഗ്രിഡുകൾ വിശദീകരിക്കുക"
   },
+  "panels/elements/ElementsTreeElement.ts | filterListRule": {
+    "message": "ഫിൽട്ടർ ലിസ്റ്റ് നയം"
+  },
   "panels/elements/ElementsTreeElement.ts | findGridDefinition": {
     "message": "ഗ്രിഡ് നിർവചനം കണ്ടെത്തുക"
   },
@@ -7616,6 +7853,9 @@
   "panels/elements/ElementsTreeElement.ts | hideElement": {
     "message": "എലമെന്റ് മറയ്ക്കുക"
   },
+  "panels/elements/ElementsTreeElement.ts | noProvenanceAvailable": {
+    "message": "ഉറവിട ഡാറ്റ ലഭ്യമല്ല"
+  },
   "panels/elements/ElementsTreeElement.ts | openMediaPanel": {
     "message": "മീഡിയ പാനലിലേക്ക് പോകുക"
   },
@@ -7627,6 +7867,9 @@
   },
   "panels/elements/ElementsTreeElement.ts | reveal": {
     "message": "വെളിപ്പെടുത്തുക"
+  },
+  "panels/elements/ElementsTreeElement.ts | rootScriptFilterListRule": {
+    "message": "റൂട്ട് സ്ക്രിപ്റ്റ് ഫിൽട്ടർ ലിസ്റ്റ് നയം"
   },
   "panels/elements/ElementsTreeElement.ts | scrollIntoView": {
     "message": "കാണാൻ സ്ക്രോൾ ചെയ്യുക"
@@ -7652,8 +7895,8 @@
   "panels/elements/ElementsTreeElement.ts | styleScrollbars": {
     "message": "സ്ക്രോൾബാറുകൾ സ്റ്റൈൽ ചെയ്യുക"
   },
-  "panels/elements/ElementsTreeElement.ts | thisFrameWasIdentifiedAsAnAd": {
-    "message": "ഈ ഫ്രെയിം ഒരു പരസ്യ ഫ്രെയിം ആണെന്ന് തിരിച്ചറിഞ്ഞു"
+  "panels/elements/ElementsTreeElement.ts | thisElementWasIdentifiedAsAnAd": {
+    "message": "ഈ എലമെന്റ് ഒരു പരസ്യമാണെന്ന് തിരിച്ചറിഞ്ഞു"
   },
   "panels/elements/ElementsTreeElement.ts | useSInTheConsoleToReferToThis": {
     "message": "ഈ എലമെന്റിനെ കുറിച്ച് സൂചിപ്പിക്കാൻ കൺസോളിൽ {PH1} ഉപയോഗിക്കുക."
@@ -7669,6 +7912,9 @@
   },
   "panels/elements/ElementsTreeOutline.ts | pageDom": {
     "message": "പേജ് DOM"
+  },
+  "panels/elements/ElementsTreeOutline.ts | showAllLines": {
+    "message": "എല്ലാം കാണിക്കുക ({PH1} വരികൾ)"
   },
   "panels/elements/ElementsTreeOutline.ts | showAllNodesDMore": {
     "message": "എല്ലാ നോഡുകളും കാണിക്കുക ({PH1} എണ്ണം കൂടി)"
@@ -7787,6 +8033,9 @@
   "panels/elements/ShortcutTreeElement.ts | reveal": {
     "message": "വെളിപ്പെടുത്തുക"
   },
+  "panels/elements/StylePropertiesSection.ts | collapseExpandedRule": {
+    "message": "വിപുലീകരിച്ച നയം ചുരുക്കുക"
+  },
   "panels/elements/StylePropertiesSection.ts | constructedStylesheet": {
     "message": "കൺസ്ട്രക്ട് ചെയ്ത സ്റ്റൈൽ ഷീറ്റ്"
   },
@@ -7801,6 +8050,9 @@
   },
   "panels/elements/StylePropertiesSection.ts | cssSelector": {
     "message": "CSS സെലക്‌ടർ"
+  },
+  "panels/elements/StylePropertiesSection.ts | expandCollapsedRule": {
+    "message": "ചുരുക്കിയ നയം വികസിപ്പിക്കുക"
   },
   "panels/elements/StylePropertiesSection.ts | injectedStylesheet": {
     "message": "ഇഞ്ചക്റ്റ് ചെയ്ത സ്റ്റൈൽ ഷീറ്റ്"
@@ -7991,11 +8243,17 @@
   "panels/elements/components/StylePropertyEditor.ts | selectButton": {
     "message": "{propertyName} ചേർക്കുക: {propertyValue}"
   },
+  "panels/elements/elements-meta.ts | CSSDocumentationTooltip": {
+    "message": "CSS ഡോക്യുമെന്റേഷൻ ടൂൾടിപ്പ്"
+  },
   "panels/elements/elements-meta.ts | captureAreaScreenshot": {
     "message": "പ്രദേശത്തിന്റെ സ്ക്രീന്‍ഷോട്ട് ക്യാപ്‌ചർ ചെയ്യുക"
   },
   "panels/elements/elements-meta.ts | copyStyles": {
     "message": "സ്റ്റൈലുകൾ പകർത്തുക"
+  },
+  "panels/elements/elements-meta.ts | detailedInspectTooltip": {
+    "message": "വിശദമായ പരിശോധനാ ടൂൾടിപ്പ്"
   },
   "panels/elements/elements-meta.ts | duplicateElement": {
     "message": "ഡ്യൂപ്ലിക്കേറ്റ് എലമെന്റ്"
@@ -8014,6 +8272,9 @@
   },
   "panels/elements/elements-meta.ts | hideHtmlComments": {
     "message": "HTML കമന്റുകൾ മറയ്‌ക്കുക"
+  },
+  "panels/elements/elements-meta.ts | htmlComments": {
+    "message": "HTML കമന്റുകൾ"
   },
   "panels/elements/elements-meta.ts | layout": {
     "message": "ലേഔട്ട്"
@@ -8036,14 +8297,8 @@
   "panels/elements/elements-meta.ts | selectAnElementInThePageTo": {
     "message": "പരിശോധിക്കുന്നതിന് പേജിലെ ഒരു എലമെന്റ് തിരഞ്ഞെടുക്കുക"
   },
-  "panels/elements/elements-meta.ts | showCSSDocumentationTooltip": {
-    "message": "CSS ഡോക്യുമെന്റേഷൻ ടൂൾടിപ്പ് കാണിക്കുക"
-  },
   "panels/elements/elements-meta.ts | showComputedStyles": {
     "message": "കമ്പ്യൂട്ട് ചെയ്ത സ്റ്റൈലുകൾ കാണിക്കുക"
-  },
-  "panels/elements/elements-meta.ts | showDetailedInspectTooltip": {
-    "message": "വിശദമായ പരിശോധനാ ടൂൾടിപ്പ് കാണിക്കുക"
   },
   "panels/elements/elements-meta.ts | showElements": {
     "message": "എലമെന്റുകൾ കാണിക്കുക"
@@ -8066,9 +8321,6 @@
   "panels/elements/elements-meta.ts | showStyles": {
     "message": "സ്റ്റൈലുകൾ കാണിക്കുക"
   },
-  "panels/elements/elements-meta.ts | showUserAgentShadowDOM": {
-    "message": "ഉപയോക്തൃ ഏജന്റ് ഷാഡോ DOM കാണിക്കുക"
-  },
   "panels/elements/elements-meta.ts | stackTrace": {
     "message": "സ്റ്റാക്ക് ട്രെയ്സ്"
   },
@@ -8083,6 +8335,9 @@
   },
   "panels/elements/elements-meta.ts | undo": {
     "message": "പഴയപടിയാക്കുക"
+  },
+  "panels/elements/elements-meta.ts | userAgentShadowDOM": {
+    "message": "ഉപയോക്തൃ ഏജന്റ് ഷാഡോ DOM"
   },
   "panels/elements/elements-meta.ts | wordWrap": {
     "message": "വേഡ് റാപ്പ്"
@@ -8100,7 +8355,7 @@
     "message": "DevTools അടയ്ക്കുക"
   },
   "panels/emulation/DeviceModeToolbar.ts | defaultF": {
-    "message": "ഡിഫോൾട്ട്: {PH1}"
+    "message": "{PH1} (ഡിഫോൾട്ട്)"
   },
   "panels/emulation/DeviceModeToolbar.ts | devicePixelRatio": {
     "message": "ഉപകരണ പിക്‌സൽ അനുപാതം"
@@ -8112,13 +8367,16 @@
     "message": "ഉപകരണ തരം"
   },
   "panels/emulation/DeviceModeToolbar.ts | dimensions": {
-    "message": "അളവുകൾ"
+    "message": "ഡയമെൻഷനുകൾ: {PH1}"
+  },
+  "panels/emulation/DeviceModeToolbar.ts | dpr": {
+    "message": "DPR: {PH1}"
   },
   "panels/emulation/DeviceModeToolbar.ts | edit": {
     "message": "എഡിറ്റ് ചെയ്യുക…"
   },
-  "panels/emulation/DeviceModeToolbar.ts | fitToWindowF": {
-    "message": "വിൻഡോയ്‌ക്ക് അനുയോജ്യമാക്കുക ({PH1}%)"
+  "panels/emulation/DeviceModeToolbar.ts | fitToWindowPercentage": {
+    "message": "{PH1}% (വിൻഡോയ്ക്ക് അനുയോജ്യമാക്കുക)"
   },
   "panels/emulation/DeviceModeToolbar.ts | heightLeaveEmptyForFull": {
     "message": "ഉയരം (പൂർണ്ണ ഉയരത്തിന് ശൂന്യമായി വിടുക)"
@@ -8138,9 +8396,6 @@
   "panels/emulation/DeviceModeToolbar.ts | moreOptions": {
     "message": "കൂടുതൽ ഓപ്ഷനുകൾ"
   },
-  "panels/emulation/DeviceModeToolbar.ts | none": {
-    "message": "ഒന്നുമില്ല"
-  },
   "panels/emulation/DeviceModeToolbar.ts | portrait": {
     "message": "പോർട്രെയ്‌റ്റ്"
   },
@@ -8159,6 +8414,9 @@
   "panels/emulation/DeviceModeToolbar.ts | rotate": {
     "message": "റൊട്ടേറ്റ് ചെയ്യുക"
   },
+  "panels/emulation/DeviceModeToolbar.ts | screenOrientationLocked": {
+    "message": "പേജ്, സ്ക്രീൻ ഓറിയന്റേഷൻ ലോക്ക് ചെയ്തിരിക്കുന്നു"
+  },
   "panels/emulation/DeviceModeToolbar.ts | screenOrientationOptions": {
     "message": "സ്‌ക്രീൻ ഓറിയന്റേഷൻ ഓപ്ഷനുകൾ"
   },
@@ -8170,6 +8428,9 @@
   },
   "panels/emulation/DeviceModeToolbar.ts | showRulers": {
     "message": "റൂളറുകൾ കാണിക്കുക"
+  },
+  "panels/emulation/DeviceModeToolbar.ts | throttling": {
+    "message": "ത്രോട്ടിലിംഗ്"
   },
   "panels/emulation/DeviceModeToolbar.ts | toggleDualscreenMode": {
     "message": "ഇരട്ട സ്ക്രീൻ മോഡ് മാറ്റുക"
@@ -8441,24 +8702,6 @@
   "panels/issues/AffectedElementsView.ts | nElements": {
     "message": "{n,plural, =1{# എലമെന്റ്}other{# എലമെന്റുകൾ}}"
   },
-  "panels/issues/AffectedElementsWithLowContrastView.ts | contrastRatio": {
-    "message": "ദൃശ്യതീവ്രതാ അനുപാതം"
-  },
-  "panels/issues/AffectedElementsWithLowContrastView.ts | element": {
-    "message": "എലമെന്റ്"
-  },
-  "panels/issues/AffectedElementsWithLowContrastView.ts | minimumAA": {
-    "message": "കുറഞ്ഞ AA അനുപാതം"
-  },
-  "panels/issues/AffectedElementsWithLowContrastView.ts | minimumAAA": {
-    "message": "കുറഞ്ഞ AAA അനുപാതം"
-  },
-  "panels/issues/AffectedElementsWithLowContrastView.ts | textSize": {
-    "message": "ടെക്‌സ്റ്റ് വലുപ്പം"
-  },
-  "panels/issues/AffectedElementsWithLowContrastView.ts | textWeight": {
-    "message": "ടെക്‌സ്‌റ്റിന്റെ കനം"
-  },
   "panels/issues/AffectedHeavyAdView.ts | cpuPeakLimit": {
     "message": "CPU ഉപയോഗ പരിധി"
   },
@@ -8511,6 +8754,24 @@
     "message": "ലഭ്യമല്ല"
   },
   "panels/issues/AffectedResourcesView.ts | unknown": {
+    "message": "അജ്ഞാതം"
+  },
+  "panels/issues/AffectedSelectivePermissionsInterventionView.ts | adAncestry": {
+    "message": "പരസ്യത്തിന്റെ ഉറവിടം"
+  },
+  "panels/issues/AffectedSelectivePermissionsInterventionView.ts | api": {
+    "message": "API"
+  },
+  "panels/issues/AffectedSelectivePermissionsInterventionView.ts | loading": {
+    "message": "ലോഡ് ചെയ്യുന്നു…"
+  },
+  "panels/issues/AffectedSelectivePermissionsInterventionView.ts | nViolations": {
+    "message": "{n,plural, =1{# ലംഘനം}other{# ലംഘനങ്ങൾ}}"
+  },
+  "panels/issues/AffectedSelectivePermissionsInterventionView.ts | script": {
+    "message": "സ്ക്രിപ്റ്റ്"
+  },
+  "panels/issues/AffectedSelectivePermissionsInterventionView.ts | unknown": {
     "message": "അജ്ഞാതം"
   },
   "panels/issues/AffectedSharedArrayBufferIssueDetailsView.ts | aSharedarraybufferWas": {
@@ -8764,6 +9025,9 @@
   },
   "panels/issues/IssuesPane.ts | samesiteCookie": {
     "message": "SameSite കുക്കി"
+  },
+  "panels/issues/IssuesPane.ts | selectivePermissionsIntervention": {
+    "message": "സെലക്ടീവ് പെർമിഷൻസ് ഇന്റർവെൻഷൻ"
   },
   "panels/issues/components/HideIssuesMenu.ts | tooltipTitle": {
     "message": "പ്രശ്നങ്ങൾ മറയ്ക്കുക"
@@ -9148,6 +9412,12 @@
   },
   "panels/lighthouse/LighthouseStatusView.ts | ahSorryWeRanIntoAnError": {
     "message": "ക്ഷമിക്കണം! ഞങ്ങൾക്ക് ഒരു പിശകുണ്ടായി."
+  },
+  "panels/lighthouse/LighthouseStatusView.ts | aiAuditingS": {
+    "message": "AI സഹായം, {PH1} ഓഡിറ്റ് ചെയ്യുന്നു"
+  },
+  "panels/lighthouse/LighthouseStatusView.ts | aiAuditingYourWebPage": {
+    "message": "AI സഹായം നിങ്ങളുടെ വെബ് പേജ് ഓഡിറ്റ് ചെയ്യുന്നു"
   },
   "panels/lighthouse/LighthouseStatusView.ts | almostThereLighthouseIsNow": {
     "message": "ഏകദേശം പൂർത്തിയായി! Lighthouse ഇപ്പോൾ നിങ്ങളുടെ റിപ്പോർട്ട് സൃഷ്ടിക്കുന്നു."
@@ -10436,6 +10706,9 @@
   "panels/network/NetworkLogViewColumns.ts | requestHeaders": {
     "message": "ഹെഡറുകൾ അഭ്യർത്ഥിക്കുക"
   },
+  "panels/network/NetworkLogViewColumns.ts | requestNumber": {
+    "message": "അഭ്യർത്ഥന #"
+  },
   "panels/network/NetworkLogViewColumns.ts | responseHeaders": {
     "message": "പ്രതികരണ ഹെഡറുകൾ"
   },
@@ -10693,6 +10966,57 @@
   },
   "panels/network/RequestDeviceBoundSessionsView.ts | sessionId": {
     "message": "സെഷൻ ഐഡി"
+  },
+  "panels/network/RequestHeadersView.ts | earlyHintsHeaders": {
+    "message": "ഏർളി ഹിന്റ്സ് ഹെഡ്ഡറുകൾ"
+  },
+  "panels/network/RequestHeadersView.ts | fromDiskCache": {
+    "message": "(ഡിസ്‌ക് കാഷെയിൽ നിന്നുള്ളത്)"
+  },
+  "panels/network/RequestHeadersView.ts | fromEarlyHints": {
+    "message": "(ഏർളി ഹിന്റ്‌സിൽ നിന്നുള്ളവ)"
+  },
+  "panels/network/RequestHeadersView.ts | fromMemoryCache": {
+    "message": "(മെമ്മറി കാഷെയിൽ നിന്ന്)"
+  },
+  "panels/network/RequestHeadersView.ts | fromPrefetchCache": {
+    "message": "(പ്രീഫെച്ച് കാഷെയിൽ നിന്നുള്ളത്)"
+  },
+  "panels/network/RequestHeadersView.ts | fromServiceWorker": {
+    "message": "(service worker ഡൊമെയ്‌നിൽ നിന്നുള്ളത്)"
+  },
+  "panels/network/RequestHeadersView.ts | fromSignedexchange": {
+    "message": "(സൈൻ ചെയ്‌ത എക്‌സ്‌ചേഞ്ചിൽ നിന്നുള്ളത്)"
+  },
+  "panels/network/RequestHeadersView.ts | general": {
+    "message": "പൊതുവായത്"
+  },
+  "panels/network/RequestHeadersView.ts | raw": {
+    "message": "റോ ഡാറ്റ ഫയൽ"
+  },
+  "panels/network/RequestHeadersView.ts | referrerPolicy": {
+    "message": "റഫറർ നയം"
+  },
+  "panels/network/RequestHeadersView.ts | remoteAddress": {
+    "message": "റിമോട്ട് അഡ്രസ്"
+  },
+  "panels/network/RequestHeadersView.ts | requestHeaders": {
+    "message": "ഹെഡറുകൾ അഭ്യർത്ഥിക്കുക"
+  },
+  "panels/network/RequestHeadersView.ts | requestMethod": {
+    "message": "അഭ്യർത്ഥനാ രീതി"
+  },
+  "panels/network/RequestHeadersView.ts | requestUrl": {
+    "message": "URL അഭ്യർത്ഥിക്കുക"
+  },
+  "panels/network/RequestHeadersView.ts | responseHeaders": {
+    "message": "പ്രതികരണ ഹെഡറുകൾ"
+  },
+  "panels/network/RequestHeadersView.ts | revealHeaderOverrides": {
+    "message": "ഹെഡ്ഡർ അസാധുവാക്കൽ നിർവചനങ്ങൾ വെളിപ്പെടുത്തുക"
+  },
+  "panels/network/RequestHeadersView.ts | statusCode": {
+    "message": "സ്റ്റാറ്റസ് കോഡ്"
   },
   "panels/network/RequestInitiatorView.ts | noInitiator": {
     "message": "ഇനിഷ്യേറ്റർ ഡാറ്റയില്ല"
@@ -11131,60 +11455,6 @@
   },
   "panels/network/components/RequestHeaderSection.ts | provisionalHeadersAreShownDisableCache": {
     "message": "പ്രൊവിഷണൽ ഹെഡറുകൾ കാണിക്കുന്നുണ്ട്. പൂർണ്ണ ഹെഡ്ഡറുകൾ കാണാൻ കാഷെ പ്രവർത്തനരഹിതമാക്കുക."
-  },
-  "panels/network/components/RequestHeadersView.ts | earlyHintsHeaders": {
-    "message": "ഏർളി ഹിന്റ്സ് ഹെഡ്ഡറുകൾ"
-  },
-  "panels/network/components/RequestHeadersView.ts | fromDiskCache": {
-    "message": "(ഡിസ്‌ക് കാഷെയിൽ നിന്നുള്ളത്)"
-  },
-  "panels/network/components/RequestHeadersView.ts | fromEarlyHints": {
-    "message": "(ഏർളി ഹിന്റ്‌സിൽ നിന്നുള്ളവ)"
-  },
-  "panels/network/components/RequestHeadersView.ts | fromMemoryCache": {
-    "message": "(മെമ്മറി കാഷെയിൽ നിന്ന്)"
-  },
-  "panels/network/components/RequestHeadersView.ts | fromPrefetchCache": {
-    "message": "(പ്രീഫെച്ച് കാഷെയിൽ നിന്നുള്ളത്)"
-  },
-  "panels/network/components/RequestHeadersView.ts | fromServiceWorker": {
-    "message": "(service worker ഡൊമെയ്‌നിൽ നിന്നുള്ളത്)"
-  },
-  "panels/network/components/RequestHeadersView.ts | fromSignedexchange": {
-    "message": "(സൈൻ ചെയ്‌ത എക്‌സ്‌ചേഞ്ചിൽ നിന്നുള്ളത്)"
-  },
-  "panels/network/components/RequestHeadersView.ts | general": {
-    "message": "പൊതുവായത്"
-  },
-  "panels/network/components/RequestHeadersView.ts | raw": {
-    "message": "റോ ഡാറ്റ ഫയൽ"
-  },
-  "panels/network/components/RequestHeadersView.ts | referrerPolicy": {
-    "message": "റഫറർ നയം"
-  },
-  "panels/network/components/RequestHeadersView.ts | remoteAddress": {
-    "message": "റിമോട്ട് അഡ്രസ്"
-  },
-  "panels/network/components/RequestHeadersView.ts | requestHeaders": {
-    "message": "ഹെഡറുകൾ അഭ്യർത്ഥിക്കുക"
-  },
-  "panels/network/components/RequestHeadersView.ts | requestMethod": {
-    "message": "അഭ്യർത്ഥനാ രീതി"
-  },
-  "panels/network/components/RequestHeadersView.ts | requestUrl": {
-    "message": "URL അഭ്യർത്ഥിക്കുക"
-  },
-  "panels/network/components/RequestHeadersView.ts | responseHeaders": {
-    "message": "പ്രതികരണ ഹെഡറുകൾ"
-  },
-  "panels/network/components/RequestHeadersView.ts | revealHeaderOverrides": {
-    "message": "ഹെഡ്ഡർ അസാധുവാക്കൽ നിർവചനങ്ങൾ വെളിപ്പെടുത്തുക"
-  },
-  "panels/network/components/RequestHeadersView.ts | showMore": {
-    "message": "കൂടുതൽ കാണിക്കുക"
-  },
-  "panels/network/components/RequestHeadersView.ts | statusCode": {
-    "message": "സ്റ്റാറ്റസ് കോഡ്"
   },
   "panels/network/components/RequestTrustTokensView.ts | aClientprovidedArgumentWas": {
     "message": "ക്ലയന്റ് നൽകിയ ഒരു വാദം തകരാറിലായി അല്ലെങ്കിൽ അസാധുവാണ്."
@@ -11626,9 +11896,6 @@
   },
   "panels/profiler/HeapSnapshotGridNodes.ts | userObjectReachableFromWindow": {
     "message": "വിൻഡോയിൽ നിന്ന് ഉപയോക്തൃ ഒബ്‌ജക്റ്റ് ആക്സസ് ചെയ്യാനാകും"
-  },
-  "panels/profiler/HeapSnapshotProxy.ts | anErrorOccurredWhenACallToMethod": {
-    "message": "\"{PH1}\" എന്ന രീതിയിലേക്ക് കോൾ അഭ്യർത്ഥിച്ചപ്പോൾ ഒരു പിശക് സംഭവിച്ചു"
   },
   "panels/profiler/HeapSnapshotView.ts | AllocationTimelinesShowInstrumented": {
     "message": "വ്യത്യസ്ത സമയങ്ങളിലുള്ള മെമ്മറി അലോക്കേഷനുകൾ റെക്കോർഡ് ചെയ്ത്, ഇപ്പോഴും സജീവമായിരിക്കുന്ന അലോക്കേഷനുകൾ ഉള്ള ഇടവേളകൾ തിരഞ്ഞെടുത്ത് മെമ്മറി ലീക്കുകൾ ഐസൊലേറ്റ് ചെയ്യുക"
@@ -13349,9 +13616,6 @@
   "panels/settings/FrameworkIgnoreListSettingsTab.ts | customExclusionRules": {
     "message": "ഇഷ്ടാനുസൃത ഒഴിവാക്കൽ നിയമങ്ങൾ"
   },
-  "panels/settings/FrameworkIgnoreListSettingsTab.ts | enableIgnoreListing": {
-    "message": "അവഗണിക്കാവുന്നവയുടെ ലിസ്‌റ്റിംഗ് പ്രവർത്തനക്ഷമമാക്കുക"
-  },
   "panels/settings/FrameworkIgnoreListSettingsTab.ts | enableIgnoreListingTooltip": {
     "message": "എല്ലാ അവഗണിക്കൽ ലിസ്റ്റിംഗുകളും പ്രവർത്തനരഹിതമാക്കാൻ അൺചെക്ക് ചെയ്യുക"
   },
@@ -13366,6 +13630,9 @@
   },
   "panels/settings/FrameworkIgnoreListSettingsTab.ts | ignoreListContentScripts": {
     "message": "വിപുലീകരണങ്ങൾ ഉൾച്ചേർത്തിരിക്കുന്ന ഉള്ളടക്ക സ്ക്രിപ്റ്റുകൾ"
+  },
+  "panels/settings/FrameworkIgnoreListSettingsTab.ts | ignoreListing": {
+    "message": "അവഗണിക്കാവുന്നവയുടെ ലിസ്റ്റ്"
   },
   "panels/settings/FrameworkIgnoreListSettingsTab.ts | ignoreListingDescription": {
     "message": "പ്രവർത്തനക്ഷമമാക്കുമ്പോൾ, അവഗണിക്കാവുന്നവയുടെ ലിസ്റ്റിലെ സ്ക്രിപ്റ്റുകൾ ഡീബഗ്ഗർ ഒഴിവാക്കുകയും അവയെ ബാധിക്കുന്ന ഒഴിവാക്കലുകൾ മാത്രം അവഗണിക്കുകയും പൊരുത്തപ്പെടുന്ന ഫ്ലേംചാർട്ട് ഇനങ്ങളെ പ്രകടന പാനൽ ചുരുക്കുകയും ചെയ്യും."
@@ -13476,7 +13743,10 @@
     "message": "ക്രമീകരണം"
   },
   "panels/settings/SettingsScreen.ts | settingsChangedReloadDevTools": {
-    "message": "ക്രമീകരണം മാറ്റി ബാധകമാക്കാൻ, DevTools റീലോഡ് ചെയ്യുക."
+    "message": "ക്രമീകരണം മാറ്റി. ബാധകമാക്കാൻ, DevTools റീലോഡ് ചെയ്യുക."
+  },
+  "panels/settings/SettingsScreen.ts | settingsChangedRestartChrome": {
+    "message": "ക്രമീകരണം മാറ്റി. ബാധകമാക്കാൻ, Chrome റീസ്റ്റാർട്ട് ചെയ്യുക."
   },
   "panels/settings/SettingsScreen.ts | shortcuts": {
     "message": "കുറുക്കുവഴികൾ"
@@ -13570,6 +13840,9 @@
   },
   "panels/settings/emulation/DevicesSettingsTab.ts | userAgentString": {
     "message": "ഉപയോക്തൃ-ഏജന്റ് സ്ട്രിംഗ്"
+  },
+  "panels/settings/emulation/DevicesSettingsTab.ts | userAgentStringCannotBeEmpty": {
+    "message": "ഉപയോക്തൃ ഏജന്റ് സ്ട്രിംഗ് നൽകാതിരിക്കാനാകില്ല."
   },
   "panels/settings/emulation/DevicesSettingsTab.ts | userAgentType": {
     "message": "ഉപയോക്തൃ ഏജന്റ് തരം"
@@ -14616,7 +14889,7 @@
     "message": "ഇൻഡന്റേഷൻ കണ്ടെത്തരുത്"
   },
   "panels/sources/sources-meta.ts | doNotDisplayVariableValuesInline": {
-    "message": "ഡീബഗ് ചെയ്യുമ്പോൾ വേരിയബിൾ മൂല്യങ്ങൾ ഇൻലൈനിൽ പ്രദർശിപ്പിക്കരുത്"
+    "message": "വേരിയബിൾ മൂല്യങ്ങൾ ഇൻലൈനിൽ കാണിക്കരുത്"
   },
   "panels/sources/sources-meta.ts | doNotSearchInAnonymousAndContent": {
     "message": "അജ്ഞാത, ഉള്ളടക്ക സ്ക്രിപ്റ്റുകളിൽ തിരയരുത്"
@@ -14815,6 +15088,9 @@
   },
   "panels/sources/sources-meta.ts | trailing": {
     "message": "പിന്നിലുള്ള പ്രതീകങ്ങൾ"
+  },
+  "panels/sources/sources-meta.ts | variableValuesInlineWhile": {
+    "message": "വേരിയബിൾ മൂല്യങ്ങൾ ഇൻലൈനിൽ"
   },
   "panels/sources/sources-meta.ts | wasmAutoStepping": {
     "message": "Wasm ഓട്ടോ-സ്റ്റെപ്പിംഗ് ബൈറ്റ്‌കോഡ്"
@@ -15205,9 +15481,6 @@
   },
   "panels/timeline/TimelinePanel.ts | exportingFailed": {
     "message": "ട്രെയ്‌സ് എക്‌സ്‌പോർട്ട് ചെയ്യാനായില്ല"
-  },
-  "panels/timeline/TimelinePanel.ts | externalRequestReceived": {
-    "message": "DevTools എന്നതിന് ഒരു ബാഹ്യ അഭ്യർത്ഥന ലഭിച്ചു"
   },
   "panels/timeline/TimelinePanel.ts | fixMe": {
     "message": "പരിഹരിക്കൂ"
@@ -15731,9 +16004,6 @@
   "panels/timeline/TimelineUIUtils.ts | stylesheetUrl": {
     "message": "സ്റ്റൈൽ ഷീറ്റ് URL"
   },
-  "panels/timeline/TimelineUIUtils.ts | thirdPartyTable": {
-    "message": "ഒന്നാം കക്ഷി / മൂന്നാം കക്ഷി പട്ടിക"
-  },
   "panels/timeline/TimelineUIUtils.ts | timeSpentInRendering": {
     "message": "റെൻഡർ ചെയ്യാൻ ചെലവഴിച്ച സമയം"
   },
@@ -15844,6 +16114,30 @@
   },
   "panels/timeline/components/CPUThrottlingSelector.ts | recommendedThrottlingReason": {
     "message": "യഥാർത്ഥ ഉപയോക്തൃ എൻവയോൺമെന്റുകൾ സിമുലേറ്റ് ചെയ്യുന്നതിനായി ക്രമീകരണം മാറ്റുന്ന കാര്യം പരിഗണിക്കുക"
+  },
+  "panels/timeline/components/CWVMetrics.ts | dismissTitle": {
+    "message": "ഡിസ്‌മിസ് ചെയ്യുക"
+  },
+  "panels/timeline/components/CWVMetrics.ts | fieldMismatchNotice": {
+    "message": "ലോക്കൽ, ഫീൽഡ് മെട്രിക്കുകൾ [പൊരുത്തപ്പെടാത്തതിന്](https://web.dev/articles/lab-and-field-data-differences) പല കാരണങ്ങളുണ്ടാകാം. ശരാശരി ഉപയോക്താവിന്റെ ചുറ്റുപാടിനോട് കൂടുതൽ സമാനമായ ട്രെയ്സുകൾ വിശകലനം ചെയ്യാൻ [ത്രോട്ടിലിംഗ് ക്രമീകരണവും ഉപകരണ എമുലേഷനും](https://developer.chrome.com/docs/devtools/device-mode) അഡ്ജസ്റ്റ് ചെയ്യുക."
+  },
+  "panels/timeline/components/CWVMetrics.ts | fieldMismatchTitle": {
+    "message": "ഫീൽഡ്, ലോക്കൽ മെട്രിക്സ് പൊരുത്തക്കേട്"
+  },
+  "panels/timeline/components/CWVMetrics.ts | fieldScoreLabel": {
+    "message": "ഫീൽഡ് ({PH1})"
+  },
+  "panels/timeline/components/CWVMetrics.ts | metricScore": {
+    "message": "{PH1}: {PH2} {PH3} സ്‌കോർ"
+  },
+  "panels/timeline/components/CWVMetrics.ts | metricScoreUnavailable": {
+    "message": "{PH1}: ലഭ്യമല്ല"
+  },
+  "panels/timeline/components/CWVMetrics.ts | originOption": {
+    "message": "ഉറവിടം"
+  },
+  "panels/timeline/components/CWVMetrics.ts | urlOption": {
+    "message": "URL"
   },
   "panels/timeline/components/DetailsView.ts | forcedReflow": {
     "message": "റീഫ്ലോ നിർബന്ധമാക്കി"
@@ -16511,32 +16805,8 @@
   "panels/timeline/components/SidebarAnnotationsTab.ts | timeRangeTutorialTitle": {
     "message": "സമയ പരിധി നിർവ്വചിക്കുക"
   },
-  "panels/timeline/components/SidebarSingleInsightSet.ts | dismissTitle": {
-    "message": "ഡിസ്‌മിസ് ചെയ്യുക"
-  },
-  "panels/timeline/components/SidebarSingleInsightSet.ts | fieldMismatchNotice": {
-    "message": "ലോക്കൽ, ഫീൽഡ് മെട്രിക്കുകൾ [പൊരുത്തപ്പെടാത്തതിന്](https://web.dev/articles/lab-and-field-data-differences) പല കാരണങ്ങളുണ്ടാകാം. ശരാശരി ഉപയോക്താവിന്റെ ചുറ്റുപാടിനോട് കൂടുതൽ സമാനമായ ട്രെയ്സുകൾ വിശകലനം ചെയ്യാൻ [ത്രോട്ടിലിംഗ് ക്രമീകരണവും ഉപകരണ എമുലേഷനും](https://developer.chrome.com/docs/devtools/device-mode) അഡ്ജസ്റ്റ് ചെയ്യുക."
-  },
-  "panels/timeline/components/SidebarSingleInsightSet.ts | fieldMismatchTitle": {
-    "message": "ഫീൽഡ്, ലോക്കൽ മെട്രിക്സ് പൊരുത്തക്കേട്"
-  },
-  "panels/timeline/components/SidebarSingleInsightSet.ts | fieldScoreLabel": {
-    "message": "ഫീൽഡ് ({PH1})"
-  },
-  "panels/timeline/components/SidebarSingleInsightSet.ts | metricScore": {
-    "message": "{PH1}: {PH2} {PH3} സ്‌കോർ"
-  },
-  "panels/timeline/components/SidebarSingleInsightSet.ts | metricScoreUnavailable": {
-    "message": "{PH1}: ലഭ്യമല്ല"
-  },
-  "panels/timeline/components/SidebarSingleInsightSet.ts | originOption": {
-    "message": "ഉറവിടം"
-  },
   "panels/timeline/components/SidebarSingleInsightSet.ts | passedInsights": {
     "message": "പാസ് ആയ ഉൾക്കാഴ്‌ചകൾ ({PH1})"
-  },
-  "panels/timeline/components/SidebarSingleInsightSet.ts | urlOption": {
-    "message": "URL"
   },
   "panels/timeline/components/TimelineSummary.ts | rangeSS": {
     "message": "ശ്രേണി:  {PH1} – {PH2}"
@@ -16613,8 +16883,8 @@
   "panels/timeline/overlays/components/TimeRangeOverlay.ts | timeRange": {
     "message": "സമയ പരിധി"
   },
-  "panels/timeline/timeline-meta.ts | hideChromeFrameInLayersView": {
-    "message": "chrome ഫ്രെയിം ലെയർ കാഴ്ചയിൽ മറയ്‌ക്കുക"
+  "panels/timeline/timeline-meta.ts | chromeFrameInLayersView": {
+    "message": "'ലെയറുകൾ കാഴ്ചയിലെ' Chrome ഫ്രെയിം"
   },
   "panels/timeline/timeline-meta.ts | loadProfile": {
     "message": "പ്രൊഫൈൽ ലോഡ് ചെയ്യുക…"
@@ -16651,6 +16921,9 @@
   },
   "panels/timeline/timeline-meta.ts | stop": {
     "message": "നിർത്തുക"
+  },
+  "panels/timeline/timeline-meta.ts | timelineShowAllEvents": {
+    "message": "എല്ലാ ഇവന്റുകളും കാണിക്കുക"
   },
   "panels/timeline/utils/IgnoreList.ts | skip3rdPartyScripts": {
     "message": "സോഴ്‌സ് മാപ്പിൽ ignoreList ഉപയോഗിച്ച് അടയാളപ്പെടുത്തിയിരിക്കുന്നു"
@@ -16793,6 +17066,12 @@
   "panels/webauthn/WebauthnPane.ts | signCount": {
     "message": "സിഗ്‌നേച്ചറുകളുടെ എണ്ണം"
   },
+  "panels/webauthn/WebauthnPane.ts | supportsHmacSecret": {
+    "message": "hmac-secret പിന്തുണയ്ക്കുന്നു"
+  },
+  "panels/webauthn/WebauthnPane.ts | supportsHmacSecretMc": {
+    "message": "hmac-secret-mc പിന്തുണയ്ക്കുന്നു"
+  },
   "panels/webauthn/WebauthnPane.ts | supportsLargeBlob": {
     "message": "ലാർജ് ബ്ലോബ് പിന്തുണയ്ക്കുന്നു"
   },
@@ -16889,10 +17168,10 @@
   "ui/components/issue_counter/IssueLinkIcon.ts | issueUnavailable": {
     "message": "പ്രശ്നം ഇപ്പോൾ ലഭ്യമല്ല"
   },
-  "ui/components/list/List.ts | edit": {
+  "ui/components/lists/List.ts | edit": {
     "message": "എഡിറ്റ് ചെയ്യുക"
   },
-  "ui/components/list/List.ts | remove": {
+  "ui/components/lists/List.ts | remove": {
     "message": "നീക്കം ചെയ്യുക"
   },
   "ui/components/markdown_view/CodeBlock.ts | code": {
@@ -16906,6 +17185,9 @@
   },
   "ui/components/markdown_view/CodeBlock.ts | disclaimer": {
     "message": "ജാഗ്രതയോടെ കോഡ് സ്‌നിപ്പറ്റുകൾ ഉപയോഗിക്കുക"
+  },
+  "ui/components/markdown_view/CodeBlock.ts | showAllLines": {
+    "message": "എല്ലാ വരികളും കാണിക്കുക ({PH1} എണ്ണം കൂടി)"
   },
   "ui/components/panel_feedback/FeedbackButton.ts | feedback": {
     "message": "ഫീഡ്‌ബാക്ക്"
@@ -17054,8 +17336,17 @@
   "ui/legacy/Infobar.ts | dontShowAgain": {
     "message": "വീണ്ടും കാണിക്കരുത്"
   },
-  "ui/legacy/InspectorView.ts | closeDrawer": {
+  "ui/legacy/InspectorDrawerView.ts | closeDrawer": {
     "message": "ഡ്രോയർ അടയ്ക്കുക"
+  },
+  "ui/legacy/InspectorDrawerView.ts | moreTools": {
+    "message": "കൂടുതൽ ടൂളുകൾ"
+  },
+  "ui/legacy/InspectorDrawerView.ts | toggleDrawerOrientation": {
+    "message": "ഡ്രോയർ ഓറിയന്റേഷൻ ടോഗിൾ ചെയ്യുക"
+  },
+  "ui/legacy/InspectorView.ts | areYouSureYouWantToRestartChrome": {
+    "message": "Chrome പുനരാരംഭിക്കണമെന്ന് തീർച്ചയാണോ?"
   },
   "ui/legacy/InspectorView.ts | devToolsLanguageMissmatch": {
     "message": "DevTools ഇപ്പോൾ {PH1} ഭാഷയിൽ ലഭ്യമാണ്"
@@ -17072,9 +17363,6 @@
   "ui/legacy/InspectorView.ts | mainToolbar": {
     "message": "പ്രധാന ടൂൾബാർ"
   },
-  "ui/legacy/InspectorView.ts | moreTools": {
-    "message": "കൂടുതൽ ടൂളുകൾ"
-  },
   "ui/legacy/InspectorView.ts | moveToDrawer": {
     "message": "ഡ്രോയറിലേക്ക് നീക്കുക"
   },
@@ -17090,6 +17378,9 @@
   "ui/legacy/InspectorView.ts | reloadDevtools": {
     "message": "DevTools റീലോഡ് ചെയ്യുക"
   },
+  "ui/legacy/InspectorView.ts | restartChrome": {
+    "message": "Chrome റീസ്‌റ്റാർട്ട് ചെയ്യുക"
+  },
   "ui/legacy/InspectorView.ts | selectFolder": {
     "message": "ഫോൾഡർ തിരഞ്ഞെടുക്കുക"
   },
@@ -17101,9 +17392,6 @@
   },
   "ui/legacy/InspectorView.ts | setToSpecificLanguage": {
     "message": "DevTools {PH1} ഭാഷയിലേക്ക് മാറ്റുക"
-  },
-  "ui/legacy/InspectorView.ts | toggleDrawerOrientation": {
-    "message": "ഡ്രോയർ ഓറിയന്റേഷൻ ടോഗിൾ ചെയ്യുക"
   },
   "ui/legacy/ListWidget.ts | addString": {
     "message": "ചേർക്കുക"
@@ -17257,6 +17545,9 @@
   },
   "ui/legacy/Toolbar.ts | pressed": {
     "message": "അമർത്തിയിരിക്കുന്നു"
+  },
+  "ui/legacy/Toolbar.ts | useRegularExpression": {
+    "message": "റെഗുലർ എക്‌സ്‌പ്രഷൻ ഉപയോഗിക്കുക"
   },
   "ui/legacy/UIUtils.ts | anonymous": {
     "message": "(അജ്ഞാതം)"
@@ -17717,6 +18008,9 @@
   "ui/legacy/components/perf_ui/FlameChart.ts | sSelected": {
     "message": "{PH1} തിരഞ്ഞെടുത്തു"
   },
+  "ui/legacy/components/perf_ui/GCActionDelegate.ts | garbageCollectionCompleted": {
+    "message": "മാലിന്യ ശേഖരണം പൂർത്തിയായി"
+  },
   "ui/legacy/components/perf_ui/NetworkPriorities.ts | high": {
     "message": "ഉയർന്നത്"
   },
@@ -17781,7 +18075,7 @@
     "message": "കമാൻഡ് റൺ ചെയ്യുക"
   },
   "ui/legacy/components/quick_open/CommandMenu.ts | settingsChangedReloadDevTools": {
-    "message": "ക്രമീകരണം മാറ്റി ബാധകമാക്കാൻ, DevTools റീലോഡ് ചെയ്യുക."
+    "message": "ക്രമീകരണം മാറ്റി. ബാധകമാക്കാൻ, DevTools റീലോഡ് ചെയ്യുക."
   },
   "ui/legacy/components/quick_open/FilteredListWidget.ts | newFeature": {
     "message": "ഇതൊരു പുതിയ ഫീച്ചറാണ്"
@@ -17808,7 +18102,7 @@
     "message": "കമാൻഡ് റൺ ചെയ്യുക"
   },
   "ui/legacy/components/settings_ui/SettingsUI.ts | settingsChangedReloadDevTools": {
-    "message": "ക്രമീകരണം മാറ്റി ബാധകമാക്കാൻ, DevTools റീലോഡ് ചെയ്യുക."
+    "message": "ക്രമീകരണം മാറ്റി. ബാധകമാക്കാൻ, DevTools റീലോഡ് ചെയ്യുക."
   },
   "ui/legacy/components/settings_ui/SettingsUI.ts | srequiresReload": {
     "message": "*റീലോഡ് ചെയ്യേണ്ടതുണ്ട്"
@@ -17962,9 +18256,6 @@
   },
   "ui/legacy/components/utils/JSPresentationUtils.ts | showMoreFrames": {
     "message": "നിരസിക്കൽ ലിസ്റ്റിലുള്ള ഫ്രെയിമുകൾ കാണിക്കുക"
-  },
-  "ui/legacy/components/utils/JSPresentationUtils.ts | unknownSource": {
-    "message": "അജ്ഞാതം"
   },
   "ui/legacy/components/utils/Linkifier.ts | auto": {
     "message": "സ്വയമേവ"

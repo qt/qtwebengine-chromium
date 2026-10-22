@@ -5,6 +5,7 @@
 #include "public/fpdf_edit.h"
 
 #include "core/fpdfapi/page/test_with_page_module.h"
+#include "public/cpp/fpdf_scopers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using PDFEditTest = TestWithPageModule;
@@ -17,23 +18,21 @@ TEST_F(PDFEditTest, LineJoin) {
   EXPECT_FALSE(FPDFPageObj_SetLineJoin(nullptr, 3));
   EXPECT_FALSE(FPDFPageObj_SetLineJoin(nullptr, 1000));
 
-  FPDF_PAGEOBJECT path = FPDFPageObj_CreateNewPath(0, 0);
-  EXPECT_EQ(FPDF_LINEJOIN_MITER, FPDFPageObj_GetLineJoin(path));
+  ScopedFPDFPageObject path(FPDFPageObj_CreateNewPath(0, 0));
+  EXPECT_EQ(FPDF_LINEJOIN_MITER, FPDFPageObj_GetLineJoin(path.get()));
 
-  EXPECT_FALSE(FPDFPageObj_SetLineJoin(path, -1));
-  EXPECT_FALSE(FPDFPageObj_SetLineJoin(path, 3));
-  EXPECT_FALSE(FPDFPageObj_SetLineJoin(path, 1000));
+  EXPECT_FALSE(FPDFPageObj_SetLineJoin(path.get(), -1));
+  EXPECT_FALSE(FPDFPageObj_SetLineJoin(path.get(), 3));
+  EXPECT_FALSE(FPDFPageObj_SetLineJoin(path.get(), 1000));
 
-  EXPECT_TRUE(FPDFPageObj_SetLineJoin(path, FPDF_LINEJOIN_BEVEL));
-  EXPECT_EQ(FPDF_LINEJOIN_BEVEL, FPDFPageObj_GetLineJoin(path));
+  EXPECT_TRUE(FPDFPageObj_SetLineJoin(path.get(), FPDF_LINEJOIN_BEVEL));
+  EXPECT_EQ(FPDF_LINEJOIN_BEVEL, FPDFPageObj_GetLineJoin(path.get()));
 
-  EXPECT_TRUE(FPDFPageObj_SetLineJoin(path, FPDF_LINEJOIN_ROUND));
-  EXPECT_EQ(FPDF_LINEJOIN_ROUND, FPDFPageObj_GetLineJoin(path));
+  EXPECT_TRUE(FPDFPageObj_SetLineJoin(path.get(), FPDF_LINEJOIN_ROUND));
+  EXPECT_EQ(FPDF_LINEJOIN_ROUND, FPDFPageObj_GetLineJoin(path.get()));
 
-  EXPECT_TRUE(FPDFPageObj_SetLineJoin(path, FPDF_LINEJOIN_MITER));
-  EXPECT_EQ(FPDF_LINEJOIN_MITER, FPDFPageObj_GetLineJoin(path));
-
-  FPDFPageObj_Destroy(path);
+  EXPECT_TRUE(FPDFPageObj_SetLineJoin(path.get(), FPDF_LINEJOIN_MITER));
+  EXPECT_EQ(FPDF_LINEJOIN_MITER, FPDFPageObj_GetLineJoin(path.get()));
 }
 
 TEST_F(PDFEditTest, LineCap) {
@@ -44,21 +43,20 @@ TEST_F(PDFEditTest, LineCap) {
   EXPECT_FALSE(FPDFPageObj_SetLineCap(nullptr, 3));
   EXPECT_FALSE(FPDFPageObj_SetLineCap(nullptr, 1000));
 
-  FPDF_PAGEOBJECT path = FPDFPageObj_CreateNewPath(0, 0);
-  EXPECT_EQ(FPDF_LINECAP_BUTT, FPDFPageObj_GetLineCap(path));
+  ScopedFPDFPageObject path(FPDFPageObj_CreateNewPath(0, 0));
+  EXPECT_EQ(FPDF_LINECAP_BUTT, FPDFPageObj_GetLineCap(path.get()));
 
-  EXPECT_FALSE(FPDFPageObj_SetLineCap(path, -1));
-  EXPECT_FALSE(FPDFPageObj_SetLineCap(path, 3));
-  EXPECT_FALSE(FPDFPageObj_SetLineCap(path, 1000));
+  EXPECT_FALSE(FPDFPageObj_SetLineCap(path.get(), -1));
+  EXPECT_FALSE(FPDFPageObj_SetLineCap(path.get(), 3));
+  EXPECT_FALSE(FPDFPageObj_SetLineCap(path.get(), 1000));
 
-  EXPECT_TRUE(FPDFPageObj_SetLineCap(path, FPDF_LINECAP_PROJECTING_SQUARE));
-  EXPECT_EQ(FPDF_LINECAP_PROJECTING_SQUARE, FPDFPageObj_GetLineCap(path));
+  EXPECT_TRUE(
+      FPDFPageObj_SetLineCap(path.get(), FPDF_LINECAP_PROJECTING_SQUARE));
+  EXPECT_EQ(FPDF_LINECAP_PROJECTING_SQUARE, FPDFPageObj_GetLineCap(path.get()));
 
-  EXPECT_TRUE(FPDFPageObj_SetLineCap(path, FPDF_LINECAP_ROUND));
-  EXPECT_EQ(FPDF_LINECAP_ROUND, FPDFPageObj_GetLineCap(path));
+  EXPECT_TRUE(FPDFPageObj_SetLineCap(path.get(), FPDF_LINECAP_ROUND));
+  EXPECT_EQ(FPDF_LINECAP_ROUND, FPDFPageObj_GetLineCap(path.get()));
 
-  EXPECT_TRUE(FPDFPageObj_SetLineCap(path, FPDF_LINECAP_BUTT));
-  EXPECT_EQ(FPDF_LINECAP_BUTT, FPDFPageObj_GetLineCap(path));
-
-  FPDFPageObj_Destroy(path);
+  EXPECT_TRUE(FPDFPageObj_SetLineCap(path.get(), FPDF_LINECAP_BUTT));
+  EXPECT_EQ(FPDF_LINECAP_BUTT, FPDFPageObj_GetLineCap(path.get()));
 }

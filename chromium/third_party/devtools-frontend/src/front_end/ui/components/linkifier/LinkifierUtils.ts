@@ -5,6 +5,9 @@
 import type * as Platform from '../../../core/platform/platform.js';
 import * as Bindings from '../../../models/bindings/bindings.js';
 
+/**
+ * @deprecated do not use
+ */
 export function linkText(url: Platform.DevToolsPath.UrlString, lineNumber?: number): string {
   if (url) {
     const displayName = Bindings.ResourceUtils.displayNameForURL(url);

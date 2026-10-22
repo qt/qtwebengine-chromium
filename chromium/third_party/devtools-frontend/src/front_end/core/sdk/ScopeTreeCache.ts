@@ -25,6 +25,10 @@ const scopeTrees = new WeakMap<Script, Promise<{scopeTree: ScopeTreeNode, text: 
  * and the text allows conversion from/to line/column numbers.
  */
 export function scopeTreeForScript(script: Script): Promise<{scopeTree: ScopeTreeNode, text: Text}|null> {
+  if (script.isWasm()) {
+    return Promise.resolve(null);
+  }
+
   let promise = scopeTrees.get(script);
   if (promise === undefined) {
     promise = script.requestContentData().then(content => {

@@ -49,19 +49,17 @@ class CPDFSecurityHandlerEmbedderTest : public EmbedderTest {
   }
 
   void VerifySavedHelloWorldDocumentWithPassword(const char* password) {
-    ASSERT_TRUE(OpenSavedDocumentWithPassword(password));
-    FPDF_PAGE page = LoadSavedPage(0);
-    VerifyHelloWorldPage(page);
-    CloseSavedPage(page);
-    CloseSavedDocument();
+    ScopedSavedDoc doc = OpenScopedSavedDocumentWithPassword(password);
+    ASSERT_TRUE(doc);
+    ScopedSavedPage page = LoadScopedSavedPage(0);
+    VerifyHelloWorldPage(page.get());
   }
 
   void VerifySavedModifiedHelloWorldDocumentWithPassword(const char* password) {
-    ASSERT_TRUE(OpenSavedDocumentWithPassword(password));
-    FPDF_PAGE page = LoadSavedPage(0);
-    VerifyModifiedHelloWorldPage(page);
-    CloseSavedPage(page);
-    CloseSavedDocument();
+    ScopedSavedDoc doc = OpenScopedSavedDocumentWithPassword(password);
+    ASSERT_TRUE(doc);
+    ScopedSavedPage page = LoadScopedSavedPage(0);
+    VerifyModifiedHelloWorldPage(page.get());
   }
 
   void RemoveTrailerIdFromDocument() {
@@ -93,16 +91,16 @@ class CPDFSecurityHandlerEmbedderTest : public EmbedderTest {
     ASSERT_TRUE(page);
 
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmapToPngWithExpectationSuffix(page_bitmap.get(),
-                                            pdfium::kHelloWorldPng);
+    CompareBitmapWithExpectationSuffix(page_bitmap.get(),
+                                       pdfium::kHelloWorldPng);
   }
 
   void VerifyModifiedHelloWorldPage(FPDF_PAGE page) {
     ASSERT_TRUE(page);
 
     ScopedFPDFBitmap page_bitmap = RenderPage(page);
-    CompareBitmapToPngWithExpectationSuffix(page_bitmap.get(),
-                                            pdfium::kHelloWorldRemovedPng);
+    CompareBitmapWithExpectationSuffix(page_bitmap.get(),
+                                       pdfium::kHelloWorldRemovedPng);
   }
 };
 
@@ -154,7 +152,7 @@ TEST_F(CPDFSecurityHandlerEmbedderTest, PasswordAfterGenerateSave) {
     EXPECT_TRUE(FPDFPath_SetDrawMode(red_rect, FPDF_FILLMODE_ALTERNATE, 0));
     FPDFPage_InsertObject(page.get(), red_rect);
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(), kBasename);
+    CompareBitmapWithExpectationSuffix(bitmap.get(), kBasename);
     EXPECT_TRUE(FPDFPage_GenerateContent(page.get()));
     SetWholeFileAvailable();
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
@@ -173,14 +171,12 @@ TEST_F(CPDFSecurityHandlerEmbedderTest, PasswordAfterGenerateSave) {
   } tests[] = {{"1234", 0xFFFFF2C0}, {"5678", 0xFFFFFFFC}};
 
   for (const auto& test : tests) {
-    ASSERT_TRUE(OpenSavedDocumentWithPassword(test.password));
-    FPDF_PAGE page = LoadSavedPage(0);
+    ScopedSavedDoc doc = OpenScopedSavedDocumentWithPassword(test.password);
+    ASSERT_TRUE(doc);
+    ScopedSavedPage page = LoadScopedSavedPage(0);
     ASSERT_TRUE(page);
-    VerifySavedRenderingToPngWithExpectationSuffix(page, kBasename);
+    VerifySavedRenderingWithExpectationSuffix(page.get(), kBasename);
     EXPECT_EQ(test.permissions, FPDF_GetDocPermissions(saved_document()));
-
-    CloseSavedPage(page);
-    CloseSavedDocument();
   }
 }
 

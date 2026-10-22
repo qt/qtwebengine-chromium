@@ -22,10 +22,11 @@
 #include "state_tracker/image_state.h"
 #include "state_tracker/state_tracker.h"
 #include "state_tracker/fence_state.h"
+#include "state_tracker/queue_state.h"
 #include "state_tracker/semaphore_state.h"
 #include "generated/dispatch_functions.h"
 
-static vku::safe_VkImageCreateInfo GetImageCreateInfo(const VkSwapchainCreateInfoKHR *pCreateInfo) {
+static vku::safe_VkImageCreateInfo GetImageCreateInfo(const VkSwapchainCreateInfoKHR* pCreateInfo) {
     VkImageCreateInfo image_ci = vku::InitStructHelper();
     // Pull out the format list only. This stack variable will get copied onto the heap
     // by the 'safe' constructor used to build the return value below.
@@ -78,7 +79,7 @@ void SwapchainImage::ResetAcquireState() {
 
 void SwapchainImage::ResetPresentWaitSemaphores() {
     const bool swapchain_has_completed_presentation = !present_wait_semaphores.empty();
-    for (auto &semaphore : present_wait_semaphores) {
+    for (auto& semaphore : present_wait_semaphores) {
         semaphore->ClearSwapchainWaitInfo();
     }
     present_wait_semaphores.clear();
@@ -88,15 +89,15 @@ void SwapchainImage::ResetPresentWaitSemaphores() {
     // from the old swapchain as not in-use.
     // NOTE: that's the algorithm we use to track old semaphores without swapchain maintenance1 extension.
     if (swapchain_has_completed_presentation && image_state->bind_swapchain) {
-        for (auto &old_present_wait_semaphore : image_state->bind_swapchain->old_swapchain_present_wait_semaphores) {
+        for (auto& old_present_wait_semaphore : image_state->bind_swapchain->old_swapchain_present_wait_semaphores) {
             old_present_wait_semaphore->ClearSwapchainWaitInfo();
         }
         image_state->bind_swapchain->old_swapchain_present_wait_semaphores.clear();
     }
 }
 
-Swapchain::Swapchain(vvl::DeviceState &dev_data_, const VkSwapchainCreateInfoKHR *pCreateInfo, VkSwapchainKHR handle)
-    : StateObject(handle, kVulkanObjectTypeSwapchainKHR),
+Swapchain::Swapchain(vvl::DeviceState& dev_data_, const VkSwapchainCreateInfoKHR* pCreateInfo, VkSwapchainKHR handle)
+    : RefcountedStateObject(handle, kVulkanObjectTypeSwapchainKHR),
       safe_create_info(pCreateInfo),
       create_info(*safe_create_info.ptr()),
       images(),
@@ -121,7 +122,32 @@ Swapchain::Swapchain(vvl::DeviceState &dev_data_, const VkSwapchainCreateInfoKHR
     }
 }
 
-void Swapchain::PresentImage(uint32_t image_index, uint64_t present_id, const SubmissionReference &present_submission_ref,
+const VulkanTypedHandle* Swapchain::InUse() const {
+    // Swapchain's parents are swapchain images (in the sense of VVL state object hierarchy).
+    // The typed handle returned by the base class InUse is not useful for reporting
+    // (it is swapchain image). Use it only to get boolean in use status.
+    const bool in_use = RefcountedStateObject::InUse() != nullptr;
+    if (!in_use) {
+        return nullptr;
+    }
+
+    // a) either there is a queue with pending present operations
+    for (const SwapchainImage& image : images) {
+        if (image.present_submission_ref.has_value()) {
+            return &image.present_submission_ref->queue->Handle();
+        }
+    }
+    // b) or acquired swapchain image is in use (e.g. layout transition was recorded and submitted)
+    for (const SwapchainImage& image : images) {
+        if (image.image_state->InUse()) {
+            return &image.image_state->Handle();
+        }
+    }
+    assert(false && "Can't find queue that uses the swapchain or another usage of swapchain image");
+    return nullptr;
+}
+
+void Swapchain::PresentImage(uint32_t image_index, uint64_t present_id, const SubmissionReference& present_submission_ref,
                              vvl::span<std::shared_ptr<vvl::Semaphore>> present_wait_semaphores) {
     if (image_index >= images.size()) {
         return;
@@ -135,7 +161,7 @@ void Swapchain::PresentImage(uint32_t image_index, uint64_t present_id, const Su
 
     images[image_index].present_submission_ref = present_submission_ref;
     images[image_index].present_wait_semaphores.clear();
-    for (const auto &semaphore : present_wait_semaphores) {
+    for (const auto& semaphore : present_wait_semaphores) {
         images[image_index].present_wait_semaphores.emplace_back(semaphore);
     }
 
@@ -144,7 +170,7 @@ void Swapchain::PresentImage(uint32_t image_index, uint64_t present_id, const Su
     // Old swapchain can't track semaphore in-use status anymore. That functionality is part of acquire logic
     // and old swapchain can't acquire new images.
     if (new_swapchain) {
-        auto &old_wait_semaphores = new_swapchain->old_swapchain_present_wait_semaphores;
+        auto& old_wait_semaphores = new_swapchain->old_swapchain_present_wait_semaphores;
         old_wait_semaphores.insert(old_wait_semaphores.end(), present_wait_semaphores.begin(), present_wait_semaphores.end());
     }
 
@@ -173,8 +199,8 @@ void Swapchain::ReleaseImage(uint32_t image_index) {
     }
 }
 
-void Swapchain::AcquireImage(uint32_t image_index, const std::shared_ptr<vvl::Semaphore> &semaphore_state,
-                             const std::shared_ptr<vvl::Fence> &fence_state) {
+void Swapchain::AcquireImage(uint32_t image_index, const std::shared_ptr<vvl::Semaphore>& semaphore_state,
+                             const std::shared_ptr<vvl::Fence>& fence_state) {
     acquired_images++;
     images[image_index].acquired = true;
     images[image_index].acquire_semaphore = semaphore_state;
@@ -204,9 +230,6 @@ void Swapchain::AcquireImage(uint32_t image_index, const std::shared_ptr<vvl::Se
             images[image_index].present_submission_ref.reset();
         }
     }
-    if (shared_presentable) {
-        images[image_index].image_state->shared_presentable = shared_presentable;
-    }
     images[image_index].ResetPresentWaitSemaphores();
 
     acquire_history_ring_buffer[acquire_request_count % acquire_history_ring_buffer_size] = image_index;
@@ -214,11 +237,35 @@ void Swapchain::AcquireImage(uint32_t image_index, const std::shared_ptr<vvl::Se
 }
 
 void Swapchain::Destroy() {
-    for (auto &swapchain_image : images) {
+    for (auto& swapchain_image : images) {
         swapchain_image.ResetPresentWaitSemaphores();
         RemoveParent(swapchain_image.image_state);
-        dev_data.Destroy<vvl::Image>(swapchain_image.image_state->VkHandle());
-        // NOTE: We don't have access to dev_data.fake_memory.Free() here, but it is currently a no-op
+
+        bool destroy_image_state = true;
+        {
+            // A. We are destroying old swapchain, but the image state is still used by the new swapchain
+            if (new_swapchain) {
+                for (const SwapchainImage& new_swapchain_image : new_swapchain->images) {
+                    if (new_swapchain_image.image_state == swapchain_image.image_state) {
+                        destroy_image_state = false;
+                        break;
+                    }
+                }
+            }
+            // B. We are destroying new swapchain, but the image state is still used by the old swapchain
+            // (old swapchain is allowed to outlive new swapchain)
+            if (auto p_old_swapchain = old_swapchain.lock()) {
+                for (const SwapchainImage& old_swapchain_image : p_old_swapchain->images) {
+                    if (old_swapchain_image.image_state == swapchain_image.image_state) {
+                        destroy_image_state = false;
+                        break;
+                    }
+                }
+            }
+        }
+        if (destroy_image_state) {
+            dev_data.Destroy<vvl::Image>(swapchain_image.image_state->VkHandle());
+        }
     }
     images.clear();
 
@@ -243,7 +290,7 @@ void Swapchain::Destroy() {
     StateObject::Destroy();
 }
 
-void Swapchain::NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) {
+void Swapchain::NotifyInvalidate(const StateObject::NodeList& invalid_nodes, bool unlink) {
     StateObject::NotifyInvalidate(invalid_nodes, unlink);
     if (unlink) {
         surface = nullptr;
@@ -304,7 +351,7 @@ void Surface::Destroy() {
     StateObject::Destroy();
 }
 
-void Surface::RemoveParent(StateObject *parent_node) {
+void Surface::RemoveParent(StateObject* parent_node) {
     if (swapchain == parent_node) {
         swapchain = nullptr;
     }
@@ -356,14 +403,14 @@ std::vector<VkPresentModeKHR> Surface::GetPresentModes(VkPhysicalDevice phys_dev
     return present_modes;
 }
 
-void Surface::SetFormats(VkPhysicalDevice phys_dev, std::vector<vku::safe_VkSurfaceFormat2KHR> &&fmts) {
+void Surface::SetFormats(VkPhysicalDevice phys_dev, std::vector<vku::safe_VkSurfaceFormat2KHR>&& fmts) {
     auto guard = Lock();
     assert(phys_dev);
     formats_[phys_dev] = std::move(fmts);
 }
 
 vvl::span<const vku::safe_VkSurfaceFormat2KHR> Surface::GetFormats(bool get_surface_capabilities2, VkPhysicalDevice phys_dev,
-                                                                   const void *surface_info2_pnext) const {
+                                                                   const void* surface_info2_pnext) const {
     auto guard = Lock();
 
     // TODO: BUG: format also depends on pNext. Rework this function similar to GetSurfaceCapabilities
@@ -403,7 +450,7 @@ vvl::span<const vku::safe_VkSurfaceFormat2KHR> Surface::GetFormats(bool get_surf
         } else {
             result.reserve(count);
             VkSurfaceFormat2KHR format2 = vku::InitStructHelper();
-            for (const auto &format : formats) {
+            for (const auto& format : formats) {
                 format2.surfaceFormat = format;
                 result.emplace_back(&format2);
             }
@@ -413,8 +460,8 @@ vvl::span<const vku::safe_VkSurfaceFormat2KHR> Surface::GetFormats(bool get_surf
     return vvl::span<const vku::safe_VkSurfaceFormat2KHR>(formats_[phys_dev]);
 }
 
-const Surface::PresentModeInfo *Surface::PhysDevCache::GetPresentModeInfo(VkPresentModeKHR present_mode) const {
-    for (auto &info : present_mode_infos) {
+const Surface::PresentModeInfo* Surface::PhysDevCache::GetPresentModeInfo(VkPresentModeKHR present_mode) const {
+    for (auto& info : present_mode_infos) {
         if (info.present_mode == present_mode) {
             return &info;
         }
@@ -422,26 +469,26 @@ const Surface::PresentModeInfo *Surface::PhysDevCache::GetPresentModeInfo(VkPres
     return nullptr;
 }
 
-const Surface::PhysDevCache *Surface::GetPhysDevCache(VkPhysicalDevice phys_dev) const {
+const Surface::PhysDevCache* Surface::GetPhysDevCache(VkPhysicalDevice phys_dev) const {
     auto it = cache_.find(phys_dev);
     return (it == cache_.end()) ? nullptr : &it->second;
 }
 
-void Surface::UpdateCapabilitiesCache(VkPhysicalDevice phys_dev, const VkSurfaceCapabilitiesKHR &surface_caps) {
+void Surface::UpdateCapabilitiesCache(VkPhysicalDevice phys_dev, const VkSurfaceCapabilitiesKHR& surface_caps) {
     auto guard = Lock();
-    PhysDevCache &cache = cache_[phys_dev];
+    PhysDevCache& cache = cache_[phys_dev];
     cache.capabilities = surface_caps;
     cache.last_capability_query_used_present_mode = false;
 }
 
-void Surface::UpdateCapabilitiesCache(VkPhysicalDevice phys_dev, const VkSurfaceCapabilities2KHR &surface_caps,
+void Surface::UpdateCapabilitiesCache(VkPhysicalDevice phys_dev, const VkSurfaceCapabilities2KHR& surface_caps,
                                       VkPresentModeKHR present_mode) {
     auto guard = Lock();
-    auto &cache = cache_[phys_dev];
+    auto& cache = cache_[phys_dev];
 
     // Get entry for the given presentation mode
-    PresentModeInfo *info = nullptr;
-    for (auto &cur_info : cache.present_mode_infos) {
+    PresentModeInfo* info = nullptr;
+    for (auto& cur_info : cache.present_mode_infos) {
         if (cur_info.present_mode == present_mode) {
             info = &cur_info;
             break;
@@ -455,11 +502,11 @@ void Surface::UpdateCapabilitiesCache(VkPhysicalDevice phys_dev, const VkSurface
 
     // Update entry
     info->surface_capabilities = surface_caps.surfaceCapabilities;
-    const auto *present_scaling_caps = vku::FindStructInPNextChain<VkSurfacePresentScalingCapabilitiesKHR>(surface_caps.pNext);
+    const auto* present_scaling_caps = vku::FindStructInPNextChain<VkSurfacePresentScalingCapabilitiesKHR>(surface_caps.pNext);
     if (present_scaling_caps) {
         info->scaling_capabilities = *present_scaling_caps;
     }
-    const auto *compat_modes = vku::FindStructInPNextChain<VkSurfacePresentModeCompatibilityKHR>(surface_caps.pNext);
+    const auto* compat_modes = vku::FindStructInPNextChain<VkSurfacePresentModeCompatibilityKHR>(surface_caps.pNext);
     if (compat_modes && compat_modes->pPresentModes) {
         info->compatible_present_modes.emplace(compat_modes->pPresentModes,
                                                compat_modes->pPresentModes + compat_modes->presentModeCount);
@@ -474,7 +521,7 @@ bool Surface::IsLastCapabilityQueryUsedPresentMode(VkPhysicalDevice phys_dev) co
     return false;
 }
 
-VkSurfaceCapabilitiesKHR Surface::GetSurfaceCapabilities(VkPhysicalDevice phys_dev, const void *surface_info_pnext) const {
+VkSurfaceCapabilitiesKHR Surface::GetSurfaceCapabilities(VkPhysicalDevice phys_dev, const void* surface_info_pnext) const {
     if (!surface_info_pnext) {
         if (auto guard = Lock(); auto cache = GetPhysDevCache(phys_dev)) {
             if (cache->capabilities.has_value()) {
@@ -487,11 +534,11 @@ VkSurfaceCapabilitiesKHR Surface::GetSurfaceCapabilities(VkPhysicalDevice phys_d
     }
 
     // Per present mode caching is supported for a common case when pNext chain is a single VkSurfacePresentModeKHR structure.
-    const auto *surface_present_mode = vku::FindStructInPNextChain<VkSurfacePresentModeKHR>(surface_info_pnext);
-    const bool single_pnext_element = static_cast<const VkBaseInStructure *>(surface_info_pnext)->pNext == nullptr;
+    const auto* surface_present_mode = vku::FindStructInPNextChain<VkSurfacePresentModeKHR>(surface_info_pnext);
+    const bool single_pnext_element = static_cast<const VkBaseInStructure*>(surface_info_pnext)->pNext == nullptr;
     if (surface_present_mode && single_pnext_element) {
         if (auto guard = Lock(); auto cache = GetPhysDevCache(phys_dev)) {
-            const PresentModeInfo *info = cache->GetPresentModeInfo(surface_present_mode->presentMode);
+            const PresentModeInfo* info = cache->GetPresentModeInfo(surface_present_mode->presentMode);
             if (info) {
                 return info->surface_capabilities;
             }
@@ -515,7 +562,7 @@ VkSurfaceCapabilitiesKHR Surface::GetPresentModeSurfaceCapabilities(VkPhysicalDe
 VkSurfacePresentScalingCapabilitiesKHR Surface::GetPresentModeScalingCapabilities(VkPhysicalDevice phys_dev,
                                                                                   VkPresentModeKHR present_mode) const {
     if (auto guard = Lock(); auto cache = GetPhysDevCache(phys_dev)) {
-        const PresentModeInfo *info = cache->GetPresentModeInfo(present_mode);
+        const PresentModeInfo* info = cache->GetPresentModeInfo(present_mode);
         if (info && info->scaling_capabilities.has_value()) {
             return info->scaling_capabilities.value();
         }
@@ -532,7 +579,7 @@ VkSurfacePresentScalingCapabilitiesKHR Surface::GetPresentModeScalingCapabilitie
 
 std::vector<VkPresentModeKHR> Surface::GetCompatibleModes(VkPhysicalDevice phys_dev, VkPresentModeKHR present_mode) const {
     if (auto guard = Lock(); auto cache = GetPhysDevCache(phys_dev)) {
-        const PresentModeInfo *info = cache->GetPresentModeInfo(present_mode);
+        const PresentModeInfo* info = cache->GetPresentModeInfo(present_mode);
         if (info && info->compatible_present_modes.has_value()) {
             return info->compatible_present_modes.value();
         }

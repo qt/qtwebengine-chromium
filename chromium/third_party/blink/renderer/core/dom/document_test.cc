@@ -37,6 +37,7 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/ukm/test_ukm_recorder.h"
+#include "services/network/public/cpp/web_sandbox_flags.h"
 #include "services/network/public/mojom/referrer_policy.mojom-blink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -49,7 +50,14 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_sanitizer_config.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_set_html_options.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_set_html_unsafe_options.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_throw_dom_exception.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_sanitizer_sanitizerconfig_sanitizerpresets.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_sanitizerelementnamespace_string.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_sanitizerelementnamespacewithattributes_string.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_string_trustedhtml.h"
 #include "third_party/blink/renderer/core/css/media_query_list_listener.h"
 #include "third_party/blink/renderer/core/css/media_query_matcher.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
@@ -181,6 +189,12 @@ class DocumentTest : public PageTestBase {
         mock_policy_container_host.BindNewEndpointAndPassDedicatedRemote());
     params->policy_container->policies.sandbox_flags =
         network::mojom::blink::WebSandboxFlags::kAll;
+    if ((params->policy_container->policies.sandbox_flags &
+         network::mojom::blink::WebSandboxFlags::kOrigin) !=
+        network::mojom::blink::WebSandboxFlags::kNone) {
+      params->origin_to_commit =
+          SecurityOrigin::Create(url)->DeriveNewOpaqueOrigin();
+    }
     GetFrame().Loader().CommitNavigation(std::move(params),
                                          /*extra_data=*/nullptr);
     test::RunPendingTasks();
@@ -190,7 +204,7 @@ class DocumentTest : public PageTestBase {
 
 void DocumentTest::SetHtmlInnerHTML(std::string_view html_content) {
   GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
-      String::FromUTF8(html_content));
+      String::FromUtf8(html_content));
   UpdateAllLifecyclePhasesForTest();
 }
 
@@ -666,7 +680,7 @@ TEST_F(DocumentTest, CanExecuteScriptsWithSandboxAndIsolatedWorld) {
   DOMWrapperWorld* world_with_csp =
       DOMWrapperWorld::EnsureIsolatedWorld(isolate, kIsolatedWorldWithCSPId);
   IsolatedWorldCSP::Get().SetContentSecurityPolicy(
-      kIsolatedWorldWithCSPId, String::FromUTF8("script-src *"),
+      kIsolatedWorldWithCSPId, "script-src *",
       SecurityOrigin::Create(KURL("chrome-extension://123")));
   ScriptState* isolated_world_with_csp_script_state =
       ToScriptState(frame, *world_with_csp);
@@ -1801,96 +1815,6 @@ TEST_F(DocumentTest, DocumentDefiningElementWithMultipleBodies) {
   EXPECT_FALSE(body2->GetLayoutBox()->GetScrollableArea());
 }
 
-TEST_F(DocumentTest, LayoutReplacedUseCounterNoStyles) {
-  SetHtmlInnerHTML(R"HTML(
-    <img>
-  )HTML");
-
-  EXPECT_FALSE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElement));
-  EXPECT_FALSE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElementWithObjectProp));
-}
-
-TEST_F(DocumentTest, LayoutReplacedUseCounterExplicitlyHidden) {
-  SetHtmlInnerHTML(R"HTML(
-    <style> .tag { overflow: hidden } </style>
-    <img class=tag>
-  )HTML");
-
-  EXPECT_FALSE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElement));
-  EXPECT_FALSE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElementWithObjectProp));
-}
-
-TEST_F(DocumentTest, LayoutReplacedUseCounterExplicitlyVisible) {
-  SetHtmlInnerHTML(R"HTML(
-    <style> .tag { overflow: visible } </style>
-    <img class=tag>
-  )HTML");
-
-  EXPECT_TRUE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElement));
-  EXPECT_FALSE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElementWithObjectProp));
-}
-
-TEST_F(DocumentTest, LayoutReplacedUseCounterExplicitlyVisibleWithObjectFit) {
-  SetHtmlInnerHTML(R"HTML(
-    <style> .tag { overflow: visible; object-fit: cover; } </style>
-    <img class=tag>
-  )HTML");
-
-  EXPECT_TRUE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElement));
-  EXPECT_TRUE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElementWithObjectProp));
-}
-
-TEST_F(DocumentTest, LayoutReplacedUseCounterExplicitlyVisibleLaterHidden) {
-  SetHtmlInnerHTML(R"HTML(
-    <style>
-      img { overflow: visible; }
-      .tag { overflow: hidden; }
-    </style>
-    <img class=tag>
-  )HTML");
-
-  EXPECT_FALSE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElement));
-  EXPECT_FALSE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElementWithObjectProp));
-}
-
-TEST_F(DocumentTest, LayoutReplacedUseCounterIframe) {
-  SetHtmlInnerHTML(R"HTML(
-    <style>
-      iframe { overflow: visible; }
-    </style>
-    <iframe></iframe>
-  )HTML");
-
-  EXPECT_FALSE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElement));
-  EXPECT_FALSE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElementWithObjectProp));
-}
-
-TEST_F(DocumentTest, LayoutReplacedUseCounterSvg) {
-  SetHtmlInnerHTML(R"HTML(
-    <style>
-      svg { overflow: visible; }
-    </style>
-    <svg></svg>
-  )HTML");
-
-  EXPECT_FALSE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElement));
-  EXPECT_FALSE(GetDocument().IsUseCounted(
-      WebFeature::kExplicitOverflowVisibleOnReplacedElementWithObjectProp));
-}
-
 class DocumentURLCacheTest : public DocumentTest {
  public:
   DocumentURLCacheTest() {
@@ -2043,12 +1967,7 @@ TEST_F(DocumentTest, LifecycleState_DirtyStyle_NoBody) {
             DocumentLifecycle::kVisualUpdatePending);
 }
 
-class SyntheticSelectTest : public DocumentTest {
-  base::test::ScopedFeatureList feature_list_{
-      features::kAutofillEnableSyntheticSelectMetricsLogging};
-};
-
-TEST_F(SyntheticSelectTest,
+TEST_F(DocumentTest,
        MetricsAreReported_WhenPotentialSyntheticSelectIsInNestedForm) {
   SetHtmlInnerHTML(R"HTML(
     <form id="f1">
@@ -2067,7 +1986,7 @@ TEST_F(SyntheticSelectTest,
       blink::mojom::WebFeature::kAutofillSyntheticSelect));
 }
 
-TEST_F(SyntheticSelectTest,
+TEST_F(DocumentTest,
        MetricsAreReported_WhenSyntheticSelectIsInNestedForm) {
   SetHtmlInnerHTML(R"HTML(
     <form id="f1">
@@ -2094,7 +2013,7 @@ struct SyntheticSelectTestCase {
 };
 
 class ParametrizedSyntheticSelectTest
-    : public SyntheticSelectTest,
+    : public DocumentTest,
       public testing::WithParamInterface<SyntheticSelectTestCase> {};
 
 TEST_P(ParametrizedSyntheticSelectTest, MetricsAreReported_WhenSelectIsInForm) {
@@ -2340,5 +2259,44 @@ TEST_F(DocumentTest, PaymentLinkHandling_MultiplePaymentLink) {
       payments::facilitated::mojom::blink::PaymentLinkHandler::Name_, {});
 }
 #endif  // BUILDFLAG(IS_ANDROID)
+
+TEST_F(DocumentTest, ParseHTMLSanitizerException) {
+  // This is a regression test for https://crbug.com/496524586.
+
+  // SanitizerConfig equivalent to: {elements: ["div"], removeElements: ["div"]}
+  SanitizerConfig* config = SanitizerConfig::Create();
+  config->setElements({MakeGarbageCollected<
+      V8UnionSanitizerElementNamespaceWithAttributesOrString>("div")});
+  config->setRemoveElements(
+      {MakeGarbageCollected<V8UnionSanitizerElementNamespaceOrString>("div")});
+
+  {
+    DummyExceptionStateForTesting exception_state;
+    SetHTMLOptions* options = MakeGarbageCollected<SetHTMLOptions>();
+    options->setSanitizer(
+        MakeGarbageCollected<
+            V8UnionSanitizerOrSanitizerConfigOrSanitizerPresets>(config));
+    Document* doc =
+        Document::parseHTML(GetDocument().GetExecutionContext(), "test string",
+                            options, exception_state);
+    EXPECT_EQ(doc, nullptr);
+    EXPECT_TRUE(exception_state.HadException());
+  }
+
+  {
+    DummyExceptionStateForTesting exception_state;
+    SetHTMLUnsafeOptions* options =
+        MakeGarbageCollected<SetHTMLUnsafeOptions>();
+    options->setSanitizer(
+        MakeGarbageCollected<
+            V8UnionSanitizerOrSanitizerConfigOrSanitizerPresets>(config));
+    Document* doc = Document::parseHTMLUnsafe(
+        GetDocument().GetExecutionContext(),
+        MakeGarbageCollected<V8UnionStringOrTrustedHTML>("test string"),
+        options, exception_state);
+    EXPECT_EQ(doc, nullptr);
+    EXPECT_TRUE(exception_state.HadException());
+  }
+}
 
 }  // namespace blink

@@ -101,6 +101,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // CB to be called on the mailbox backing this frame when the frame is
   // destroyed.
   using ReleaseMailboxCB = base::OnceCallback<void(const gpu::SyncToken&)>;
+  using ReleaseMailboxCBWithLostResource =
+      base::OnceCallback<void(const gpu::SyncToken&, bool)>;
 
   // Interface representing client operations on a SyncToken, i.e. insert one in
   // the GPU Command Buffer and wait for it.
@@ -220,6 +222,17 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
       gpu::SyncToken sync_token,
       ReleaseMailboxCB shared_image_release_cb,
       const gfx::Size& coded_size,
+      const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
+      base::TimeDelta timestamp);
+
+  // Overload of above method that does not take coded_size param and instead
+  // passes the coded_size from `shared_image`.
+  static scoped_refptr<VideoFrame> WrapSharedImage(
+      VideoPixelFormat format,
+      scoped_refptr<gpu::ClientSharedImage> shared_image,
+      gpu::SyncToken sync_token,
+      ReleaseMailboxCB shared_image_release_cb,
       const gfx::Rect& visible_rect,
       const gfx::Size& natural_size,
       base::TimeDelta timestamp);
@@ -430,10 +443,10 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   static std::string HexHashOfFrameForTesting(const VideoFrame& frame,
                                               bool visible_data_only = true);
 
-  // Returns true if |frame| is accessible mapped in the VideoFrame memory
-  // space.
-  // static
-  static bool IsStorageTypeMappable(VideoFrame::StorageType storage_type);
+  // Returns true if a VideoFrame backed by `storage_type` would allow direct
+  // CPU access to the backing data in the VideoFrame memory space.
+  static bool StorageTypeAllowsDirectCpuAccess(
+      VideoFrame::StorageType storage_type);
 
   // Returns true if |plane| is a valid plane index for the given |format|.
   static bool IsValidPlane(VideoPixelFormat format, size_t plane);
@@ -467,10 +480,11 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
     return shm_region_;
   }
 
-  // Returns true if |frame| is accessible and mapped in the VideoFrame memory
-  // space. If false, clients should refrain from accessing data(),
-  // visible_data() etc.
-  bool IsMappable() const;
+  // Returns true if |frame|'s backing storage is directly CPU-accessible (as
+  // opposed to either needing to be mapped in some fashion, be asynchronously
+  // read back from GPU memory, etc). If false, clients should refrain from
+  // accessing data(), visible_data(), and other similar accessors.
+  bool HasDirectCpuAccess() const;
 
   // Returns true if the video frame uses ClientSharedImage.
   bool HasSharedImage() const;
@@ -499,9 +513,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 
   // Returns the color space of this frame's content.
   gfx::ColorSpace ColorSpace() const;
-  void set_color_space(const gfx::ColorSpace& color_space) {
-    color_space_ = color_space;
-  }
+  void set_color_space(const gfx::ColorSpace& color_space);
 
   // Return the full-range RGB component of the color space of this frame's
   // content. This will replace several color spaces (Rec601, Rec709, and
@@ -550,9 +562,9 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // Returns the number of columns for a given plane.
   int columns(size_t plane) const;
 
-  // Returns pointer to the buffer for a given plane, if this is an
-  // IsMappable() frame type. The memory is owned by VideoFrame object and must
-  // not be freed by the caller.
+  // Returns pointer to the buffer for a given plane, if HasDirectCpuAccess() is
+  // true. The memory is owned by VideoFrame object and must not be freed by the
+  // caller.
   const uint8_t* data(size_t plane) const {
     auto span = data_span(plane);
     if (span.empty()) [[unlikely]] {
@@ -563,7 +575,7 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 
   base::span<const uint8_t> data_span(size_t plane) const {
     CHECK(IsValidPlane(format(), plane));
-    CHECK(IsMappable());
+    CHECK(HasDirectCpuAccess());
     return data_[plane];
   }
 
@@ -596,16 +608,16 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   }
 #endif
 
-  // Returns pointer to the data in the visible region of the frame, for
-  // IsMappable() storage types. The returned pointer is offset into the
-  // plane buffer specified by visible_rect().origin(). Memory is owned by
-  // VideoFrame object and must not be freed by the caller.
+  // Returns pointer to the data in the visible region of the frame, if
+  // HasDirectCpuAccess() is true. The returned pointer is offset into the plane
+  // buffer specified by visible_rect().origin(). Memory is owned by VideoFrame
+  // object and must not be freed by the caller.
   const uint8_t* visible_data(size_t plane) const;
   uint8_t* GetWritableVisibleData(size_t plane);
 
-  // Returns spans of data in the visible region of the frame, for
-  // IsMappable() storage types. The returned span is offset into the
-  // plane buffer specified by visible_rect().origin().
+  // Returns spans of data in the visible region of the frame, if
+  // HasDirectCpuAccess() is true. The returned span is offset into the plane
+  // buffer specified by visible_rect().origin().
   base::span<const uint8_t> GetVisiblePlaneData(size_t plane) const;
   base::span<uint8_t> GetWritableVisiblePlaneData(size_t plane);
 
@@ -616,7 +628,8 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   SkYUVAInfo GetVisibleSkYUVAInfo() const;
 
   // Return SkPixmaps that reference the visible data for this. On failure,
-  // the result will be empty.
+  // the result will be empty. The SkColorSpace for all SkPixmaps will be
+  // set to ColorSpace().GetAsFullRangeRGB().ToSkColorSpace().
   std::vector<SkPixmap> GetVisiblePlanesSkPixmaps() const;
 
   // Returns the `acquire_sync_token_`
@@ -651,6 +664,11 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   // WARNING: This method is not thread safe; it should only be called if you
   // are still the only owner of this VideoFrame.
   void SetReleaseMailboxCB(ReleaseMailboxCB release_mailbox_cb);
+
+  // Overrides the above with ReleaseMailboxCBWithLostResource. The above method
+  // calls into this one by binding its `release_mailbox_cb` ignoring the lost
+  // resource bool.
+  void SetReleaseMailboxCB(ReleaseMailboxCBWithLostResource release_mailbox_cb);
 
   // Tests whether a mailbox release callback is configured.
   bool HasReleaseMailboxCB() const;
@@ -706,6 +724,9 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 
   // Returns the number of bits per channel.
   size_t BitDepth() const;
+
+  // Sets the `lost_shared_image_resource_` to true.
+  void SetLostSharedImageResource();
 
  protected:
   friend class base::RefCountedThreadSafe<VideoFrame>;
@@ -803,7 +824,14 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
 
   // Sync token associated with the `shared_image_`.
   gpu::SyncToken acquire_sync_token_;
-  ReleaseMailboxCB shared_image_release_cb_;
+  ReleaseMailboxCBWithLostResource shared_image_release_cb_;
+
+  // Tracks whether the SharedImage within VideoFrame which is transported over
+  // a TransferableResource to the Display Compositor is lost, and if such a
+  // VideoFrame can be reused. This is to be read only during VideoFrame
+  // destruction.
+  // TODO(b/495385034): Track this over ClientSharedImage.
+  bool lost_shared_image_resource_ = false;
 
   // Native texture shared image that is only set when the VideoFrame is
   // created via VideoFrame::WrapSharedImage().

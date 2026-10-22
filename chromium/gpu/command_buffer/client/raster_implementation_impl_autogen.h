@@ -27,8 +27,9 @@ void RasterImplementation::GenQueriesEXT(GLsizei n, GLuint* queries) {
   }
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   IdAllocator* id_allocator = GetIdAllocator(IdNamespaces::kQueries);
-  for (GLsizei ii = 0; ii < n; ++ii)
+  for (GLsizei ii = 0; ii < n; ++ii) {
     queries[ii] = id_allocator->AllocateID();
+  }
   GenQueriesEXTHelper(n, queries);
   helper_->GenQueriesEXTImmediate(n, queries);
   GPU_CLIENT_LOG_CODE_BLOCK({
@@ -67,6 +68,14 @@ void RasterImplementation::LoseContextCHROMIUM(GLenum current, GLenum other) {
                      << GLES2Util::GetStringResetStatus(current) << ", "
                      << GLES2Util::GetStringResetStatus(other) << ")");
   helper_->LoseContextCHROMIUM(current, other);
+  CheckGLError();
+}
+
+void RasterImplementation::FlushTileRasterGraphiteCommandsCHROMIUM() {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix()
+                     << "] glFlushTileRasterGraphiteCommandsCHROMIUM(" << ")");
+  helper_->FlushTileRasterGraphiteCommandsCHROMIUM();
   CheckGLError();
 }
 

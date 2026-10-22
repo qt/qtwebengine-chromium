@@ -10,7 +10,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "components/reading_list/core/offline_url_utils.h"
@@ -201,10 +200,6 @@ void ReadingListEntry::SetRead(bool read, const base::Time& now) {
   }
   if (FirstReadTime() == 0 && read) {
     int64_t time_to_us = TimeToUS(now);
-    int64_t time_since_creation =
-        (time_to_us - creation_time_us_) / base::Time::kMicrosecondsPerHour;
-    base::UmaHistogramCounts1000("ReadingList.Read.AgeOnFirstRead",
-                                 time_since_creation);
     first_read_time_us_ = time_to_us;
   }
   if (!(previous_state == UNSEEN && state_ == UNREAD)) {

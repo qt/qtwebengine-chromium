@@ -10,7 +10,6 @@
 #include "base/compiler_specific.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/notimplemented.h"
 #include "base/numerics/checked_math.h"
 #include "base/strings/string_number_conversions.h"
@@ -39,6 +38,9 @@
 #include "ui/gl/gl_utils.h"
 #include "ui/gl/gl_version_info.h"
 #include "ui/gl/scoped_make_current.h"
+#include "base/time/time.h"
+#include "base/check_op.h"
+#include "base/check.h"
 
 namespace gpu {
 namespace gles2 {
@@ -510,7 +512,7 @@ error::Error GLES2DecoderPassthroughImpl::DoBindTexture(GLenum target,
   if (service_id != 0) {
     // Label the texture with additional context info
     const char* label = ContextTypeToLabel(feature_info_->context_type());
-    api()->glObjectLabelFn(GL_TEXTURE, service_id, strlen(label), label);
+    api()->glObjectLabelKHRFn(GL_TEXTURE, service_id, strlen(label), label);
 
     // Create a new texture object to track this texture
     if (!resources_->texture_object_map.GetServiceID(texture,
@@ -615,6 +617,10 @@ error::Error GLES2DecoderPassthroughImpl::DoBufferData(GLenum target,
   CheckErrorCallbackState();
   api()->glBufferDataFn(target, size, data, usage);
   if (CheckErrorCallbackState()) {
+    // Calling buffer data on a mapped buffer will implicitly unmap it
+    // (https://registry.khronos.org/OpenGL-Refpages/es3.1/html/glMapBufferRange.xhtml)
+    // Even if it returns an error.
+    resources_->mapped_buffer_map.erase(bound_buffers_[target]);
     return error::kNoError;
   }
 
@@ -742,12 +748,10 @@ error::Error GLES2DecoderPassthroughImpl::DoCompressedTexImage2D(
     GLsizei height,
     GLint border,
     GLsizei image_size,
-    GLsizei data_size,
     const void* data) {
   CheckErrorCallbackState();
-  api()->glCompressedTexImage2DRobustANGLEFn(target, level, internalformat,
-                                             width, height, border, image_size,
-                                             data_size, data);
+  api()->glCompressedTexImage2DFn(target, level, internalformat, width, height,
+                                  border, image_size, data);
   if (CheckErrorCallbackState()) {
     return error::kNoError;
   }
@@ -770,11 +774,9 @@ error::Error GLES2DecoderPassthroughImpl::DoCompressedTexSubImage2D(
     GLsizei height,
     GLenum format,
     GLsizei image_size,
-    GLsizei data_size,
     const void* data) {
-  api()->glCompressedTexSubImage2DRobustANGLEFn(target, level, xoffset, yoffset,
-                                                width, height, format,
-                                                image_size, data_size, data);
+  api()->glCompressedTexSubImage2DFn(target, level, xoffset, yoffset, width,
+                                     height, format, image_size, data);
 
   // Texture data upload can be slow.  Exit command processing to allow for
   // context preemption and GPU watchdog checks.
@@ -792,12 +794,10 @@ error::Error GLES2DecoderPassthroughImpl::DoCompressedTexImage3D(
     GLsizei depth,
     GLint border,
     GLsizei image_size,
-    GLsizei data_size,
     const void* data) {
   CheckErrorCallbackState();
-  api()->glCompressedTexImage3DRobustANGLEFn(target, level, internalformat,
-                                             width, height, depth, border,
-                                             image_size, data_size, data);
+  api()->glCompressedTexImage3DFn(target, level, internalformat, width, height,
+                                  depth, border, image_size, data);
   if (CheckErrorCallbackState()) {
     return error::kNoError;
   }
@@ -822,11 +822,10 @@ error::Error GLES2DecoderPassthroughImpl::DoCompressedTexSubImage3D(
     GLsizei depth,
     GLenum format,
     GLsizei image_size,
-    GLsizei data_size,
     const void* data) {
-  api()->glCompressedTexSubImage3DRobustANGLEFn(
-      target, level, xoffset, yoffset, zoffset, width, height, depth, format,
-      image_size, data_size, data);
+  api()->glCompressedTexSubImage3DFn(target, level, xoffset, yoffset, zoffset,
+                                     width, height, depth, format, image_size,
+                                     data);
 
   // Texture data upload can be slow.  Exit command processing to allow for
   // context preemption and GPU watchdog checks.
@@ -3922,10 +3921,12 @@ error::Error GLES2DecoderPassthroughImpl::DoGenVertexArraysOES(
 error::Error GLES2DecoderPassthroughImpl::DoDeleteVertexArraysOES(
     GLsizei n,
     const volatile GLuint* arrays) {
-  return DeleteHelper(n, arrays, &vertex_array_id_map_,
-                      [this](GLsizei n, GLuint* arrays) {
-                        api()->glDeleteVertexArraysOESFn(n, arrays);
-                      });
+  error::Error err = DeleteHelper(n, arrays, &vertex_array_id_map_,
+                                  [this](GLsizei n, GLuint* arrays) {
+                                    api()->glDeleteVertexArraysOESFn(n, arrays);
+                                  });
+  bound_element_array_buffer_dirty_ = true;
+  return err;
 }
 
 error::Error GLES2DecoderPassthroughImpl::DoIsVertexArrayOES(GLuint array,
@@ -4324,8 +4325,9 @@ GLES2DecoderPassthroughImpl::DoGetTransformFeedbackVaryingsCHROMIUM(
   api()->glGetProgramivFn(service_program, GL_TRANSFORM_FEEDBACK_VARYINGS,
                           &num_transform_feedback_varyings);
 
-  // Resize the data to fit the headers and info objects so that strings can be
-  // appended.
+  // Resize the data to fit the headers and info objects. Strings will be
+  // appended at the end of the buffer and info objects will point to the
+  // strings using their offset in the buffer.
   const base::CheckedNumeric<size_t> buffer_header_size(
       sizeof(TransformFeedbackVaryingsHeader));
   const base::CheckedNumeric<size_t> buffer_block_size(
@@ -4362,12 +4364,15 @@ GLES2DecoderPassthroughImpl::DoGetTransformFeedbackVaryingsCHROMIUM(
     varying_info.size = size;
     varying_info.type = type;
 
+    // Add the string at the end and make the info object point at it using its
+    // offset.
     DCHECK(length + 1 <= max_transform_feedback_varying_length);
-    varying_info.name_length = data->size();
+    varying_info.name_offset = data->size();
     varying_info.name_length = length + 1;
     AppendStringToBuffer(data, transform_feedback_varying_name_buf.data(),
                          length + 1);
 
+    // Put the header info in the previously reserved space in the buffer.
     InsertValueIntoBuffer(
         data, varying_info,
         (buffer_header_size +
@@ -4967,7 +4972,8 @@ constexpr static char kPLSDefaultFramebufferBound[] =
 error::Error
 GLES2DecoderPassthroughImpl::DoFramebufferMemorylessPixelLocalStorageANGLE(
     GLint plane,
-    GLenum internalformat) {
+    GLenum internalformat,
+    GLbitfield usage) {
   // Memoryless pixel local storage planes cannot be saved and restored for a
   // context switch, so we do not support them in the command buffer.
   InsertError(GL_INVALID_OPERATION,
@@ -4981,14 +4987,15 @@ GLES2DecoderPassthroughImpl::DoFramebufferTexturePixelLocalStorageANGLE(
     GLint plane,
     GLuint backingtexture,
     GLint level,
-    GLint layer) {
+    GLint layer,
+    GLbitfield usage) {
   if (IsEmulatedFramebufferBound(GL_DRAW_FRAMEBUFFER)) {
     InsertError(GL_INVALID_OPERATION, kPLSDefaultFramebufferBound);
     return error::kNoError;
   }
   api()->glFramebufferTexturePixelLocalStorageANGLEFn(
       plane, GetTextureServiceID(api(), backingtexture, resources_), level,
-      layer);
+      layer, usage);
   return error::kNoError;
 }
 
@@ -5078,6 +5085,12 @@ error::Error GLES2DecoderPassthroughImpl::DoEndPixelLocalStorageANGLE(
   return error::kNoError;
 }
 
+error::Error
+GLES2DecoderPassthroughImpl::DoEndPixelLocalStorageImplicitANGLE() {
+  api()->glEndPixelLocalStorageImplicitANGLEFn();
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderPassthroughImpl::DoPixelLocalStorageBarrierANGLE() {
   if (IsEmulatedFramebufferBound(GL_DRAW_FRAMEBUFFER)) {
     InsertError(GL_INVALID_OPERATION, kPLSDefaultFramebufferBound);
@@ -5155,6 +5168,38 @@ GLES2DecoderPassthroughImpl::DoGetFramebufferPixelLocalStorageParameterivANGLE(
   }
 
   if (PatchGetFramebufferPixelLocalStorageParameterivANGLE(
+          plane, pname, *length, params) != error::kNoError) {
+    *length = 0;
+    return error::kInvalidArguments;
+  }
+
+  return error::kNoError;
+}
+
+error::Error
+GLES2DecoderPassthroughImpl::DoGetFramebufferPixelLocalStorageParameteruivANGLE(
+    GLint plane,
+    GLenum pname,
+    GLsizei bufsize,
+    GLsizei* length,
+    GLuint* params) {
+  if (IsEmulatedFramebufferBound(GL_DRAW_FRAMEBUFFER)) {
+    InsertError(GL_INVALID_OPERATION, kPLSDefaultFramebufferBound);
+    *length = 0;
+    return error::kNoError;
+  }
+
+  CheckErrorCallbackState();
+
+  api()->glGetFramebufferPixelLocalStorageParameteruivRobustANGLEFn(
+      plane, pname, bufsize, length, params);
+
+  if (CheckErrorCallbackState()) {
+    *length = 0;
+    return error::kNoError;
+  }
+
+  if (PatchGetFramebufferPixelLocalStorageParameteruivANGLE(
           plane, pname, *length, params) != error::kNoError) {
     *length = 0;
     return error::kInvalidArguments;

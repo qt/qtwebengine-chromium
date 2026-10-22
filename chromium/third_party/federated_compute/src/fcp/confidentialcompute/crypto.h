@@ -29,9 +29,9 @@
 #ifndef FCP_CONFIDENTIALCOMPUTE_CRYPTO_H_
 #define FCP_CONFIDENTIALCOMPUTE_CRYPTO_H_
 
-#include <cstdint>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
@@ -39,6 +39,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"
+#include "fcp/protos/confidentialcompute/key.pb.h"
 #include "openssl/base.h"
 #include "openssl/ec_key.h"  // // IWYU pragma: keep, needed for bssl::UniquePtr<EC_KEY>
 #include "openssl/hpke.h"
@@ -69,22 +70,28 @@ class MessageEncryptor {
  public:
   MessageEncryptor();
 
-  // Encrypts a message with the specified public key, which may be either a
-  // serialized CWT or a serialized COSE_Key.
+  // Encrypts a message with the specified public key, which may be a serialized
+  // CWT, a serialized COSE_Key, or a Key message.
   absl::StatusOr<EncryptMessageResult> Encrypt(
-      absl::string_view plaintext, absl::string_view recipient_public_key,
+      absl::string_view plaintext,
+      const std::variant<absl::string_view, confidentialcompute::Key>&
+          recipient_public_key,
       absl::string_view associated_data) const;
 
-  // Encrypts a message with the specified public key and generates a "release
-  // token" that can be passed to the CFC KMS to release the decryption key.
-  // Like with `Encrypt`, the public key may be either a serialized CWT or a
-  // serialized COSE_Key.
+  // Encrypts a message using an internally generated symmetric key and creates
+  // a release token that holds this symmetric key (encrypted using the
+  // specified public key) as the payload. This release token can be passed to
+  // the CFC KMS to release the decryption key.
+  // Like with `Encrypt`, the public key may be a serialized CWT, a
+  // serialized COSE_Key, or a Key message.
   //
   // The KMS will only reveal the decryption key if the logical pipeline's state
   // can be updated from `src_state` to `dst_state`. See the KMS API docs in
   // ../protos/confidentialcompute/kms.proto.
   absl::StatusOr<EncryptMessageResult> EncryptForRelease(
-      absl::string_view plaintext, absl::string_view recipient_public_key,
+      absl::string_view plaintext,
+      const std::variant<absl::string_view, confidentialcompute::Key>&
+          recipient_public_key,
       absl::string_view associated_data,
       std::optional<absl::string_view> src_state, absl::string_view dst_state,
       absl::FunctionRef<absl::StatusOr<std::string>(absl::string_view)> signer)
@@ -97,7 +104,9 @@ class MessageEncryptor {
   // This function implements the common functionality for `Encrypt` and
   // `EncryptForRelease`.
   absl::StatusOr<EncryptMessageResult> EncryptInternal(
-      absl::string_view plaintext, absl::string_view recipient_public_key,
+      absl::string_view plaintext,
+      const std::variant<absl::string_view, confidentialcompute::Key>&
+          recipient_public_key,
       absl::string_view associated_data,
       std::optional<absl::string_view> src_state, absl::string_view dst_state,
       std::optional<
@@ -110,41 +119,33 @@ class MessageEncryptor {
   const EVP_AEAD* aead_;
 };
 
+// The result of unwrapping a ReleaseToken which was originally produced by
+// `MessageEncryptor::EncryptForRelease`.
+struct UnwrappedReleaseToken {
+  std::optional<std::optional<std::string>> src_state;
+  std::optional<std::string> dst_state;
+  std::string serialized_symmetric_key;
+};
+
 // Decrypts messages intended for this recipient.
 //
 // This class is thread-safe.
 class MessageDecryptor {
  public:
-  // Constructs a new MessageDecryptor. If set, the provided config_properties
-  // will be included in the public key claims. The MessageDecryptor may be
-  // provided with a list of decryption keys to use in addition to the
-  // internally generated key; these keys should be encoded as serialized
-  // COSE_Keys. Any invalid keys will be ignored.
+  // Constructs a new MessageDecryptor that uses the provided decryption keys;
+  // these keys should be encoded as serialized COSE_Keys. Any invalid keys will
+  // be ignored.
   explicit MessageDecryptor(
-      std::string config_properties = "",
-      const std::vector<absl::string_view>& decryption_keys = {});
+      const std::vector<absl::string_view>& decryption_keys);
 
   // MessageDecryptor is not copyable or moveable due to the use of
   // bssl::ScopedEVP_HPKE_KEY.
   MessageDecryptor(const MessageDecryptor& other) = delete;
   MessageDecryptor& operator=(const MessageDecryptor& other) = delete;
 
-  // Obtain a public key that can be used to encrypt messages that this class
-  // can subsequently decrypt. The key will be a CBOR Web Token (CWT) signed by
-  // the provided signing function.
-  //
-  // The key material is generated in the constructor so the same key material
-  // will be included in the CWT even if this function is called multiple times.
-  // The CWT returned by this function may differ between function calls if
-  // different signing functions or algorithm identifiers are used, or if the
-  // provided signing function is non-deterministic.
-  absl::StatusOr<std::string> GetPublicKey(
-      absl::FunctionRef<absl::StatusOr<std::string>(absl::string_view)> signer,
-      int64_t signer_algorithm) const;
-
   // Decrypts `ciphertext` using a symmetric key produced by decrypting
-  // `encrypted_symmetric_key` with the `encapped_key` and the private key
-  // corresponding to the public key returned by `GetPublicKey`.
+  // `encrypted_symmetric_key` with the `encapped_key` and a private key
+  // provided to the constructor.
   //
   // The ciphertext to decrypt should have been produced by
   // `MessageEncryptor::Encrypt` or an equivalent implementation.
@@ -154,7 +155,7 @@ class MessageDecryptor {
   // intermediary for decryption by this recipient.
   //
   // Returns the decrypted plaintext, a FAILED_PRECONDITION status if
-  // `GetPublicKey` has never been called for this class, or an INVALID_ARGUMENT
+  // no key with the required key id was provided,, or an INVALID_ARGUMENT
   // status if the ciphertext could not be decrypted with the provided
   // arguments.
   absl::StatusOr<std::string> Decrypt(
@@ -162,7 +163,7 @@ class MessageDecryptor {
       absl::string_view ciphertext_associated_data,
       absl::string_view encrypted_symmetric_key,
       absl::string_view encrypted_symmetric_key_associated_data,
-      absl::string_view encapped_key, absl::string_view key_id = "") const;
+      absl::string_view encapped_key, absl::string_view key_id) const;
 
   // Decrypts `ciphertext` using a symmetric key returned by
   // `/KeyManagementService.ReleaseResults`.
@@ -177,11 +178,20 @@ class MessageDecryptor {
       absl::string_view ciphertext, absl::string_view associated_data,
       absl::string_view symmetric_key) const;
 
+  // Unwraps a ReleaseToken using the decryption keys provided in the
+  // constructor.
+  // The release token should have been produced by
+  // `MessageEncryptor::EncryptForRelease`. The unwrapped release token includes
+  // the `src` and `dst` states that were originally passed to
+  // `MessageEncryptor::EncryptForRelease`. It also includes the symmetric key
+  // used to encrypt the plaintext.
+  absl::StatusOr<UnwrappedReleaseToken> UnwrapReleaseToken(
+      absl::string_view release_token) const;
+
  private:
   // Attempts to unwraps the encrypted symmetric key using the decryption keys
-  // provided in the constructor. Returns nullopt if decryption is not
-  // successful.
-  std::optional<std::string> UnwrapSymmetricKeyWithDecryptionKeys(
+  // provided in the constructor.
+  absl::StatusOr<std::string> UnwrapSymmetricKeyWithDecryptionKeys(
       absl::string_view encrypted_symmetric_key,
       absl::string_view encrypted_symmetric_key_associated_data,
       absl::string_view encapped_key, absl::string_view key_id) const;
@@ -192,7 +202,6 @@ class MessageDecryptor {
   const EVP_HPKE_KEM* hpke_kem_;
   const EVP_HPKE_KDF* hpke_kdf_;
   const EVP_HPKE_AEAD* hpke_aead_;
-  bssl::ScopedEVP_HPKE_KEY hpke_key_;
   const EVP_AEAD* aead_;
 };
 
@@ -262,6 +271,10 @@ class EcdsaP256R1SignatureVerifier {
   EcdsaP256R1SignatureVerifier(bssl::UniquePtr<EC_KEY> public_key);
   bssl::UniquePtr<EC_KEY> public_key_;
 };
+
+// Converts a P1363 signature (i.e. RFC 8152 section 8.1) to ASN.1 format.
+absl::StatusOr<std::string> ConvertP1363SignatureToAsn1(
+    absl::string_view signature);
 
 // Helper functions exposed for testing purposes.
 namespace crypto_internal {

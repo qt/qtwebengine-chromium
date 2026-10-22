@@ -155,6 +155,8 @@ CApplePlatform::~CApplePlatform() = default;
 
 void CApplePlatform::Init() {}
 
+void CApplePlatform::Terminate() {}
+
 std::unique_ptr<SystemFontInfoIface>
 CApplePlatform::CreateDefaultSystemFontInfo() {
   auto pInfo = std::make_unique<CFX_MacFontInfo>();

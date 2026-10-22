@@ -18,31 +18,33 @@
 #include <openssl/dsa.h>
 
 #include "../internal.h"
+#include "../mem_internal.h"
 
 
 DECLARE_OPAQUE_STRUCT(dsa_st, DSAImpl)
 
 BSSL_NAMESPACE_BEGIN
 
-class DSAImpl : public dsa_st {
+class DSAImpl : public dsa_st, public RefCounted<DSAImpl> {
  public:
-  static constexpr bool kAllowUniquePtr = true;
+  DSAImpl();
 
-  ~DSAImpl();
+  UniquePtr<BIGNUM> p;
+  UniquePtr<BIGNUM> q;
+  UniquePtr<BIGNUM> g;
 
-  BIGNUM *p;
-  BIGNUM *q;
-  BIGNUM *g;
-
-  BIGNUM *pub_key;
-  BIGNUM *priv_key;
+  UniquePtr<BIGNUM> pub_key;
+  UniquePtr<BIGNUM> priv_key;
 
   // Normally used to cache montgomery values
-  bssl::CRYPTO_MUTEX method_mont_lock;
-  BN_MONT_CTX *method_mont_p;
-  BN_MONT_CTX *method_mont_q;
-  bssl::CRYPTO_refcount_t references;
+  mutable Mutex method_mont_lock;
+  mutable UniquePtr<BN_MONT_CTX> method_mont_p;
+  mutable UniquePtr<BN_MONT_CTX> method_mont_q;
   CRYPTO_EX_DATA ex_data;
+
+ private:
+  friend RefCounted;
+  ~DSAImpl();
 };
 
 // dsa_check_key performs cheap self-checks on |dsa|, and ensures it is within

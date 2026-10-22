@@ -18,11 +18,16 @@
 #include <vulkan/vulkan_core.h>
 #include <string>
 #include <vector>
+#include "state_tracker/descriptor_mode.h"
 
 // The goal is to keep instrumentation a seperate library to draw a strong line where the GPU-AV SPIR-V logic is.
 // This header is designed as the interface that can be shared between the instrumentation passes and the rest of GPU-AV
 
 struct Location;
+
+namespace spirv {
+struct Module;
+}
 
 namespace gpuav {
 namespace spirv {
@@ -79,6 +84,12 @@ struct InstrumentationInterface {
     VkShaderStageFlagBits entry_point_stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
 
     InstrumentationDescriptorSetLayouts instrumentation_dsl;
+    const VkSpecializationInfo* specialization_info = nullptr;
+
+    // Used for MeshPass to know if a task will be used as well
+    bool has_task_shader = false;
+
+    vvl::DescriptorMode descriptor_mode = vvl::DescriptorModeUnknown;
 
     const Location& loc;
 
@@ -99,6 +110,11 @@ struct DeviceSettings {
     // zero is same as "unlimited"
     uint32_t max_instrumentations_count;
     bool support_non_semantic_info;
+    // Lets us embed the size instead of calling OpArrayLength
+    uint32_t error_buffer_data_length;
+    uint32_t debug_printf_buffer_size;
+    // maxComputeSharedMemorySize limit
+    uint32_t max_compute_shared_memory_size;
 };
 
 // When running the DebugPrintf pass, if we detect an instrumented shader has a printf call (for debugging) we can hold them until

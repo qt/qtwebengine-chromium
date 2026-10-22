@@ -169,7 +169,7 @@ std::string ToString(const CastMessage& message) {
   return ss.str();
 }
 
-constexpr EnumNameTable<CastMessageType, 28> kCastMessageTypeNames{
+constexpr EnumNameTable<CastMessageType, 29> kCastMessageTypeNames{
     {{"UNKNOWN", CastMessageType::kUnknown},
      {"PING", CastMessageType::kPing},
      {"PONG", CastMessageType::kPong},
@@ -197,7 +197,8 @@ constexpr EnumNameTable<CastMessageType, 28> kCastMessageTypeNames{
      {"MULTIZONE_STATUS", CastMessageType::kMultizoneStatus},
      {"PRESENTATION", CastMessageType::kPresentation},
      {"GET_DEVICE_INFO", CastMessageType::kGetDeviceInfo},
-     {"eureka_info", CastMessageType::kEurekaInfo}}};
+     {"eureka_info", CastMessageType::kEurekaInfo},
+     {"INPUT", CastMessageType::kInput}}};
 
 const char* CastMessageTypeToString(CastMessageType type) {
   return GetEnumName(kCastMessageTypeNames, type).value("OTHER");

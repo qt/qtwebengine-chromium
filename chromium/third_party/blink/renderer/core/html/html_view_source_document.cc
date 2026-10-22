@@ -26,6 +26,7 @@
 
 #include <optional>
 
+#include "base/compiler_specific.h"
 #include "base/types/optional_util.h"
 #include "third_party/blink/public/common/view_source/rendering_preferences.h"
 #include "third_party/blink/public/mojom/persistent_renderer_prefs.mojom-blink.h"
@@ -189,12 +190,13 @@ void HTMLViewSourceDocument::AddSource(
     case HTMLToken::kEndTag:
       ProcessTagToken(source, token, attributes_ranges, token_start);
       break;
+    case HTMLToken::kProcessingInstruction:
+      // TODO(nrosenthal): implement processing instructions in view-source.
+      break;
     case HTMLToken::kComment:
       ProcessCommentToken(source, token);
       break;
     case HTMLToken::kCharacter:
-    case HTMLToken::kDOMPart:
-      // Process DOM Parts as character tokens.
       ProcessCharacterToken(source, token);
       break;
   }
@@ -345,14 +347,17 @@ void HTMLViewSourceDocument::AddText(const StringView& text,
     unsigned start_pos = 0;
     unsigned pos = 0;
     while (pos < text.length()) {
-      if (text[pos] == '\r') {
+      // SAFETY: index checked in loop condition.
+      UChar ch = UNSAFE_BUFFERS(text[pos]);
+      if (ch == '\r') {
         lines.push_back(text.substr(start_pos, pos - start_pos));
         pos++;
-        if (pos < text.length() && text[pos] == '\n') {
+        // SAFETY: index checked prior to use in &&-operation.
+        if (pos < text.length() && UNSAFE_BUFFERS(text[pos]) == '\n') {
           pos++;  // \r\n counts as a single line break.
         }
         start_pos = pos;
-      } else if (text[pos] == '\n') {
+      } else if (ch == '\n') {
         lines.push_back(text.substr(start_pos, pos - start_pos));
         pos++;
         start_pos = pos;

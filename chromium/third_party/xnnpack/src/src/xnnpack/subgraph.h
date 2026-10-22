@@ -61,18 +61,6 @@
 extern "C" {
 #endif
 
-#ifdef XNN_SLINKY_ENABLED
-/// Slinky interface -- unused unless XNN_FLAG_SLINKY_ENABLED is set
-struct slinky_pipeline;
-typedef struct slinky_pipeline* slinky_pipeline_t;
-
-enum xnn_status slinky_init_pipeline(xnn_runtime_t runtime);
-void slinky_setup_pipeline(xnn_runtime_t runtime);
-void slinky_destroy_pipeline(xnn_runtime_t runtime);
-enum xnn_status slinky_reshape_pipeline(xnn_runtime_t runtime);
-enum xnn_status slinky_invoke_pipeline(xnn_runtime_t runtime);
-#endif  // XNN_SLINKY_ENABLED
-
 struct xnn_shape {
   size_t num_dims;
   size_t dim[XNN_MAX_TENSOR_DIMS];
@@ -176,18 +164,19 @@ struct xnn_value {
   uint32_t num_consumers;
   uint32_t num_nchw_compatible_consumers;
   enum xnn_layout_type layout;
+
   /// Set during analysis in xnn_subgraph_rewrite_for_fp16.
-  /// Indicates that this value should be converted to FP16.
-  bool fp16_compatible;
-  /// Set during analysis in xnn_subgraph_rewrite_for_fp16.
-  /// Indicates Value ID of the FP16 variant of this Value.
-  uint32_t fp16_id;
-  /// Set during analysis in xnn_subgraph_rewrite_for_fp16.
-  /// Indicates Value ID of the FP32 variant of this Value.
-  uint32_t fp32_id;
-  /// Used during analysis in xnn_subgraph_rewrite_for_fp16.
-  /// Temporary buffer to convert static data to FP16.
-  void* fp16_temp_data;
+  struct rewrite_for_fp16 {
+    /// Indicates that this value should be converted to FP16.
+    bool fp16_compatible;
+    /// Indicates Value ID of the FP16 variant of this Value.
+    uint32_t fp16_id;
+    /// Indicates Value ID of the FP32 variant of this Value.
+    uint32_t fp32_id;
+    /// Temporary buffer to convert static data to FP16.
+    void* fp16_temp_data;
+  } fp16_rewrite;
+
   // Pointer to a `xnn_gemm_config` if this value is packed for a specific GEMM.
   const struct xnn_gemm_config* gemm_config;
   // Pointer to original fp32 data if this value was converted from fp32 to fp16
@@ -375,6 +364,7 @@ struct xnn_node {
     struct {
       size_t pre_paddings[XNN_MAX_TENSOR_DIMS];
       size_t post_paddings[XNN_MAX_TENSOR_DIMS];
+      size_t num_padding_dims;
       uint32_t padding_value;
     } static_pad;
     struct {
@@ -530,22 +520,22 @@ struct xnn_runtime {
   // inside of opdata need to be updated if workspace changes.
   bool has_been_setup;
   bool memory_planned;
-
-#ifdef XNN_SLINKY_ENABLED
-  // Fields used by Slinky -- unused unless XNN_FLAG_SLINKY_ENABLED is set
-  slinky_pipeline_t slinky_pipeline;
-  xnn_threadpool_t xnn_threadpool;
-#endif  // XNN_SLINKY_ENABLED
 };
 
 enum xnn_status xnn_insert_clamp_node(xnn_subgraph_t subgraph, float output_min,
-                                      float output_max, struct xnn_node* node);
+                                      float output_max, uint32_t node_id);
 
 enum xnn_status xnn_insert_pack_lh_node(xnn_subgraph_t subgraph,
                                         uint32_t input_id, uint32_t* new_id);
 
+enum xnn_status xnn_subgraph_reserve_values(xnn_subgraph_t subgraph,
+                                            size_t num_values);
 struct xnn_value* xnn_subgraph_new_internal_value(xnn_subgraph_t subgraph);
+enum xnn_status xnn_subgraph_add_internal_values(xnn_subgraph_t subgraph,
+                                                 size_t num_values);
 
+enum xnn_status xnn_subgraph_reserve_nodes(xnn_subgraph_t subgraph,
+                                           size_t num_nodes);
 struct xnn_node* xnn_subgraph_new_node(xnn_subgraph_t subgraph);
 
 enum xnn_status xnn_subgraph_add_nodes(xnn_subgraph_t subgraph,
@@ -562,8 +552,6 @@ uint32_t xnn_subgraph_get_num_values(xnn_subgraph_t subgraph);
 // Get size of the tensor in bytes (based on dimensions of tensor).
 size_t xnn_tensor_get_size(const struct xnn_value* value);
 size_t xnn_runtime_tensor_get_size(const struct xnn_runtime_value* value);
-
-size_t xnn_tensor_get_size_by_id(xnn_subgraph_t subgraph, uint32_t value_id);
 
 XNN_INLINE static size_t xnn_get_rounded_size(size_t size) {
   // We round it to XNN_EXTRA_BYTES to ensure that we can read more than the

@@ -573,14 +573,53 @@ TEST_F(ElementRuleCollectorTest, FindStyleRuleWithNesting) {
   RuleIndexList* foo_css_rules = GetMatchedCSSRuleList(foo, rule_set);
   ASSERT_EQ(2u, foo_css_rules->size());
   CSSRule* foo_css_rule_1 = foo_css_rules->at(0).rule.Get();
-  EXPECT_EQ("#foo", DynamicTo<CSSStyleRule>(foo_css_rule_1)->selectorText());
+  ASSERT_TRUE(IsA<CSSStyleRule>(foo_css_rule_1));
+  EXPECT_EQ("#foo", To<CSSStyleRule>(*foo_css_rule_1).selectorText());
   CSSRule* foo_css_rule_2 = foo_css_rules->at(1).rule.Get();
-  EXPECT_EQ("&.a", DynamicTo<CSSStyleRule>(foo_css_rule_2)->selectorText());
+  ASSERT_TRUE(IsA<CSSStyleRule>(foo_css_rule_2));
+  EXPECT_EQ("&.a", To<CSSStyleRule>(*foo_css_rule_2).selectorText());
 
   RuleIndexList* bar_css_rules = GetMatchedCSSRuleList(bar, rule_set);
   ASSERT_EQ(1u, bar_css_rules->size());
   CSSRule* bar_css_rule_1 = bar_css_rules->at(0).rule.Get();
-  EXPECT_EQ("& > .b", DynamicTo<CSSStyleRule>(bar_css_rule_1)->selectorText());
+  ASSERT_TRUE(IsA<CSSStyleRule>(bar_css_rule_1));
+  EXPECT_EQ("& > .b", To<CSSStyleRule>(*bar_css_rule_1).selectorText());
+}
+
+TEST_F(ElementRuleCollectorTest, EmptyStyleNotUseCounted) {
+  // Test to ensure that we do not count any pseudos in the UA styelsheet.
+  SetBodyInnerHTML(R"HTML(
+    <div>Some text</div>
+  )HTML");
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_FALSE(GetDocument().IsUseCounted(WebFeature::kFirstLinePseudoElement));
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kFirstLetterPseudoElement));
+  EXPECT_FALSE(GetDocument().IsUseCounted(WebFeature::kCheckMarkPseudoElement));
+  EXPECT_FALSE(GetDocument().IsUseCounted(WebFeature::kBeforePseudoElement));
+  EXPECT_FALSE(GetDocument().IsUseCounted(WebFeature::kAfterPseudoElement));
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kPickerIconPseudoElement));
+  EXPECT_FALSE(GetDocument().IsUseCounted(WebFeature::kMarkerPseudoElement));
+  EXPECT_FALSE(GetDocument().IsUseCounted(WebFeature::kBackdropPseudoElement));
+  EXPECT_FALSE(GetDocument().IsUseCounted(WebFeature::kSelectionPseudoElement));
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kSearchTextPseudoElement));
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kTargetTextPseudoElement));
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kCustomHighlightPseudoElement));
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kSpellingErrorPseudoElement));
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kGrammarErrorPseudoElement));
+  EXPECT_FALSE(GetDocument().IsUseCounted(WebFeature::kColumnPseudoElement));
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kScrollButtonPseudoElement));
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kScrollMarkerPseudoElement));
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kInterestHintPseudoElement));
 }
 
 TEST_F(ElementRuleCollectorTest, FirstLineUseCounted) {
@@ -619,15 +658,29 @@ TEST_F(ElementRuleCollectorTest, CheckMarkAndPickerIconUseCounted) {
       GetDocument().IsUseCounted(WebFeature::kPickerIconPseudoElement));
   SetBodyInnerHTML(R"HTML(
     <style>
-      select::picker(select) {
+      select,
+      ::picker(select) {
         appearance: base-select;
       }
+      select::picker-icon {
+        color: #999999;
+        transition: 0.4s rotate;
+        content: "X";
+      }
+      li::checkmark {
+        order: 1;
+        margin-left: auto;
+        content: "X";
+      }
     </style>
-    <select aria-label="Pets">
+    <select>
       <option>Dog</option>
       <option>Cat</option>
       <option>Donkey</option>
     </select>
+    <ul>
+      <li>Item></li>
+    </ul>
   )HTML");
   UpdateAllLifecyclePhasesForTest();
   EXPECT_TRUE(GetDocument().IsUseCounted(WebFeature::kCheckMarkPseudoElement));
@@ -810,7 +863,7 @@ TEST_F(ElementRuleCollectorTest, TraceRuleIndexList) {
     ASSERT_EQ(1u, rule_index_list->size());
     CSSRule* css_rule = rule_index_list->at(0).rule.Get();
     ASSERT_TRUE(IsA<CSSStyleRule>(css_rule));
-    EXPECT_EQ("#e", DynamicTo<CSSStyleRule>(css_rule)->selectorText());
+    EXPECT_EQ("#e", To<CSSStyleRule>(*css_rule).selectorText());
   }
 
   ThreadState::Current()->CollectAllGarbageForTesting();
@@ -822,7 +875,7 @@ TEST_F(ElementRuleCollectorTest, TraceRuleIndexList) {
     ASSERT_EQ(1u, rule_index_list->size());
     CSSRule* css_rule = rule_index_list->at(0).rule.Get();
     ASSERT_TRUE(IsA<CSSStyleRule>(css_rule));
-    EXPECT_EQ("#e", DynamicTo<CSSStyleRule>(css_rule)->selectorText());
+    EXPECT_EQ("#e", To<CSSStyleRule>(*css_rule).selectorText());
   }
 }
 

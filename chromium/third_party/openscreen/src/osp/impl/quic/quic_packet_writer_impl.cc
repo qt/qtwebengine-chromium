@@ -40,8 +40,8 @@ bool PacketWriterImpl::IsWriteBlocked() const {
 
 void PacketWriterImpl::SetWritable() {}
 
-absl::optional<int> PacketWriterImpl::MessageTooBigErrorCode() const {
-  return absl::nullopt;
+std::optional<int> PacketWriterImpl::MessageTooBigErrorCode() const {
+  return std::nullopt;
 }
 
 quic::QuicByteCount PacketWriterImpl::GetMaxPacketSize(

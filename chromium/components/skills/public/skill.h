@@ -5,10 +5,12 @@
 #ifndef COMPONENTS_SKILLS_PUBLIC_SKILL_H_
 #define COMPONENTS_SKILLS_PUBLIC_SKILL_H_
 
+#include <ostream>
 #include <string>
 
 #include "base/time/time.h"
 #include "components/sync/protocol/skill_specifics.pb.h"
+#include "url/gurl.h"
 
 namespace skills {
 
@@ -34,6 +36,12 @@ struct Skill {
   // The description of the skill.
   std::string description;
 
+  // The name of the curator for this skill, if any.
+  std::string curated_by;
+
+  // The image URL associated with the skill.
+  GURL image_url;
+
   // The source of the skill which can be 1P or user created.
   sync_pb::SkillSource source = sync_pb::SkillSource::SKILL_SOURCE_USER_CREATED;
 
@@ -49,6 +57,8 @@ struct Skill {
         const std::string& icon,
         const std::string& prompt,
         const std::string& description = "",
+        const std::string& curated_by = "",
+        const GURL& image_url = GURL(),
         const sync_pb::SkillSource& source =
             sync_pb::SkillSource::SKILL_SOURCE_USER_CREATED);
   Skill(const Skill&);
@@ -56,6 +66,8 @@ struct Skill {
   Skill(Skill&&);
   Skill& operator=(Skill&&);
   ~Skill();
+
+  friend std::ostream& operator<<(std::ostream& os, const Skill& skill);
 };
 // LINT.ThenChange(//components/skills/public/skill.mojom:Skill,
 // //chrome/browser/glic/host/glic.mojom:Skill)

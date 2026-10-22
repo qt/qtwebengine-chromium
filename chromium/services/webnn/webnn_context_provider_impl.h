@@ -24,6 +24,7 @@
 #include "services/webnn/public/cpp/webnn_trace.h"
 #include "services/webnn/public/mojom/webnn_context.mojom.h"
 #include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
+#include "services/webnn/public/mojom/webnn_service_introspection.mojom.h"
 #include "services/webnn/webnn_context_impl.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -47,7 +48,8 @@ class Environment;
 // Maintain a set of WebNNContextImpl instances that are created by the context
 // provider.
 class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
-    : public mojom::WebNNContextProvider {
+    : public mojom::WebNNContextProvider,
+      public mojom::WebNNServiceIntrospection {
  public:
   WebNNContextProviderImpl(const WebNNContextProviderImpl&) = delete;
   WebNNContextProviderImpl& operator=(const WebNNContextProviderImpl&) = delete;
@@ -64,6 +66,7 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
       gpu::GpuFeatureInfo gpu_feature_info,
       gpu::GPUInfo gpu_info,
       gpu::SharedImageManager* shared_image_manager,
+      scoped_refptr<gpu::MemoryTracker::Observer> peak_memory_monitor,
       LoseAllContextsCallback lose_all_contexts_callback,
       scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
       gpu::Scheduler* scheduler,
@@ -73,6 +76,7 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
     // Indicates whether the provider is operating in incognito mode.
     const bool is_incognito;
     const int32_t client_id;
+    const uint64_t client_tracing_id;
   };
 
   // Called to add a another WebNNContextProvider receiver to this
@@ -80,6 +84,9 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
   void BindWebNNContextProvider(
       mojo::PendingReceiver<mojom::WebNNContextProvider> receiver,
       const WebNNReceiversParams& params);
+
+  void BindWebNNServiceIntrospection(
+      mojo::PendingReceiver<mojom::WebNNServiceIntrospection> receiver);
 
   enum class WebNNStatus {
     kWebNNGpuDisabled = 0,
@@ -97,11 +104,6 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
   // Kill the GPU process to destroy all contexts.
   void DestroyAllContextsAndKillGpuProcess();
 #endif  // BUILDFLAG(IS_WIN)
-
-  // Retrieves a `WebNNContextImpl` instance created from this provider.
-  // Emits a bad message if a context with the given handle does not exist.
-  base::optional_ref<WebNNContextImpl> GetWebNNContextImplForTesting(
-      const blink::WebNNContextToken& handle);
 
   using WebNNContextImplPtr =
       std::unique_ptr<WebNNContextImpl, OnTaskRunnerDeleter>;
@@ -133,6 +135,7 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
       gpu::GpuFeatureInfo gpu_feature_info,
       gpu::GPUInfo gpu_info,
       gpu::SharedImageManager* shared_image_manager,
+      scoped_refptr<gpu::MemoryTracker::Observer> peak_memory_monitor,
       LoseAllContextsCallback lose_all_contexts_callback,
       scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner,
       gpu::Scheduler* scheduler,
@@ -141,6 +144,18 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
   // mojom::WebNNContextProvider
   void CreateWebNNContext(mojom::CreateContextOptionsPtr options,
                           CreateWebNNContextCallback callback) override;
+
+  // mojom::WebNNServiceIntrospection
+  void SetClient(mojo::PendingRemote<mojom::WebNNServiceIntrospectionClient>
+                     client) override;
+
+  void GetExistingContextsDetails(
+      GetExistingContextsDetailsCallback callback) override;
+
+  std::vector<mojom::WebNNContextIntrospectionDetailsPtr>
+  PopulateContextsDetailsForIntrospection();
+
+  void UpdateWebNNServiceIntrospection();
 
   base::WeakPtr<WebNNContextProviderImpl> AsWeakPtr() {
     DCHECK_CALLED_ON_VALID_SEQUENCE(main_sequence_checker_);
@@ -170,7 +185,8 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
       mojo::PendingReceiver<mojom::WebNNContext> receiver,
       mojo::PendingRemote<mojom::WebNNContext> remote,
       CreateWebNNContextCallback callback,
-      bool is_incognito);
+      bool is_incognito,
+      scoped_refptr<gpu::MemoryTracker> memory_tracker);
 #endif  // BUILDFLAG(WEBNN_USE_TFLITE)
 
 #if BUILDFLAG(WEBNN_USE_LITERT)
@@ -186,7 +202,9 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
       scoped_refptr<base::SingleThreadTaskRunner> task_runner,
       mojo::PendingReceiver<mojom::WebNNContext> receiver,
       mojo::PendingRemote<mojom::WebNNContext> remote,
-      CreateWebNNContextCallback callback);
+      CreateWebNNContextCallback callback,
+      bool is_incognito,
+      scoped_refptr<gpu::MemoryTracker> memory_tracker);
 #endif  // BUILDFLAG(WEBNN_USE_LITERT)
 
 #if BUILDFLAG(IS_WIN)
@@ -203,6 +221,7 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
                        mojo::PendingRemote<mojom::WebNNContext> remote,
                        CreateWebNNContextCallback callback,
                        bool is_incognito,
+                       scoped_refptr<gpu::MemoryTracker> memory_tracker,
                        base::expected<scoped_refptr<ort::Environment>,
                                       std::string> env_creation_results);
 
@@ -220,6 +239,7 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
       mojo::PendingRemote<mojom::WebNNContext> remote,
       CreateWebNNContextCallback callback,
       bool is_incognito,
+      scoped_refptr<gpu::MemoryTracker> memory_tracker,
       base::flat_map<std::string, mojom::EpPackageInfoPtr> ep_package_info);
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -242,6 +262,13 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
   mojo::ReceiverSet<mojom::WebNNContextProvider, WebNNReceiversParams>
       provider_receivers_ GUARDED_BY_CONTEXT(main_sequence_checker_);
 
+  mojo::Receiver<mojom::WebNNServiceIntrospection>
+      service_introspection_receiver_
+          GUARDED_BY_CONTEXT(main_sequence_checker_){this};
+
+  mojo::Remote<mojom::WebNNServiceIntrospectionClient>
+      service_introspection_client_ GUARDED_BY_CONTEXT(main_sequence_checker_);
+
   // Lifetime of the scheduler is managed by the GPU service. The GPU service
   // destroys the WebNNContextProviderImpl and all its contexts when it
   // is destroyed. So a raw pointer is safe. Must be destroyed after
@@ -255,11 +282,7 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) WebNNContextProviderImpl
   // Specifies the thread on which the GPU scheduler should run tasks.
   const scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
 
-  // The memory tracker from the `shared_context_state_` which is used to create
-  // tensors from shared images.
-  // TODO(crbug.com/345352987): give WebNN its own memory source and
-  // tracker.
-  scoped_refptr<gpu::MemoryTracker> memory_tracker_;
+  const scoped_refptr<gpu::MemoryTracker::Observer> peak_memory_monitor_;
 
   mojo::SharedRemote<viz::mojom::GpuHost> gpu_host_;
 

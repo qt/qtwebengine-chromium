@@ -22,6 +22,7 @@ class AlgorithmRegistry {
         aes_cbc_(CreateAesCbcImplementation()),
         aes_ctr_(CreateAesCtrImplementation()),
         aes_kw_(CreateAesKwImplementation()),
+        chacha20_poly1305_(CreateChaCha20Poly1305Implementation()),
         hmac_(CreateHmacImplementation()),
         rsa_ssa_(CreateRsaSsaImplementation()),
         rsa_oaep_(CreateRsaOaepImplementation()),
@@ -31,7 +32,8 @@ class AlgorithmRegistry {
         hkdf_(CreateHkdfImplementation()),
         pbkdf2_(CreatePbkdf2Implementation()),
         ed25519_(CreateEd25519Implementation()),
-        x25519_(CreateX25519Implementation()) {}
+        x25519_(CreateX25519Implementation()),
+        ml_dsa_(CreateMlDsaImplementation()) {}
 
   const AlgorithmImplementation* GetAlgorithm(
       blink::WebCryptoAlgorithmId id) const {
@@ -69,8 +71,12 @@ class AlgorithmRegistry {
         return ed25519_.get();
       case blink::kWebCryptoAlgorithmIdX25519:
         return x25519_.get();
-      // TODO(crbug.com/450627018): implement chacha20poly1305
-      // TODO(crbug.com/450848555): implement ML-DSA 44/65/87
+      case blink::kWebCryptoAlgorithmIdMlDsa44:
+      case blink::kWebCryptoAlgorithmIdMlDsa65:
+      case blink::kWebCryptoAlgorithmIdMlDsa87:
+        return ml_dsa_.get();
+      case blink::kWebCryptoAlgorithmIdChaCha20Poly1305:
+        return chacha20_poly1305_.get();
       // TODO(crbug.com/450627019): implement ML-KEM 768/1024
       default:
         return nullptr;
@@ -83,6 +89,7 @@ class AlgorithmRegistry {
   const std::unique_ptr<AlgorithmImplementation> aes_cbc_;
   const std::unique_ptr<AlgorithmImplementation> aes_ctr_;
   const std::unique_ptr<AlgorithmImplementation> aes_kw_;
+  const std::unique_ptr<AlgorithmImplementation> chacha20_poly1305_;
   const std::unique_ptr<AlgorithmImplementation> hmac_;
   const std::unique_ptr<AlgorithmImplementation> rsa_ssa_;
   const std::unique_ptr<AlgorithmImplementation> rsa_oaep_;
@@ -93,6 +100,7 @@ class AlgorithmRegistry {
   const std::unique_ptr<AlgorithmImplementation> pbkdf2_;
   const std::unique_ptr<AlgorithmImplementation> ed25519_;
   const std::unique_ptr<AlgorithmImplementation> x25519_;
+  const std::unique_ptr<AlgorithmImplementation> ml_dsa_;
 };
 
 }  // namespace

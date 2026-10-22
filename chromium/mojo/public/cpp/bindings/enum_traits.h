@@ -18,7 +18,7 @@ namespace mojo {
 //
 //     // Returning false results in deserialization failure and causes the
 //     // message pipe receiving it to be disconnected.
-//     static bool FromMojom(MojomType input, T* output);
+//     static T FromMojom(MojomType input);
 //   };
 //
 template <typename MojomType, typename T>
@@ -33,10 +33,7 @@ struct EnumTraits {
 template <typename T>
 struct EnumTraits<T, T> {
   static T ToMojom(T input) { return input; }
-  static bool FromMojom(T input, T* output) {
-    *output = input;
-    return true;
-  }
+  static T FromMojom(T input) { return input; }
 };
 
 }  // namespace mojo

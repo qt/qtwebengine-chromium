@@ -267,7 +267,7 @@ class FrameManager extends EventEmitter_js_1.EventEmitter {
             frame.updateClient(target._session());
         }
         this.setupEventListeners(target._session());
-        void this.initialize(target._session(), frame);
+        void this.initialize(target._session(), frame).catch(util_js_1.debugError);
     }
     _deviceRequestPromptManager(client) {
         let manager = this.#deviceRequestPromptManagerMap.get(client);

@@ -13,9 +13,13 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "ynnpack/base/base.h"
 #include "slinky/builder/pipeline.h"
 #include "slinky/runtime/buffer.h"
 #include "slinky/runtime/expr.h"
@@ -25,14 +29,32 @@
 
 namespace ynn {
 
+class slinky_globals {
+ public:
+  // Make a global variable for the given expression. Deduplicates identical
+  // expressions to the same variable.
+  slinky::expr get(slinky::expr value, const char* prefix);
+
+  // Make an array of dimensions that is begin, 1, ... end - 1.
+  std::vector<slinky::var> make_dims(int begin, int end);
+  std::vector<slinky::var> make_dims(int rank);
+
+  slinky::buffer_expr_ptr make_buffer_expr(const std::string& name, int rank,
+                                           slinky::expr elem_size);
+
+  // Symbols we've named in Slinky.
+  slinky::node_context symbols;
+
+  // This is a list of global variables and their (symbolic) value that will be
+  // lifted out of the pipeline.
+  std::vector<std::pair<slinky::var, slinky::expr>> lets;
+};
+
 inline int axis_to_slinky_dim(int rank, int axis) {
   return axis < 0 ? -(axis + 1) : rank - (axis + 1);
 }
 
 slinky::buffer_expr_ptr make_buffer_expr(slinky::var sym, int rank,
-                                         slinky::expr elem_size);
-slinky::buffer_expr_ptr make_buffer_expr(slinky::node_context& ctx,
-                                         const std::string& name, int rank,
                                          slinky::expr elem_size);
 
 // Constrain the strides of the first `dims` dimensions of a buffer such that
@@ -40,11 +62,6 @@ slinky::buffer_expr_ptr make_buffer_expr(slinky::node_context& ctx,
 // XNNPACK/TFlite expect.
 void require_contiguous(slinky::buffer_expr& buf,
                         size_t dims = std::numeric_limits<size_t>::max());
-
-// Make an array of dimensions that is begin, 1, ... end - 1.
-std::vector<slinky::var> make_dims(int begin, int end,
-                                   slinky::node_context& ctx);
-std::vector<slinky::var> make_dims(int rank, slinky::node_context& ctx);
 
 // Get bounds for an elementwise dimension, allowing for the possibility of a
 // broadcast.
@@ -125,12 +142,12 @@ namespace internal {
 
 // Helper to apply a function to pairs of elements in a parameter pack.
 template <typename F, typename A, typename B>
-void apply_to_pairs(F&& f, A&& a, B&& b) {
+YNN_ALWAYS_INLINE void apply_to_pairs(F&& f, A&& a, B&& b) {
   f(std::forward<A>(a), std::forward<B>(b));
 }
 
 template <typename F, typename A, typename B, typename... Pairs>
-void apply_to_pairs(F&& f, A&& a, B&& b, Pairs&&... pairs) {
+YNN_ALWAYS_INLINE void apply_to_pairs(F&& f, A&& a, B&& b, Pairs&&... pairs) {
   f(std::forward<A>(a), std::forward<B>(b));
   apply_to_pairs(std::forward<F>(f), std::forward<Pairs>(pairs)...);
 }
@@ -138,31 +155,24 @@ void apply_to_pairs(F&& f, A&& a, B&& b, Pairs&&... pairs) {
 // Helper to apply a predicate to pairs of elements in a parameter pack and
 // return true if the predicate is true for all pairs.
 template <typename F, typename A, typename B>
-bool all_of_pairs(F&& f, A&& a, B&& b) {
+YNN_ALWAYS_INLINE bool all_of_pairs(F&& f, A&& a, B&& b) {
   return f(std::forward<A>(a), std::forward<B>(b));
 }
 
 template <typename F, typename A, typename B, typename... Pairs>
-bool all_of_pairs(F&& f, A&& a, B&& b, Pairs&&... pairs) {
+YNN_ALWAYS_INLINE bool all_of_pairs(F&& f, A&& a, B&& b, Pairs&&... pairs) {
   return f(std::forward<A>(a), std::forward<B>(b)) &&
          all_of_pairs(std::forward<F>(f), std::forward<Pairs>(pairs)...);
 }
 
 }  // namespace internal
 
-inline const slinky::dim& dim0_or_broadcast(const slinky::raw_buffer& buf) {
+YNN_ALWAYS_INLINE const slinky::dim& dim0_or_broadcast(
+    const slinky::raw_buffer& buf) {
   return buf.rank > 0 ? buf.dim(0) : slinky::dim::broadcast();
 }
 
-inline void slice0_if_not_scalar(slinky::raw_buffer& buf, slinky::index_t min) {
-  if (buf.rank > 0) buf.slice(0, min);
-}
-
-inline void slice0_if_not_scalar(slinky::raw_buffer& buf) {
-  if (buf.rank > 0) buf.slice(0);
-}
-
-inline bool same_bounds(const slinky::dim& a, const slinky::dim& b) {
+YNN_ALWAYS_INLINE bool same_bounds(const slinky::dim& a, const slinky::dim& b) {
   // Return true if the dimensions have the same min and max or if they are
   // both broadcasts.
   return (a.min() == b.min() && a.max() == b.max()) ||
@@ -170,15 +180,16 @@ inline bool same_bounds(const slinky::dim& a, const slinky::dim& b) {
 }
 
 template <typename... Dims>
-inline bool same_bounds(const slinky::dim& a, const slinky::dim& b,
-                        const Dims&... dims) {
+YNN_ALWAYS_INLINE bool same_bounds(const slinky::dim& a, const slinky::dim& b,
+                                   const Dims&... dims) {
   return same_bounds(a, b) && same_bounds(b, dims...);
 }
 
 // A dimension is contiguous if it satisfies one of the following:
 //   1. Its extent is 1. In this case, we disregard stride.
 //   2. Its stride is equal to its element size.
-inline bool is_continguous(const slinky::dim& dim, const int element_size) {
+YNN_ALWAYS_INLINE bool is_continguous(const slinky::dim& dim,
+                                      const int element_size) {
   return dim.extent() == 1 || dim.stride() == element_size;
 }
 
@@ -206,22 +217,17 @@ void fuse_and_slice_leading_dims(slinky::dim* x_dims, slinky::raw_buffer& x,
     x_dims[i] = dim0_or_broadcast(x);
 
     // Initialize `in_dims[i]` for each input.
-    internal::apply_to_pairs(
-        [i](slinky::dim* in_dims, const slinky::raw_buffer& in_buf) {
-          in_dims[i] = dim0_or_broadcast(in_buf);
-        },
-        inputs...);
-
     // `x` is already a view to the correct tile in the larger output buffer.
     // Inputs are not. We must explicitly set their offsets according to `x`
     // before slicing.
     internal::apply_to_pairs(
-        [x_min_i = x_dims[i].min()](const slinky::dim* /*in_dims*/,
-                                    slinky::raw_buffer& in_buf) {
-          slice0_if_not_scalar(in_buf, x_min_i);
+        [i, x_min_i = x_dims[i].min()](slinky::dim* in_dims,
+                                       slinky::raw_buffer& in_buf) {
+          in_dims[i] = in_buf.dim(0);
+          in_buf.slice(0, x_min_i);
         },
         inputs...);
-    slice0_if_not_scalar(x);
+    if (x.rank > 0) x.slice(0);
 
     while (x.rank > 0) {
       // First check whether fusing dimensions is possible.
@@ -243,8 +249,10 @@ void fuse_and_slice_leading_dims(slinky::dim* x_dims, slinky::raw_buffer& x,
       internal::apply_to_pairs(
           [i, x_min_i = x.dim(0).min()](slinky::dim* in_dims,
                                         slinky::raw_buffer& in_buf) {
-            in_dims[i] = slinky::fuse(in_dims[i], dim0_or_broadcast(in_buf));
-            slice0_if_not_scalar(in_buf, x_min_i);
+            if (in_buf.rank > 0) {
+              in_dims[i] = slinky::fuse(in_dims[i], in_buf.dim(0));
+              in_buf.slice(0, x_min_i);
+            }
           },
           inputs...);
       x.slice(0);

@@ -5,6 +5,7 @@
 #include "cast/streaming/sender_message.h"
 
 #include <utility>
+#include <variant>
 
 #include "cast/streaming/message_fields.h"
 #include "util/base64.h"
@@ -17,10 +18,11 @@ namespace openscreen::cast {
 
 namespace {
 
-EnumNameTable<SenderMessage::Type, 3> kMessageTypeNames{
+EnumNameTable<SenderMessage::Type, 4> kMessageTypeNames{
     {{kMessageTypeOffer, SenderMessage::Type::kOffer},
      {"GET_CAPABILITIES", SenderMessage::Type::kGetCapabilities},
-     {"RPC", SenderMessage::Type::kRpc}}};
+     {"RPC", SenderMessage::Type::kRpc},
+     {"INPUT", SenderMessage::Type::kInput}}};
 
 SenderMessage::Type GetMessageType(const Json::Value& root) {
   std::string type;
@@ -49,9 +51,9 @@ ErrorOr<SenderMessage> SenderMessage::Parse(const Json::Value& value) {
   message.type = GetMessageType(value);
   switch (message.type) {
     case Type::kOffer: {
-      Offer offer;
-      if (Offer::TryParse(value[kOfferMessageBody], &offer).ok()) {
-        message.body = std::move(offer);
+      auto offer_or_error = Offer::TryParse(value[kOfferMessageBody]);
+      if (offer_or_error.is_value()) {
+        message.body = std::move(offer_or_error.value());
         message.valid = true;
       }
     } break;
@@ -62,6 +64,16 @@ ErrorOr<SenderMessage> SenderMessage::Parse(const Json::Value& value) {
       if (json::TryParseString(value[kRpcMessageBody], &rpc_body) &&
           base64::Decode(rpc_body, &rpc)) {
         message.body = rpc;
+        message.valid = true;
+      }
+    } break;
+
+    case Type::kInput: {
+      std::string input_body;
+      std::vector<uint8_t> input;
+      if (json::TryParseString(value[kInputMessageBody], &input_body) &&
+          base64::Decode(input_body, &input)) {
+        message.body = input;
         message.valid = true;
       }
     } break;
@@ -90,12 +102,17 @@ ErrorOr<Json::Value> SenderMessage::ToJson() const {
 
   switch (type) {
     case SenderMessage::Type::kOffer:
-      root[kOfferMessageBody] = absl::get<Offer>(body).ToJson();
+      root[kOfferMessageBody] = std::get<Offer>(body).ToJson();
       break;
 
     case SenderMessage::Type::kRpc:
       root[kRpcMessageBody] =
-          base64::Encode(absl::get<std::vector<uint8_t>>(body));
+          base64::Encode(std::get<std::vector<uint8_t>>(body));
+      break;
+
+    case SenderMessage::Type::kInput:
+      root[kInputMessageBody] =
+          base64::Encode(std::get<std::vector<uint8_t>>(body));
       break;
 
     case SenderMessage::Type::kGetCapabilities:

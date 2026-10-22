@@ -19,6 +19,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <new>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -32,6 +33,15 @@
 #include "base/numerics/integral_constant_like.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/types/to_address.h"
+#include "partition_alloc/buildflags.h"
+
+#if PA_BUILDFLAG(CHECKED_SPAN)
+// nogncheck: The only function used from this header
+// (`IsExtentOutOfBounds()`) is gated consistently by this buildflag
+// in this file, and the buildflag is false when `use_partition_alloc`
+// evaluates false.
+#include "partition_alloc/bounds_checks.h"  // nogncheck
+#endif
 
 // A span is a view of contiguous elements that can be accessed like an array,
 // intended for use as a parameter or local. Unlike direct use of pointers and
@@ -314,6 +324,15 @@ struct allow_nonunique_obj_t {
 };
 inline constexpr allow_nonunique_obj_t allow_nonunique_obj{};
 
+// Tag struct used in the vein of `std::from_range_t`.
+//
+// Used in span constructors to elide the PartitionAlloc bounds check.
+// See: https://crbug.com/484171909
+struct unchecked_t {
+  unchecked_t() = default;
+};
+inline constexpr unchecked_t unchecked;
+
 namespace internal {
 
 // Exposition-only concept from [span.syn]
@@ -436,7 +455,7 @@ constexpr auto as_byte_span(
   // of 1 byte, the resulting pointer has no alignment concerns, and it is not
   // UB to access memory contents inside the allocation through it.
   return UNSAFE_BUFFERS(span<ByteType, kByteExtent>(
-      reinterpret_cast<ByteType*>(s.data()), s.size_bytes()));
+      unchecked, reinterpret_cast<ByteType*>(s.data()), s.size_bytes()));
 }
 
 }  // namespace internal
@@ -473,6 +492,25 @@ class GSL_POINTER span {
   // PRECONDITIONS: `first` must point to the first of at least `count`
   // contiguous valid elements.
   UNSAFE_BUFFER_USAGE constexpr span(It first, StrictNumeric<size_type> count)
+      : span(unchecked, first, count) {
+#if PA_BUILDFLAG(CHECKED_SPAN)
+    if (!std::is_constant_evaluated()) {
+      if (data() || size()) {
+        CHECK(!partition_alloc::IsExtentOutOfBounds(data(), size_bytes(),
+                                                    sizeof(element_type)));
+      }
+    }
+#endif  // PA_BUILDFLAG(CHECKED_SPAN)
+  }
+
+  // Iterator + count, skipping PartitionAlloc bounds check.
+  template <typename It>
+    requires(internal::CompatibleIter<element_type, It>)
+  // PRECONDITIONS: `first` must point to the first of at least `count`
+  // contiguous valid elements.
+  UNSAFE_BUFFER_USAGE constexpr span(unchecked_t tag,
+                                     It first,
+                                     StrictNumeric<size_type> count)
       : data_(to_address(first)) {
     CHECK(size_type{count} == extent);
 
@@ -489,6 +527,26 @@ class GSL_POINTER span {
   // PRECONDITIONS: `first` and `last` must be for the same allocation and all
   // elements in the range [first, last) must be valid.
   UNSAFE_BUFFER_USAGE constexpr span(It first, End last)
+      // SAFETY: See comments in the unchecked constructor.
+      : UNSAFE_BUFFERS(span(unchecked, first, last)) {
+#if PA_BUILDFLAG(CHECKED_SPAN)
+    if (!std::is_constant_evaluated()) {
+      if (data() || size()) {
+        CHECK(!partition_alloc::IsExtentOutOfBounds(data(), size_bytes(),
+                                                    sizeof(element_type)));
+      }
+    }
+#endif  // PA_BUILDFLAG(CHECKED_SPAN)
+  }
+
+  // Iterator + sentinel, skipping the PartitionAlloc bounds check.
+  template <typename It, typename End>
+    requires(internal::CompatibleIter<element_type, It> &&
+             std::sized_sentinel_for<End, It> &&
+             !std::is_convertible_v<End, size_t>)
+  // PRECONDITIONS: `first` and `last` must be for the same allocation and all
+  // elements in the range [first, last) must be valid.
+  UNSAFE_BUFFER_USAGE constexpr span(unchecked_t tag, It first, End last)
       // SAFETY: The caller must guarantee that `first` and `last` point into
       // the same allocation. In this case, the extent will be the number of
       // elements between the iterators and thus a valid size for the pointer to
@@ -497,7 +555,8 @@ class GSL_POINTER span {
       // It is safe to check for underflow after subtraction because the
       // underflow itself is not UB and `size_` is not converted to an invalid
       // pointer (which would be UB) before the check.
-      : UNSAFE_BUFFERS(span(first, static_cast<size_type>(last - first))) {
+      : UNSAFE_BUFFERS(
+            span(unchecked, first, static_cast<size_type>(last - first))) {
     // Verify `last - first` did not underflow.
     CHECK(first <= last);
   }
@@ -506,7 +565,7 @@ class GSL_POINTER span {
   // NOLINTNEXTLINE(google-explicit-constructor)
   constexpr span(element_type (&arr LIFETIME_BOUND)[extent]) noexcept
       // SAFETY: The type signature guarantees `arr` contains `extent` elements.
-      : UNSAFE_BUFFERS(span(arr, extent)) {}
+      : UNSAFE_BUFFERS(span(unchecked, arr, extent)) {}
 
   // Range.
   template <typename R, size_t N = internal::kComputedExtent<R>>
@@ -517,8 +576,9 @@ class GSL_POINTER span {
       // SAFETY: `std::ranges::size()` returns the number of elements
       // `std::ranges::data()` will point to, so accessing those elements will
       // be safe.
-      : UNSAFE_BUFFERS(
-            span(std::ranges::data(range), std::ranges::size(range))) {}
+      : UNSAFE_BUFFERS(span(unchecked,
+                            std::ranges::data(range),
+                            std::ranges::size(range))) {}
   template <typename R, size_t N = internal::kComputedExtent<R>>
     requires(internal::CompatibleRange<element_type, R> &&
              internal::FixedExtentConstructibleFromExtent<extent, N> &&
@@ -528,8 +588,9 @@ class GSL_POINTER span {
       // SAFETY: `std::ranges::size()` returns the number of elements
       // `std::ranges::data()` will point to, so accessing those elements will
       // be safe.
-      : UNSAFE_BUFFERS(
-            span(std::ranges::data(range), std::ranges::size(range))) {}
+      : UNSAFE_BUFFERS(span(unchecked,
+                            std::ranges::data(range),
+                            std::ranges::size(range))) {}
 
   // Initializer list.
   // NOLINTNEXTLINE(google-explicit-constructor)
@@ -537,7 +598,7 @@ class GSL_POINTER span {
     requires(std::is_const_v<element_type>)
       // SAFETY: `size()` is exactly the number of elements in the initializer
       // list, so accessing that many will be safe.
-      : UNSAFE_BUFFERS(span(il.begin(), il.size())) {}
+      : UNSAFE_BUFFERS(span(unchecked, il.begin(), il.size())) {}
 
   // Copy and move.
   constexpr span(const span& other) noexcept = default;
@@ -551,7 +612,7 @@ class GSL_POINTER span {
                other) noexcept
       // SAFETY: `size()` is the number of elements that can be safely accessed
       // at `data()`.
-      : UNSAFE_BUFFERS(span(other.data(), other.size())) {}
+      : UNSAFE_BUFFERS(span(unchecked, other.data(), other.size())) {}
   constexpr span(span&& other) noexcept = default;
 
   // Copy and move assignment.
@@ -713,13 +774,13 @@ class GSL_POINTER span {
   {
     // SAFETY: `data()` points to at least `extent` elements, so the new data
     // scope is a strict subset of the old.
-    return UNSAFE_BUFFERS(span<element_type, Count>(data(), Count));
+    return UNSAFE_BUFFERS(span<element_type, Count>(unchecked, data(), Count));
   }
   constexpr auto first(StrictNumeric<size_type> count) const {
     CHECK(size_type{count} <= extent);
     // SAFETY: `data()` points to at least `extent` elements, so the new data
     // scope is a strict subset of the old.
-    return UNSAFE_BUFFERS(span<element_type>(data(), count));
+    return UNSAFE_BUFFERS(span<element_type>(unchecked, data(), count));
   }
 
   // Last `count` elements.
@@ -730,14 +791,14 @@ class GSL_POINTER span {
     // SAFETY: `data()` points to at least `extent` elements, so the new data
     // scope is a strict subset of the old.
     return UNSAFE_BUFFERS(
-        span<element_type, Count>(data() + (extent - Count), Count));
+        span<element_type, Count>(unchecked, data() + (extent - Count), Count));
   }
   constexpr auto last(StrictNumeric<size_type> count) const {
     CHECK(size_type{count} <= extent);
     // SAFETY: `data()` points to at least `extent` elements, so the new data
     // scope is a strict subset of the old.
-    return UNSAFE_BUFFERS(
-        span<element_type>(data() + (extent - size_type{count}), count));
+    return UNSAFE_BUFFERS(span<element_type>(
+        unchecked, data() + (extent - size_type{count}), count));
   }
 
   // `count` elements beginning at `offset`.
@@ -751,13 +812,14 @@ class GSL_POINTER span {
       // SAFETY: `data()` points to at least `extent` elements, so `Offset`
       // specifies a valid element index or the past-the-end index, and
       // `kRemaining` cannot index past-the-end elements.
-      return UNSAFE_BUFFERS(
-          span<element_type, kRemaining>(data() + Offset, kRemaining));
+      return UNSAFE_BUFFERS(span<element_type, kRemaining>(
+          unchecked, data() + Offset, kRemaining));
     } else {
       // SAFETY: `data()` points to at least `extent` elements, so `Offset`
       // specifies a valid element index or the past-the-end index, and `Count`
       // is no larger than the number of remaining valid elements.
-      return UNSAFE_BUFFERS(span<element_type, Count>(data() + Offset, Count));
+      return UNSAFE_BUFFERS(
+          span<element_type, Count>(unchecked, data() + Offset, Count));
     }
   }
   constexpr auto subspan(StrictNumeric<size_type> offset) const {
@@ -767,7 +829,7 @@ class GSL_POINTER span {
     // specifies a valid element index or the past-the-end index, and
     // `remaining` cannot index past-the-end elements.
     return UNSAFE_BUFFERS(
-        span<element_type>(data() + size_type{offset}, remaining));
+        span<element_type>(unchecked, data() + size_type{offset}, remaining));
   }
   constexpr auto subspan(StrictNumeric<size_type> offset,
                          StrictNumeric<size_type> count) const {
@@ -780,7 +842,7 @@ class GSL_POINTER span {
     // specifies a valid element index or the past-the-end index, and `count` is
     // no larger than the number of remaining valid elements.
     return UNSAFE_BUFFERS(
-        span<element_type>(data() + size_type{offset}, count));
+        span<element_type>(unchecked, data() + size_type{offset}, count));
   }
 
   // Splits a span a given offset, returning a pair of spans that cover the
@@ -1015,6 +1077,25 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
   // PRECONDITIONS: `first` must point to the first of at least `count`
   // contiguous valid elements.
   UNSAFE_BUFFER_USAGE constexpr span(It first, StrictNumeric<size_type> count)
+      : span(unchecked, first, count) {
+#if PA_BUILDFLAG(CHECKED_SPAN)
+    if (!std::is_constant_evaluated()) {
+      if (data() || size()) {
+        CHECK(!partition_alloc::IsExtentOutOfBounds(data(), size_bytes(),
+                                                    sizeof(element_type)));
+      }
+    }
+#endif  // PA_BUILDFLAG(CHECKED_SPAN)
+  }
+
+  // Iterator + count, skipping PartitionAlloc bounds check.
+  template <typename It>
+    requires(internal::CompatibleIter<element_type, It>)
+  // PRECONDITIONS: `first` must point to the first of at least `count`
+  // contiguous valid elements.
+  UNSAFE_BUFFER_USAGE constexpr span(unchecked_t tag,
+                                     It first,
+                                     StrictNumeric<size_type> count)
       : data_(to_address(first)), size_(count) {
     // Non-zero `count` implies non-null `data_`. Use `SpanOrSize<T>` to
     // represent a size that might not be accompanied by the actual data.
@@ -1029,6 +1110,26 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
   // PRECONDITIONS: `first` and `last` must be for the same allocation and all
   // elements in the range [first, last) must be valid.
   UNSAFE_BUFFER_USAGE constexpr span(It first, End last)
+      // SAFETY: See comments in the unchecked constructor.
+      : UNSAFE_BUFFERS(span(unchecked, first, last)) {
+#if PA_BUILDFLAG(CHECKED_SPAN)
+    if (!std::is_constant_evaluated()) {
+      if (data() || size()) {
+        CHECK(!partition_alloc::IsExtentOutOfBounds(data(), size_bytes(),
+                                                    sizeof(element_type)));
+      }
+    }
+#endif  // PA_BUILDFLAG(CHECKED_SPAN)
+  }
+
+  // Iterator + sentinel, skipping the PartitionAlloc bounds check.
+  template <typename It, typename End>
+    requires(internal::CompatibleIter<element_type, It> &&
+             std::sized_sentinel_for<End, It> &&
+             !std::is_convertible_v<End, size_t>)
+  // PRECONDITIONS: `first` and `last` must be for the same allocation and all
+  // elements in the range [first, last) must be valid.
+  UNSAFE_BUFFER_USAGE constexpr span(unchecked_t tag, It first, End last)
       // SAFETY: The caller must guarantee that `first` and `last` point into
       // the same allocation. In this case, `size_` will be the number of
       // elements between the iterators and thus a valid size for the pointer to
@@ -1037,7 +1138,8 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
       // It is safe to check for underflow after subtraction because the
       // underflow itself is not UB and `size_` is not converted to an invalid
       // pointer (which would be UB) before the check.
-      : UNSAFE_BUFFERS(span(first, static_cast<size_type>(last - first))) {
+      : UNSAFE_BUFFERS(
+            span(unchecked, first, static_cast<size_type>(last - first))) {
     // Verify `last - first` did not underflow.
     CHECK(first <= last);
   }
@@ -1047,7 +1149,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
   // NOLINTNEXTLINE(google-explicit-constructor)
   constexpr span(element_type (&arr LIFETIME_BOUND)[N]) noexcept
       // SAFETY: The type signature guarantees `arr` contains `N` elements.
-      : UNSAFE_BUFFERS(span(arr, N)) {}
+      : UNSAFE_BUFFERS(span(unchecked, arr, N)) {}
 
   // Range.
   template <typename R>
@@ -1057,8 +1159,9 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
       // SAFETY: `std::ranges::size()` returns the number of elements
       // `std::ranges::data()` will point to, so accessing those elements will
       // be safe.
-      : UNSAFE_BUFFERS(
-            span(std::ranges::data(range), std::ranges::size(range))) {}
+      : UNSAFE_BUFFERS(span(unchecked,
+                            std::ranges::data(range),
+                            std::ranges::size(range))) {}
   template <typename R>
     requires(internal::CompatibleRange<element_type, R> &&
              std::ranges::borrowed_range<R>)
@@ -1067,15 +1170,16 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
       // SAFETY: `std::ranges::size()` returns the number of elements
       // `std::ranges::data()` will point to, so accessing those elements will
       // be safe.
-      : UNSAFE_BUFFERS(
-            span(std::ranges::data(range), std::ranges::size(range))) {}
+      : UNSAFE_BUFFERS(span(unchecked,
+                            std::ranges::data(range),
+                            std::ranges::size(range))) {}
 
   // Initializer list.
   constexpr span(std::initializer_list<value_type> il LIFETIME_BOUND)
     requires(std::is_const_v<element_type>)
       // SAFETY: `size()` is exactly the number of elements in the initializer
       // list, so accessing that many will be safe.
-      : UNSAFE_BUFFERS(span(il.begin(), il.size())) {}
+      : UNSAFE_BUFFERS(span(unchecked, il.begin(), il.size())) {}
 
   // Copy and move.
   constexpr span(const span& other) noexcept = default;
@@ -1200,13 +1304,13 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
     CHECK(Count <= size());
     // SAFETY: `data()` points to at least `size()` elements, so the new data
     // scope is a strict subset of the old.
-    return UNSAFE_BUFFERS(span<element_type, Count>(data(), Count));
+    return UNSAFE_BUFFERS(span<element_type, Count>(unchecked, data(), Count));
   }
   constexpr auto first(StrictNumeric<size_t> count) const {
     CHECK(size_type{count} <= size());
     // SAFETY: `data()` points to at least `size()` elements, so the new data
     // scope is a strict subset of the old.
-    return UNSAFE_BUFFERS(span<element_type>(data(), count));
+    return UNSAFE_BUFFERS(span<element_type>(unchecked, data(), count));
   }
 
   // Last `count` elements.
@@ -1216,14 +1320,14 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
     // SAFETY: `data()` points to at least `size()` elements, so the new data
     // scope is a strict subset of the old.
     return UNSAFE_BUFFERS(
-        span<element_type, Count>(data() + (size() - Count), Count));
+        span<element_type, Count>(unchecked, data() + (size() - Count), Count));
   }
   constexpr auto last(StrictNumeric<size_type> count) const {
     CHECK(size_type{count} <= size());
     // SAFETY: `data()` points to at least `size()` elements, so the new data
     // scope is a strict subset of the old.
-    return UNSAFE_BUFFERS(
-        span<element_type>(data() + (size() - size_type{count}), count));
+    return UNSAFE_BUFFERS(span<element_type>(
+        unchecked, data() + (size() - size_type{count}), count));
   }
 
   // `count` elements beginning at `offset`.
@@ -1236,13 +1340,14 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
       // specifies a valid element index or the past-the-end index, and
       // `remaining` cannot index past-the-end elements.
       return UNSAFE_BUFFERS(
-          span<element_type, Count>(data() + Offset, remaining));
+          span<element_type, Count>(unchecked, data() + Offset, remaining));
     }
     CHECK(Count <= remaining);
     // SAFETY: `data()` points to at least `size()` elements, so `Offset`
     // specifies a valid element index or the past-the-end index, and `Count` is
     // no larger than the number of remaining valid elements.
-    return UNSAFE_BUFFERS(span<element_type, Count>(data() + Offset, Count));
+    return UNSAFE_BUFFERS(
+        span<element_type, Count>(unchecked, data() + Offset, Count));
   }
   constexpr auto subspan(StrictNumeric<size_type> offset) const {
     CHECK(size_type{offset} <= size());
@@ -1251,7 +1356,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
     // specifies a valid element index or the past-the-end index, and
     // `remaining` cannot index past-the-end elements.
     return UNSAFE_BUFFERS(
-        span<element_type>(data() + size_type{offset}, remaining));
+        span<element_type>(unchecked, data() + size_type{offset}, remaining));
   }
   constexpr auto subspan(StrictNumeric<size_type> offset,
                          StrictNumeric<size_type> count) const {
@@ -1264,7 +1369,7 @@ class GSL_POINTER span<ElementType, dynamic_extent, InternalPtrType> {
     // specifies a valid element index or the past-the-end index, and `count` is
     // no larger than the number of remaining valid elements.
     return UNSAFE_BUFFERS(
-        span<element_type>(data() + size_type{offset}, count));
+        span<element_type>(unchecked, data() + size_type{offset}, count));
   }
 
   // Splits a span a given offset, returning a pair of spans that cover the
@@ -1495,6 +1600,12 @@ template <typename It, typename EndOrSize>
 span(It, EndOrSize) -> span<std::remove_reference_t<std::iter_reference_t<It>>,
                             internal::MaybeStaticExt<EndOrSize>>;
 
+template <typename It, typename EndOrSize>
+  requires(std::contiguous_iterator<It>)
+span(unchecked_t, It, EndOrSize)
+    -> span<std::remove_reference_t<std::iter_reference_t<It>>,
+            internal::MaybeStaticExt<EndOrSize>>;
+
 template <typename R>
   requires(std::ranges::contiguous_range<R>)
 span(R&&) -> span<std::remove_reference_t<std::ranges::range_reference_t<R>>,
@@ -1575,13 +1686,13 @@ template <typename T>
 constexpr auto span_from_ref(const T& t LIFETIME_BOUND) {
   // SAFETY: It's safe to read the memory at `t`'s address as long as the
   // provided reference is valid.
-  return UNSAFE_BUFFERS(span<const T, 1>(std::addressof(t), 1u));
+  return UNSAFE_BUFFERS(span<const T, 1>(unchecked, std::addressof(t), 1u));
 }
 template <typename T>
 constexpr auto span_from_ref(T& t LIFETIME_BOUND) {
   // SAFETY: It's safe to read the memory at `t`'s address as long as the
   // provided reference is valid.
-  return UNSAFE_BUFFERS(span<T, 1>(std::addressof(t), 1u));
+  return UNSAFE_BUFFERS(span<T, 1>(unchecked, std::addressof(t), 1u));
 }
 
 // Converts a `T&` to a `span<[const] uint8_t, sizeof(T)>`.
@@ -1733,6 +1844,102 @@ constexpr auto as_writable_byte_span(
     ElementType (&arr LIFETIME_BOUND)[Extent]) {
   return as_writable_bytes(allow_nonunique_obj, span<ElementType, Extent>(arr));
 }
+
+namespace subtle {
+// Reinterprets a span of bytes (uint8_t) as a span of another type
+// `ElementType`.
+//
+// Please use sparingly. Prefer structured serialization/deserialization methods
+// when possible, for instance with SpanReader.
+//
+// This is useful when handling buffers (e.g. IPC messages, shared memory) where
+// the type of the data is known but the buffer is typed as generic bytes.
+//
+// This is conceptually the inverse of `as_byte_span()`.
+//
+// The source span must be strictly `uint8_t` (const or mutable).
+//
+// Please do not use as_byte_span() followed by reinterpret_span() as a way to
+// cast between two arbitrary types. This would violate strict aliasing rules
+// and result in undefined behavior. Only use reinterpret_span() on spans that
+// were originally byte spans.
+template <typename ElementType,
+          typename ByteType,
+          size_t Count,
+          typename InternalPtrType>
+  requires(
+      // In standard C++, pointers of different types are assumed not to alias
+      // (the strict aliasing rule). While Chromium disables strict aliasing
+      // (-fno-strict-aliasing), it doesn't hurt to follow the rule in this
+      // function, since it is intended to be a safe alternative to raw pointer
+      // casts. By restricting `ByteType` to be `uint8_t` (or `const uint8_t`),
+      // we ensure that the function is only used for its intended purpose of
+      // reinterpreting byte spans, and not for arbitrary type punning.
+      std::same_as<std::remove_cv_t<ByteType>, uint8_t> &&
+
+      // This function effectively "creates" objects by overlaying a type onto
+      // raw bytes, bypassing constructors. Such an operation is only safe for
+      // objects that do not maintain internal invariant. Therefore, we restrict
+      // this function to trivially copyable types.
+      std::is_trivially_copyable_v<ElementType> &&
+
+      // Ensure we are not casting away constness.
+      (!std::is_const_v<ByteType> || std::is_const_v<ElementType>) &&
+
+      // Ensure the size of the byte span is a multiple of the target type size.
+      // This is checked at compile time for fixed-size spans, and at runtime
+      // for dynamic-size spans.
+      (Count == dynamic_extent || Count % sizeof(ElementType) == 0))
+[[nodiscard]] constexpr auto reinterpret_span(
+    span<ByteType, Count, InternalPtrType> s) {
+  // Check for proper alignment of the target type.
+  // This remains a runtime CHECK because alignment is a property of the
+  // pointer value, not the type system.
+  CHECK(reinterpret_cast<uintptr_t>(s.data()) % alignof(ElementType) == 0u);
+
+  // Runtime check for dynamic spans ensures size is a multiple of ElementType.
+  if constexpr (Count == dynamic_extent) {
+    CHECK(s.size_bytes() % sizeof(ElementType) == 0u);
+  }
+
+  // In C++, one cannot simply reinterpret a span of bytes as a span of
+  // `ElementType` and dereference it, unless an object of type `ElementType`
+  // actually exists at that memory location.
+  //
+  // Per [intro.object], casting a pointer does not start the lifetime of an
+  // object. Even if the bytes represent a valid object representation, strict
+  // adherence to the standard requires explicit object creation. Dereferencing
+  // a pointer to an object that hasn't been created is undefined behavior.
+  //
+  // The proper solution is C++23's `std::start_lifetime_as_array`
+  // (see [obj.lifetime]), which explicitly blesses the memory as containing
+  // objects of type `ElementType`.
+  //
+  // [intro.object]: https://eel.is/c++draft/intro.object
+  // [obj.lifetime] https://eel.is/c++draft/obj.lifetime
+  //
+  // TODO(arthursonzogni): use std::start_lifetime_as_array.
+  //
+  // std::start_lifetime_as_array is part of C++23, but not yet implemented by
+  // CLang as of January 2026. `std::launder` helps with pointer provenance
+  // issues, but does not by itself start the lifetime of the object. However,
+  // in practice, most compilers implicitly treat this pattern as valid de
+  // facto, but it is technically not standard-compliant.
+  auto* ptr = std::launder(reinterpret_cast<ElementType*>(s.data()));
+
+  if constexpr (Count == dynamic_extent) {
+    // SAFETY: We checked for proper alignment, size, strict aliasing rules, and
+    // started the lifetime of the array.
+    return UNSAFE_BUFFERS(span<ElementType, dynamic_extent>(
+        ptr, s.size_bytes() / sizeof(ElementType)));
+  } else {
+    // SAFETY: We checked for proper alignment, size, strict aliasing rules, and
+    // started the lifetime of the array.
+    constexpr size_t NewCount = Count / sizeof(ElementType);
+    return UNSAFE_BUFFERS(span<ElementType, NewCount>(ptr, NewCount));
+  }
+}
+}  // namespace subtle
 
 }  // namespace base
 

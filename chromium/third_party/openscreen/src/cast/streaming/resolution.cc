@@ -38,12 +38,16 @@ bool FrameRateEquals(double a, double b) {
 
 }  // namespace
 
-bool Resolution::TryParse(const Json::Value& root, Resolution* out) {
-  if (!json::TryParseInt(root[kWidth], &(out->width)) ||
-      !json::TryParseInt(root[kHeight], &(out->height))) {
-    return false;
+ErrorOr<Resolution> Resolution::TryParse(const Json::Value& root) {
+  Resolution out;
+  if (!json::TryParseInt(root[kWidth], &out.width) ||
+      !json::TryParseInt(root[kHeight], &out.height)) {
+    return Error(Error::Code::kJsonParseError, "Invalid resolution");
   }
-  return out->IsValid();
+  if (!out.IsValid()) {
+    return Error(Error::Code::kJsonParseError, "Invalid resolution values");
+  }
+  return out;
 }
 
 bool Resolution::IsValid() const {
@@ -71,14 +75,23 @@ bool Resolution::IsSupersetOf(const Resolution& other) const {
   return width >= other.width && height >= other.height;
 }
 
-bool Dimensions::TryParse(const Json::Value& root, Dimensions* out) {
-  if (!json::TryParseInt(root[kWidth], &(out->width)) ||
-      !json::TryParseInt(root[kHeight], &(out->height)) ||
-      !(root[kFrameRate].isNull() ||
-        json::TryParseSimpleFraction(root[kFrameRate], &(out->frame_rate)))) {
-    return false;
+ErrorOr<Dimensions> Dimensions::TryParse(const Json::Value& root) {
+  Dimensions out;
+  if (!json::TryParseInt(root[kWidth], &out.width) ||
+      !json::TryParseInt(root[kHeight], &out.height)) {
+    return Error(Error::Code::kJsonParseError, "Invalid dimensions");
   }
-  return out->IsValid();
+
+  if (!root[kFrameRate].isNull()) {
+    if (!json::TryParseSimpleFraction(root[kFrameRate], &out.frame_rate)) {
+      return Error(Error::Code::kJsonParseError, "Invalid frame rate");
+    }
+  }
+
+  if (!out.IsValid()) {
+    return Error(Error::Code::kJsonParseError, "Invalid dimensions values");
+  }
+  return out;
 }
 
 bool Dimensions::IsValid() const {

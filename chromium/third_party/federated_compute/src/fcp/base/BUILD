@@ -60,6 +60,7 @@ cc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:cord",
+        "@com_google_protobuf//:protobuf",
     ],
 )
 
@@ -143,6 +144,7 @@ cc_library(
         "random_token.h",
     ],
     copts = FCP_COPTS,
+    visibility = ["//visibility:public"],
     deps = [
         ":base",
         "@boringssl//:crypto",
@@ -445,6 +447,8 @@ cc_library(
     copts = FCP_COPTS,
     deps = [
         ":clock",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
     ],
 )
 

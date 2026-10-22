@@ -27,7 +27,6 @@
 
 #include "src/tint/lang/spirv/writer/raise/resource_table_helper.h"
 
-#include "src/tint/lang/core/type/pointer.h"
 #include "src/tint/lang/core/type/resource_table.h"
 #include "src/tint/lang/core/type/resource_type.h"
 

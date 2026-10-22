@@ -26,6 +26,7 @@
 
 #include "libavutil/mem.h"
 #include "libavutil/avassert.h"
+#include "libavutil/base64.h"
 #include "libavutil/bprint.h"
 #include "libavutil/error.h"
 #include "libavutil/hash.h"
@@ -147,12 +148,7 @@ int avtext_context_open(AVTextFormatContext **ptctx, const AVTextFormatter *form
         goto fail;
     }
 
-    tctx->is_key_selected = options.is_key_selected;
-    tctx->show_value_unit = options.show_value_unit;
-    tctx->use_value_prefix = options.use_value_prefix;
-    tctx->use_byte_value_binary_prefix = options.use_byte_value_binary_prefix;
-    tctx->use_value_sexagesimal_format = options.use_value_sexagesimal_format;
-    tctx->show_optional_fields = options.show_optional_fields;
+    tctx->opts = options;
 
     if (nb_sections > SECTION_MAX_NB_SECTIONS) {
         av_log(tctx, AV_LOG_ERROR, "The number of section definitions (%d) is larger than the maximum allowed (%d)\n", nb_sections, SECTION_MAX_NB_SECTIONS);
@@ -292,17 +288,17 @@ void avtext_print_integer(AVTextFormatContext *tctx, const char *key, int64_t va
 {
     av_assert0(tctx);
 
-    if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER)
+    if (tctx->opts.show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER)
         return;
 
-    if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
+    if (tctx->opts.show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
         && (flags & AV_TEXTFORMAT_PRINT_STRING_OPTIONAL)
         && !(tctx->formatter->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS))
         return;
 
     av_assert0(key && tctx->level >= 0 && tctx->level < SECTION_MAX_NB_LEVELS);
 
-    if (!tctx->is_key_selected || tctx->is_key_selected(tctx, key)) {
+    if (!tctx->opts.is_key_selected || tctx->opts.is_key_selected(tctx, key)) {
         tctx->formatter->print_integer(tctx, key, val);
         tctx->nb_item[tctx->level]++;
     }
@@ -388,7 +384,7 @@ static char *value_string(const AVTextFormatContext *tctx, char *buf, int buf_si
         vali = uv.val.i;
     }
 
-    if (uv.unit == unit_second_str && tctx->use_value_sexagesimal_format) {
+    if (uv.unit == unit_second_str && tctx->opts.use_value_sexagesimal_format) {
         double secs;
         int hours, mins;
         secs  = vald;
@@ -400,10 +396,10 @@ static char *value_string(const AVTextFormatContext *tctx, char *buf, int buf_si
     } else {
         const char *prefix_string = "";
 
-        if (tctx->use_value_prefix && vald > 1) {
+        if (tctx->opts.use_value_prefix && vald > 1) {
             int64_t index;
 
-            if (uv.unit == unit_byte_str && tctx->use_byte_value_binary_prefix) {
+            if (uv.unit == unit_byte_str && tctx->opts.use_byte_value_binary_prefix) {
                 index = (int64_t)(log2(vald) / 10);
                 index = av_clip64(index, 0, FF_ARRAY_ELEMS(si_prefixes) - 1);
                 vald /= si_prefixes[index].bin_val;
@@ -417,13 +413,13 @@ static char *value_string(const AVTextFormatContext *tctx, char *buf, int buf_si
             vali = (int64_t)vald;
         }
 
-        if (show_float || (tctx->use_value_prefix && vald != (int64_t)vald))
+        if (show_float || (tctx->opts.use_value_prefix && vald != (int64_t)vald))
             snprintf(buf, buf_size, "%f", vald);
         else
             snprintf(buf, buf_size, "%"PRId64, vali);
 
-        av_strlcatf(buf, buf_size, "%s%s%s", *prefix_string || tctx->show_value_unit ? " " : "",
-                    prefix_string, tctx->show_value_unit ? uv.unit : "");
+        av_strlcatf(buf, buf_size, "%s%s%s", *prefix_string || tctx->opts.show_value_unit ? " " : "",
+                    prefix_string, tctx->opts.show_value_unit ? uv.unit : "");
     }
 
     return buf;
@@ -449,15 +445,15 @@ int avtext_print_string(AVTextFormatContext *tctx, const char *key, const char *
 
     section = tctx->section[tctx->level];
 
-    if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER)
+    if (tctx->opts.show_optional_fields == SHOW_OPTIONAL_FIELDS_NEVER)
         return 0;
 
-    if (tctx->show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
+    if (tctx->opts.show_optional_fields == SHOW_OPTIONAL_FIELDS_AUTO
         && (flags & AV_TEXTFORMAT_PRINT_STRING_OPTIONAL)
         && !(tctx->formatter->flags & AV_TEXTFORMAT_FLAG_SUPPORTS_OPTIONAL_FIELDS))
         return 0;
 
-    if (!tctx->is_key_selected || tctx->is_key_selected(tctx, key)) {
+    if (!tctx->opts.is_key_selected || tctx->opts.is_key_selected(tctx, key)) {
         if (flags & AV_TEXTFORMAT_PRINT_STRING_VALIDATE) {
             char *key1 = NULL, *val1 = NULL;
             ret = validate_string(tctx, &key1, key);
@@ -513,30 +509,57 @@ void avtext_print_ts(AVTextFormatContext *tctx, const char *key, int64_t ts, int
         avtext_print_integer(tctx, key, ts, 0);
 }
 
+static void print_data_xxd(AVBPrint *bp, const uint8_t *data, int size)
+{
+    unsigned offset = 0;
+    int i;
+
+    av_bprintf(bp, "\n");
+    while (size) {
+        av_bprintf(bp, "%08x: ", offset);
+        int l = FFMIN(size, 16);
+        for (i = 0; i < l; i++) {
+            av_bprintf(bp, "%02x", data[i]);
+            if (i & 1)
+                av_bprintf(bp, " ");
+        }
+        av_bprint_chars(bp, ' ', 41 - 2 * i - i / 2);
+        for (i = 0; i < l; i++)
+            av_bprint_chars(bp, data[i] - 32U < 95 ? data[i] : '.', 1);
+        av_bprintf(bp, "\n");
+        offset += l;
+        data   += l;
+        size   -= l;
+    }
+}
+
+static void print_data_base64(AVBPrint *bp, const uint8_t *data, int size)
+{
+    char buf[AV_BASE64_SIZE(60)];
+
+    av_bprintf(bp, "\n");
+    while (size) {
+        int l = FFMIN(size, 60);
+        av_base64_encode(buf, sizeof(buf), data, l);
+        av_bprintf(bp, "%s\n", buf);
+        data   += l;
+        size   -= l;
+    }
+}
 void avtext_print_data(AVTextFormatContext *tctx, const char *key,
                        const uint8_t *data, int size)
 {
     AVBPrint bp;
-    unsigned offset = 0;
-    int i;
-
     av_bprint_init(&bp, 0, AV_BPRINT_SIZE_UNLIMITED);
-    av_bprintf(&bp, "\n");
-    while (size) {
-        av_bprintf(&bp, "%08x: ", offset);
-        int l = FFMIN(size, 16);
-        for (i = 0; i < l; i++) {
-            av_bprintf(&bp, "%02x", data[i]);
-            if (i & 1)
-                av_bprintf(&bp, " ");
-        }
-        av_bprint_chars(&bp, ' ', 41 - 2 * i - i / 2);
-        for (i = 0; i < l; i++)
-            av_bprint_chars(&bp, data[i] - 32U < 95 ? data[i] : '.', 1);
-        av_bprintf(&bp, "\n");
-        offset += l;
-        data   += l;
-        size   -= l;
+    switch (tctx->opts.data_dump_format) {
+    case AV_TEXTFORMAT_DATADUMP_XXD:
+        print_data_xxd(&bp, data, size);
+        break;
+    case AV_TEXTFORMAT_DATADUMP_BASE64:
+        print_data_base64(&bp, data, size);
+        break;
+    default:
+        av_unreachable("Invalid data dump type");
     }
     avtext_print_string(tctx, key, bp.str, 0);
     av_bprint_finalize(&bp, NULL);

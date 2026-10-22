@@ -9,7 +9,10 @@
 #include <utility>
 #include <vector>
 
+#include "base/check.h"
+#include "base/logging.h"
 #include "base/memory/raw_ptr.h"
+#include "base/notreached.h"
 #include "base/process/memory.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
@@ -17,7 +20,6 @@
 #include "cc/paint/image_provider.h"
 #include "cc/paint/render_surface_filters.h"
 #include "components/viz/common/display/renderer_settings.h"
-#include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_util.h"
 #include "components/viz/common/quads/aggregated_render_pass_draw_quad.h"
@@ -553,10 +555,9 @@ void SoftwareRenderer::DrawRenderPassQuad(
   }
 
   sk_sp<SkImage> filter_image;
-  const cc::FilterOperations* filters = FiltersForPass(quad->render_pass_id);
-  if (filters) {
-    DCHECK(!filters->IsEmpty());
-    auto paint_filter = cc::RenderSurfaceFilters::BuildImageFilter(*filters);
+  if (!quad->filters.IsEmpty()) {
+    auto paint_filter =
+        cc::RenderSurfaceFilters::BuildImageFilter(quad->filters);
     auto image_filter =
         paint_filter ? paint_filter->cached_sk_filter_ : nullptr;
     if (image_filter) {
@@ -845,13 +846,9 @@ sk_sp<SkImage> SoftwareRenderer::ApplyBackdropFilterWithExactOutputSize(
   if (!available_backdrop.contains(filter->filterBounds(
           output_rect, local_matrix, SkImageFilter::kReverse_MapDirection,
           /*inputRect=*/nullptr))) {
-    const SkTileMode sk_tile_mode =
-        base::FeatureList::IsEnabled(features::kBackdropFilterMirrorEdgeMode)
-            ? SkTileMode::kMirror
-            : SkTileMode::kClamp;
     filter = SkImageFilters::Compose(
         /*outer=*/std::move(filter),
-        /*inner=*/SkImageFilters::Crop(available_backdrop, sk_tile_mode,
+        /*inner=*/SkImageFilters::Crop(available_backdrop, SkTileMode::kMirror,
                                        nullptr));
   }
 
@@ -890,7 +887,7 @@ sk_sp<SkShader> SoftwareRenderer::GetBackdropFilterShader(
     const AggregatedRenderPassDrawQuad* quad,
     SkTileMode content_tile_mode) const {
   const cc::FilterOperations* backdrop_filters =
-      BackdropFiltersForPass(quad->render_pass_id);
+      quad->backdrop_filters.IsEmpty() ? nullptr : &quad->backdrop_filters;
   if (!ShouldApplyBackdropFilters(backdrop_filters, quad)) {
     return nullptr;
   }
@@ -908,8 +905,7 @@ sk_sp<SkShader> SoftwareRenderer::GetBackdropFilterShader(
   // Get the backdrop-filter-bounds as defined by the renderer. This is usually
   // the area defined by the border box of the element of the backdrop filter.
   // It will be in content space. This defines the area needed to be filtered.
-  std::optional<SkPath> backdrop_filter_bounds =
-      BackdropFilterBoundsForPass(quad->render_pass_id);
+  std::optional<SkPath> backdrop_filter_bounds = quad->backdrop_filter_bounds;
 
   gfx::Rect content_backdrop_rect;
   if (backdrop_filter_bounds.has_value()) {
@@ -964,7 +960,7 @@ sk_sp<SkShader> SoftwareRenderer::GetBackdropFilterShader(
   // the magnifier widget does so, which mixes a ZOOM backdrop filter with an
   // OFFSET filter. Due to crbug.com/1451898, that scenario never reaches this
   // check.
-  DCHECK(!FiltersForPass(quad->render_pass_id))
+  DCHECK(quad->filters.IsEmpty())
       << "Filters should always be in a separate Effect node";
 
   // We keep calculations in content space as to not break any crop filters

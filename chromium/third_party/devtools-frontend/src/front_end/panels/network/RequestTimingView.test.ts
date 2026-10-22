@@ -6,10 +6,14 @@ import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as Logs from '../../models/logs/logs.js';
 import * as NetworkTimeCalculator from '../../models/network_time_calculator/network_time_calculator.js';
 import {assertScreenshot, getCleanTextContentFromElements, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
 import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
+import {createViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
+import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
+import * as UI from '../../ui/legacy/legacy.js';
 
 import * as Network from './network.js';
 
@@ -208,5 +212,122 @@ describe('ResourceTimingView', () => {
     const revealStub = sinon.stub(Common.Revealer.RevealerRegistry.instance(), 'reveal');
     icon.click();
     sinon.assert.calledOnceWithExactly(revealStub, wasThrottled, false);
+  });
+
+  it('correctly passes requestUnfinished to the view', async () => {
+    stubNoopSettings();
+    const request = createNetworkRequest(
+        Protocol.Network.ServiceWorkerRouterSource.Network, Protocol.Network.ServiceWorkerRouterSource.Network);
+    request.finished = false;
+    const calculator = new NetworkTimeCalculator.NetworkTimeCalculator(true);
+
+    const viewStub = createViewFunctionStub(Network.RequestTimingView.RequestTimingView);
+    const component = new Network.RequestTimingView.RequestTimingView(undefined, viewStub);
+    renderElementIntoDOM(component);
+
+    component.request = request;
+    component.calculator = calculator;
+
+    const input = await viewStub.nextInput;
+    assert.isTrue(input.requestUnfinished, 'requestUnfinished should be true when request is not finished');
+
+    const requestFinished = createNetworkRequest(
+        Protocol.Network.ServiceWorkerRouterSource.Network, Protocol.Network.ServiceWorkerRouterSource.Network);
+    requestFinished.finished = true;
+
+    component.request = requestFinished;
+
+    const inputFinished = await viewStub.nextInput;
+    assert.isFalse(inputFinished.requestUnfinished, 'requestUnfinished should be false when request is finished');
+  });
+
+  it('shows caution message in DEFAULT_VIEW if and only if requestUnfinished is true', async () => {
+    stubNoopSettings();
+    const container = document.createElement('div');
+    renderElementIntoDOM(container);
+
+    const request = createNetworkRequest(
+        Protocol.Network.ServiceWorkerRouterSource.Network, Protocol.Network.ServiceWorkerRouterSource.Network);
+    const timeRanges = NetworkTimeCalculator.calculateRequestTimeRanges(request, 100);
+    const calculator = new NetworkTimeCalculator.NetworkTimeCalculator(true);
+
+    const baseInput: Parameters<typeof Network.RequestTimingView.DEFAULT_VIEW>[0] = {
+      requestUnfinished: false,
+      requestStartTime: 0,
+      requestIssueTime: 0,
+      totalDuration: 100,
+      startTime: 0,
+      endTime: 100,
+      timeRanges,
+      calculator,
+      serverTimings: [],
+    };
+
+    // Case 1: requestUnfinished = true
+    Network.RequestTimingView.DEFAULT_VIEW({...baseInput, requestUnfinished: true}, {}, container);
+    const cautionElementTrue = container.querySelector('.caution');
+    assert.isNotNull(cautionElementTrue, 'caution element should exist when requestUnfinished is true');
+    assert.include(cautionElementTrue?.textContent, 'CAUTION: request is not finished yet!');
+
+    // Case 2: requestUnfinished = false
+    Network.RequestTimingView.DEFAULT_VIEW({...baseInput, requestUnfinished: false}, {}, container);
+    const cautionElementFalse = container.querySelector('.caution');
+    assert.isNull(cautionElementFalse, 'caution element should not exist when requestUnfinished is false');
+  });
+
+  it('renders read-only object properties for Service Worker fetch details', async () => {
+    stubNoopSettings();
+    const request = createNetworkRequest(
+        Protocol.Network.ServiceWorkerRouterSource.Network, Protocol.Network.ServiceWorkerRouterSource.Network);
+    request.fetchedViaServiceWorker = true;
+
+    const origRequest = {
+      url: request.url(),
+      method: 'GET',
+      headers: {},
+      initialPriority: Protocol.Network.ResourcePriority.High,
+      referrerPolicy: Protocol.Network.RequestReferrerPolicy.StrictOriginWhenCrossOrigin,
+    } as Protocol.Network.Request;
+
+    const response = {
+      url: request.url(),
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      mimeType: 'text/html',
+      charset: '',
+      connectionReused: false,
+      connectionId: 0,
+      encodedDataLength: 0,
+      securityState: Protocol.Security.SecurityState.Secure,
+    } as Protocol.Network.Response;
+
+    sinon.stub(Logs.NetworkLog.NetworkLog.instance(), 'originalRequestForURL').returns(origRequest);
+    sinon.stub(Logs.NetworkLog.NetworkLog.instance(), 'originalResponseForURL').returns(response);
+
+    const component = Network.RequestTimingView.RequestTimingView.create(
+        request, new NetworkTimeCalculator.NetworkTimeCalculator(true));
+    const div = document.createElement('div');
+    renderElementIntoDOM(div);
+    component.markAsRoot();
+    component.show(div);
+
+    await component.updateComplete;
+
+    const detailsTreeElement = component.contentElement.querySelector('.network-fetch-timing-bar-details > *');
+    assert.exists(detailsTreeElement);
+    assert.exists(detailsTreeElement.shadowRoot);
+
+    const rootElements = detailsTreeElement.shadowRoot.querySelectorAll('li.object-properties-section-root-element');
+    assert.lengthOf(rootElements, 2);
+
+    for (const rootElementNode of rootElements) {
+      const rootElement = UI.TreeOutline.TreeElement.getTreeElementBylistItemNode(rootElementNode);
+      assert.exists(rootElement);
+      await rootElement.onpopulate();
+      const firstProperty = rootElement.childAt(0);
+      assert.instanceOf(firstProperty, ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement);
+      assert.isFalse(firstProperty.editable);
+    }
   });
 });

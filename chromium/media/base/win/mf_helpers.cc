@@ -875,6 +875,8 @@ Microsoft::WRL::ComPtr<IMFSample> CreateSampleFromTexture(
   if (need_perform_copy) {
     D3D11_TEXTURE2D_DESC desc;
     input_texture->GetDesc(&desc);
+    desc.Width = static_cast<UINT>(frame->visible_rect().width());
+    desc.Height = static_cast<UINT>(frame->visible_rect().height());
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_VIDEO_ENCODER;
     desc.ArraySize = 1;
@@ -1059,8 +1061,14 @@ void GenerateResourceOnSyncTokenReleased(
     RETURN_ON_FAILURE_WITH_CALLBACK(E_FAIL, "Invalid shared context state");
   }
 
+  auto shared_context_state = shared_image_stub->shared_context_state();
+  const bool needs_gl = !shared_context_state->IsGraphiteDawn();
+  if (!shared_context_state->MakeCurrent(nullptr, needs_gl)) {
+    RETURN_ON_FAILURE_WITH_CALLBACK(E_FAIL, "Failed to make context current");
+  }
+
   Microsoft::WRL::ComPtr<ID3D11Device> shared_d3d11_device =
-      shared_image_stub->shared_context_state()->GetD3D11Device();
+      shared_context_state->GetD3D11Device();
   HRESULT hr = shared_d3d11_device ? S_OK : E_FAIL;
   RETURN_ON_FAILURE_WITH_CALLBACK(hr, "Invalid shared d3d11 device");
   bool use_same_device = (encoder_device.Get() == shared_d3d11_device.Get());
@@ -1072,6 +1080,10 @@ void GenerateResourceOnSyncTokenReleased(
           command_buffer_helper->GetMemoryTypeTracker());
   RETURN_ON_FAILURE_WITH_CALLBACK(image_representation ? S_OK : E_FAIL,
                                   "Failed to produce video");
+
+  if (image_representation->size() != frame->coded_size()) {
+    RETURN_ON_FAILURE_WITH_CALLBACK(E_FAIL, "SharedImage size mismatch");
+  }
 
   auto scoped_read_access = image_representation->BeginScopedReadAccess();
   gpu::D3D11TextureAndArrayIndex input_texture =
@@ -1121,6 +1133,8 @@ void GenerateResourceOnSyncTokenReleased(
     texture_desc.CPUAccessFlags = 0;
     texture_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE |
                              D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+    texture_desc.Width = static_cast<UINT>(frame->visible_rect().width());
+    texture_desc.Height = static_cast<UINT>(frame->visible_rect().height());
     Microsoft::WRL::ComPtr<ID3D11Texture2D> shared_texture;
     hr = shared_d3d11_device->CreateTexture2D(&texture_desc, nullptr,
                                               &shared_texture);

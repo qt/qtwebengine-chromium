@@ -203,6 +203,96 @@ void GEMMBenchmark(benchmark::State& state,
 }
 
 void GEMMBenchmark(benchmark::State& state,
+                   xnn_qs8_qc2w_gemm_minmax_ukernel_fn gemm,
+                   xnn_init_qs8_qc8w_conv_minmax_params_fn init_params,
+                   xnn_pack_qs8_qc2w_gemm_fn pack, size_t mr, size_t nr,
+                   size_t kr, size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
+    return;
+  }
+
+  const size_t mc = state.range(0);
+  const size_t nc = state.range(1);
+  const size_t kc = state.range(2);
+
+  // Only allow full bytes of input rows.
+  if (kc % 4 != 0) {
+    return;
+  }
+
+  const size_t nc_stride = round_up_po2(nc, nr);
+  const size_t kc_stride = (round_up_po2(kc, kr * sr * 4) + 3) / 4;
+
+  xnnpack::ReplicableRandomDevice rng;
+  auto i32rng = std::bind(std::uniform_int_distribution<int32_t>(-10000, 10000),
+                          std::ref(rng));
+
+  xnnpack::Buffer<int8_t> a(mc * kc, xnnpack::XnnExtraBytes);
+  xnnpack::fill_uniform_random_bits(a.data(), a.size(), rng);
+  xnnpack::Buffer<uint8_t> k(nc * kc / 4);
+  xnnpack::fill_uniform_random_bits(k.data(), k.size(), rng);
+  xnnpack::Buffer<int32_t> b(nc);
+  std::generate(b.begin(), b.end(), std::ref(i32rng));
+
+  const size_t w_size = nc_stride * (sizeof(float) + sizeof(int32_t)) +
+                        kc_stride * nc_stride;
+  const size_t c_elements = mc * nc;
+  const size_t num_buffers = 1 + benchmark::utils::DivideRoundUp<size_t>(
+                                     benchmark::utils::GetMaxCacheSize(),
+                                     w_size + c_elements * sizeof(int8_t));
+
+  xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> w(w_size * num_buffers);
+
+  const xnn_qs8_qc2w_packing_params packing_params = {
+      static_cast<int8_t>(127 - 0x80), 0.0f};
+  pack(/*g=*/1, nc, kc, nr, kr, sr, k.data(), b.data(), /*scale=*/nullptr,
+       w.data(), nr * sizeof(float), &packing_params);
+
+  xnnpack::Buffer<int8_t> c(c_elements * num_buffers);
+
+  union xnn_qs8_qc8w_conv_minmax_params quantization_params;
+  init_params(&quantization_params,
+              /*output_zero_point=*/127,
+              /*output_min=*/-127,
+              /*output_max=*/126);
+
+  size_t buffer_index = 0;
+  for (auto _ : state) {
+    // Use circular buffers (exceeding cache size) and prefetch to control cache
+    // state:
+    // - A is always in L1 cache (if fits, otherwise L2, L3, etc)
+    // - W is not in cache (for any cache level)
+    // - C is not in cache (for any cache level)
+    state.PauseTiming();
+    benchmark::utils::PrefetchToL1(a.data(), a.size() * sizeof(int8_t));
+    buffer_index = (buffer_index + 1) % num_buffers;
+    state.ResumeTiming();
+
+    for (uint32_t m = 0; m < mc; m += mr) {
+      const uint32_t mb = min(mc - m, mr);
+      for (uint32_t n = 0; n < nc; n += nr) {
+        const uint32_t nb = min(nc - n, nr);
+        gemm(mb, nb, kc * sizeof(int8_t), a.data() + m * kc,
+             kc * sizeof(int8_t),
+             w.data() + w_size * buffer_index +
+                 n * (kc_stride + sizeof(int32_t)),
+             c.data() + (mc * buffer_index + m) * nc + n, nc * sizeof(int8_t),
+             nr * sizeof(int8_t), &quantization_params);
+      }
+    }
+  }
+
+  const uint64_t cpu_frequency = benchmark::utils::GetCurrentCpuFrequency();
+  if (cpu_frequency != 0) {
+    state.counters["cpufreq"] = cpu_frequency;
+  }
+
+  state.counters["OPS"] =
+      benchmark::Counter(uint64_t(state.iterations()) * 2 * mc * nc * kc,
+                         benchmark::Counter::kIsRate);
+}
+
+void GEMMBenchmark(benchmark::State& state,
                    xnn_qs8_qc4w_gemm_minmax_ukernel_fn gemm,
                    xnn_init_qs8_qc8w_conv_minmax_params_fn init_params,
                    xnn_pack_qs8_qc4w_gemm_fn pack, size_t mr, size_t nr, size_t kr,
@@ -708,7 +798,7 @@ void GEMMBenchmark(benchmark::State& state,
 void GEMMBenchmark(benchmark::State& state,
                    xnn_qd8_f32_qc2w_gemm_ukernel_fn gemm,
                    xnn_init_f32_minmax_params_fn init_params,
-                   xnn_pack_qs8_qc2w_gemm_fn pack, size_t mr, size_t nr,
+                   xnn_pack_qd8_qc2w_gemm_fn pack, size_t mr, size_t nr,
                    size_t kr, size_t sr, uint64_t arch_flags) {
   if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
@@ -748,7 +838,7 @@ void GEMMBenchmark(benchmark::State& state,
   xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> w(w_elements * num_buffers);
   xnnpack::Buffer<float> kernel_zero_point(nc, 0.0f);
 
-  const xnn_qs8_qc2w_packing_params packing_params = {
+  const xnn_qd8_qc2w_packing_params packing_params = {
       /*input_zero_point=*/1, /*kernel_zero_point=*/kernel_zero_point.data()};
   pack(1, nc, kc, nr, kr, sr, k.data(), /*bias=*/nullptr, /*scale=*/nullptr,
        w.data(), sizeof(float) * 2 * nr, &packing_params);
@@ -777,6 +867,93 @@ void GEMMBenchmark(benchmark::State& state,
            w.data() + w_elements * buffer_index,
            c.data() + (buffer_index * mc + m) * nc, nc * sizeof(float),
            nr * sizeof(float), &params, row_sum.data() + m,
+           quantization_params.data() + m);
+    }
+  }
+
+  const uint64_t cpu_frequency = benchmark::utils::GetCurrentCpuFrequency();
+  if (cpu_frequency != 0) {
+    state.counters["cpufreq"] = cpu_frequency;
+  }
+
+  state.counters["OPS"] =
+      benchmark::Counter(static_cast<uint64_t>(
+          state.iterations()) * 2 * mc * nc * kc, benchmark::Counter::kIsRate);
+}
+
+void GEMMBenchmark(benchmark::State& state,
+                   xnn_qd8_f16_qc2w_gemm_ukernel_fn gemm,
+                   xnn_init_f16_minmax_params_fn init_params,
+                   xnn_pack_qd8_qc2w_gemm_fn pack, size_t mr, size_t nr,
+                   size_t kr, size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
+    return;
+  }
+
+  const size_t mc = state.range(0);
+  const size_t nc = state.range(1);
+  const size_t kc = state.range(2);
+
+  // Only allow full bytes of input rows.
+  if (kc % 4 != 0) {
+    return;
+  }
+
+  const size_t nc_stride = round_up_po2(nc, nr);
+  const size_t kc_stride = (round_up_po2(kc, kr * sr * 4) + 3) / 4;
+
+  xnnpack::ReplicableRandomDevice rng;
+
+  xnnpack::Buffer<int8_t> a(mc * kc, xnnpack::XnnExtraBytes);
+  xnnpack::fill_uniform_random_bits(a.data(), a.size(), rng);
+
+  xnnpack::Buffer<uint8_t> k(nc * kc / 4);
+  xnnpack::fill_uniform_random_bits(k.data(), k.size(), rng);
+
+  xnnpack::Buffer<xnn_qd8_quantization_params> quantization_params(
+      mc + XNN_EXTRA_QUANTIZATION_PARAMS);
+  xnnpack::Buffer<float> row_sum(mc + XNN_EXTRA_QUANTIZATION_PARAMS);
+  const size_t w_elements =
+      nc_stride * (sizeof(float) * 3 + sizeof(int32_t)) + kc_stride * nc_stride;
+
+  const size_t c_elements = mc * nc;
+  const size_t num_buffers = 1 + benchmark::utils::DivideRoundUp<size_t>(
+                                     benchmark::utils::GetMaxCacheSize(),
+                                     sizeof(float) * (w_elements + c_elements));
+
+  xnnpack::Buffer<char, XNN_ALLOCATION_ALIGNMENT> w(w_elements * num_buffers);
+  xnnpack::Buffer<float> kernel_zero_point(nc, 0.0f);
+
+  const xnn_qd8_qc2w_packing_params packing_params = {
+      /*input_zero_point=*/1, /*kernel_zero_point=*/kernel_zero_point.data()};
+  pack(1, nc, kc, nr, kr, sr, k.data(), /*bias=*/nullptr, /*scale=*/nullptr,
+       w.data(), sizeof(float) * 2 * nr, &packing_params);
+  xnnpack::Buffer<xnn_float16> c(c_elements * num_buffers);
+
+  // Prepare parameters.
+  xnn_f16_minmax_params params;
+  init_params(&params,
+              static_cast<xnn_float16>(std::numeric_limits<int8_t>::min()),
+              static_cast<xnn_float16>(std::numeric_limits<int8_t>::max()));
+
+  size_t buffer_index = 0;
+  for (auto _ : state) {
+    // Use circular buffers (exceeding cache size) and prefetch to control cache
+    // state:
+    // - A is always in L1 cache (if fits, otherwise L2, L3, etc)
+    // - W is not in cache (for any cache level)
+    // - C is not in cache (for any cache level)
+    state.PauseTiming();
+    benchmark::utils::PrefetchToL1(a.data(), a.size());
+    buffer_index = (buffer_index + 1) % num_buffers;
+    state.ResumeTiming();
+
+    for (uint32_t m = 0; m < mc; m += mr) {
+      const uint32_t mb = min(mc - m, mr);
+      gemm(mb, nc, kc * sizeof(int8_t), a.data() + m * kc, kc * sizeof(int8_t),
+           w.data() + w_elements * buffer_index,
+           c.data() + (buffer_index * mc + m) * nc, nc * sizeof(xnn_float16),
+           nr * sizeof(xnn_float16), &params, row_sum.data() + m,
            quantization_params.data() + m);
     }
   }
@@ -952,11 +1129,11 @@ void GEMMBenchmark(benchmark::State& state,
   for (auto _ : state) {
     // Use circular buffers (exceeding cache size) and prefetch to control cache
     // state:
-    // - A is always in L1 cache (if fits, otherwise L2, L3, etc)
+    // - A_packed is always in L1 cache (if fits, otherwise L2, L3, etc)
     // - W is not in cache (for any cache level)
     // - C is not in cache (for any cache level)
     state.PauseTiming();
-    benchmark::utils::PrefetchToL1(a.data(), a.size());
+    benchmark::utils::PrefetchToL1(input_qp8.data(), input_qp8.size());
     buffer_index = (buffer_index + 1) % num_buffers;
     state.ResumeTiming();
 
@@ -1297,11 +1474,11 @@ void GEMMBenchmark(benchmark::State& state,
   for (auto _ : state) {
     // Use circular buffers (exceeding cache size) and prefetch to control cache
     // state:
-    // - A is always in L1 cache (if fits, otherwise L2, L3, etc)
+    // - A_packed is always in L1 cache (if fits, otherwise L2, L3, etc)
     // - W is not in cache (for any cache level)
     // - C is not in cache (for any cache level)
     state.PauseTiming();
-    benchmark::utils::PrefetchToL1(a.data(), a.size());
+    benchmark::utils::PrefetchToL1(input_qp8.data(), input_qp8.size());
     buffer_index = (buffer_index + 1) % num_buffers;
     state.ResumeTiming();
 

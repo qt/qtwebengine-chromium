@@ -63,7 +63,7 @@ struct Decoder<T, std::enable_if_t<std::is_integral_v<T>>> {
     /// @param reader the reader to decode from
     /// @param endianness the endianness of the integer
     /// @returns the decoded integer type, or an error if the stream is too short.
-    static Result<T> Decode(Reader& reader, Endianness endianness = Endianness::kLittle) {
+    static Result<T> Decode(Reader& reader, std::endian endianness = std::endian::little) {
         return reader.Int<T>(endianness);
     }
 };
@@ -255,7 +255,7 @@ struct Decoder<T, std::void_t<decltype(tint::EnumRange<T>::kMax)>> {
     /// @param reader the reader to decode from
     /// @param endianness the endianness of the enum
     /// @returns the decoded enum type, or an error if the stream is too short.
-    static Result<T> Decode(Reader& reader, Endianness endianness = Endianness::kLittle) {
+    static Result<T> Decode(Reader& reader, std::endian endianness = std::endian::little) {
         using Range = tint::EnumRange<T>;
         using U = std::underlying_type_t<T>;
         TINT_CHECK_RESULT_UNWRAP(value, reader.Int<U>(endianness));

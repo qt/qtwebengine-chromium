@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex};
@@ -43,7 +44,7 @@ static STATE_ID: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize
 pub struct State<'template, 'env> {
     pub(crate) ctx: Context<'env>,
     pub(crate) current_block: Option<&'env str>,
-    pub(crate) auto_escape: AutoEscape,
+    pub(crate) auto_escape: Cell<AutoEscape>,
     pub(crate) instructions: &'template Instructions<'env>,
     pub(crate) temps: Arc<Mutex<BTreeMap<Box<str>, Value>>>,
     pub(crate) blocks: BTreeMap<&'env str, BlockStack<'template, 'env>>,
@@ -64,7 +65,7 @@ impl fmt::Debug for State<'_, '_> {
         let mut ds = f.debug_struct("State");
         ds.field("name", &self.instructions.name());
         ds.field("current_block", &self.current_block);
-        ds.field("auto_escape", &self.auto_escape);
+        ds.field("auto_escape", &self.auto_escape.get());
         ds.field("ctx", &self.ctx);
         ds.field("env", &self.env());
         ds.finish()
@@ -83,7 +84,7 @@ impl<'template, 'env> State<'template, 'env> {
             #[cfg(feature = "macros")]
             id: STATE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             current_block: None,
-            auto_escape,
+            auto_escape: Cell::new(auto_escape),
             instructions,
             blocks,
             temps: Default::default(),
@@ -122,7 +123,22 @@ impl<'template, 'env> State<'template, 'env> {
     /// Returns the current value of the auto escape flag.
     #[inline(always)]
     pub fn auto_escape(&self) -> AutoEscape {
-        self.auto_escape
+        self.auto_escape.get()
+    }
+
+    pub(crate) fn with_auto_escape<R>(
+        &self,
+        auto_escape: AutoEscape,
+        f: impl FnOnce(&State<'template, 'env>) -> R,
+    ) -> R {
+        if self.auto_escape.get() == auto_escape {
+            return f(self);
+        }
+
+        let old = self.auto_escape.replace(auto_escape);
+        let rv = f(self);
+        self.auto_escape.set(old);
+        rv
     }
 
     /// Returns the current undefined behavior.
@@ -179,9 +195,9 @@ impl<'template, 'env> State<'template, 'env> {
     /// # let mut env = Environment::new();
     /// # env.add_template("hello", "{% block hi %}Hello {{ name }}!{% endblock %}")?;
     /// let tmpl = env.get_template("hello")?;
-    /// let rv = tmpl
-    ///     .eval_to_state(context!(name => "John"))?
-    ///     .render_block("hi")?;
+    /// let mut rendered = tmpl
+    ///     .render_captured(context!(name => "John"))?;
+    /// let rv = rendered.with_state_mut(|state| state.render_block("hi"))?;
     /// println!("{}", rv);
     /// # Ok(()) }
     /// ```
@@ -316,7 +332,7 @@ impl<'template, 'env> State<'template, 'env> {
     /// Temps are similar to context values but the engine never looks them up
     /// on their own and they are not scoped.  The lifetime of temps is limited
     /// to the rendering process of a template.  Temps are useful so that
-    /// filters and other things can temporary stash away state without having
+    /// filters and other things can temporarily stash away state without having
     /// to resort to thread locals which are hard to manage.  Unlike context
     /// variables, temps can also be modified during evaluation by filters and
     /// functions.
@@ -354,7 +370,7 @@ impl<'template, 'env> State<'template, 'env> {
 
     /// Shortcut for registering an object as a temp.
     ///
-    /// If the value is already there, it's returned as object, if it's
+    /// If the value is already there, it's returned as an object. If it's
     /// not there yet, the function is invoked to create it.
     ///
     /// # Example
@@ -378,7 +394,7 @@ impl<'template, 'env> State<'template, 'env> {
     ///
     /// # Panics
     ///
-    /// This will panick if the value registered under that name is not
+    /// This will panic if the value registered under that name is not
     /// the object expected.
     pub fn get_or_set_temp_object<O, F>(&self, name: &str, f: F) -> Arc<O>
     where
@@ -433,7 +449,7 @@ impl<'a> ArgType<'a> for &State<'_, '_> {
     }
 }
 
-/// Tracks a block and it's parents for super.
+/// Tracks a block and its parents for super.
 #[derive(Default)]
 pub(crate) struct BlockStack<'template, 'env> {
     instructions: Vec<&'template Instructions<'env>>,

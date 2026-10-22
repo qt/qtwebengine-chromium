@@ -107,7 +107,7 @@ gfx::ImageSkia ScaleDesktopFrame(std::unique_ptr<webrtc::DesktopFrame> frame,
   // TODO(sergeyu): Fix screen/window capturers to capture alpha channel and
   // remove this code. Currently screen/window capturers (at least some
   // implementations) only capture R, G and B channels and set Alpha to 0.
-  // crbug.com/264424
+  // crbug.com/41029106
   for (int y = 0; y < result.height(); ++y) {
     for (int x = 0; x < result.width(); ++x) {
       UNSAFE_TODO(
@@ -216,7 +216,8 @@ content::DesktopMediaID::Id GetUpdatedWindowId(
     }
   }
 #elif BUILDFLAG(IS_MAC)
-  if (remote_cocoa::ScopedCGWindowID::Get(desktop_media_id.id)) {
+  if (!is_source_list_delegated &&
+      remote_cocoa::ScopedCGWindowID::Get(desktop_media_id.id)) {
     window_id = desktop_media_id.id;
   }
 #endif
@@ -896,8 +897,14 @@ void NativeDesktopMediaList::Refresh(bool update_thumbnails) {
   DCHECK(can_refresh());
 
 #if defined(USE_AURA)
-  DCHECK_EQ(pending_aura_capture_requests_, 0);
-  DCHECK(!pending_native_thumbnail_capture_);
+  if (pending_aura_capture_requests_ > 0 || pending_native_thumbnail_capture_) {
+    // If there's still a pending capture, just bail out; we can't refresh until
+    // the capture is actually finished. This can happen if the worker thread is
+    // slow to finish its native captures or the update rate for refreshes is
+    // very fast (or the timing is just unlucky).
+    return;
+  }
+
   new_aura_thumbnail_hashes_.clear();
 #endif
 

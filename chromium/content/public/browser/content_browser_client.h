@@ -455,6 +455,15 @@ class CONTENT_EXPORT ContentBrowserClient {
   // debug URLs.
   virtual bool IsExplicitNavigation(ui::PageTransition transition);
 
+  // Returns whether the given |web_contents|, which does not currently have
+  // focus, should be allowed to enter fullscreen mode. This provides a hook
+  // for handling special scenarios where an unfocused WebContents needs
+  // fullscreen capability. The primary motivating use case is to allow
+  // embedded content, such as a Controlled Frame, to enter fullscreen
+  // if its embedding context is focused. By default, returns false.
+  virtual bool IsFullscreenAllowedForUnfocusedWebContents(
+      content::WebContents* unfocused_web_contents);
+
   // Returns whether all instances of the specified site URL should be
   // rendered by the same process, rather than using process-per-site-instance.
   virtual bool ShouldUseProcessPerSite(BrowserContext* browser_context,
@@ -685,12 +694,21 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Must be less than or equal to the total number of RenderProcessHosts.
   virtual size_t GetProcessCountToIgnoreForLimit();
 
-  // Returns the cached permissions policy for the given Isolated Web App
-  // origin. Returns nullopt if the policy is not cached.
-  virtual std::optional<
-      std::vector<blink::mojom::IsolatedAppPermissionPolicyEntryPtr>>
-  GetPermissionsPolicyForIsolatedWebApp(BrowserContext* browser_context,
-                                        const url::Origin& iwa_origin);
+  // Allows the embedder to define a baseline permissions policy for an isolated
+  // app origin; if supported, permissions policies derived from the
+  // Permissions-Policy header of any document will be downscaled to respect the
+  // baseline.
+  //
+  // Say, the returned baseline is equal to { cross-origin-isolated: (self) }.
+  // Then a Permissions-Policy: cross-origin-isolated=(*), direct-sockets=(self)
+  // header will be effectively reduced to cross-origin-isolated=(self).
+  //
+  // It's valid to return false to disable this functionality; in this case the
+  // Permissions-Policy header will not be affected.
+  virtual bool SupportsBaselinePermissionsPolicyForIsolatedApp();
+  virtual std::vector<blink::mojom::IsolatedAppPermissionPolicyEntryPtr>
+  GetBaselinePermissionsPolicyForIsolatedApp(BrowserContext* browser_context,
+                                             const url::Origin& app_origin);
 
   // Returns whether a new process should be created or an existing one should
   // be reused based on the URL we want to load. This should return false,
@@ -800,6 +818,15 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool IsInitialWebUIURL(const GURL& url);
 #endif  // !BUILDFLAG(IS_ANDROID)
 
+  // Returns true if the given `url` hosts a Top Chrome WebUI.
+  // This allows the embedder to identify WebUIs that are part of the browser
+  // chrome, e.g., Tab Search, Side Panel, Initial WebUI etc., so that content/
+  // can apply specific process-sharing or metric-gathering logic.
+  //
+  // This function is defined on all platforms, but is expected to always return
+  // false on platforms that do not support Top Chrome WebUIs, e.g., Android.
+  virtual bool IsTopChromeWebUIURL(const GURL& url);
+
   // Allows the embedder to enable access to Isolated Context Web APIs for the
   // given |lock_url| -- the URL to which the renderer process is locked.
   // See [IsolatedContext] IDL attribute for more details.
@@ -907,20 +934,6 @@ class CONTENT_EXPORT ContentBrowserClient {
       const GURL& scope,
       BrowserContext* browser_context);
 
-  // Allows the embedder to enable process-wide blink features before starting a
-  // service worker. This is similar to
-  // `blink.mojom.CommitNavigationParams.force_enabled_origin_trials` but for
-  // RuntimeFeatures instead of Origin Trials.
-  //
-  // This method is only called when the process that will run the Service
-  // Worker is isolated. These features can be highly privileged, so the
-  // renderer process with such features enabled shouldn't be used for other
-  // sites.
-  virtual void UpdateEnabledBlinkRuntimeFeaturesInIsolatedWorker(
-      BrowserContext* context,
-      const GURL& script_url,
-      std::vector<std::string>& out_forced_enabled_runtime_features);
-
   // Allow the embedder to control if a Shared Worker can be connected from a
   // given tab.
   // This is called on the UI thread.
@@ -956,6 +969,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   // ServiceWorker controller, which is aligned with the specification.
   // https://w3c.github.io/ServiceWorker/#control-and-use-worker-client.
   virtual bool AllowSharedWorkerBlobURLFix(BrowserContext* context);
+
+  // Allow the shared worker to have extended lifetime.
+  virtual bool AllowSharedWorkerExtendedLifetime(BrowserContext* context);
 
   virtual bool IsDataSaverEnabled(BrowserContext* context);
 
@@ -1008,33 +1024,6 @@ class CONTENT_EXPORT ContentBrowserClient {
       BrowserContext* browser_context,
       const std::vector<GlobalRenderFrameHostId>& render_frames,
       const blink::StorageKey& storage_key);
-
-  // Allow the embedder to control whether we can use Web Bluetooth.
-  // TODO(crbug.com/40458188): Replace this with a use of the permission system.
-  enum class AllowWebBluetoothResult {
-    ALLOW,
-    BLOCK_POLICY,
-    BLOCK_GLOBALLY_DISABLED,
-  };
-  virtual AllowWebBluetoothResult AllowWebBluetooth(
-      content::BrowserContext* browser_context,
-      const url::Origin& requesting_origin,
-      const url::Origin& embedding_origin);
-
-  // Returns a blocklist of UUIDs that have restrictions when accessed
-  // via Web Bluetooth. Parsed by BluetoothBlocklist::Add().
-  //
-  // The blocklist string must be a comma-separated list of UUID:exclusion
-  // pairs. The pairs may be separated by whitespace. Pair components are
-  // colon-separated and must not have whitespace around the colon.
-  //
-  // UUIDs are a string that BluetoothUUID can parse (See BluetoothUUID
-  // constructor comment). Exclusion values are a single lower case character
-  // string "e", "r", or "w" for EXCLUDE, EXCLUDE_READS, or EXCLUDE_WRITES.
-  //
-  // Example:
-  // "1812:e, 00001800-0000-1000-8000-00805f9b34fb:w, ignored:1, alsoignored."
-  virtual std::string GetWebBluetoothBlocklist();
 
   using InterestGroupApiOperation = content::InterestGroupApiOperation;
 
@@ -1213,14 +1202,6 @@ class CONTENT_EXPORT ContentBrowserClient {
       std::string* out_debug_message,
       bool* out_block_is_site_setting_specific);
 
-  // Allows the embedder to control if fenced storage read can happen in a given
-  // context.
-  virtual bool IsFencedStorageReadAllowed(
-      content::BrowserContext* browser_context,
-      content::RenderFrameHost* rfh,
-      const url::Origin& top_frame_origin,
-      const url::Origin& accessing_origin);
-
   // Allows the embedder to control if Private Aggregation API operations can
   // happen in a given context.
   //
@@ -1268,35 +1249,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool IsServiceWorkerSyntheticResponseAllowed(
       content::BrowserContext* browser_context,
       const GURL& url);
-
-  // Temporarily allow `accessing_site` to access cookies when embedded on
-  // `top_frame_site` when third-party cookies are otherwise blocked. After
-  // `ttl` has passed, the access will be revoked. If `ignore_schemes` is true,
-  // then cookie access will be allowed for the sites for all schemes.
-  //
-  // Note that this is not a query to check whether cookie access is permitted.
-  // It is a request that such access *be* permitted; i.e., until `ttl` expires,
-  // `IsFullCookieAccessAllowed()` should return true when called with an URL
-  // belonging to `accessing_site` and a storage key belonging to
-  // `top_frame_site`.
-  //
-  // This method will only be called by cookie access heuristics, described at
-  // https://github.com/amaliev/3pcd-exemption-heuristics/blob/main/explainer.md
-  // "DueToHeuristic" is in the name so that embedders can optionally treat
-  // these grants differently from grants due to other causes, if other types
-  // are added in the future.
-  //
-  // This should only be called on the UI thread.
-  //
-  // TODO: crbug.com/40883201 - this is temporarily only called by code in
-  // //chrome. Once the cookie access heuristics move to //content, it will be
-  // called by code in //content.
-  virtual void GrantCookieAccessDueToHeuristic(
-      content::BrowserContext* browser_context,
-      const net::SchemefulSite& top_frame_site,
-      const net::SchemefulSite& accessing_site,
-      base::TimeDelta ttl,
-      bool ignore_schemes);
 
   // Returns whether third-party cookies are allowed by default.
   //
@@ -1434,6 +1386,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // threads are destroyed.  Its interface will always be called from the same
   // sequence.
   virtual FeatureObserverClient* GetFeatureObserverClient();
+
+  // Returns true if the given render frame host is allowed to bypass the popup
+  // blocker.
+  virtual bool IsPopupBypassAllowed(RenderFrameHost* render_frame_host);
 
   // Returns true if the given page is allowed to open a window of the given
   // type. If true is returned, |no_javascript_access| will indicate whether
@@ -2258,14 +2214,15 @@ class CONTENT_EXPORT ContentBrowserClient {
       mojo::PendingRemote<network::mojom::URLLoaderClient> client)>;
 
   // Allows the embedder to return a callback that is capable of loading a
-  // service worker navigation preload request. Similar to
+  // service worker initiated navigational preload request (e.g., navigation
+  // preload or synthetic response). Similar to
   // |WillCreateURLLoaderRequestInterceptors()|, but only allows for synchronous
   // decisions of whether to handle the preload request with no fallback. As a
   // result of being synchronous, the embedder can decide which, if there are
   // multiple, URLLoader handlers is appropriate. If the embedder returns a null
   // callback, the default behavior will be used to fetch the request.
   virtual URLLoaderRequestHandler
-  CreateURLLoaderHandlerForServiceWorkerNavigationPreload(
+  CreateURLLoaderHandlerForServiceWorkerInitiatedNavigationRequest(
       FrameTreeNodeId frame_tree_node_id,
       const network::ResourceRequest& resource_request);
 
@@ -2632,6 +2589,23 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual bool IsBuiltinComponent(BrowserContext* browser_context,
                                   const url::Origin& origin);
 
+  // Tries to start RTC diagnostic logging (best effort).
+  virtual void StartRtcDiagnosticLogging(
+      RenderFrameHost& frame_host,
+      bool should_upload_on_stop,
+      base::flat_map<std::string, std::string> metadata,
+      base::OnceCallback<void(const std::string&)> callback);
+
+  // Finishes RTC diagnostic logging if a session is ongoing.
+  // The results of logging are stored to disk and potentially uploaded.
+  virtual void FinishRtcDiagnosticLogging(RenderFrameHost& frame_host,
+                                          base::OnceClosure callback);
+
+  // Cancels RTC diagnostic logging if a session is ongoing. If a session is
+  // cancelled, the results of logging are not stored in a file or uploaded.
+  virtual void CancelRtcDiagnosticLogging(RenderFrameHost& frame_host,
+                                          base::OnceClosure callback);
+
   // Returns whether given |url| has to be blocked. It's used only for renderer
   // debug URLs, as other requests are handled via NavigationThrottlers and
   // blocklist policies are applied there.
@@ -2693,17 +2667,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   // return true for the same main frame context).
   virtual int NumVersionsInTopicsEpochs(
       content::RenderFrameHost* main_frame) const;
-
-  // Returns whether a site is blocked to use Bluetooth scanning API.
-  virtual bool IsBluetoothScanningBlocked(
-      content::BrowserContext* browser_context,
-      const url::Origin& requesting_origin,
-      const url::Origin& embedding_origin);
-
-  // Blocks a site to use Bluetooth scanning API.
-  virtual void BlockBluetoothScanning(content::BrowserContext* browser_context,
-                                      const url::Origin& requesting_origin,
-                                      const url::Origin& embedding_origin);
 
   // Returns via callback:
   //  1. A boolean indicating whether persistent device IDs are allowed.
@@ -3318,19 +3281,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   // allows a prerender fall back to prefetch if available.
   virtual bool UsePrefetchPrerenderIntegration();
 
-  // Returns true if `PreloadServingMetrics` should be enabled, which record
-  // serving metrics of preloads.
-  //
-  // Some //content features enable the feature even if it's false. For
-  // details, see `PreloadServingMetricsCapsule::IsFeatureEnabled()`.
-  //
-  // We use `ContentBrowserClient` rather than //content public feature because
-  // we have mulitple preload triggers in //chrome that want to enable the
-  // feature, and we have a limitation: a feature cannot be used in mulitple
-  // experiments. For more details, see
-  // https://docs.google.com/document/d/1bBhfhO7BotUB7Myy_8mtFF_4lI5N8hUyNayV_gI019Y/edit?tab=t.0#heading=h.9osmajzfan4b
-  virtual bool UsePreloadServingMetrics();
-
 #if !BUILDFLAG(IS_ANDROID)
   // Gives the content embedder a chance to disallow a credential request,
   // for example if there's an active actor task in the tab associated with
@@ -3390,12 +3340,44 @@ class CONTENT_EXPORT ContentBrowserClient {
       const GURL& url,
       const std::string& embedder_histogram_suffix);
 
+  // Allows the embedder to modify the request headers for a prefetch request
+  // initiated by `content::PrefetchContainer` (not by other prefetches).
+  //
+  // This performs a part of the operations that would be done by
+  // `URLLoaderThrottle`s of `CreateURLLoaderThrottles()`. Currently,
+  // `CreateURLLoaderThrottles()` is not applied to
+  // `content::PrefetchContainer`. As a workaround, this function applies some
+  // necessary operations until the prefetch supports
+  // `CreateURLLoaderThrottles()`.
+  //
+  // The embedder implementation is expected to add:
+  // - headers that should be removed when the request is redirection to
+  //   `removed_headers` (For non-redirect prefetch requests, the caller ignores
+  //   this vector),
+  // - headers that should be present on the request to `modified_headers`, and
+  // - cors-exempt headers that should be present on the request to
+  //   `modified_cors_exempt_headers`.
+  virtual void ModifyRequestHeadersForPrefetch(
+      const GURL& url,
+      std::vector<std::string>& removed_headers,
+      net::HttpRequestHeaders& modified_headers,
+      net::HttpRequestHeaders& modified_cors_exempt_headers);
+
+  // Allows the embedder to update the cors exempt header list for a new
+  // NetworkContext created for a cross-site prefetch request initiated by
+  // `content::PrefetchContainer` (not by other prefetches).
+  virtual void UpdateCorsExemptHeaderForPrefetch(
+      network::mojom::NetworkContextParams* params);
+
   // Returns whether to enable concrete cross-origin isolation, which gives
   // access to cross-origin isolated APIs. If this return false, logical
   // cross-origin isolation will be applied instead, which applies web-visible
   // restrictions but does not give access to cross-origin isolated APIs.
   virtual bool OriginSupportsConcreteCrossOriginIsolation(
       const url::Origin& origin);
+
+  // Returns true if the Attribution Internals WebUI should be enabled.
+  virtual bool IsAttributionInternalsWebUIEnabled();
 };
 
 }  // namespace content

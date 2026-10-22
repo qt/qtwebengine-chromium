@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 /* eslint-disable @devtools/no-imperative-dom-api */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 /*
  * Copyright (C) 2007 Apple Inc.  All rights reserved.
@@ -46,8 +47,10 @@ import * as Bindings from '../../models/bindings/bindings.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as Tooltips from '../../ui/components/tooltips/tooltips.js';
+import {createIcon, type Icon} from '../../ui/kit/kit.js';
 import type * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {html, type LitTemplate, nothing, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as PanelsCommon from '../common/common.js';
 
@@ -55,8 +58,8 @@ import {FontEditorSectionManager} from './ColorSwatchPopoverIcon.js';
 import * as ElementsComponents from './components/components.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import stylePropertiesTreeOutlineStyles from './stylePropertiesTreeOutline.css.js';
-import {type Context, StylePropertyTreeElement} from './StylePropertyTreeElement.js';
-import {StylesSidebarPane} from './StylesSidebarPane.js';
+import {type Context, GhostStylePropertyTreeElement, StylePropertyTreeElement} from './StylePropertyTreeElement.js';
+import type {StylesContainer} from './StylesContainer.js';
 
 const UIStrings = {
   /**
@@ -114,16 +117,38 @@ const UIStrings = {
    * @example {(0,0,1)} PH1
    */
   specificity: 'Specificity: {PH1}',
+  /**
+   * @description Accessibility label for the button that expands a collapsed CSS rule in the Styles pane.
+   */
+  expandCollapsedRule: 'Expand collapsed rule',
+  /**
+   * @description Accessibility label for the button that collapses an expanded CSS rule in the Styles pane.
+   */
+  collapseExpandedRule: 'Collapse expanded rule',
 } as const;
 
 const str_ = i18n.i18n.registerUIStrings('panels/elements/StylePropertiesSection.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+const {widget} = UI.Widget;
 
 const STYLE_TAG = '<style>';
 const DEFAULT_MAX_PROPERTIES = 50;
 
+export interface ActiveAiSuggestionProperty {
+  name: string;
+  value: string;
+}
+
+export interface ActiveAiSuggestion {
+  text: string;
+  properties: ActiveAiSuggestionProperty[];
+  cursorPosition: number;
+  clearCachedRequest?: () => void;
+  cssProperty: SDK.CSSProperty.CSSProperty;
+}
+
 export class StylePropertiesSection {
-  protected parentPane: StylesSidebarPane;
+  protected stylesContainer: StylesContainer;
   styleInternal: SDK.CSSStyleDeclaration.CSSStyleDeclaration;
   readonly matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles;
   private computedStyles: Map<string, string>|null;
@@ -150,6 +175,8 @@ export class StylePropertiesSection {
   protected readonly selectorRefElement: HTMLElement;
   private hoverableSelectorsMode: boolean;
   #isHidden: boolean;
+  #isCollapsed: boolean;
+  #collapseIcon: Icon|null = null;
   protected customPopulateCallback: () => void;
 
   nestingLevel = 0;
@@ -166,13 +193,16 @@ export class StylePropertiesSection {
   static #nextSectionTooltipIdPrefix = 0;
   readonly sectionTooltipIdPrefix = StylePropertiesSection.#nextSectionTooltipIdPrefix++;
 
+  private ghostStyleTreeElements: GhostStylePropertyTreeElement[] = [];
+  #activeAiSuggestion?: ActiveAiSuggestion;
+
   constructor(
-      parentPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
+      stylesContainer: StylesContainer, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
       style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number, computedStyles: Map<string, string>|null,
       parentsComputedStyles: Map<string, string>|null,
       computedStyleExtraFields: Protocol.CSS.ComputedStyleExtraFields|null, customHeaderText?: string) {
     this.#customHeaderText = customHeaderText;
-    this.parentPane = parentPane;
+    this.stylesContainer = stylesContainer;
     this.sectionIdx = sectionIdx;
     this.styleInternal = style;
     this.matchedStyles = matchedStyles;
@@ -196,7 +226,7 @@ export class StylePropertiesSection {
     this.element.tabIndex = -1;
     UI.ARIAUtils.markAsListitem(this.element);
     this.element.addEventListener('keydown', this.onKeyDown.bind(this), false);
-    parentPane.sectionByElement.set(this.element, this);
+    stylesContainer.sectionByElement.set(this.element, this);
     this.#styleRuleElement = this.element.createChild('div', 'style-rule');
 
     this.#ancestorRuleListElement = document.createElement('div');
@@ -225,6 +255,25 @@ export class StylePropertiesSection {
     const selectorContainer = document.createElement('div');
     selectorContainer.createChild('span', 'styles-clipboard-only').textContent = indent.repeat(this.nestingLevel);
     selectorContainer.classList.add('selector-container');
+
+    // Collapse/expand toggle icon for rules that can be manually toggled.
+    this.#collapseIcon = createIcon('triangle-right', 'section-collapse-icon');
+    UI.ARIAUtils.markAsButton(this.#collapseIcon);
+    UI.ARIAUtils.setControls(this.#collapseIcon, this.propertiesTreeOutline.element);
+    this.#collapseIcon.tabIndex = 0;
+    this.#collapseIcon.addEventListener('click', (event: Event) => {
+      event.consume(true);
+      this.#toggleCollapsed();
+    });
+    this.#collapseIcon.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (!Platform.KeyboardUtilities.isEnterOrSpaceKey(event)) {
+        return;
+      }
+      event.consume(true);
+      this.#toggleCollapsed();
+    });
+    selectorContainer.appendChild(this.#collapseIcon);
+
     this.selectorElement = document.createElement('span');
     UI.ARIAUtils.setLabel(this.selectorElement, i18nString(UIStrings.cssSelector));
     this.selectorElement.classList.add('selector');
@@ -250,7 +299,7 @@ export class StylePropertiesSection {
       const newRuleButton = new UI.Toolbar.ToolbarButton(
           i18nString(UIStrings.insertStyleRuleBelow), 'plus', undefined, 'elements.new-style-rule');
       newRuleButton.addEventListener(UI.Toolbar.ToolbarButton.Events.CLICK, this.onNewRuleClick, this);
-      newRuleButton.setSize(Buttons.Button.Size.SMALL);
+      newRuleButton.setSize(Buttons.Button.Size.MICRO);
       newRuleButton.element.tabIndex = -1;
       if (!this.newStyleRuleToolbar) {
         this.newStyleRuleToolbar =
@@ -262,7 +311,7 @@ export class StylePropertiesSection {
 
     if (Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.FONT_EDITOR) && this.editable) {
       this.fontEditorToolbar = this.#styleRuleElement.createChild('devtools-toolbar', 'sidebar-pane-section-toolbar');
-      this.fontEditorSectionManager = new FontEditorSectionManager(this.parentPane.swatchPopoverHelper(), this);
+      this.fontEditorSectionManager = new FontEditorSectionManager(this.stylesContainer.swatchPopoverHelper(), this);
       this.fontEditorButton =
           new UI.Toolbar.ToolbarButton('Font Editor', 'custom-typography', undefined, 'font-editor');
       this.fontEditorButton.addEventListener(UI.Toolbar.ToolbarButton.Events.CLICK, () => {
@@ -321,8 +370,10 @@ export class StylePropertiesSection {
     }
     this.hoverableSelectorsMode = false;
     this.#isHidden = false;
+    this.#isCollapsed = false;
     this.markSelectorMatches();
     this.onpopulate();
+    this.#updateCollapsedState();
   }
 
   setComputedStyles(computedStyles: Map<string, string>|null): void {
@@ -371,7 +422,7 @@ export class StylePropertiesSection {
   }
 
   resetToolbars(): void {
-    if (this.parentPane.swatchPopoverHelper().isShowing() ||
+    if (this.stylesContainer.swatchPopoverHelper().isShowing() ||
         this.styleInternal.type === SDK.CSSStyleDeclaration.Type.Inline) {
       return;
     }
@@ -385,9 +436,9 @@ export class StylePropertiesSection {
 
   static createRuleOriginNode(
       matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, linkifier: Components.Linkifier.Linkifier,
-      rule: SDK.CSSRule.CSSRule|null): Node {
+      rule: SDK.CSSRule.CSSRule|null): LitTemplate {
     if (!rule) {
-      return document.createTextNode('');
+      return nothing;
     }
 
     const ruleLocation = StylePropertiesSection.getRuleLocationFromCSSRule(rule);
@@ -407,24 +458,22 @@ export class StylePropertiesSection {
       return null;
     }
 
-    function linkifyNode(label: string): Node|null {
+    function linkifyNode(label: string): LitTemplate|null {
       if (header?.ownerNode) {
-        const link = document.createElement('devtools-widget') as
-            UI.Widget.WidgetElement<PanelsCommon.DOMLinkifier.DeferredDOMNodeLink>;
-        link.widgetConfig =
-            UI.Widget.widgetConfig(e => new PanelsCommon.DOMLinkifier.DeferredDOMNodeLink(e, header.ownerNode));
-        link.textContent = label;
-        return link;
+        return html`<devtools-widget ${
+            widget(e => new PanelsCommon.DOMLinkifier.DeferredDOMNodeLink(e, header.ownerNode))}>
+          ${label}
+        </devtools-widget>`;
       }
       if (rule && rule.style.styleSheetId && rule.treeScope) {
         // Make link for adopted stylesheet.
         const ownerNode = new SDK.DOMModel.DeferredDOMNode(rule.cssModelInternal.target(), rule.treeScope);
-        const link = document.createElement('devtools-widget') as
-            UI.Widget.WidgetElement<PanelsCommon.DOMLinkifier.DeferredDOMNodeLink>;
-        link.widgetConfig = UI.Widget.widgetConfig(
-            e => new PanelsCommon.DOMLinkifier.DeferredDOMNodeLink(e, ownerNode, undefined, rule.style.styleSheetId));
-        link.textContent = label;
-        return link;
+        // clang-format off
+        return html`<devtools-widget ${widget(
+            e => new PanelsCommon.DOMLinkifier.DeferredDOMNodeLink(e, ownerNode, undefined, rule.style.styleSheetId))}>
+          ${label}
+        </devtools-widget>`;
+        // clang-format on
       }
       return null;
     }
@@ -432,29 +481,29 @@ export class StylePropertiesSection {
     if (header?.isMutable && !header.isViaInspector()) {
       const location = header.isConstructedByNew() && !header.sourceMapURL ? null : linkifyRuleLocation();
       if (location) {
-        return location;
+        return html`${location}`;
       }
       const label = header.isConstructedByNew() ? i18nString(UIStrings.constructedStylesheet) : STYLE_TAG;
       const node = linkifyNode(label);
       if (node) {
         return node;
       }
-      return document.createTextNode(label);
+      return html`${label}`;
     }
 
     const location = linkifyRuleLocation();
     if (location) {
-      return location;
+      return html`${location}`;
     }
 
     if (rule.isUserAgent()) {
-      return document.createTextNode(i18nString(UIStrings.userAgentStylesheet));
+      return html`${i18nString(UIStrings.userAgentStylesheet)}`;
     }
     if (rule.isInjected()) {
-      return document.createTextNode(i18nString(UIStrings.injectedStylesheet));
+      return html`${i18nString(UIStrings.injectedStylesheet)}`;
     }
     if (rule.isViaInspector()) {
-      return document.createTextNode(i18nString(UIStrings.viaInspector));
+      return html`${i18nString(UIStrings.viaInspector)}`;
     }
 
     const node = linkifyNode(STYLE_TAG);
@@ -462,12 +511,12 @@ export class StylePropertiesSection {
       return node;
     }
 
-    return document.createTextNode('');
+    return nothing;
   }
 
   protected createRuleOriginNode(
       matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, linkifier: Components.Linkifier.Linkifier,
-      rule: SDK.CSSRule.CSSRule|null): Node {
+      rule: SDK.CSSRule.CSSRule|null): LitTemplate {
     return StylePropertiesSection.createRuleOriginNode(matchedStyles, linkifier, rule);
   }
 
@@ -569,9 +618,18 @@ export class StylePropertiesSection {
         keyboardEvent.metaKey) {
       return;
     }
+
+    // Only handle section-level edit shortcuts when the event originated from
+    // the section itself. Child editors dispatch key events that bubble up to
+    // the section, and we must not treat those as section shortcuts.
+    const isSectionLevelShortcut = keyboardEvent.target === this.element;
+
     switch (keyboardEvent.key) {
       case 'Enter':
       case ' ':
+        if (!isSectionLevelShortcut) {
+          return;
+        }
         this.startEditingAtFirstPosition();
         keyboardEvent.consume(true);
         break;
@@ -583,7 +641,7 @@ export class StylePropertiesSection {
         break;
       default:
         // Filter out non-printable key strokes.
-        if (keyboardEvent.key.length === 1) {
+        if (isSectionLevelShortcut && keyboardEvent.key.length === 1) {
           this.addNewBlankProperty(0).startEditingName();
         }
         break;
@@ -601,7 +659,7 @@ export class StylePropertiesSection {
 
   private onMouseLeave(_event: Event): void {
     this.setSectionHovered(false);
-    this.parentPane.setActiveProperty(null);
+    this.stylesContainer.setActiveProperty(null);
   }
 
   private onMouseMove(event: MouseEvent): void {
@@ -610,9 +668,9 @@ export class StylePropertiesSection {
 
     const treeElement = this.propertiesTreeOutline.treeElementFromEvent(event);
     if (treeElement instanceof StylePropertyTreeElement) {
-      this.parentPane.setActiveProperty((treeElement));
+      this.stylesContainer.setActiveProperty((treeElement));
     } else {
-      this.parentPane.setActiveProperty(null);
+      this.stylesContainer.setActiveProperty(null);
     }
     const selection = this.element.getComponentSelection();
     if (!this.selectedSinceMouseDown && selection?.toString()) {
@@ -622,7 +680,7 @@ export class StylePropertiesSection {
 
   private onFontEditorButtonClicked(): void {
     if (this.fontEditorSectionManager && this.fontEditorButton) {
-      void this.fontEditorSectionManager.showPopover(this.fontEditorButton.element, this.parentPane);
+      void this.fontEditorSectionManager.showPopover(this.fontEditorButton.element, this.stylesContainer);
     }
   }
 
@@ -682,7 +740,7 @@ export class StylePropertiesSection {
 
   highlight(mode: string|undefined = 'all'): void {
     SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
-    const node = this.parentPane.node();
+    const node = this.stylesContainer.node();
     if (!node) {
       return;
     }
@@ -701,7 +759,7 @@ export class StylePropertiesSection {
 
     let childElement: (ChildNode|null) = parent.firstChild;
     while (childElement) {
-      const childSection = this.parentPane.sectionByElement.get(childElement);
+      const childSection = this.stylesContainer.sectionByElement.get(childElement);
       if (childSection) {
         return childSection;
       }
@@ -744,7 +802,7 @@ export class StylePropertiesSection {
 
     let childElement: (ChildNode|null) = parent.lastChild;
     while (childElement) {
-      const childSection = this.parentPane.sectionByElement.get(childElement);
+      const childSection = this.stylesContainer.sectionByElement.get(childElement);
       if (childSection) {
         return childSection;
       }
@@ -758,10 +816,10 @@ export class StylePropertiesSection {
     let curElement: (ChildNode|null)|HTMLDivElement = this.element;
     do {
       curElement = curElement.nextSibling;
-    } while (curElement && !this.parentPane.sectionByElement.has(curElement));
+    } while (curElement && !this.stylesContainer.sectionByElement.has(curElement));
 
     if (curElement) {
-      return this.parentPane.sectionByElement.get(curElement);
+      return this.stylesContainer.sectionByElement.get(curElement);
     }
     return;
   }
@@ -770,12 +828,90 @@ export class StylePropertiesSection {
     let curElement: (ChildNode|null)|HTMLDivElement = this.element;
     do {
       curElement = curElement.previousSibling;
-    } while (curElement && !this.parentPane.sectionByElement.has(curElement));
+    } while (curElement && !this.stylesContainer.sectionByElement.has(curElement));
 
     if (curElement) {
-      return this.parentPane.sectionByElement.get(curElement);
+      return this.stylesContainer.sectionByElement.get(curElement);
     }
     return;
+  }
+
+  set activeAiSuggestion(activeAiSuggestion: ActiveAiSuggestion|undefined) {
+    this.#clearActiveAiSuggestion();
+    this.#activeAiSuggestion = activeAiSuggestion;
+    if (this.#activeAiSuggestion) {
+      this.#renderActiveAiSuggestion();
+    }
+  }
+
+  get activeAiSuggestion(): ActiveAiSuggestion|undefined {
+    return this.#activeAiSuggestion;
+  }
+
+  async commitActiveAiSuggestion(): Promise<void> {
+    if (!this.#activeAiSuggestion) {
+      return;
+    }
+    const sourceTreeElement = this.#getAiSuggestionSourceTreeElement();
+    // Apply everything atomically
+    await sourceTreeElement?.commitAiSuggestion(this.#activeAiSuggestion.text);
+  }
+
+  #clearActiveAiSuggestion(): void {
+    this.#getAiSuggestionSourceTreeElement()?.clearActiveAiSuggestion();
+    // Clear existing ghost elements
+    for (const ghost of this.ghostStyleTreeElements) {
+      this.propertiesTreeOutline.removeChild(ghost);
+    }
+    this.ghostStyleTreeElements = [];
+  }
+
+  #renderActiveAiSuggestion(): void {
+    if (!this.#activeAiSuggestion) {
+      return;
+    }
+
+    const sourceTreeElement = this.#getAiSuggestionSourceTreeElement();
+    if (!sourceTreeElement || !this.#activeAiSuggestion.properties.length) {
+      return;
+    }
+    sourceTreeElement.renderActiveAiSuggestion(this.#activeAiSuggestion.properties[0]);
+
+    if (this.#activeAiSuggestion.properties.length <= 1) {
+      return;
+    }
+    const index = this.propertiesTreeOutline.rootElement().children().indexOf(sourceTreeElement);
+    const properties = this.#activeAiSuggestion.properties.slice(1);
+    for (let i = 0; i < properties.length; i++) {
+      const property = properties[i];
+      // Create a fake property attached to this style
+      const fakeProperty = new SDK.CSSProperty.CSSProperty(
+          this.styleInternal,
+          this.styleInternal.allProperties().length,
+          property.name,
+          property.value,
+          false,
+          false,
+          true,
+          false,
+      );
+
+      const ghost = new GhostStylePropertyTreeElement(this.stylesContainer, this, this.matchedStyles, fakeProperty);
+      this.propertiesTreeOutline.insertChild(ghost, index + i + 1);
+      this.ghostStyleTreeElements.push(ghost);
+    }
+  }
+
+  #getAiSuggestionSourceTreeElement(): StylePropertyTreeElement|undefined {
+    if (!this.#activeAiSuggestion) {
+      return;
+    }
+    const sourceTreeElement = this.closestPropertyForEditing(this.#activeAiSuggestion.cssProperty.index);
+    if (!(sourceTreeElement instanceof StylePropertyTreeElement) ||
+        sourceTreeElement.property !== this.#activeAiSuggestion.cssProperty) {
+      return;
+    }
+    return sourceTreeElement;
   }
 
   private onNewRuleClick(event: Common.EventTarget.EventTargetEvent<Event>): void {
@@ -786,7 +922,7 @@ export class StylePropertiesSection {
     }
     const range =
         TextUtils.TextRange.TextRange.createFromLocation(rule.style.range.endLine, rule.style.range.endColumn + 1);
-    this.parentPane.addBlankSection(this, rule.header, range);
+    this.stylesContainer.addBlankSection(this, rule.header, range);
   }
 
   styleSheetEdited(edit: SDK.CSSModel.Edit): void {
@@ -807,6 +943,7 @@ export class StylePropertiesSection {
     let scopeIndex = 0;
     let supportsIndex = 0;
     let nestingIndex = 0;
+    let navigationsIndex = 0;
     this.nestingLevel = 0;
     for (const ruleType of rule.ruleTypes) {
       let ancestorRuleElement;
@@ -828,6 +965,9 @@ export class StylePropertiesSection {
           break;
         case Protocol.CSS.CSSRuleType.StartingStyleRule:
           ancestorRuleElement = this.createStartingStyleElement();
+          break;
+        case Protocol.CSS.CSSRuleType.NavigationRule:
+          ancestorRuleElement = this.createNavigationElement(rule.navigations[navigationsIndex++]);
           break;
       }
       if (ancestorRuleElement) {
@@ -935,10 +1075,6 @@ export class StylePropertiesSection {
 
   protected createContainerQueryElement(containerQuery: SDK.CSSContainerQuery.CSSContainerQuery):
       ElementsComponents.CSSQuery.CSSQuery|undefined {
-    if (!containerQuery.text) {
-      return;
-    }
-
     let onQueryTextClick;
     if (containerQuery.styleSheetId) {
       onQueryTextClick = this.handleQueryRuleClick.bind(this, containerQuery);
@@ -1005,6 +1141,27 @@ export class StylePropertiesSection {
       jslogContext: 'supports',
     };
     return supportsElement;
+  }
+
+  protected createNavigationElement(navigation: SDK.CSSNavigation.CSSNavigation): ElementsComponents.CSSQuery.CSSQuery
+      |undefined {
+    if (!navigation.text) {
+      return;
+    }
+
+    let onQueryTextClick;
+    if (navigation.styleSheetId) {
+      onQueryTextClick = this.handleQueryRuleClick.bind(this, navigation);
+    }
+
+    const navigationElement = new ElementsComponents.CSSQuery.CSSQuery();
+    navigationElement.data = {
+      queryPrefix: '@navigation',
+      queryText: navigation.text,
+      onQueryTextClick,
+      jslogContext: 'navigation',
+    };
+    return navigationElement;
   }
 
   protected createNestingElement(nestingSelector?: string): HTMLElement|undefined {
@@ -1093,7 +1250,7 @@ export class StylePropertiesSection {
   }
 
   refreshUpdate(editedTreeElement: StylePropertyTreeElement): void {
-    this.parentPane.refreshUpdate(this, editedTreeElement);
+    this.stylesContainer.refreshUpdate(this, editedTreeElement);
   }
 
   updateVarFunctions(editedTreeElement: StylePropertyTreeElement): void {
@@ -1138,7 +1295,7 @@ export class StylePropertiesSection {
   }
 
   onpopulate(): void {
-    this.parentPane.setActiveProperty(null);
+    this.stylesContainer.setActiveProperty(null);
     this.nextEditorTriggerButtonIdx = 1;
     this.propertiesTreeOutline.removeChildren();
     this.customPopulateCallback();
@@ -1161,7 +1318,7 @@ export class StylePropertiesSection {
         continue;
       }
       const item = new StylePropertyTreeElement({
-        stylesPane: this.parentPane,
+        stylesContainer: this.stylesContainer,
         section: this,
         matchedStyles: this.matchedStyles,
         property,
@@ -1198,7 +1355,7 @@ export class StylePropertiesSection {
       }
     }
 
-    const regex = this.parentPane.filterRegex();
+    const regex = this.stylesContainer.filterRegex();
     const hideRule = !hasMatchingChild && regex !== null && !regex.test(this.element.deepTextContent());
     this.#isHidden = hideRule;
     this.element.classList.toggle('hidden', hideRule);
@@ -1210,6 +1367,82 @@ export class StylePropertiesSection {
 
   isHidden(): boolean {
     return this.#isHidden;
+  }
+
+  /**
+   * Checks whether the section should be collapsed because it does not
+   * contribute any active styles. A section is collapsed when:
+   * - It has no leading properties (empty rule), OR
+   * - All its leading properties have PropertyState.OVERLOADED
+   *
+   * Sections containing only user-disabled properties are NOT collapsed,
+   * since the user intentionally toggled them off and they should remain visible.
+   */
+  #shouldCollapse(): boolean {
+    const style = this.styleInternal;
+    const properties = style.leadingProperties();
+
+    // Never collapse the element's own inline style section.
+    if (style.type === SDK.CSSStyleDeclaration.Type.Inline) {
+      return false;
+    }
+
+    // Empty rule (e.g. from CSS nesting): collapse.
+    if (properties.length === 0) {
+      return true;
+    }
+
+    // If any property is user-disabled (toggled off via checkbox), do not
+    // collapse. The user deliberately disabled them.
+    const hasDisabledProperty = properties.some(p => p.disabled);
+    if (hasDisabledProperty) {
+      return false;
+    }
+
+    // If every property is OVERLOADED, collapse.
+    const allOverloaded =
+        properties.every(p => this.matchedStyles.propertyState(p) === SDK.CSSMatchedStyles.PropertyState.OVERLOADED);
+    return allOverloaded;
+  }
+
+  #updateCollapsedState(): void {
+    const shouldCollapse = this.#shouldCollapse();
+    // Mark as collapsible so the toggle icon is always shown for
+    // sections that can be collapsed, even after manual expansion.
+    this.element.classList.toggle('collapsible', shouldCollapse);
+    this.#setCollapsed(shouldCollapse);
+  }
+
+  #setCollapsed(collapsed: boolean): void {
+    this.#isCollapsed = collapsed;
+    this.element.classList.toggle('collapsed', collapsed);
+    this.propertiesTreeOutline.element.classList.toggle('hidden', collapsed);
+    if (this.#collapseIcon) {
+      this.#collapseIcon.name = collapsed ? 'triangle-right' : 'triangle-down';
+      UI.ARIAUtils.setExpanded(this.#collapseIcon, !collapsed);
+      UI.ARIAUtils.setLabel(
+          this.#collapseIcon,
+          collapsed ? i18nString(UIStrings.expandCollapsedRule) : i18nString(UIStrings.collapseExpandedRule));
+    }
+  }
+
+  #toggleCollapsed(): void {
+    this.#setCollapsed(!this.#isCollapsed);
+  }
+
+  /**
+   * Expand a collapsed section, e.g. when navigating to a property
+   * via a var() link.
+   */
+  expand(): void {
+    if (!this.#isCollapsed) {
+      return;
+    }
+    this.#setCollapsed(false);
+  }
+
+  isCollapsed(): boolean {
+    return this.#isCollapsed;
   }
 
   markSelectorMatches(): void {
@@ -1224,7 +1457,7 @@ export class StylePropertiesSection {
       matchingSelectors[matchingIndex] = true;
     }
 
-    if (this.parentPane.isEditingStyle) {
+    if (this.stylesContainer.isEditingStyle) {
       return;
     }
 
@@ -1265,7 +1498,7 @@ export class StylePropertiesSection {
 
   markSelectorHighlights(): void {
     const selectors = this.selectorElement.getElementsByClassName('simple-selector');
-    const regex = this.parentPane.filterRegex();
+    const regex = this.stylesContainer.filterRegex();
     for (let i = 0; i < selectors.length; ++i) {
       const selectorMatchesFilter = regex?.test(selectors[i].textContent || '');
       selectors[i].classList.toggle('filter-match', selectorMatchesFilter);
@@ -1274,9 +1507,13 @@ export class StylePropertiesSection {
 
   addNewBlankProperty(index: number|undefined = this.propertiesTreeOutline.rootElement().childCount()):
       StylePropertyTreeElement {
+    if (this.#isCollapsed) {
+      this.expand();
+    }
+
     const property = this.styleInternal.newBlankProperty(index);
     const item = new StylePropertyTreeElement({
-      stylesPane: this.parentPane,
+      stylesContainer: this.stylesContainer,
       section: this,
       matchedStyles: this.matchedStyles,
       property,
@@ -1290,11 +1527,18 @@ export class StylePropertiesSection {
   }
 
   private handleEmptySpaceMouseDown(): void {
-    this.willCauseCancelEditing = this.parentPane.isEditingStyle;
+    this.willCauseCancelEditing = this.stylesContainer.isEditingStyle;
     this.selectedSinceMouseDown = false;
   }
 
   private handleEmptySpaceClick(event: Event): void {
+    // If collapsed, clicking anywhere on the section should expand it.
+    if (this.#isCollapsed) {
+      this.#toggleCollapsed();
+      event.consume(true);
+      return;
+    }
+
     // `this.willCauseCancelEditing` is a hacky way to understand whether we should
     // create a new property or not on empty space click.
     // For empty space clicks, the order of events are:
@@ -1364,7 +1608,7 @@ export class StylePropertiesSection {
     if (selection) {
       selection.selectAllChildren(element);
     }
-    this.parentPane.setEditingStyle(true);
+    this.stylesContainer.setEditingStyle(true);
     const parentMediaElement = element.enclosingNodeOrSelfWithClass('query');
     parentMediaElement.classList.add('editing-query');
 
@@ -1372,7 +1616,7 @@ export class StylePropertiesSection {
   }
 
   private editingMediaFinished(element: Element): void {
-    this.parentPane.setEditingStyle(false);
+    this.stylesContainer.setEditingStyle(false);
     const parentMediaElement = element.enclosingNodeOrSelfWithClass('query');
     parentMediaElement.classList.remove('editing-query');
   }
@@ -1400,7 +1644,7 @@ export class StylePropertiesSection {
       _context: Context|undefined,
       _moveDirection: string,
       ): Promise<void> {
-    this.parentPane.setEditingStyle(false);
+    this.stylesContainer.setEditingStyle(false);
     this.editingMediaFinished(element);
 
     if (newContent) {
@@ -1408,8 +1652,8 @@ export class StylePropertiesSection {
     }
 
     // This gets deleted in finishOperation(), which is called both on success and failure.
-    this.parentPane.setUserOperation(true);
-    const cssModel = this.parentPane.cssModel();
+    this.stylesContainer.setUserOperation(true);
+    const cssModel = this.stylesContainer.cssModel();
     if (cssModel && query.styleSheetId) {
       const range = query.range as TextUtils.TextRange.TextRange;
       let success = false;
@@ -1419,15 +1663,17 @@ export class StylePropertiesSection {
         success = await cssModel.setSupportsText(query.styleSheetId, range, newContent);
       } else if (query instanceof SDK.CSSScope.CSSScope) {
         success = await cssModel.setScopeText(query.styleSheetId, range, newContent);
+      } else if (query instanceof SDK.CSSNavigation.CSSNavigation) {
+        success = await cssModel.setNavigationText(query.styleSheetId, range, newContent);
       } else {
         success = await cssModel.setMediaText(query.styleSheetId, range, newContent);
       }
 
       if (success) {
         this.matchedStyles.resetActiveProperties();
-        this.parentPane.refreshUpdate(this);
+        this.stylesContainer.refreshUpdate(this);
       }
-      this.parentPane.setUserOperation(false);
+      this.stylesContainer.setUserOperation(false);
       this.editingMediaTextCommittedForTest();
     }
   }
@@ -1469,20 +1715,49 @@ export class StylePropertiesSection {
     }, {jslogContext: 'copy-selector'});
 
     contextMenu.clipboardSection().appendItem(i18nString(UIStrings.copyRule), () => {
-      const ruleText = StylesSidebarPane.formatLeadingProperties(this).ruleText;
+      const ruleText = this.formatLeadingProperties().ruleText;
       Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(ruleText);
     }, {jslogContext: 'copy-rule'});
 
     contextMenu.clipboardSection().appendItem(i18nString(UIStrings.copyAllDeclarations), () => {
-      const allDeclarationText = StylesSidebarPane.formatLeadingProperties(this).allDeclarationText;
+      const allDeclarationText = this.formatLeadingProperties().allDeclarationText;
       Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(allDeclarationText);
     }, {jslogContext: 'copy-all-declarations'});
 
     void contextMenu.show();
   }
 
+  formatLeadingProperties(): {
+    allDeclarationText: string,
+    ruleText: string,
+  } {
+    const selectorText = this.headerText();
+    const indent = Common.Settings.Settings.instance().moduleSetting('text-editor-indent').get();
+
+    const style = this.style();
+    const lines: string[] = [];
+
+    // Invalid property should also be copied.
+    // For example: *display: inline.
+    for (const property of style.leadingProperties()) {
+      if (property.disabled) {
+        lines.push(`${indent}/* ${property.name}: ${property.value}; */`);
+      } else {
+        lines.push(`${indent}${property.name}: ${property.value};`);
+      }
+    }
+
+    const allDeclarationText: string = lines.join('\n');
+    const ruleText = `${selectorText} {\n${allDeclarationText}\n}`;
+
+    return {
+      allDeclarationText,
+      ruleText,
+    };
+  }
+
   private navigateToSelectorSource(index: number, focus: boolean): void {
-    const cssModel = this.parentPane.cssModel();
+    const cssModel = this.stylesContainer.cssModel();
     if (!cssModel) {
       return;
     }
@@ -1541,7 +1816,7 @@ export class StylePropertiesSection {
     if (selection) {
       selection.selectAllChildren(element);
     }
-    this.parentPane.setEditingStyle(true);
+    this.stylesContainer.setEditingStyle(true);
     if (element.classList.contains('simple-selector')) {
       this.navigateToSelectorSource(0, false);
     }
@@ -1599,13 +1874,13 @@ export class StylePropertiesSection {
     }
 
     function headerTextCommitted(this: StylePropertiesSection): void {
-      this.parentPane.setUserOperation(false);
+      this.stylesContainer.setUserOperation(false);
       this.moveEditorFromSelector(moveDirection);
       this.editingSelectorCommittedForTest();
     }
 
     // This gets deleted in finishOperationAndMoveEditor(), which is called both on success and failure.
-    this.parentPane.setUserOperation(true);
+    this.stylesContainer.setUserOperation(true);
     void this.setHeaderText(rule, newContent).then(headerTextCommitted.bind(this));
   }
 
@@ -1624,7 +1899,7 @@ export class StylePropertiesSection {
       const doesAffectSelectedNode = this.matchedStyles.getMatchingSelectors(rule).length > 0;
       this.propertiesTreeOutline.element.classList.toggle('no-affect', !doesAffectSelectedNode);
       this.matchedStyles.resetActiveProperties();
-      this.parentPane.refreshUpdate(this);
+      this.stylesContainer.refreshUpdate(this);
     }
 
     if (!(rule instanceof SDK.CSSRule.CSSStyleRule)) {
@@ -1642,13 +1917,13 @@ export class StylePropertiesSection {
   }
 
   protected updateRuleOrigin(): void {
-    this.selectorRefElement.removeChildren();
-    this.selectorRefElement.appendChild(
-        this.createRuleOriginNode(this.matchedStyles, this.parentPane.linkifier, this.styleInternal.parentRule));
+    const origin =
+        this.createRuleOriginNode(this.matchedStyles, this.stylesContainer.linkifier, this.styleInternal.parentRule);
+    render(origin, this.selectorRefElement, {host: this});
   }
 
   protected editingSelectorEnded(): void {
-    this.parentPane.setEditingStyle(false);
+    this.stylesContainer.setEditingStyle(false);
   }
 
   editingSelectorCancelled(): void {
@@ -1680,18 +1955,19 @@ export class BlankStylePropertiesSection extends StylePropertiesSection {
   private readonly styleSheetHeader;
 
   constructor(
-      stylesPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, defaultSelectorText: string,
-      styleSheetHeader: SDK.CSSStyleSheetHeader.CSSStyleSheetHeader, ruleLocation: TextUtils.TextRange.TextRange,
-      insertAfterStyle: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number) {
-    const cssModel = (stylesPane.cssModel() as SDK.CSSModel.CSSModel);
+      stylesContainer: StylesContainer, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
+      defaultSelectorText: string, styleSheetHeader: SDK.CSSStyleSheetHeader.CSSStyleSheetHeader,
+      ruleLocation: TextUtils.TextRange.TextRange, insertAfterStyle: SDK.CSSStyleDeclaration.CSSStyleDeclaration,
+      sectionIdx: number) {
+    const cssModel = (stylesContainer.cssModel() as SDK.CSSModel.CSSModel);
     const rule = SDK.CSSRule.CSSStyleRule.createDummyRule(cssModel, defaultSelectorText);
-    super(stylesPane, matchedStyles, rule.style, sectionIdx, null, null, null);
+    super(stylesContainer, matchedStyles, rule.style, sectionIdx, null, null, null);
     this.normal = false;
     this.ruleLocation = ruleLocation;
     this.styleSheetHeader = styleSheetHeader;
-    this.selectorRefElement.removeChildren();
-    this.selectorRefElement.appendChild(StylePropertiesSection.linkifyRuleLocation(
-        cssModel, this.parentPane.linkifier, styleSheetHeader, this.actualRuleLocation()));
+    const locationNode = StylePropertiesSection.linkifyRuleLocation(
+        cssModel, this.stylesContainer.linkifier, styleSheetHeader, this.actualRuleLocation());
+    render(html`${locationNode}`, this.selectorRefElement, {host: this});
     this.maybeCreateAncestorRules(insertAfterStyle);
     this.element.classList.add('blank-section');
   }
@@ -1740,7 +2016,7 @@ export class BlankStylePropertiesSection extends StylePropertiesSection {
 
       this.updateRuleOrigin();
 
-      this.parentPane.setUserOperation(false);
+      this.stylesContainer.setUserOperation(false);
       this.editingSelectorEnded();
       if (this.element.parentElement)  // Might have been detached already.
       {
@@ -1754,9 +2030,9 @@ export class BlankStylePropertiesSection extends StylePropertiesSection {
     if (newContent) {
       newContent = newContent.trim();
     }
-    this.parentPane.setUserOperation(true);
+    this.stylesContainer.setUserOperation(true);
 
-    const cssModel = this.parentPane.cssModel();
+    const cssModel = this.stylesContainer.cssModel();
     const ruleText = this.rulePrefix() + newContent + ' {}';
     if (cssModel) {
       void cssModel.addRule(this.styleSheetHeader.id, ruleText, this.ruleLocation).then(onRuleAdded.bind(this));
@@ -1764,14 +2040,14 @@ export class BlankStylePropertiesSection extends StylePropertiesSection {
   }
 
   override editingSelectorCancelled(): void {
-    this.parentPane.setUserOperation(false);
+    this.stylesContainer.setUserOperation(false);
     if (!this.isBlank) {
       super.editingSelectorCancelled();
       return;
     }
 
     this.editingSelectorEnded();
-    this.parentPane.removeSection(this);
+    this.stylesContainer.removeSection(this);
   }
 
   private makeNormal(newRule: SDK.CSSRule.CSSRule): void {
@@ -1784,10 +2060,10 @@ export class BlankStylePropertiesSection extends StylePropertiesSection {
 
 export class RegisteredPropertiesSection extends StylePropertiesSection {
   constructor(
-      stylesPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
+      stylesContainer: StylesContainer, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
       style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number, propertyName: string,
       expandedByDefault: boolean) {
-    super(stylesPane, matchedStyles, style, sectionIdx, null, null, null, propertyName);
+    super(stylesContainer, matchedStyles, style, sectionIdx, null, null, null, propertyName);
     if (!expandedByDefault) {
       this.element.classList.add('hidden');
     }
@@ -1803,26 +2079,26 @@ export class RegisteredPropertiesSection extends StylePropertiesSection {
       return;
     }
     if (await rule.setPropertyName(newContent)) {
-      this.parentPane.forceUpdate();
+      this.stylesContainer.forceUpdate();
     }
   }
 
   override createRuleOriginNode(
       matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, linkifier: Components.Linkifier.Linkifier,
-      rule: SDK.CSSRule.CSSRule|null): Node {
+      rule: SDK.CSSRule.CSSRule|null): LitTemplate {
     if (rule) {
       return super.createRuleOriginNode(matchedStyles, linkifier, rule);
     }
-    return document.createTextNode('CSS.registerProperty');
+    return html`CSS.registerProperty`;
   }
 }
 
 export class FunctionRuleSection extends StylePropertiesSection {
   constructor(
-      stylesPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
+      stylesContainer: StylesContainer, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
       style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, children: SDK.CSSRule.CSSNestedStyle[], sectionIdx: number,
       functionName: string, expandedByDefault: boolean) {
-    super(stylesPane, matchedStyles, style, sectionIdx, null, null, null, functionName);
+    super(stylesContainer, matchedStyles, style, sectionIdx, null, null, null, functionName);
     if (!expandedByDefault) {
       this.element.classList.add('hidden');
     }
@@ -1840,6 +2116,9 @@ export class FunctionRuleSection extends StylePropertiesSection {
     }
     if ('supports' in condition) {
       return this.createSupportsElement(condition.supports);
+    }
+    if ('navigation' in condition) {
+      return this.createNavigationElement(condition.navigation);
     }
     return;
   }
@@ -1882,9 +2161,9 @@ export class FunctionRuleSection extends StylePropertiesSection {
 
 export class AtRuleSection extends StylePropertiesSection {
   constructor(
-      stylesPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
+      stylesContainer: StylesContainer, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
       style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number, expandedByDefault: boolean) {
-    super(stylesPane, matchedStyles, style, sectionIdx, null, null, null);
+    super(stylesContainer, matchedStyles, style, sectionIdx, null, null, null);
     this.selectorElement.className = 'font-palette-values-key';
     if (!expandedByDefault) {
       this.element.classList.add('hidden');
@@ -1894,9 +2173,9 @@ export class AtRuleSection extends StylePropertiesSection {
 
 export class PositionTryRuleSection extends StylePropertiesSection {
   constructor(
-      stylesPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
+      stylesContainer: StylesContainer, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
       style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number, active: boolean) {
-    super(stylesPane, matchedStyles, style, sectionIdx, null, null, null);
+    super(stylesContainer, matchedStyles, style, sectionIdx, null, null, null);
     this.selectorElement.className = 'position-try-values-key';
     this.propertiesTreeOutline.element.classList.toggle('no-affect', !active);
   }
@@ -1904,9 +2183,9 @@ export class PositionTryRuleSection extends StylePropertiesSection {
 
 export class KeyframePropertiesSection extends StylePropertiesSection {
   constructor(
-      stylesPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
+      stylesContainer: StylesContainer, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
       style: SDK.CSSStyleDeclaration.CSSStyleDeclaration, sectionIdx: number) {
-    super(stylesPane, matchedStyles, style, sectionIdx, null, null, null);
+    super(stylesContainer, matchedStyles, style, sectionIdx, null, null, null);
     this.selectorElement.className = 'keyframe-key';
   }
 
@@ -1922,7 +2201,7 @@ export class KeyframePropertiesSection extends StylePropertiesSection {
       if (!success) {
         return;
       }
-      this.parentPane.refreshUpdate(this);
+      this.stylesContainer.refreshUpdate(this);
     }
 
     if (!(rule instanceof SDK.CSSRule.CSSKeyframeRule)) {

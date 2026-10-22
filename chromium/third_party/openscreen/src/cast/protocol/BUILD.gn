@@ -74,7 +74,6 @@ openscreen_source_set("unittests") {
     ":receiver_examples",
     ":streaming_examples",
     "../../platform:base",
-    "../../third_party/abseil",
     "../../third_party/googletest:gmock",
     "../../third_party/googletest:gtest",
     "../../util",

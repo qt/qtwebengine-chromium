@@ -21,6 +21,7 @@ import {
   BinOpMatcher,
   ColorMatcher,
   ColorMixMatcher,
+  ContrastColorMatcher,
   CustomFunctionMatcher,
   defaultValueForCSSType,
   EnvFunctionMatcher,
@@ -225,7 +226,7 @@ export interface CSSType {
 export class CSSRegisteredProperty {
   #registration: Protocol.CSS.CSSPropertyRegistration|CSSPropertyRule;
   #cssModel: CSSModel;
-  #style: CSSStyleDeclaration|undefined;
+  #style?: CSSStyleDeclaration;
   constructor(cssModel: CSSModel, registration: CSSPropertyRule|Protocol.CSS.CSSPropertyRegistration) {
     this.#cssModel = cssModel;
     this.#registration = registration;
@@ -932,6 +933,7 @@ export class CSSMatchedStyles {
       new VariableMatcher(this, style),
       new ColorMatcher(() => computedStyles?.get('color') ?? null),
       new ColorMixMatcher(),
+      new ContrastColorMatcher(),
       new URLMatcher(),
       new AngleMatcher(),
       new LinkableNameMatcher(),
@@ -1332,6 +1334,9 @@ class DOMInheritanceCascade {
       case CSSWideKeyword.REVERT_LAYER:
         return this.#findPropertyInPreviousStyle(property, isPreviousLayer) ??
             this.resolveGlobalKeyword(property, CSSWideKeyword.REVERT);
+      case CSSWideKeyword.REVERT_RULE:
+        return this.#findPropertyInPreviousStyle(property, () => true) ??
+            this.resolveGlobalKeyword(property, CSSWideKeyword.UNSET);
       case CSSWideKeyword.UNSET:
         return this.#findPropertyInParentCascadeIfInherited(property) ??
             this.#findCustomPropertyRegistration(property.name);

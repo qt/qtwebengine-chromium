@@ -4,13 +4,10 @@
 namespace Eigen {
 namespace internal {
 
-F16_PACKET_FUNCTION(Packet8f, Packet8h, perf)
-BF16_PACKET_FUNCTION(Packet8f, Packet8bf, perf)
-
-F16_PACKET_FUNCTION(Packet8f, Packet8h, pndtri)
-BF16_PACKET_FUNCTION(Packet8f, Packet8bf, pndtri)
+EIGEN_INSTANTIATE_SPECIAL_FUNCS_F16(Packet8f, Packet8h)
+EIGEN_INSTANTIATE_SPECIAL_FUNCS_BF16(Packet8f, Packet8bf)
 
 }  // namespace internal
 }  // namespace Eigen
 
-#endif  // EIGEN_AVX_SPECIAL_FUNCTIONS_H
+#endif  // EIGEN_AVX_SPECIALFUNCTIONS_H

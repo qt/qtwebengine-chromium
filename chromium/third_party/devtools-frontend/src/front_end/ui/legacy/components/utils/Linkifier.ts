@@ -17,9 +17,11 @@ import * as TextUtils from '../../../../models/text_utils/text_utils.js';
 import type * as Trace from '../../../../models/trace/trace.js';
 import * as Workspace from '../../../../models/workspace/workspace.js';
 import * as UIHelpers from '../../../helpers/helpers.js';
-import {html, type LitTemplate, render} from '../../../lit/lit.js';
+import {Directives, html, type LitTemplate, render, type TemplateResult} from '../../../lit/lit.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
+
+const {ref, ifDefined, classMap} = Directives;
 
 const UIStrings = {
   /**
@@ -228,7 +230,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       sourceURL: Platform.DevToolsPath.UrlString, lineNumber: number|undefined, options?: LinkifyOptions): HTMLElement
       |null {
     let fallbackAnchor: HTMLElement|null = null;
-    const linkifyURLOptions: LinkifyURLOptions = {
+    const linkifyURLOptions = {
       lineNumber,
       maxLength: options?.maxLength ?? this.maxLength,
       columnNumber: options?.columnNumber,
@@ -239,7 +241,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       userMetric: options?.userMetric,
       jslogContext: options?.jslogContext || 'script-location',
       omitOrigin: options?.omitOrigin,
-    };
+    } satisfies LinkifyURLOptions;
     const {columnNumber, className = ''} = linkifyURLOptions;
     if (sourceURL) {
       fallbackAnchor = Linkifier.linkifyURL(sourceURL, linkifyURLOptions);
@@ -280,6 +282,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
 
     const linkDisplayOptions: LinkDisplayOptions = {
       showColumnNumber: linkifyURLOptions.showColumnNumber ?? false,
+      maxLength: linkifyURLOptions.maxLength,
       revealBreakpoint: options?.revealBreakpoint,
     };
 
@@ -344,13 +347,10 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
         callFrame.url as Platform.DevToolsPath.UrlString, callFrame.lineNumber, linkifyOptions);
   }
 
-  maybeLinkifyStackTraceFrame(
-      target: SDK.Target.Target|null, frame: StackTrace.StackTrace.Frame, options?: LinkifyOptions): HTMLElement|null {
-    let fallbackAnchor: HTMLElement|null = null;
-    const linkifyURLOptions: LinkifyURLOptions = {
+  static linkifyStackTraceFrame(frame: StackTrace.StackTrace.Frame, options?: LinkifyOptions): HTMLElement {
+    const linkifyURLOptions = {
       ...options,
       lineNumber: frame.line,
-      maxLength: this.maxLength,
       columnNumber: frame.column,
       showColumnNumber: Boolean(options?.showColumnNumber),
       className: options?.className,
@@ -359,12 +359,10 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       userMetric: options?.userMetric,
       jslogContext: options?.jslogContext || 'script-location',
       omitOrigin: options?.omitOrigin,
-    };
+    } satisfies LinkifyURLOptions;
     const {className = ''} = linkifyURLOptions;
-    if (frame.url) {
-      fallbackAnchor = Linkifier.linkifyURL(frame.url as Platform.DevToolsPath.UrlString, linkifyURLOptions);
-    }
-    if (!target || target.isDisposed()) {
+    const fallbackAnchor = Linkifier.linkifyURL(frame.url as Platform.DevToolsPath.UrlString, linkifyURLOptions);
+    if (!frame.uiSourceCode) {
       return fallbackAnchor;
     }
 
@@ -374,20 +372,18 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     };
     const {link, linkInfo} = Linkifier.createLink(
         fallbackAnchor?.textContent ? fallbackAnchor.textContent : '', className, createLinkOptions);
-    linkInfo.enableDecorator = this.useLinkDecorator;
     linkInfo.fallback = fallbackAnchor;
     linkInfo.userMetric = options?.userMetric;
 
     const linkDisplayOptions: LinkDisplayOptions = {
       showColumnNumber: linkifyURLOptions.showColumnNumber ?? false,
+      maxLength: linkifyURLOptions.maxLength ?? UI.UIUtils.MaxLengthForDisplayedURLs,
       revealBreakpoint: options?.revealBreakpoint,
     };
 
-    const uiLocation = frame.uiSourceCode?.uiLocation(frame.line, frame.column) ?? null;
-    this.updateAnchorFromUILocation(link, linkDisplayOptions, uiLocation);
+    const uiLocation = frame.uiSourceCode.uiLocation(frame.line, frame.column) ?? null;
+    Linkifier.updateAnchorFromUILocation(link, linkDisplayOptions, uiLocation);
 
-    const anchors = (this.anchorsByTarget.get(target) as Element[]);
-    anchors.push(link);
     return link;
   }
 
@@ -425,7 +421,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     linkInfo.enableDecorator = this.useLinkDecorator;
     linkInfo.fallback = fallbackAnchor;
 
-    const linkDisplayOptions = {showColumnNumber: false};
+    const linkDisplayOptions = {showColumnNumber: false, maxLength: this.maxLength};
 
     const updateDelegate = async(liveLocation: Bindings.LiveLocation.LiveLocation): Promise<void> => {
       await this.updateAnchor(link, linkDisplayOptions, liveLocation);
@@ -456,7 +452,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       return link;
     }
 
-    const linkDisplayOptions = {showColumnNumber: false};
+    const linkDisplayOptions = {showColumnNumber: false, maxLength: this.maxLength};
 
     const updateDelegate = async(liveLocation: Bindings.LiveLocation.LiveLocation): Promise<void> => {
       await this.updateAnchor(link, linkDisplayOptions, liveLocation);
@@ -512,10 +508,10 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     this.#anchorUpdaters.set(anchor, function(this: Linkifier, anchor: HTMLElement) {
       void this.updateAnchor(anchor, options, liveLocation);
     });
-    this.updateAnchorFromUILocation(anchor, options, uiLocation);
+    Linkifier.updateAnchorFromUILocation(anchor, options, uiLocation);
   }
 
-  private updateAnchorFromUILocation(
+  private static updateAnchorFromUILocation(
       anchor: HTMLElement, options: LinkDisplayOptions, uiLocation: Workspace.UISourceCode.UILocation|null): void {
     if (!uiLocation) {
       anchor.classList.add('invalid-link');
@@ -529,7 +525,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     }
 
     const text = uiLocation.linkText(true /* skipTrim */, options.showColumnNumber);
-    Linkifier.setTrimmedText(anchor, text, this.maxLength);
+    Linkifier.setTrimmedText(anchor, text, options.maxLength);
 
     let titleText: string = uiLocation.uiSourceCode.url();
     if (uiLocation.uiSourceCode.mimeType() === 'application/wasm') {
@@ -566,7 +562,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     info.icon = icon;
   }
 
-  static linkifyURL(url: Platform.DevToolsPath.UrlString, options?: LinkifyURLOptions): HTMLElement {
+  static renderLinkifiedUrl(url: Platform.DevToolsPath.UrlString, options?: LinkifyURLOptions): TemplateResult {
     options = options || {
       showColumnNumber: false,
       inlineFrameIndex: 0,
@@ -581,16 +577,14 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     const maxLength = options.maxLength || UI.UIUtils.MaxLengthForDisplayedURLs;
     const bypassURLTrimming = options.bypassURLTrimming;
     const omitOrigin = options.omitOrigin;
-    if (!url || Common.ParsedURL.schemeIs(url, 'javascript:')) {
-      const element = document.createElement('span');
-      if (className) {
-        element.className = className;
-      }
 
-      element.textContent = text || url || i18nString(UIStrings.unknown);
-      return element;
+    if (!url || Common.ParsedURL.schemeIs(url, 'javascript:')) {
+      // clang-format off
+      return html`<span class=${className}>${text || url || i18nString(UIStrings.unknown)}</span>`;
+      // clang-format on
     }
 
+    // FIXME: Bindings.ResourceUtils.displayNameForURL should be called in presenters.
     let linkText = text || Bindings.ResourceUtils.displayNameForURL(url);
 
     if (omitOrigin) {
@@ -615,16 +609,21 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       tabStop: options.tabStop,
       bypassURLTrimming,
       jslogContext: options.jslogContext || 'url',
+      lineNumber,
+      columnNumber,
+      userMetric: options?.userMetric,
+      onRef: options.onRef,
     };
-    const {link, linkInfo} = Linkifier.createLink(linkText, className, linkOptions);
-    if (lineNumber) {
-      linkInfo.lineNumber = lineNumber;
-    }
-    if (columnNumber) {
-      linkInfo.columnNumber = columnNumber;
-    }
-    linkInfo.userMetric = options?.userMetric;
-    return link;
+    return Linkifier.renderLink(linkText, className, linkOptions);
+  }
+
+  /**
+   * @deprecated use renderLinkifiedUrl.
+   */
+  static linkifyURL(url: Platform.DevToolsPath.UrlString, options?: LinkifyURLOptions): HTMLElement {
+    const container = document.createDocumentFragment();
+    render(Linkifier.renderLinkifiedUrl(url, options), container);
+    return container.firstElementChild as HTMLElement;
   }
 
   static linkifyRevealable(
@@ -641,64 +640,90 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     return link;
   }
 
-  private static createLink(text: string|HTMLElement, className: string, options: CreateLinkOptions = {}):
-      {link: HTMLElement, linkInfo: LinkInfo} {
+  private static renderLink(text: string|HTMLElement, className: string, options: CreateLinkOptions = {}):
+      TemplateResult {
     const {maxLength, title, href, preventClick, tabStop, bypassURLTrimming, jslogContext} = options;
-    const link = document.createElement(options.preventClick ? 'span' : 'button');
-    if (className) {
-      link.className = className;
-    }
-    link.classList.add('devtools-link');
-    if (!options.preventClick) {
-      link.classList.add('text-button', 'link-style');
-    }
-    if (title) {
-      UI.Tooltip.Tooltip.install(link, title);
-    }
-    if (href) {
-      // @ts-expect-error
-      link.href = href;
-    }
-    link.setAttribute('jslog', `${VisualLogging.link(jslogContext).track({click: true})}`);
-
-    if (text instanceof HTMLElement) {
-      link.appendChild(text);
-    } else if (bypassURLTrimming) {
-      link.classList.add('devtools-link-styled-trim');
-      Linkifier.appendTextWithoutHashes(link, text);
-    } else {
-      Linkifier.setTrimmedText(link, text, maxLength);
-    }
-
-    const linkInfo = {
-      icon: null,
-      enableDecorator: false,
-      uiLocation: null,
-      liveLocation: null,
-      url: href || null,
-      lineNumber: null,
-      columnNumber: null,
-      inlineFrameIndex: 0,
-      revealable: null,
-      fallback: null,
+    const classes: Record<string, boolean> = {
+      'devtools-link': true,
+      'text-button': !preventClick,
+      'link-style': !preventClick,
+      'devtools-link-prevent-click': !!preventClick,
     };
-    infoByAnchor.set(link, linkInfo);
-    if (!preventClick) {
-      const handler = (event: MouseEvent|KeyboardEvent): void => {
-        if (event instanceof KeyboardEvent && event.key !== Platform.KeyboardUtilities.ENTER_KEY && event.key !== ' ') {
+    // More than one class name may be passed.
+    for (const cls of className.split(' ')) {
+      if (cls) {
+        classes[cls] = true;
+      }
+    }
+    const handler = (event: MouseEvent|KeyboardEvent): void => {
+      if (event instanceof KeyboardEvent && event.key !== Platform.KeyboardUtilities.ENTER_KEY && event.key !== ' ') {
+        return;
+      }
+      if (Linkifier.handleClick(event)) {
+        event.consume(true);
+      }
+    };
+    const createRef = (): ReturnType<typeof ref> => {
+      return ref(link => {
+        if (!link) {
           return;
         }
-        if (Linkifier.handleClick(event)) {
-          event.consume(true);
+        options.onRef?.(link as HTMLElement);
+        if (text instanceof HTMLElement) {
+          link.appendChild(text);
+        } else if (bypassURLTrimming) {
+          link.classList.add('devtools-link-styled-trim');
+          Linkifier.appendTextWithoutHashes(link, text);
+        } else {
+          Linkifier.setTrimmedText(link, text, maxLength);
         }
-      };
-      link.onclick = handler;
-      link.onkeydown = handler;
-    } else {
-      link.classList.add('devtools-link-prevent-click');
-    }
-    UI.ARIAUtils.markAsLink(link);
-    link.tabIndex = tabStop ? 0 : -1;
+        const linkInfo = {
+          icon: null,
+          enableDecorator: false,
+          uiLocation: null,
+          liveLocation: null,
+          url: options.href || null,
+          lineNumber: options.lineNumber ?? null,
+          columnNumber: options.columnNumber ?? null,
+          inlineFrameIndex: 0,
+          revealable: null,
+          fallback: null,
+          userMetric: options.userMetric,
+        };
+        infoByAnchor.set(link, linkInfo);
+      });
+    };
+    const jslog = VisualLogging.link(jslogContext).track({click: true});
+    // clang-format off
+    return preventClick ? html`<span
+      class=${classMap(classes)}
+      .href=${href}
+      title=${ifDefined(title ? title : undefined)}
+      jslog=${jslog}
+      .tabIndex=${tabStop ? 0 : -1}
+      role="link"
+      ${createRef()}></span>` : html`<button
+        @click=${handler}
+        @keydown=${handler}
+        class=${classMap(classes)}
+        .href=${href}
+        title=${ifDefined(title ? title : undefined)}
+        jslog=${jslog}
+        .tabIndex=${tabStop ? 0 : -1}
+        role="link"
+        ${createRef()}></button>`;
+    // clang-format on
+  }
+
+  /**
+   * @deprecated use renderLink.
+   */
+  private static createLink(text: string|HTMLElement, className: string, options: CreateLinkOptions = {}):
+      {link: HTMLElement, linkInfo: LinkInfo} {
+    const container = document.createDocumentFragment();
+    render(Linkifier.renderLink(text, className, options), container);
+    const link = container.firstElementChild as HTMLElement;
+    const linkInfo = infoByAnchor.get(link) as LinkInfo;
     return {link, linkInfo};
   }
 
@@ -1131,6 +1156,7 @@ export interface LinkifyURLOptions {
   userMetric?: Host.UserMetrics.Action;
   jslogContext?: string;
   omitOrigin?: boolean;
+  onRef?: (el: HTMLElement) => void;
 }
 
 export interface LinkifyOptions {
@@ -1158,10 +1184,15 @@ interface CreateLinkOptions {
   tabStop?: boolean;
   bypassURLTrimming?: boolean;
   jslogContext?: string;
+  lineNumber?: number;
+  columnNumber?: number;
+  userMetric?: Host.UserMetrics.Action;
+  onRef?: (el: HTMLElement) => void;
 }
 
 interface LinkDisplayOptions {
   showColumnNumber: boolean;
+  maxLength: number;
 
   /**
    * If true, we'll check if there is a breakpoint at the UILocation we get

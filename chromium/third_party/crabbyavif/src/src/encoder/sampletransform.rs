@@ -21,11 +21,11 @@ impl Recipe {
         match self {
             Recipe::Auto => match image.depth {
                 8 | 10 | 12 => Recipe::None,
-                16 => Recipe::BitDepthExtension8b8b,
+                16 => Recipe::BitDepthExtension12b4b,
                 // This is unsupported and will lead to an error later.
                 _ => Recipe::None,
             },
-            Recipe::None | Recipe::BitDepthExtension8b8b => self,
+            Recipe::None | Recipe::BitDepthExtension8b8b | Recipe::BitDepthExtension12b4b => self,
         }
     }
 }
@@ -96,7 +96,7 @@ fn recipe_to_expression(recipe: Recipe) -> Result<SampleTransform, AvifError> {
                 // SampleTransformBitDepth::Signed32bits is necessary because the two input images
                 // once combined use 16-bit unsigned values, but intermediate results are stored in signed integers.
                 SampleTransformBitDepth::Signed32bits.to_bits(),
-                2,
+                2, // num_inputs
                 vec![
                     // The base image represents the 8 most significant bits of the reconstructed, bit-depth-extended output image.
                     // Left shift the base image (which is also the primary item, or the auxiliary alpha item of the primary item)
@@ -108,6 +108,31 @@ fn recipe_to_expression(recipe: Recipe) -> Result<SampleTransform, AvifError> {
                     SampleTransformToken::ImageItem(1),
                     // Combine the two.
                     SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Or),
+                ],
+            )
+        }
+        Recipe::BitDepthExtension12b4b => {
+            // reference_count is two: one 12-bit input image and one 8-bit input image (because AV1 does not support 4-bit samples).
+            //   (base_sample << 4) | (hidden_sample >> 4)
+            // Note: base_sample is encoded losslessly. hidden_sample is encoded lossily or losslessly.
+            SampleTransform::create_from(
+                // SampleTransformBitDepth::Signed32bits is necessary because the two input images
+                // once combined use 16-bit unsigned values, but intermediate results are stored in signed integers.
+                SampleTransformBitDepth::Signed32bits.to_bits(),
+                2, // num_inputs
+                vec![
+                    // The base image represents the 12 most significant bits of the reconstructed, bit-depth-extended output image.
+                    // Left shift the base image (which is also the primary item, or the auxiliary alpha item of the primary item)
+                    // by 4 bits. This is equivalent to multiplying by 2^4.
+                    SampleTransformToken::Constant(16),
+                    SampleTransformToken::ImageItem(0),
+                    SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Product),
+                    // The second image represents the 4 least significant bits of the reconstructed, bit-depth-extended output image.
+                    SampleTransformToken::ImageItem(1),
+                    SampleTransformToken::Constant(16),
+                    SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Quotient),
+                    // Combine the two.
+                    SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Sum),
                 ],
             )
         }
@@ -204,18 +229,18 @@ impl Encoder {
         Ok(())
     }
 
-    pub(crate) fn create_bit_depth_extension_image(
+    pub(crate) fn create_bit_depth_extension_8b8b_image(
         full_depth_image: &Image,
         item: &Item,
     ) -> AvifResult<Image> {
         assert_eq!(full_depth_image.depth, 16);
         if item.is_sato_least_significant_input {
-            // 8-bit image containing the least significant bits of the 16-bit image.
+            // 8-bit image containing the 8 least significant bits of the 16-bit image.
             let mut lsb = full_depth_image.shallow_clone();
             lsb.depth = 8;
             lsb.allocate_planes(item.category)?;
-            let op = SampleTransform::create_from(
-                /*bit_depth=*/ 32, // Unsigned so 16 is not enough.
+            SampleTransform::create_from(
+                /*bit_depth=*/ 32, // Signed so 16 is not enough.
                 /*num_inputs=*/ 1,
                 vec![
                     // Postfix notation.
@@ -223,8 +248,8 @@ impl Encoder {
                     SampleTransformToken::Constant(255),
                     SampleTransformToken::BinaryOp(SampleTransformBinaryOp::And),
                 ],
-            )?;
-            op.apply_to_planes(
+            )?
+            .apply_to_planes(
                 item.category,
                 std::slice::from_ref(full_depth_image),
                 &mut lsb,
@@ -235,8 +260,8 @@ impl Encoder {
             let mut msb = full_depth_image.shallow_clone();
             msb.depth = 8;
             msb.allocate_planes(item.category)?;
-            let op = SampleTransform::create_from(
-                /*bit_depth=*/ 32, // Unsigned so 16 is not enough.
+            SampleTransform::create_from(
+                /*bit_depth=*/ 32, // Signed so 16 is not enough.
                 /*num_inputs=*/ 1,
                 vec![
                     // Postfix notation.
@@ -244,8 +269,78 @@ impl Encoder {
                     SampleTransformToken::Constant(256),
                     SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Quotient),
                 ],
+            )?
+            .apply_to_planes(
+                item.category,
+                std::slice::from_ref(full_depth_image),
+                &mut msb,
             )?;
-            op.apply_to_planes(
+            Ok(msb)
+        }
+    }
+
+    pub(crate) fn create_bit_depth_extension_12b4b_image(
+        full_depth_image: &Image,
+        item: &Item,
+        item_will_be_encoded_losslessly: bool,
+    ) -> AvifResult<Image> {
+        assert_eq!(full_depth_image.depth, 16);
+        if item.is_sato_least_significant_input {
+            // 8-bit image containing the 4 least significant bits of the 16-bit image.
+            let mut lsb = full_depth_image.shallow_clone();
+            lsb.depth = 8;
+            lsb.allocate_planes(item.category)?;
+            let mut tokens = vec![
+                // Postfix notation.
+                SampleTransformToken::ImageItem(0),
+                SampleTransformToken::Constant(15),
+                SampleTransformToken::BinaryOp(SampleTransformBinaryOp::And),
+            ];
+            // AVIF only supports 8, 10 or 12-bit image items. Scale the samples to fit the range.
+            // Note: The samples could be encoded as is without being shifted left before encoding,
+            //       but they would not be shifted right after decoding either. Right shifting after
+            //       decoding provides a guarantee on the range of values and on the lack of integer
+            //       overflow, so it is safer to do these extra steps.
+            //       It also makes more sense from a compression point-of-view to use the full range.
+            tokens.push(SampleTransformToken::Constant(16));
+            tokens.push(SampleTransformToken::BinaryOp(
+                SampleTransformBinaryOp::Product,
+            ));
+            if !item_will_be_encoded_losslessly {
+                // Small loss at encoding could be amplified by the truncation caused by the right
+                // shift after decoding. Offset sample values now, before encoding, to round rather
+                // than floor the samples shifted after decoding.
+                // Note: Samples were just left shifted by numShiftedBits, so adding less than
+                //       (1<<numShiftedBits) will not trigger any integer overflow.
+                tokens.push(SampleTransformToken::Constant(7));
+                tokens.push(SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Sum));
+            }
+            SampleTransform::create_from(
+                /*bit_depth=*/ 32, // Signed so 16 is not enough.
+                /*num_inputs=*/ 1, tokens,
+            )?
+            .apply_to_planes(
+                item.category,
+                std::slice::from_ref(full_depth_image),
+                &mut lsb,
+            )?;
+            Ok(lsb)
+        } else {
+            // 12-bit image containing the 12 most significant bits of the 16-bit image.
+            let mut msb = full_depth_image.shallow_clone();
+            msb.depth = 12;
+            msb.allocate_planes(item.category)?;
+            SampleTransform::create_from(
+                /*bit_depth=*/ 32, // Signed so 16 is not enough.
+                /*num_inputs=*/ 1,
+                vec![
+                    // Postfix notation.
+                    SampleTransformToken::ImageItem(0),
+                    SampleTransformToken::Constant(16),
+                    SampleTransformToken::BinaryOp(SampleTransformBinaryOp::Quotient),
+                ],
+            )?
+            .apply_to_planes(
                 item.category,
                 std::slice::from_ref(full_depth_image),
                 &mut msb,

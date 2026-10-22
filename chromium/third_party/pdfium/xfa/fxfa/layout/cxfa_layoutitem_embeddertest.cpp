@@ -36,7 +36,7 @@ TEST_F(CXFALayoutItemEmbedderTest, Bug306123) {
 }
 
 TEST_F(CXFALayoutItemEmbedderTest, BreakBeforeAfter) {
-  static constexpr int kExpectedPageCount = 10;
+  static constexpr int kExpectedPageCount = 9;
   ASSERT_TRUE(OpenDocument("xfa/xfa_break_before_after.pdf"));
   for (int i = 0; i < kExpectedPageCount; ++i) {
     ScopedPage page = LoadScopedPage(i);

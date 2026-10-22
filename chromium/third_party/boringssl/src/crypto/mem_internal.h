@@ -25,6 +25,8 @@
 #include <openssl/err.h>
 #include <openssl/span.h>
 
+#include "internal.h"
+
 
 BSSL_NAMESPACE_BEGIN
 
@@ -42,29 +44,16 @@ BSSL_NAMESPACE_BEGIN
 // returns nullptr on allocation error. It only implements single-object
 // allocation and not new T[n].
 //
+// When called with no arguments, it performs value-initialization, not
+// default-initialization. This means that, if selects a non-user-provided
+// constructor, the object will be zero-initialized. (As in any C++ type, once
+// |T| gains a user-provided constructors, it is responsible for initializing
+// all fields explicitly.)
+//
 // Note: unlike |new|, this does not support non-public constructors.
 template <typename T, typename... Args>
 T *New(Args &&...args) {
   void *t = OPENSSL_malloc(sizeof(T));
-  if (t == nullptr) {
-    return nullptr;
-  }
-  return new (t) T(std::forward<Args>(args)...);
-}
-
-// NewZeroed behaves like |new| but uses |OPENSSL_zalloc| for memory
-// allocation, thereby zeroing the memory prior to calling constructors. It
-// returns nullptr on allocation error. It only implements single-object
-// allocation and not new T[n].
-//
-// Note: unlike |new|, this does not support non-public constructors.
-//
-// TODO(crbug.com/42220000): Actually replace calls to this by explicitly
-// setting default values in the structs, or - when it can be shown this is not
-// necessary - simply by |New|.
-template <typename T, typename... Args>
-T *NewZeroed(Args &&...args) {
-  void *t = OPENSSL_zalloc(sizeof(T));
   if (t == nullptr) {
     return nullptr;
   }
@@ -82,14 +71,40 @@ void Delete(T *t) {
   }
 }
 
-// All types with kAllowUniquePtr set may be used with UniquePtr. Other types
-// may be C structs which require a |BORINGSSL_MAKE_DELETER| registration.
 namespace internal {
+
+// All types with kAllowUniquePtr set may be used with UniquePtr. Other types
+// may be C structs which require a |BORINGSSL_MAKE_DELETER| registration. Where
+// an internal type cannot be annotated (e.g. an alias of std::variant), use
+// |BORINGSSL_MAKE_DELETER(T, Delete)|.
 template <typename T>
 struct DeleterImpl<T, std::enable_if_t<T::kAllowUniquePtr>> {
   static void Free(T *t) { Delete(t); }
 };
+
+// All types with kAllowRefCountedUniquePtr may be used with UniquePtr, which
+// then will behave like std::shared_ptr.
+template <typename T>
+struct DeleterImpl<T, std::enable_if_t<T::kAllowRefCountedUniquePtr>> {
+  static void Free(T *t) { t->DecRefInternal(); }
+};
+
 }  // namespace internal
+
+// All types with kAllowRefCountedUniquePtr types also automatically get an
+// UpRef function. Other types may be C structs which require a
+// |BORINGSSL_MAKE_UP_REF| registration.
+template <typename T, typename = std::enable_if_t<T::kAllowRefCountedUniquePtr>>
+inline UniquePtr<T> UpRef(T *v) {
+  if (v != nullptr) {
+    v->UpRefInternal();
+  }
+  return UniquePtr<T>(v);
+}
+template <typename T, typename = std::enable_if_t<T::kAllowRefCountedUniquePtr>>
+inline UniquePtr<T> UpRef(const UniquePtr<T> &ptr) {
+  return UpRef(ptr.get());
+}
 
 // MakeUnique behaves like |std::make_unique| but returns nullptr on allocation
 // error.
@@ -97,6 +112,54 @@ template <typename T, typename... Args>
 UniquePtr<T> MakeUnique(Args &&...args) {
   return UniquePtr<T>(New<T>(std::forward<Args>(args)...));
 }
+
+
+// RefCounted is a common base for ref-counted types. This is an instance of the
+// C++ curiously-recurring template pattern, so a type Foo must subclass
+// RefCounted<Foo>. It additionally must friend RefCounted<Foo> to allow calling
+// the destructor.
+template <typename Derived>
+class RefCounted {
+ public:
+  static constexpr bool kAllowRefCountedUniquePtr = true;
+
+  RefCounted(const RefCounted &) = delete;
+  RefCounted &operator=(const RefCounted &) = delete;
+
+  // These methods are intentionally named differently from `bssl::UpRef` to
+  // avoid a collision. Only the implementations of `FOO_up_ref` and `FOO_free`
+  // should call these. |DecRefInternal| returns true if the object was freed
+  // and false if there are still references.
+  void UpRefInternal() { CRYPTO_refcount_inc(&references_); }
+  bool DecRefInternal() {
+    if (CRYPTO_refcount_dec_and_test_zero(&references_)) {
+      Derived *d = static_cast<Derived *>(this);
+      d->~Derived();
+      OPENSSL_free(d);
+      return true;
+    }
+    return false;
+  }
+
+ protected:
+  // Ensure that only `Derived`, which must inherit from `RefCounted<Derived>`,
+  // can call the constructor. This catches bugs where someone inherited from
+  // the wrong base.
+  class CheckSubClass {
+   private:
+    friend Derived;
+    CheckSubClass() = default;
+  };
+  RefCounted(CheckSubClass) {
+    static_assert(std::is_base_of_v<RefCounted, Derived>,
+                  "Derived must subclass RefCounted<Derived>");
+  }
+
+  ~RefCounted() { BSSL_CHECK(references_.load() == 0); }
+
+ private:
+  CRYPTO_refcount_t references_ = 1;
+};
 
 
 // Containers.
@@ -202,7 +265,10 @@ class Array {
 
   // CopyFrom replaces the array with a newly-allocated copy of |in|. It returns
   // true on success and false on error.
+  //
+  // |in| may not alias |this|.
   [[nodiscard]] bool CopyFrom(Span<const T> in) {
+    BSSL_CHECK(!spans_alias(MakeConstSpan(*this), in));
     if (!InitUninitialized(in.size())) {
       return false;
     }
@@ -317,7 +383,7 @@ class Vector {
   // Push adds |elem| at the end of the internal array, growing if necessary. It
   // returns false when allocation fails.
   [[nodiscard]] bool Push(T elem) {
-    if (!MaybeGrow()) {
+    if (!MaybeGrow(1)) {
       return false;
     }
     new (&data_[size_]) T(std::move(elem));
@@ -339,26 +405,46 @@ class Vector {
     return true;
   }
 
+  // Append appends the contents of |in| to the array. It returns true on
+  // success and false on allocation error.
+  [[nodiscard]] bool Append(Span<const T> in) {
+    if (!MaybeGrow(in.size())) {
+      return false;
+    }
+    std::uninitialized_copy(in.begin(), in.end(), data_ + size_);
+    size_ += in.size();
+    return true;
+  }
+
+  // EraseIf removes all elements that satisfy the predicate |pred|.
+  template <typename Pred>
+  void EraseIf(Pred pred) {
+    auto it = std::remove_if(begin(), end(), pred);
+    std::destroy(it, end());
+    size_ = it - begin();
+  }
+
  private:
-  // If there is no room for one more element, creates a new backing array with
+  // If there is no room for |num| elements, creates a new backing array with
   // double the size of the old one and copies elements over.
-  bool MaybeGrow() {
-    // No need to grow if we have room for one more T.
-    if (size_ < capacity_) {
-      return true;
-    }
-    size_t new_capacity = kDefaultSize;
-    if (capacity_ > 0) {
-      // Double the array's size if it's safe to do so.
-      if (capacity_ > SIZE_MAX / 2) {
-        OPENSSL_PUT_ERROR(CRYPTO, ERR_R_OVERFLOW);
-        return false;
-      }
-      new_capacity = capacity_ * 2;
-    }
-    if (new_capacity > SIZE_MAX / sizeof(T)) {
+  [[nodiscard]] bool MaybeGrow(size_t num) {
+    constexpr size_t kDefaultSize = 16;
+    constexpr size_t kMaxCapacity = SIZE_MAX / sizeof(T);
+    if (num > kMaxCapacity - size_) {
       OPENSSL_PUT_ERROR(CRYPTO, ERR_R_OVERFLOW);
       return false;
+    }
+    size_t new_capacity = size_ + num;
+    // No need to grow if we have room.
+    if (capacity_ >= new_capacity) {
+      return true;
+    }
+    // Always grow to at least kDefaultSize to avoid several small mallocs at
+    // the start.
+    new_capacity = std::max(new_capacity, std::min(kDefaultSize, kMaxCapacity));
+    // At least double the old capacity for linear amortized behavior.
+    if (capacity_ <= kMaxCapacity / 2) {
+      new_capacity = std::max(new_capacity, capacity_ * 2);
     }
     T *new_data =
         reinterpret_cast<T *>(OPENSSL_malloc(new_capacity * sizeof(T)));
@@ -381,8 +467,6 @@ class Vector {
   size_t size_ = 0;
   // |capacity_| is the number of elements allocated in this Vector.
   size_t capacity_ = 0;
-  // |kDefaultSize| is the default initial size of the backing array.
-  static constexpr size_t kDefaultSize = 16;
 };
 
 // A PackedSize is an integer that can store values from 0 to N, represented as
@@ -504,7 +588,10 @@ class InplaceVector {
 
   // TryCopyFrom sets the vector to a copy of |in| and returns true, or returns
   // false if |in| is too large.
+  //
+  // |in| may not alias |this|.
   [[nodiscard]] bool TryCopyFrom(Span<const T> in) {
+    BSSL_CHECK(!spans_alias(MakeConstSpan(*this), in));
     if (in.size() > capacity()) {
       return false;
     }
@@ -551,25 +638,11 @@ class InplaceVector {
     return *ret;
   }
 
+  // EraseIf removes all elements that satisfy the predicate |pred|.
   template <typename Pred>
   void EraseIf(Pred pred) {
-    // See if anything needs to be erased at all. This avoids a self-move.
-    auto iter = std::find_if(begin(), end(), pred);
-    if (iter == end()) {
-      return;
-    }
-
-    // Elements before the first to be erased may be left as-is.
-    size_t new_size = iter - begin();
-    // Swap all subsequent elements in if they are to be kept.
-    for (size_t i = new_size + 1; i < size(); i++) {
-      if (!pred((*this)[i])) {
-        (*this)[new_size] = std::move((*this)[i]);
-        new_size++;
-      }
-    }
-
-    Shrink(new_size);
+    auto it = std::remove_if(begin(), end(), pred);
+    Shrink(it - begin());
   }
 
  private:

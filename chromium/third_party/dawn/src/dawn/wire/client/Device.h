@@ -34,8 +34,8 @@
 #include <optional>
 
 #include "dawn/common/LinkedList.h"
-#include "dawn/common/MutexProtected.h"
 #include "dawn/common/RefCountedWithExternalCount.h"
+#include "dawn/common/WGPUDeviceCallbackInfos.h"
 #include "dawn/wire/WireCmd_autogen.h"
 #include "dawn/wire/client/ApiObjects_autogen.h"
 #include "dawn/wire/client/LimitsAndFeatures.h"
@@ -106,22 +106,7 @@ class Device final : public RefCountedWithExternalCount<ObjectWithEventsBase> {
     LimitsAndFeatures mLimitsAndFeatures;
     std::variant<Ref<TrackedEvent>, FutureID> mDeviceLostInfo;
 
-    struct CallbackInfos {
-        CallbackInfos(const WGPUUncapturedErrorCallbackInfo& error,
-                      const WGPULoggingCallbackInfo& logging);
-
-        // The callback infos are optional because once the device is lost, they are set to
-        // std::nullopt and no longer do anything.
-        std::optional<WGPUUncapturedErrorCallbackInfo> error = std::nullopt;
-        std::optional<WGPULoggingCallbackInfo> logging = std::nullopt;
-
-        // Counter that tracks how many places are currently using callback infos. This is used to
-        // ensure that before we call the device lost callback (which may deallocate the uncaptured
-        // error and logging callbacks), we have ensured that there are no outstanding references to
-        // those callbacks.
-        uint32_t semaphore = 0;
-    };
-    MutexCondVarProtected<CallbackInfos> mCallbackInfos;
+    WGPUDeviceCallbackInfos mCallbackInfos;
 
     Ref<Adapter> mAdapter;
     Ref<Queue> mQueue;

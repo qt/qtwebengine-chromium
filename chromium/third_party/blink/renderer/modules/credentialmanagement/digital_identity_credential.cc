@@ -64,15 +64,12 @@ void AbortRequest(ScriptState* script_state) {
 // Converts a base::Value to a ScriptObject.
 // Returns an empty ScriptObject on failure.
 ScriptObject ValueToScriptObject(ScriptState* script_state,
-                                 std::optional<base::Value> response) {
-  if (!response.has_value()) {
-    return ScriptObject();
-  }
+                                 base::Value response) {
   std::unique_ptr<WebV8ValueConverter> converter =
       Platform::Current()->CreateWebV8ValueConverter();
   ScriptState::Scope script_state_scope(script_state);
   v8::Local<v8::Value> v8_response =
-      converter->ToV8Value(response.value(), script_state->GetContext());
+      converter->ToV8Value(response, script_state->GetContext());
   if (v8_response.IsEmpty() || !v8_response->IsObject()) {
     // Parsed value is not an object.
     return ScriptObject();
@@ -85,7 +82,7 @@ void OnCompleteRequest(ScriptPromiseResolver<IDLNullable<Credential>>* resolver,
                        DigitalIdentityRequestType request_type,
                        RequestDigitalIdentityStatus status,
                        const String& protocol,
-                       std::optional<base::Value> token) {
+                       base::Value token) {
   TRACE_EVENT("content.digitalcredentials", "OnCompleteRequest", "status",
               status, "request_type", request_type, "protocol", protocol);
 
@@ -129,6 +126,11 @@ void OnCompleteRequest(ScriptPromiseResolver<IDLNullable<Credential>>* resolver,
                                  : "digital-credentials-get"))));
       return;
 
+    case RequestDigitalIdentityStatus::kErrorUserDeclined: {
+      resolver->Reject(MakeGarbageCollected<DOMException>(
+          DOMExceptionCode::kNotAllowedError, "Request is cancelled."));
+      return;
+    }
     case RequestDigitalIdentityStatus::kError: {
       resolver->Reject(MakeGarbageCollected<DOMException>(
           DOMExceptionCode::kNetworkError, "Error retrieving a token."));
@@ -238,6 +240,11 @@ void DiscoverDigitalIdentityCredentialFromExternalSource(
     std::unique_ptr<base::Value> digital_credential_request_data =
         converter->FromV8Value(request->data().V8Object(),
                                resolver->GetScriptState()->GetContext());
+    // The `ExecutionContext` might have been destroyed by malicious getters
+    // during the V8-to-C++ object conversion above. Bail out if it was.
+    if (!resolver->GetScriptState()->ContextIsValid()) {
+      return;
+    }
     if (!digital_credential_request_data) {
       return;
     }
@@ -324,6 +331,11 @@ void CreateDigitalIdentityCredentialInExternalSource(
     std::unique_ptr<base::Value> digital_credential_request_data =
         converter->FromV8Value(request->data().V8Object(),
                                resolver->GetScriptState()->GetContext());
+    // The `ExecutionContext` might have been destroyed by malicious getters
+    // during the V8-to-C++ object conversion above. Bail out if it was.
+    if (!resolver->GetScriptState()->ContextIsValid()) {
+      return;
+    }
     if (!digital_credential_request_data) {
       continue;
     }

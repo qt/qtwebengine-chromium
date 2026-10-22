@@ -36,8 +36,9 @@ typedef struct evp_pkey_ctx_method_st EVP_PKEY_CTX_METHOD;
 BSSL_NAMESPACE_END
 
 struct evp_pkey_alg_st {
-  // method implements operations for this |EVP_PKEY_ALG|.
+  // method and pkey_method implement operations for this |EVP_PKEY_ALG|.
   const bssl::EVP_PKEY_ASN1_METHOD *method;
+  const bssl::EVP_PKEY_CTX_METHOD *pkey_method;
 };
 
 BSSL_NAMESPACE_BEGIN
@@ -81,6 +82,11 @@ struct evp_pkey_asn1_method_st {
   // pub_present returns true iff the |pk| has a public key. (If so, validity
   // is not guaranteed and should be checked separately.)
   bool (*pub_present)(const EvpPkey *pk);
+
+  // pub_copy sets the key data of |out| to a newly allocated key data structure
+  // which contains a copy of only the public key of |pk|, freeing any key
+  // previously in |out|. Returns true on success or false on failure.
+  bool (*pub_copy)(EvpPkey *out, const EvpPkey *pk);
 
   // priv_decode decodes |params| and |key| as a PrivateKeyInfo and writes the
   // result into |out|.  It returns |evp_decode_ok| on success, and
@@ -134,24 +140,21 @@ struct evp_pkey_asn1_method_st {
   void (*pkey_free)(EvpPkey *pkey);
 } /* EVP_PKEY_ASN1_METHOD */;
 
-class EvpPkey : public evp_pkey_st {
+class EvpPkey : public evp_pkey_st, public RefCounted<EvpPkey> {
  public:
-  ~EvpPkey();
-
-  bssl::CRYPTO_refcount_t references;
+  EvpPkey();
 
   // pkey contains a pointer to a structure dependent on |ameth|.
-  void *pkey;
+  void *pkey = nullptr;
 
   // ameth contains a pointer to a method table that determines the key type, or
   // nullptr if the key is empty.
-  const bssl::EVP_PKEY_ASN1_METHOD *ameth;
-} /* EVP_PKEY */;
+  const bssl::EVP_PKEY_ASN1_METHOD *ameth = nullptr;
 
-// |UniquePtr|s to EvpPkey are actually intrusive |shared_ptr|s!
-// TODO(crbug.com/481633975): find a better way for handling this.
-BORINGSSL_MAKE_DELETER(EvpPkey, EVP_PKEY_free)
-BORINGSSL_MAKE_UP_REF(EvpPkey, EVP_PKEY_up_ref)
+ private:
+  ~EvpPkey();
+  friend RefCounted;
+} /* EVP_PKEY */;
 
 #define EVP_PKEY_OP_UNDEFINED 0
 #define EVP_PKEY_OP_KEYGEN (1 << 2)
@@ -162,14 +165,13 @@ BORINGSSL_MAKE_UP_REF(EvpPkey, EVP_PKEY_up_ref)
 #define EVP_PKEY_OP_DECRYPT (1 << 7)
 #define EVP_PKEY_OP_DERIVE (1 << 8)
 #define EVP_PKEY_OP_PARAMGEN (1 << 9)
+#define EVP_PKEY_OP_ENCAPSULATE (1 << 10)
+#define EVP_PKEY_OP_DECAPSULATE (1 << 11)
 
 #define EVP_PKEY_OP_TYPE_SIG \
   (EVP_PKEY_OP_SIGN | EVP_PKEY_OP_VERIFY | EVP_PKEY_OP_VERIFYRECOVER)
 
 #define EVP_PKEY_OP_TYPE_CRYPT (EVP_PKEY_OP_ENCRYPT | EVP_PKEY_OP_DECRYPT)
-
-#define EVP_PKEY_OP_TYPE_NOGEN \
-  (EVP_PKEY_OP_SIG | EVP_PKEY_OP_CRYPT | EVP_PKEY_OP_DERIVE)
 
 #define EVP_PKEY_OP_TYPE_GEN (EVP_PKEY_OP_KEYGEN | EVP_PKEY_OP_PARAMGEN)
 
@@ -221,12 +223,16 @@ OPENSSL_EXPORT int EVP_PKEY_CTX_ctrl(EVP_PKEY_CTX *ctx, int keytype, int optype,
 #define EVP_PKEY_CTRL_HKDF_SALT (EVP_PKEY_ALG_CTRL + 17)
 #define EVP_PKEY_CTRL_HKDF_INFO (EVP_PKEY_ALG_CTRL + 18)
 #define EVP_PKEY_CTRL_DH_PAD (EVP_PKEY_ALG_CTRL + 19)
+#define EVP_PKEY_CTRL_SIGNATURE_CONTEXT_STRING (EVP_PKEY_ALG_CTRL + 20)
 
 class EvpPkeyCtx : public evp_pkey_ctx_st {
  public:
   static constexpr bool kAllowUniquePtr = true;
 
-  ~EvpPkeyCtx();
+  // TODO(crbug.com/487376811): This destructor is virtual to confirm that we
+  // can emit vtables in libcrypto. Later we should replace |pmeth| with virtual
+  // methods and subclassing.
+  virtual ~EvpPkeyCtx();
 
   // Method associated with this operation
   const bssl::EVP_PKEY_CTX_METHOD *pmeth = nullptr;
@@ -237,16 +243,17 @@ class EvpPkeyCtx : public evp_pkey_ctx_st {
   // operation contains one of the |EVP_PKEY_OP_*| values.
   int operation = EVP_PKEY_OP_UNDEFINED;
   // Algorithm specific data.
-  // TODO(davidben): Since a |EVP_PKEY_CTX| never has its type change after
-  // creation, this should instead be a base class, with the algorithm-specific
-  // data on the subclass, coming from the same allocation.
+  // TODO(crbug.com/487376811): Since a |EVP_PKEY_CTX| never has its type change
+  // after creation, this should instead be a base class, with the
+  // algorithm-specific data on the subclass, coming from the same allocation.
   void *data = nullptr;
 };
 
 struct evp_pkey_ctx_method_st {
   int pkey_id;
 
-  int (*init)(EvpPkeyCtx *ctx);
+  // |alg| may be nullptr. If non-null, |ctx| will have a key set.
+  int (*init)(EvpPkeyCtx *ctx, const EVP_PKEY_ALG *alg);
   int (*copy)(EvpPkeyCtx *dst, EvpPkeyCtx *src);
   void (*cleanup)(EvpPkeyCtx *ctx);
 
@@ -277,16 +284,48 @@ struct evp_pkey_ctx_method_st {
 
   int (*paramgen)(EvpPkeyCtx *ctx, EvpPkey *pkey);
 
+  int (*encap)(EvpPkeyCtx *ctx, uint8_t *out_ciphertext,
+               size_t *out_ciphertext_len, uint8_t *out_secret,
+               size_t *out_secret_len);
+
+  int (*decap)(EvpPkeyCtx *ctx, uint8_t *out_secret, size_t *out_secret_len,
+               const uint8_t *ciphertext, size_t ciphertext_len);
+
   int (*ctrl)(EvpPkeyCtx *ctx, int type, int p1, void *p2);
 } /* EVP_PKEY_CTX_METHOD */;
 
-extern const EVP_PKEY_CTX_METHOD rsa_pkey_meth;
-extern const EVP_PKEY_CTX_METHOD rsa_pss_pkey_meth;
-extern const EVP_PKEY_CTX_METHOD ec_pkey_meth;
-extern const EVP_PKEY_CTX_METHOD ed25519_pkey_meth;
-extern const EVP_PKEY_CTX_METHOD x25519_pkey_meth;
-extern const EVP_PKEY_CTX_METHOD hkdf_pkey_meth;
-extern const EVP_PKEY_CTX_METHOD dh_pkey_meth;
+BSSL_NAMESPACE_END
+
+// TODO(chlily): Make compatible with `EVP_HPKE_KEM`.
+struct evp_kem_st {
+  // Identifies the type of EVP_PKEYs compatible with this KEM.
+  int pkey_id;
+
+  // Constant lengths of ciphertexts and secrets produced/consumed by this KEM.
+  size_t ciphertext_len;
+  size_t secret_len;
+
+  int (*encap)(uint8_t *out_ciphertext, size_t ciphertext_len,
+               uint8_t *out_secret, size_t secret_len,
+               const EVP_PKEY *peer_key);
+  int (*decap)(uint8_t *out_secret, size_t secret_len,
+               const uint8_t *ciphertext, size_t ciphertext_len,
+               const EVP_PKEY *key);
+} /* EVP_KEM */;
+
+BSSL_NAMESPACE_BEGIN
+
+// evp_pkey_ec_no_curve returns an internal curveless EC |EVP_PKEY_ALG|. This
+// cannot be used to parse anything and is only useful for key generation.
+const EVP_PKEY_ALG *evp_pkey_ec_no_curve();
+
+// evp_pkey_hkdf returns an internal |EVP_PKEY_ALG| used to implement
+// |EVP_PKEY_HKDF|. It has no associated key type.
+const EVP_PKEY_ALG *evp_pkey_hkdf();
+
+// evp_pkey_ctx_new_alg behaves like |EVP_PKEY_CTX_new_id| but takes an
+// |EVP_PKEY_ALG|.
+UniquePtr<EvpPkeyCtx> evp_pkey_ctx_new_alg(const EVP_PKEY_ALG *alg);
 
 // evp_pkey_set0 sets |pkey|'s method to |method| and data to |pkey_data|,
 // freeing any key that may previously have been configured. This function takes

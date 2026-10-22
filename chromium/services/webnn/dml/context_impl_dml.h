@@ -76,7 +76,8 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) ContextImplDml final
       WebNNGraphImpl::ComputeResourceInfo compute_resource_info,
       base::flat_map<OperandId, std::unique_ptr<WebNNConstantOperand>>
           constant_operands,
-      base::flat_map<OperandId, WebNNTensorImpl*> constant_tensor_operands,
+      base::flat_map<OperandId, scoped_refptr<WebNNTensorImpl>>
+          constant_tensor_operands,
       CreateGraphImplCallback callback) override;
 
   base::expected<scoped_refptr<WebNNTensorImpl>, mojom::ErrorPtr>
@@ -110,6 +111,8 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) ContextImplDml final
   // After the upload completes, tell the queue to immediately
   // release the staging buffer used for the GPU upload.
   void OnUploadComplete(HRESULT hr);
+
+  std::string_view GetBackendName() const override;
 
   // The `Adapter` instance shared by all `GraphImplDml` created by this
   // context.

@@ -8,6 +8,7 @@
 #include <stddef.h>
 
 #include <string>
+#include <string_view>
 
 #include "components/autofill/core/common/form_data.h"
 #include "url/gurl.h"
@@ -177,6 +178,9 @@ class SavePasswordProgressLogger {
     STRING_PASSWORD_CHANGE_INITIAL_FORM_WAITING_RESULT,
     STRING_PASSWORD_CHANGE_MODEL_PAGE_PREDICTION_TYPE,
     STRING_PASSWORD_CHANGE_SUBSEQUENT_FORM_WAITING_RESULT,
+    STRING_PASSWORD_CHANGE_STABILITY_MONITOR_STARTED,
+    STRING_PASSWORD_CHANGE_STABILITY_MONITOR_SUCCEEDED,
+    STRING_PASSWORD_CHANGE_STABILITY_MONITOR_TIMED_OUT,
     STRING_AUTOMATED_PASSWORD_CHANGE_OTP_DISAPPEARED,
     STRING_AUTOMATED_PASSWORD_CHANGE_START_FLOW,
     STRING_AUTOMATED_PASSWORD_CHANGE_CANCEL_FLOW,
@@ -195,7 +199,7 @@ class SavePasswordProgressLogger {
     STRING_AUTOMATED_PASSWORD_CHANGE_BUTTON_CLICK_ACTION_RESULT,
     STRING_AUTOMATED_PASSWORD_CHANGE_DOM_NODE_ID_TO_CLICK,
     STRING_AUTOMATED_PASSWORD_CHANGE_FORM_NOT_FOUND,
-    STRING_AUTOMATED_PASSWORD_CHANGE_SUBMISSION_DETECTED_OR_TIMEOUT,
+    STRING_AUTOMATED_PASSWORD_CHANGE_TIMEOUT,
     STRING_AUTOMATED_PASSWORD_CHANGE_FILLING_ACTION_RESULT,
     STRING_PASSWORD_CHANGE_OVERRIDDEN_BY_SWITCH,
     STRING_PASSWORD_CHANGE_GENERATION_UNAVAILABLE,
@@ -269,13 +273,14 @@ class SavePasswordProgressLogger {
   // will be still possible to match the scrubbed string to the original ID or
   // name in the HTML doc. That's good enough for the logging purposes, and
   // provides some security benefits.
-  static std::string ScrubElementID(const std::u16string& element_id);
+  static std::string ScrubElementID(std::u16string_view element_id);
 
   // The UTF-8 version of the function above.
   static std::string ScrubElementID(std::string element_id);
 
   // Translates the StringID values into the corresponding strings.
-  static std::string GetStringFromID(SavePasswordProgressLogger::StringID id);
+  static std::string_view GetStringFromID(
+      SavePasswordProgressLogger::StringID id);
 
  protected:
   // Sends `log` immediately for display.

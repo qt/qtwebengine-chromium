@@ -125,7 +125,7 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
     // create_info_shaders + linking_shaders
     const VkShaderStageFlags active_shaders = 0;
 
-    const vvl::unordered_set<uint32_t> fragmentShader_writable_output_location_list;
+    const vvl::unordered_set<uint32_t> fs_writable_output_location_list;
 
     // NOTE: this map is used in performance critical code paths.
     // The values of existing entries in the samplers_used_by_image map
@@ -160,6 +160,9 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
         // When we instrument GPL at link time, we need to hold the libraries created by GPU-AV
         // so they can be re-used
         VkPipeline instrumented_pipeline_lib = VK_NULL_HANDLE;
+        // We need to lock the pipelines when doig GPL
+        // while we have one in vvl::ShaderModule GPL needs it also at the pipeline library scope
+        std::mutex mutex;
     } instrumentation_data;
 
     Pipeline(const DeviceState &state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
@@ -557,6 +560,15 @@ class Pipeline : public StateObject, public SubStateManager<PipelineSubState> {
         return false;
     }
     static uint32_t CountDescriptorHeapEmbeddedSamplers(const Pipeline& pipe_state);
+
+    const ShaderStageState* GetShaderStageState(VkShaderStageFlagBits stage) const {
+        for (const ShaderStageState& shader_stage_state : stage_states) {
+            if (shader_stage_state.GetStage() == stage) {
+                return &shader_stage_state;
+            }
+        }
+        return nullptr;
+    }
 
   protected:
     static std::shared_ptr<VertexInputState> CreateVertexInputState(const Pipeline &p, const DeviceState &state,

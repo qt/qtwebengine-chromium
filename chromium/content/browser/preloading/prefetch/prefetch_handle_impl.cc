@@ -43,25 +43,26 @@ void PrefetchContainerObserver::OnDeterminedHead(
     // https://chromium-review.googlesource.com/c/chromium/src/+/6615559/comment/3f439d19_8c9cf99a
     //
     // TODO(crbug.com/400761083): Use the callback.
-    if (prefetch_container.GetNonRedirectResponseReader() &&
-        prefetch_container.GetNonRedirectResponseReader()->load_state() ==
-            PrefetchResponseReader::LoadState::kResponseReceived) {
-      on_prefetch_head_received_.Run(*prefetch_container.GetNonRedirectHead());
+    if (prefetch_container.GetLoadState() ==
+        PrefetchContainer::LoadState::kDeterminedHead) {
+      const auto* head = prefetch_container.GetNonRedirectHead();
+      CHECK(head);
+      on_prefetch_head_received_.Run(*head);
     }
   }
 }
 
 void PrefetchContainerObserver::OnPrefetchCompletedOrFailed(
     const PrefetchContainer& prefetch_container,
-    const network::URLLoaderCompletionStatus& completion_status,
-    const std::optional<int>& response_code) {
+    const network::URLLoaderCompletionStatus& completion_status) {
   // `IsDecoy()` check is added to preserve the existing behavior.
   // https://crbug.com/400761083
   if (prefetch_container.IsDecoy()) {
     return;
   }
   if (on_prefetch_completed_or_failed_) {
-    on_prefetch_completed_or_failed_.Run(completion_status, response_code);
+    on_prefetch_completed_or_failed_.Run(completion_status,
+                                         prefetch_container.GetResponseCode());
   }
 }
 
@@ -70,6 +71,7 @@ PrefetchHandleImpl::PrefetchHandleImpl(
     base::WeakPtr<PrefetchContainer> prefetch_container)
     : prefetch_service_(std::move(prefetch_service)),
       prefetch_container_(std::move(prefetch_container)) {
+  CHECK_CURRENTLY_ON(BrowserThread::UI);
   CHECK(prefetch_service_);
   // Note that `prefetch_container_` can be nullptr.
 
@@ -79,6 +81,7 @@ PrefetchHandleImpl::PrefetchHandleImpl(
 }
 
 PrefetchHandleImpl::~PrefetchHandleImpl() {
+  CHECK_CURRENTLY_ON(BrowserThread::UI);
   if (prefetch_container_) {
     prefetch_container_->RemoveObserver(&prefetch_container_observer_);
   }
@@ -113,6 +116,7 @@ PrefetchHandleImpl::~PrefetchHandleImpl() {
 void PrefetchHandleImpl::SetOnPrefetchHeadReceivedCallback(
     base::RepeatingCallback<void(const network::mojom::URLResponseHead&)>
         on_prefetch_head_received) {
+  CHECK_CURRENTLY_ON(BrowserThread::UI);
   prefetch_container_observer_.SetOnPrefetchHeadReceivedCallback(
       std::move(on_prefetch_head_received));
 }
@@ -122,16 +126,19 @@ void PrefetchHandleImpl::SetOnPrefetchCompletedOrFailedCallback(
         void(const network::URLLoaderCompletionStatus& completion_status,
              const std::optional<int>& response_code)>
         on_prefetch_completed_or_failed) {
+  CHECK_CURRENTLY_ON(BrowserThread::UI);
   prefetch_container_observer_.SetOnPrefetchCompletedOrFailedCallback(
       std::move(on_prefetch_completed_or_failed));
 }
 
 bool PrefetchHandleImpl::IsAlive() const {
+  CHECK_CURRENTLY_ON(BrowserThread::UI);
   return static_cast<bool>(prefetch_container_);
 }
 
 void PrefetchHandleImpl::SetPrefetchStatusOnReleaseStartedPrefetch(
     PrefetchStatus prefetch_status_on_release_started_prefetch) {
+  CHECK_CURRENTLY_ON(BrowserThread::UI);
   CHECK(!prefetch_status_on_release_started_prefetch_);
   prefetch_status_on_release_started_prefetch_ =
       prefetch_status_on_release_started_prefetch;

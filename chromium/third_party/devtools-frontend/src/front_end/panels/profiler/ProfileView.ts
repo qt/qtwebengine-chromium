@@ -19,8 +19,7 @@ import * as UI from '../../ui/legacy/legacy.js';
 import {BottomUpProfileDataGridTree} from './BottomUpProfileDataGrid.js';
 import {type Formatter, type ProfileDataGridNode, ProfileDataGridTree} from './ProfileDataGrid.js';
 import {ProfileFlameChart, type ProfileFlameChartDataProvider} from './ProfileFlameChartDataProvider.js';
-import {type DataDisplayDelegate, ProfileHeader, type ProfileType} from './ProfileHeader.js';
-import {ProfileSidebarTreeElement} from './ProfileSidebarTreeElement.js';
+import {ProfileHeader, type ProfileType} from './ProfileHeader.js';
 import {TopDownProfileDataGridTree} from './TopDownProfileDataGrid.js';
 
 const UIStrings = {
@@ -138,7 +137,7 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
     this.searchableViewInternal.setPlaceholder(i18nString(UIStrings.findByCostMsNameOrFile));
     this.searchableViewInternal.show(this.element);
 
-    const columns = ([] as DataGrid.DataGrid.ColumnDescriptor[]);
+    const columns: DataGrid.DataGrid.ColumnDescriptor[] = [];
     columns.push({
       id: 'self',
       title: this.columnHeader('self'),
@@ -146,16 +145,6 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
       fixedWidth: true,
       sortable: true,
       sort: DataGrid.DataGrid.Order.Descending,
-      titleDOMFragment: undefined,
-      align: undefined,
-      editable: undefined,
-      nonSelectable: undefined,
-      longText: undefined,
-      disclosure: undefined,
-      weight: undefined,
-      allowInSortByEvenWhenHidden: undefined,
-      dataType: undefined,
-      defaultWeight: undefined,
     });
     columns.push({
       id: 'total',
@@ -163,42 +152,17 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
       width: '120px',
       fixedWidth: true,
       sortable: true,
-      sort: undefined,
-      titleDOMFragment: undefined,
-      align: undefined,
-      editable: undefined,
-      nonSelectable: undefined,
-      longText: undefined,
-      disclosure: undefined,
-      weight: undefined,
-      allowInSortByEvenWhenHidden: undefined,
-      dataType: undefined,
-      defaultWeight: undefined,
     });
     columns.push({
       id: 'function',
       title: i18nString(UIStrings.function),
       disclosure: true,
       sortable: true,
-      sort: undefined,
-      titleDOMFragment: undefined,
-      align: undefined,
-      editable: undefined,
-      nonSelectable: undefined,
-      longText: undefined,
-      weight: undefined,
-      allowInSortByEvenWhenHidden: undefined,
-      dataType: undefined,
-      defaultWeight: undefined,
-      width: undefined,
-      fixedWidth: undefined,
     });
 
     this.dataGrid = new DataGrid.DataGrid.DataGridImpl({
       displayName: i18nString(UIStrings.profiler),
       columns,
-      deleteCallback: undefined,
-      refreshCallback: undefined,
     });
     this.dataGrid.addEventListener(DataGrid.DataGrid.Events.SORTING_CHANGED, this.sortProfile, this);
     this.dataGrid.addEventListener(DataGrid.DataGrid.Events.SELECTED_NODE, this.nodeSelected.bind(this, true));
@@ -333,9 +297,6 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
     if (!this.profileDataGridTree) {
       return;
     }
-    const selectedProfileNode =
-        this.dataGrid.selectedNode ? (this.dataGrid.selectedNode as ProfileDataGridNode).profileNode : null;
-
     this.dataGrid.rootNode().removeChildren();
 
     const children = this.profileDataGridTree.children;
@@ -343,12 +304,6 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
 
     for (let index = 0; index < count; ++index) {
       this.dataGrid.rootNode().appendChild(children[index]);
-    }
-
-    if (selectedProfileNode) {
-      // TODO(crbug.com/1011811): Cleanup the added `selected` property to this SDK class.
-      // @ts-expect-error
-      selectedProfileNode.selected = true;
     }
   }
 
@@ -589,10 +544,6 @@ export class WritableProfileHeader extends ProfileHeader implements Common.Strin
 
   override dispose(): void {
     this.removeTempFile();
-  }
-
-  override createSidebarTreeElement(panel: DataDisplayDelegate): ProfileSidebarTreeElement {
-    return new ProfileSidebarTreeElement(panel, this, 'profile-sidebar-tree-item');
   }
 
   override canSaveToFile(): boolean {

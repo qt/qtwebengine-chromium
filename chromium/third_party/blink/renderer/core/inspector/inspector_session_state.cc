@@ -39,8 +39,7 @@ void InspectorSessionState::EnqueueUpdate(const String& key,
                                           const std::vector<uint8_t>* value) {
   std::optional<Vector<uint8_t>> updated_value;
   if (value) {
-    Vector<uint8_t> payload;
-    payload.AppendRange(value->begin(), value->end());
+    Vector<uint8_t> payload(*value);
     updated_value = std::move(payload);
   }
   updates_->entries.Set(key, std::move(updated_value));
@@ -123,7 +122,7 @@ void InspectorAgentState::Serialize(const blink::String& v,
 bool InspectorAgentState::Deserialize(span<uint8_t> in, blink::String* v) {
   CBORTokenizer tokenizer(in);
   if (tokenizer.TokenTag() == CBORTokenTag::STRING8) {
-    *v = blink::String::FromUTF8(tokenizer.GetString8());
+    *v = blink::String::FromUtf8(tokenizer.GetString8());
     return true;
   }
   if (tokenizer.TokenTag() == CBORTokenTag::STRING16) {

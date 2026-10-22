@@ -7,6 +7,8 @@ import("../build_webui_tests.gni")
 assert(is_win)
 
 build_webui_tests("build") {
+  cc_test_files = [ "inline_login_browsertest.cc" ]
+
   files = [
     "inline_login_test.ts",
     "inline_login_test_util.ts",
@@ -28,7 +30,6 @@ build_webui_tests("build") {
 
   ts_deps = [
     "//chrome/browser/resources/inline_login:build_ts",
-    "//third_party/polymer/v3_0:library",
     "//ui/webui/resources/js:build_ts",
   ]
 }

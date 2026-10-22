@@ -212,7 +212,10 @@ export class NetworkTimeCalculator extends Common.ObjectWrapper.ObjectWrapper<Ev
     const leftLabel = hasLatency ? i18n.TimeUtilities.secondsToString(request.latency) : rightLabel;
 
     if (request.timing) {
-      return {left: leftLabel, right: rightLabel, tooltip: undefined};
+      return {
+        left: leftLabel,
+        right: rightLabel,
+      };
     }
 
     let tooltip;

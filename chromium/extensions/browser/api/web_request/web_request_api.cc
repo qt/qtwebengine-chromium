@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/containers/fixed_flat_set.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
@@ -40,6 +41,7 @@
 #include "extensions/browser/api/web_request/web_request_proxying_url_loader_factory.h"
 #include "extensions/browser/api/web_request/web_request_proxying_websocket.h"
 #include "extensions/browser/api/web_request/web_request_proxying_webtransport.h"
+#include "extensions/browser/bad_message.h"
 #include "extensions/browser/browser_frame_context_data.h"
 #include "extensions/browser/browser_process_context_data.h"
 #include "extensions/browser/event_router.h"
@@ -415,10 +417,8 @@ void WebRequestAPI::OnListenerAdded(const EventListenerInfo& details) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (!base::FeatureList::IsEnabled(
-          extensions_features::kWebRequestAlternativeAddListener)) {
-    return;
-  }
-  if (details.is_lazy) {
+          extensions_features::
+              kWebRequestPersistFilteredEventsViaEventRouter)) {
     return;
   }
 
@@ -465,6 +465,20 @@ void WebRequestAPI::OnListenerAdded(const EventListenerInfo& details) {
   std::string sub_event_name = details.event_name;
   auto* process = content::RenderProcessHost::FromID(details.render_process_id);
 
+  // Active webRequest listeners owned by an extension must only be registered
+  // by processes authorized to host that extension.
+  // `AddFilteredListenerForMainThread` also accepts registrations from web
+  // processes that have executed content or user scripts for the extension, so
+  // enforce the stronger `ProcessMap` check here. Lazy listeners are exempt
+  // since they are not bound to a specific process. See crbug.com/513321171.
+  if (extension && !details.is_lazy && process &&
+      !ProcessMap::Get(details.browser_context)
+           ->Contains(extension->id(), process->GetDeprecatedID())) {
+    bad_message::ReceivedBadMessage(
+        process, bad_message::WRA_INVALID_EXTENSION_ID_FOR_PROCESS);
+    return;
+  }
+
   if (extra_info_spec & ExtraInfoSpec::SECURITY_INFO) {
     // Security info should not be available in Chrome Apps and
     // non-controlled frame, non-extension contexts.
@@ -500,6 +514,13 @@ void WebRequestAPI::OnListenerAdded(const EventListenerInfo& details) {
       AddMessageToConsoleForListener(details,
                                      blink::mojom::ConsoleMessageLevel::kError,
                                      "Missing webview permission.");
+      return;
+    }
+
+    if (!event_name.starts_with("webViewInternal.")) {
+      AddMessageToConsoleForListener(details,
+                                     blink::mojom::ConsoleMessageLevel::kError,
+                                     "Invalid event name for webview.");
       return;
     }
   } else {
@@ -548,19 +569,23 @@ void WebRequestAPI::OnListenerAdded(const EventListenerInfo& details) {
     }
   }
 
+  // TODO(crbug.com/379869738) Remove GetUnsafeValue.
   if (!WebRequestEventRouter::Get(details.browser_context)
            ->AddEventListener(
                details.browser_context, details.extension_id, extension_name,
                event_name, sub_event_name, std::move(filter), extra_info_spec,
-               details.render_process_id, web_view_instance_id,
-               details.worker_thread_id, details.service_worker_version_id)) {
+               details.render_process_id.GetUnsafeValue(), web_view_instance_id,
+               details.worker_thread_id, details.service_worker_version_id,
+               details.is_lazy)) {
     AddMessageToConsoleForListener(details,
                                    blink::mojom::ConsoleMessageLevel::kError,
                                    "Failed to add listener.");
     return;
   }
 
-  helpers::ClearCacheOnNavigation();
+  if (!details.is_lazy) {
+    helpers::ClearCacheOnNavigation();
+  }
 }
 
 void WebRequestAPI::OnListenerRemoved(const EventListenerInfo& details) {
@@ -661,7 +686,7 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
       declarative_request_extension_count_, kMaxCount);
   base::UmaHistogramExactLinear(
       "Extensions.WebRequest.WebViewDependentExtensionCount",
-      web_view_extension_count_, kMaxCount);
+      web_view_extension_ids_.size(), kMaxCount);
 
   if (decision == ProxyDecision::kWillProxyForExtension &&
       !base::FeatureList::IsEnabled(
@@ -672,14 +697,14 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
         ProxyDecisionDetailsForExtension::kForMixedReasons;
     if (web_request_extension_count_ == 0 &&
         declarative_request_extension_count_ == 0) {
-      CHECK_NE(web_view_extension_count_, 0);
+      CHECK_NE(web_view_extension_ids_.size(), 0u);
       details = ProxyDecisionDetailsForExtension::kOnlyForWebView;
-    } else if (web_view_extension_count_ == 0 &&
+    } else if (web_view_extension_ids_.size() == 0 &&
                declarative_request_extension_count_ == 0) {
       CHECK_NE(web_request_extension_count_, 0);
       details = ProxyDecisionDetailsForExtension::kOnlyForWebRequest;
     } else if (web_request_extension_count_ == 0 &&
-               web_view_extension_count_ == 0) {
+               web_view_extension_ids_.size() == 0) {
       CHECK_NE(declarative_request_extension_count_, 0);
       details = ProxyDecisionDetailsForExtension::kOnlyForDeclarativeRequest;
     }
@@ -702,39 +727,33 @@ WebRequestAPI::ProxyDecision WebRequestAPI::MaybeProxyURLLoaderFactoryInternal(
     scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
     const url::Origin& request_initiator) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  ProxyDecision decision = MayHaveProxies()
-                               ? ProxyDecision::kWillProxyForExtension
-                               : ProxyDecision::kWillNotProxy;
-  if (decision != ProxyDecision::kWillProxyForExtension) {
-#if BUILDFLAG(ENABLE_GUEST_VIEW)
-    // There are a few internal WebUIs that use WebView tag that are allowlisted
-    // for webRequest.
-    // TODO(crbug.com/40288053): Remove the scheme check once we're sure
-    // that WebUIs with WebView run in real WebUI processes and check the
-    // context type using |IsAvailableToWebViewEmbedderFrame()| below.
-    if (WebViewGuest::IsGuest(frame)) {
-      content::RenderFrameHost* embedder =
-          frame->GetOutermostMainFrameOrEmbedder();
-      const auto& embedder_url = embedder->GetLastCommittedURL();
-      if (embedder_url.SchemeIs(content::kChromeUIScheme)) {
-        auto* feature = FeatureProvider::GetAPIFeature("webRequestInternal");
-        if (feature
-                ->IsAvailableToContext(
-                    nullptr, mojom::ContextType::kWebUi, embedder_url,
-                    util::GetBrowserContextId(browser_context),
-                    BrowserFrameContextData(frame))
-                .is_available()) {
-          decision = ProxyDecision::kWillProxyForWebUI;
-        }
-      } else {
-        if (IsAvailableToWebViewEmbedderFrame(frame)) {
-          decision = ProxyDecision::kWillProxyForEmbedderWebView;
-        }
-      }
-    }
-#endif
 
-    if (decision == ProxyDecision::kWillNotProxy) {
+  ProxyDecision decision = ProxyDecision::kWillNotProxy;
+  if (base::FeatureList::IsEnabled(
+          extensions_features::kOptimizeWebRequestProxy)) {
+    if (HasWebRequestOrDeclarativeWebRequestExtension()) {
+      decision = ProxyDecision::kWillProxyForExtension;
+    } else if (IsAvailableToWebViewEmbedderWebUIFrame(frame)) {
+      // There are a few internal WebUIs that use WebView tag that are
+      // allowlisted for webRequest.
+      decision = ProxyDecision::kWillProxyForWebUI;
+    } else if (IsAvailableToWebViewEmbedderWebPageFrame(frame)) {
+      decision = ProxyDecision::kWillProxyForEmbedderWebView;
+    } else if (IsAvailableToWebViewEmbedderExtensionFrame(frame)) {
+      decision = ProxyDecision::kWillProxyForEmbedderWebView;
+    } else {
+      return decision;
+    }
+  } else {
+    if (MayHaveProxies()) {
+      decision = ProxyDecision::kWillProxyForExtension;
+    } else if (IsAvailableToWebViewEmbedderWebUIFrame(frame)) {
+      // There are a few internal WebUIs that use WebView tag that are
+      // allowlisted for webRequest.
+      decision = ProxyDecision::kWillProxyForWebUI;
+    } else if (IsAvailableToWebViewEmbedderWebPageFrame(frame)) {
+      decision = ProxyDecision::kWillProxyForEmbedderWebView;
+    } else {
       return decision;
     }
   }
@@ -785,24 +804,23 @@ bool WebRequestAPI::MaybeProxyAuthRequest(
     bool is_request_for_navigation,
     AuthRequestCallback callback,
     WebViewGuest* web_view_guest) {
-  if (!MayHaveProxies()) {
-    bool needed_for_webview = false;
 #if BUILDFLAG(ENABLE_GUEST_VIEW)
-    needed_for_webview =
-        web_view_guest &&
-        IsAvailableToWebViewEmbedderFrame(web_view_guest->GetGuestMainFrame());
-#endif
-    if (!needed_for_webview) {
-      return false;
-    }
+  if (!MayHaveProxiesForFrame(
+          web_view_guest ? web_view_guest->GetGuestMainFrame() : nullptr)) {
+    return false;
   }
+#else   // BUILDFLAG(ENABLE_GUEST_VIEW)
+  if (!MayHaveProxies()) {
+    return false;
+  }
+#endif  //  BUILDFLAG(ENABLE_GUEST_VIEW)
 
   content::GlobalRequestID proxied_request_id = request_id;
   // In MaybeProxyURLLoaderFactory, we use an invalid render_process_id for
   // navigation requests. Applying the same logic here so that we can correctly
   // identify the request.
   if (is_request_for_navigation) {
-    proxied_request_id.child_id = network::OriginatingProcess();
+    proxied_request_id.child_id = network::OriginatingProcessId();
   }
 
   // NOTE: This request may be proxied on behalf of an incognito frame, but
@@ -826,7 +844,7 @@ void WebRequestAPI::ProxyWebSocket(
     mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
         handshake_client) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(MayHaveProxies() || IsAvailableToWebViewEmbedderFrame(frame));
+  DCHECK(MayHaveProxiesForFrame(frame));
 
   content::BrowserContext* browser_context =
       frame->GetProcess()->GetBrowserContext();
@@ -854,13 +872,10 @@ void WebRequestAPI::ProxyWebTransport(
         handshake_client,
     content::ContentBrowserClient::WillCreateWebTransportCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (!MayHaveProxies()) {
-    auto* render_frame_host = content::RenderFrameHost::FromID(
-        render_process_host.GetDeprecatedID(), frame_routing_id);
-    if (!IsAvailableToWebViewEmbedderFrame(render_frame_host)) {
-      std::move(callback).Run(std::move(handshake_client), std::nullopt);
-      return;
-    }
+  if (!MayHaveProxiesForFrame(content::RenderFrameHost::FromID(
+          render_process_host.GetDeprecatedID(), frame_routing_id))) {
+    std::move(callback).Run(std::move(handshake_client), std::nullopt);
+    return;
   }
   DCHECK(proxies_);
   StartWebRequestProxyingWebTransport(
@@ -884,13 +899,89 @@ bool WebRequestAPI::MayHaveProxies() const {
 
   return (web_request_extension_count_ > 0) ||
          (declarative_request_extension_count_ > 0) ||
-         (web_view_extension_count_ > 0);
+         (web_view_extension_ids_.size() > 0);
 }
 
-bool WebRequestAPI::IsAvailableToWebViewEmbedderFrame(
+bool WebRequestAPI::MayHaveProxiesForFrame(
+    content::RenderFrameHost* render_frame_host) const {
+  if (base::FeatureList::IsEnabled(
+          extensions_features::kOptimizeWebRequestProxy)) {
+    return HasWebRequestOrDeclarativeWebRequestExtension() ||
+           IsAvailableToWebViewEmbedderWebPageFrame(render_frame_host) ||
+           IsAvailableToWebViewEmbedderWebUIFrame(render_frame_host) ||
+           IsAvailableToWebViewEmbedderExtensionFrame(render_frame_host);
+  } else {
+    return MayHaveProxies() ||
+           IsAvailableToWebViewEmbedderWebPageFrame(render_frame_host) ||
+           IsAvailableToWebViewEmbedderWebUIFrame(render_frame_host);
+  }
+}
+
+bool WebRequestAPI::HasWebRequestOrDeclarativeWebRequestExtension() const {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (base::FeatureList::IsEnabled(
+          extensions_features::kForceWebRequestProxyForTest)) {
+    return true;
+  }
+
+  return (web_request_extension_count_ > 0) ||
+         (declarative_request_extension_count_ > 0);
+}
+
+bool WebRequestAPI::IsAvailableToWebViewEmbedderWebUIFrame(
     content::RenderFrameHost* render_frame_host) const {
 #if BUILDFLAG(ENABLE_GUEST_VIEW)
-  if (!render_frame_host || !WebViewGuest::IsGuest(render_frame_host)) {
+  if (!render_frame_host ||
+      !WebViewGuest::FromRenderFrameHost(render_frame_host)) {
+    return false;
+  }
+  content::BrowserContext* browser_context =
+      render_frame_host->GetBrowserContext();
+  content::RenderFrameHost* embedder_frame =
+      render_frame_host->GetOutermostMainFrameOrEmbedder();
+  const auto& embedder_url = embedder_frame->GetLastCommittedURL();
+  // TODO(crbug.com/40288053): Remove the scheme check once we're sure
+  // that WebUIs with WebView run in real WebUI processes and check the
+  // context type using |IsAvailableToWebViewEmbedderWebPageFrame()| below.
+  if (!embedder_url.SchemeIs(content::kChromeUIScheme)) {
+    return false;
+  }
+  auto* feature = FeatureProvider::GetAPIFeature("webRequestInternal");
+  return feature
+      ->IsAvailableToContext(nullptr, mojom::ContextType::kWebUi, embedder_url,
+                             util::GetBrowserContextId(browser_context),
+                             BrowserFrameContextData(render_frame_host))
+      .is_available();
+#else
+  return false;
+#endif
+}
+
+bool WebRequestAPI::IsAvailableToWebViewEmbedderExtensionFrame(
+    content::RenderFrameHost* render_frame_host) const {
+#if BUILDFLAG(ENABLE_GUEST_VIEW)
+  if (!render_frame_host ||
+      !WebViewGuest::FromRenderFrameHost(render_frame_host)) {
+    return false;
+  }
+  content::BrowserContext* browser_context =
+      render_frame_host->GetBrowserContext();
+  content::RenderFrameHost* embedder_frame =
+      render_frame_host->GetOutermostMainFrameOrEmbedder();
+  const Extension* extension =
+      ProcessManager::Get(browser_context)
+          ->GetExtensionForRenderFrameHost(embedder_frame);
+  return extension && web_view_extension_ids_.contains(extension->id());
+#else
+  return false;
+#endif
+}
+
+bool WebRequestAPI::IsAvailableToWebViewEmbedderWebPageFrame(
+    content::RenderFrameHost* render_frame_host) const {
+#if BUILDFLAG(ENABLE_GUEST_VIEW)
+  if (!render_frame_host ||
+      !WebViewGuest::FromRenderFrameHost(render_frame_host)) {
     return false;
   }
 
@@ -955,7 +1046,7 @@ void WebRequestAPI::OnExtensionLoaded(content::BrowserContext* browser_context,
     update_may_have_proxies = true;
   }
   if (HasWebViewPermission(*extension)) {
-    ++web_view_extension_count_;
+    CHECK(web_view_extension_ids_.insert(extension->id()).second);
     update_may_have_proxies = true;
   }
   if (update_may_have_proxies) {
@@ -978,7 +1069,7 @@ void WebRequestAPI::OnExtensionUnloaded(
     update_may_have_proxies = true;
   }
   if (HasWebViewPermission(*extension)) {
-    --web_view_extension_count_;
+    CHECK_EQ(web_view_extension_ids_.erase(extension->id()), 1u);
     update_may_have_proxies = true;
   }
   if (update_may_have_proxies) {
@@ -1161,6 +1252,10 @@ WebRequestInternalAddEventListenerFunction::Run() {
                          mojom::APIPermissionID::kWebView)) {
       return RespondNow(Error("Missing webview permission."));
     }
+
+    if (!event_name.starts_with("webViewInternal.")) {
+      return RespondNow(Error("Invalid event name for webview."));
+    }
   } else {
     auto has_blocking_permission = [&extension, &event_name]() {
       if (extension->permissions_data()->HasAPIPermission(
@@ -1201,11 +1296,11 @@ WebRequestInternalAddEventListenerFunction::Run() {
 
   bool success =
       WebRequestEventRouter::Get(browser_context())
-          ->AddEventListener(browser_context(), extension_id_safe(),
-                             extension_name, event_name, sub_event_name,
-                             std::move(filter), extra_info_spec,
-                             render_process_id, web_view_instance_id,
-                             worker_thread_id(), service_worker_version_id());
+          ->AddEventListener(
+              browser_context(), extension_id_safe(), extension_name,
+              event_name, sub_event_name, std::move(filter), extra_info_spec,
+              render_process_id, web_view_instance_id, worker_thread_id(),
+              service_worker_version_id(), /*is_lazy=*/false);
   EXTENSION_FUNCTION_VALIDATE(success);
 
   helpers::ClearCacheOnNavigation();

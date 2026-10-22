@@ -521,7 +521,7 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
   // See
   // https://chromium.googlesource.com/chromium/src.git/+/main/third_party/blink/renderer/core/paint/README.md
   // for the definition of a replaced normal-flow stacking element.
-  bool IsReplacedNormalFlowStacking() const;
+  bool IsReplacedNormalFlowStackingContext() const;
 
 #if DCHECK_IS_ON()
   bool LayerListMutationAllowed() const { return layer_list_mutation_allowed_; }
@@ -654,6 +654,8 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
       ShouldRespectOverflowClipType);
   bool HitTestClippedOutByClipPath(const PaintLayer& root_layer,
                                    const HitTestLocation&) const;
+  bool HitTestClippedOutByBorderShape(const PaintLayer& transform_container,
+                                      const HitTestLocation&) const;
   bool HitTestClippedOutByBorderRadius(
       const PaintLayer& transform_container,
       const PaintLayerFragment* container_fragment,
@@ -707,6 +709,8 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
   void SetNeedsReorderOverlayOverflowControls(bool);
 
   bool ComputeHasFilterThatMovesPixels() const;
+
+  bool ComputeHasReferenceFilter() const;
 
   // Self-painting layer is an optimization where we avoid the heavy Layer
   // painting machinery for a Layer allocated only to handle the overflow clip
@@ -765,6 +769,9 @@ class CORE_EXPORT PaintLayer : public GarbageCollected<PaintLayer>,
 
   // Caches |ComputeHasFilterThatMovesPixels()|, updated on style changes.
   unsigned has_filter_that_moves_pixels_ : 1;
+
+  // Caches `ComputeHasReferenceFilter()`, updated on style changes.
+  unsigned has_reference_filter_ : 1 = false;
 
   // True if the current subtree is underneath a LayoutSVGHiddenContainer
   // ancestor.

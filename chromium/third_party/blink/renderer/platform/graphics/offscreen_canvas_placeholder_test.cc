@@ -63,7 +63,7 @@ class OffscreenCanvasPlaceholderTest : public Test {
   viz::ResourceId PeekNextResourceId() {
     return dispatcher_->id_generator_.PeekNextValueForTesting();
   }
-  void DrawSomething();
+  scoped_refptr<CanvasResource> DrawSomething();
   void CreateDispatcher();
 
  protected:
@@ -103,17 +103,16 @@ void OffscreenCanvasPlaceholderTest::CreateDispatcher() {
       CanvasNon2DResourceProviderSharedImage::CreateForSoftwareCompositor(
           gfx::Size(kWidth, kHeight), GetN32FormatForCanvas(),
           kPremul_SkAlphaType, gfx::ColorSpace::CreateSRGB(),
-          CanvasResourceProvider::ShouldInitialize::kCallClear,
           test_web_shared_image_interface_provider_.get());
 }
 
-void OffscreenCanvasPlaceholderTest::DrawSomething() {
-  resource_provider_->Canvas().clear(SkColors::kWhite);
+scoped_refptr<CanvasResource> OffscreenCanvasPlaceholderTest::DrawSomething() {
+  return resource_provider_->DoExternalDrawAndProduceResource(
+      [](cc::PaintCanvas& canvas) { canvas.clear(SkColors::kWhite); });
 }
 
 CanvasResource* OffscreenCanvasPlaceholderTest::DispatchOneFrame() {
-  scoped_refptr<CanvasResource> resource =
-      resource_provider_->ProduceCanvasResource(FlushReason::kOther);
+  scoped_refptr<CanvasResource> resource = DrawSomething();
   CanvasResource* resource_raw_ptr = resource.get();
   dispatcher_->DispatchFrame(std::move(resource), SkIRect::MakeEmpty(),
                              /*is_opaque=*/false);

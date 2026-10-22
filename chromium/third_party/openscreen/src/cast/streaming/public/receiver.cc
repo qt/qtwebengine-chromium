@@ -144,12 +144,11 @@ int Receiver::AdvanceToNextFrame() {
   for (FrameId f = immediate_next_frame; f <= latest_frame_expected_; ++f) {
     PendingFrame& entry = GetQueueEntry(f);
     if (entry.collector.is_complete()) {
-      const EncryptedFrame& encrypted_frame =
-          entry.collector.PeekAtAssembledFrame();
+      const EncodedFrame& metadata = entry.collector.PeekFrameMetadata();
 
       const bool is_next_frame = f == immediate_next_frame;
       const bool is_independent =
-          encrypted_frame.dependency != EncodedFrame::Dependency::kDependent;
+          metadata.dependency != EncodedFrame::Dependency::kDependent;
       const bool is_ready = is_next_frame || is_independent;
       if (is_ready) {
         // Found a frame after skipping past some frames. Drop the ones being
@@ -158,7 +157,7 @@ int Receiver::AdvanceToNextFrame() {
           DropAllFramesBefore(f);
         }
         TRACE_FLOW_STEP(TraceCategory::kReceiver, "Frame.Ready", f);
-        return FrameCrypto::GetPlaintextSize(encrypted_frame);
+        return static_cast<int>(entry.collector.GetFramePayloadSize());
       }
     }
 
@@ -199,13 +198,13 @@ EncodedFrame Receiver::ConsumeNextFrame(ByteBuffer buffer) {
   OSP_CHECK(entry.collector.is_complete());
   OSP_CHECK(entry.estimated_capture_time);
 
-  const EncryptedFrame& encrypted_frame =
-      entry.collector.PeekAtAssembledFrame();
+  const EncodedFrame& metadata = entry.collector.PeekFrameMetadata();
 
   // `buffer` will contain the decrypted frame contents.
-  crypto_.Decrypt(encrypted_frame, buffer);
+  crypto_.Decrypt(metadata.frame_id, entry.collector.GetPayloadChunks(),
+                  buffer);
   EncodedFrame frame;
-  encrypted_frame.CopyMetadataTo(&frame);
+  metadata.CopyMetadataTo(&frame);
   frame.data = buffer;
   frame.reference_time = *entry.estimated_capture_time +
                          ResolveTargetPlayoutDelay(frame_id) -
@@ -346,11 +345,11 @@ void Receiver::OnReceivedRtpPacket(Clock::time_point arrival_time,
   }
   TRACE_FLOW_STEP(TraceCategory::kReceiver, "Frame.Complete", part->frame_id);
 
-  const EncryptedFrame& encrypted_frame = collector.PeekAtAssembledFrame();
+  const EncodedFrame& metadata = collector.PeekFrameMetadata();
 
   // Whenever a key frame has been received, the decoder has what it needs to
   // recover. In this case, clear the PLI condition.
-  if (encrypted_frame.dependency == EncryptedFrame::Dependency::kKeyFrame) {
+  if (metadata.dependency == EncodedFrame::Dependency::kKeyFrame) {
     rtcp_builder_->SetPictureLossIndicator(false);
     last_key_frame_received_ = part->frame_id;
   }

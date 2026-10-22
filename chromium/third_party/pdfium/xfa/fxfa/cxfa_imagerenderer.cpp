@@ -10,7 +10,6 @@
 
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/check_op.h"
-#include "core/fxge/agg/cfx_agg_imagerenderer.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 
@@ -22,7 +21,7 @@ CXFA_ImageRenderer::CXFA_ImageRenderer(CFX_RenderDevice* device,
       bitmap_(std::move(bitmap)) {
   // Assume this always draws into CFX_DefaultRenderDevice.
   CHECK(device_);
-  CHECK(device_->GetRenderCaps() & FXRC_GET_BITS);
+  CHECK(device_->RenderCapGetBits());
   CHECK(bitmap_);
 }
 
@@ -38,8 +37,8 @@ bool CXFA_ImageRenderer::Start() {
   }
 
   CHECK_EQ(result.result, RenderDeviceDriverIface::Result::kSuccess);
-  device_handle_ = std::move(result.agg_image_renderer);
-  if (!device_handle_) {
+  continuation_ = std::move(result.continuation);
+  if (!continuation_) {
     return false;
   }
 
@@ -49,5 +48,5 @@ bool CXFA_ImageRenderer::Start() {
 
 bool CXFA_ImageRenderer::Continue() {
   CHECK_EQ(state_, State::kStarted);
-  return device_->ContinueDIBits(device_handle_.get(), nullptr);
+  return device_->ContinueDIBits(continuation_.get(), nullptr);
 }

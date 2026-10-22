@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "ynnpack/base/log.h"
 #include "ynnpack/include/ynnpack.h"
 #include "ynnpack/subgraph/runtime.h"
 #include "ynnpack/subgraph/slinky.h"
@@ -67,14 +68,14 @@ void deduce_reshape_extent(ynn_node& node, int input_idx,
   }
 
   if (deduce_dim != -1) {
-    slinky::expr deduced_extent = num_elements / current_elements;
+    slinky::expr deduced_extent = simplify(num_elements / current_elements);
     if (is_pure(deduced_extent)) {
       output_extents[deduce_dim] = deduced_extent;
     } else {
       // This ends up being a pretty complicated expression, so hoist it into
       // a global variable.
       output_extents[deduce_dim] =
-          subgraph.make_global_variable(deduced_extent, "deduced_extent");
+          subgraph.globals.get(deduced_extent, "deduced_extent");
     }
 
     node.checks.push_back({
@@ -94,7 +95,7 @@ slinky::func make_reshape(ynn_runtime& runtime,
   const size_t out_rank = output_extents.size();
   assert(out_rank == output_buf->rank());
 
-  std::vector<slinky::var> dims = make_dims(out_rank, runtime.symbols);
+  std::vector<slinky::var> dims = runtime.globals.make_dims(out_rank);
   slinky::box_expr bounds(in_rank);
 
   // Compute the "flat" index of the coordinates in the output.
@@ -148,7 +149,8 @@ slinky::func make_reshape(ynn_runtime& runtime,
     slinky::buffer<const void, YNN_MAX_TENSOR_RANK> input_as_output = output;
     input_as_output.raw_buffer::base = input.raw_buffer::base;
     for (size_t d = 0; d < input_as_output.rank; ++d) {
-      input_as_output.dim(d).set_bounds(0, input_as_output.dim(d).max());
+      input_as_output.mutable_dim(d).set_bounds(0,
+                                                input_as_output.dim(d).max());
     }
     slinky::copy(input_as_output, output);
     return 0;
@@ -173,38 +175,61 @@ slinky::func make_reshape(ynn_runtime& runtime,
   // slinky::func::make_copy(std::move(input), std::move(output));
 }
 
+ynn_status validate_new_shape(const char* node, size_t rank,
+                              const size_t* new_dims) {
+  YNN_RETURN_IF_ERROR(validate_rank(node, "new_dims", rank));
+  if (new_dims == nullptr && rank > 0) {
+    YNN_LOG_ERROR() << "For node `" << node
+                    << "`, new_dims must be non-null for rank > 0";
+    return ynn_status_invalid_parameter;
+  }
+  return ynn_status_success;
+}
+
 }  // namespace
 
-extern "C" {
-
-ynn_status ynn_define_copy(ynn_subgraph_t subgraph, uint32_t input_id,
-                           uint32_t* output_id, uint32_t flags) {
-  // Validate arguments.
-  assert(subgraph);
-  assert(subgraph->is_valid_value(input_id));
-  assert(output_id);
-  const ynn_value& input = subgraph->value(input_id);
+void define_copy(ynn_subgraph& subgraph, ynn_node& node, uint32_t input_id,
+                 uint32_t output_id, uint32_t flags) {
+  const ynn_value& input = subgraph.value(input_id);
 
   // Propagate shape.
-  ynn_value& output = subgraph->get_output_value(output_id, input);
+  ynn_value& output = subgraph.get_output_value(&output_id, input);
   output.extents = input.extents;
 
-  ynn_node node;
   node.inputs = {input_id};
-  node.outputs = {*output_id};
+  node.outputs = {output_id};
   node.op = ynn_node::copy{};
   node.create = [](const ynn_node& node, ynn_runtime& runtime) {
     const ynn_runtime_value& input = runtime.value(node.inputs[0]);
     ynn_runtime_value& output = runtime.value(node.outputs[0]);
 
     output.make_buffer(runtime, input.buffer->elem_size());
-    std::vector<slinky::var> dims = make_dims(output.rank(), runtime.symbols);
+    std::vector<slinky::var> dims = runtime.globals.make_dims(output.rank());
     slinky::box_expr bounds = make_elementwise_bounds(dims, input.extents);
     auto func = slinky::func::make_copy({input.buffer, std::move(bounds)},
                                         {output.buffer, std::move(dims)});
     runtime.funcs.push_back(std::move(func));
     return ynn_status_success;
   };
+}
+
+extern "C" {
+
+ynn_status ynn_define_copy(ynn_subgraph_t subgraph, uint32_t input_id,
+                           uint32_t* output_id, uint32_t flags) {
+  // Validate arguments.
+  YNN_RETURN_IF_ERROR(validate_subgraph("copy", subgraph));
+  YNN_RETURN_IF_ERROR(
+      validate_input_tensor("copy", subgraph, "input_id", input_id));
+  YNN_RETURN_IF_ERROR(
+      validate_output_tensor("copy", subgraph, "output_id", output_id));
+  const ynn_value& input = subgraph->value(input_id);
+
+  // Propagate shape.
+  ynn_value& output = subgraph->get_output_value(output_id, input);
+
+  ynn_node node;
+  define_copy(*subgraph, node, input_id, output.id, flags);
   subgraph->add_node(std::move(node));
   return ynn_status_success;
 }
@@ -213,11 +238,15 @@ ynn_status ynn_define_static_reshape(ynn_subgraph_t subgraph, size_t rank,
                                      const size_t* new_dims, uint32_t input_id,
                                      uint32_t* output_id, uint32_t flags) {
   // Validate arguments.
-  assert(subgraph);
-  assert(subgraph->is_valid_value(input_id));
-  assert(output_id);
-  assert(rank == 0 || new_dims);
+  YNN_RETURN_IF_ERROR(validate_subgraph("static_reshape", subgraph));
+  YNN_RETURN_IF_ERROR(
+      validate_input_tensor("static_reshape", subgraph, "input_id", input_id));
+  YNN_RETURN_IF_ERROR(validate_output_tensor("static_reshape", subgraph,
+                                             "output_id", output_id));
+  YNN_RETURN_IF_ERROR(validate_new_shape("static_reshape", rank, new_dims));
+
   const ynn_value& input = subgraph->value(input_id);
+
   ynn_value& output = subgraph->get_output_value(output_id, input);
 
   ynn_node::static_reshape op;
@@ -252,12 +281,14 @@ ynn_status ynn_define_static_broadcast(ynn_subgraph_t subgraph, size_t rank,
                                        uint32_t input_id, uint32_t* output_id,
                                        uint32_t flags) {
   // Validate arguments.
-  assert(subgraph);
-  assert(subgraph->is_valid_value(input_id));
-  assert(output_id);
-  assert(rank == 0 || new_dims);
-  const ynn_value& input = subgraph->value(input_id);
+  YNN_RETURN_IF_ERROR(validate_subgraph("static_broadcast", subgraph));
+  YNN_RETURN_IF_ERROR(validate_input_tensor("static_broadcast", subgraph,
+                                            "input_id", input_id));
+  YNN_RETURN_IF_ERROR(validate_output_tensor("static_broadcast", subgraph,
+                                             "output_id", output_id));
+  YNN_RETURN_IF_ERROR(validate_new_shape("static_broadcast", rank, new_dims));
 
+  const ynn_value& input = subgraph->value(input_id);
   ynn_node::static_broadcast op;
   op.new_dims.assign(new_dims, new_dims + rank);
   std::reverse(op.new_dims.begin(), op.new_dims.end());
@@ -292,7 +323,7 @@ ynn_status ynn_define_static_broadcast(ynn_subgraph_t subgraph, size_t rank,
     const ynn_runtime_value& input = runtime.value(input_id);
     ynn_runtime_value& output = runtime.value(node.outputs[0]);
 
-    std::vector<slinky::var> dims = make_dims(output.rank(), runtime.symbols);
+    std::vector<slinky::var> dims = runtime.globals.make_dims(output.rank());
     slinky::box_expr bounds =
         make_broadcast_bounds(dims, input.extents, output.extents);
 
@@ -312,16 +343,22 @@ ynn_status ynn_define_static_expand_dims(ynn_subgraph_t subgraph,
                                          uint32_t input_id, uint32_t* output_id,
                                          uint32_t flags) {
   // Validate arguments.
-  assert(subgraph);
-  assert(subgraph->is_valid_value(input_id));
-  assert(output_id);
-  assert(num_new_axes == 0 || new_axes);
+  YNN_RETURN_IF_ERROR(validate_subgraph("static_expand_dims", subgraph));
+  YNN_RETURN_IF_ERROR(validate_input_tensor("static_expand_dims", subgraph,
+                                            "input_id", input_id));
+  YNN_RETURN_IF_ERROR(validate_output_tensor("static_expand_dims", subgraph,
+                                             "output_id", output_id));
+
   const ynn_value& input = subgraph->value(input_id);
+
   ynn_value& output = subgraph->get_output_value(output_id, input);
 
   const int new_rank = input.rank() + num_new_axes;
+  YNN_RETURN_IF_ERROR(validate_rank("static_expand_dims", "output", new_rank));
   ynn_node::static_expand_dims op;
   for (size_t i = 0; i < num_new_axes; ++i) {
+    YNN_RETURN_IF_ERROR(
+        validate_axis("static_expand_dims", "output", new_rank, new_axes[i]));
     op.new_axes[axis_to_slinky_dim(new_rank, new_axes[i])] = true;
   }
 
@@ -348,7 +385,7 @@ ynn_status ynn_define_static_expand_dims(ynn_subgraph_t subgraph,
     assert(input.rank() == input.extents.size());
     assert(output.rank() == input.rank() + new_axes.count());
 
-    std::vector<slinky::var> dims = make_dims(output.rank(), runtime.symbols);
+    std::vector<slinky::var> dims = runtime.globals.make_dims(output.rank());
     slinky::box_expr bounds(input.rank());
 
     auto bounds_d = bounds.begin();
@@ -372,11 +409,19 @@ ynn_status ynn_define_fuse_dim(ynn_subgraph_t subgraph, int32_t axis,
                                size_t axes_count, uint32_t input_id,
                                uint32_t* output_id, uint32_t flags) {
   // Validate arguments.
-  assert(subgraph);
-  assert(subgraph->is_valid_value(input_id));
-  assert(output_id);
-  assert(axes_count > 0);
+  YNN_RETURN_IF_ERROR(validate_subgraph("fuse_dim", subgraph));
+  YNN_RETURN_IF_ERROR(
+      validate_input_tensor("fuse_dim", subgraph, "input_id", input_id));
+  YNN_RETURN_IF_ERROR(
+      validate_output_tensor("fuse_dim", subgraph, "output_id", output_id));
+  if (axes_count == 0) {
+    YNN_LOG_ERROR() << "For node `fuse_dim`, axes_count must be greater than 0";
+    return ynn_status_invalid_parameter;
+  }
   const ynn_value& input = subgraph->value(input_id);
+  YNN_RETURN_IF_ERROR(validate_axis("fuse_dim", "input", input.rank(), axis));
+  YNN_RETURN_IF_ERROR(
+      validate_axis("fuse_dim", "input", input.rank(), axis + axes_count - 1));
 
   ynn_node::fuse_dim op;
   // Since the first axis was specified with the dims in reverse order, we
@@ -431,11 +476,21 @@ ynn_status ynn_define_split_dim(ynn_subgraph_t subgraph, int32_t axis,
                                 uint32_t input_id, uint32_t* output_id,
                                 uint32_t flags) {
   // Validate arguments.
-  assert(subgraph);
-  assert(subgraph->is_valid_value(input_id));
-  assert(output_id);
-  assert(num_splits == 0 || splits);
+  YNN_RETURN_IF_ERROR(validate_subgraph("split_dim", subgraph));
+  YNN_RETURN_IF_ERROR(
+      validate_input_tensor("split_dim", subgraph, "input_id", input_id));
+  YNN_RETURN_IF_ERROR(
+      validate_output_tensor("split_dim", subgraph, "output_id", output_id));
+  if (splits == nullptr && num_splits > 0) {
+    YNN_LOG_ERROR()
+        << "For node `split_dim`, splits must be non-null for num_splits > 0";
+    return ynn_status_invalid_parameter;
+  }
   const ynn_value& input = subgraph->value(input_id);
+  YNN_RETURN_IF_ERROR(
+      validate_rank("split_dim", "output", input.rank() + num_splits - 1));
+  YNN_RETURN_IF_ERROR(validate_axis("split_dim", "input", input.rank(), axis));
+
   ynn_value& output = subgraph->get_output_value(output_id, input);
 
   ynn_node::split_dim op;
@@ -478,19 +533,28 @@ ynn_status ynn_define_split_dim(ynn_subgraph_t subgraph, int32_t axis,
   subgraph->add_node(std::move(node));
   return ynn_status_success;
 }
-
 ynn_status ynn_define_fuse_dims(ynn_subgraph_t subgraph, size_t num_axes,
                                 const int32_t* axes, uint32_t input_id,
                                 uint32_t* output_id, uint32_t flags) {
   // Validate arguments.
-  assert(subgraph);
-  assert(subgraph->is_valid_value(input_id));
-  assert(subgraph->is_valid_value(*output_id));
+  YNN_RETURN_IF_ERROR(validate_subgraph("fuse_dims", subgraph));
+  YNN_RETURN_IF_ERROR(
+      validate_input_tensor("fuse_dims", subgraph, "input_id", input_id));
+  YNN_RETURN_IF_ERROR(
+      validate_output_tensor("fuse_dims", subgraph, "output_id", output_id));
+  if (axes == nullptr && num_axes > 0) {
+    YNN_LOG_ERROR()
+        << "For node `fuse_dims`, axes must be non-null for num_axes > 0";
+    return ynn_status_invalid_parameter;
+  }
+
   const ynn_value& input = subgraph->value(input_id);
   ynn_value& output = subgraph->get_output_value(output_id, input);
 
   ynn_node::fuse_dims op;
   for (size_t i = 0; i < num_axes; ++i) {
+    YNN_RETURN_IF_ERROR(
+        validate_axis("fuse_dims", "input", input.rank(), axes[i]));
     // Since we are reversing the axes, the first dimension to fuse is actually
     // the next dimension.
     op.axes[axis_to_slinky_dim(input.rank(), axes[i] + 1)] = true;
@@ -527,16 +591,22 @@ ynn_status ynn_define_split_dims(ynn_subgraph_t subgraph, size_t num_axes,
                                  uint32_t input_id, uint32_t* output_id,
                                  uint32_t flags) {
   // Validate arguments.
-  assert(subgraph);
-  assert(subgraph->is_valid_value(input_id));
-  assert(subgraph->is_valid_value(*output_id));
-  assert(num_axes == 0 || axes);
-  assert(num_axes == 0 || splits);
+  YNN_RETURN_IF_ERROR(validate_subgraph("split_dims", subgraph));
+  YNN_RETURN_IF_ERROR(
+      validate_input_tensor("split_dims", subgraph, "input_id", input_id));
+  YNN_RETURN_IF_ERROR(
+      validate_output_tensor("split_dims", subgraph, "output_id", output_id));
+  if (num_axes > 0 && (axes == nullptr || splits == nullptr)) {
+    YNN_LOG_ERROR() << "For node `split_dims`, axes and splits must be "
+                       "non-null when num_axes > 0";
+    return ynn_status_invalid_parameter;
+  }
   const ynn_value& input = subgraph->value(input_id);
-
   using split = ynn_node::split_dims::split;
   ynn_node::split_dims op;
   for (size_t i = 0; i < num_axes; ++i) {
+    YNN_RETURN_IF_ERROR(
+        validate_axis("split_dims", "input", input.rank(), axes[i]));
     op.splits.push_back({axis_to_slinky_dim(input.rank(), axes[i]), splits[i]});
   }
 

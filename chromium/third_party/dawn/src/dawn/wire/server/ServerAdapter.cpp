@@ -48,7 +48,7 @@ WireResult Server::DoAdapterRequestDevice(Known<WGPUAdapter> adapter,
     auto userdata = MakeUserdata<RequestDeviceUserdata>();
     userdata->eventManager = eventManager;
     userdata->future = future;
-    userdata->deviceObjectId = device.id;
+    userdata->device = device.AsHandle();
     userdata->deviceLostFuture = deviceLostFuture;
 
     // Update the descriptor with the device lost callback associated with this request.
@@ -128,15 +128,13 @@ void Server::OnRequestDeviceCallback(RequestDeviceUserdata* data,
     WGPUDawnTexelCopyBufferRowAlignmentLimits texelCopyBufferRowAlignmentLimits =
         WGPU_DAWN_TEXEL_COPY_BUFFER_ROW_ALIGNMENT_LIMITS_INIT;
     compatLimits.chain.next = &texelCopyBufferRowAlignmentLimits.chain;
-    WGPUResourceTableLimits resourceTableLimits = WGPU_RESOURCE_TABLE_LIMITS_INIT;
-    texelCopyBufferRowAlignmentLimits.chain.next = &resourceTableLimits.chain;
 
     mProcs->deviceGetLimits(device, &limits);
     cmd.limits = &limits;
 
     // Assign the handle and allocated status if the device is created successfully.
     Known<WGPUDevice> reservation;
-    if (FillReservation(data->deviceObjectId, device, &reservation) == WireResult::FatalError) {
+    if (FillReservation(data->device, device, &reservation) == WireResult::FatalError) {
         cmd.status = WGPURequestDeviceStatus_CallbackCancelled;
         cmd.message = ToOutputStringView("Destroyed before request was fulfilled.");
         SerializeCommand(cmd);

@@ -197,7 +197,7 @@ static int gnutls_gen_private_key(gnutls_x509_privkey_t *key)
     }
 
     ret = gnutls_x509_privkey_generate(*key, GNUTLS_PK_ECDSA,
-                                       gnutls_sec_param_to_pk_bits(GNUTLS_PK_ECDSA, GNUTLS_SEC_PARAM_MEDIUM), 0);
+                                       GNUTLS_CURVE_TO_BITS(GNUTLS_ECC_CURVE_SECP256R1), 0);
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "TLS: Failed to generate private key: %s\n", gnutls_strerror(ret));
         goto einval_end;
@@ -689,7 +689,7 @@ static int tls_read(URLContext *h, uint8_t *buf, int size)
     TLSShared *s = &c->tls_shared;
     URLContext *uc = s->is_dtls ? s->udp : s->tcp;
     int ret;
-    // Set or clear the AVIO_FLAG_NONBLOCK on c->tls_shared.tcp
+    // Set or clear the AVIO_FLAG_NONBLOCK on the underlying socket
     uc->flags &= ~AVIO_FLAG_NONBLOCK;
     uc->flags |= h->flags & AVIO_FLAG_NONBLOCK;
     ret = gnutls_record_recv(c->session, buf, size);
@@ -706,9 +706,15 @@ static int tls_write(URLContext *h, const uint8_t *buf, int size)
     TLSShared *s = &c->tls_shared;
     URLContext *uc = s->is_dtls ? s->udp : s->tcp;
     int ret;
-    // Set or clear the AVIO_FLAG_NONBLOCK on c->tls_shared.tcp
+    // Set or clear the AVIO_FLAG_NONBLOCK on the underlying socket
     uc->flags &= ~AVIO_FLAG_NONBLOCK;
     uc->flags |= h->flags & AVIO_FLAG_NONBLOCK;
+
+    if (s->is_dtls) {
+        const size_t mtu_size = gnutls_dtls_get_data_mtu(c->session);
+        size = FFMIN(size, mtu_size);
+    }
+
     ret = gnutls_record_send(c->session, buf, size);
     if (ret > 0)
         return ret;

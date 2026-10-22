@@ -71,7 +71,7 @@ export class InteractionsTrackAppender implements TrackAppender {
   #appendTrackHeaderAtLevel(currentLevel: number, expanded?: boolean): void {
     const trackIsCollapsible = this.#parsedTrace.data.UserInteractions.interactionEvents.length > 0;
     const style = buildGroupStyle({
-      collapsible: trackIsCollapsible ? PerfUI.FlameChart.GroupCollapsibleState.ALWAYS :
+      collapsible: trackIsCollapsible ? PerfUI.FlameChart.GroupCollapsibleState.IF_MULTI_ROW :
                                         PerfUI.FlameChart.GroupCollapsibleState.NEVER,
       useDecoratorsForOverview: true,
     });

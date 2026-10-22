@@ -550,11 +550,11 @@ class DataGridElementNode extends SortableDataGridNode<DataGridElementNode> {
     }
     const cell = this.createTD(columnId);
     cell.setAttribute('part', `${columnId}-column`);
-    if (this.isCreationNode) {
-      return cell;
-    }
     const configCells = [...this.#configElement.children].filter(c => c.tagName === 'TD') as HTMLTableCellElement[];
     const configCell = configCells[index];
+    if (this.isCreationNode && !configCell) {
+      return cell;
+    }
     if (!configCell) {
       throw new Error(`Column ${columnId} not found in the data grid`);
     }
@@ -613,14 +613,14 @@ export const ifExpanded = Lit.Directive.directive(class extends Lit.Directive.Di
   #partInfo: {type: Lit.Directive.PartType, startNode: Node};
   constructor(partInfo: Lit.Directive.PartInfo) {
     if (partInfo.type !== Lit.Directive.PartType.CHILD) {
-      throw new Error('expand directive must be used in a child node');
+      throw new Error('ifExpanded directive must be used in a child node');
     }
     super(partInfo);
     this.#partInfo = partInfo as {type: Lit.Directive.PartType, startNode: Node};
   }
 
-  render(content: () => Lit.TemplateResult): Lit.LitTemplate {
-    return this.#isInExpandedRow(this.#partInfo.startNode) ? content() : Lit.nothing;
+  render(content: Lit.LitTemplate|Iterable<Lit.LitTemplate>): Lit.LitTemplate|Iterable<Lit.LitTemplate> {
+    return this.#isInExpandedRow(this.#partInfo.startNode) ? content : Lit.nothing;
   }
 
   #isInExpandedRow(element: Node|null|undefined): boolean {

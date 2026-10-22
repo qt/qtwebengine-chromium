@@ -14,8 +14,8 @@ devtools_module("issues_manager") {
     "BounceTrackingIssue.ts",
     "CheckFormsIssuesTrigger.ts",
     "ClientHintIssue.ts",
+    "ConnectionAllowlistIssue.ts",
     "ContentSecurityPolicyIssue.ts",
-    "ContrastCheckTrigger.ts",
     "CookieDeprecationMetadataIssue.ts",
     "CookieIssue.ts",
     "CorsIssue.ts",
@@ -31,7 +31,6 @@ devtools_module("issues_manager") {
     "IssueResolver.ts",
     "IssuesManager.ts",
     "IssuesManagerEvents.ts",
-    "LowTextContrastIssue.ts",
     "MarkdownIssueDescription.ts",
     "MixedContentIssue.ts",
     "PartitioningBlobURLIssue.ts",
@@ -40,6 +39,7 @@ devtools_module("issues_manager") {
     "QuirksModeIssue.ts",
     "RelatedIssue.ts",
     "SRIMessageSignatureIssue.ts",
+    "SelectivePermissionsInterventionIssue.ts",
     "SharedArrayBufferIssue.ts",
     "SharedDictionaryIssue.ts",
     "SourceFrameIssuesManager.ts",
@@ -96,6 +96,12 @@ devtools_issue_description_files = [
   "CoepCorpNotSameOriginAfterDefaultedToSameOriginByCoep.md",
   "CoepCorpNotSameSite.md",
   "CoepFrameResourceNeedsCoepHeader.md",
+  "connectionAllowlistInvalidAllowlistItemType.md",
+  "connectionAllowlistInvalidHeader.md",
+  "connectionAllowlistInvalidUrlPattern.md",
+  "connectionAllowlistItemNotInnerList.md",
+  "connectionAllowlistMoreThanOneList.md",
+  "connectionAllowlistReportingEndpointNotToken.md",
   "CompatibilityModeQuirks.md",
   "CookieAttributeValueExceedsMaxSize.md",
   "cookieExcludeBlockedWithinRelatedWebsiteSet.md",
@@ -136,9 +142,6 @@ devtools_issue_description_files = [
   "federatedAuthRequestManifestHttpNotFound.md",
   "federatedAuthRequestManifestNoResponse.md",
   "federatedAuthRequestManifestInvalidResponse.md",
-  "federatedAuthRequestClientMetadataHttpNotFound.md",
-  "federatedAuthRequestClientMetadataNoResponse.md",
-  "federatedAuthRequestClientMetadataInvalidResponse.md",
   "federatedAuthRequestErrorFetchingSignin.md",
   "federatedAuthRequestInvalidSigninResponse.md",
   "federatedAuthRequestAccountsHttpNotFound.md",
@@ -214,6 +217,7 @@ devtools_issue_description_files = [
   "selectElementAccessibilityInteractiveContentLegendChild.md",
   "selectElementAccessibilityInteractiveContentOptionChild.md",
   "selectElementAccessibilityNonPhrasingContentOptionChild.md",
+  "selectivePermissionsIntervention.md",
   "summaryElementAccessibilityInteractiveContentSummaryDescendant.md",
   "sharedArrayBuffer.md",
   "stylesheetLateImport.md",
@@ -319,6 +323,7 @@ ts_library("unittests") {
   sources = [
     "CheckFormsIssuesTrigger.test.ts",
     "IssuesManager.test.ts",
+    "SelectivePermissionsInterventionIssue.test.ts",
   ]
 
   deps = [
@@ -334,6 +339,7 @@ devtools_foundation_module("foundation_unittests") {
   testonly = true
 
   sources = [
+    "ConnectionAllowlistIssue.test.ts",
     "DeprecationIssue.test.ts",
     "ElementAccessibilityIssue.test.ts",
     "FederatedAuthUserInfoRequestIssue.test.ts",
@@ -341,7 +347,6 @@ devtools_foundation_module("foundation_unittests") {
     "Issue.test.ts",
     "IssueAggregator.test.ts",
     "IssueResolver.test.ts",
-    "LowTextContrastIssue.test.ts",
     "MarkdownIssueDescription.test.ts",
     "PermissionElementIssue.test.ts",
     "PropertyRuleIssue.test.ts",

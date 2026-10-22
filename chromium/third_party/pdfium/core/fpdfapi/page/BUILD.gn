@@ -145,6 +145,7 @@ pdfium_unittest_source_set("unittests") {
     "cpdf_colorspace_unittest.cpp",
     "cpdf_devicecs_unittest.cpp",
     "cpdf_function_unittest.cpp",
+    "cpdf_page_unittest.cpp",
     "cpdf_pageimagecache_unittest.cpp",
     "cpdf_pageobjectholder_unittest.cpp",
     "cpdf_psengine_unittest.cpp",
@@ -153,7 +154,10 @@ pdfium_unittest_source_set("unittests") {
   ]
   deps = [
     ":page",
+    ":unit_test_support",
+    "../../../constants",
     "../parser",
+    "../parser:unit_test_support",
     "../render",
   ]
   pdfium_root_dir = "../../../"

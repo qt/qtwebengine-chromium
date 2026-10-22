@@ -115,7 +115,7 @@ class SparseMatrixBase : public EigenBase<Derived> {
   typedef Transpose<Derived> TransposeReturnType;
   typedef Transpose<const Derived> ConstTransposeReturnType;
 
-  // FIXME storage order do not match evaluator storage order
+  // FIXME: storage order may not match evaluator storage order.
   typedef SparseMatrix<Scalar, Flags & RowMajorBit ? RowMajor : ColMajor, StorageIndex> PlainObject;
 
   /** This is the "real scalar" type; if the \a Scalar type is already real numbers
@@ -203,7 +203,7 @@ class SparseMatrixBase : public EigenBase<Derived> {
     return derived();
   }
 
-  SparseMatrixBase() : m_isRValue(false) { /* TODO check flags */
+  SparseMatrixBase() : m_isRValue(false) { /* TODO: validate traits flags. */
   }
 
   template <typename OtherDerived>

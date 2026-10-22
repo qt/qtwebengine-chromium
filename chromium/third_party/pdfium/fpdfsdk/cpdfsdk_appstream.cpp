@@ -32,6 +32,7 @@
 #include "core/fpdfdoc/cpdf_icon.h"
 #include "core/fpdfdoc/cpvt_word.h"
 #include "core/fxcrt/fx_string_wrappers.h"
+#include "core/fxcrt/notreached.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/span.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
@@ -57,6 +58,26 @@ enum class ButtonStyle {
   kIconRightLabelLeft,
   kLabelOverIcon
 };
+
+ButtonStyle TextPositionToButtonStyle(CPDF_ApSettings::TextPosition position) {
+  switch (position) {
+    case CPDF_ApSettings::TextPosition::kCaption:
+      return ButtonStyle::kLabel;
+    case CPDF_ApSettings::TextPosition::kIcon:
+      return ButtonStyle::kIcon;
+    case CPDF_ApSettings::TextPosition::kBelow:
+      return ButtonStyle::kIconTopLabelBottom;
+    case CPDF_ApSettings::TextPosition::kAbove:
+      return ButtonStyle::kIconBottomLabelTop;
+    case CPDF_ApSettings::TextPosition::kRight:
+      return ButtonStyle::kIconLeftLabelRight;
+    case CPDF_ApSettings::TextPosition::kLeft:
+      return ButtonStyle::kIconRightLabelLeft;
+    case CPDF_ApSettings::TextPosition::kOverlaid:
+      return ButtonStyle::kLabelOverIcon;
+  }
+  NOTREACHED();
+}
 
 const char kAppendRectOperator[] = "re";
 const char kConcatMatrixOperator[] = "cm";
@@ -1147,30 +1168,7 @@ CPDFSDK_AppStream::~CPDFSDK_AppStream() = default;
 void CPDFSDK_AppStream::SetAsPushButton() {
   CPDF_FormControl* pControl = widget_->GetFormControl();
   CFX_FloatRect rcWindow = widget_->GetRotatedRect();
-  ButtonStyle nLayout = ButtonStyle::kLabel;
-  switch (pControl->GetTextPosition()) {
-    case TEXTPOS_ICON:
-      nLayout = ButtonStyle::kIcon;
-      break;
-    case TEXTPOS_BELOW:
-      nLayout = ButtonStyle::kIconTopLabelBottom;
-      break;
-    case TEXTPOS_ABOVE:
-      nLayout = ButtonStyle::kIconBottomLabelTop;
-      break;
-    case TEXTPOS_RIGHT:
-      nLayout = ButtonStyle::kIconLeftLabelRight;
-      break;
-    case TEXTPOS_LEFT:
-      nLayout = ButtonStyle::kIconRightLabelLeft;
-      break;
-    case TEXTPOS_OVERLAID:
-      nLayout = ButtonStyle::kLabelOverIcon;
-      break;
-    default:
-      nLayout = ButtonStyle::kLabel;
-      break;
-  }
+  ButtonStyle nLayout = TextPositionToButtonStyle(pControl->GetTextPosition());
 
   CFX_Color crBackground = pControl->GetOriginalBackgroundColor();
   CFX_Color crBorder = pControl->GetOriginalBorderColor();

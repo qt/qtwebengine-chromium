@@ -8,8 +8,18 @@ import '../../../ui/kit/kit.js';
 import * as Common from '../../../core/common/common.js';
 import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
-import type * as Platform from '../../../core/platform/platform.js';
+import * as Platform from '../../../core/platform/platform.js';
+import * as Root from '../../../core/root/root.js';
+import * as SDK from '../../../core/sdk/sdk.js';
+import type * as Protocol from '../../../generated/protocol.js';
+import type {
+  AiWidget, BottomUpTreeAiWidget, ComputedStyleAiWidget, CoreVitalsAiWidget, DomTreeAiWidget, LcpBreakdownAiWidget,
+  PerformanceTraceAiWidget, StylePropertiesAiWidget,
+  TimelineRangeSummaryAiWidget} from '../../../models/ai_assistance/agents/AiAgent.js';
 import * as AiAssistanceModel from '../../../models/ai_assistance/ai_assistance.js';
+import * as ComputedStyle from '../../../models/computed_style/computed_style.js';
+import * as Trace from '../../../models/trace/trace.js';
+import * as PanelsCommon from '../../../panels/common/common.js';
 import * as Marked from '../../../third_party/marked/marked.js';
 import * as Buttons from '../../../ui/components/buttons/buttons.js';
 import * as Input from '../../../ui/components/input/input.js';
@@ -19,20 +29,28 @@ import * as UIHelpers from '../../../ui/helpers/helpers.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
+import * as Elements from '../../elements/elements.js';
+import * as TimelineComponents from '../../timeline/components/components.js';
+import * as TimelineInsights from '../../timeline/components/insights/insights.js';
+import * as Timeline from '../../timeline/timeline.js';
+import * as TimelineUtils from '../../timeline/utils/utils.js';
+import {PanelUtils} from '../../utils/utils.js';
 
 import chatMessageStyles from './chatMessage.css.js';
+import {walkthroughCloseTitle, walkthroughTitle, WalkthroughView} from './WalkthroughView.js';
 
 const {html, Directives: {ref, ifDefined}} = Lit;
 const lockedString = i18n.i18n.lockedString;
+const {widget} = UI.Widget;
 
 const REPORT_URL = 'https://crbug.com/364805393' as Platform.DevToolsPath.UrlString;
 const SCROLL_ROUNDING_OFFSET = 1;
+const MAX_NUM_LINES_IN_CODEBLOCK = 11;
 
 /*
 * Strings that don't need to be translated at this time.
 */
 const UIStringsNotTranslate = {
-
   /**
    * @description The title of the button that allows submitting positive
    * feedback about the response for AI assistance.
@@ -91,21 +109,21 @@ const UIStringsNotTranslate = {
    */
   maxStepsError: 'Seems like I am stuck with the investigation. It would be better if you start over.',
   /**
+   * @description The error message when the LLM selects context from a different origin.
+   */
+  crossOriginError: 'I have selected the new context but you will have to start a new chat.',
+  /**
    * @description Displayed when the user stop the response
    */
   stoppedResponse: 'You stopped this response',
   /**
-   * @description Prompt for user to confirm code execution that may affect the page.
-   */
-  sideEffectConfirmationDescription: 'This code may modify page content. Continue?',
-  /**
    * @description Button text that confirm code execution that may affect the page.
    */
-  positiveSideEffectConfirmation: 'Continue',
+  confirmActionRequestApproval: 'Continue',
   /**
    * @description Button text that cancels code execution that may affect the page.
    */
-  negativeSideEffectConfirmation: 'Cancel',
+  declineActionRequestApproval: 'Cancel',
   /**
    * @description The generic name of the AI agent (do not translate)
    */
@@ -114,10 +132,6 @@ const UIStringsNotTranslate = {
    * @description Gemini (do not translate)
    */
   gemini: 'Gemini',
-  /**
-   * @description The fallback text when we can't find the user full name
-   */
-  you: 'You',
   /**
    * @description The fallback text when a step has no title yet
    */
@@ -151,10 +165,6 @@ const UIStringsNotTranslate = {
    */
   imageInputSentToTheModel: 'Image input sent to the model',
   /**
-   * @description Alt text for the account avatar.
-   */
-  accountAvatar: 'Account avatar',
-  /**
    * @description Title for the link which wraps the image input rendered in chat messages.
    */
   openImageInNewTab: 'Open image in a new tab',
@@ -162,6 +172,38 @@ const UIStringsNotTranslate = {
    * @description Alt text for image when it is not available.
    */
   imageUnavailable: 'Image unavailable',
+  /**
+   * @description Title for the button that takes the user into other DevTools panels to reveal items the AI references.
+   */
+  reveal: 'Reveal',
+  /**
+   * @description Title used for revealing the performance trace.
+   */
+  revealTrace: 'Reveal trace',
+  /**
+   * @description Title for the core web vitals widget.
+   */
+  coreVitals: 'Core Web Vitals',
+  /**
+   * @description Title for the LCP breakdown widget.
+   */
+  lcpBreakdown: 'LCP breakdown',
+  /**
+   * @description Title for the LCP element widget.
+   */
+  lcpElement: 'LCP element',
+  /**
+   * @description Title for the performance summary widget.
+   */
+  performanceSummary: 'Performance summary',
+  /**
+   * @description The title of the button that allows exporting the conversation for agents.
+   */
+  exportForAgents: 'Copy for your coding agent',
+  /**
+   * @description Title for the bottom up thread activity widget.
+   */
+  bottomUpTree: 'Bottom-up thread activity',
 } as const;
 
 export interface Step {
@@ -170,12 +212,14 @@ export interface Step {
   title?: string;
   code?: string;
   output?: string;
+  widgets?: AiWidget[];
   canceled?: boolean;
-  sideEffect?: ConfirmSideEffectDialog;
+  requestApproval?: ConfirmSideEffectDialog;
   contextDetails?: [AiAssistanceModel.AiAgent.ContextDetail, ...AiAssistanceModel.AiAgent.ContextDetail[]];
 }
 
 export interface ConfirmSideEffectDialog {
+  description: string|null;
   onAnswer: (result: boolean) => void;
 }
 
@@ -195,7 +239,12 @@ export interface StepPart {
   step: Step;
 }
 
-export type ModelMessagePart = AnswerPart|StepPart;
+export interface WidgetPart {
+  type: 'widget';
+  widgets: AiWidget[];
+}
+
+export type ModelMessagePart = AnswerPart|StepPart|WidgetPart;
 
 export interface UserChatMessage {
   entity: ChatMessageEntity.USER;
@@ -221,6 +270,8 @@ export interface RatingViewInput {
 export interface ActionViewInput {
   onReportClick: () => void;
   onCopyResponseClick: () => void;
+  onExportClick?: () => void;
+  showActions: boolean;
 }
 
 export interface SuggestionViewInput {
@@ -253,84 +304,119 @@ export interface MessageInput {
   isLoading: boolean;
   isReadOnly: boolean;
   isLastMessage: boolean;
+  isFirstMessage: boolean;
   canShowFeedbackForm: boolean;
-  userInfo: Pick<Host.InspectorFrontendHostAPI.SyncInformation, 'accountImage'|'accountFullName'|'accountGivenName'>;
   markdownRenderer: MarkdownLitRenderer;
   onSuggestionClick: (suggestion: string) => void;
   onFeedbackSubmit: (rpcId: Host.AidaClient.RpcGlobalId, rate: Host.AidaClient.Rating, feedback?: string) => void;
   onCopyResponseClick: (message: ModelChatMessage) => void;
+  onExportClick?: () => void;
+  changeSummary?: string;
+  walkthrough: {
+    onOpen: (message: ModelChatMessage) => void,
+    isExpanded: boolean,
+    onToggle: (isOpen: boolean, message: ModelChatMessage) => void,
+    isInlined: boolean,
+    activeSidebarMessage: ModelChatMessage|null,
+    inlineExpandedMessages: ModelChatMessage[],
+  };
 }
 
 export const DEFAULT_VIEW = (input: ChatMessageViewInput, output: ViewOutput, target: HTMLElement): void => {
+  const hasAiV2 = Boolean(Root.Runtime.hostConfig.devToolsAiAssistanceV2?.enabled);
   const message = input.message;
+
   if (message.entity === ChatMessageEntity.USER) {
-    const givenName = AiAssistanceModel.AiUtils.isGeminiBranding() ? input.userInfo.accountGivenName : '';
-    const name = givenName || input.userInfo.accountFullName || lockedString(UIStringsNotTranslate.you);
-    const image = input.userInfo.accountImage ?
-        html`<img src="data:image/png;base64, ${input.userInfo.accountImage}" alt=${
-            UIStringsNotTranslate.accountAvatar} />` :
-        html`<devtools-icon
-          name="profile"
-        ></devtools-icon>`;
     const imageInput = message.imageInput && 'inlineData' in message.imageInput ?
         renderImageChatMessage(message.imageInput.inlineData) :
         Lit.nothing;
+
+    const messageClasses = Lit.Directives.classMap({
+      'chat-message': true,
+      query: true,
+      'is-last-message': input.isLastMessage,
+      'is-first-message': input.isFirstMessage,
+      'ai-v2': hasAiV2,
+    });
+
+    const userQueryWrapperClasses = Lit.Directives.classMap({
+      // Don't need to style at all unless we are on the V2 flag.
+      // Once we ship this can be removed entirely.
+      'user-query-wrapper': hasAiV2
+    });
     // clang-format off
     Lit.render(html`
       <style>${Input.textInputStyles}</style>
       <style>${chatMessageStyles}</style>
-      <section
-        class="chat-message query ${input.isLastMessage ? 'is-last-message' : ''}"
-        jslog=${VisualLogging.section('question')}
-      >
-        <div class="message-info">
-          ${image}
-          <div class="message-name">
-            <h2>${name}</h2>
-          </div>
-        </div>
-        ${imageInput}
-        <div class="message-content">${renderTextAsMarkdown(message.text, input.markdownRenderer)}</div>
-      </section>
+      <div class=${userQueryWrapperClasses}>
+        <section class=${messageClasses} jslog=${VisualLogging.section('question')}>
+          ${imageInput}
+          <div class="message-content">${renderTextAsMarkdown(message.text, input.markdownRenderer)}</div>
+        </section>
+      </div>
     `, target);
     // clang-format on
     return;
   }
 
+  const steps = message.parts.filter(part => part.type === 'step').map(part => part.step);
   const icon = AiAssistanceModel.AiUtils.getIconName();
 
+  const messageClasses = Lit.Directives.classMap({
+    'chat-message': true,
+    answer: true,
+    'is-last-message': input.isLastMessage,
+    'is-first-message': input.isFirstMessage,
+    'ai-v2': hasAiV2,
+  });
   // clang-format off
   Lit.render(html`
     <style>${Input.textInputStyles}</style>
     <style>${chatMessageStyles}</style>
-    <section
-      class="chat-message answer ${input.isLastMessage ? 'is-last-message' : ''}"
-      jslog=${VisualLogging.section('answer')}
-    >
-      <div class="message-info">
-        <devtools-icon name=${icon}></devtools-icon>
-        <div class="message-name">
-          <h2>${AiAssistanceModel.AiUtils.isGeminiBranding() ? lockedString(UIStringsNotTranslate.gemini) : lockedString(UIStringsNotTranslate.ai)}</h2>
-        </div>
+    <section class=${messageClasses} jslog=${VisualLogging.section('answer')}>
+      ${hasAiV2 ? Lit.nothing : html`
+        <div class="message-info">
+          <devtools-icon name=${icon}></devtools-icon>
+          <div class="message-name">
+            <h2>${AiAssistanceModel.AiUtils.isGeminiBranding() ? lockedString(UIStringsNotTranslate.gemini) : lockedString(UIStringsNotTranslate.ai)}</h2>
+          </div>
+        </div>`}
+      ${hasAiV2 ? renderWalkthroughUI(input, steps) : Lit.nothing}
+      <div class="answer-body-wrapper">
+        ${Lit.Directives.repeat(
+          message.parts,
+          (_, index) => index,
+          (part, index) => {
+            const isLastPart = index === message.parts.length - 1;
+            if (part.type === 'answer') {
+              return html`<p>${renderTextAsMarkdown(part.text, input.markdownRenderer, { animate: !input.isReadOnly && input.isLoading && isLastPart && input.isLastMessage })}</p>`;
+            }
+            if (part.type === 'widget') {
+              return html`${Lit.Directives.until(renderWidgets(part.widgets, {wrapperClass: 'main-widgets-wrapper'}))}`;
+            }
+            if (!hasAiV2 && part.type === 'step') {
+              return renderStep({
+                step: part.step,
+                isLoading: input.isLoading,
+                markdownRenderer: input.markdownRenderer,
+                isLast: isLastPart,
+              });
+            }
+            return Lit.nothing;
+          },
+        )}
+        ${renderError(message)}
+        ${input.isLastMessage && hasAiV2 && !input.isLoading && input.changeSummary ? html`
+          <devtools-code-block
+            .code=${input.changeSummary}
+            .codeLang=${'css'}
+            .displayLimit=${MAX_NUM_LINES_IN_CODEBLOCK}
+            .displayNotice=${true}
+            class="ai-css-change"
+          ></devtools-code-block>
+        ` : Lit.nothing}
+        ${input.showActions ? renderActions(input, output) : Lit.nothing}
       </div>
-      ${Lit.Directives.repeat(
-        message.parts,
-        (_, index) => index,
-        (part, index) => {
-          const isLastPart = index === message.parts.length - 1;
-          if (part.type === 'answer') {
-            return html`<p>${renderTextAsMarkdown(part.text, input.markdownRenderer, { animate: !input.isReadOnly && input.isLoading && isLastPart && input.isLastMessage })}</p>`;
-          }
-          return renderStep({
-            step: part.step,
-            isLoading: input.isLoading,
-            markdownRenderer: input.markdownRenderer,
-            isLast: isLastPart,
-          });
-        },
-      )}
-      ${renderError(message)}
-      ${input.isLastMessage && !input.isLoading ? renderActions(input, output) : Lit.nothing}
     </section>
   `, target);
   // clang-format on
@@ -367,12 +453,16 @@ function renderTextAsMarkdown(text: string, markdownRenderer: MarkdownLitRendere
   // clang-format on
 }
 
-function renderTitle(step: Step): Lit.LitTemplate {
-  const paused =
-      step.sideEffect ? html`<span class="paused">${lockedString(UIStringsNotTranslate.paused)}: </span>` : Lit.nothing;
-  const actionTitle = step.title ?? `${lockedString(UIStringsNotTranslate.investigating)}…`;
+export function titleForStep(step: Step): string {
+  return step.title ?? `${lockedString(UIStringsNotTranslate.investigating)}…`;
+}
 
-  return html`<span class="title">${paused}${actionTitle}</span>`;
+function renderTitle(step: Step): Lit.LitTemplate {
+  const paused = step.requestApproval ?
+      html`<span class="paused">${lockedString(UIStringsNotTranslate.paused)}: </span>` :
+      Lit.nothing;
+
+  return html`<span class="title">${paused}${titleForStep(step)}</span>`;
 }
 
 function renderStepCode(step: Step): Lit.LitTemplate {
@@ -392,6 +482,7 @@ function renderStepCode(step: Step): Lit.LitTemplate {
       <devtools-code-block
         .code=${step.code.trim()}
         .codeLang=${'js'}
+        .displayLimit=${MAX_NUM_LINES_IN_CODEBLOCK}
         .displayNotice=${!Boolean(step.output)}
         .header=${codeHeadingText}
         .showCopyButton=${true}
@@ -402,6 +493,7 @@ function renderStepCode(step: Step): Lit.LitTemplate {
     <devtools-code-block
       .code=${step.output}
       .codeLang=${'js'}
+      .displayLimit=${MAX_NUM_LINES_IN_CODEBLOCK}
       .displayNotice=${true}
       .header=${lockedString(UIStringsNotTranslate.dataReturned)}
       .showCopyButton=${false}
@@ -422,7 +514,7 @@ function renderStepDetails({
   markdownRenderer: MarkdownLitRenderer,
   isLast: boolean,
 }): Lit.LitTemplate {
-  const sideEffects = isLast && step.sideEffect ? renderSideEffectConfirmationUi(step) : Lit.nothing;
+  const sideEffects = isLast && step.requestApproval ? renderSideEffectConfirmationUi(step) : Lit.nothing;
   const thought = step.thought ? html`<p>${renderTextAsMarkdown(step.thought, markdownRenderer)}</p>` : Lit.nothing;
 
   // clang-format off
@@ -434,6 +526,7 @@ function renderStepDetails({
       <devtools-code-block
         .code=${contextDetail.text}
         .codeLang=${contextDetail.codeLang || ''}
+        .displayLimit=${MAX_NUM_LINES_IN_CODEBLOCK}
         .displayNotice=${false}
         .header=${contextDetail.title}
         .showCopyButton=${true}
@@ -451,19 +544,136 @@ function renderStepDetails({
   // clang-format on
 }
 
+function renderWalkthroughSidebarButton(
+    input: ChatMessageViewInput,
+    steps: Step[],
+    ): Lit.LitTemplate {
+  const {message, walkthrough} = input;
+  const lastStep = steps.at(-1);
+  if (walkthrough.isInlined || !lastStep) {
+    return Lit.nothing;
+  }
+
+  const hasOneStepWithWidget = steps.some(step => step.widgets?.length);
+  const isExpanded = walkthrough.isExpanded && input.message === input.walkthrough.activeSidebarMessage;
+  const title = isExpanded ? walkthroughCloseTitle({hasWidgets: hasOneStepWithWidget}) : walkthroughTitle({
+    isLoading: input.isLoading,
+    hasWidgets: hasOneStepWithWidget,
+    lastStep,
+  });
+
+  // The button should be tonal when there are widgets, but we only
+  // want to change it visually at the end once everything has stopped
+  // loading.
+  const variant = hasOneStepWithWidget && !input.isLoading ? Buttons.Button.Variant.TONAL : Buttons.Button.Variant.TEXT;
+  const icon = AiAssistanceModel.AiUtils.getIconName();
+
+  // clang-format off
+  return html`
+    <div class="walkthrough-toggle-container ${hasOneStepWithWidget ? 'has-widgets' : ''}">
+      ${input.isLoading ?
+        html`<devtools-spinner></devtools-spinner>` :
+        html`<devtools-icon name=${icon}></devtools-icon>`}
+      <devtools-button
+        .variant=${variant}
+        .size=${Buttons.Button.Size.SMALL}
+        .title=${lastStep.isLoading ? titleForStep(lastStep) : title}
+        .jslogContext=${walkthrough.isExpanded ? 'ai-hide-walkthrough-sidebar' : 'ai-show-walkthrough-sidebar'}
+        data-show-walkthrough
+        @click=${() => {
+          if(walkthrough.activeSidebarMessage === input.message && walkthrough.isExpanded) {
+            walkthrough.onToggle(false, message as ModelChatMessage);
+          } else {
+            // Can't just toggle the visibility here; we need to ensure we
+            // update the state with this message as the user could have had
+            // the walkthrough open with an alternative message.
+            walkthrough.onOpen(message as ModelChatMessage);
+          }
+        }}
+>
+        ${title}<devtools-icon class="chevron" .name=${isExpanded ? 'cross' : 'chevron-right'}></devtools-icon>
+      </devtools-button>
+    </div>
+  `;
+  // clang-format on
+}
+/**
+ * Responsible for rendering the AI Walkthrough UI. This can take different
+ * shapes and involve different parts depending on if the walkthrough is
+ * inlined, expanded, or if we have side-effect steps. In cases where the
+ * walkthrough is closed, side-effect steps are rendered inline in the chat.
+ */
+function renderWalkthroughUI(input: ChatMessageViewInput, steps: Step[]): Lit.LitTemplate {
+  const lastStep = steps.at(-1);
+  if (!lastStep) {
+    // No steps = no walkthrough UI in the chat view.
+    return Lit.nothing;
+  }
+  const sideEffectSteps = steps.filter(s => s.requestApproval);
+  // If the walkthrough is in the sidebar, we render a button into the
+  // ChatView to open it.
+  const openWalkThroughSidebarButton =
+      !input.walkthrough.isInlined ? renderWalkthroughSidebarButton(input, steps) : Lit.nothing;
+
+  // A message's walkthrough is considered expanded if the walkthrough is
+  // open and it is specifically targeting this message. This is necessary
+  // because the walkthrough state is shared across all messages in the chat.
+  const isExpanded = input.walkthrough.isInlined ?
+      input.walkthrough.inlineExpandedMessages.includes(input.message as ModelChatMessage) :
+      (input.walkthrough.isExpanded && input.walkthrough.activeSidebarMessage === input.message);
+
+  // When a side-effect step is present and needs user approval, it's
+  // shown in the main chat UI, regardless of if the walkthrough is
+  // open or closed.
+  // Once the user has approved/denied it, it goes back into the sidebar.
+  // clang-format off
+  const sideEffectStepsUI = sideEffectSteps.length > 0 ? sideEffectSteps.map(step => html`
+    <div class="side-effect-container">
+      ${renderStep({
+         step,
+         isLoading: input.isLoading,
+         markdownRenderer: input.markdownRenderer,
+         isLast: true
+      })}
+    </div> `) : Lit.nothing;
+  // clang-format on
+
+  // clang-format off
+  const walkthroughInline = input.walkthrough.isInlined ? html`
+    <div class="walkthrough-container">
+      ${widget(WalkthroughView, {
+        message: input.message as ModelChatMessage,
+        isLoading: input.isLoading && input.isLastMessage,
+        markdownRenderer: input.markdownRenderer,
+        isInlined: true,
+        isExpanded,
+        onToggle: input.walkthrough.onToggle,
+        onOpen: input.walkthrough.onOpen,
+      })}
+    </div>
+  ` : Lit.nothing;
+
+  return html`
+    ${openWalkThroughSidebarButton}
+    ${walkthroughInline}
+    ${sideEffectStepsUI}
+  `;
+  // clang-format on
+}
+
 function renderStepBadge({step, isLoading, isLast}: {
   step: Step,
   isLoading: boolean,
   isLast: boolean,
 }): Lit.LitTemplate {
-  if (isLoading && isLast && !step.sideEffect) {
+  if (isLoading && isLast && !step.requestApproval) {
     return html`<devtools-spinner></devtools-spinner>`;
   }
 
   let iconName = 'checkmark';
   let ariaLabel: string|undefined = lockedString(UIStringsNotTranslate.completed);
   let role: 'button'|undefined = 'button';
-  if (isLast && step.sideEffect) {
+  if (isLast && step.requestApproval) {
     role = undefined;
     ariaLabel = undefined;
     iconName = 'pause-circle';
@@ -480,7 +690,7 @@ function renderStepBadge({step, isLoading, isLast}: {
     ></devtools-icon>`;
 }
 
-function renderStep({step, isLoading, markdownRenderer, isLast}: {
+export function renderStep({step, isLoading, markdownRenderer, isLast}: {
   step: Step,
   isLoading: boolean,
   markdownRenderer: MarkdownLitRenderer,
@@ -488,15 +698,15 @@ function renderStep({step, isLoading, markdownRenderer, isLast}: {
 }): Lit.LitTemplate {
   const stepClasses = Lit.Directives.classMap({
     step: true,
-    empty: !step.thought && !step.code && !step.contextDetails && !step.sideEffect,
-    paused: Boolean(step.sideEffect),
+    empty: !step.thought && !step.code && !step.contextDetails && !step.requestApproval,
+    paused: Boolean(step.requestApproval),
     canceled: Boolean(step.canceled),
   });
   // clang-format off
   return html`
     <details class=${stepClasses}
       jslog=${VisualLogging.section('step')}
-      .open=${Boolean(step.sideEffect)}>
+      .open=${Boolean(step.requestApproval)}>
       <summary>
         <div class="summary">
           ${renderStepBadge({ step, isLoading, isLast })}
@@ -508,12 +718,349 @@ function renderStep({step, isLoading, markdownRenderer, isLast}: {
         </div>
       </summary>
       ${renderStepDetails({step, markdownRenderer, isLast})}
-    </details>`;
+    </details>
+    ${Lit.Directives.until(renderWidgets(step.widgets, {wrapperClass: 'step-widgets-wrapper'}))}
+    `;
   // clang-format on
 }
 
+interface WidgetMakerResponse {
+  // Can be null if the widget is only used to add the Reveal CTA.
+  renderedWidget: Lit.LitTemplate|null;
+  revealable: unknown;
+  customRevealTitle?: Platform.UIString.LocalizedString;
+  // Can be null if the widget is only used to add the Reveal CTA.
+  title: Lit.LitTemplate|Platform.UIString.LocalizedString|null;
+}
+
+const nodeCache = new Map<Protocol.DOM.BackendNodeId, SDK.DOMModel.DOMNode>();
+
+async function resolveNode(backendNodeId: Protocol.DOM.BackendNodeId): Promise<SDK.DOMModel.DOMNode|null> {
+  const cachedNode = nodeCache.get(backendNodeId);
+  if (cachedNode) {
+    return cachedNode;
+  }
+
+  const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+  if (!target) {
+    return null;
+  }
+
+  const node = new SDK.DOMModel.DeferredDOMNode(target, backendNodeId);
+  const resolved = await node.resolvePromise();
+  if (resolved) {
+    nodeCache.set(backendNodeId, resolved);
+  }
+  return resolved;
+}
+
+async function makeComputedStyleWidget(widgetData: ComputedStyleAiWidget): Promise<WidgetMakerResponse|null> {
+  const domNodeForId = await resolveNode(widgetData.data.backendNodeId);
+  if (!domNodeForId) {
+    return null;
+  }
+  const styles = new ComputedStyle.ComputedStyleModel.ComputedStyle(domNodeForId, widgetData.data.computedStyles);
+
+  // clang-format off
+  const renderedWidget = html`<devtools-widget
+      class="computed-styles-widget" ${widget(Elements.ComputedStyleWidget.ComputedStyleWidget, {
+        nodeStyle: styles,
+        matchedStyles: widgetData.data.matchedCascade,
+        // This disables showing the nested traces and detailed information in the widget.
+        propertyTraces: null,
+        allowUserControl: false,
+        filterText: new RegExp(widgetData.data.properties.join('|'), 'i'),
+        enableNarrowViewResizing: false,
+      })}></devtools-widget>`;
+  // clang-format on
+
+  return {
+    renderedWidget,
+    revealable: new Elements.ElementsPanel.NodeComputedStyles(domNodeForId),
+    title: html`<devtools-widget
+      ${widget(PanelsCommon.DOMLinkifier.DOMNodeLink, {
+      node: domNodeForId,
+    })}
+    ></devtools-widget>`,
+  };
+}
+
+async function makeCoreWebVitalsWidget(widgetData: CoreVitalsAiWidget): Promise<WidgetMakerResponse|null> {
+  // clang-format off
+  const renderedWidget = html`<devtools-widget class="core-vitals-widget" ${widget(TimelineComponents.CWVMetrics.CWVMetrics, {data: widgetData.data, skipBottomBorder: true})}>
+  </devtools-widget>`;
+  // clang-format on
+
+  return {
+    renderedWidget,
+    revealable: new TimelineUtils.Helpers.RevealableCoreVitals(widgetData.data.insightSetKey),
+    title: lockedString(UIStringsNotTranslate.coreVitals),
+  };
+}
+
+async function makeStylePropertiesWidget(widgetData: StylePropertiesAiWidget): Promise<WidgetMakerResponse|null> {
+  const domNodeForId = await resolveNode(widgetData.data.backendNodeId);
+  if (!domNodeForId) {
+    return null;
+  }
+
+  // clang-format off
+  const renderedWidget = html`<devtools-widget
+      class="styling-preview-widget"
+      ${widget(Elements.StandaloneStylesContainer.StandaloneStylesContainer, {
+      domNode: domNodeForId,
+      filter: widgetData.data.selector ? new RegExp(widgetData.data.selector) : null,
+    })}>
+  </devtools-widget>`;
+  // clang-format on
+
+  return {
+    renderedWidget,
+    revealable: domNodeForId,
+    title: html`<devtools-widget
+      ${widget(PanelsCommon.DOMLinkifier.DOMNodeLink, {
+      node: domNodeForId,
+    })}
+    ></devtools-widget>`,
+  };
+}
+
+async function makeLcpBreakdownWidget(widgetData: LcpBreakdownAiWidget): Promise<WidgetMakerResponse|null> {
+  const insight = widgetData.data.lcpData;
+  if (!insight) {
+    return null;
+  }
+
+  // clang-format off
+  const renderedWidget = html`<devtools-widget
+    class="lcp-breakdown-widget"
+    ${widget(TimelineInsights.LCPBreakdown.LCPBreakdown, {
+      model: insight,
+      minimal: true,
+    })}></devtools-widget>`;
+  // clang-format on
+
+  return {
+    renderedWidget,
+    revealable: new TimelineUtils.Helpers.RevealableInsight(insight),
+    title: lockedString(UIStringsNotTranslate.lcpBreakdown),
+  };
+}
+
+async function makeBottomUpTimelineTreeWidget(widgetData: BottomUpTreeAiWidget): Promise<WidgetMakerResponse|null> {
+  const bottomUpRootNode = AiAssistanceModel.AIQueries.AIQueries.mainThreadActivityBottomUp(
+      widgetData.data.bounds, widgetData.data.parsedTrace);
+  if (!bottomUpRootNode) {
+    return null;
+  }
+  const events = bottomUpRootNode.events;
+  const startTime = Trace.Helpers.Timing.microToMilli(widgetData.data.bounds.min);
+  const endTime = Trace.Helpers.Timing.microToMilli(widgetData.data.bounds.max);
+
+  const renderedWidget = html`<devtools-widget
+      class="bottom-up-timeline-tree-widget"
+      ${widget(Timeline.TimelineTreeView.BottomUpTimelineTreeView, {
+    selectedEvents: events,
+    parsedTrace: widgetData.data.parsedTrace,
+    startTime,
+    endTime,
+    compactMode: true,
+    maxLinkLength: 15,
+    maxRows: 10,
+  })}></devtools-widget>`;
+
+  return {
+    renderedWidget,
+    revealable: new TimelineUtils.Helpers.RevealableBottomUpProfile(widgetData.data.bounds),
+    title: lockedString(UIStringsNotTranslate.bottomUpTree)
+  };
+}
+
+function renderWidgetResponse(response: WidgetMakerResponse|null): Lit.LitTemplate {
+  if (response === null) {
+    return Lit.nothing;
+  }
+
+  function onReveal(): void {
+    if (response === null) {
+      return;
+    }
+    void Common.Revealer.reveal(response?.revealable);
+  }
+
+  const classes = Lit.Directives.classMap({
+    'widget-and-revealer-container': true,
+    'revealer-only': response.renderedWidget === null,
+  });
+
+  const revealButton = html`
+    <devtools-button class="widget-reveal-button"
+      .variant=${Buttons.Button.Variant.TEXT}
+      @click=${onReveal}
+    >
+      ${response.customRevealTitle ?? lockedString(UIStringsNotTranslate.reveal)}
+      <devtools-icon name='tab-move'></devtools-icon>
+    </devtools-button>
+  `;
+
+  // clang-format off
+  return html`
+    <div class=${classes}>
+      ${response.title ? html`
+        <div class="widget-header">
+          <div class="widget-name">${response.title}</div>
+          <div class="widget-reveal-container">
+            ${revealButton}
+          </div>
+        </div>
+      ` : Lit.nothing}
+      ${response.renderedWidget ? html`
+        <div class="widget-content-container">
+          ${response.renderedWidget}
+        </div>` : Lit.nothing
+      }
+      ${!response.title ? html`
+        <div class="widget-reveal-container">
+          ${revealButton}
+        </div>
+      ` : Lit.nothing}
+    </div>
+    `;
+  // clang-format on
+}
+
+async function makePerformanceTraceWidget(widgetData: PerformanceTraceAiWidget): Promise<WidgetMakerResponse|null> {
+  return {
+    renderedWidget: null,
+    title: null,
+    revealable: new Timeline.TimelinePanel.ParsedTraceRevealable(widgetData.data.parsedTrace),
+    customRevealTitle: lockedString(UIStringsNotTranslate.revealTrace),
+  };
+}
+
+function renderNetworkRequestPreview(networkRequest: NonNullable<DomTreeAiWidget['data']['networkRequest']>):
+    Lit.TemplateResult {
+  const filename = networkRequest.url.split('/').pop() || networkRequest.url;
+  const size = i18n.ByteUtilities.bytesToString(networkRequest.size);
+  const resourceType = Common.ResourceType.resourceTypes[networkRequest.resourceType];
+  const {iconName, color} = PanelUtils.iconDataForResourceType(resourceType);
+
+  return html`
+    <div class="network-request-preview">
+      <div class="network-request-header">
+        <div class="network-request-icon">
+          ${
+      resourceType.isImage() ? html`<img src=${networkRequest.imageUrl ?? networkRequest.url} alt=${filename} />` :
+                               html`<devtools-icon name=${iconName} style=${Lit.Directives.styleMap({
+                                 color: color ?? ''
+                               })}></devtools-icon>`}
+        </div>
+        <div class="network-request-details">
+          <div class="network-request-name" title=${networkRequest.url}>${filename}</div>
+          <div class="network-request-size">${size}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function makeDomTreeWidget(widgetData: DomTreeAiWidget): Promise<WidgetMakerResponse|null> {
+  const root = widgetData.data.root;
+  if (!(root instanceof SDK.DOMModel.DOMNodeSnapshot)) {
+    return null;
+  }
+
+  const networkRequest = widgetData.data.networkRequest;
+
+  // clang-format off
+  const renderedWidget = html`
+    ${networkRequest ? renderNetworkRequestPreview(networkRequest) : Lit.nothing}
+    <devtools-widget class="dom-tree-widget" ${widget(Elements.ElementsTreeOutline.DOMTreeWidget, {
+      maxTreeDepth: 2,
+      enableContextMenu: false,
+      showComments: false,
+      showAIButton: false,
+      disableEdits: true,
+      expandRoot: true,
+      rootDOMNode: root,
+      visibleWidth: 400,
+      wrap: true,
+      maxRows: 10,
+    })}></devtools-widget>
+  `;
+  // clang-format on
+
+  return {
+    renderedWidget,
+    revealable: new SDK.DOMModel.DeferredDOMNode(root.domModel().target(), root.backendNodeId()),
+    title: lockedString(UIStringsNotTranslate.lcpElement),
+  };
+}
+
+/**
+ * Renders AI-defined UI widgets.
+ * When a ModelChatMessage contains a WidgetPart, or a Step has widgets,
+ * the ChatMessage component iterates through the \`widgets\` array.
+ * For each widget, it determines the appropriate rendering logic based on
+ * the \`widgetData.name\`.
+ *
+ * Currently, 'COMPUTED_STYLES', 'CORE_VITALS' and 'STYLE_PROPERTIES' widgets are supported.
+ * For these, the corresponding \`make...Widget\` functions are called to construct the necessary
+ * data and configuration for the UI components. The widget is then rendered using the
+ * \`<devtools-widget>\` custom element, which dynamically instantiates and displays the
+ * specified UI.Widget subclass with the provided configuration.
+ *
+ * This allows for a flexible and extensible system where new widget types
+ * can be added to the AI responses and rendered in DevTools by adding
+ * corresponding \`make...Widget\` functions and handling them here.
+ */
+async function renderWidgets(
+    widgets: AiWidget[]|undefined, options: {wrapperClass?: string} = {}): Promise<Lit.LitTemplate> {
+  if (!Root.Runtime.hostConfig.devToolsAiAssistanceV2?.enabled || !widgets || widgets.length === 0) {
+    return Lit.nothing;
+  }
+  const ui = await Promise.all(widgets.map(async widgetData => {
+    let response: WidgetMakerResponse|null = null;
+    switch (widgetData.name) {
+      case 'COMPUTED_STYLES':
+        response = await makeComputedStyleWidget(widgetData);
+        break;
+      case 'CORE_VITALS':
+        response = await makeCoreWebVitalsWidget(widgetData);
+        break;
+      case 'STYLE_PROPERTIES':
+        response = await makeStylePropertiesWidget(widgetData);
+        break;
+      case 'DOM_TREE':
+        response = await makeDomTreeWidget(widgetData);
+        break;
+      case 'PERFORMANCE_TRACE':
+        response = await makePerformanceTraceWidget(widgetData);
+        break;
+      case 'LCP_BREAKDOWN':
+        response = await makeLcpBreakdownWidget(widgetData);
+        break;
+      case 'TIMELINE_RANGE_SUMMARY':
+        response = await makeTimelineRangeSummaryWidget(widgetData);
+        break;
+      case 'BOTTOM_UP_TREE':
+        response = await makeBottomUpTimelineTreeWidget(widgetData);
+        break;
+      default:
+        Platform.assertNever(widgetData, 'Unknown AiWidget name');
+    }
+    return renderWidgetResponse(response);
+  }));
+
+  if (options.wrapperClass) {
+    return html`<div class=${options.wrapperClass}>${ui}</div>`;
+  }
+
+  return html`${ui}`;
+}
+
 function renderSideEffectConfirmationUi(step: Step): Lit.LitTemplate {
-  if (!step.sideEffect) {
+  if (!step.requestApproval) {
     return Lit.nothing;
   }
 
@@ -522,7 +1069,7 @@ function renderSideEffectConfirmationUi(step: Step): Lit.LitTemplate {
     class="side-effect-confirmation"
     jslog=${VisualLogging.section('side-effect-confirmation')}
   >
-    <p>${lockedString(UIStringsNotTranslate.sideEffectConfirmationDescription)}</p>
+    ${step.requestApproval.description ? html`<p>${step.requestApproval.description}</p>` : Lit.nothing}
     <div class="side-effect-buttons-container">
       <devtools-button
         .data=${
@@ -531,9 +1078,9 @@ function renderSideEffectConfirmationUi(step: Step): Lit.LitTemplate {
             jslogContext: 'decline-execute-code',
           } as Buttons.Button.ButtonData
         }
-        @click=${() => step.sideEffect?.onAnswer(false)}
+        @click=${() => step.requestApproval?.onAnswer(false)}
       >${lockedString(
-        UIStringsNotTranslate.negativeSideEffectConfirmation,
+        UIStringsNotTranslate.declineActionRequestApproval,
       )}</devtools-button>
       <devtools-button
         .data=${
@@ -543,9 +1090,9 @@ function renderSideEffectConfirmationUi(step: Step): Lit.LitTemplate {
             iconName: 'play',
           } as Buttons.Button.ButtonData
         }
-        @click=${() => step.sideEffect?.onAnswer(true)}
+        @click=${() => step.requestApproval?.onAnswer(true)}
       >${
-          lockedString(UIStringsNotTranslate.positiveSideEffectConfirmation)
+          lockedString(UIStringsNotTranslate.confirmActionRequestApproval)
       }</devtools-button>
     </div>
   </div>`;
@@ -562,6 +1109,9 @@ function renderError(message: ModelChatMessage): Lit.LitTemplate {
         break;
       case AiAssistanceModel.AiAgent.ErrorType.MAX_STEPS:
         errorMessage = UIStringsNotTranslate.maxStepsError;
+        break;
+      case AiAssistanceModel.AiAgent.ErrorType.CROSS_ORIGIN:
+        errorMessage = UIStringsNotTranslate.crossOriginError;
         break;
       case AiAssistanceModel.AiAgent.ErrorType.ABORT:
         return html`<p class="aborted" jslog=${VisualLogging.section('aborted')}>${
@@ -594,9 +1144,14 @@ function renderImageChatMessage(inlineData: Host.AidaClient.MediaBlob): Lit.LitT
 }
 
 function renderActions(input: ChatMessageViewInput, output: ViewOutput): Lit.LitTemplate {
+  const aiAssistanceV2 = Root.Runtime.hostConfig.devToolsAiAssistanceV2?.enabled;
+  const rowClasses = Lit.Directives.classMap({
+    'ai-assistance-feedback-row': true,
+    'not-v2': !aiAssistanceV2,
+  });
   // clang-format off
   return html`
-    <div class="ai-assistance-feedback-row">
+    <div class=${rowClasses}>
       <div class="action-buttons">
         ${input.showRateButtons ? html`
           <devtools-button
@@ -625,7 +1180,7 @@ function renderActions(input: ChatMessageViewInput, output: ViewOutput): Lit.Lit
             } as Buttons.Button.ButtonData}
             @click=${() => input.onRatingClick(Host.AidaClient.Rating.NEGATIVE)}
           ></devtools-button>
-          <div class="vertical-separator"></div>
+          ${aiAssistanceV2 ? Lit.nothing : html`<div class="vertical-separator"></div>`}
         `: Lit.nothing}
         <devtools-button
           .data=${
@@ -639,7 +1194,8 @@ function renderActions(input: ChatMessageViewInput, output: ViewOutput): Lit.Lit
           }
           @click=${input.onReportClick}
         ></devtools-button>
-        <div class="vertical-separator"></div>
+        ${aiAssistanceV2 ? Lit.nothing : html`
+          <div class="vertical-separator"></div>
           <devtools-button
             .data=${{
               variant: Buttons.Button.Variant.ICON,
@@ -650,6 +1206,17 @@ function renderActions(input: ChatMessageViewInput, output: ViewOutput): Lit.Lit
             } as Buttons.Button.ButtonData}
             aria-label=${lockedString(UIStringsNotTranslate.copyResponse)}
             @click=${input.onCopyResponseClick}></devtools-button>
+        `}
+        ${input.onExportClick && aiAssistanceV2 && input.isLastMessage ? html`
+          <devtools-button
+            class="export-for-agents-button"
+            .jslogContext=${'ai-export-for-agents'}
+            .variant=${Buttons.Button.Variant.OUTLINED}
+            .iconName=${'copy'}
+            @click=${input.onExportClick}
+          >${lockedString(UIStringsNotTranslate.exportForAgents)}</devtools-button>
+          ${input.suggestions ? html`<div class="vertical-separator"></div>` : Lit.nothing}
+        ` : Lit.nothing}
       </div>
       ${input.suggestions ? html`<div class="suggestions-container">
         <div class="scroll-button-container left hidden" ${ref(element => { output.suggestionsLeftScrollButtonContainer = element; } )}>
@@ -753,16 +1320,25 @@ export class ChatMessage extends UI.Widget.Widget {
   isReadOnly = false;
   canShowFeedbackForm = false;
   isLastMessage = false;
-  userInfo:
-      Pick<Host.InspectorFrontendHostAPI.SyncInformation, 'accountImage'|'accountFullName'|'accountGivenName'> = {};
+  isFirstMessage = false;
   markdownRenderer!: MarkdownLitRenderer;
   onSuggestionClick: (suggestion: string) => void = () => {};
   onFeedbackSubmit:
       (rpcId: Host.AidaClient.RpcGlobalId, rate: Host.AidaClient.Rating, feedback?: string) => void = () => {};
   onCopyResponseClick: (message: ModelChatMessage) => void = () => {};
+  onExportClick: () => void = () => {};
+  changeSummary?: string;
+  walkthrough: MessageInput['walkthrough'] = {
+    onOpen: () => {},
+    onToggle: () => {},
+    isInlined: false,
+    isExpanded: false,
+    activeSidebarMessage: null,
+    inlineExpandedMessages: [],
+  };
 
   #suggestionsResizeObserver = new ResizeObserver(() => this.#handleSuggestionsScrollOrResize());
-  #suggestionsEvaluateLayoutThrottler = new Common.Throttler.Throttler(50);
+  #suggestionsEvaluateLayoutThrottler = new Common.Throttler.Throttler(100);
 
   #feedbackValue = '';
   #currentRating: Host.AidaClient.Rating|undefined;
@@ -771,6 +1347,8 @@ export class ChatMessage extends UI.Widget.Widget {
 
   #view: View;
   #viewOutput: ViewOutput = {};
+
+  #isObservingSuggestions = false;
 
   constructor(element?: HTMLElement, view?: View) {
     super(element);
@@ -781,10 +1359,6 @@ export class ChatMessage extends UI.Widget.Widget {
     super.wasShown();
     void this.performUpdate();
     this.#evaluateSuggestionsLayout();
-
-    if (this.#viewOutput.suggestionsScrollContainer) {
-      this.#suggestionsResizeObserver.observe(this.#viewOutput.suggestionsScrollContainer);
-    }
   }
 
   override performUpdate(): Promise<void>|void {
@@ -794,9 +1368,9 @@ export class ChatMessage extends UI.Widget.Widget {
           isLoading: this.isLoading,
           isReadOnly: this.isReadOnly,
           canShowFeedbackForm: this.canShowFeedbackForm,
-          userInfo: this.userInfo,
           markdownRenderer: this.markdownRenderer,
           isLastMessage: this.isLastMessage,
+          isFirstMessage: this.isFirstMessage,
           onSuggestionClick: this.onSuggestionClick,
           onRatingClick: this.#handleRateClick.bind(this),
           onReportClick: () => UIHelpers.openInNewTab(REPORT_URL),
@@ -805,6 +1379,7 @@ export class ChatMessage extends UI.Widget.Widget {
               this.onCopyResponseClick(this.message);
             }
           },
+          onExportClick: this.onExportClick,
           scrollSuggestionsScrollContainer: this.#scrollSuggestionsScrollContainer.bind(this),
           onSuggestionsScrollOrResize: this.#handleSuggestionsScrollOrResize.bind(this),
           onSubmit: this.#handleSubmit.bind(this),
@@ -812,16 +1387,24 @@ export class ChatMessage extends UI.Widget.Widget {
           onInputChange: this.#handleInputChange.bind(this),
           isSubmitButtonDisabled: this.#isSubmitButtonDisabled,
           // Props for actions logic
+          showActions: !(this.isLastMessage && this.isLoading),
           showRateButtons: this.message.entity === ChatMessageEntity.MODEL && !!this.message.rpcId,
-          suggestions: (this.message.entity === ChatMessageEntity.MODEL && !this.isReadOnly &&
+          suggestions: (this.isLastMessage && this.message.entity === ChatMessageEntity.MODEL && !this.isReadOnly &&
                         this.message.parts.at(-1)?.type === 'answer') ?
               (this.message.parts.at(-1) as AnswerPart).suggestions :
               undefined,
           currentRating: this.#currentRating,
           isShowingFeedbackForm: this.#isShowingFeedbackForm,
           onFeedbackSubmit: this.onFeedbackSubmit,
+          changeSummary: this.changeSummary,
+          walkthrough: this.walkthrough,
         },
         this.#viewOutput, this.contentElement);
+
+    if (this.#viewOutput.suggestionsScrollContainer && !this.#isObservingSuggestions) {
+      this.#suggestionsResizeObserver.observe(this.#viewOutput.suggestionsScrollContainer);
+      this.#isObservingSuggestions = true;
+    }
   }
 
   #handleInputChange(value: string): void {
@@ -845,6 +1428,7 @@ export class ChatMessage extends UI.Widget.Widget {
     const shouldShowRightButton = suggestionsScrollContainer.scrollLeft +
             (suggestionsScrollContainer as HTMLElement).offsetWidth + SCROLL_ROUNDING_OFFSET <
         suggestionsScrollContainer.scrollWidth;
+
     leftScrollButtonContainer.classList.toggle('hidden', !shouldShowLeftButton);
     rightScrollButtonContainer.classList.toggle('hidden', !shouldShowRightButton);
   };
@@ -852,6 +1436,7 @@ export class ChatMessage extends UI.Widget.Widget {
   override willHide(): void {
     super.willHide();
     this.#suggestionsResizeObserver.disconnect();
+    this.#isObservingSuggestions = false;
   }
 
   #handleSuggestionsScrollOrResize(): void {
@@ -915,4 +1500,57 @@ export class ChatMessage extends UI.Widget.Widget {
     this.#isSubmitButtonDisabled = true;
     void this.performUpdate();
   }
+}
+
+async function makeTimelineRangeSummaryWidget(widgetData: TimelineRangeSummaryAiWidget):
+    Promise<WidgetMakerResponse|null> {
+  const {bounds, parsedTrace, track} = widgetData.data;
+  let events: readonly Trace.Types.Events.Event[] = [];
+  if (track === 'main') {
+    const flameChartView = Timeline.TimelinePanel.TimelinePanel.instance().getFlameChart();
+    const mainDataProvider = flameChartView.getMainDataProvider();
+    const mainTrack =
+        mainDataProvider.timelineData().groups.find((group: {name: string}) => group.name.startsWith('Main \u2014 '));
+    if (mainTrack) {
+      events = mainDataProvider.groupTreeEvents(mainTrack) ?? [];
+    }
+  }
+  const eventsArray = Array.from(events);
+  eventsArray.sort((a, b) => a.ts - b.ts);
+
+  const thirdPartyTree = new Timeline.ThirdPartyTreeView.ThirdPartyTreeViewWidget();
+  const mapper = new Trace.EntityMapper.EntityMapper(parsedTrace);
+  thirdPartyTree.model = {selectedEvents: eventsArray, parsedTrace, entityMapper: mapper};
+  thirdPartyTree.activeSelection = Timeline.TimelineSelection.selectionFromRangeMicroSeconds(bounds.min, bounds.max);
+  thirdPartyTree.refreshTree(true);
+
+  // clang-format off
+  const template = html`
+    <devtools-widget
+      ${widget(TimelineComponents.TimelineRangeSummaryView.TimelineRangeSummaryView, {
+        data: {
+          parsedTrace,
+          events,
+          startTime: Trace.Helpers.Timing.microToMilli(bounds.min),
+          endTime: Trace.Helpers.Timing.microToMilli(bounds.max),
+          thirdPartyTreeTemplate: html`${
+            widget(Timeline.ThirdPartyTreeView.ThirdPartyTreeViewWidget, {
+              maxRows: 10,
+              model: {
+                selectedEvents: thirdPartyTree.selectedEvents ?? null,
+                parsedTrace,
+                entityMapper: thirdPartyTree.entityMapper(),
+              },
+              activeSelection: { bounds },
+            })}`,
+        } as TimelineComponents.TimelineRangeSummaryView.TimelineRangeSummaryViewData,
+      })}
+    ></devtools-widget>`;
+  // clang-format on
+
+  return {
+    renderedWidget: template,
+    revealable: new TimelineUtils.Helpers.RevealableTimeRange(bounds),
+    title: lockedString(UIStringsNotTranslate.performanceSummary),
+  };
 }

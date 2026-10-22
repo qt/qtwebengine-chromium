@@ -8,6 +8,7 @@
 #include <array>
 #include <optional>
 
+#include "base/compiler_specific.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/css_anchor_query_enums.h"
 #include "third_party/blink/renderer/core/css/css_counter_value.h"
@@ -82,11 +83,14 @@ class ColorParserContext {
   static ColorParserContext AbsoluteColorContext() {
     return {.absolute_colors_ = true};
   }
-  static ColorParserContext NoElementContext() { return {.no_element_ = true}; }
+  static ColorParserContext NoElementNoPropertyContext() {
+    return {.no_element_ = true, .no_property_ = true};
+  }
 
   bool AllColorsAllowed() const { return !absolute_colors_ && !no_element_; }
   bool OnlyAbsoluteColorsAllowed() const { return absolute_colors_; }
   bool InElementContext() const { return !(no_element_ || absolute_colors_); }
+  bool InPropertyContext() const { return !(no_property_ || absolute_colors_); }
 
   // Parsing absolute <color> values:
   // https://drafts.csswg.org/css-color-5/#absolute-color
@@ -95,6 +99,10 @@ class ColorParserContext {
   // Parsing <color> values without an element context.
   // Disallow tree counting functions.
   bool no_element_ = false;
+
+  // Parsing <color> values without a property context.
+  // Disallow random() function.
+  bool no_property_ = false;
 };
 enum class EmptyPathStringHandling { kFailure, kTreatAsNone };
 
@@ -206,8 +214,7 @@ cssvalue::CSSScopedKeywordValue* ConsumeScopedKeywordValue(
 
 // https://drafts.csswg.org/css-values-5/#ident
 CSSFunctionValue* ConsumeIdentFunction(CSSParserTokenStream&,
-                                       const CSSParserContext&,
-                                       CSSParserLocalContext&);
+                                       const CSSParserContext&);
 CSSCustomIdentValue* ConsumeCustomIdent(CSSParserTokenStream&,
                                         const CSSParserContext&,
                                         CSSParserLocalContext&);
@@ -219,8 +226,8 @@ cssvalue::CSSScopedKeywordValue* ConsumeScopedKeywordValue(
 CSSStringValue* ConsumeString(CSSParserTokenStream&);
 cssvalue::CSSURIValue* ConsumeUrl(CSSParserTokenStream&,
                                   const CSSParserContext&);
-CSSURLPatternValue* ConsumeUrlPattern(CSSParserTokenStream&,
-                                      const CSSParserContext&);
+CORE_EXPORT CSSURLPatternValue* ConsumeUrlPattern(CSSParserTokenStream&,
+                                                  const CSSParserContext&);
 
 // Some properties accept non-standard colors, like rgb values without a
 // preceding hash, in quirks mode.
@@ -235,9 +242,10 @@ CORE_EXPORT CSSValue* ConsumeColor(
     const ColorParserContext& = ColorParserContext());
 
 // To parse in context without element (e.g. to prevent sibling-index()).
-CORE_EXPORT CSSValue* ConsumeColorWithoutElementContext(CSSParserTokenStream&,
-                                                        const CSSParserContext&,
-                                                        CSSParserLocalContext&);
+CORE_EXPORT CSSValue* ConsumeColorWithoutElementAndPropertyContext(
+    CSSParserTokenStream&,
+    const CSSParserContext&,
+    CSSParserLocalContext&);
 
 // https://drafts.csswg.org/css-color-5/#absolute-color
 CORE_EXPORT CSSValue* ConsumeAbsoluteColor(CSSParserTokenStream&,
@@ -373,7 +381,7 @@ bool IsContentPositionKeyword(CSSValueID);
 bool IsContentPositionOrLeftOrRightKeyword(CSSValueID);
 CORE_EXPORT bool IsCSSWideKeyword(CSSValueID);
 CORE_EXPORT bool IsCSSWideKeyword(StringView);
-bool IsInvalidFontFamily(const AtomicString&);
+bool FontFamilyNeedsQuoting(const AtomicString&);
 bool IsRevertKeyword(StringView);
 bool IsDefaultKeyword(StringView);
 bool IsHashIdentifier(const CSSParserToken&);
@@ -381,11 +389,14 @@ CORE_EXPORT bool IsDashedIdent(const CSSParserToken&);
 
 // https://drafts.csswg.org/css-mixins-1/#function-rule
 inline bool IsDashedFunctionName(const CSSParserToken& token) {
+  // SAFETY: token value length checked before use in &&-expression.
   return token.GetType() == kFunctionToken && token.Value().length() >= 3 &&
-         token.Value()[0] == '-' && token.Value()[1] == '-';
+         UNSAFE_BUFFERS(token.Value()[0]) == '-' &&
+         UNSAFE_BUFFERS(token.Value()[1]) == '-';
 }
 
-CSSValue* ConsumeCSSWideKeyword(CSSParserTokenStream&);
+CORE_EXPORT CSSValue* ConsumeCSSWideKeyword(CSSParserTokenStream&,
+                                            const CSSParserContext& context);
 
 // This function returns false for CSS-wide keywords, 'default', and any
 // template parameters provided.
@@ -469,7 +480,11 @@ void AddBackgroundValue(CSSValue*& list, const CSSValue*);
 CSSValue* ConsumeBackgroundAttachment(CSSParserTokenStream&);
 CSSValue* ConsumeBackgroundBlendMode(CSSParserTokenStream&);
 CSSValue* ConsumeBackgroundBox(CSSParserTokenStream&);
-CSSValue* ConsumeBackgroundBoxOrText(CSSParserTokenStream&);
+
+enum class AllowBorderAreaValue { kAllow, kForbid };
+CSSValue* ConsumeBackgroundClip(
+    CSSParserTokenStream&,
+    AllowBorderAreaValue = AllowBorderAreaValue::kAllow);
 CSSValue* ConsumeMaskComposite(CSSParserTokenStream&);
 CSSValue* ConsumePrefixedMaskComposite(CSSParserTokenStream&);
 CSSValue* ConsumeMaskMode(CSSParserTokenStream&);
@@ -697,6 +712,13 @@ bool ConsumeGapDecorationsRuleEdgeInteriorInsetShorthand(
     CSSValue*& rule_edge_inset,
     CSSValue*& rule_interior_inset);
 
+bool ConsumeGapDecorationsRuleInsetStartEndShorthand(
+    bool important,
+    const CSSParserContext& context,
+    CSSParserLocalContext& local_context,
+    CSSParserTokenStream& stream,
+    CSSValue*& rule_inset_value);
+
 bool ConsumeGapDecorationsRuleInsetShorthand(
     bool important,
     const CSSParserContext& context,
@@ -772,6 +794,7 @@ bool ConsumeRadii(std::array<CSSValue*, 4>& horizontal_radii,
                   CSSParserLocalContext& local_context);
 
 CSSValue* ConsumeTextDecorationLine(CSSParserTokenStream&);
+CSSValue* ConsumeTextTransform(CSSParserTokenStream&);
 CSSValue* ConsumeTextBoxEdge(CSSParserTokenStream&);
 CSSValue* ConsumeTextBoxTrim(CSSParserTokenStream&);
 
@@ -996,7 +1019,7 @@ CSSValue* ConsumeBackgroundPositionLonghand(
 
 inline bool AtIdent(const CSSParserToken& token, const char* ident) {
   return token.GetType() == kIdentToken &&
-         EqualIgnoringASCIICase(token.Value(), ident);
+         EqualIgnoringAsciiCase(token.Value(), ident);
 }
 
 inline bool ConsumeIfIdent(CSSParserTokenStream& stream, const char* ident) {

@@ -5,6 +5,7 @@
 #include "components/autofill/core/browser/webdata/addresses/autofill_profile_sync_bridge.h"
 
 #include <memory>
+#include <ranges>
 #include <vector>
 
 #include "base/functional/bind.h"
@@ -178,8 +179,7 @@ std::unique_ptr<syncer::DataBatch> AutofillProfileSyncBridge::GetDataForCommit(
     return nullptr;
   }
 
-  absl::flat_hash_set<std::string> keys_set(storage_keys.begin(),
-                                            storage_keys.end());
+  absl::flat_hash_set<std::string> keys_set(std::from_range, storage_keys);
   auto batch = std::make_unique<syncer::MutableDataBatch>();
   for (const AutofillProfile& entry : entries) {
     std::string key = GetStorageKeyFromAutofillProfile(entry);
@@ -303,6 +303,14 @@ std::string AutofillProfileSyncBridge::GetStorageKey(
   DCHECK(entity_data.specifics.has_autofill_profile());
   return GetStorageKeyFromAutofillProfileSpecifics(
       entity_data.specifics.autofill_profile());
+}
+
+sync_pb::EntitySpecifics
+AutofillProfileSyncBridge::TrimAllSupportedFieldsFromRemoteSpecifics(
+    const sync_pb::EntitySpecifics& entity_specifics) const {
+  // Clears all fields by default to avoid the memory and I/O overhead of an
+  // additional copy of the data.
+  return sync_pb::EntitySpecifics();
 }
 
 bool AutofillProfileSyncBridge::IsEntityDataValid(

@@ -25,7 +25,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/webui_bundled_cached_metadata_handler.h"
 #include "third_party/blink/renderer/platform/testing/task_environment.h"
 #include "third_party/blink/renderer/platform/testing/testing_platform_support.h"
-#include "third_party/blink/renderer/platform/testing/testing_platform_support_with_mock_scheduler.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
@@ -129,7 +128,7 @@ class V8ScriptRunnerTest : public testing::Test {
 
   ScriptResource* CreateEmptyResource(v8::Isolate* isolate) {
     ScriptResource* resource =
-        ScriptResource::CreateForTest(isolate, NullURL(), Utf8Encoding());
+        ScriptResource::CreateForTest(isolate, NullUrl(), Utf8Encoding());
     return resource;
   }
 
@@ -191,9 +190,7 @@ class V8ScriptRunnerTest : public testing::Test {
     // Copy the serialized data to return it at an independent vector.
     base::span<const uint8_t> serialized_data_view =
         cached_metadata->SerializedData();
-    Vector<uint8_t> ret;
-    ret.AppendRange(serialized_data_view.begin(), serialized_data_view.end());
-    return ret;
+    return Vector<uint8_t>(serialized_data_view);
   }
 
   // TODO(leszeks): Change this from needing an explicit quit callback to

@@ -18,6 +18,8 @@
 #include "build/buildflag.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/enterprise/util/managed_browser_utils.h"
+#include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
+#include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_attributes_init_params.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
@@ -33,6 +35,7 @@
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/signin/promos/signin_promo_tab_helper.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/ui_features.h"
@@ -256,7 +259,11 @@ class SigninUiUtilTest_ReplaceSyncPromosWithSignInPromos
  public:
   SigninUiUtilTest_ReplaceSyncPromosWithSignInPromos()
       : base::test::WithFeatureOverride(
-            syncer::kReplaceSyncPromosWithSignInPromos) {}
+            syncer::kReplaceSyncPromosWithSignInPromos) {
+    feature_list_.InitWithFeatureState(
+        syncer::kReplaceSyncPromosWithSigninPromosNewSignin,
+        IsParamFeatureEnabled());
+  }
 
   bool IsReplaceSyncPromosWithSignInPromosEnabled() const {
     return IsParamFeatureEnabled();
@@ -284,7 +291,7 @@ class SigninUiUtilTest_ReplaceSyncPromosWithSignInPromos
     CoreAccountId account_id =
         GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
             GaiaId(kMainGaiaID), kMainEmail, "refresh_token", false,
-            signin_metrics::AccessPoint::kUnknown,
+            signin_metrics::AccessPoint::kStartPage,
             signin_metrics::SourceForRefreshTokenOperation::kUnknown);
 
     // Verify that the primary account is not set before.
@@ -316,11 +323,11 @@ IN_PROC_BROWSER_TEST_P(SigninUiUtilTest_ReplaceSyncPromosWithSignInPromos,
   CoreAccountId account_id =
       GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
           kMainGaiaID, kMainEmail, "refresh_token", false,
-          signin_metrics::AccessPoint::kUnknown,
+          signin_metrics::AccessPoint::kStartPage,
           signin_metrics::SourceForRefreshTokenOperation::kUnknown);
   GetIdentityManager()->GetPrimaryAccountMutator()->SetPrimaryAccount(
       account_id, signin::ConsentLevel::kSignin,
-      signin_metrics::AccessPoint::kUnknown);
+      signin_metrics::AccessPoint::kStartPage);
 
   for (bool is_default_promo_account : {true, false}) {
     base::HistogramTester histogram_tester;
@@ -357,14 +364,15 @@ IN_PROC_BROWSER_TEST_P(SigninUiUtilTest_ReplaceSyncPromosWithSignInPromos,
   CoreAccountId account_id =
       GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
           kMainGaiaID, kMainEmail, "refresh_token", false,
-          signin_metrics::AccessPoint::kUnknown,
+          signin_metrics::AccessPoint::kStartPage,
           signin_metrics::SourceForRefreshTokenOperation::kUnknown);
 
   // Add an account and then put its refresh token into an error state to
   // require a reauth before enabling sync.
   signin::UpdatePersistentErrorOfRefreshTokenForAccount(
       GetIdentityManager(), account_id,
-      GoogleServiceAuthError(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
+      GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+          GoogleServiceAuthError::InvalidGaiaCredentialsReason::UNKNOWN));
 
   for (bool is_default_promo_account : {true, false}) {
     base::HistogramTester histogram_tester;
@@ -435,7 +443,7 @@ IN_PROC_BROWSER_TEST_P(SigninUiUtilTest_ReplaceSyncPromosWithSignInPromos,
 
   GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
       kMainGaiaID, kMainEmail, "refresh_token", false,
-      signin_metrics::AccessPoint::kUnknown,
+      signin_metrics::AccessPoint::kStartPage,
       signin_metrics::SourceForRefreshTokenOperation::kUnknown);
 
   ExpectNoSigninStartedHistograms(histogram_tester);
@@ -489,11 +497,11 @@ IN_PROC_BROWSER_TEST_F(SigninUiUtilTest, SignInWithAlreadySignedInAccount) {
   CoreAccountId account_id =
       GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
           kMainGaiaID, kMainEmail, "refresh_token", false,
-          signin_metrics::AccessPoint::kUnknown,
+          signin_metrics::AccessPoint::kStartPage,
           signin_metrics::SourceForRefreshTokenOperation::kUnknown);
   GetIdentityManager()->GetPrimaryAccountMutator()->SetPrimaryAccount(
       account_id, signin::ConsentLevel::kSignin,
-      signin_metrics::AccessPoint::kUnknown);
+      signin_metrics::AccessPoint::kStartPage);
 
   SignIn(GetIdentityManager()->FindExtendedAccountInfoByAccountId(account_id));
 
@@ -519,14 +527,15 @@ IN_PROC_BROWSER_TEST_F(SigninUiUtilTest, SignInWithAccountThatNeedsReauth) {
   CoreAccountId account_id =
       GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
           kMainGaiaID, kMainEmail, "refresh_token", false,
-          signin_metrics::AccessPoint::kUnknown,
+          signin_metrics::AccessPoint::kStartPage,
           signin_metrics::SourceForRefreshTokenOperation::kUnknown);
 
   // Add an account and then put its refresh token into an error state to
   // require a reauth before signing in.
   signin::UpdatePersistentErrorOfRefreshTokenForAccount(
       GetIdentityManager(), account_id,
-      GoogleServiceAuthError(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
+      GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+          GoogleServiceAuthError::InvalidGaiaCredentialsReason::UNKNOWN));
 
   EXPECT_CALL(
       mock_delegate_,
@@ -702,7 +711,8 @@ IN_PROC_BROWSER_TEST_F(SigninUiUtilTest, ShowReauthTab) {
   // require a reauth before enabling sync.
   signin::UpdatePersistentErrorOfRefreshTokenForAccount(
       GetIdentityManager(), account_info.account_id,
-      GoogleServiceAuthError(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
+      GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+          GoogleServiceAuthError::InvalidGaiaCredentialsReason::UNKNOWN));
 
   EXPECT_CALL(
       mock_delegate_,
@@ -854,7 +864,7 @@ IN_PROC_BROWSER_TEST_P(SigninUiUtilTest_ReplaceSyncPromosWithSignInPromos,
   CoreAccountId account_id =
       GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
           kMainGaiaID, kMainEmail, "refresh_token", false,
-          signin_metrics::AccessPoint::kUnknown,
+          signin_metrics::AccessPoint::kStartPage,
           signin_metrics::SourceForRefreshTokenOperation::kUnknown);
 
   for (bool is_default_promo_account : {true, false}) {
@@ -903,7 +913,7 @@ IN_PROC_BROWSER_TEST_F(SigninUiUtilTest, SignInWithExistingWebOnlyAccount) {
   CoreAccountId account_id =
       GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
           kMainGaiaID, kMainEmail, "refresh_token", false,
-          signin_metrics::AccessPoint::kUnknown,
+          signin_metrics::AccessPoint::kStartPage,
           signin_metrics::SourceForRefreshTokenOperation::kUnknown);
 
   // Verify that the primary account is not set before.
@@ -921,14 +931,15 @@ IN_PROC_BROWSER_TEST_F(SigninUiUtilTest, ShowExtensionSigninPromptReauth) {
   CoreAccountId account_id =
       GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
           kMainGaiaID, kMainEmail, "refresh_token", false,
-          signin_metrics::AccessPoint::kUnknown,
+          signin_metrics::AccessPoint::kStartPage,
           signin_metrics::SourceForRefreshTokenOperation::kUnknown);
   GetIdentityManager()->GetPrimaryAccountMutator()->SetPrimaryAccount(
       account_id, signin::ConsentLevel::kSignin,
-      signin_metrics::AccessPoint::kUnknown);
+      signin_metrics::AccessPoint::kStartPage);
   signin::UpdatePersistentErrorOfRefreshTokenForAccount(
       GetIdentityManager(), account_id,
-      GoogleServiceAuthError(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
+      GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+          GoogleServiceAuthError::InvalidGaiaCredentialsReason::UNKNOWN));
 
   Profile* profile = browser()->profile();
   TabStripModel* tab_strip = browser()->tab_strip_model();
@@ -991,11 +1002,15 @@ IN_PROC_BROWSER_TEST_F(DiceSigninUiUtilBrowserTest,
   ShowExtensionSigninPrompt(new_profile, /*enable_sync=*/false,
                             /*email_hint=*/std::string());
   // `ShowExtensionSigninPrompt()` creates a new browser.
-  Browser* browser = chrome::FindBrowserWithProfile(new_profile);
+  BrowserWindowInterface* browser =
+      chrome::FindBrowserWithProfile(new_profile);
   ASSERT_TRUE(browser);
-  EXPECT_EQ(1, browser->tab_strip_model()->count());
+  EXPECT_EQ(1, browser->GetTabStripModel()->count());
 
-  // Profile deletion closes the browser.
+  // Scheduling a profile for deletion closes the browser. Prevent Profile from
+  // being destroyed before we attempt to show the signin prompt.
+  ScopedProfileKeepAlive profile_keep_alive(
+      new_profile, ProfileKeepAliveOrigin::kBackgroundMode);
   ui_test_utils::BrowserDestroyedObserver observer(browser);
   g_browser_process->profile_manager()
       ->GetDeleteProfileHelper()

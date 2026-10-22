@@ -169,7 +169,8 @@ class ReadAnythingAppController
       base::DictValue voices,
       base::ListValue languages_enabled_in_pref,
       read_anything::mojom::HighlightGranularity granularity,
-      read_anything::mojom::LineFocus line_focus) override;
+      read_anything::mojom::LineFocus last_non_disabled_line_focus,
+      bool line_focus_enabled) override;
   void SetLanguageCode(const std::string& code) override;
   void SetDefaultLanguageCode(const std::string& code) override;
   void ScreenAIServiceReady() override;
@@ -193,10 +194,6 @@ class ReadAnythingAppController
 #endif
 
   // ui::AXTreeObserver:
-  void OnNodeDataChanged(ui::AXTree* tree,
-                         const ui::AXNodeData& old_node_data,
-                         const ui::AXNodeData& new_node_data) override;
-
   void OnNodeWillBeDeleted(ui::AXTree* tree, ui::AXNode* node) override;
 
   void OnNodeDeleted(ui::AXTree* tree, ui::AXNodeID node) override;
@@ -217,6 +214,7 @@ class ReadAnythingAppController
   int StartOffset() const;
   ui::AXNodeID EndNodeId() const;
   int EndOffset() const;
+  bool HasValidSelection() const;
   std::string FontName() const;
   float FontSize() const;
   bool LinksEnabled() const;
@@ -231,7 +229,8 @@ class ReadAnythingAppController
   int LineSpacing() const;
   int ColorTheme() const;
   int HighlightGranularity() const;
-  int LineFocus() const;
+  int LastNonDisabledLineFocus() const;
+  bool IsLineFocusOn() const;
   bool IsHighlightOn();
   int StandardLineSpacing() const;
   int LooseLineSpacing() const;
@@ -245,9 +244,8 @@ class ReadAnythingAppController
   int YellowTheme() const;
   int BlueTheme() const;
   int HighContrastTheme() const;
-  int LowContrastTheme() const;
-  int SepiaLightTheme() const;
-  int SepiaDarkTheme() const;
+  int LowContrastLightTheme() const;
+  int LowContrastDarkTheme() const;
   int AutoHighlighting() const;
   int WordHighlighting() const;
   int PhraseHighlighting() const;
@@ -269,6 +267,7 @@ class ReadAnythingAppController
   int LineFocusStaticLine() const;
   int LineFocusCursorLine() const;
   int MaxLineWidth() const;
+  int InHiddenPresentationState() const;
   int InSidePanelPresentationState() const;
   int InImmersiveOverlayPresentationState() const;
   int DistillationTypeScreen2x() const;
@@ -314,7 +313,6 @@ class ReadAnythingAppController
   void OnCollapseSelection() const;
   void OnDistilled(int word_count);
   bool IsGoogleDocs() const;
-  bool IsReadAloudEnabled() const;
   bool IsImmersiveEnabled() const;
   bool IsTsTextSegmentationEnabled() const;
   bool IsReadabilityEnabled() const;
@@ -352,6 +350,7 @@ class ReadAnythingAppController
   void TogglePresentation();
   void TogglePinState();
   void OnPinStatusReceived(bool pin_state) override;
+  void OnSpeechEngineStalled();
 
   // Returns the current active distillation method state as an integer.
   int GetDistillationMethod() const;
@@ -468,9 +467,24 @@ class ReadAnythingAppController
   // processed accessibility events.
   void ProcessModelUpdates();
 
+  // Applies accessibility updates to ensure links are properly synced
+  // between distilled Readability content and what's in the accessibility tree.
+  // This should only be called when Readability is being used as a distillation
+  // method and links are supported.
+  void ApplyAccessibilityUpdatesForReadabilityLinks(
+      const ui::AXTreeID& tree_id,
+      const std::vector<ui::AXTreeUpdate>& updates,
+      const std::vector<ui::AXEvent>& events);
+
   // Helper for forwarding reading mode hide events to the webui so we can
   // perform cleaning operations on it.
   void ReadingModeWillClose();
+
+  // Helper method for recording all reading mode per-session metrics. If
+  // reading mode is hidden, this will no-op unless overridden with the
+  // recently_hidden parameter.
+  void RecordSessionMetricsIfShownOrRecentlyHidden(
+      bool recently_hidden = false);
 
   // Records the number of selections that occurred for the active page. Called
   // when the active tree changes.
@@ -526,6 +540,8 @@ class ReadAnythingAppController
   // This function is expected to be called just once. There would be a mismatch
   // between the training protos and the screenshot if it runs more than once.
   void DistillAndScreenshot();
+
+  bool IsHidden() const;
 
   std::unique_ptr<AXTreeDistiller> distiller_;
   mojo::Remote<read_anything::mojom::UntrustedPageHandlerFactory>

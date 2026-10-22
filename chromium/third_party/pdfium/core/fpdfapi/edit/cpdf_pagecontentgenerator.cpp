@@ -46,6 +46,7 @@
 #include "core/fxcrt/notreached.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/span.h"
+#include "core/fxcrt/zip.h"
 
 namespace {
 
@@ -938,7 +939,7 @@ ByteString CPDF_PageContentGenerator::GetOrCreateDefaultGraphics() const {
 // Tm sets the text matrix (allows positioning and transforming text).
 // Tf sets the font name (from Font in Resources) and font size.
 // Tr sets the text rendering mode.
-// Tj sets the actual text, <####...> is used when specifying charcodes.
+// TJ sets the actual text, <####...> is used when specifying charcodes.
 void CPDF_PageContentGenerator::ProcessText(fxcrt::ostringstream* buf,
                                             CPDF_TextObject* pTextObj) {
   ProcessGraphics(buf, pTextObj);
@@ -996,12 +997,21 @@ void CPDF_PageContentGenerator::ProcessText(fxcrt::ostringstream* buf,
   *buf << "/" << PDF_NameEncode(dict_name) << " ";
   WriteFloat(*buf, pTextObj->GetFontSize()) << " Tf ";
   *buf << static_cast<int>(pTextObj->GetTextRenderMode()) << " Tr ";
+
+  *buf << "[";
   ByteString text;
-  for (uint32_t charcode : pTextObj->GetCharCodes()) {
-    if (charcode != CPDF_Font::kInvalidCharCode) {
-      font->AppendChar(&text, charcode);
+  for (auto [char_code, char_kerning] :
+       fxcrt::Zip(pTextObj->GetCharCodes(), pTextObj->GetCharKernings())) {
+    font->AppendChar(&text, char_code);
+    if (char_kerning != 0) {
+      *buf << PDF_HexEncodeString(text.AsStringView()) << " ";
+      text.clear();
+      WriteFloat(*buf, char_kerning) << " ";
     }
   }
-  *buf << PDF_HexEncodeString(text.AsStringView()) << " Tj ET";
+  if (!text.IsEmpty()) {
+    *buf << PDF_HexEncodeString(text.AsStringView());
+  }
+  *buf << "] TJ ET";
   EndProcessGraphics(*buf);
 }

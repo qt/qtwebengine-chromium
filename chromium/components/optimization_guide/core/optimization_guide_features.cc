@@ -10,7 +10,6 @@
 
 #include "base/byte_count.h"
 #include "base/command_line.h"
-#include "base/containers/enum_set.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
@@ -28,7 +27,6 @@
 #include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/core/optimization_guide_enums.h"
 #include "components/optimization_guide/core/optimization_guide_switches.h"
-#include "components/optimization_guide/machine_learning_tflite_buildflags.h"
 #include "components/optimization_guide/proto/common_types.pb.h"
 #include "components/variations/hashing.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -36,8 +34,11 @@
 #include "net/base/url_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
-namespace optimization_guide {
-namespace features {
+#if BUILDFLAG(IS_ANDROID)
+#include "components/version_info/android/channel_getter.h"
+#endif
+
+namespace optimization_guide::features {
 
 namespace {
 
@@ -145,10 +146,6 @@ const base::FeatureParam<std::string> kPerformanceClassListForImageInput{
     &kOnDeviceModelPerformanceParams,
     "compatible_on_device_performance_classes_image_input", "3,4,5,6"};
 
-const base::FeatureParam<std::string> kPerformanceClassListForAudioInput{
-    &kOnDeviceModelPerformanceParams,
-    "compatible_on_device_performance_classes_audio_input", "5,6"};
-
 BASE_FEATURE(kOnDeviceModelBackgroundDownload,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -195,7 +192,7 @@ const base::FeatureParam<base::TimeDelta> kGetAIPageContentSubframeTimeoutParam{
     &kGetAIPageContentSubframeTimeoutEnabled, "timeout", base::Seconds(10)};
 
 // Controls whether to enforce a timeout for main frame page content extraction.
-// If enabled, defaults to 10 seconds. If disabled, wait indefinitely for the
+// If enabled, defaults to 30 seconds. If disabled, wait indefinitely for the
 // main frame to respond.
 BASE_FEATURE(kGetAIPageContentMainFrameTimeoutEnabled,
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -225,7 +222,11 @@ std::string GetOptimizationGuideServiceAPIKey() {
         switches::kOptimizationGuideServiceAPIKey);
   }
 
+#if BUILDFLAG(IS_ANDROID)
+  return google_apis::GetAPIKey(version_info::android::GetChannel());
+#else
   return google_apis::GetAPIKey();
+#endif
 }
 
 GURL GetOptimizationGuideServiceGetModelsURL() {
@@ -641,5 +642,4 @@ std::optional<base::TimeDelta> GetMainFrameGetAIPageContentTimeout() {
   return kGetAIPageContentMainFrameTimeoutParam.Get();
 }
 
-}  // namespace features
-}  // namespace optimization_guide
+}  // namespace optimization_guide::features

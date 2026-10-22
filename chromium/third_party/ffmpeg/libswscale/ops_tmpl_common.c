@@ -93,6 +93,7 @@ DECL_ENTRY(clear##_##X##Y##Z##W,                                                
 
 WRAP_CLEAR(1, 1, 1, 0) /* rgba alpha */
 WRAP_CLEAR(0, 1, 1, 1) /* argb alpha */
+WRAP_CLEAR(1, 0, 1, 1) /* ya alpha */
 
 WRAP_CLEAR(0, 0, 1, 1) /* vuya chroma */
 WRAP_CLEAR(1, 0, 0, 1) /* yuva chroma */
@@ -174,3 +175,31 @@ WRAP_COMMON_PATTERNS(scale,
     .setup = ff_sws_setup_q,
     .flexible = true,
 );
+
+static void fn(process)(const SwsOpExec *exec, const void *priv,
+                        const int bx_start, const int y_start,
+                        int bx_end, int y_end)
+{
+    const SwsOpChain *chain = priv;
+    const SwsOpImpl *impl = chain->impl;
+    u32block_t x, y, z, w; /* allocate enough space for any intermediate */
+
+    SwsOpIter iterdata;
+    SwsOpIter *iter = &iterdata; /* for CONTINUE() macro to work */
+    for (int i = 0; i < 4; i++) {
+        iter->in[i]  = exec->in[i];
+        iter->out[i] = exec->out[i];
+    }
+
+    for (iter->y = y_start; iter->y < y_end; iter->y++) {
+        for (int block = bx_start; block < bx_end; block++) {
+            iter->x = block * SWS_BLOCK_SIZE;
+            CONTINUE(block_t, (void *) x, (void *) y, (void *) z, (void *) w);
+        }
+
+        for (int i = 0; i < 4; i++) {
+            iter->in[i]  += exec->in_bump[i];
+            iter->out[i] += exec->out_bump[i];
+        }
+    }
+}

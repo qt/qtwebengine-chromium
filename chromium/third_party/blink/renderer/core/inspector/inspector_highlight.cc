@@ -80,27 +80,15 @@ class HighlightPathBuilder {
   std::unique_ptr<protocol::ListValue> Release() { return std::move(path_); }
 
   void AppendPath(const Path& path, float scale) {
-    ApplyInfo apply_info{this, scale};
-    path.Apply(&apply_info, &HighlightPathBuilder::AppendPathElement);
+    path.Apply([this, scale](const PathElement& path_element) {
+      AppendPathElement(path_element, scale);
+    });
   }
 
  protected:
   virtual gfx::PointF TranslatePoint(const gfx::PointF& point) { return point; }
 
  private:
-  struct ApplyInfo {
-    STACK_ALLOCATED();
-
-   public:
-    HighlightPathBuilder* builder;
-    float scale;
-  };
-
-  static void AppendPathElement(void* info, const PathElement& path_element) {
-    const ApplyInfo* apply_info = static_cast<ApplyInfo*>(info);
-    apply_info->builder->AppendPathElement(path_element, apply_info->scale);
-  }
-
   void AppendPathElement(const PathElement&, float scale);
   void AppendPathCommandAndPoints(const char* command,
                                   base::span<const gfx::PointF> points,
@@ -399,6 +387,8 @@ std::unique_ptr<protocol::DictionaryValue> BuildElementInfo(Element* element) {
       class_names.Append("::before");
     } else if (pseudo_element->GetPseudoId() == kPseudoIdAfter) {
       class_names.Append("::after");
+    } else if (pseudo_element->GetPseudoId() == kPseudoIdExpandIcon) {
+      class_names.Append("::expand-icon");
     } else if (pseudo_element->GetPseudoId() == kPseudoIdPickerIcon) {
       class_names.Append("::picker-icon");
     } else if (pseudo_element->GetPseudoId() == kPseudoIdInterestHint) {
@@ -450,6 +440,47 @@ std::unique_ptr<protocol::DictionaryValue> BuildElementInfo(Element* element) {
   element_info->setString("layoutObjectName", layout_object->GetName());
 
   return element_info;
+}
+
+std::unique_ptr<protocol::DictionaryValue>
+InspectorGreenDevFloatyAnchorHighlight(
+    Node* node,
+    const InspectorGreenDevFloatyAnchorConfig& config,
+    float scale) {
+  LayoutObject* layout_object = node->GetLayoutObject();
+  if (!layout_object) {
+    LOG(ERROR) << "No layout object";
+    return nullptr;
+  }
+
+  LocalFrameView* containing_view = node->GetDocument().View();
+  if (!containing_view) {
+    LOG(ERROR) << "No containing view";
+    return nullptr;
+  }
+
+  std::unique_ptr<protocol::DictionaryValue> floaty_info =
+      protocol::DictionaryValue::create();
+
+  gfx::QuadF content_quad;
+  gfx::QuadF padding_quad;
+  gfx::QuadF border_quad;
+  gfx::QuadF margin_quad;
+  InspectorHighlightBase::BuildNodeQuads(node, &content_quad, &padding_quad,
+                                         &border_quad, &margin_quad);
+
+  gfx::RectF bounding_box = border_quad.BoundingBox();
+  if (bounding_box.IsEmpty()) {
+    bounding_box = content_quad.BoundingBox();
+  }
+
+  double x = (bounding_box.x() + bounding_box.width() / 2) * scale;
+  double y = (bounding_box.y() + bounding_box.height() / 2) * scale;
+  floaty_info->setDouble("x", x);
+  floaty_info->setDouble("y", y);
+  floaty_info->setInteger("nodeId", config.node_id);
+
+  return floaty_info;
 }
 
 namespace {
@@ -1253,7 +1284,7 @@ Vector<String> GetAuthoredGridTrackSizes(const CSSValue* value,
       // There could be only one auto repeat value in a |value_list|, therefore,
       // resetting auto_repeat_count to zero after inserting repeated values.
       for (; auto_repeat_count; --auto_repeat_count)
-        result.AppendVector(repeated_track_sizes);
+        result.append_range(repeated_track_sizes);
       continue;
     }
 
@@ -1808,6 +1839,14 @@ std::unique_ptr<protocol::DictionaryValue> BuildGridInfoForGrid(
   // Columns
   LayoutUnit column_top = rows.front();
   LayoutUnit column_height = rows.back() - rows.front();
+
+  if (grid->StyleRef().GetWritingMode() == WritingMode::kVerticalLr) {
+    grid_info->setValue(
+        "writingModeRoot",
+        BuildPosition(LocalToAbsolutePoint(
+            element, PhysicalOffset(grid->ContentLeft(), grid->ContentTop()),
+            scale)));
+  }
   grid_info->setValue(
       "columns",
       BuildTrackPaths(grid, containing_view, columns, column_top, column_height,
@@ -2261,7 +2300,7 @@ void InspectorHighlight::VisitAndCollectDistanceInfo(Node* node) {
       for (PseudoId pseudo_id :
            {kPseudoIdFirstLetter, kPseudoIdScrollMarkerGroupBefore,
             kPseudoIdCheckMark, kPseudoIdBefore, kPseudoIdAfter,
-            kPseudoIdPickerIcon, kPseudoIdInterestHint,
+            kPseudoIdExpandIcon, kPseudoIdPickerIcon, kPseudoIdInterestHint,
             kPseudoIdScrollMarkerGroupAfter, kPseudoIdScrollMarker,
             kPseudoIdScrollButtonBlockStart, kPseudoIdScrollButtonInlineStart,
             kPseudoIdScrollButtonInlineEnd, kPseudoIdScrollButtonBlockEnd}) {

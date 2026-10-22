@@ -26,17 +26,11 @@ class SkWriteBuffer;
 
 namespace skgpu {
 enum class MaskFormat : int;
-
-namespace graphite {
-class DrawWriter;
-class Rect;
-class Transform;
-}
 }
 
 namespace sktext::gpu {
-class Glyph;
 class SubRunAllocator;
+class AtlasSubRun;
 
 enum FillerType {
     kIsDirect,
@@ -68,50 +62,40 @@ public:
                              SubRunAllocator *alloc,
                              FillerType fillerType);
 
-    static std::optional<VertexFiller> MakeFromBuffer(SkReadBuffer &buffer,
-                                                      SubRunAllocator *alloc);
-
     int unflattenSize() const { return fLeftTop.size_bytes(); }
 
-    void flatten(SkWriteBuffer &buffer) const;
-
-    // These are only available if the Ganesh backend is compiled in (see GaneshVertexFiller.cpp)
-    size_t vertexStride(const SkMatrix &matrix) const;
-    void fillVertexData(int offset, int count,
-                        SkSpan<const Glyph*> glyphs,
-                        const SkPMColor4f& color,
-                        const SkMatrix& positionMatrix,
-                        SkIRect clip,
-                        void* vertexBuffer) const;
-
-    // This is only available if the Graphite backend is compiled in (see GraphiteVertexFiller.cpp)
-    void fillInstanceData(skgpu::graphite::DrawWriter* dw,
-                          int offset, int count,
-                          unsigned short flags,
-                          uint32_t ssboIndex,
-                          SkSpan<const Glyph*> glyphs,
-                          SkScalar depth) const;
-
-    std::tuple<skgpu::graphite::Rect, skgpu::graphite::Transform> boundsAndDeviceMatrix(
-            const skgpu::graphite::Transform& localToDevice, SkPoint drawOrigin) const;
+    std::tuple<SkRect, SkMatrix> boundsAndDeviceMatrix(const SkMatrix& localToDevice,
+                                                       SkPoint drawOrigin) const;
 
     // Return true if the positionMatrix represents an integer translation. Return the device
     // bounding box of all the glyphs. If the bounding box is empty, then something went singular
     // and this operation should be dropped.
     std::tuple<bool, SkRect> deviceRectAndCheckTransform(const SkMatrix &positionMatrix) const;
 
-    skgpu::MaskFormat grMaskType() const { return fMaskType; }
+    skgpu::MaskFormat maskFormat() const { return fMaskFormat; }
+
     bool isLCD() const;
 
     int count() const { return SkCount(fLeftTop); }
 
+    SkSpan<const SkPoint> topLefts() const { return fLeftTop; }
+
+    bool canDrawDirect() const { return fCanDrawDirect; }
+
+    const SkMatrix& creationMatrix() const { return fCreationMatrix; }
+
+    std::tuple<bool, SkVector> canUseDirect(const SkMatrix& positionMatrix) const {
+        return CanUseDirect(fCreationMatrix, positionMatrix);
+    }
+    SkMatrix viewDifference(const SkMatrix& positionMatrix) const;
+
 private:
+    friend class AtlasSubRun;
+
     static std::tuple<bool, SkVector> CanUseDirect(const SkMatrix& creationMatrix,
                                                    const SkMatrix& positionMatrix);
 
-    SkMatrix viewDifference(const SkMatrix &positionMatrix) const;
-
-    const skgpu::MaskFormat fMaskType;
+    const skgpu::MaskFormat fMaskFormat;
     const bool fCanDrawDirect;
     const SkMatrix fCreationMatrix;
     const SkRect fCreationBounds;

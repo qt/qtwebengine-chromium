@@ -5,19 +5,21 @@
 #include "chrome/browser/ui/webui/chrome_untrusted_web_ui_configs.h"
 
 #include "build/build_config.h"
+#include "chrome/common/buildflags.h"
 #include "content/public/browser/webui_config_map.h"
 #include "printing/buildflags/buildflags.h"
 
 #if defined(TOOLKIT_VIEWS)
 #include "chrome/browser/ui/webui/data_sharing/data_sharing_ui.h"
-#include "chrome/browser/ui/webui/privacy_sandbox/privacy_sandbox_dialog_untrusted_ui.h"
 #include "chrome/browser/ui/webui/side_panel/read_anything/read_anything_untrusted_ui.h"
 #include "components/compose/buildflags.h"
 #if BUILDFLAG(ENABLE_COMPOSE)
 #include "chrome/browser/ui/webui/compose/compose_untrusted_ui.h"
 #endif  // BUILDFLAG(ENABLE_COMPOSE)
+#include "chrome/browser/glic/selection/selection_overlay_untrusted_ui.h"
 #include "chrome/browser/ui/lens/lens_overlay_untrusted_ui.h"
 #include "chrome/browser/ui/lens/lens_side_panel_untrusted_ui.h"
+#include "chrome/browser/ui/webui/ai_overlay_dialog/ai_overlay_dialog_untrusted_ui.h"
 #endif  // defined(TOOLKIT_VIEWS)
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
@@ -49,14 +51,18 @@ void RegisterChromeUntrustedWebUIConfigs() {
   map.AddUntrustedWebUIConfig(
       std::make_unique<lens::LensSidePanelUntrustedUIConfig>());
   map.AddUntrustedWebUIConfig(
+      std::make_unique<ttc::AiOverlayDialogUntrustedUIConfig>());
+  map.AddUntrustedWebUIConfig(
       std::make_unique<ReadAnythingUIUntrustedConfig>());
   map.AddUntrustedWebUIConfig(std::make_unique<DataSharingUIConfig>());
-  map.AddUntrustedWebUIConfig(
-      std::make_unique<PrivacySandboxDialogUntrustedUIConfig>());
 
 #if BUILDFLAG(ENABLE_COMPOSE)
   map.AddUntrustedWebUIConfig(std::make_unique<ComposeUIUntrustedConfig>());
 #endif  // BUILDFLAG(ENABLE_COMPOSE)
+
+  map.AddUntrustedWebUIConfig(
+      std::make_unique<glic::SelectionOverlayUntrustedUIConfig>());
+
 #endif  // defined(TOOLKIT_VIEWS)
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)

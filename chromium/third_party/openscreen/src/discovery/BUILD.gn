@@ -70,7 +70,6 @@ openscreen_source_set("mdns") {
     "mdns/impl/mdns_trackers.h",
   ]
 
-  public_deps = [ "../third_party/abseil" ]
   deps = [
     ":public",
     "../platform",
@@ -115,7 +114,6 @@ openscreen_source_set("dnssd") {
   deps = [
     ":mdns",
     ":public",
-    "../third_party/abseil",
     "../util",
   ]
   friend = [ ":unittests" ]
@@ -135,7 +133,6 @@ openscreen_source_set("testing") {
   deps = [
     ":mdns",
     ":public",
-    "../third_party/abseil",
     "../third_party/googletest:gmock",
     "../third_party/googletest:gtest",
   ]
@@ -176,7 +173,6 @@ openscreen_source_set("unittests") {
     ":public",
     ":testing",
     "../platform:test",
-    "../third_party/abseil",
     "../third_party/googletest:gmock",
     "../third_party/googletest:gtest",
     "../util",

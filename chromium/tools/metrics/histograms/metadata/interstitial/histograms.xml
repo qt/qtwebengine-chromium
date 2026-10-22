@@ -59,6 +59,10 @@ chromium-metrics-reviews@google.com.
       summary="scam detection verdict 1"/>
   <variant name=".scam_experiment_verdict_2"
       summary="scam detection verdict 2"/>
+  <variant name=".scam_experiment_verdict_3"
+      summary="scam detection verdict 3"/>
+  <variant name=".scam_experiment_verdict_4"
+      summary="scam detection verdict 4"/>
 </variants>
 
 <variants name="SecurityInterstitialSBWithSourceType">
@@ -183,7 +187,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="interstitial.phishing.interaction.from_client_side_detection{SecurityInterstitialSBWithSourceSubtype}"
-    enum="SecurityInterstitialDecision" expires_after="2026-04-09">
+    enum="SecurityInterstitialDecision" expires_after="2027-03-02">
   <owner>andysjlim@chromium.org</owner>
   <owner>chrome-counter-abuse-alerts@Google.com</owner>
   <summary>
@@ -394,7 +398,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="interstitial.{SecurityInterstitialSBType}decision{RepeatVisit}{IsPostCommitInterstitialSuffix}"
-    enum="SecurityInterstitialDecision" expires_after="2026-07-05">
+    enum="SecurityInterstitialDecision" expires_after="2026-09-06">
   <owner>xinghuilu@chromium.org</owner>
   <owner>chrome-counter-abuse-alerts@google.com</owner>
   <summary>
@@ -486,7 +490,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="interstitial.{SecurityInterstitialSBType}show_delay{TimeRange}{SecurityInterstitialSBWithSourceType}"
-    units="ms" expires_after="2026-07-05">
+    units="ms" expires_after="2026-09-06">
   <owner>xinghuilu@chromium.org</owner>
   <owner>chrome-counter-abuse-alerts@google.com</owner>
   <summary>

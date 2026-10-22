@@ -100,7 +100,8 @@ TEST_F(WebFormControlElementTest, ResetDocumentClearsEditedState) {
 }
 
 TEST_F(WebFormControlElementTest, TextControlPreviewDisabledInCanvas) {
-  if (!RuntimeEnabledFeatures::CanvasDrawElementEnabled()) {
+  if (!RuntimeEnabledFeatures::CanvasDrawElementEnabled(
+          GetDocument().GetExecutionContext())) {
     return;
   }
 
@@ -129,7 +130,8 @@ TEST_F(WebFormControlElementTest, TextControlPreviewDisabledInCanvas) {
 
 TEST_F(WebFormControlElementTest,
        TextControlPreviewDisabledWhenMovingToCanvas) {
-  if (!RuntimeEnabledFeatures::CanvasDrawElementEnabled()) {
+  if (!RuntimeEnabledFeatures::CanvasDrawElementEnabled(
+          GetDocument().GetExecutionContext())) {
     return;
   }
 
@@ -162,7 +164,8 @@ TEST_F(WebFormControlElementTest,
 }
 
 TEST_F(WebFormControlElementTest, SelectPreviewDisabledInCanvas) {
-  if (!RuntimeEnabledFeatures::CanvasDrawElementEnabled()) {
+  if (!RuntimeEnabledFeatures::CanvasDrawElementEnabled(
+          GetDocument().GetExecutionContext())) {
     return;
   }
 
@@ -189,7 +192,8 @@ TEST_F(WebFormControlElementTest, SelectPreviewDisabledInCanvas) {
 
 TEST_F(WebFormControlElementTest,
        SelectPreviewDisabledInCanvasWhenMovingToCanvas) {
-  if (!RuntimeEnabledFeatures::CanvasDrawElementEnabled()) {
+  if (!RuntimeEnabledFeatures::CanvasDrawElementEnabled(
+          GetDocument().GetExecutionContext())) {
     return;
   }
 
@@ -296,7 +300,7 @@ class WebFormControlElementGetOwningFormForAutofillTest
       const DocumentOrShadowRoot& document_or_shadow_root,
       std::string_view id) {
     return WebFormElement(DynamicTo<HTMLFormElement>(
-        document_or_shadow_root.getElementById(WebString::FromASCII(id))));
+        document_or_shadow_root.getElementById(WebString::FromAscii(id))));
   }  // namespace blink
 
   template <typename DocumentOrShadowRoot>
@@ -304,7 +308,7 @@ class WebFormControlElementGetOwningFormForAutofillTest
       const DocumentOrShadowRoot& document_or_shadow_root,
       std::string_view id) {
     return WebFormControlElement(DynamicTo<HTMLFormControlElement>(
-        document_or_shadow_root.getElementById(WebString::FromASCII(id))));
+        document_or_shadow_root.getElementById(WebString::FromAscii(id))));
   }
 };
 

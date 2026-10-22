@@ -85,7 +85,6 @@ openscreen_source_set("openscreen_unittests_all") {
     "cast/streaming:unittests",
     "cast/test:unittests",
     "platform:unittests",
-    "third_party/abseil",
     "util:unittests",
   ]
 

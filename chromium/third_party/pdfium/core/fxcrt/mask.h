@@ -5,6 +5,7 @@
 #ifndef CORE_FXCRT_MASK_H_
 #define CORE_FXCRT_MASK_H_
 
+#include <concepts>
 #include <type_traits>
 
 namespace fxcrt {
@@ -25,45 +26,10 @@ class Mask {
   // NOLINTNEXTLINE(runtime/explicit)
   constexpr Mask(E val) : val_(static_cast<UnderlyingType>(val)) {}
 
-  // Unfortunately, std::initializer_list<> can't be used in constexpr
-  // methods per C++ standards, and we need constexpr for a zero-cost
-  // abstraction.  Hence, expand out constructors of various arity.
-  constexpr Mask(E v1, E v2)
-      : val_(static_cast<UnderlyingType>(v1) |
-             static_cast<UnderlyingType>(v2)) {}
-
-  constexpr Mask(E v1, E v2, E v3)
-      : val_(static_cast<UnderlyingType>(v1) | static_cast<UnderlyingType>(v2) |
-             static_cast<UnderlyingType>(v3)) {}
-
-  constexpr Mask(E v1, E v2, E v3, E v4)
-      : val_(static_cast<UnderlyingType>(v1) | static_cast<UnderlyingType>(v2) |
-             static_cast<UnderlyingType>(v3) |
-             static_cast<UnderlyingType>(v4)) {}
-
-  constexpr Mask(E v1, E v2, E v3, E v4, E v5)
-      : val_(static_cast<UnderlyingType>(v1) | static_cast<UnderlyingType>(v2) |
-             static_cast<UnderlyingType>(v3) | static_cast<UnderlyingType>(v4) |
-             static_cast<UnderlyingType>(v5)) {}
-
-  constexpr Mask(E v1, E v2, E v3, E v4, E v5, E v6)
-      : val_(static_cast<UnderlyingType>(v1) | static_cast<UnderlyingType>(v2) |
-             static_cast<UnderlyingType>(v3) | static_cast<UnderlyingType>(v4) |
-             static_cast<UnderlyingType>(v5) |
-             static_cast<UnderlyingType>(v6)) {}
-
-  constexpr Mask(E v1, E v2, E v3, E v4, E v5, E v6, E v7)
-      : val_(static_cast<UnderlyingType>(v1) | static_cast<UnderlyingType>(v2) |
-             static_cast<UnderlyingType>(v3) | static_cast<UnderlyingType>(v4) |
-             static_cast<UnderlyingType>(v5) | static_cast<UnderlyingType>(v6) |
-             static_cast<UnderlyingType>(v7)) {}
-
-  constexpr Mask(E v1, E v2, E v3, E v4, E v5, E v6, E v7, E v8)
-      : val_(static_cast<UnderlyingType>(v1) | static_cast<UnderlyingType>(v2) |
-             static_cast<UnderlyingType>(v3) | static_cast<UnderlyingType>(v4) |
-             static_cast<UnderlyingType>(v5) | static_cast<UnderlyingType>(v6) |
-             static_cast<UnderlyingType>(v7) |
-             static_cast<UnderlyingType>(v8)) {}
+  template <std::same_as<E>... Args>
+  constexpr Mask(E first, Args... rest)
+      : val_((static_cast<UnderlyingType>(first) | ... |
+              static_cast<UnderlyingType>(rest))) {}
 
   explicit operator bool() const { return !!val_; }
   Mask operator~() const { return Mask(~val_); }

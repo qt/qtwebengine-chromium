@@ -32,8 +32,7 @@ class ProcessesApiTest : public extensions::ExtensionApiTest {
   }
 };
 
-
-// This test is flaky. https://crbug.com/598445
+// This test is flaky. https://crbug.com/40462635
 IN_PROC_BROWSER_TEST_F(ProcessesApiTest, DISABLED_Processes) {
   ASSERT_TRUE(RunExtensionTest("processes/api")) << message_;
 }
@@ -75,7 +74,15 @@ IN_PROC_BROWSER_TEST_F(ProcessesApiTest, DISABLED_ProcessesApiListeners) {
   EXPECT_EQ(0, GetListenersCount());
 }
 
-IN_PROC_BROWSER_TEST_F(ProcessesApiTest, OnUpdatedWithMemoryRefreshTypes) {
+// TODO(crbug.com/500051686): Flaky on desktop Android.
+#if BUILDFLAG(IS_ANDROID)
+#define MAYBE_OnUpdatedWithMemoryRefreshTypes \
+  DISABLED_OnUpdatedWithMemoryRefreshTypes
+#else
+#define MAYBE_OnUpdatedWithMemoryRefreshTypes OnUpdatedWithMemoryRefreshTypes
+#endif
+IN_PROC_BROWSER_TEST_F(ProcessesApiTest,
+                       MAYBE_OnUpdatedWithMemoryRefreshTypes) {
   EXPECT_EQ(0, GetListenersCount());
 
   // Load an extension that listen to the onUpdatedWithMemory.
@@ -109,8 +116,9 @@ IN_PROC_BROWSER_TEST_F(ProcessesApiTest, OnUpdatedWithMemoryRefreshTypes) {
       task_manager::REFRESH_TYPE_WEBCACHE_STATS,
   };
 
-  for (const auto& type : kOnUpdatedRefreshTypes)
+  for (const auto& type : kOnUpdatedRefreshTypes) {
     EXPECT_TRUE(task_manager->IsResourceRefreshEnabled(type));
+  }
 
   // Unload the extensions and make sure the listeners count is updated.
   UnloadExtension(extension->id());

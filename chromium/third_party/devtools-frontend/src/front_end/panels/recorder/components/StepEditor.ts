@@ -32,6 +32,7 @@ import {
 const {html, Decorators, Directives, LitElement} = Lit;
 const {customElement, property, state} = Decorators;
 const {live} = Directives;
+const {widget} = UI.Widget;
 
 type StepFor<Type> = Extract<Models.Schema.Step, {type: Type}>;
 type Attribute = Keys<Models.Schema.Step>;
@@ -646,7 +647,7 @@ export class StepEditor extends LitElement {
   #renderTypeRow(editable: boolean): Lit.TemplateResult {
     this.#renderedAttributes.add('type');
     // clang-format off
-    return html`<div class="row attribute" data-attribute="type" jslog=${VisualLogging.treeItem('type')}>
+    return html`<div class="row attribute" data-attribute="type" jslog=${VisualLogging.treeItem('type').track({resize: true})}>
       <div id="type">type<span class="separator">:</span></div>
       <devtools-suggestion-input
         aria-labelledby="type"
@@ -667,7 +668,7 @@ export class StepEditor extends LitElement {
       return;
     }
     // clang-format off
-    return html`<div class="row attribute" data-attribute=${attribute} jslog=${VisualLogging.treeItem(Platform.StringUtilities.toKebabCase(attribute))}>
+    return html`<div class="row attribute" data-attribute=${attribute} jslog=${VisualLogging.treeItem(Platform.StringUtilities.toKebabCase(attribute)).track({resize: true})}>
       <div id=${attribute}>${attribute}<span class="separator">:</span></div>
       <devtools-suggestion-input
         .disabled=${this.disabled}
@@ -706,7 +707,7 @@ export class StepEditor extends LitElement {
     }
     // clang-format off
     return html`
-      <div class="attribute" data-attribute="frame" jslog=${VisualLogging.treeItem('frame')}>
+      <div class="attribute" data-attribute="frame" jslog=${VisualLogging.treeItem('frame').track({resize: true})}>
         <div class="row">
           <div id="frame">frame<span class="separator">:</span></div>
           ${this.#renderDeleteButton('frame')}
@@ -778,13 +779,11 @@ export class StepEditor extends LitElement {
     return html`<div class="attribute" data-attribute="selectors" jslog=${VisualLogging.treeItem('selectors')}>
       <div class="row">
         <div>selectors<span class="separator">:</span></div>
-        <devtools-widget
-          .widgetConfig=${UI.Widget.widgetConfig(SelectorPicker, {
-            disabled: this.disabled,
-            onSelectorPicked: this.#handleSelectorPicked,
-            onAttributeRequested: this.#handleAttributeRequested,
-          })}
-        ></devtools-widget>
+        ${widget(SelectorPicker, {
+          disabled: this.disabled,
+          onSelectorPicked: this.#handleSelectorPicked,
+          onAttributeRequested: this.#handleAttributeRequested,
+        })}
         ${this.#renderDeleteButton('selectors')}
       </div>
       ${this.state.selectors.map((selector, index, selectors) => {

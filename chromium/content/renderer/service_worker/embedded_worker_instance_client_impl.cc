@@ -10,9 +10,9 @@
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "content/child/child_thread_impl.h"
 #include "content/child/scoped_child_process_reference.h"
@@ -98,10 +98,6 @@ void EmbeddedWorkerInstanceClientImpl::StartWorker(
 
   start_data->is_cross_origin_isolated = params->cross_origin_isolated;
 
-  for (const auto& feature : params->forced_enabled_runtime_features) {
-    blink::WebRuntimeFeatures::EnableFeatureFromString(feature, true);
-  }
-
   // `cache_storage` may be null if COEP is not enabled, we cannot bind
   // eagerly in that case.
   mojo::PendingRemote<blink::mojom::CacheStorage> cache_storage =
@@ -140,9 +136,6 @@ void EmbeddedWorkerInstanceClientImpl::StartWorker(
             std::move(params->installed_scripts_info->manager_host_remote));
   }
 
-  // Wait for the process has processed the security settings before starting
-  // the worker thread.
-  GetContentClient()->renderer()->WaitForProcessReady();
   auto worker =
       blink::WebEmbeddedWorker::Create(service_worker_context_client_.get());
   service_worker_context_client_->StartWorkerContextOnInitiatorThread(

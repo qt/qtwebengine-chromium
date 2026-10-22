@@ -9,22 +9,22 @@ import {assertNotReached} from '//resources/js/assert.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
 
 import {ContentSettingsType} from '../../content_settings_types.mojom-webui.js';
-import type {ActorTaskPauseReason as ActorTaskPauseReasonMojo, ActorTaskStopReason as ActorTaskStopReasonMojo, CaptureRegionObserver, CaptureRegionResult as CaptureRegionResultMojo, OpenSettingsOptions as OpenSettingsOptionsMojo, PinCandidate as PinCandidateMojo, PinCandidatesObserver, ScrollToSelector as ScrollToSelectorMojo, SkillSource as MojomSkillSource, TabDataHandlerInterface, TabDataMojoType, WebClientHandlerInterface} from '../../glic.mojom-webui.js';
-import {CaptureRegionErrorReason as CaptureRegionErrorReasonMojo, CaptureRegionObserverReceiver, CurrentView as CurrentViewMojo, PinCandidatesObserverReceiver, ResponseStopCause as ResponseStopCauseMojo, SettingsPageField as SettingsPageFieldMojo, TabDataHandlerReceiver, WebClientReceiver} from '../../glic.mojom-webui.js';
-import type {ActorTaskPauseReason, ActorTaskStopReason, CancelActionsResult, CaptureRegionErrorReason, ConversationInfo, CreateSkillRequest, DraggableArea, GetPinCandidatesOptions, Journal, OnResponseStoppedDetails, OpenSettingsOptions, PinTabsOptions, Screenshot, ScrollToParams, Skill, SkillSource, TabContextOptions, TaskOptions, UnpinTabsOptions, UpdateSkillRequest, ViewChangedNotification, WebClientMode, ZeroStateSuggestions, ZeroStateSuggestionsOptions, ZeroStateSuggestionsV2} from '../../glic_api/glic_api.js';
-import {CaptureScreenshotErrorReason, ClientView, CreateTaskErrorReason, PerformActionsErrorReason, ResponseStopCause, ScrollToErrorReason} from '../../glic_api/glic_api.js';
+import type {CaptureRegionObserver, CaptureRegionResult as CaptureRegionResultMojo, OpenSettingsOptions as OpenSettingsOptionsMojo, PinCandidate as PinCandidateMojo, PinCandidatesObserver, ScrollToSelector as ScrollToSelectorMojo, TabDataHandlerInterface, TabDataMojoType, TabFaviconHandlerInterface, WebClientHandlerInterface} from '../../glic.mojom-webui.js';
+import {CaptureRegionErrorReason as CaptureRegionErrorReasonMojo, CaptureRegionObserverReceiver, PinCandidatesObserverReceiver, ResponseStopCause as ResponseStopCauseMojo, SettingsPageField as SettingsPageFieldMojo, SkillSource as SkillSourceMojo, TabDataHandlerReceiver, TabFaviconHandlerReceiver, WebClientReceiver} from '../../glic.mojom-webui.js';
+import type {ActorTaskInterruptReason, ActorTaskPauseReason, ActorTaskStopReason, CancelActionsResult, ConversationInfo, CreateSkillRequest, DraggableArea, FormFillingResponse, GetPinCandidatesOptions, Journal, MicrophoneStatus, OnResponseStoppedDetails, OpenSettingsOptions, PinTabsOptions, Screenshot, ScrollToParams, Skill, SkillsWebClientEvent, TabContextOptions, TaskOptions, UnpinTabsOptions, UpdateSkillRequest, WebClientMode, ZeroStateSuggestions, ZeroStateSuggestionsOptions, ZeroStateSuggestionsV2} from '../../glic_api/glic_api.js';
+import {CaptureScreenshotErrorReason, ClientCapabilities, CreateTaskErrorReason, PerformActionsErrorReason, ResponseStopCause, ScrollToErrorReason} from '../../glic_api/glic_api.js';
 import {replaceProperties} from '../conversions.js';
+import {enumFromClient, enumToClient} from '../enum_conversions.js';
 import {ResponseExtras} from '../post_message_transport.js';
 import type {PostMessageRequestSender} from '../post_message_transport.js';
 import type {HostRequestTypes, RequestRequestType, RequestResponseType, ResumeActorTaskResultPrivate, RgbaImage, TabContextResultPrivate, TransferableException, WebClientInitialStatePrivate} from '../request_types.js';
 import {ErrorWithReasonImpl, exceptionFromTransferable} from '../request_types.js';
 
-import {bitmapN32ToRGBAImage, byteArrayFromClient, captureRegionResultToClient, conversationInfoFromClient, focusedTabDataToClient, getArrayBufferFromBigBuffer, getPinCandidatesOptionsFromClient, hostCapabilitiesToClient, idFromClient, idToClient, optionalFromClient, optionalToClient, panelStateToClient, pinTabsOptionsToMojo, platformToClient, resumeActorTaskResultToClient, tabContextOptionsFromClient, tabContextToClient, tabDataToClient, taskOptionsToMojo, timeDeltaFromClient, unpinTabsOptionsToMojo, urlFromClient, urlToClient, webClientModeToMojo, zeroStateSuggestionsToClient} from './conversions.js';
+import {bitmapN32ToRGBAImage, byteArrayFromClient, captureRegionResultToClient, conversationInfoFromClient, conversionSettings, focusedTabDataToClient, getArrayBufferFromBigBuffer, getPinCandidatesOptionsFromClient, hostCapabilitiesToClient, idFromClient, idToClient, microphoneStatusToMojo, optionalFromClient, optionalToClient, panelStateToClient, pinTabsOptionsToMojo, resumeActorTaskResultToClient, tabContextOptionsFromClient, tabContextToClient, tabDataToClient, taskOptionsToMojo, timeDeltaFromClient, unpinTabsOptionsToMojo, urlFromClient, urlToClient, webClientModeToMojo, zeroStateSuggestionsToClient} from './conversions.js';
 import type {GatedSender} from './gated_sender.js';
 import type {ApiHostEmbedder, GlicApiHost} from './glic_api_host.js';
 import {DetailedWebClientState} from './glic_api_host.js';
 import {WebClientImpl} from './host_to_client.js';
-
 
 // Turn everything except void into a promise.
 type Promisify<T> = T extends void ? void : Promise<T>;
@@ -66,22 +66,33 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
     }
   }
 
-  async glicBrowserWebClientCreated(_request: void, extras: ResponseExtras):
+  async glicBrowserWebClientCreated(
+      request: {clientCapabilities: ClientCapabilities[]},
+      extras: ResponseExtras):
       Promise<{initialState: WebClientInitialStatePrivate}> {
     if (this.receiver) {
       throw new Error('web client already created');
     }
+    // Note: Ideally we would avoid computing favicons in c++ entirely, but that
+    // change is more difficult as some parts of the system can be shared by
+    // multiple clients. Instead, we just avoid sending favicons from the WebUI,
+    // which avoids most of the cost.
+    conversionSettings.omitFaviconInTabData =
+        request.clientCapabilities.includes(
+            ClientCapabilities.IGNORES_TAB_DATA_FAVICONS);
     this.host.detailedWebClientState =
         DetailedWebClientState.WEB_CLIENT_NOT_INITIALIZED;
 
     if (loadTimeData.getBoolean('glicWebContentsWarming')) {
-      this.embedder.webClientReady();
+      this.embedder.webClientWarmed();
     }
 
     const webClientImpl = new WebClientImpl(this.host, this.embedder);
     this.receiver = new WebClientReceiver(webClientImpl);
     const {initialState} = await this.handler.webClientCreated(
         this.receiver.$.bindNewPipeAndPassRemote());
+    webClientImpl.markCreated();
+    conversionSettings.platform = enumToClient(initialState.platform);
     this.host.setInitialState(initialState);
     const chromeVersion = initialState.chromeVersion.components;
     const hostCapabilities = initialState.hostCapabilities;
@@ -112,10 +123,13 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
           build: chromeVersion[2] || 0,
           patch: chromeVersion[3] || 0,
         },
-        platform: platformToClient(platform),
+        platform: enumToClient(platform),
+        formFactor: enumToClient(initialState.formFactor),
         loggingEnabled: loadTimeData.getBoolean('loggingEnabled'),
+        maxInFlightRequests: loadTimeData.getInteger('maxInFlightRequests'),
+        sendResponsesForAllRequests:
+            loadTimeData.getBoolean('sendResponsesForAllRequests'),
         hostCapabilities: hostCapabilitiesToClient(hostCapabilities),
-        rgbaToBmp: loadTimeData.getBoolean('glicBitmapsEnabled'),
       }),
     };
   }
@@ -168,7 +182,8 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
       highlightField: SettingsPageFieldMojo.kNone,
     };
     if (request.options?.highlightField) {
-      optionsMojo.highlightField = request.options?.highlightField as number;
+      optionsMojo.highlightField =
+          enumFromClient(request.options?.highlightField);
     }
     this.handler.openGlicSettingsPage(optionsMojo);
   }
@@ -329,15 +344,14 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
       Promise<{result: CancelActionsResult}> {
     const cancelResult = await this.handler.cancelActions(request.taskId);
     return {
-      result: cancelResult.result as number as CancelActionsResult,
+      result: enumToClient(cancelResult.result),
     };
   }
 
   glicBrowserStopActorTask(
       request: {taskId: number, stopReason: ActorTaskStopReason}): void {
-    const actorTaskStopReason =
-        request.stopReason as number as ActorTaskStopReasonMojo;
-    this.handler.stopActorTask(request.taskId, actorTaskStopReason);
+    this.handler.stopActorTask(
+        request.taskId, enumFromClient(request.stopReason));
   }
 
   glicBrowserPauseActorTask(request: {
@@ -345,10 +359,9 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
     pauseReason: ActorTaskPauseReason,
     tabId: string,
   }): void {
-    const actorTaskPauseReason =
-        request.pauseReason as number as ActorTaskPauseReasonMojo;
     this.handler.pauseActorTask(
-        request.taskId, actorTaskPauseReason, idFromClient(request.tabId));
+        request.taskId, enumFromClient(request.pauseReason),
+        idFromClient(request.tabId));
   }
 
   async glicBrowserResumeActorTask(
@@ -377,8 +390,10 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
 
   glicBrowserInterruptActorTask(request: {
     taskId: number,
+    interruptReason?: ActorTaskInterruptReason,
   }): void {
-    this.handler.interruptActorTask(request.taskId);
+    this.handler.interruptActorTask(
+        request.taskId, enumFromClient(request.interruptReason));
   }
 
   glicBrowserUninterruptActorTask(request: {
@@ -396,7 +411,8 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
       icon: request.request.icon ?? '',
       prompt: request.request.prompt,
       description: request.request.description ?? '',
-      source: request.request.source as number as MojomSkillSource,
+      source:
+          enumFromClient(request.request.source) ?? SkillSourceMojo.kUnknown,
     };
     return await this.handler.createSkill(mojoRequest);
   }
@@ -409,6 +425,10 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
 
   glicBrowserShowManageSkillsUi(_request: void): void {
     this.handler.showManageSkillsUi();
+  }
+
+  glicBrowserShowBrowseSkillsUi(_request: void): void {
+    this.handler.showBrowseSkillsUi();
   }
 
   async glicBrowserGetSkill(request: {
@@ -424,10 +444,16 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
         sourceSkillId: optionalFromClient(mojoSkill.sourceSkillId) || undefined,
         preview: {
           ...mojoSkill.preview,
-          source: mojoSkill.preview.source as number as SkillSource,
+          source: enumToClient(mojoSkill.preview.source),
         },
       },
     };
+  }
+
+  glicBrowserRecordSkillsWebClientEvent(request: {
+    event: SkillsWebClientEvent,
+  }): void {
+    this.handler.recordSkillsWebClientEvent(enumFromClient(request.event));
   }
 
   async glicBrowserCreateActorTab(request: {
@@ -489,6 +515,19 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
       this.host.captureRegionObserver.destroy();
       this.host.captureRegionObserver = undefined;
     }
+  }
+
+  glicBrowserSubscribeToZoomLevel(): void {
+    this.host.subscribeToZoomLevel();
+  }
+
+  glicBrowserUnsubscribeFromZoomLevel(): void {
+    this.host.unsubscribeFromZoomLevel();
+  }
+
+  glicBrowserDeleteCapturedRegion(request: {tabId: string, regionId: string}) {
+    this.handler.deleteCapturedRegion(
+        idFromClient(request.tabId), request.regionId);
   }
 
   async glicBrowserCaptureScreenshot(_request: void, extras: ResponseExtras):
@@ -553,6 +592,7 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
     }
 
     let avatarIcon: RgbaImage|undefined;
+    bitmapN32ToRGBAImage;
     if (mojoProfileInfo.avatarIcon) {
       avatarIcon = bitmapN32ToRGBAImage(mojoProfileInfo.avatarIcon);
       if (avatarIcon) {
@@ -574,6 +614,10 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
     this.handler.setAudioDucking(request.enabled);
   }
 
+  glicBrowserOnOptinImpression(): void {
+    this.handler.onOptinImpression();
+  }
+
   glicBrowserOnUserInputSubmitted(request: {mode: number}): void {
     this.handler.onUserInputSubmitted(request.mode);
   }
@@ -588,6 +632,10 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
 
   glicBrowserOnReaction(request: {reactionType: number}): void {
     this.handler.onReaction(request.reactionType);
+  }
+
+  glicBrowserOnActionSubmitted(request: {isRetry?: boolean}): void {
+    this.handler.onActionSubmitted(request.isRetry ?? false);
   }
 
   glicBrowserOnResponseStarted(): void {
@@ -750,7 +798,7 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
     };
     const {errorReason} = (await this.handler.scrollTo(mojoParams));
     if (errorReason !== null) {
-      throw new ErrorWithReasonImpl('scrollTo', errorReason as number);
+      throw new ErrorWithReasonImpl('scrollTo', enumToClient(errorReason));
     }
     return {};
   }
@@ -868,27 +916,6 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
     this.handler.maybeRefreshUserStatus();
   }
 
-  glicBrowserOnViewChanged(request: {notification: ViewChangedNotification}):
-      void {
-    const {currentView} = request.notification;
-    switch (currentView) {
-      case ClientView.ACTUATION:
-        this.handler.onViewChanged({currentView: CurrentViewMojo.kActuation});
-        break;
-      case ClientView.CONVERSATION:
-        this.handler.onViewChanged(
-            {currentView: CurrentViewMojo.kConversation});
-        break;
-      default:
-        // The compiler should enforce that this is unreachable if types are
-        // correct; nonetheless check at runtime since TypeScript cannot
-        // guarantee this absolutely.
-        const _exhaustive: never = currentView;
-        throw new Error(
-            `glicBrowserOnViewChanged: invalid currentView: ${_exhaustive}`);
-    }
-  }
-
   glicBrowserSubscribeToPageMetadata(request: {
     tabId: string,
     names: string[],
@@ -899,6 +926,12 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
 
   glicBrowserOnModeChange(request: {newMode: WebClientMode}): void {
     this.handler.onModeChange(webClientModeToMojo(request.newMode));
+  }
+
+  glicBrowserOnMicrophoneStatusChange(request: {status: MicrophoneStatus}):
+      void {
+    this.handler.onMicrophoneStatusChange(
+        microphoneStatusToMojo(request.status));
   }
 
   glicBrowserSetOnboardingCompleted(): void {
@@ -930,6 +963,48 @@ export class HostMessageHandler implements HostMessageHandlerInterface {
           idFromClient(payload.tabId), payload.observationId);
     }
   }
+
+  glicBrowserSubscribeToTabFavicon(
+      payload: {tabId: string, observationId: number, cancel: boolean}): void {
+    if (payload.cancel) {
+      this.host.tabFaviconHandlerSet.remove(payload.observationId);
+    } else {
+      this.host.tabFaviconHandlerSet.create(
+          idFromClient(payload.tabId), payload.observationId);
+    }
+  }
+
+  glicBrowserAutofillSuggestionDialogOnFormPresented(payload: {
+    taskId: number,
+    params: {formFillingRequestIndex: number},
+  }): void {
+    this.handler.autofillSuggestionDialogOnFormPresented(
+        payload.taskId, payload.params);
+  }
+
+  glicBrowserAutofillSuggestionDialogOnFormPreviewChanged(payload: {
+    taskId: number,
+    params: {
+      formFillingRequestIndex: number,
+      response?: FormFillingResponse,
+    },
+  }): void {
+    this.handler.autofillSuggestionDialogOnFormPreviewChanged(payload.taskId, {
+      formFillingRequestIndex: payload.params.formFillingRequestIndex,
+      response: payload.params.response ?? null,
+    });
+  }
+
+  glicBrowserAutofillSuggestionDialogOnFormConfirmed(payload: {
+    taskId: number,
+    params: {
+      formFillingRequestIndex: number,
+      response: FormFillingResponse,
+    },
+  }): void {
+    this.handler.autofillSuggestionDialogOnFormConfirmed(
+        payload.taskId, payload.params);
+  }
 }
 
 
@@ -939,6 +1014,17 @@ export class CaptureRegionObserverImpl implements CaptureRegionObserver {
       private sender: GatedSender, private handler: WebClientHandlerInterface,
       public observationId: number) {
     this.connectToSource();
+  }
+
+  disconnectFromSource() {
+    if (!this.receiver) {
+      return;
+    }
+    this.sender.sendWhenActive('glicWebClientCaptureRegionUpdate', {
+      reason: enumToClient(CaptureRegionErrorReasonMojo.kUnknown),
+      observationId: this.observationId,
+    });
+    this.destroy();
   }
 
   // Stops requesting updates.
@@ -980,8 +1066,7 @@ export class CaptureRegionObserverImpl implements CaptureRegionObserver {
       // Use `sendWhenActive` to ensure the error is delivered, even if the
       // panel is currently inactive.
       this.sender.sendWhenActive('glicWebClientCaptureRegionUpdate', {
-        reason: (reason ?? CaptureRegionErrorReasonMojo.kUnknown) as number as
-            CaptureRegionErrorReason,
+        reason: enumToClient(reason ?? CaptureRegionErrorReasonMojo.kUnknown),
         observationId: this.observationId,
       });
       this.destroy();
@@ -1040,6 +1125,69 @@ class TabDataHandlerImpl implements TabDataHandlerInterface {
     this.sender.requestNoResponse(
         'glicWebClientTabDataChanged', {
           tabData: tabDataToClient(tabData, extras),
+          observationId: this.observationId,
+        },
+        extras.transfers);
+  }
+}
+
+export class TabFaviconHandlerSet {
+  handlersByObservation: Map<number, TabFaviconHandlerImpl> = new Map();
+
+  constructor(
+      private sender: PostMessageRequestSender,
+      private webClientHandler: WebClientHandlerInterface) {}
+  create(tabId: number, observationId: number): void {
+    const handler = new TabFaviconHandlerImpl(
+        tabId, this.webClientHandler, this.sender, this, observationId);
+    this.handlersByObservation.set(observationId, handler);
+  }
+  remove(observationId: number): void {
+    const handler = this.handlersByObservation.get(observationId);
+    if (!handler) {
+      return;
+    }
+    handler.destroy();
+    this.handlersByObservation.delete(observationId);
+  }
+}
+
+class TabFaviconHandlerImpl implements TabFaviconHandlerInterface {
+  receiver?: TabFaviconHandlerReceiver;
+
+  constructor(
+      tabId: number, handler: WebClientHandlerInterface,
+      private sender: PostMessageRequestSender,
+      handlerSet: TabFaviconHandlerSet, public readonly observationId: number) {
+    this.receiver = new TabFaviconHandlerReceiver(this);
+    this.receiver.onConnectionError.addListener(() => {
+      handlerSet.remove(this.observationId);
+    });
+    handler.subscribeToTabFavicon(
+        tabId, this.receiver.$.bindNewPipeAndPassRemote());
+  }
+  destroy() {
+    if (!this.receiver) {
+      return;
+    }
+    this.receiver.$.close();
+    this.receiver = undefined;
+    this.sender.requestNoResponse(
+        'glicWebClientTabFaviconChanged',
+        {observationId: this.observationId, tabRemoved: true});
+  }
+  onTabFaviconChanged(favicon: any): void {
+    const extras = new ResponseExtras();
+    let faviconImage: RgbaImage|undefined = undefined;
+    if (favicon) {
+      faviconImage = bitmapN32ToRGBAImage(favicon);
+      if (faviconImage) {
+        extras.addTransfer(faviconImage.dataRGBA);
+      }
+    }
+    this.sender.requestNoResponse(
+        'glicWebClientTabFaviconChanged', {
+          favicon: faviconImage,
           observationId: this.observationId,
         },
         extras.transfers);

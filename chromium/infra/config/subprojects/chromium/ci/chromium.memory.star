@@ -173,8 +173,12 @@ linux_memory_builder(
                 # These are very slow on the ASAN trybot for some reason.
                 # crbug.com/1257927
                 swarming = targets.swarming(
+                    hard_timeout_sec = 5400,  # 90 minutes,
                     shards = 70,
                 ),
+            ),
+            "components_browsertests": targets.mixin(
+                ci_only = True,
             ),
             "components_unittests": targets.mixin(
                 # These are very slow on the ASAN trybot for some reason.
@@ -344,7 +348,7 @@ linux_memory_builder(
             "interactive_ui_tests": targets.mixin(
                 # Slow on certain debug builders, see crbug.com/1513713.
                 swarming = targets.swarming(
-                    shards = 10,
+                    shards = 15,
                 ),
             ),
         },
@@ -1411,13 +1415,18 @@ ci.builder(
                     "--test-launcher-jobs=3",
                 ],
                 swarming = targets.swarming(
-                    shards = 2,
+                    shards = 3,
                 ),
             ),
             "unit_tests": targets.mixin(
                 swarming = targets.swarming(
                     # ASAN bot is slow: https://crbug.com/1484550#c4
                     shards = 4,
+                ),
+            ),
+            "updater_tests": targets.mixin(
+                swarming = targets.swarming(
+                    shards = 2,
                 ),
             ),
             "updater_tests_system": targets.mixin(

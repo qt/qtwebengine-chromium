@@ -22,6 +22,7 @@
 #include "base/notreached.h"
 #include "base/scoped_observation.h"
 #include "build/build_config.h"
+#include "components/accessibility_annotator/core/accessibility_query_service.h"
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/crowdsourcing/autofill_crowdsourcing_manager.h"
 #include "components/autofill/core/browser/crowdsourcing/mock_autofill_crowdsourcing_manager.h"
@@ -32,6 +33,7 @@
 #include "components/autofill/core/browser/data_manager/valuables/valuables_data_manager.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_quality/addresses/test_address_normalizer.h"
+#include "components/autofill/core/browser/form_predictions_tracker.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/foundations/autofill_driver_factory.h"
 #include "components/autofill/core/browser/foundations/test_autofill_driver_factory.h"
@@ -46,6 +48,8 @@
 #include "components/autofill/core/browser/logging/text_log_receiver.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/form_interactions_ukm_logger.h"
+#include "components/autofill/core/browser/ml_model/field_classification_model_handler.h"
+#include "components/autofill/core/browser/network/autofill_ai/mock_wallet_pass_access_manager.h"
 #include "components/autofill/core/browser/payments/test_payments_autofill_client.h"
 #include "components/autofill/core/browser/permissions/autofill_ai/autofill_ai_permission_utils.h"
 #include "components/autofill/core/browser/single_field_fillers/autocomplete/mock_autocomplete_history_manager.h"
@@ -63,12 +67,12 @@
 #include "components/autofill/core/common/autofill_debug_features.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_prefs.h"
+#include "components/consent_auditor/fake_consent_auditor.h"
 #include "components/device_reauth/mock_device_authenticator.h"
 #include "components/one_time_tokens/core/browser/one_time_token_service_impl.h"
 #include "components/one_time_tokens/core/browser/sms_otp_backend.h"
 #include "components/optimization_guide/core/feature_registry/feature_registration.h"
 #include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
-#include "components/optimization_guide/machine_learning_tflite_buildflags.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_registry.h"
 #include "components/prefs/pref_service.h"
@@ -83,10 +87,6 @@
 #include "services/network/test/test_url_loader_factory.h"
 #include "url/gurl.h"
 #include "url/origin.h"
-
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
-#include "components/autofill/core/browser/ml_model/field_classification_model_handler.h"
-#endif
 
 namespace autofill {
 
@@ -167,6 +167,10 @@ class TestAutofillClientTemplate : public T {
                : entity_data_manager_.get();
   }
 
+  WalletPassAccessManager* GetWalletPassAccessManager() override {
+    return wallet_pass_access_manager_.get();
+  }
+
   MockAutofillOptimizationGuideDecider* GetAutofillOptimizationGuideDecider()
       const override {
     return mock_autofill_optimization_guide_decider_.get();
@@ -178,6 +182,14 @@ class TestAutofillClientTemplate : public T {
 
   AutofillAiManager* GetAutofillAiManager() override {
     return mock_autofill_ai_delegate_.get();
+  }
+
+  consent_auditor::ConsentAuditor* GetConsentAuditor() override {
+    if (!consent_auditor_) {
+      consent_auditor_ =
+          std::make_unique<consent_auditor::FakeConsentAuditor>();
+    }
+    return consent_auditor_.get();
   }
 
   SingleFieldFillRouter& GetSingleFieldFillRouter() override {
@@ -196,6 +208,11 @@ class TestAutofillClientTemplate : public T {
 
   AutofillPlusAddressDelegate* GetPlusAddressDelegate() override {
     return plus_address_delegate_.get();
+  }
+
+  accessibility_annotator::AccessibilityQueryService*
+  GetAccessibilityQueryService() override {
+    return accessibility_query_service_.get();
   }
 
   IdentityCredentialDelegate* GetIdentityCredentialDelegate() override {
@@ -258,7 +275,6 @@ class TestAutofillClientTemplate : public T {
     return &test_address_normalizer_;
   }
 
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
   FieldClassificationModelHandler* GetAutofillFieldClassificationModelHandler()
       override {
     return autofill_ml_prediction_model_handler_.get();
@@ -278,7 +294,6 @@ class TestAutofillClientTemplate : public T {
       std::unique_ptr<FieldClassificationModelHandler> handler) {
     password_ml_prediction_model_handler_ = std::move(handler);
   }
-#endif
 
   const GURL& GetLastCommittedPrimaryMainFrameURL() const override {
     return last_committed_primary_main_frame_url_;
@@ -385,8 +400,8 @@ class TestAutofillClientTemplate : public T {
     return autofill_profile_enabled_;
   }
 
-  bool IsWalletStorageEnabled() const override {
-    return wallet_storage_enabled_;
+  bool IsWalletPublicPassStorageEnabled() const override {
+    return wallet_public_pass_storage_enabled_;
   }
 
   bool IsAutocompleteEnabled() const override { return true; }
@@ -423,33 +438,14 @@ class TestAutofillClientTemplate : public T {
   }
 
   std::unique_ptr<device_reauth::DeviceAuthenticator> GetDeviceAuthenticator(
-      std::string histogram) override {
+      std::string histogram) const override {
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(IS_CHROMEOS)
-    if (device_authenticator_) {
-      return std::move(device_authenticator_);
-    }
     return std::make_unique<device_reauth::MockDeviceAuthenticator>();
 #else
     return nullptr;
 #endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) ||
         // BUILDFLAG(IS_CHROMEOS)
-  }
-
-  device_reauth::MockDeviceAuthenticator* GetDeviceAuthenticatorPtr() {
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) || \
-    BUILDFLAG(IS_CHROMEOS)
-    return device_authenticator_.get();
-#else
-    return nullptr;
-#endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) ||
-        // BUILDFLAG(IS_CHROMEOS)
-  }
-
-  void SetDeviceAuthenticator(
-      std::unique_ptr<device_reauth::MockDeviceAuthenticator>
-          device_authenticator) {
-    device_authenticator_ = std::move(device_authenticator);
   }
 
 #if BUILDFLAG(IS_IOS)
@@ -493,8 +489,8 @@ class TestAutofillClientTemplate : public T {
     }
   }
 
-  void SetWalletStorageEnabled(bool wallet_storage_enabled) {
-    wallet_storage_enabled_ = wallet_storage_enabled;
+  void SetWalletPublicPassStorageEnabled(bool enabled) {
+    wallet_public_pass_storage_enabled_ = enabled;
   }
 
   // Sets up prefs and identity state to simulate an opted-in AutofillAI user.
@@ -536,6 +532,11 @@ class TestAutofillClientTemplate : public T {
   void set_entity_data_manager(EntityDataManager* entity_data_manager) {
     entity_data_manager_.reset();
     entity_data_manager_non_owning_ = entity_data_manager;
+  }
+
+  void set_wallet_pass_access_manager(
+      std::unique_ptr<WalletPassAccessManager> wallet_pass_access_manager) {
+    wallet_pass_access_manager_ = std::move(wallet_pass_access_manager);
   }
 
   void set_payments_autofill_client(
@@ -623,6 +624,12 @@ class TestAutofillClientTemplate : public T {
     plus_address_delegate_ = std::move(plus_address_delegate);
   }
 
+  void set_accessibility_query_service(
+      std::unique_ptr<accessibility_annotator::AccessibilityQueryService>
+          accessibility_query_service) {
+    accessibility_query_service_ = std::move(accessibility_query_service);
+  }
+
   void set_identity_credential_delegate(
       std::unique_ptr<IdentityCredentialDelegate>
           identity_credential_delegate) {
@@ -673,12 +680,23 @@ class TestAutofillClientTemplate : public T {
     injected_one_time_token_service_ = std::move(one_time_token_service);
   }
 
+  FormPredictionsTracker* GetFormPredictionsTracker() override {
+    return form_predictions_tracker_.get();
+  }
+
+  void set_form_predictions_tracker(
+      std::unique_ptr<FormPredictionsTracker> form_predictions_tracker) {
+    form_predictions_tracker_ = std::move(form_predictions_tracker);
+  }
+
  private:
   ukm::TestAutoSetUkmRecorder test_ukm_recorder_;
   signin::IdentityTestEnvironment identity_test_env_;
   raw_ptr<syncer::SyncService> test_sync_service_ = nullptr;
   std::unique_ptr<OtpPhishGuardDelegate> otp_phish_guard_delegate_;
   std::unique_ptr<AutofillPlusAddressDelegate> plus_address_delegate_;
+  std::unique_ptr<accessibility_annotator::AccessibilityQueryService>
+      accessibility_query_service_;
   std::unique_ptr<IdentityCredentialDelegate> identity_credential_delegate_;
   std::unique_ptr<PasswordManagerDelegate> password_manager_delegate_;
   TestAddressNormalizer test_address_normalizer_;
@@ -692,21 +710,17 @@ class TestAutofillClientTemplate : public T {
               /*strike_database=*/nullptr);
   ::testing::NiceMock<MockAutocompleteHistoryManager>
       mock_autocomplete_history_manager_;
-  std::unique_ptr<device_reauth::MockDeviceAuthenticator>
-      device_authenticator_ = nullptr;
   std::unique_ptr<one_time_tokens::SmsOtpBackend> injected_sms_otp_backend_;
   std::unique_ptr<one_time_tokens::OneTimeTokenService>
       injected_one_time_token_service_;
 
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
   std::unique_ptr<FieldClassificationModelHandler>
       autofill_ml_prediction_model_handler_;
   std::unique_ptr<FieldClassificationModelHandler>
       password_ml_prediction_model_handler_;
-#endif
 
   bool autofill_profile_enabled_ = true;
-  bool wallet_storage_enabled_ = true;
+  bool wallet_public_pass_storage_enabled_ = true;
 
   // NULL by default.
   std::unique_ptr<test::AutofillTestingPrefService> prefs_;
@@ -722,6 +736,8 @@ class TestAutofillClientTemplate : public T {
       payments_autofill_client_;
   std::unique_ptr<SingleFieldFillRouter> single_field_fill_router_;
   std::unique_ptr<FormDataImporter> form_data_importer_;
+  std::unique_ptr<WalletPassAccessManager> wallet_pass_access_manager_;
+  std::unique_ptr<consent_auditor::FakeConsentAuditor> consent_auditor_;
 
   GeoIpCountryCode variation_config_country_code_;
 
@@ -791,6 +807,8 @@ class TestAutofillClientTemplate : public T {
 
   std::unique_ptr<AutofillCrowdsourcingManager> crowdsourcing_manager_;
   std::unique_ptr<TestVotesUploader> votes_uploader_;
+
+  std::unique_ptr<FormPredictionsTracker> form_predictions_tracker_;
 
   base::WeakPtrFactory<TestAutofillClientTemplate> weak_ptr_factory_{this};
 };

@@ -208,13 +208,13 @@ export class VoiceSearchOverlayElement extends CrLitElement {
 
   protected accessor interimResult_: string = '';
   protected accessor finalResult_: string = '';
-  private accessor state_: State = State.UNINITIALIZED;
   protected accessor helpUrl_: string =
       `https://support.google.com/chrome/?p=ui_voice_search&hl=${
           window.navigator.language}`;
   protected accessor micVolumeLevel_: number = 0;
   protected accessor micVolumeDuration_: number =
       VOLUME_ANIMATION_DURATION_MIN_MS;
+  private accessor state_: State = State.UNINITIALIZED;
 
   private voiceRecognition_: SpeechRecognition;
   private error_: Error|null = null;
@@ -402,6 +402,7 @@ export class VoiceSearchOverlayElement extends CrLitElement {
     searchParams.append('q', this.finalResult_);
     // Add a parameter to indicate that this request is a voice search.
     searchParams.append('gs_ivs', '1');
+    searchParams.append('sourceid', 'chrome');
     // Build the query URL.
     const queryUrl =
         new URL('/search', loadTimeData.getString('googleBaseUrl'));

@@ -12,6 +12,12 @@ export function getHtml(this: ManagementUiElement) {
 <cr-toolbar page-name="$i18n{toolbarTitle}" role="banner" autofocus
     @search-changed="${this.onSearchChanged_}" clear-label="$i18n{clearSearch}"
     search-prompt="$i18n{searchPrompt}">
+  <if expr="is_android">
+    <!-- Android doesn't have full theme support; workaround for broken logo. -->
+    <picture slot="product-logo">
+      <img srcset="images/product_logo.png" role="presentation">
+    </picture>
+  </if>
 </cr-toolbar>
 <main id="mainContent" class="cr-scrollable">
   <div class="cr-scrollable-top-shadow"></div>
@@ -19,7 +25,7 @@ export function getHtml(this: ManagementUiElement) {
     <div class="card">
       <section ?hidden="${!this.managed_}" class="page-subtitle">
         <cr-icon-button class="icon-arrow-back" id="closeButton"
-            @click="${this.onTapBack_}" aria-label="$i18n{backButton}">
+            @click="${this.onBackClick_}" aria-label="$i18n{backButton}">
         </cr-icon-button>
         <h2 class="cr-title-text">${this.subtitle_}</h2>
       </section>
@@ -199,7 +205,7 @@ export function getHtml(this: ManagementUiElement) {
               <tr>
                 <td class="extension-name">
                   <div .title="${item.name}" role="presentation">
-                    <img .src="${item.icon}" alt="" aria-hidden="true">
+                    <img .src="${item.icon || ''}" alt="" aria-hidden="true">
                     <span>${item.name}</span>
                   </div>
                 </td>
@@ -243,7 +249,7 @@ export function getHtml(this: ManagementUiElement) {
               <tr>
                 <td class="application-name">
                   <div .title="${item.name}" role="presentation">
-                    <img .src="${item.icon}" alt="" aria-hidden="true">
+                    <img .src="${item.icon || ''}" alt="" aria-hidden="true">
                     <span>${item.name}</span>
                   </div>
                 </td>

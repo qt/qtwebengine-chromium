@@ -4,6 +4,8 @@
 
 import {html} from '//resources/lit/v3_0/lit.rollup.js';
 
+import type {ServiceInterface} from '../service.js';
+
 import type {ExtensionsActivityLogElement} from './activity_log.js';
 
 export function getHtml(this: ExtensionsActivityLogElement) {
@@ -22,19 +24,19 @@ export function getHtml(this: ExtensionsActivityLogElement) {
       </div>
     </div>
     <cr-tabs id="tabs" selected="${this.selectedSubpage_}"
-        @selected-changed="${this.onTabsChangedSelectedSubpage_}"
+        @selected-changed="${this.onTabsSelectedChanged_}"
         .tabNames="${this.tabNames_}">
     </cr-tabs>
     <cr-page-selector selected="${this.selectedSubpage_}">
       <div>
         ${this.isHistoryTabSelected_() ? html`
           <activity-log-history extension-id="${this.extensionInfo.id}"
-              .delegate="${this.delegate}">
+              .delegate="${this.delegate as ServiceInterface}">
           </activity-log-history>` : ''}
       </div>
       <div>
         <activity-log-stream extension-id="${this.extensionInfo.id}"
-            .delegate="${this.delegate}"
+            .delegate="${this.delegate as ServiceInterface}"
             ?hidden="${!this.isStreamTabSelected_()}">
         </activity-log-stream>
       </div>

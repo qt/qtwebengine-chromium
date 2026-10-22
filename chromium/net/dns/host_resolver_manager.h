@@ -312,8 +312,9 @@ class NET_EXPORT HostResolverManager
     CONFIG_PRESET = 7,
     NAT64 = 8,
     HOSTS = 9,
+    DNS_PLATFORM = 10,
 
-    kMaxValue = HOSTS,
+    kMaxValue = DNS_PLATFORM,
   };
 
   // Returns true if the task is local, synchronous, and instantaneous.
@@ -602,7 +603,7 @@ class NET_EXPORT HostResolverManager
   // For per-context cache invalidation notifications.
   base::ObserverList<ResolveContext,
                      true /* check_empty */,
-                     false /* allow_reentrancy */>
+                     base::ObserverListReentrancyPolicy::kDisallowReentrancy>
       registered_contexts_;
 
   // True while invalidating caches.

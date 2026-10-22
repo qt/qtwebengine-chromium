@@ -27,6 +27,11 @@ void SDLEventLoopProcessor::RegisterForKeyboardEvent(
   keyboard_callbacks_.push_back(std::move(cb));
 }
 
+void SDLEventLoopProcessor::RegisterForMouseButtonEvent(
+    SDLEventLoopProcessor::MouseButtonEventCallback cb) {
+  mouse_button_callbacks_.push_back(std::move(cb));
+}
+
 void SDLEventLoopProcessor::ProcessPendingEvents() {
   // Process all pending events.
   SDL_Event event;
@@ -39,6 +44,11 @@ void SDLEventLoopProcessor::ProcessPendingEvents() {
     } else if (event.type == SDL_KEYUP) {
       for (auto& cb : keyboard_callbacks_) {
         cb(event.key);
+      }
+    } else if (event.type == SDL_MOUSEBUTTONDOWN ||
+               event.type == SDL_MOUSEBUTTONUP) {
+      for (auto& cb : mouse_button_callbacks_) {
+        cb(event.button);
       }
     }
   }

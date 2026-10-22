@@ -23,6 +23,7 @@ use crate::decoder::item::Item;
 use crate::decoder::GridImageHelper;
 use crate::image::Image;
 use crate::image::YuvRange;
+use crate::internal_utils::u32_from_usize;
 use crate::utils::pixels::*;
 use crate::*;
 
@@ -221,7 +222,6 @@ impl Dav1d {
                     image.height,
                     image.row_bytes[3],
                 )?);
-                image.image_owns_planes[3] = false;
                 // # Safety: seq_hdr is popualated by dav1d and is guaranteed to be valid.
                 let seq_hdr = unsafe { &(*dav1d_picture.seq_hdr) };
                 image.yuv_range =
@@ -255,10 +255,9 @@ impl Dav1d {
                     image.planes[plane] = Some(Pixels::from_raw_pointer(
                         dav1d_picture.data[plane] as *mut u8,
                         image.depth as u32,
-                        image.height,
+                        u32_from_usize(image.height(plane.into()))?,
                         image.row_bytes[plane],
                     )?);
-                    image.image_owns_planes[plane] = false;
                 }
                 if image.yuv_format == PixelFormat::Yuv400 {
                     // Clear left over chroma planes from previous frames.

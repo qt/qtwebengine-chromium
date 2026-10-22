@@ -46,6 +46,7 @@ namespace tint::core::ir::transform {
 const core::ir::Capabilities kSubstituteOverridesCapabilities{
     core::ir::Capability::kAllowOverrides,
     core::ir::Capability::kAllow8BitIntegers,
+    core::ir::Capability::kAllow16BitIntegers,
 };
 
 /// Substitute overrides to their constant values.

@@ -643,7 +643,7 @@ void LineBreaker::ComputeBaseDirection() {
     if (!current_.text_offset) {
       return;
     }
-    start_offset = text.ReverseFind(uchar::kLineFeed, current_.text_offset - 1);
+    start_offset = text.rfind(uchar::kLineFeed, current_.text_offset - 1);
     if (start_offset == kNotFound)
       return;
     ++start_offset;
@@ -804,6 +804,8 @@ void LineBreaker::PrepareNextLine(LineInfo* line_info) {
 
   line_info->SetStart(current_);
   line_info->SetIsFirstFormattedLine(is_first_formatted_line_);
+  line_info->SetIsStartOfParagraph(current_.IsZero() ||
+                                   previous_line_had_forced_break_);
   line_info->SetLineStyle(node_, *items_data_, use_first_line_style_);
 
   DCHECK(!line_info->TextIndent());

@@ -1,6 +1,15 @@
+# Copyright 2025 Google LLC
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Specializations for int8 arm dot kernel generators."""
 
+# pylint: disable=missing-class-docstring
+# pylint: disable=invalid-name
+
 from ynnpack.kernels.dot.generator.arm import arm_neon
+from ynnpack.kernels.dot.generator.dot_base import generate_dot_kernels
 
 
 class arm_int8_int8_int32(arm_neon):
@@ -55,7 +64,7 @@ class arm_neondot_int8_int8_int32(arm_int8_int8_int32):
 
 namespace {
 
-YNN_INTRINSIC int32_t unaligned_load_int8x4(const void* ptr) {
+YNN_INTRINSIC int32_t unaligned_load_int8x4(const int8_t* ptr) {
     int32_t value;
     memcpy(&value, ptr, sizeof(int32_t));
     return value;
@@ -70,44 +79,31 @@ YNN_INTRINSIC int32_t unaligned_load_int8x4(const void* ptr) {
     if nk == 8:
       return f"int8x8_t a_{i}_{k} = vld1_s8({self.a_ptr(i, k)});\n"
     else:
-      return f"int8x8_t a_{i}_{k} = vreinterpret_s8_s32(vdup_n_s32(unaligned_load_int8x4({self.a_ptr(i, k)})));\n"
+      a_x4 = f"unaligned_load_int8x4({self.a_ptr(i, k)})"
+      return f"int8x8_t a_{i}_{k} = vreinterpret_s8_s32(vdup_n_s32({a_x4}));\n"
 
   def load_b_tile(self, k, j):
     return f"int8x16_t b_{k}_{j} = vld1q_s8({self.b_ptr(k, j)});\n"
 
   def product(self, i, j, k):
     # TODO: arm64 has vdtoq_laneq_s32, so we can unroll by 16 instead of 8.
-    return (
-        f"c_{i}_{j} = vdotq_lane_s32(c_{i}_{j}, b_{k}_{j}, a_{i}_{(k//8)*8},"
-        f" {(k//4)%2});\n"
-    )
+    c_ij = f"c_{i}_{j}"
+    b_kj = f"b_{k}_{j}"
+    return f"""
+{c_ij} = vdotq_lane_s32({c_ij}, {b_kj}, a_{i}_{(k//8)*8}, {(k//4)%2});
+"""
 
 
-class arm_neoni8mm_int8_int8_int32(arm_int8_int8_int32):
+class arm64_neoni8mm_int8_int8_int32(arm_int8_int8_int32):
   def __init__(self):
     super().__init__("neoni8mm", (2, 4, 8))
     self.flags += ["dot_flag::transpose_a"]
-
-  def header(self):
-    return "#include <tuple>\n" + super().header() + """
-
-namespace {
-
-YNN_INTRINSIC std::tuple<int32x4_t, int32x4_t> transpose2x2_x64(int32x4_t x0, int32x4_t x1) {
-  return {vcombine_s32(vget_low_s32(x0), vget_low_s32(x1)),
-          vcombine_s32(vget_high_s32(x0), vget_high_s32(x1))};
-}
-
-}  // namespace
-"""
 
   # This is one of the trickier generators. mmla is a 2x8*8x2 matrix multiply.
   # We handle it in 2x4 tiles, with 2 accumulator registers per tile.
 
   def load_a_tile(self, i, k):
-    return f"""
-const int8x16_t a_{i}_{k} = vld1q_s8({self.a_ptr(i, k)});
-"""
+    return f"const int8x16_t a_{i}_{k} = vld1q_s8({self.a_ptr(i, k)});\n"
 
   def load_b_tile(self, k, j):
     return f"""
@@ -141,7 +137,56 @@ vst1q_s32({self.c_out_ptr(i+0, j)}, c_{i+0}_{j});
 """
 
   def finalize_c_tile(self, i, j):
+    c0 = f"c_{i}_{j+0}"
+    c2 = f"c_{i}_{j+2}"
     return f"""
-int32x4_t c_{i+1}_{j+0};
-std::tie(c_{i}_{j+0}, c_{i+1}_{j+0}) = transpose2x2_x64(c_{i}_{j+0}, c_{i}_{j+2});
+int32x4_t c_{i+1}_{j} = vcombine_s32(vget_high_s32({c0}), vget_high_s32({c2}));
+c_{i+0}_{j} = vcombine_s32(vget_low_s32({c0}), vget_low_s32({c2}));
 """
+
+
+generate_dot_kernels(
+    arm_neon_int8_int8_int32(),
+    [
+        (1, 16, 8),
+        (2, 16, 8),
+        (3, 16, 8),
+        (4, 16, 8),
+        (2, 8, 8),
+        (3, 8, 8),
+        (4, 8, 8),
+        (5, 8, 8),
+        (6, 8, 8),
+        (8, 8, 8),
+        (8, 4, 8),
+    ],
+)
+
+generate_dot_kernels(
+    arm_neondot_int8_int8_int32(),
+    [
+        (1, 32, 8),
+        (2, 32, 8),
+        (3, 32, 8),
+        (2, 16, 8),
+        (3, 16, 8),
+        (4, 16, 8),
+        (5, 16, 8),
+        (8, 8, 8),
+        (10, 8, 8),
+        (8, 4, 8),
+    ],
+)
+
+generate_dot_kernels(
+    arm64_neoni8mm_int8_int8_int32(),
+    [
+        (2, 32, 8),
+        (4, 16, 8),
+        (6, 16, 8),
+        (6, 8, 8),
+        (8, 8, 8),
+        (10, 8, 8),
+        (16, 4, 8),
+    ],
+)

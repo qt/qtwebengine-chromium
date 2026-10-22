@@ -44,7 +44,7 @@ class WebContents;
 //
 // See the following document and bug for more context:
 // https://docs.google.com/document/d/13VxFdLJbMwxHrvnpDm8RXnU41W2ZlcP0mdWWe9zXQT8/edit
-// https://crbug.com/437277
+// https://crbug.com/40395913
 class PushMessagingNotificationManager {
  public:
   using EnforceRequirementsCallback =
@@ -114,13 +114,13 @@ class PushMessagingNotificationManager {
 
   void LogSilentPushEvent(SilentPushEvent event);
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   // For extensions builds, skip userVisibleOnly requirement for worker-based
   // extensions that set it to false.
   bool ShouldExtensionsBypassUserVisibleOnlyRequirement(
       const GURL& origin,
       bool requested_user_visible_only);
-#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 
   // Weak. This manager is owned by a keyed service on this profile.
   raw_ptr<Profile> profile_;

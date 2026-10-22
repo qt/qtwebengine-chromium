@@ -101,7 +101,7 @@ HeapVector<Member<Node>> CollectFlattenedAssignedNodes(
       if (!child.IsSlotable())
         continue;
       if (auto* child_slot = ToHTMLSlotElementIfSupportsAssignmentOrNull(child))
-        nodes.AppendVector(CollectFlattenedAssignedNodes(*child_slot));
+        nodes.append_range(CollectFlattenedAssignedNodes(*child_slot));
       else
         nodes.push_back(child);
     }
@@ -110,7 +110,7 @@ HeapVector<Member<Node>> CollectFlattenedAssignedNodes(
       DCHECK(node->IsSlotable());
       if (auto* assigned_node_slot =
               ToHTMLSlotElementIfSupportsAssignmentOrNull(*node))
-        nodes.AppendVector(CollectFlattenedAssignedNodes(*assigned_node_slot));
+        nodes.append_range(CollectFlattenedAssignedNodes(*assigned_node_slot));
       else
         nodes.push_back(node);
     }
@@ -365,7 +365,8 @@ void HTMLSlotElement::AttachLayoutTreeForSlotChildren(AttachContext& context) {
 void HTMLSlotElement::DetachLayoutTree(bool performing_reattach) {
   if (SupportsAssignment()) {
     auto* host = OwnerShadowHost();
-    const HeapVector<Member<Node>>& flat_tree_children = assigned_nodes_;
+    // Defensive copy to prevent UAF from sync recalc. See crbug.com/497830330.
+    const HeapVector<Member<Node>> flat_tree_children = assigned_nodes_;
     for (auto& node : flat_tree_children) {
       // Don't detach the assigned node if the node is no longer a child of the
       // host.

@@ -26,11 +26,11 @@ namespace blink {
 namespace {
 
 bool IsValidName(const String& name) {
-  if (!name.IsLowerASCII()) {
+  if (!name.ContainsNoAsciiUpper()) {
     return false;
   }
 
-  if (!name.ContainsOnlyASCIIOrEmpty()) {
+  if (!name.ContainsOnlyAsciiOrEmpty()) {
     return false;
   }
 
@@ -41,7 +41,7 @@ bool IsValidName(const String& name) {
   // | name | must only contain lowercase latin letters, digits 0-9, or special
   // characters '-' & '_' in the middle of the name, but not at the beginning.
   for (wtf_size_t i = 0; i < name.length(); i++) {
-    if (!IsASCIIAlphanumeric(name[i]) &&
+    if (!IsAsciiAlphanumeric(name[i]) &&
         (i == 0 || (name[i] != '_' && name[i] != '-'))) {
       return false;
     }

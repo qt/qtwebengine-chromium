@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 import {loadTimeData} from '//resources/js/load_time_data.js';
+import {isFullWebView} from '/shared/web_view_type.js';
 import {assert, assertNotReachedCase} from 'chrome://resources/js/assert.js';
 import {getRequiredElement} from 'chrome://resources/js/util.js';
 
 import type {BrowserProxyImpl} from './browser_proxy.js';
+import type {ZoomAction} from './glic.mojom-webui.js';
 import {PanelStateKind, PrepareForClientResult, ProfileReadyState, WebUiState} from './glic.mojom-webui.js';
 import type {ApiHostEmbedder} from './glic_api_impl/host/glic_api_host.js';
 import {WebClientState} from './glic_api_impl/host/glic_api_host.js';
@@ -215,7 +217,7 @@ export class GlicAppController implements WebviewDelegate, ApiHostEmbedder {
       if (this.enteredUnresponsiveTimestampMs !== undefined) {
         const unresponsiveDuration =
             Date.now() - this.enteredUnresponsiveTimestampMs;
-        chrome.metricsPrivate.recordMediumTime(
+        chrome.histograms.recordMediumTime(
             'Glic.Host.WebClientUnresponsiveState.Duration',
             unresponsiveDuration);
         this.enteredUnresponsiveTimestampMs = undefined;
@@ -226,7 +228,7 @@ export class GlicAppController implements WebviewDelegate, ApiHostEmbedder {
     }
 
     // Record unresponsive state detections and transitions.
-    chrome.metricsPrivate.recordEnumerationValue(
+    chrome.histograms.recordEnumerationValue(
         'Glic.Host.WebClientUnresponsiveState', newState,
         WebClientUnresponsiveState.MAX_VALUE + 1);
   }
@@ -252,6 +254,7 @@ export class GlicAppController implements WebviewDelegate, ApiHostEmbedder {
       case 'regular':
         $.guestPanel.classList.toggle('show-header', false);
         if (this.state === WebUiState.kReady ||
+            this.state === WebUiState.kWarmed ||
             this.state === WebUiState.kGuestError) {
           this.setState(WebUiState.kBeginLoad);
         }
@@ -348,6 +351,15 @@ export class GlicAppController implements WebviewDelegate, ApiHostEmbedder {
       },
     ],
     [
+      WebUiState.kWarmed,
+      {
+        onEnter: () => {
+          $.guestPanel.classList.toggle('show-header', false);
+          this.showPanel('guestPanel');
+        },
+      },
+    ],
+    [
       WebUiState.kReady,
       {
         onEnter: () => {
@@ -424,7 +436,7 @@ export class GlicAppController implements WebviewDelegate, ApiHostEmbedder {
       return;
     }
 
-    chrome.metricsPrivate.recordMediumTime(
+    chrome.histograms.recordMediumTime(
         'Glic.Host.LoadingStageDuration.' +
             LoadingStage[this.getLoadingStage()],
         Math.floor(performance.now() - this.loadingStageStartTimestampMs!));
@@ -539,7 +551,7 @@ export class GlicAppController implements WebviewDelegate, ApiHostEmbedder {
       }
 
       if (this.state !== WebUiState.kReady) {
-        chrome.metricsPrivate.recordEnumerationValue(
+        chrome.histograms.recordEnumerationValue(
             'Glic.Host.LoadingTimedOut', this.getLoadingStage(),
             LoadingStage.MAX_VALUE + 1);
         this.webview?.onLoadTimeOut();
@@ -558,6 +570,14 @@ export class GlicAppController implements WebviewDelegate, ApiHostEmbedder {
 
     const panelStateKindSection = getRequiredElement('localPanels');
     panelStateKindSection.classList.toggle('hidden', id === 'guestPanel');
+
+    // Focus the webview when the guest panel is shown.
+    // b/475260887: webview.focus() won't focus the client page if the
+    // <webview> element is invisible (due to an ancestor element having
+    // display: none or HTML hidden attribute).
+    if (id === 'guestPanel') {
+      this.webview?.focus();
+    }
 
     if (loadTimeData.getBoolean('glicWebContentsWarming')) {
       // These resizes really aren't needed at all for multi-instance, but in
@@ -653,12 +673,55 @@ export class GlicAppController implements WebviewDelegate, ApiHostEmbedder {
   // when triggered from the browser.
   webClientReady(): void {
     if (this.state === WebUiState.kBeginLoad ||
-        this.state === WebUiState.kFinishLoading) {
+        this.state === WebUiState.kFinishLoading ||
+        this.state === WebUiState.kWarmed) {
+      this.cancelTimeout();
       this.trackLoadingStageEnd();
       this.setState(WebUiState.kReady);
     } else if (this.state === WebUiState.kShowLoading) {
+      this.cancelTimeout();
       this.setState(WebUiState.kHoldLoading);
     }
+  }
+
+  getZoom(): Promise<number> {
+    return new Promise((resolve) => {
+      if (!this.webview || !isFullWebView(this.webview.webview)) {
+        resolve(1.0);
+        return;
+      }
+      // Cast to any because the WebView type definition is missing `getZoom`
+      // and `setZoom`. We've already checked that this.webview is a full
+      // WebView so this should be safe.
+      const webview = this.webview.webview as any;
+      webview.getZoom((currentZoom: number) => {
+        resolve(currentZoom);
+      });
+    });
+  }
+
+  webClientWarmed(): void {
+    if (this.state === WebUiState.kBeginLoad ||
+        this.state === WebUiState.kFinishLoading ||
+        this.state === WebUiState.kShowLoading) {
+      this.cancelTimeout();
+      this.trackLoadingStageEnd();
+      this.setState(WebUiState.kWarmed);
+      if (this.panelStateKind !== PanelStateKind.kHidden) {
+        this.startWarmedTimeout();
+      }
+    }
+  }
+
+  private startWarmedTimeout(): void {
+    if (this.loadingTimer) {
+      return;
+    }
+    this.loadingTimer = setTimeout(() => {
+      if (this.state === WebUiState.kWarmed) {
+        this.setState(WebUiState.kError);
+      }
+    }, kMaxWaitTimeMs);
   }
 
   webClientStateChanged(state: WebClientState): void {
@@ -745,11 +808,20 @@ export class GlicAppController implements WebviewDelegate, ApiHostEmbedder {
     }
     this.panelStateKind = panelStateKind;
 
+    if (this.panelStateKind !== PanelStateKind.kHidden &&
+        this.state === WebUiState.kWarmed) {
+      this.startWarmedTimeout();
+    }
+
     const panelStateKindSection = getRequiredElement('localPanels');
     panelStateKindSection.classList.toggle(
         'sidePanel', this.panelStateKind === PanelStateKind.kAttached);
     panelStateKindSection.classList.toggle(
         'floating', this.panelStateKind === PanelStateKind.kDetached);
+  }
+
+  zoom(zoomAction: ZoomAction) {
+    this.webview?.zoom(zoomAction);
   }
 
   // Called before the WebUI is shown. If we're in an error state, automatically

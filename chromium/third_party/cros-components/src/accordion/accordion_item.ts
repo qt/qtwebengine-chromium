@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import '../icon_button/icon-button';
-import '../tooltip/tooltip';
+import '../icon_button/icon-button.js';
+import '../tooltip/tooltip.js';
 import '@material/web/focus/md-focus-ring.js';
 
 import {css, CSSResultGroup, html, LitElement, nothing, PropertyValues} from 'lit';
-import {ClassInfo, classMap} from 'lit/directives/class-map';
-import {StyleInfo, styleMap} from 'lit/directives/style-map';
+import {ClassInfo, classMap} from 'lit/directives/class-map.js';
+import {StyleInfo, styleMap} from 'lit/directives/style-map.js';
 
 /**
  * Fired when an accordion item is expanded.

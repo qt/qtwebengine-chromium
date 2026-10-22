@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 /* eslint-disable @devtools/no-imperative-dom-api */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -9,6 +10,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as uiI18n from '../../ui/i18n/i18n.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as PanelsCommon from '../common/common.js';
 
@@ -315,14 +317,14 @@ export class AXNodePropertyTreeElement extends UI.TreeOutline.TreeElement {
   appendRelatedNode(relatedNode: Protocol.Accessibility.AXRelatedNode, _index: number): void {
     const deferredNode =
         new SDK.DOMModel.DeferredDOMNode(this.axNode.accessibilityModel().target(), relatedNode.backendDOMNodeId);
-    const nodeTreeElement = new AXRelatedNodeSourceTreeElement({deferredNode, idref: undefined}, relatedNode);
+    const nodeTreeElement = new AXRelatedNodeSourceTreeElement({deferredNode}, relatedNode);
     this.appendChild(nodeTreeElement);
   }
 
   appendRelatedNodeInline(relatedNode: Protocol.Accessibility.AXRelatedNode): void {
     const deferredNode =
         new SDK.DOMModel.DeferredDOMNode(this.axNode.accessibilityModel().target(), relatedNode.backendDOMNodeId);
-    const linkedNode = new AXRelatedNodeElement({deferredNode, idref: undefined});
+    const linkedNode = new AXRelatedNodeElement({deferredNode});
     this.listItemElement.appendChild(linkedNode.render());
   }
 
@@ -440,9 +442,9 @@ export class AXValueSourceTreeElement extends AXNodePropertyTreeElement {
       if (matchingNode) {
         this.appendRelatedNodeWithIdref(matchingNode, idref);
       } else if (idrefs.length === 1) {
-        this.listItemElement.appendChild(new AXRelatedNodeElement({deferredNode: undefined, idref}).render());
+        this.listItemElement.appendChild(new AXRelatedNodeElement({idref}).render());
       } else {
-        this.appendChild(new AXRelatedNodeSourceTreeElement({deferredNode: undefined, idref}));
+        this.appendChild(new AXRelatedNodeSourceTreeElement({idref}));
       }
     }
   }
@@ -591,8 +593,11 @@ export class AXRelatedNodeElement {
         if (!node) {
           return;
         }
-        valueElement.appendChild(PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(
-            node, {tooltip: undefined, preventKeyboardFocus: true}));
+        render(
+            PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(node, {
+              preventKeyboardFocus: true,
+            }),
+            valueElement);
       });
     } else if (this.idref) {
       element.classList.add('invalid');

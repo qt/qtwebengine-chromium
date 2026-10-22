@@ -132,9 +132,10 @@ StoragePartition* BrowserContext::GetStoragePartition(
   if (site_instance)
     DCHECK_EQ(this, site_instance->GetBrowserContext());
 
-  auto partition_config = site_instance
-                              ? site_instance->GetStoragePartitionConfig()
-                              : StoragePartitionConfig::CreateDefault(this);
+  auto partition_config =
+      site_instance
+          ? site_instance->GetSecurityPrincipal().GetStoragePartitionConfig()
+          : StoragePartitionConfig::CreateDefault(this);
   return GetStoragePartition(partition_config, can_create);
 }
 
@@ -199,6 +200,7 @@ BrowserContext::StartBrowserPrefetchRequest(
     bool javascript_enabled,
     std::optional<net::HttpNoVarySearchData> no_vary_search_hint,
     std::optional<PrefetchPriority> priority,
+    scoped_refptr<PreloadPipelineInfo> preload_pipeline_info,
     const net::HttpRequestHeaders& additional_headers,
     std::unique_ptr<PrefetchRequestStatusListener> request_status_listener,
     base::TimeDelta ttl,
@@ -223,7 +225,7 @@ BrowserContext::StartBrowserPrefetchRequest(
       this, url, prefetch_type, embedder_histogram_suffix,
       blink::mojom::Referrer(), javascript_enabled,
       /*referring_origin=*/std::nullopt, std::move(no_vary_search_hint),
-      std::move(priority),
+      std::move(priority), std::move(preload_pipeline_info),
       /*attempt=*/nullptr, additional_headers,
       std::move(request_status_listener), ttl, should_append_variations_header,
       should_disable_block_until_head_timeout, should_bypass_http_cache);
@@ -242,8 +244,8 @@ void BrowserContext::UpdatePrefetchServiceDelegateAcceptLanguageHeader(
 }
 
 bool BrowserContext::IsPrefetchDuplicate(
-    GURL& url,
-    std::optional<net::HttpNoVarySearchData> no_vary_search_hint) {
+    const GURL& url,
+    const std::optional<net::HttpNoVarySearchData>& no_vary_search_hint) {
   PrefetchService* prefetch_service =
       BrowserContextImpl::From(this)->GetPrefetchService();
   // `CHECK` is used here because this method should not be called unless there
@@ -360,7 +362,7 @@ bool BrowserContext::ShutdownStarted() {
   return impl()->ShutdownStarted();
 }
 
-const std::string& BrowserContext::UniqueId() {
+const std::string& BrowserContext::UniqueId() const {
   return impl()->UniqueId();
 }
 

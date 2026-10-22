@@ -82,6 +82,7 @@ class RendererStartupHelperInterceptor : public RendererStartupHelper,
     activated_extensions_.push_back(extension_id);
   }
   void SetActivityLoggingEnabled(bool enabled) override {}
+  void SetPolicyActivityLoggingEnabled(bool enabled) override {}
 
   void LoadExtensions(
       std::vector<mojom::ExtensionLoadedParamsPtr> loaded_extensions) override {
@@ -637,7 +638,7 @@ TEST_F(RendererStartupHelperTest, SkipInitializationOnLaunchWithFeature) {
   auto new_process =
       std::make_unique<content::MockRenderProcessHost>(browser_context());
 
-  new_process->SetIsForInitialWebUI(true);
+  new_process->SetIsForTopChromeWebUI(true);
 
   // 1. Simulate process launch.
   helper_->OnRenderProcessLaunched(new_process.get());

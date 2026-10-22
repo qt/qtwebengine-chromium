@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "base/functional/bind.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/task_runner.h"
@@ -604,7 +603,7 @@ void AppWindow::SetAppIconUrl(const GURL& url) {
   app_icon_url_ = url;
 
   // Don't start custom app icon loading in the case window is not ready yet.
-  // see crbug.com/788531.
+  // see crbug.com/41357416.
   if (!window_ready_)
     return;
 
@@ -643,7 +642,7 @@ void AppWindow::SetFullscreen(FullscreenType type, bool enable) {
 #if !BUILDFLAG(IS_MAC)
     // Do not enter fullscreen mode if disallowed by pref.
     // TODO(bartfab): Add a test once it becomes possible to simulate a user
-    // gesture. http://crbug.com/174178
+    // gesture. http://crbug.com/40300937
     if (type != FULLSCREEN_TYPE_FORCED) {
       PrefService* prefs =
           ExtensionsBrowserClient::Get()->GetPrefServiceForContext(

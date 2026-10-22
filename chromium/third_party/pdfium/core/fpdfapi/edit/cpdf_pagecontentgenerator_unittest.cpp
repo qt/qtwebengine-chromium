@@ -304,7 +304,7 @@ TEST_F(CPDFPageContentGeneratorTest, ProcessStandardText) {
   // Color RGB values used are integers divided by 255.
   const ByteString kCompareString2 = " gs BT 1 0 0 1 100 100 Tm /";
   const ByteString kCompareString3 =
-      " 10 Tf 0 Tr <48656C6C6F20576F726C64> Tj ET Q\n";
+      " 10 Tf 0 Tr [<48656C6C6F20576F726C64>] TJ ET Q\n";
   EXPECT_LT(kCompareString1.GetLength() + kCompareString2.GetLength() +
                 kCompareString3.GetLength(),
             text_string.GetLength());
@@ -383,7 +383,7 @@ TEST_F(CPDFPageContentGeneratorTest, ProcessText) {
   // q and Q must be outside the BT .. ET operations
   ByteString compare_string1 = "q 0 0 5 4 re W* n BT /";
   ByteString compare_string2 =
-      " 15.5 Tf 4 Tr <4920616D20696E646972656374> Tj ET Q\n";
+      " 15.5 Tf 4 Tr [<4920616D20696E646972656374>] TJ ET Q\n";
   EXPECT_LT(compare_string1.GetLength() + compare_string2.GetLength(),
             text_string.GetLength());
   EXPECT_EQ(compare_string1, text_string.First(compare_string1.GetLength()));

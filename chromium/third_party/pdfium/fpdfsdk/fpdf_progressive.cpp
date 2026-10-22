@@ -13,6 +13,7 @@
 #include "core/fpdfapi/render/cpdf_pagerendercontext.h"
 #include "core/fpdfapi/render/cpdf_progressiverenderer.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/cpdfsdk_pauseadapter.h"
@@ -70,7 +71,7 @@ FPDF_RenderPageBitmapWithColorScheme_Start(FPDF_BITMAP bitmap,
   context->return_premultiplied_ = pBitmap->IsPremultiplied();
 
 #if defined(PDF_USE_SKIA)
-  if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+  if (CFX_GEModule::Get()->UseSkiaRenderer()) {
     pBitmap->PreMultiply();
   }
 #endif
@@ -86,7 +87,7 @@ FPDF_RenderPageBitmapWithColorScheme_Start(FPDF_BITMAP bitmap,
 
   if (!context->renderer_) {
 #if defined(PDF_USE_SKIA)
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer() &&
+    if (CFX_GEModule::Get()->UseSkiaRenderer() &&
         !context->return_premultiplied_) {
       pBitmap->UnPreMultiply();
     }
@@ -106,7 +107,7 @@ FPDF_RenderPageBitmapWithColorScheme_Start(FPDF_BITMAP bitmap,
   }
 
 #if defined(PDF_USE_SKIA)
-  if (CFX_DefaultRenderDevice::UseSkiaRenderer() &&
+  if (CFX_GEModule::Get()->UseSkiaRenderer() &&
       !context->return_premultiplied_) {
     pBitmap->UnPreMultiply();
   }
@@ -154,7 +155,7 @@ FPDF_EXPORT int FPDF_CALLCONV FPDF_RenderPage_Continue(FPDF_PAGE page,
   }
 
 #if defined(PDF_USE_SKIA)
-  if (CFX_DefaultRenderDevice::UseSkiaRenderer() &&
+  if (CFX_GEModule::Get()->UseSkiaRenderer() &&
       !context->return_premultiplied_) {
     context->device_->GetBitmap()->UnPreMultiply();
   }

@@ -84,6 +84,8 @@ cc_library(
         "bit_cast.h",
         "fp16.h",
         "half.h",
+        "ref_count.h",
+        "span.h",
         "to_string.h",
         "type.h",
     ],
@@ -105,6 +107,12 @@ cc_library(
             "YNN_ARCH_ARM",
             "YNN_ARCH_ARM32",
         ],
+        "//ynnpack:hexagon": [
+            "YNN_ARCH_HEXAGON",
+        ],
+        "//ynnpack:wasm": [
+            "YNN_ARCH_WASM",
+        ],
         "//conditions:default": [],
     }),
     local_defines = select({
@@ -114,6 +122,7 @@ cc_library(
     deps = [
         ":log",
         "//ynnpack:ynnpack_h",
+        "@slinky//slinky/base",
     ] + select({
         "//ynnpack:ynn_enable_cpuinfo": ["@cpuinfo"],
         "//conditions:default": [],

@@ -46,7 +46,6 @@ class MODULES_EXPORT MediaStreamAudioDestinationNode final
     : public AudioNode,
       public ActiveScriptWrappable<MediaStreamAudioDestinationNode> {
   DEFINE_WRAPPERTYPEINFO();
-  USING_PRE_FINALIZER(MediaStreamAudioDestinationNode, Dispose);
 
  public:
   static MediaStreamAudioDestinationNode* Create(AudioContext&,
@@ -63,7 +62,6 @@ class MODULES_EXPORT MediaStreamAudioDestinationNode final
 
   bool HasPendingActivity() const final;
   void Trace(Visitor*) const final;
-  void Dispose();
 
   // InspectorHelperMixin
   void ReportDidCreate() final;
@@ -73,7 +71,7 @@ class MODULES_EXPORT MediaStreamAudioDestinationNode final
   MediaStreamAudioDestinationHandler& GetOwnHandler() const;
 
   // https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/media/capture/README.md#logs
-  void SendLogMessage(const char* const function_name, const String& message);
+  void SendLogMessage(const String& function_name, const String& message);
 
   Member<MediaStreamSource> source_;
   Member<MediaStream> stream_;

@@ -13,16 +13,16 @@ class CFPF_SkiaFontMgr;
 
 class CFPF_SkiaDeviceModule {
  public:
-  CFPF_SkiaDeviceModule();
-  ~CFPF_SkiaDeviceModule();
+  static CFPF_SkiaDeviceModule* GetOrCreate();
 
   void Destroy();
   CFPF_SkiaFontMgr* GetFontMgr();
 
- protected:
+ private:
+  CFPF_SkiaDeviceModule();
+  ~CFPF_SkiaDeviceModule();
+
   std::unique_ptr<CFPF_SkiaFontMgr> font_mgr_;
 };
-
-CFPF_SkiaDeviceModule* CFPF_GetSkiaDeviceModule();
 
 #endif  // CORE_FXGE_ANDROID_CFPF_SKIADEVICEMODULE_H_

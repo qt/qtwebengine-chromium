@@ -32,7 +32,7 @@ class CPDF_Type3Font final : public CPDF_SimpleFont {
   const CPDF_Type3Font* AsType3Font() const override;
   CPDF_Type3Font* AsType3Font() override;
   void WillBeDestroyed() override;
-  int GetCharWidthF(uint32_t charcode) override;
+  int GetCharWidth(uint32_t charcode) override;
   FX_RECT GetCharBBox(uint32_t charcode) override;
 
   void SetPageResources(CPDF_Dictionary* pResources) {

@@ -79,10 +79,9 @@ export class CSSModel extends SDKModel<EventTypes> {
       void this.enable();
     }
 
-    this.#sourceMapManager.setEnabled(
-        Common.Settings.Settings.instance().moduleSetting<boolean>('css-source-maps-enabled').get());
-    Common.Settings.Settings.instance()
-        .moduleSetting<boolean>('css-source-maps-enabled')
+    const settings = this.target().targetManager().settings;
+    this.#sourceMapManager.setEnabled(settings.moduleSetting<boolean>('css-source-maps-enabled').get());
+    settings.moduleSetting<boolean>('css-source-maps-enabled')
         .addChangeListener(event => this.#sourceMapManager.setEnabled(event.data));
   }
 
@@ -567,6 +566,28 @@ export class CSSModel extends SDKModel<EventTypes> {
       }
       this.#domModel.markUndoableState();
       const edit = new Edit(styleSheetId, range, newSupportsText, supports);
+      this.fireStyleSheetChanged(styleSheetId, edit);
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  }
+
+  async setNavigationText(
+      styleSheetId: Protocol.DOM.StyleSheetId, range: TextUtils.TextRange.TextRange,
+      newNavigationText: string): Promise<boolean> {
+    Host.userMetrics.actionTaken(Host.UserMetrics.Action.StyleRuleEdited);
+
+    try {
+      await this.ensureOriginalStyleSheetText(styleSheetId);
+      const {navigation} = await this.agent.invoke_setNavigationText({styleSheetId, range, text: newNavigationText});
+
+      if (!navigation) {
+        return false;
+      }
+      this.#domModel.markUndoableState();
+      const edit = new Edit(styleSheetId, range, newNavigationText, navigation);
       this.fireStyleSheetChanged(styleSheetId, edit);
       return true;
     } catch (e) {

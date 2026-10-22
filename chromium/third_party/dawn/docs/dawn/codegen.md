@@ -116,4 +116,4 @@ The schema of `dawn_wire.json` is a dictionary with the following keys:
 
 ## OpenGL loader generator
 
-The code to load OpenGL entrypoints from a `GetProcAddress` function is generated from [`gl.xml`](../../third_party/khronos/gl.xml) and the [list of extensions](../../src/dawn/native/opengl/supported_extensions.json) it supports.
+The code to load OpenGL entrypoints from a `GetProcAddress` function is generated from [`gl.xml`](../../third_party/OpenGL-Registry/src/xml/gl.xml) and the [list of extensions](../../src/dawn/native/opengl/supported_extensions.json) it supports.

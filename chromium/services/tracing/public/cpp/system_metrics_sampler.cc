@@ -5,6 +5,7 @@
 #include "services/tracing/public/cpp/system_metrics_sampler.h"
 
 #include "base/check.h"
+#include "base/logging.h"
 #include "base/no_destructor.h"
 #include "base/power_monitor/cpu_frequency_utils.h"
 #include "base/task/sequenced_task_runner.h"
@@ -28,7 +29,7 @@ namespace tracing {
 
 namespace {
 
-constexpr base::TimeDelta kDefaultSamplingInterval = base::Seconds(5);
+constexpr base::TimeDelta kDefaultSamplingInterval = base::Milliseconds(500);
 
 }  // namespace
 

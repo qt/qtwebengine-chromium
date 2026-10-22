@@ -123,7 +123,7 @@ int CPWL_EditImpl::Provider::GetCharWidth(int32_t nFontIndex, uint16_t word) {
     return 0;
   }
 
-  return pPDFFont->GetCharWidthF(charcode);
+  return pPDFFont->GetCharWidth(charcode);
 }
 
 int32_t CPWL_EditImpl::Provider::GetWordFontIndex(uint16_t word,

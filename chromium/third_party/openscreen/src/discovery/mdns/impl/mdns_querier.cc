@@ -10,6 +10,7 @@
 #include <memory>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "discovery/common/config.h"
@@ -31,7 +32,7 @@ bool IsNegativeResponseFor(const MdnsRecord& record, DnsType type) {
     return false;
   }
 
-  const NsecRecordRdata& nsec = absl::get<NsecRecordRdata>(record.rdata());
+  const NsecRecordRdata& nsec = std::get<NsecRecordRdata>(record.rdata());
 
   // RFC 6762 section 6.1, the NSEC bit must NOT be set in the received NSEC
   // record to indicate this is an mDNS NSEC record rather than a traditional
@@ -165,7 +166,7 @@ void RemoveInvalidNsecFlags(std::vector<MdnsRecord>* records) {
     bool has_changed = false;
 
     // The types for the new record to create, if `has_changed`.
-    const NsecRecordRdata& nsec_rdata = absl::get<NsecRecordRdata>(it->rdata());
+    const NsecRecordRdata& nsec_rdata = std::get<NsecRecordRdata>(it->rdata());
     DnsTypeBitSet types;
     for (DnsType type : nsec_rdata.types()) {
       types.Insert(type);
@@ -181,7 +182,7 @@ void RemoveInvalidNsecFlags(std::vector<MdnsRecord>* records) {
     while (it != records->end() && it->name() == nsec->name() &&
            it->dns_type() == DnsType::kNSEC) {
       has_changed |=
-          types.Insert(absl::get<NsecRecordRdata>(it->rdata()).types());
+          types.Insert(std::get<NsecRecordRdata>(it->rdata()).types());
       new_ttl = std::min(new_ttl, it->ttl());
       it = records->erase(it);
     }
@@ -581,7 +582,7 @@ bool MdnsQuerier::ShouldAnswerRecordBeProcessed(const MdnsRecord& answer) {
   // which is no longer active.
   std::vector<DnsType> types = {answer.dns_type()};
   if (answer.dns_type() == DnsType::kNSEC) {
-    const auto& nsec_rdata = absl::get<NsecRecordRdata>(answer.rdata());
+    const auto& nsec_rdata = std::get<NsecRecordRdata>(answer.rdata());
     types = nsec_rdata.types();
   }
 
@@ -631,7 +632,7 @@ void MdnsQuerier::ProcessRecord(const MdnsRecord& record) {
   size_t types_count = 0;
   const DnsType* types_ptr = nullptr;
   if (record.dns_type() == DnsType::kNSEC) {
-    const auto& nsec_rdata = absl::get<NsecRecordRdata>(record.rdata());
+    const auto& nsec_rdata = std::get<NsecRecordRdata>(record.rdata());
     if (Contains(nsec_rdata.types(), DnsType::kANY)) {
       types_ptr = kTranslatedNsecAnyQueryTypes.data();
       types_count = kTranslatedNsecAnyQueryTypes.size();

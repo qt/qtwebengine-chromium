@@ -12,6 +12,7 @@
 #include "base/auto_reset.h"
 #include "base/feature_list.h"
 #include "base/memory/weak_ptr.h"
+#include "base/memory_coordinator/utils.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/no_destructor.h"
 #include "base/scoped_observation.h"
@@ -33,8 +34,10 @@
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/crash/core/common/crash_key.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/security_principal.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "ui/base/models/menu_model.h"
@@ -118,7 +121,7 @@ content::WebUIController* GetWebUIController(
 }
 
 bool IsShowingErrorPage(content::WebContents* web_contents) {
-  return web_contents->GetSiteInstance()->GetSiteURL().SchemeIs(
+  return web_contents->GetSiteInstance()->GetSecurityPrincipal().SchemeIs(
       content::kChromeErrorScheme);
 }
 
@@ -519,6 +522,8 @@ WebUIContentsPreloadManager::CreateNewContents(
   // Propagates user prefs to web contents.
   // This is needed by, for example, text selection color on ChromeOS.
   PrefsTabHelper::CreateForWebContents(web_contents.get());
+  web_modal::WebContentsModalDialogManager::CreateForWebContents(
+      web_contents.get());
   WebUIContentsPreloadState::CreateForWebContents(web_contents.get());
   task_manager::WebContentsTags::CreateForToolContents(
       web_contents.get(), IDS_TASK_MANAGER_PRELOADED_RENDERER_FOR_UI);
@@ -561,7 +566,7 @@ bool WebUIContentsPreloadManager::ShouldPreloadForBrowserContext(
   }
 
   // Don't preload if under heavy memory pressure.
-  if (memory_pressure_level() >= base::MEMORY_PRESSURE_LEVEL_MODERATE) {
+  if (GetMemoryLimit() <= base::kModerateMemoryPressureThreshold) {
     return false;
   }
 

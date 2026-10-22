@@ -8,39 +8,15 @@
 #include <cstdint>
 #include <vector>
 
+#include "platform/api/connection.h"
 #include "platform/base/error.h"
 #include "platform/base/ip_address.h"
 #include "platform/base/span.h"
 
 namespace openscreen {
 
-class TlsConnection {
+class TlsConnection : public Connection {
  public:
-  // Client callbacks are run via the TaskRunner used by TlsConnectionFactory.
-  class Client {
-   public:
-    // Called when `connection` experiences an error, such as a read error.
-    virtual void OnError(TlsConnection* connection, const Error& error) = 0;
-
-    // Called when a `block` arrives on `connection`.
-    virtual void OnRead(TlsConnection* connection,
-                        std::vector<uint8_t> block) = 0;
-
-   protected:
-    virtual ~Client();
-  };
-
-  virtual ~TlsConnection();
-
-  // Sets the Client associated with this instance. This should be called as
-  // soon as the factory provides a new TlsConnection instance via
-  // TlsConnectionFactory::OnAccepted() or OnConnected(). Pass nullptr to unset
-  // the Client.
-  virtual void SetClient(Client* client) = 0;
-
-  // Sends a message. Returns true iff the message will be sent.
-  [[nodiscard]] virtual bool Send(ByteView data) = 0;
-
   // Get the connected remote address.
   virtual IPEndpoint GetRemoteEndpoint() const = 0;
 

@@ -44,8 +44,8 @@ VideoFrameResource* VideoFrameResource::AsVideoFrameResource() {
   return this;
 }
 
-bool VideoFrameResource::IsMappable() const {
-  return VideoFrame::IsStorageTypeMappable(storage_type());
+bool VideoFrameResource::HasDirectCpuAccess() const {
+  return frame_->HasDirectCpuAccess();
 }
 
 const uint8_t* VideoFrameResource::data(size_t plane) const {
@@ -99,7 +99,7 @@ VideoPixelFormat VideoFrameResource::format() const {
   return frame_->format();
 }
 
-int VideoFrameResource::stride(size_t plane) const {
+size_t VideoFrameResource::stride(size_t plane) const {
   return frame_->stride(plane);
 }
 

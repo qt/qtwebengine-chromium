@@ -34,7 +34,6 @@ void AuthenticationAlice::StartAuthentication() {
   msgs::AuthSpake2Handshake message = {
       .initiation_token =
           msgs::AuthInitiationToken{
-              .has_token = true,
               .token = auth_token_,
           },
       .psk_status = msgs::AuthSpake2PskStatus::kPskShown,
@@ -70,7 +69,7 @@ ErrorOr<size_t> AuthenticationAlice::OnStreamMessage(uint64_t instance_id,
         return Error::Code::kCborParsing;
       } else {
         auto& initiation_token = handshake.initiation_token;
-        if (!initiation_token.has_token ||
+        if (!initiation_token.token.has_value() ||
             initiation_token.token != auth_token_) {
           Error error{Error::Code::kInvalidAnswer,
                       "Authentication failed: initiation token mismatch."};
@@ -87,7 +86,6 @@ ErrorOr<size_t> AuthenticationAlice::OnStreamMessage(uint64_t instance_id,
           msgs::AuthSpake2Handshake message = {
               .initiation_token =
                   msgs::AuthInitiationToken{
-                      .has_token = true,
                       .token = auth_token_,
                   },
               .psk_status = msgs::AuthSpake2PskStatus::kPskInput,

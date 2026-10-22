@@ -421,8 +421,8 @@ RTCError JsepTransportController::RollbackTransports() {
 RTCError JsepTransportController::RollbackTransports_n() {
   bundles_.Rollback();
   if (!transports_.RollbackTransports()) {
-    LOG_AND_RETURN_ERROR(RTCErrorType::INTERNAL_ERROR,
-                         "Failed to roll back transport state.");
+    return LOG_ERROR(RTCError(RTCErrorType::INTERNAL_ERROR)
+                     << "Failed to roll back transport state.");
   }
   return RTCError::OK();
 }
@@ -554,9 +554,6 @@ JsepTransportController::CreateDtlsSrtpTransport(
   RTC_DCHECK_RUN_ON(network_thread_);
   auto dtls_srtp_transport = std::make_unique<DtlsSrtpTransport>(
       rtcp_dtls_transport == nullptr, env_.field_trials());
-  if (config_.enable_external_auth) {
-    dtls_srtp_transport->EnableExternalAuth();
-  }
 
   dtls_srtp_transport->SetDtlsTransportsOwned(std::move(rtp_dtls_transport),
                                               std::move(rtcp_dtls_transport));
@@ -704,10 +701,9 @@ RTCError JsepTransportController::ApplyDescription_n(
 
     JsepTransport* transport = GetJsepTransportForMid(content_info.mid());
     if (!transport) {
-      LOG_AND_RETURN_ERROR(
-          RTCErrorType::INVALID_PARAMETER,
-          "Could not find transport for m= section with mid='" +
-              content_info.mid() + "'");
+      return LOG_ERROR(RTCError(RTCErrorType::INVALID_PARAMETER)
+                       << "Could not find transport for m= section with mid='"
+                       << content_info.mid() << "'");
     }
 
     if (established_bundle_group &&
@@ -734,13 +730,10 @@ RTCError JsepTransportController::ApplyDescription_n(
       extension_ids = GetEncryptedHeaderExtensionIds(content_info);
     }
 
-    int rtp_abs_sendtime_extn_id =
-        GetRtpAbsSendTimeHeaderExtensionId(content_info);
-
     SetIceRole_n(DetermineIceRole(transport, transport_info, type, local));
 
     JsepTransportDescription jsep_description = CreateJsepTransportDescription(
-        content_info, transport_info, extension_ids, rtp_abs_sendtime_extn_id);
+        content_info, transport_info, extension_ids);
     if (local) {
       error =
           transport->SetLocalJsepTransportDescription(jsep_description, type);
@@ -750,10 +743,10 @@ RTCError JsepTransportController::ApplyDescription_n(
     }
 
     if (!error.ok()) {
-      LOG_AND_RETURN_ERROR(
-          RTCErrorType::INVALID_PARAMETER,
-          "Failed to apply the description for m= section with mid='" +
-              content_info.mid() + "': " + error.message());
+      return LOG_ERROR(
+          RTCError(RTCErrorType::INVALID_PARAMETER)
+          << "Failed to apply the description for m= section with mid='"
+          << content_info.mid() << "': " << error.message());
     }
   }
   if (type == SdpType::kAnswer) {
@@ -1006,8 +999,7 @@ JsepTransportDescription
 JsepTransportController::CreateJsepTransportDescription(
     const ContentInfo& content_info,
     const TransportInfo& transport_info,
-    const std::vector<int>& encrypted_extension_ids,
-    int rtp_abs_sendtime_extn_id) {
+    const std::vector<int>& encrypted_extension_ids) {
   TRACE_EVENT0("webrtc",
                "JsepTransportController::CreateJsepTransportDescription");
   const MediaContentDescription* content_desc =
@@ -1018,7 +1010,6 @@ JsepTransportController::CreateJsepTransportDescription(
                               : content_desc->rtcp_mux();
 
   return JsepTransportDescription(rtcp_mux_enabled, encrypted_extension_ids,
-                                  rtp_abs_sendtime_extn_id,
                                   transport_info.description);
 }
 
@@ -1068,24 +1059,6 @@ JsepTransportController::MergeEncryptedHeaderExtensionIdsForBundles(
     }
   }
   return merged_encrypted_extension_ids_by_bundle;
-}
-
-int JsepTransportController::GetRtpAbsSendTimeHeaderExtensionId(
-    const ContentInfo& content_info) {
-  if (!config_.enable_external_auth) {
-    return -1;
-  }
-
-  const MediaContentDescription* content_desc =
-      content_info.media_description();
-
-  const RtpExtension* send_time_extension =
-      RtpExtension::FindHeaderExtensionByUri(
-          content_desc->rtp_header_extensions(), RtpExtension::kAbsSendTimeUri,
-          config_.crypto_options.srtp.enable_encrypted_rtp_header_extensions
-              ? RtpExtension::kPreferEncryptedExtension
-              : RtpExtension::kDiscardEncryptedExtension);
-  return send_time_extension ? send_time_extension->id : -1;
 }
 
 const JsepTransport* JsepTransportController::GetJsepTransportForMid(

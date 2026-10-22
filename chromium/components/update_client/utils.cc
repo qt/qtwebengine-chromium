@@ -19,6 +19,7 @@
 #include "base/containers/heap_array.h"
 #include "base/containers/span.h"
 #include "base/files/file.h"
+#include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/memory_mapped_file.h"
@@ -51,17 +52,13 @@
 
 namespace update_client {
 
-const char kArchAmd64[] = "x86_64";
-const char kArchIntel[] = "x86";
-const char kArchArm64[] = "arm64";
-
 #if BUILDFLAG(IS_CHROMEOS)
 // In ChromeOS, /tmp is a ramfs drive that can be too small
 // for large downloads like Gemini Nano2v3. A larger tmpfiles.d
 // mount has been created (see https://crrev.com/c/6810025) as a
 // scratch space with access to the full stateful partition to
 // handle these larger downloads.
-const char kTempDir[] = "/var/lib/odml/chrome_component_updater";
+constexpr char kTempDir[] = "/var/lib/odml/chrome_component_updater";
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
 bool IsHttpServerError(int status_code) {
@@ -118,7 +115,7 @@ bool VerifyFileHash256(const base::FilePath& filepath,
 }
 
 bool IsValidBrand(const std::string& brand) {
-  const size_t kMaxBrandSize = 4;
+  static constexpr size_t kMaxBrandSize = 4;
   return brand.empty() ||
          (brand.size() == kMaxBrandSize &&
           std::ranges::all_of(brand, &base::IsAsciiAlpha<char>));
@@ -236,5 +233,23 @@ std::string StringTypeToUTF8(const base::FilePath::StringType& stringtype) {
   return base::WideToUTF8(stringtype);
 }
 #endif  // BUILDFLAG(IS_WIN)
+
+void CleanupDirectoriesOlderThan(const base::FilePath& dir,
+                                 const base::FilePath::StringType& matcher,
+                                 base::TimeDelta older_than) {
+  // Enumerate the directories matching `matcher`.
+  base::FileEnumerator(dir,
+                       /*recursive=*/false, base::FileEnumerator::DIRECTORIES,
+                       matcher)
+      .ForEach([&](const base::FilePath& dir) {
+        base::File::Info info;
+
+        // Delete the directories older than `older_than`.
+        if (base::GetFileInfo(dir, &info) &&
+            ((info.creation_time + older_than) < base::Time::Now())) {
+          RetryFileOperation(&base::DeletePathRecursively, dir);
+        }
+      });
+}
 
 }  // namespace update_client

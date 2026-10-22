@@ -20,23 +20,23 @@ describe('Treemap', () => {
       assert.deepEqual(node, {
         name: src,
         resourceBytes: 300,
-        encodedBytes: undefined,
+
         children: [
           {
             name: 'a.js',
             resourceBytes: 100,
-            encodedBytes: undefined,
+
           },
           {
             duplicatedNormalizedModuleName: 'blah',
             name: 'b.js',
             resourceBytes: 100,
-            encodedBytes: undefined,
+
           },
           {
             name: 'c.js',
             resourceBytes: 100,
-            encodedBytes: undefined,
+
           },
         ],
       });
@@ -55,21 +55,19 @@ describe('Treemap', () => {
               {
                 name: 'a.js',
                 resourceBytes: 100,
-                encodedBytes: undefined,
+
               },
               {
                 name: 'b.js',
                 resourceBytes: 100,
-                encodedBytes: undefined,
+
               },
             ],
             name: '/folder',
             resourceBytes: 200,
-            encodedBytes: undefined,
           },
         ],
         resourceBytes: 200,
-        encodedBytes: undefined,
       });
     });
 
@@ -87,22 +85,22 @@ describe('Treemap', () => {
                 children: undefined,
                 name: 'folder1/a.js',
                 resourceBytes: 100,
-                encodedBytes: undefined,
+
               },
               {
                 children: undefined,
                 name: 'folder2/b.js',
                 resourceBytes: 100,
-                encodedBytes: undefined,
+
               },
             ],
             name: '/root',
             resourceBytes: 200,
-            encodedBytes: undefined,
+
           },
         ],
         resourceBytes: 200,
-        encodedBytes: undefined,
+
       });
     });
 
@@ -114,17 +112,17 @@ describe('Treemap', () => {
       assert.deepEqual(node, {
         name: src,
         resourceBytes: 200,
-        encodedBytes: undefined,
+
         children: [
           {
             name: 'a.js',
             resourceBytes: 100,
-            encodedBytes: undefined,
+
           },
           {
             name: 'b.js',
             resourceBytes: 100,
-            encodedBytes: undefined,
+
           },
         ],
       });
@@ -144,20 +142,20 @@ describe('Treemap', () => {
               {
                 name: 'a.js',
                 resourceBytes: 100,
-                encodedBytes: undefined,
+
               },
               {
                 name: 'b.js',
                 resourceBytes: 100,
-                encodedBytes: undefined,
+
               },
             ],
             resourceBytes: 200,
-            encodedBytes: undefined,
+
           },
         ],
         resourceBytes: 200,
-        encodedBytes: undefined,
+
       });
     });
 
@@ -173,24 +171,24 @@ describe('Treemap', () => {
           {
             name: 'some/prefix',
             resourceBytes: 201,
-            encodedBytes: undefined,
+
             children: [
               {
                 name: 'main.js',
                 resourceBytes: 100,
-                encodedBytes: undefined,
+
               },
               {
                 name: 'not/a.js',
                 resourceBytes: 101,
-                encodedBytes: undefined,
+
                 children: undefined,
               },
             ],
           },
         ],
         resourceBytes: 201,
-        encodedBytes: undefined,
+
       });
 
       expect(node.name).to.equal(src);
@@ -215,7 +213,7 @@ describe('Treemap', () => {
       assert.deepEqual(node, {
         name: src,
         resourceBytes: 502,
-        encodedBytes: undefined,
+
         children: [
           {
             children: [
@@ -223,7 +221,7 @@ describe('Treemap', () => {
                 children: undefined,
                 name: 'folder/a.js',
                 resourceBytes: 100,
-                encodedBytes: undefined,
+
               },
               {
                 children: [
@@ -231,23 +229,23 @@ describe('Treemap', () => {
                     duplicatedNormalizedModuleName: 'dep/a.js',
                     name: 'a.js',
                     resourceBytes: 101,
-                    encodedBytes: undefined,
+
                   },
                   {
                     duplicatedNormalizedModuleName: 'dep/b.js',
                     name: 'b.js',
                     resourceBytes: 101,
-                    encodedBytes: undefined,
+
                   },
                 ],
                 name: 'node_modules/dep',
                 resourceBytes: 202,
-                encodedBytes: undefined,
+
               },
             ],
             name: 'lib',
             resourceBytes: 302,
-            encodedBytes: undefined,
+
           },
           {
             children: [
@@ -255,18 +253,18 @@ describe('Treemap', () => {
                 duplicatedNormalizedModuleName: 'dep/a.js',
                 name: 'a.js',
                 resourceBytes: 100,
-                encodedBytes: undefined,
+
               },
               {
                 duplicatedNormalizedModuleName: 'dep/b.js',
                 name: 'b.js',
                 resourceBytes: 100,
-                encodedBytes: undefined,
+
               },
             ],
             name: 'node_modules/dep',
             resourceBytes: 200,
-            encodedBytes: undefined,
+
           },
         ],
       });

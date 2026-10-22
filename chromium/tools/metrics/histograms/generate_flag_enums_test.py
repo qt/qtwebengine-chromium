@@ -5,7 +5,9 @@
 
 import unittest
 
-import generate_flag_enums
+import setup_modules  # pylint: disable=unused-import
+
+import chromium_src.tools.metrics.histograms.generate_flag_enums as generate_flag_enums
 
 ENUMS_XML_CONTAINING_XY = """
 <histogram-configuration>

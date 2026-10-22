@@ -874,7 +874,14 @@ void MockClientSocketFactory::AddSSLSocketDataProvider(
 
 void MockClientSocketFactory::ResetNextMockIndexes() {
   mock_data_.ResetNextIndex();
+  mock_tcp_data_.ResetNextIndex();
   mock_ssl_data_.ResetNextIndex();
+}
+
+bool MockClientSocketFactory::AllDataProvidersUsed() const {
+  return mock_data_.no_more_data_providers() &&
+         mock_tcp_data_.no_more_data_providers() &&
+         mock_ssl_data_.no_more_data_providers();
 }
 
 std::unique_ptr<DatagramClientSocket>
@@ -1251,7 +1258,7 @@ void MockTCPClientSocket::Disconnect() {
 bool MockTCPClientSocket::IsConnected() const {
   if (!data_)
     return false;
-  return connected_ && !peer_closed_connection_;
+  return connected_ && !peer_closed_connection_ && !data_->silently_closed();
 }
 
 bool MockTCPClientSocket::IsConnectedAndIdle() const {
@@ -1420,8 +1427,6 @@ void MockSSLClientSocket::ConnectCallback(
     MockSSLClientSocket* ssl_client_socket,
     CompletionOnceCallback callback,
     int rv) {
-  if (rv == OK)
-    ssl_client_socket->connected_ = true;
   std::move(callback).Run(rv);
 }
 
@@ -1475,8 +1480,6 @@ int MockSSLClientSocket::Connect(CompletionOnceCallback callback) {
     data_->connect.completer->SetCallback(std::move(callback));
     return ERR_IO_PENDING;
   }
-  if (data_->connect.result == OK)
-    connected_ = true;
   RunClosureIfNonNull(std::move(data_->connect_callback));
   if (data_->connect.mode == ASYNC) {
     RunCallbackAsync(std::move(callback), data_->connect.result);
@@ -2331,18 +2334,28 @@ constexpr auto kSOCKS5OkResponseData =
 const std::string_view kSOCKS5OkResponse(kSOCKS5OkResponseData.begin(),
                                          kSOCKS5OkResponseData.end());
 
+base::ByteSize CountReadByteSize(base::span<const MockRead> reads) {
+  base::ByteSize total;
+  for (const MockRead& read : reads) {
+    total += base::ByteSize(read.data.length());
+  }
+  return total;
+}
+
 int64_t CountReadBytes(base::span<const MockRead> reads) {
-  int64_t total = 0;
-  for (const MockRead& read : reads)
-    total += static_cast<int>(read.data.length());
+  return CountReadByteSize(reads).InBytes();
+}
+
+base::ByteSize CountWriteByteSize(base::span<const MockWrite> writes) {
+  base::ByteSize total;
+  for (const MockWrite& write : writes) {
+    total += base::ByteSize(write.data.length());
+  }
   return total;
 }
 
 int64_t CountWriteBytes(base::span<const MockWrite> writes) {
-  int64_t total = 0;
-  for (const MockWrite& write : writes)
-    total += static_cast<int>(write.data.length());
-  return total;
+  return CountWriteByteSize(writes).InBytes();
 }
 
 #if BUILDFLAG(IS_ANDROID)

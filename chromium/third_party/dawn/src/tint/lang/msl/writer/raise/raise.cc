@@ -39,6 +39,7 @@
 #include "src/tint/lang/core/ir/transform/builtin_polyfill.h"
 #include "src/tint/lang/core/ir/transform/builtin_scalarize.h"
 #include "src/tint/lang/core/ir/transform/change_immediate_to_uniform.h"
+#include "src/tint/lang/core/ir/transform/collapse_subgroup_min_max.h"
 #include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
 #include "src/tint/lang/core/ir/transform/demote_to_helper.h"
 #include "src/tint/lang/core/ir/transform/multiplanar_external_texture.h"
@@ -65,9 +66,9 @@
 #include "src/tint/lang/msl/writer/raise/binary_polyfill.h"
 #include "src/tint/lang/msl/writer/raise/builtin_polyfill.h"
 #include "src/tint/lang/msl/writer/raise/convert_print_to_log.h"
+#include "src/tint/lang/msl/writer/raise/fix_type_layout.h"
 #include "src/tint/lang/msl/writer/raise/module_constant.h"
 #include "src/tint/lang/msl/writer/raise/module_scope_vars.h"
-#include "src/tint/lang/msl/writer/raise/packed_vec3.h"
 #include "src/tint/lang/msl/writer/raise/shader_io.h"
 #include "src/tint/lang/msl/writer/raise/simd_ballot.h"
 #include "src/tint/lang/msl/writer/raise/validate_subgroup_matrix.h"
@@ -81,6 +82,10 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
         core::ir::transform::SubstituteOverrides(module, options.substitute_overrides_config));
 
     TINT_CHECK_RESULT(raise::ValidateSubgroupMatrix(module));
+
+    if (options.workarounds.collapse_subgroup_min_max) {
+        TINT_CHECK_RESULT(core::ir::transform::CollapseSubgroupMinMax(module));
+    }
 
     RaiseResult raise_result;
 
@@ -149,22 +154,23 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
     }
 
     {
-        core::ir::transform::BuiltinPolyfillConfig core_polyfills{};
-        core_polyfills.clamp_int = true;
-        core_polyfills.clamp_float = options.workarounds.polyfill_clamp_float;
-        core_polyfills.degrees = true;
-        core_polyfills.dot_4x8_packed = true;
-        core_polyfills.extract_bits = core::ir::transform::BuiltinPolyfillLevel::kClampOrRangeCheck;
-        core_polyfills.first_leading_bit = true;
-        core_polyfills.first_trailing_bit = true;
-        core_polyfills.fwidth_fine = true;
-        core_polyfills.insert_bits = core::ir::transform::BuiltinPolyfillLevel::kClampOrRangeCheck;
-        core_polyfills.pack_unpack_4x8 = true;
-        core_polyfills.pack_4xu8_clamp = true;
-        core_polyfills.radians = true;
-        core_polyfills.texture_sample_base_clamp_to_edge_2d_f32 = true;
-        core_polyfills.abs_signed_int = true;
-        core_polyfills.subgroup_broadcast_f16 = options.workarounds.polyfill_subgroup_broadcast_f16;
+        core::ir::transform::BuiltinPolyfillConfig core_polyfills{
+            .clamp_int = true,
+            .clamp_float = options.workarounds.polyfill_clamp_float,
+            .abs_signed_int = true,
+            .degrees = true,
+            .extract_bits = core::ir::transform::BuiltinPolyfillLevel::kClampOrRangeCheck,
+            .first_leading_bit = true,
+            .first_trailing_bit = true,
+            .fwidth_fine = true,
+            .insert_bits = core::ir::transform::BuiltinPolyfillLevel::kClampOrRangeCheck,
+            .radians = true,
+            .texture_sample_base_clamp_to_edge_2d_f32 = true,
+            .dot_4x8_packed = true,
+            .pack_unpack_4x8 = true,
+            .pack_4xu8_clamp = true,
+            .subgroup_broadcast_f16 = options.workarounds.polyfill_subgroup_broadcast_f16,
+        };
         TINT_CHECK_RESULT(core::ir::transform::BuiltinPolyfill(module, core_polyfills));
     }
 
@@ -218,7 +224,12 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
     TINT_CHECK_RESULT(raise::ShaderIO(
         module, raise::ShaderIOConfig{immediate_data_layout, options.emit_vertex_point_size,
                                       options.fixed_sample_mask, options.depth_range_offsets}));
-    TINT_CHECK_RESULT(raise::PackedVec3(module));
+
+    raise::FixTypeLayoutOptions fix_type_layout_options{
+        .replace_bool_with_u32 = options.workarounds.replace_workgroup_bool_with_u32,
+    };
+    TINT_CHECK_RESULT(raise::FixTypeLayout(module, fix_type_layout_options));
+
     TINT_CHECK_RESULT(raise::SimdBallot(module));
 
     // ArgumentBuffers must come before ModuleScopeVars
@@ -265,6 +276,7 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
         module, {
                     .polyfill_unpack_2x16_snorm = options.workarounds.polyfill_unpack_2x16_snorm,
                     .polyfill_unpack_2x16_unorm = options.workarounds.polyfill_unpack_2x16_unorm,
+                    .polyfill_tanh_f16 = options.workarounds.polyfill_tanh_f16,
                 }));
     // After 'BuiltinPolyfill' as that transform can introduce signed dot products.
     core::ir::transform::SignedIntegerPolyfillConfig signed_integer_cfg{

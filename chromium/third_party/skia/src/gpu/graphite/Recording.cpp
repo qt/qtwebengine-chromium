@@ -157,7 +157,7 @@ const Texture* RecordingPriv::setupDeferredTarget(ResourceProvider* resourceProv
                                                   SkIRect targetClip) {
     SkASSERT(targetSurface && fRecording->fTargetProxyData);
 
-    TextureProxy* surfaceTexture = targetSurface->backingTextureProxy();
+    TextureProxy* surfaceTexture = targetSurface->target().proxy();
     SkASSERT(surfaceTexture->isInstantiated());
 
     const TextureProxy* targetProxy = fRecording->fTargetProxyData->lazyProxy();
@@ -226,7 +226,7 @@ bool RecordingPriv::addCommands(Context* context,
                                 SkIVector targetTranslation,
                                 SkIRect targetClip) {
     for (size_t i = 0; i < fRecording->fExtraResourceRefs.size(); ++i) {
-        commandBuffer->trackCommandBufferResource(fRecording->fExtraResourceRefs[i]);
+        commandBuffer->trackResource(fRecording->fExtraResourceRefs[i]);
     }
 
     // There's no need to differentiate kSuccess and kDiscard at the root list level; if every task

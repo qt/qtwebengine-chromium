@@ -11,9 +11,11 @@
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "crypto/keypair.h"
 #include "net/base/completion_once_callback.h"
@@ -25,6 +27,7 @@
 #include "net/cert/mock_cert_verifier.h"
 #include "net/cert/multi_log_ct_verifier.h"
 #include "net/cert/x509_certificate.h"
+#include "net/cert/x509_util.h"
 #include "net/dns/mapped_host_resolver.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_auth_handler_factory.h"
@@ -37,6 +40,7 @@
 #include "net/proxy_resolution/configured_proxy_resolution_service.h"
 #include "net/quic/crypto/proof_source_chromium.h"
 #include "net/quic/crypto_test_utils_chromium.h"
+#include "net/quic/quic_chromium_client_session.h"
 #include "net/quic/quic_context.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/ssl/ssl_config_service.h"
@@ -47,7 +51,9 @@
 #include "net/test/test_data_directory.h"
 #include "net/test/test_with_task_environment.h"
 #include "net/third_party/quiche/src/quiche/quic/test_tools/crypto_test_utils.h"
+#include "net/third_party/quiche/src/quiche/quic/test_tools/quic_crypto_server_config_peer.h"
 #include "net/third_party/quiche/src/quiche/quic/test_tools/quic_test_utils.h"
+#include "net/third_party/quiche/src/quiche/quic/test_tools/test_ticket_crypter.h"
 #include "net/third_party/quiche/src/quiche/quic/tools/quic_memory_cache_backend.h"
 #include "net/tools/quic/quic_simple_server.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
@@ -95,8 +101,11 @@ class TestTransactionFactory : public HttpTransactionFactory {
 
 class QuicEndToEndTest : public ::testing::Test, public WithTaskEnvironment {
  protected:
-  QuicEndToEndTest()
-      : host_resolver_(CreateResolverImpl()),
+  explicit QuicEndToEndTest(
+      base::test::TaskEnvironment::TimeSource time_source =
+          base::test::TaskEnvironment::TimeSource::DEFAULT)
+      : WithTaskEnvironment(time_source),
+        host_resolver_(CreateResolverImpl()),
         ssl_config_service_(
             std::make_unique<TestSSLConfigService>(SSLContextConfig())),
         proxy_resolution_service_(
@@ -165,6 +174,10 @@ class QuicEndToEndTest : public ::testing::Test, public WithTaskEnvironment {
   void StartServer() {
     std::unique_ptr<ProofSourceChromium> proof_source =
         std::make_unique<ProofSourceChromium>();
+    proof_source->SetTicketCrypter(
+        std::make_unique<quic::test::TestTicketCrypter>());
+    ticket_crypter_ = reinterpret_cast<quic::test::TestTicketCrypter*>(
+        proof_source->GetTicketCrypter());
     CertificateList cert_list;
     cert_list.push_back(cert_);
     proof_source->InitializeFromCertAndKey(cert_list, *cert_key_);
@@ -179,7 +192,6 @@ class QuicEndToEndTest : public ::testing::Test, public WithTaskEnvironment {
     server_->Listen(server_address_);
     server_address_ = server_->server_address();
     server_->StartReading();
-    server_started_ = true;
 
     CertVerifyResult verify_result;
     verify_result.verified_cert = cert_list[0];
@@ -256,7 +268,8 @@ class QuicEndToEndTest : public ::testing::Test, public WithTaskEnvironment {
   std::string server_hostname_;
   quic::QuicConfig server_config_;
   quic::QuicCryptoServerConfig::ConfigOptions server_config_options_;
-  bool server_started_;
+  // Owned by server_.
+  raw_ptr<quic::test::TestTicketCrypter> ticket_crypter_ = nullptr;
   bool strike_register_no_startup_period_ = false;
 };
 
@@ -329,66 +342,334 @@ TEST_F(QuicEndToEndTest, EnableMLKEM) {
             SSL_GROUP_X25519_MLKEM768);
 }
 
-TEST_F(QuicEndToEndTest, MLKEMDisabled) {
-  // Disable ML-KEM on the client.
-  SSLContextConfig config;
-  std::erase_if(config.supported_named_groups,
-                std::mem_fn(&net::SSLNamedGroupInfo::IsPostQuantum));
-  ssl_config_service_->UpdateSSLConfigAndNotify(config);
-
-  // Configure the server to only support ML-KEM.
-  server_->crypto_config()->set_preferred_groups({SSL_GROUP_X25519_MLKEM768});
-
+TEST_F(QuicEndToEndTest, CryptoHandshakeCompleteMetrics) {
   AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
 
+  base::HistogramTester histograms;
   TestTransactionConsumer consumer(DEFAULT_PRIORITY,
                                    transaction_factory_.get());
   consumer.Start(&request_, NetLogWithSource());
+  ASSERT_NO_FATAL_FAILURE(
+      CheckResponse(consumer, "HTTP/1.1 200", kResponseBody));
 
-  // Connection should fail because there's no supported group in common between
-  // client and server.
-  EXPECT_EQ(consumer.error(), net::ERR_QUIC_PROTOCOL_ERROR);
+  // The Net.QuicSession.HandshakeConfirmedTime metric should be logged.
+  histograms.ExpectTotalCount("Net.QuicSession.HandshakeConfirmedTime", 1);
+
+  // MTC variants of that metric (and related MTC metrics) should not be
+  // present.
+  histograms.ExpectTotalCount("Net.QuicSession.HandshakeConfirmedTime.MTC", 0);
+  histograms.ExpectTotalCount(
+      "Net.QuicSession.HandshakeConfirmedTime.MTC.NewConnection", 0);
+  histograms.ExpectTotalCount(
+      "Net.QuicSession.HandshakeConfirmedTime.MTC.Resumption", 0);
+  histograms.ExpectTotalCount("Net.QuicSession.TLSHandshakeBytes.MTC2", 0);
+  histograms.ExpectTotalCount(
+      "Net.QuicSession.TLSHandshakeBytes.MTC2.NewConnection", 0);
+  histograms.ExpectTotalCount(
+      "Net.QuicSession.TLSHandshakeBytes.MTC2.Resumption", 0);
 }
 
 #if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
 class QuicEndToEndMTCTest : public QuicEndToEndTest {
  public:
+  QuicEndToEndMTCTest()
+      : QuicEndToEndTest(base::test::TaskEnvironment::TimeSource::DEFAULT) {
+    feature_list_.InitWithFeatures(
+        {{features::kTLSTrustAnchorIDs, features::kVerifyMTCs}}, {});
+  }
+
   void SetUp() override {
     auto leaf = std::move(CertBuilder::CreateSimpleChain(1)[0]);
     leaf->SetSubjectAltName("test.example.com");
     // ProofSourceChromium assumes the leaf cert uses an RSA key.
-    leaf->UseKeyFromFile(GetTestCertsDirectory().AppendASCII("rsa-2048-1.key"));
+    ASSERT_TRUE(leaf->UseKeyFromFile(
+        GetTestCertsDirectory().AppendASCII("rsa-2048-1.key")));
     cert_key_ = crypto::keypair::PrivateKey(
         bssl::UpRef(leaf->GetKey()), crypto::SubtlePassKey::ForTesting());
 
-    // This is the log ID for the MTC experiment (see kMtcExperimentBaseId in
+    // This is the log ID for the MTC experiment (see log_id in
+    // root_store.textproto). It doesn't actually matter for this test.
+    constexpr uint8_t kMtcLogId[] = {0x82, 0xda, 0x4b, 0x30, 0x08};
+    // This is the base ID for the MTC experiment (see kMtcExperimentBaseId in
     // quic_chromium_client_session.cc).
-    constexpr uint8_t kMtcLogId[] = {0x82, 0xda, 0x4b, 0x30, 0x07};
-    MtcLogBuilder mtc_log(kMtcLogId);
+    constexpr uint8_t kMtcBaseId[] = {0x82, 0xda, 0x4b, 0x30, 0x07};
+    MtcLogBuilder mtc_log(kMtcLogId, kMtcBaseId);
     uint64_t leaf_index = mtc_log.AddEntry(*leaf);
     mtc_log.AdvanceLandmark();
     auto leaf_der = mtc_log.CreateSignaturelessCertificate(leaf_index);
     ASSERT_TRUE(leaf_der);
     cert_ = X509Certificate::CreateFromBytes(*leaf_der);
+    ASSERT_TRUE(cert_);
+
+    // This is a fake trust anchor ID formed from the base ID above. (We could
+    // make one that actually matches the generated landmark number from
+    // mtc_log, but it doesn't matter for this test.)
+    const auto kMtcTrustAnchorId =
+        x509_util::AppendOidComponent(kMtcBaseId, 0x01);
+
+    SSLContextConfig config;
+    config.mtc_trust_anchor_ids = {{kMtcTrustAnchorId}};
+    config.mtc_update_time_seconds =
+        (base::Time::Now() - kMtcUpdateAge).InMillisecondsSinceUnixEpoch() /
+        1000;
+    ssl_config_service_->UpdateSSLConfigAndNotify(config);
 
     QuicEndToEndTest::SetUp();
   }
+
+  static constexpr base::TimeDelta kMtcUpdateAge = base::Hours(42);
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
 };
 
 TEST_F(QuicEndToEndMTCTest, SimpleConnection) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures(
-      {{features::kTLSTrustAnchorIDs, features::kVerifyMTCs}}, {});
-
   AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
 
+  base::HistogramTester histograms;
   TestTransactionConsumer consumer(DEFAULT_PRIORITY,
                                    transaction_factory_.get());
   consumer.Start(&request_, NetLogWithSource());
-  CheckResponse(consumer, "HTTP/1.1 200", kResponseBody);
+  ASSERT_NO_FATAL_FAILURE(
+      CheckResponse(consumer, "HTTP/1.1 200", kResponseBody));
 
   EXPECT_EQ(consumer.response_info()->ssl_info.cert->signature_algorithm(),
             bssl::SignatureAlgorithm::kMtcProofDraftDavidben08);
+
+  // Not logged, since the server is not configured to reply with a TAI.
+  // TODO(crbug.com/482083310): add tests of other cases.
+  histograms.ExpectTotalCount("Net.QuicSession.MTCLandmarkDelta2.OldClient", 0);
+  histograms.ExpectTotalCount("Net.QuicSession.MTCLandmarkDelta2.CurrentClient",
+                              0);
+
+  histograms.ExpectTimeBucketCount("Net.QuicSession.MTCMetadataAge2",
+                                   kMtcUpdateAge, 1);
+
+  histograms.ExpectUniqueSample("Net.QuicSession.HasMTCMetadata2", /*sample=*/1,
+                                /*expected_bucket_count=*/1);
+
+  histograms.ExpectUniqueSample("Net.QuicSession.MTCResult2",
+                                /*sample=*/MTCResult::kValidMTC,
+                                /*expected_bucket_count=*/1);
+
+  histograms.ExpectUniqueSample(
+      "Net.QuicSession.CertVerificationResult.MTCAdvertised2",
+      /*sample=*/-net::OK,
+      /*expected_bucket_count=*/1);
+
+  histograms.ExpectUniqueSample(
+      "Net.QuicSession.CertVerificationResult.MTCReceived2",
+      /*sample=*/-net::OK,
+      /*expected_bucket_count=*/1);
+
+  // We don't know what the exact timing value should be for
+  // HandshakeConfirmedTime, so only check that a sample is present.
+  histograms.ExpectTotalCount("Net.QuicSession.HandshakeConfirmedTime.MTC", 1);
+  histograms.ExpectTotalCount(
+      "Net.QuicSession.HandshakeConfirmedTime.MTC.NewConnection", 1);
+  histograms.ExpectTotalCount(
+      "Net.QuicSession.HandshakeConfirmedTime.MTC.Resumption", 0);
+
+  // Should be logged, but we don't know what the exact value will be, so just
+  // check that a sample is present.
+  histograms.ExpectTotalCount("Net.QuicSession.TLSHandshakeBytes.MTC2", 1);
+  histograms.ExpectTotalCount(
+      "Net.QuicSession.TLSHandshakeBytes.MTC2.NewConnection", 1);
+  histograms.ExpectTotalCount(
+      "Net.QuicSession.TLSHandshakeBytes.MTC2.Resumption", 0);
+}
+
+TEST_F(QuicEndToEndMTCTest, MTCResultResumptionNotAttempted) {
+  AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
+
+  base::HistogramTester histograms;
+  TestTransactionConsumer consumer(DEFAULT_PRIORITY,
+                                   transaction_factory_.get());
+  consumer.Start(&request_, NetLogWithSource());
+  ASSERT_NO_FATAL_FAILURE(
+      CheckResponse(consumer, "HTTP/1.1 200", kResponseBody));
+
+  histograms.ExpectUniqueSample("Net.QuicSession.MTCResult2",
+                                MTCResult::kValidMTC, 1);
+}
+
+class QuicEndToEndMTCResumptionTest
+    : public QuicEndToEndMTCTest,
+      public ::testing::WithParamInterface<bool> {
+  void SetUp() override {
+    QuicEndToEndMTCTest::SetUp();
+
+    quic::test::QuicCryptoServerConfigPeer peer(server_->crypto_config());
+    peer.mutable_ssl_config()->early_data_enabled = GetParam();
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(All, QuicEndToEndMTCResumptionTest, ::testing::Bool());
+
+TEST_P(QuicEndToEndMTCResumptionTest, MTCResultResumptionAccepted) {
+  AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
+
+  // First request to get a session ticket.
+  {
+    TestTransactionConsumer consumer(DEFAULT_PRIORITY,
+                                     transaction_factory_.get());
+    consumer.Start(&request_, NetLogWithSource());
+    ASSERT_NO_FATAL_FAILURE(
+        CheckResponse(consumer, "HTTP/1.1 200", kResponseBody));
+  }
+
+  // Force a second QUIC connection.
+  transaction_factory_->GetSession()->quic_session_pool()->CloseAllSessions(
+      ERR_FAILED, quic::QUIC_NO_ERROR);
+
+  // Second request should attempt resumption and succeed.
+  base::HistogramTester histograms;
+  {
+    TestTransactionConsumer consumer(DEFAULT_PRIORITY,
+                                     transaction_factory_.get());
+    consumer.Start(&request_, NetLogWithSource());
+    ASSERT_NO_FATAL_FAILURE(
+        CheckResponse(consumer, "HTTP/1.1 200", kResponseBody));
+    EXPECT_EQ(consumer.response_info()->ssl_info.early_data_accepted,
+              GetParam());
+  }
+
+  // Check that MTCResult is not logged because there was no certificate sent by
+  // the server on this connection.
+  histograms.ExpectTotalCount("Net.QuicSession.MTCResult2", 0);
+}
+
+TEST_P(QuicEndToEndMTCResumptionTest, MTCResultResumptionRejected) {
+  AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
+
+  // First request to get a session ticket.
+  {
+    TestTransactionConsumer consumer(DEFAULT_PRIORITY,
+                                     transaction_factory_.get());
+    consumer.Start(&request_, NetLogWithSource());
+    ASSERT_NO_FATAL_FAILURE(
+        CheckResponse(consumer, "HTTP/1.1 200", kResponseBody));
+  }
+
+  // Force a second QUIC connection.
+  transaction_factory_->GetSession()->quic_session_pool()->CloseAllSessions(
+      ERR_FAILED, quic::QUIC_NO_ERROR);
+
+  // Configure server to reject the ticket.
+  ticket_crypter_->set_fail_decrypt(true);
+
+  // Second request should attempt resumption but fail, falling back to a full
+  // handshake.
+  base::HistogramTester histograms;
+  {
+    TestTransactionConsumer consumer(DEFAULT_PRIORITY,
+                                     transaction_factory_.get());
+    consumer.Start(&request_, NetLogWithSource());
+    ASSERT_NO_FATAL_FAILURE(
+        CheckResponse(consumer, "HTTP/1.1 200", kResponseBody));
+    EXPECT_FALSE(consumer.response_info()->ssl_info.early_data_accepted);
+  }
+
+  // Even though resumption was attempted, it was rejected, so MTCResult should
+  // be logged because we received a cert (an MTC cert) from the server.
+  histograms.ExpectUniqueSample("Net.QuicSession.MTCResult2",
+                                MTCResult::kValidMTC, 1);
+}
+
+TEST_P(QuicEndToEndMTCResumptionTest, HandshakeBytesAndConfirmedTime) {
+  AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
+
+  // First request (full handshake).
+  {
+    base::HistogramTester histograms;
+
+    TestTransactionConsumer consumer(DEFAULT_PRIORITY,
+                                     transaction_factory_.get());
+    consumer.Start(&request_, NetLogWithSource());
+    ASSERT_NO_FATAL_FAILURE(
+        CheckResponse(consumer, "HTTP/1.1 200", kResponseBody));
+
+    // HandshakeConfirmedTime and TLSHandshakeBytes should be recorded (and with
+    // the NewConnection variant).
+    histograms.ExpectTotalCount("Net.QuicSession.HandshakeConfirmedTime.MTC",
+                                1);
+    histograms.ExpectTotalCount(
+        "Net.QuicSession.HandshakeConfirmedTime.MTC.NewConnection", 1);
+    histograms.ExpectTotalCount(
+        "Net.QuicSession.HandshakeConfirmedTime.MTC.Resumption", 0);
+    histograms.ExpectTotalCount("Net.QuicSession.TLSHandshakeBytes.MTC2", 1);
+    histograms.ExpectTotalCount(
+        "Net.QuicSession.TLSHandshakeBytes.MTC2.NewConnection", 1);
+    histograms.ExpectTotalCount(
+        "Net.QuicSession.TLSHandshakeBytes.MTC2.Resumption", 0);
+  }
+
+  // Force a second QUIC connection.
+  transaction_factory_->GetSession()->quic_session_pool()->CloseAllSessions(
+      ERR_FAILED, quic::QUIC_NO_ERROR);
+
+  // Second request (resumption).
+  {
+    base::HistogramTester histograms;
+
+    TestTransactionConsumer consumer(DEFAULT_PRIORITY,
+                                     transaction_factory_.get());
+    consumer.Start(&request_, NetLogWithSource());
+    ASSERT_NO_FATAL_FAILURE(
+        CheckResponse(consumer, "HTTP/1.1 200", kResponseBody));
+
+    // HandshakeConfirmedTime and TLSHandshakeBytes should be recorded again
+    // (this time with the Resumption variant).
+    histograms.ExpectTotalCount("Net.QuicSession.HandshakeConfirmedTime.MTC",
+                                1);
+    histograms.ExpectTotalCount(
+        "Net.QuicSession.HandshakeConfirmedTime.MTC.NewConnection", 0);
+    histograms.ExpectTotalCount(
+        "Net.QuicSession.HandshakeConfirmedTime.MTC.Resumption", 1);
+    histograms.ExpectTotalCount("Net.QuicSession.TLSHandshakeBytes.MTC2", 1);
+    histograms.ExpectTotalCount(
+        "Net.QuicSession.TLSHandshakeBytes.MTC2.NewConnection", 0);
+    histograms.ExpectTotalCount(
+        "Net.QuicSession.TLSHandshakeBytes.MTC2.Resumption", 1);
+  }
+}
+
+TEST_F(QuicEndToEndMTCTest, MTCResultZeroRttRejectedResumptionAccepted) {
+  AddToCache(request_.url.PathForRequest(), 200, "OK", kResponseBody);
+
+  // First request to get a session ticket.
+  {
+    TestTransactionConsumer consumer(DEFAULT_PRIORITY,
+                                     transaction_factory_.get());
+    consumer.Start(&request_, NetLogWithSource());
+    ASSERT_NO_FATAL_FAILURE(
+        CheckResponse(consumer, "HTTP/1.1 200", kResponseBody));
+  }
+
+  // Force a second QUIC connection.
+  transaction_factory_->GetSession()->quic_session_pool()->CloseAllSessions(
+      ERR_FAILED, quic::QUIC_NO_ERROR);
+
+  // Disable early data on the server.
+  quic::test::QuicCryptoServerConfigPeer peer(server_->crypto_config());
+  peer.mutable_ssl_config()->early_data_enabled = false;
+
+  // Second request should attempt 0-RTT, have it rejected, but then succeed
+  // with 1-RTT resumption.
+  base::HistogramTester histograms;
+  {
+    TestTransactionConsumer consumer(DEFAULT_PRIORITY,
+                                     transaction_factory_.get());
+    consumer.Start(&request_, NetLogWithSource());
+    ASSERT_NO_FATAL_FAILURE(
+        CheckResponse(consumer, "HTTP/1.1 200", kResponseBody));
+    EXPECT_FALSE(consumer.response_info()->ssl_info.early_data_accepted);
+  }
+
+  // Even though 0-RTT was rejected, a TLS session resumption was still
+  // successful, so no cert was sent on the wire and no MTCResult should be
+  // logged.
+  histograms.ExpectTotalCount("Net.QuicSession.MTCResult2", 0);
 }
 #endif  // BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
 

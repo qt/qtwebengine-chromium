@@ -37,11 +37,7 @@ const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined
 let snippetsQuickOpenInstance: SnippetsQuickOpen;
 
 export class SnippetsQuickOpen extends QuickOpen.FilteredListWidget.Provider {
-  private snippets: Workspace.UISourceCode.UISourceCode[];
-  private constructor() {
-    super('snippet');
-    this.snippets = [];
-  }
+  private snippets: Workspace.UISourceCode.UISourceCode[] = [];
 
   static instance(opts: {forceNew: boolean|null} = {forceNew: null}): SnippetsQuickOpen {
     const {forceNew} = opts;
@@ -106,4 +102,5 @@ QuickOpen.FilteredListWidget.registerProvider({
   helpTitle: i18nLazyString(UIStrings.runSnippet),
   titlePrefix: i18nLazyString(UIStrings.run),
   titleSuggestion: i18nLazyString(UIStrings.snippet),
+  jslogContext: 'snippet',
 });

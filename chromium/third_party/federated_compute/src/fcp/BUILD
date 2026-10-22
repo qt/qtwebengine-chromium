@@ -38,6 +38,15 @@ package_group(
     ],
 )
 
+package_group(
+    name = "customers",
+    includes = [
+    ],
+    packages = [
+        "//fcp/...",
+    ],
+)
+
 platform(
     name = "remote_platform",
     constraint_values = [
@@ -56,7 +65,6 @@ compile_pip_requirements(
     timeout = "moderate",
     srcs = [
         "requirements.in",
-        "@org_tensorflow_federated//:requirements.txt",
     ],
     extra_args = [
         "--allow-unsafe",

@@ -578,15 +578,14 @@ class DeleteSocketCallback : public TestCompletionCallbackBase {
  private:
   void OnComplete(int result) {
     if (socket_) {
-      delete socket_;
-      socket_ = nullptr;
+      delete socket_.ExtractAsDangling();
     } else {
       ADD_FAILURE() << "Deleting socket twice";
     }
     SetResult(result);
   }
 
-  raw_ptr<StreamSocket, DanglingUntriaged> socket_;
+  raw_ptr<StreamSocket> socket_;
 };
 
 class MockSCTAuditingDelegate : public SCTAuditingDelegate {
@@ -788,7 +787,7 @@ class SSLClientSocketTest : public PlatformTest, public WithTaskEnvironment {
   }
 
   RecordingNetLogObserver log_observer_;
-  raw_ptr<ClientSocketFactory, DanglingUntriaged> socket_factory_;
+  raw_ptr<ClientSocketFactory> socket_factory_;
   std::unique_ptr<TestSSLConfigService> ssl_config_service_;
   std::unique_ptr<ParamRecordingMockCertVerifier> cert_verifier_;
   std::unique_ptr<TransportSecurityState> transport_security_state_;
@@ -920,6 +919,13 @@ class SSLClientSocketReadTest
               socket_factory_);
       socket_factory_ = wrapped_socket_factory_.get();
     }
+  }
+
+  ~SSLClientSocketReadTest() override {
+    // `socket_factory_` is a member in the base class and destroyed after
+    // `wrapped_socket_factory_` so manually clear it now to avoid dangling
+    // references.
+    socket_factory_ = nullptr;
   }
 
   // Convienient wrapper to call Read()/ReadIfReady() depending on whether
@@ -6470,24 +6476,9 @@ TEST_F(SSLClientSocketTest, PostQuantumKeyExchange) {
   server_config.curves_for_testing.push_back(NID_X25519MLKEM768);
   ASSERT_TRUE(
       StartEmbeddedTestServer(EmbeddedTestServer::CERT_OK, server_config));
-
-  for (bool enabled : {false, true}) {
-    SCOPED_TRACE(enabled);
-
-    SSLContextConfig config;
-    if (!enabled) {
-      std::erase_if(config.supported_named_groups,
-                    std::mem_fn(&SSLNamedGroupInfo::IsPostQuantum));
-    }
-    ssl_config_service_->UpdateSSLConfigAndNotify(config);
-    int rv;
-    ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &rv));
-    if (enabled) {
-      EXPECT_THAT(rv, IsOk());
-    } else {
-      EXPECT_THAT(rv, IsError(ERR_SSL_VERSION_OR_CIPHER_MISMATCH));
-    }
-  }
+  int rv;
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &rv));
+  EXPECT_THAT(rv, IsOk());
 }
 
 // Test that the compliance policy that reorders the cipher preference for TLS

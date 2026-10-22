@@ -129,6 +129,7 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
       const KURL& response_url,
       network::mojom::ReferrerPolicy response_referrer_policy,
       Vector<network::mojom::blink::ContentSecurityPolicyPtr> response_csp,
+      DocumentPolicy::DocumentPolicyBundle response_document_policy,
       const Vector<String>* response_origin_trial_tokens) override;
   // Fetches and runs the top-level classic worker script.
   void FetchAndRunClassicScript(
@@ -410,6 +411,7 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
       const KURL& response_url,
       network::mojom::ReferrerPolicy response_referrer_policy,
       Vector<network::mojom::blink::ContentSecurityPolicyPtr> response_csp,
+      DocumentPolicy::DocumentPolicyBundle response_document_policy,
       const Vector<String>* response_origin_trial_tokens,
       const String& source_code,
       std::unique_ptr<Vector<uint8_t>> cached_meta_data,
@@ -451,14 +453,10 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
       DispatchFetchEventForSubresourceCallback callback) override;
   void Clone(
       mojo::PendingReceiver<mojom::blink::ControllerServiceWorker> receiver,
-      const network::CrossOriginEmbedderPolicy& cross_origin_embedder_policy,
-      mojo::PendingRemote<
-          network::mojom::blink::CrossOriginEmbedderPolicyReporter>
-          coep_reporter,
-      const network::DocumentIsolationPolicy& document_isolation_policy,
-      mojo::PendingRemote<
-          network::mojom::blink::DocumentIsolationPolicyReporter> dip_reporter)
-      override;
+      mojom::blink::CrossOriginEmbedderPolicyInfoPtr
+          cross_origin_embedder_policy_info,
+      mojom::blink::DocumentIsolationPolicyInfoPtr
+          document_isolation_policy_info) override;
 
   // Implements mojom::blink::ServiceWorker.
   void InitializeGlobalScope(

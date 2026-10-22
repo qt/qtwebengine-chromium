@@ -103,7 +103,7 @@ export async function createUISourceCode(options?: {
         url,
         mimeType: options?.mimeType ?? 'application/javascript',
         resourceType: options?.resourceType ?? Common.ResourceType.resourceTypes.Script,
-        content: options?.content ?? undefined,
+        content: options?.content,
       },
     ],
     target: createTarget(),
@@ -125,11 +125,12 @@ export async function createUISourceCode(options?: {
 export function createNetworkRequest(opts?: {
   url?: Platform.DevToolsPath.UrlString,
   includeInitiators?: boolean,
+  documentURL?: Platform.DevToolsPath.UrlString,
 }): SDK.NetworkRequest.NetworkRequest {
   const networkRequest = SDK.NetworkRequest.NetworkRequest.create(
       'requestId-0' as Protocol.Network.RequestId,
       opts?.url ?? Platform.DevToolsPath.urlString`https://www.example.com/script.js`,
-      Platform.DevToolsPath.urlString``, null, null, null);
+      opts?.documentURL ?? Platform.DevToolsPath.urlString``, null, null, null);
   networkRequest.statusCode = 200;
   networkRequest.setRequestHeaders([{name: 'content-type', value: 'bar1'}]);
   networkRequest.responseHeaders = [{name: 'content-type', value: 'bar2'}, {name: 'x-forwarded-for', value: 'bar3'}];
@@ -182,7 +183,6 @@ let panels: AiAssistancePanel.AiAssistancePanel[] = [];
 export async function createAiAssistancePanel(options?: {
   aidaClient?: Host.AidaClient.AidaClient,
   aidaAvailability?: Host.AidaClient.AidaAccessPreconditions,
-  syncInfo?: Host.InspectorFrontendHostAPI.SyncInformation,
   chatView?: AiAssistancePanel.ChatView,
 }) {
   let aidaAvailabilityForStub = options?.aidaAvailability ?? Host.AidaClient.AidaAccessPreconditions.AVAILABLE;
@@ -196,7 +196,6 @@ export async function createAiAssistancePanel(options?: {
   const panel = new AiAssistancePanel.AiAssistancePanel(view, {
     aidaClient,
     aidaAvailability: aidaAvailabilityForStub,
-    syncInfo: options?.syncInfo ?? {isSyncActive: true},
   });
   panels.push(panel);
 
@@ -291,6 +290,7 @@ export function initializePersistenceImplForTests(): void {
     targetManager: SDK.TargetManager.TargetManager.instance(),
     workspace,
     debuggerWorkspaceBinding,
+    settings: Common.Settings.Settings.instance(),
   });
   Persistence.Persistence.PersistenceImpl.instance({forceNew: true, workspace, breakpointManager});
   WorkspaceDiff.WorkspaceDiff.workspaceDiff({forceNew: true});

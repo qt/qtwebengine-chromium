@@ -28,7 +28,6 @@
 #include "src/tint/lang/core/ir/transform/prepare_immediate_data.h"
 
 #include "gmock/gmock.h"
-
 #include "src/tint/lang/core/ir/transform/helper_test.h"
 
 namespace tint::core::ir::transform {
@@ -44,7 +43,7 @@ class IR_PrepareImmediateDataTests : public TransformTest {
         TINT_CHECK_RESULT_UNWRAP(result, PrepareImmediateData(mod, config));
 
         // Validate the output IR.
-        EXPECT_EQ(ir::Validate(mod, capabilities), Success);
+        EXPECT_EQ(ir::Validate(mod, capabilities, "after transform"), Success);
 
         return result;
     }

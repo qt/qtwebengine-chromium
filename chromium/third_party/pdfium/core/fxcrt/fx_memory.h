@@ -30,8 +30,6 @@ void FXMEM_DefaultFree(void* pointer);
 #include <stdlib.h>
 #endif
 
-void FX_InitializeMemoryAllocators();
-void FX_DestroyMemoryAllocators();
 NOINLINE void FX_OutOfMemoryTerminate(size_t size);
 
 // General Partition Allocators.

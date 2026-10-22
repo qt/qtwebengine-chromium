@@ -6,11 +6,19 @@
 #define SERVICES_NETWORK_PUBLIC_CPP_CONNECTION_ALLOWLIST_MOJOM_TRAITS_H_
 
 #include "base/component_export.h"
+#include "base/notreached.h"
+#include "mojo/public/cpp/base/unguessable_token_mojom_traits.h"
 #include "mojo/public/cpp/bindings/struct_traits.h"
 #include "services/network/public/cpp/connection_allowlist.h"
 #include "services/network/public/mojom/connection_allowlist.mojom-shared.h"
+#include "url/mojom/url_gurl_mojom_traits.h"
 
 namespace mojo {
+
+namespace {
+using RedirectBehavior = network::ConnectionAllowlist::RedirectBehavior;
+using WebRtcBehavior = network::ConnectionAllowlist::WebRtcBehavior;
+}  // namespace
 
 template <>
 struct COMPONENT_EXPORT(NETWORK_CPP_CONNECTION_ALLOWLIST)
@@ -31,6 +39,30 @@ struct COMPONENT_EXPORT(NETWORK_CPP_CONNECTION_ALLOWLIST)
     return allowlist.issues;
   }
 
+  static network::mojom::RedirectBehavior redirect_behavior(
+      const network::ConnectionAllowlist& allowlist) {
+    switch (allowlist.redirect_behavior) {
+      case RedirectBehavior::kAllow:
+        return network::mojom::RedirectBehavior::kAllow;
+      case RedirectBehavior::kBlock:
+        return network::mojom::RedirectBehavior::kBlock;
+      default:
+        NOTREACHED();
+    }
+  }
+
+  static network::mojom::WebRtcBehavior webrtc_behavior(
+      const network::ConnectionAllowlist& allowlist) {
+    switch (allowlist.webrtc_behavior) {
+      case WebRtcBehavior::kAllow:
+        return network::mojom::WebRtcBehavior::kAllow;
+      case WebRtcBehavior::kBlock:
+        return network::mojom::WebRtcBehavior::kBlock;
+      default:
+        NOTREACHED();
+    }
+  }
+
   static bool Read(network::mojom::ConnectionAllowlistDataView data,
                    network::ConnectionAllowlist* out);
 };
@@ -39,6 +71,11 @@ template <>
 struct COMPONENT_EXPORT(NETWORK_CPP_CONNECTION_ALLOWLIST)
     StructTraits<network::mojom::ConnectionAllowlistsDataView,
                  network::ConnectionAllowlists> {
+  static const GURL& response_url(
+      const network::ConnectionAllowlists& allowlists) {
+    return allowlists.response_url;
+  }
+
   static const std::optional<network::ConnectionAllowlist>& enforced(
       const network::ConnectionAllowlists& allowlists) {
     return allowlists.enforced;
@@ -47,6 +84,11 @@ struct COMPONENT_EXPORT(NETWORK_CPP_CONNECTION_ALLOWLIST)
   static const std::optional<network::ConnectionAllowlist>& report_only(
       const network::ConnectionAllowlists& allowlists) {
     return allowlists.report_only;
+  }
+
+  static const std::optional<base::UnguessableToken>& reporting_source(
+      const network::ConnectionAllowlists& allowlists) {
+    return allowlists.reporting_source;
   }
 
   static bool Read(network::mojom::ConnectionAllowlistsDataView data,

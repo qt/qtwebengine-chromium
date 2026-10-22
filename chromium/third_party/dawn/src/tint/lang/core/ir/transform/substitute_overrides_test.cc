@@ -535,6 +535,44 @@ $B1: {  # root
     EXPECT_EQ(expect, str());
 }
 
+TEST_F(IR_SubstituteOverridesTest, OverrideWorkgroupSizeMustBeGreaterThanZero) {
+    core::ir::Override* x = nullptr;
+    b.Append(mod.root_block, [&] {
+        x = b.Override("x", ty.u32());
+        x->SetOverrideId({2});
+    });
+
+    auto* func = b.ComputeFunction("foo", x, 1_u, 1_u);
+    b.Append(func->Block(), [&] { b.Return(func); });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{2}] = 0.0;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(result.Failure().reason, R"(error: @workgroup_size values must be greater than 0)");
+}
+
+TEST_F(IR_SubstituteOverridesTest, OverrideWorkgroupSizeExceedsMax) {
+    core::ir::Override* x = nullptr;
+    core::ir::Override* y = nullptr;
+    b.Append(mod.root_block, [&] {
+        x = b.Override("x", ty.u32());
+        x->SetOverrideId({1});
+        y = b.Override("y", ty.u32());
+        y->SetOverrideId({2});
+    });
+
+    auto* func = b.ComputeFunction("foo", x, y, 1_u);
+    b.Append(func->Block(), [&] { b.Return(func); });
+
+    SubstituteOverridesConfig cfg{};
+    cfg.map[OverrideId{1}] = 65536.0;
+    cfg.map[OverrideId{2}] = 65536.0;
+    auto result = RunWithFailure(SubstituteOverrides, cfg);
+    ASSERT_NE(result, Success);
+    EXPECT_EQ(result.Failure().reason, R"(error: workgroup grid size cannot exceed 4294967295)");
+}
+
 TEST_F(IR_SubstituteOverridesTest, FunctionExpression) {
     core::ir::Override* o = nullptr;
     core::ir::Override* x = nullptr;

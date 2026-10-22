@@ -202,8 +202,9 @@ static int d3d12va_encode_h264_init_sequence_params(AVCodecContext *avctx)
     }
 
     if (!(support.SupportFlags & D3D12_VIDEO_ENCODER_SUPPORT_FLAG_GENERAL_SUPPORT_OK)) {
-        av_log(avctx, AV_LOG_ERROR, "Driver does not support some request features. %#x\n",
+        av_log(avctx, AV_LOG_ERROR, "Driver does not support requested features. ValidationFlags: %#x\n",
                support.ValidationFlags);
+        ff_d3d12va_encode_check_encoder_feature_flags(avctx, support.ValidationFlags);
         return AVERROR(EINVAL);
     }
 
@@ -293,25 +294,30 @@ static int d3d12va_encode_h264_get_encoder_caps(AVCodecContext *avctx)
 
     config->ConfigurationFlags = D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_FLAG_NONE;
 
-    if (h264_caps.SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_H264_FLAG_CABAC_ENCODING_SUPPORT) {
-        config->ConfigurationFlags |= D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_FLAG_ENABLE_CABAC_ENCODING;
-        priv->unit_opts.cabac = 1;
-    }
-
     // Deblocking filter configuration
-    if (priv->deblock == 1) {
+    if (priv->deblock) {
        if (h264_caps.DisableDeblockingFilterSupportedModes & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODE_FLAG_0_ALL_LUMA_CHROMA_SLICE_BLOCK_EDGES_ALWAYS_FILTERED) {
             config->DisableDeblockingFilterConfig = D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODE_0_ALL_LUMA_CHROMA_SLICE_BLOCK_EDGES_ALWAYS_FILTERED;
         } else {
             av_log(avctx, AV_LOG_ERROR, "Requested deblocking filter enable mode not supported by driver.\n");
             return AVERROR(ENOTSUP);
         }
-    } else if (priv->deblock == 0) {
+    } else {
         if (h264_caps.DisableDeblockingFilterSupportedModes & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODE_FLAG_1_DISABLE_ALL_SLICE_BLOCK_EDGES) {
             config->DisableDeblockingFilterConfig = D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_SLICES_DEBLOCKING_MODE_1_DISABLE_ALL_SLICE_BLOCK_EDGES;
         } else {
             av_log(avctx, AV_LOG_ERROR, "Requested deblocking filter disable mode not supported by driver.\n");
             return AVERROR(ENOTSUP);
+        }
+    }
+
+    // Entropy coder configuration
+    if (priv->unit_opts.cabac) {
+        if (h264_caps.SupportFlags & D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_SUPPORT_H264_FLAG_CABAC_ENCODING_SUPPORT) {
+            config->ConfigurationFlags |= D3D12_VIDEO_ENCODER_CODEC_CONFIGURATION_H264_FLAG_ENABLE_CABAC_ENCODING;
+        } else {
+            av_log(avctx, AV_LOG_WARNING, "CABAC entropy coding is not supported by the driver, falling back to CAVLC.\n");
+            priv->unit_opts.cabac = 0;
         }
     }
 
@@ -640,7 +646,12 @@ static const AVOption d3d12va_encode_h264_options[] = {
 #undef LEVEL
 
     { "deblock", "Deblocking filter mode",
-      OFFSET(deblock), AV_OPT_TYPE_BOOL, { .i64 = -1 }, -1, 1, FLAGS },
+      OFFSET(deblock), AV_OPT_TYPE_BOOL, { .i64 = 1 }, 0, 1, FLAGS },
+
+    { "coder", "Entropy coder type",
+      OFFSET(unit_opts.cabac), AV_OPT_TYPE_INT, { .i64 = 1 }, 0, 1, FLAGS, "coder" },
+        { "cavlc", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 0 }, INT_MIN, INT_MAX, FLAGS, "coder" },
+        { "cabac", NULL, 0, AV_OPT_TYPE_CONST, { .i64 = 1 }, INT_MIN, INT_MAX, FLAGS, "coder" },
 
     { NULL },
 };

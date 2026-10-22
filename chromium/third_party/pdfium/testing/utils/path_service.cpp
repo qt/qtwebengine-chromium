@@ -38,6 +38,15 @@ int CallStat(const char* path, stat_wrapper_t* sb) {
 }
 #endif
 
+void MaybeAppendPdfiumPathInChromiumCheckout(std::string& path) {
+#ifdef BUILD_WITH_CHROMIUM
+  path.append("third_party");
+  path.push_back(PATH_SEPARATOR);
+  path.append("pdfium");
+  path.push_back(PATH_SEPARATOR);
+#endif
+}
+
 }  // namespace
 
 // static
@@ -141,27 +150,15 @@ std::string PathService::GetTestDataDir() {
     path.push_back(PATH_SEPARATOR);
   }
 
-  std::string potential_path = path;
-  potential_path.append("testing");
-  potential_path.push_back(PATH_SEPARATOR);
-  potential_path.append("resources");
-  if (PathService::DirectoryExists(potential_path)) {
-    return potential_path;
+  MaybeAppendPdfiumPathInChromiumCheckout(path);
+  path.append("testing");
+  path.push_back(PATH_SEPARATOR);
+  path.append("resources");
+  if (!PathService::DirectoryExists(path)) {
+    return std::string();
   }
 
-  potential_path = path;
-  potential_path.append("third_party");
-  potential_path.push_back(PATH_SEPARATOR);
-  potential_path.append("pdfium");
-  potential_path.push_back(PATH_SEPARATOR);
-  potential_path.append("testing");
-  potential_path.push_back(PATH_SEPARATOR);
-  potential_path.append("resources");
-  if (PathService::DirectoryExists(potential_path)) {
-    return potential_path;
-  }
-
-  return std::string();
+  return path;
 }
 
 // static
@@ -189,27 +186,13 @@ std::string PathService::GetThirdPartyFilePath(const std::string& file_name) {
     path.push_back(PATH_SEPARATOR);
   }
 
-  std::string potential_path = path;
-  potential_path.append("third_party");
-
-  // Use third_party/bigint as a way to distinguish PDFium's vs. other's.
-  std::string bigint = potential_path + PATH_SEPARATOR + "bigint";
-  if (PathService::DirectoryExists(bigint)) {
-    potential_path.append(PATH_SEPARATOR + file_name);
-    return potential_path;
+  MaybeAppendPdfiumPathInChromiumCheckout(path);
+  path.append("third_party");
+  if (!PathService::DirectoryExists(path)) {
+    return std::string();
   }
 
-  potential_path = path;
-  potential_path.append("third_party");
-  potential_path.push_back(PATH_SEPARATOR);
-  potential_path.append("pdfium");
-  potential_path.push_back(PATH_SEPARATOR);
-  potential_path.append("third_party");
-  bigint = potential_path + PATH_SEPARATOR + "bigint";
-  if (PathService::DirectoryExists(potential_path)) {
-    potential_path.append(PATH_SEPARATOR + file_name);
-    return potential_path;
-  }
-
-  return std::string();
+  path.push_back(PATH_SEPARATOR);
+  path.append(file_name);
+  return path;
 }

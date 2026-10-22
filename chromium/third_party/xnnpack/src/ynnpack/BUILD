@@ -68,6 +68,20 @@ selects.config_setting_group(
     ],
 )
 
+# TODO(dsharlet): This doesn't actually do anything yet, it's just a placeholder for a proper
+# toolchain configuration.
+config_setting(
+    name = "hexagon-clang",
+    define_values = {"ynn_hexagon_clang": "true"},
+)
+
+selects.config_setting_group(
+    name = "hexagon",
+    match_any = [
+        ":hexagon-clang",
+    ],
+)
+
 selects.config_setting_group(
     name = "apple_clang",
     match_any = [
@@ -77,10 +91,26 @@ selects.config_setting_group(
 )
 
 selects.config_setting_group(
+    name = "not_apple",
+    match_any = [
+        "@platforms//os:linux",
+        "@platforms//os:android",
+        "@platforms//os:windows",
+    ],
+)
+
+selects.config_setting_group(
     name = "msvc",
     match_any = [
         "@rules_cc//cc/compiler:clang-cl",
         "@rules_cc//cc/compiler:msvc-cl",
+    ],
+)
+
+selects.config_setting_group(
+    name = "wasm",
+    match_any = [
+        "@platforms//os:emscripten",
     ],
 )
 
@@ -148,6 +178,16 @@ define_build_option(
 )
 
 define_build_option(
+    name = "ynn_enable_arm64_sve",
+    default_all = [
+        ":ynn_enable_arm64",
+        # Apple's compilers appear to generate SVE code in *any* function, regardless of whether
+        # the function actually uses it, which causes us to execute SVE code on non-apple targets.
+        ":not_apple",
+    ],
+)
+
+define_build_option(
     name = "ynn_enable_x86_sse",
     default_all = [":x86"],
 )
@@ -209,16 +249,6 @@ define_build_option(
 )
 
 define_build_option(
-    name = "ynn_enable_x86_avx512f",
-    default_all = [":ynn_enable_x86_avx512"],
-)
-
-define_build_option(
-    name = "ynn_enable_x86_avx512bw",
-    default_all = [":ynn_enable_x86_avx512"],
-)
-
-define_build_option(
     name = "ynn_enable_x86_avx512bf16",
     default_all = [
         ":ynn_enable_x86_avx512",
@@ -240,7 +270,7 @@ define_build_option(
 
 define_build_option(
     name = "ynn_enable_x86_amx",
-    default_all = [":x86"],
+    default_all = ["@platforms//cpu:x86_64"],
 )
 
 define_build_option(
@@ -256,4 +286,14 @@ define_build_option(
 define_build_option(
     name = "ynn_enable_x86_amxint8",
     default_all = [":ynn_enable_x86_amx"],
+)
+
+define_build_option(
+    name = "ynn_enable_hvx",
+    default_all = [":hexagon"],
+)
+
+define_build_option(
+    name = "ynn_enable_wasm_simd128",
+    default_all = [":wasm"],
 )

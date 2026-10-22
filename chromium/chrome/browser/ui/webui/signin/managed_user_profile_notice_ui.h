@@ -42,14 +42,17 @@ class ManagedUserProfileNoticeUIConfig
 class ManagedUserProfileNoticeUI : public content::WebUIController {
  public:
   // Type of a managed user notice screen.
+  // LINT.IfChange(ScreenType)
   enum class ScreenType {
     kEntepriseAccountSyncEnabled,
     kEntepriseAccountSyncDisabled,
     kConsumerAccountSyncDisabled,
     kEnterpriseAccountCreation,
     kEnterpriseOIDC,
-    kProfilePicker
+    kProfilePicker,
+    kFirstRun
   };
+  // LINT.ThenChange(//chrome/browser/resources/signin/managed_user_profile_notice/managed_user_profile_notice_browser_proxy.ts:ScreenType)
 
   explicit ManagedUserProfileNoticeUI(content::WebUI* web_ui);
   ~ManagedUserProfileNoticeUI() override;

@@ -483,6 +483,11 @@ export function contentIncludingHint(view: CM.EditorView): string {
 
 export const setAiAutoCompleteSuggestion = CM.StateEffect.define<ActiveSuggestion|null>();
 
+export const enum AiSuggestionSource {
+  COMPLETION = 'completion',
+  GENERATION = 'generation',
+}
+
 export interface ActiveSuggestion {
   text: string;
   from: number;
@@ -491,6 +496,7 @@ export interface ActiveSuggestion {
   startTime: number;
   onImpression: (rpcGlobalId: Host.AidaClient.RpcGlobalId, latency: number, sampleId?: number) => void;
   clearCachedRequest?: () => void;
+  source: AiSuggestionSource;
 }
 
 export const aiAutoCompleteSuggestionState = CM.StateField.define<ActiveSuggestion|null>({

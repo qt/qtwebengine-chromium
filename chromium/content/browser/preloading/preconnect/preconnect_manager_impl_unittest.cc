@@ -201,7 +201,7 @@ class MockNetworkContext : public network::TestNetworkContext {
 net::NetworkAnonymizationKey CreateNetworkAnonymizationKey(
     const GURL& main_frame_url) {
   net::SchemefulSite site = net::SchemefulSite(main_frame_url);
-  return net::NetworkAnonymizationKey::CreateSameSite(site);
+  return net::NetworkAnonymizationKey::CreateSameSite(std::move(site));
 }
 
 }  // namespace
@@ -1054,6 +1054,7 @@ TEST_F(PreconnectManagerImplTest, TestStartPreconnectUrl) {
       url, allow_credentials, network_anonymization_key,
       TRAFFIC_ANNOTATION_FOR_TESTS,
       /*storage_partition_config=*/nullptr,
+      /*network_restrictions_id=*/std::nullopt,
       /*keepalive_config=*/std::nullopt, mojo::NullRemote());
 
   EXPECT_CALL(
@@ -1072,6 +1073,7 @@ TEST_F(PreconnectManagerImplTest, TestStartPreconnectUrl) {
       non_http_url, allow_credentials, network_anonymization_key,
       TRAFFIC_ANNOTATION_FOR_TESTS,
       /*storage_partition_config=*/nullptr,
+      /*network_restrictions_id=*/std::nullopt,
       /*keepalive_config=*/std::nullopt, mojo::NullRemote());
 }
 
@@ -1091,6 +1093,7 @@ TEST_F(PreconnectManagerImplTest, TestStartPreconnectUrlDisabled) {
       url, allow_credentials, network_anonymization_key,
       TRAFFIC_ANNOTATION_FOR_TESTS,
       /*storage_partition_config=*/nullptr,
+      /*network_restrictions_id=*/std::nullopt,
       /*keepalive_config=*/std::nullopt, mojo::NullRemote());
 }
 
@@ -1102,7 +1105,7 @@ TEST_F(PreconnectManagerImplTest,
   net::SchemefulSite requesting_site =
       net::SchemefulSite(GURL("http://foo.test"));
   auto network_anonymization_key =
-      net::NetworkAnonymizationKey::CreateSameSite(requesting_site);
+      net::NetworkAnonymizationKey::CreateSameSite(std::move(requesting_site));
 
   EXPECT_CALL(*mock_delegate_, IsPreconnectEnabled()).WillOnce(Return(true));
   EXPECT_CALL(*mock_network_context_, ResolveHostProxy(origin.GetHost()));
@@ -1110,6 +1113,7 @@ TEST_F(PreconnectManagerImplTest,
       url, allow_credentials, network_anonymization_key,
       TRAFFIC_ANNOTATION_FOR_TESTS,
       /*storage_partition_config=*/nullptr,
+      /*network_restrictions_id=*/std::nullopt,
       /*keepalive_config=*/std::nullopt, mojo::NullRemote());
 
   EXPECT_CALL(

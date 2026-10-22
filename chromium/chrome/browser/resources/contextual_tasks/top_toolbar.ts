@@ -9,6 +9,7 @@ import '//resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import '//resources/cr_elements/cr_lazy_render/cr_lazy_render_lit.js';
 import '//resources/cr_elements/icons.html.js';
 import './favicon_group.js';
+import './reopen_tabs.js';
 import './sources_menu.js';
 
 import {AnchorAlignment} from '//resources/cr_elements/cr_action_menu/cr_action_menu.js';
@@ -16,6 +17,7 @@ import type {CrActionMenuElement} from 'chrome://resources/cr_elements/cr_action
 import type {CrLazyRenderLitElement} from 'chrome://resources/cr_elements/cr_lazy_render/cr_lazy_render_lit.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+import type {PropertyValues} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import type {ContextInfo} from './contextual_tasks.mojom-webui.js';
 import type {BrowserProxy} from './contextual_tasks_browser_proxy.js';
@@ -27,12 +29,10 @@ import {getHtml} from './top_toolbar.html.js';
 export interface TopToolbarElement {
   $: {
     closeButton: HTMLImageElement,
-    contextButton: HTMLImageElement,
     menu: CrLazyRenderLitElement<CrActionMenuElement>,
     newThreadButton: HTMLImageElement,
     sourcesMenu: CrLazyRenderLitElement<SourcesMenuElement>,
     threadHistoryButton: HTMLImageElement,
-    topToolbarLogo: HTMLImageElement,
   };
 }
 
@@ -62,27 +62,54 @@ export class TopToolbarElement extends CrLitElement {
         reflect: true,
         attribute: 'is-ai-page',
       },
-      logoImageUrl_: {type: String},
+      enableOpenInNewTabButton: {
+        type: Boolean,
+        reflect: true,
+      },
       title: {type: String},
+      hideMenuButton_: {type: Boolean},
+      showReopenTabs_: {type: Boolean},
+      isExpandButtonEnabled: {type: Boolean},
+      isPinButtonEnabled: {type: Boolean},
+      isPinned: {type: Boolean},
     };
   }
 
   override accessor title: string = '';
   accessor contextInfos: ContextInfo[] = [];
   accessor darkMode: boolean = false;
-  accessor isAiPage: boolean = false;
+  accessor isAiPage: boolean = loadTimeData.getBoolean('isAiPage');
+  accessor enableOpenInNewTabButton: boolean = false;
+  accessor showReopenTabs_: boolean = false;
   private browserProxy_: BrowserProxy = BrowserProxyImpl.getInstance();
   private listenerIds_: number[] = [];
-  protected isExpandButtonEnabled: boolean =
+  protected accessor isExpandButtonEnabled: boolean =
       loadTimeData.getBoolean('expandButtonEnabled');
+  protected accessor isPinButtonEnabled: boolean =
+      loadTimeData.getBoolean('enablePinButton');
+  private hideMenuOnAiPageEnabled_: boolean =
+      loadTimeData.getBoolean('hideMenuOnAiPageEnabled');
+  accessor hideMenuButton_: boolean =
+      this.hideMenuOnAiPageEnabled_ && this.isAiPage;
+  protected accessor isPinned: boolean =
+      loadTimeData.getBoolean('isSidePanelPinned');
 
   override connectedCallback() {
     super.connectedCallback();
     const callbackRouter = this.browserProxy_.callbackRouter;
-    this.listenerIds_ = [callbackRouter.onContextUpdated.addListener(
-        (contextInfos: ContextInfo[]) => {
-          this.contextInfos = contextInfos;
-        })];
+    this.listenerIds_ = [
+      callbackRouter.onContextUpdated.addListener(
+          (contextInfos: ContextInfo[]) => {
+            this.contextInfos = contextInfos;
+          }),
+      callbackRouter.setShowReopenTabs.addListener((show: boolean) => {
+        this.showReopenTabs_ = show;
+      }),
+      callbackRouter.onSidePanelPinStateChanged.addListener(
+          (isPinned: boolean) => {
+            this.isPinned = isPinned;
+          }),
+    ];
   }
 
   override disconnectedCallback() {
@@ -92,8 +119,34 @@ export class TopToolbarElement extends CrLitElement {
     this.listenerIds_ = [];
   }
 
+  override updated(changedProperties: PropertyValues<this>) {
+    super.updated(changedProperties);
+
+    if (changedProperties.has('isAiPage')) {
+      this.hideMenuButton_ = this.isAiPage && this.hideMenuOnAiPageEnabled_;
+    }
+  }
+
+  protected shouldShowPinButton_(): boolean {
+    return this.isPinButtonEnabled && this.isAiPage;
+  }
+
+  protected getPinButtonTooltip_(): string {
+    return this.isPinned ? loadTimeData.getString('unpinTooltip') :
+                           loadTimeData.getString('pinTooltip');
+  }
+
   protected shouldShowSourcesMenuButton_(): boolean {
     return this.contextInfos.length > 0;
+  }
+
+  protected onPinClick_() {
+    this.isPinned = !this.isPinned;
+    if (this.isPinned) {
+      this.browserProxy_.handler.pinSidePanel();
+    } else {
+      this.browserProxy_.handler.unpinSidePanel();
+    }
   }
 
   protected onCloseButtonClick_() {
@@ -149,13 +202,21 @@ export class TopToolbarElement extends CrLitElement {
     this.browserProxy_.handler.openMyActivityUi();
   }
 
-  protected onHelpClick_() {
+  protected onFeedbackClick_() {
     this.$.menu.get().close();
     chrome.metricsPrivate.recordUserAction(
         'ContextualTasks.WebUI.UserAction.OpenHelp');
     chrome.metricsPrivate.recordBoolean(
         'ContextualTasks.WebUI.UserAction.OpenHelp', true);
-    this.browserProxy_.handler.openHelpUi();
+    this.browserProxy_.handler.openFeedbackUi();
+  }
+
+  protected onReopenTabsReopenClick_() {
+    this.browserProxy_.handler.reopenTabs();
+  }
+
+  protected onReopenTabsDismissClick_() {
+    this.showReopenTabs_ = false;
   }
 }
 

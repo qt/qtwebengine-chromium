@@ -10,7 +10,6 @@
 
 #include "base/check_is_test.h"
 #include "base/check_op.h"
-#include "base/containers/enum_set.h"
 #include "base/feature_list.h"
 #include "base/numerics/safe_conversions.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
@@ -579,8 +578,9 @@ void PreloadingDecider::UpdateSpeculationCandidates(
     }
 
     SpeculationCandidateKey key{candidate->url, candidate->action};
-    if (tags_map_for_immediate_preloading.count(key) != 0) {
-      candidate->tags = tags_map_for_immediate_preloading[key];
+    if (auto it = tags_map_for_immediate_preloading.find(key);
+        it != tags_map_for_immediate_preloading.end()) {
+      candidate->tags = it->second;
     }
   }
 

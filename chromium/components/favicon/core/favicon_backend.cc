@@ -28,7 +28,7 @@
 namespace favicon {
 
 BASE_FEATURE(kUseLastVisitedFallbackURLFavicon,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 using RedirectList = std::vector<GURL>;
 
@@ -91,10 +91,6 @@ void FaviconBackend::Commit() {
   DCHECK_EQ(db_->transaction_nesting(), 0)
       << "Somebody left a transaction open";
   db_->BeginTransaction();
-}
-
-void FaviconBackend::TrimMemory() {
-  db_->TrimMemory();
 }
 
 favicon_base::FaviconRawBitmapResult FaviconBackend::GetLargestFaviconForUrl(

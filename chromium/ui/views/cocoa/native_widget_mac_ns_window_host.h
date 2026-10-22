@@ -78,6 +78,10 @@ class VIEWS_EXPORT NativeWidgetMacNSWindowHost
   // widget; use a __bridge cast to convert to and from NSView*.
   static const char kMovedContentNSView[];
 
+  // Sets state as to whether windows, upon being restored, should be moved to
+  // the space that originally contained them.
+  static void SetMoveWindowsToOriginalSpacesUponRestoration(bool move);
+
   // Unique integer id handles are used to bridge between the
   // NativeWidgetMacNSWindowHost in one process and the NativeWidgetNSWindowHost
   // potentially in another.
@@ -242,9 +246,12 @@ class VIEWS_EXPORT NativeWidgetMacNSWindowHost
 
   bool IsVisible() const { return is_visible_; }
   bool IsMiniaturized() const { return is_miniaturized_; }
-  bool IsWindowKey() const { return is_window_key_; }
+  bool IsWindowKey() const;
   bool IsMouseCaptureActive() const { return is_mouse_capture_active_; }
   bool IsZoomed() const { return is_zoomed_; }
+  bool IsVisibleOnAllWorkspaces() const {
+    return is_visible_on_all_workspaces_;
+  }
 
   // This tracks -[NSWindow isOnActiveSpace].
   // A screen has one active space and may have several hidden spaces.
@@ -353,6 +360,8 @@ class VIEWS_EXPORT NativeWidgetMacNSWindowHost
   void OnWindowGeometryChanged(
       const gfx::Rect& window_bounds_in_screen_dips,
       const gfx::Rect& content_bounds_in_screen_dips) override;
+  void OnWindowWillMove() override;
+  void OnWindowDidEndMove() override;
   void OnWindowWillStartLiveResize() override;
   void OnWindowDidEndLiveResize() override;
   void OnWindowFullscreenTransitionStart(bool target_fullscreen_state) override;
@@ -368,6 +377,7 @@ class VIEWS_EXPORT NativeWidgetMacNSWindowHost
                                 bool full_keyboard_access_enabled) override;
   void OnWindowStateRestorationDataChanged(
       const std::vector<uint8_t>& data) override;
+  void OnVisibleOnAllWorkspacesChanged(bool visible) override;
   void OnSheetModalShown() override;
   void OnSheetModalClosed() override;
   void OnImmersiveFullscreenToolbarRevealChanged(bool is_revealed) override;
@@ -552,6 +562,7 @@ class VIEWS_EXPORT NativeWidgetMacNSWindowHost
   bool is_window_key_ = false;
   bool is_mouse_capture_active_ = false;
   bool is_zoomed_ = false;
+  bool is_visible_on_all_workspaces_ = false;
   gfx::Rect window_bounds_before_fullscreen_;
 
   // Weak pointers to event monitors for this widget. The event monitors

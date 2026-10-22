@@ -19,11 +19,13 @@
 #include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_writer.h"
+#include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/version.h"
@@ -36,6 +38,8 @@
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handler.h"
+// TODO(crbug.com/324534603): Remove this.
+#include "extensions/common/manifest_handlers/description_info.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "extensions/common/manifest_handlers/permissions_parser.h"
 #include "extensions/common/permissions/permission_set.h"
@@ -271,6 +275,9 @@ scoped_refptr<Extension> Extension::Create(const base::FilePath& path,
   manifest->ValidateManifest(&install_warnings);
 
   scoped_refptr<Extension> extension = new Extension(path, std::move(manifest));
+  if (!extension->LoadRequiredFeatures(&install_warnings, error)) {
+    return nullptr;
+  }
   extension->install_warnings_.swap(install_warnings);
 
   // Some manifest parsing may require the dynamic URL to be present on the
@@ -327,7 +334,7 @@ bool Extension::ResourceMatches(const URLPatternSet& pattern_set,
 
 ExtensionResource Extension::GetResource(std::string_view relative_path) const {
   // We have some legacy data where resources have leading slashes.
-  // See: http://crbug.com/121164
+  // See: http://crbug.com/40767705
   if (!relative_path.empty() && relative_path[0] == '/') {
     relative_path.remove_prefix(1);
   }
@@ -621,10 +628,6 @@ bool Extension::InitFromValue(int flags, std::u16string* error) {
     return false;
   }
 
-  if (!LoadRequiredFeatures(error)) {
-    return false;
-  }
-
   if (const std::string* temp = manifest()->FindStringPath(keys::kPublicKey)) {
     // We don't need to validate because ComputeExtensionId() already did that.
     public_key_ = *temp;
@@ -661,8 +664,10 @@ bool Extension::InitFromValue(int flags, std::u16string* error) {
   return true;
 }
 
-bool Extension::LoadRequiredFeatures(std::u16string* error) {
-  if (!LoadName(error) || !LoadVersion(error)) {
+bool Extension::LoadRequiredFeatures(
+    std::vector<InstallWarning>* install_warnings,
+    std::u16string* error) {
+  if (!LoadName(error) || !LoadVersion(install_warnings, error)) {
     return false;
   }
   return true;
@@ -684,7 +689,8 @@ bool Extension::LoadName(std::u16string* error) {
   return true;
 }
 
-bool Extension::LoadVersion(std::u16string* error) {
+bool Extension::LoadVersion(std::vector<InstallWarning>* install_warnings,
+                            std::u16string* error) {
   const std::string* version_str = manifest_->FindStringPath(keys::kVersion);
   if (version_str == nullptr) {
     *error = errors::kInvalidVersion;
@@ -694,6 +700,16 @@ bool Extension::LoadVersion(std::u16string* error) {
   if (!version_.IsValid() || version_.components().size() > 4) {
     *error = errors::kInvalidVersion;
     return false;
+  }
+  // If specified extension version can be parsed into a valid base::Version,
+  // but the representation in manifest is not the "canonical" one, warn
+  // developer. For example, warn that "1.0.02.5" is interpreted as "1.0.2.5" in
+  // case developer meant to write "1.0.20.5" and made a typo.
+  if (*version_str != version_.GetString()) {
+    install_warnings->emplace_back(
+        base::StringPrintf(errors::kVersionFormatting,
+                           version_.GetString().c_str()),
+        keys::kVersion);
   }
   if (const base::Value* temp = manifest_->FindKey(keys::kVersionName)) {
     if (!temp->is_string()) {
@@ -784,22 +800,10 @@ bool Extension::LoadExtent(const char* key,
 }
 
 bool Extension::LoadSharedFeatures(std::u16string* error) {
-  if (!LoadDescription(error) ||
-      !ManifestHandler::ParseExtension(this, error) || !LoadShortName(error)) {
+  if (!ManifestHandler::ParseExtension(this, error) || !LoadShortName(error)) {
     return false;
   }
 
-  return true;
-}
-
-bool Extension::LoadDescription(std::u16string* error) {
-  if (const base::Value* temp = manifest_->FindKey(keys::kDescription)) {
-    if (!temp->is_string()) {
-      *error = errors::kInvalidDescription;
-      return false;
-    }
-    description_ = temp->GetString();
-  }
   return true;
 }
 
@@ -852,6 +856,11 @@ bool Extension::LoadShortName(std::u16string* error) {
     short_name_ = display_name_;
   }
   return true;
+}
+
+// TODO(crbug.com/324534603): Remove this.
+const std::string& Extension::description() const {
+  return DescriptionInfo::GetDescription(*this);
 }
 
 ExtensionInfo::ExtensionInfo(const base::DictValue* manifest,

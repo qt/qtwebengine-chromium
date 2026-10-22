@@ -30,7 +30,6 @@ void AuthenticationBob::StartAuthentication() {
   msgs::AuthSpake2Handshake message = {
       .initiation_token =
           msgs::AuthInitiationToken{
-              .has_token = true,
               .token = auth_data_.auth_token,
           },
       .psk_status = msgs::AuthSpake2PskStatus::kPskNeedsPresentation,
@@ -66,7 +65,7 @@ ErrorOr<size_t> AuthenticationBob::OnStreamMessage(uint64_t instance_id,
         return Error::Code::kCborParsing;
       } else {
         auto& initiation_token = handshake.initiation_token;
-        if (!initiation_token.has_token ||
+        if (!initiation_token.token.has_value() ||
             initiation_token.token != auth_data_.auth_token) {
           Error error{Error::Code::kInvalidAnswer,
                       "Authentication failed: initiation token mismatch."};
@@ -82,7 +81,6 @@ ErrorOr<size_t> AuthenticationBob::OnStreamMessage(uint64_t instance_id,
           msgs::AuthSpake2Handshake message = {
               .initiation_token =
                   msgs::AuthInitiationToken{
-                      .has_token = true,
                       .token = initiation_token.token,
                   },
               .psk_status = msgs::AuthSpake2PskStatus::kPskInput,

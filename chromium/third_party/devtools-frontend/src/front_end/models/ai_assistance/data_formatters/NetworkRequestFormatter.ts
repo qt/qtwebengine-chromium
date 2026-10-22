@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import type * as SDK from '../../../core/sdk/sdk.js';
+import type * as Protocol from '../../../generated/protocol.js';
 import * as Annotations from '../../annotations/annotations.js';
 import * as Logs from '../../logs/logs.js';
 import * as NetworkTimeCalculator from '../../network_time_calculator/network_time_calculator.js';
@@ -75,6 +76,51 @@ export class NetworkRequestFormatter {
     return '<redacted cross-origin initiator URL>';
   }
 
+  static formatStatus(status: {
+    statusCode: number,
+    statusText: string,
+    failed: boolean,
+    canceled: boolean,
+    preserved: boolean,
+    finished: boolean,
+  }): string {
+    let responseStatus = '';
+    if (status.statusCode) {
+      responseStatus = `Response status: ${status.statusCode} ${status.statusText}\n`;
+    }
+    const flags = [];
+    flags.push(status.finished ? 'finished' : 'pending');
+    if (status.failed) {
+      flags.push('failed');
+    }
+    if (status.canceled) {
+      flags.push('canceled');
+    }
+    if (status.preserved) {
+      flags.push('preserved');
+    }
+    const requestStatus = flags.length > 0 ? `Network request status: ${flags.join(', ')}\n` : '';
+    return `${responseStatus}${requestStatus}`;
+  }
+
+  static formatFailureReasons(reasons: {
+    blockedReason?: Protocol.Network.BlockedReason,
+    corsErrorStatus?: Protocol.Network.CorsErrorStatus,
+    localizedFailDescription?: string|null,
+  }): string {
+    const lines = [];
+    if (reasons.blockedReason) {
+      lines.push(`Blocked reason: ${reasons.blockedReason}`);
+    }
+    if (reasons.corsErrorStatus) {
+      lines.push(`CORS error: ${reasons.corsErrorStatus.corsError} ${reasons.corsErrorStatus.failedParameter}`);
+    }
+    if (reasons.localizedFailDescription) {
+      lines.push(`Fail description: ${reasons.localizedFailDescription}`);
+    }
+    return lines.length > 0 ? `${lines.join('\n')}\n` : '';
+  }
+
   constructor(
       request: SDK.NetworkRequest.NetworkRequest, calculator: NetworkTimeCalculator.NetworkTransferTimeCalculator) {
     this.#request = request;
@@ -111,11 +157,29 @@ ${this.formatRequestHeaders()}
 
 ${this.formatResponseHeaders()}${responseBody}
 
-Response status: ${this.#request.statusCode} ${this.#request.statusText}
-
+${this.formatStatus()}${this.formatFailureReasons()}
 Request timing:\n${this.formatNetworkRequestTiming()}
 
 Request initiator chain:\n${this.formatRequestInitiatorChain()}`;
+  }
+
+  formatStatus(): string {
+    return NetworkRequestFormatter.formatStatus({
+      statusCode: this.#request.statusCode,
+      statusText: this.#request.statusText,
+      failed: this.#request.failed,
+      canceled: this.#request.canceled,
+      preserved: this.#request.preserved,
+      finished: this.#request.finished,
+    });
+  }
+
+  formatFailureReasons(): string {
+    return NetworkRequestFormatter.formatFailureReasons({
+      blockedReason: this.#request.blockedReason(),
+      corsErrorStatus: this.#request.corsErrorStatus(),
+      localizedFailDescription: this.#request.localizedFailDescription,
+    });
   }
 
   /**

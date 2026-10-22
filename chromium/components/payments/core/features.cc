@@ -29,16 +29,12 @@ BASE_FEATURE(kAppStoreBilling,
 
 BASE_FEATURE(kAppStoreBillingDebug, base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kCanMakePaymentTrueWhenPrivate, base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kAllowJITInstallationWhenAppIconIsMissing,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kEnforceFullDelegation, base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kGPayAppDynamicUpdate, base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kRestrictIsReadyToPayQuery, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kSecurePaymentConfirmationUseCredentialStoreAPIs,
 #if BUILDFLAG(IS_ANDROID)
@@ -48,10 +44,17 @@ BASE_FEATURE(kSecurePaymentConfirmationUseCredentialStoreAPIs,
 #endif
 );
 
-BASE_FEATURE(kSecurePaymentConfirmationFallback,
+
+BASE_FEATURE(kPaymentRequestUseRendererUrlLoader,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kPaymentRequestRejectTooSmallWindows,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kPaymentRequestSupportReportingAppError,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kPaymentHandlerDialogUseInitiatorInUrlLoad,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace features

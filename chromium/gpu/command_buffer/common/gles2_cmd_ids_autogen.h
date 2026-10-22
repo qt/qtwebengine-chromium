@@ -326,14 +326,16 @@
   OP(FramebufferPixelLocalClearValueuivANGLEImmediate)         /* 567 */ \
   OP(BeginPixelLocalStorageANGLEImmediate)                     /* 568 */ \
   OP(EndPixelLocalStorageANGLEImmediate)                       /* 569 */ \
-  OP(PixelLocalStorageBarrierANGLE)                            /* 570 */ \
-  OP(FramebufferPixelLocalStorageInterruptANGLE)               /* 571 */ \
-  OP(FramebufferPixelLocalStorageRestoreANGLE)                 /* 572 */ \
-  OP(GetFramebufferPixelLocalStorageParameterfvANGLE)          /* 573 */ \
-  OP(GetFramebufferPixelLocalStorageParameterivANGLE)          /* 574 */ \
-  OP(ClipControlEXT)                                           /* 575 */ \
-  OP(PolygonModeANGLE)                                         /* 576 */ \
-  OP(PolygonOffsetClampEXT)                                    /* 577 */
+  OP(EndPixelLocalStorageImplicitANGLE)                        /* 570 */ \
+  OP(PixelLocalStorageBarrierANGLE)                            /* 571 */ \
+  OP(FramebufferPixelLocalStorageInterruptANGLE)               /* 572 */ \
+  OP(FramebufferPixelLocalStorageRestoreANGLE)                 /* 573 */ \
+  OP(GetFramebufferPixelLocalStorageParameterfvANGLE)          /* 574 */ \
+  OP(GetFramebufferPixelLocalStorageParameterivANGLE)          /* 575 */ \
+  OP(GetFramebufferPixelLocalStorageParameteruivANGLE)         /* 576 */ \
+  OP(ClipControlEXT)                                           /* 577 */ \
+  OP(PolygonModeANGLE)                                         /* 578 */ \
+  OP(PolygonOffsetClampEXT)                                    /* 579 */
 
 enum CommandId {
   kOneBeforeStartPoint =

@@ -290,7 +290,7 @@ class PLATFORM_EXPORT Resource : public GarbageCollected<Resource>,
       scoped_refptr<base::SingleThreadTaskRunner> loader_task_runner) {}
   virtual void DidReceiveDecodedData(
       const String& data,
-      std::unique_ptr<ParkableStringImpl::SecureDigest> digest) {}
+      std::unique_ptr<SecureStringDigest> digest) {}
   void SetResponse(const ResourceResponse&);
   const ResourceResponse& GetResponse() const { return response_; }
   ResourceResponse& GetMutableResponseForTesting() { return response_; }
@@ -459,7 +459,7 @@ class PLATFORM_EXPORT Resource : public GarbageCollected<Resource>,
   }
 
   // Sets the ResourceRequest to be tagged as an ad.
-  void SetIsAdResource();
+  void SetIsAdResource(AdProvenance ad_provenance);
 
   void DidRemoveClientOrObserver();
 

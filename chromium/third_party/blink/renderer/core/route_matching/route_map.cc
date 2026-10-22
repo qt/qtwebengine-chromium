@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/core/url_pattern/url_pattern_utils.h"
 #include "third_party/blink/renderer/platform/json/json_parser.h"
 #include "third_party/blink/renderer/platform/json/json_values.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -107,7 +108,7 @@ RouteMap::ParseResult RouteMap::ParseAndApplyRoutes(
                            "Invalid data type or missing name entry for route");
       }
 
-      if (name.StartsWith("--")) {
+      if (name.starts_with("--")) {
         // Don't clash with CSS @route rules.
         //
         // TODO(crbug.com/436805487): Add a test for this (if support for
@@ -163,7 +164,7 @@ RouteMap::ParseResult RouteMap::ParseAndApplyRoutes(
 
 void RouteMap::AddRouteFromRule(const String& dashed_ident,
                                 URLPattern* url_pattern) {
-  DCHECK(dashed_ident.StartsWith("--"));
+  DCHECK(dashed_ident.starts_with("--"));
 
   if (routes_.find(dashed_ident) != routes_.end()) {
     // TODO(crbug.com/436805487): Handle route modificiation and removal.
@@ -267,6 +268,22 @@ void RouteMap::OnNavigationDone() {
   if (has_history_rules_) {
     GetDocument().GetStyleEngine().NavigationsMayHaveChanged();
   }
+}
+
+void RouteMap::OnPreviewStart() {
+  CHECK(!in_preview_);
+  CHECK(RuntimeEnabledFeatures::TwoPhaseViewTransitionEnabled());
+  in_preview_ = true;
+  GetDocument().GetStyleEngine().NavigationsMayHaveChanged();
+}
+
+void RouteMap::OnPreviewFinished() {
+  if (!in_preview_) {
+    return;
+  }
+  CHECK(RuntimeEnabledFeatures::TwoPhaseViewTransitionEnabled());
+  in_preview_ = false;
+  GetDocument().GetStyleEngine().NavigationsMayHaveChanged();
 }
 
 RouteMap::ParseResult RouteMap::AddPatternToRoute(Route& route,

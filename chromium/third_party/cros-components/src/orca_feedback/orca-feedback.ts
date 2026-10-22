@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import '../button/button';
-import '../chip/chip';
+import '../button/button.js';
+import '../chip/chip.js';
 
 import {Task} from '@lit/task';
 import {css, CSSResultGroup, html, LitElement, nothing} from 'lit';
 
-import {maybeSafeHTML} from './maybe_safe_html';
+import {maybeSafeHTML} from './maybe_safe_html.js';
 
 interface StringSource {
   getAriaLabelForLink(arg: string): string;

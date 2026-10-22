@@ -14,6 +14,7 @@
  */
 
 #include "type_manager.h"
+#include <cstdint>
 #include <spirv/unified1/spirv.hpp>
 #include "generated/spirv_grammar_helper.h"
 #include "module.h"
@@ -48,7 +49,7 @@ const Type* Variable::PointerType(TypeManager& type_manager_) const {
 const Type& TypeManager::AddType(std::unique_ptr<Instruction> new_inst, SpvType spv_type) {
     const auto& inst = module_.types_values_constants_.emplace_back(std::move(new_inst));
 
-    id_to_type_[inst->ResultId()] = std::make_unique<Type>(spv_type, *inst);
+    id_to_type_[inst->ResultId()] = std::make_unique<Type>(spv_type, *inst, *this);
     const Type* new_type = id_to_type_[inst->ResultId()].get();
 
     switch (spv_type) {
@@ -110,6 +111,13 @@ const Type& TypeManager::AddType(std::unique_ptr<Instruction> new_inst, SpvType 
         case SpvType::kHitObjectNV:
         case SpvType::kHitObjectEXT:
             break;  // don't track hit objects currently
+        case SpvType::kBufferEXT:
+            break;
+        case SpvType::kUntypedPointerKHR:
+            break;
+        case SpvType::kTensorLayoutNV:
+        case SpvType::kTensorViewNV:
+            break;
         default:
             assert(false && "unsupported SpvType");
             break;
@@ -121,6 +129,7 @@ const Type& TypeManager::AddType(std::unique_ptr<Instruction> new_inst, SpvType 
 // We don't want to waste time trying to look up potential recursive struct type
 // This is added for those we want to spend time to not duplicate and link with.
 // We also will hit spirv-val errors if using 2 OpTypeStruct, even if same internals
+// (https://gitlab.khronos.org/spirv/SPIR-V/-/issues/918)
 void TypeManager::AddStructTypeForLinking(const Type* new_type) {
     assert(new_type && new_type->spv_type_ == SpvType::kStruct);
     linking_struct_types_.push_back(new_type);
@@ -250,8 +259,7 @@ const Type& TypeManager::GetTypeAccelerationStructure() {
 
 const Type& TypeManager::GetTypeInt(uint32_t bit_width, bool is_signed) {
     for (const auto type : int_types_) {
-        const bool int_is_signed = type->inst_.Word(3) != 0;
-        if (type->inst_.Word(2) == bit_width && int_is_signed == is_signed) {
+        if (type->meta_.scalar.bit_width == bit_width && type->meta_.scalar.is_signed == is_signed) {
             return *type;
         }
     }
@@ -265,7 +273,7 @@ const Type& TypeManager::GetTypeInt(uint32_t bit_width, bool is_signed) {
 
 const Type& TypeManager::GetTypeFloat(uint32_t bit_width) {
     for (const auto type : float_types_) {
-        if (type->inst_.Word(2) == bit_width) {
+        if (type->meta_.scalar.bit_width == bit_width) {
             return *type;
         }
     }
@@ -276,12 +284,14 @@ const Type& TypeManager::GetTypeFloat(uint32_t bit_width) {
     return AddType(std::move(new_inst), SpvType::kFloat);
 }
 
-const Type& TypeManager::GetTypeArray(const Type& element_type, const Constant& length) {
-    for (const auto type : array_types_) {
-        const Type* this_element_type = FindTypeById(type->inst_.Word(2));
-        if (this_element_type && (*this_element_type == element_type)) {
-            if (type->inst_.Word(3) == length.Id()) {
-                return *type;
+const Type& TypeManager::GetTypeArray(const Type& element_type, const Constant& length, bool get_explicit_layout) {
+    if (get_explicit_layout || !IsExplicitLayoutType(element_type)) {
+        for (const auto type : array_types_) {
+            const Type* this_element_type = FindTypeById(type->inst_.Word(2));
+            if (this_element_type && (*this_element_type == element_type)) {
+                if (type->inst_.Word(3) == length.Id()) {
+                    return *type;
+                }
             }
         }
     }
@@ -292,11 +302,13 @@ const Type& TypeManager::GetTypeArray(const Type& element_type, const Constant& 
     return AddType(std::move(new_inst), SpvType::kArray);
 }
 
-const Type& TypeManager::GetTypeRuntimeArray(const Type& element_type) {
-    for (const auto type : runtime_array_types_) {
-        const Type* this_element_type = FindTypeById(type->inst_.Word(2));
-        if (this_element_type && (*this_element_type == element_type)) {
-            return *type;
+const Type& TypeManager::GetTypeRuntimeArray(const Type& element_type, bool get_explicit_layout) {
+    if (get_explicit_layout || !IsExplicitLayoutType(element_type)) {
+        for (const auto type : runtime_array_types_) {
+            const Type* this_element_type = FindTypeById(type->inst_.Word(2));
+            if (this_element_type && (*this_element_type == element_type)) {
+                return *type;
+            }
         }
     }
 
@@ -308,7 +320,7 @@ const Type& TypeManager::GetTypeRuntimeArray(const Type& element_type) {
 
 const Type& TypeManager::GetTypeVector(const Type& component_type, uint32_t component_count) {
     for (const auto type : vector_types_) {
-        if (type->inst_.Word(3) != component_count) {
+        if (type->meta_.vector.component_count != component_count) {
             continue;
         }
 
@@ -326,7 +338,7 @@ const Type& TypeManager::GetTypeVector(const Type& component_type, uint32_t comp
 
 const Type& TypeManager::GetTypeMatrix(const Type& column_type, uint32_t column_count) {
     for (const auto type : matrix_types_) {
-        if (type->inst_.Word(3) != column_count) {
+        if (type->meta_.matrix.component_count != column_count) {
             continue;
         }
 
@@ -356,15 +368,17 @@ const Type& TypeManager::GetTypeSampledImage(const Type& image_type) {
     return AddType(std::move(new_inst), SpvType::kSampledImage);
 }
 
-const Type& TypeManager::GetTypePointer(spv::StorageClass storage_class, const Type& pointer_type) {
-    for (const auto type : pointer_types_) {
-        if (type->inst_.Word(2) != storage_class) {
-            continue;
-        }
+const Type& TypeManager::GetTypePointer(spv::StorageClass storage_class, const Type& pointer_type, bool get_explicit_layout) {
+    if (get_explicit_layout || !IsExplicitLayoutType(pointer_type)) {
+        for (const auto type : pointer_types_) {
+            if (type->inst_.Word(2) != storage_class) {
+                continue;
+            }
 
-        const Type* this_pointer_type = FindTypeById(type->inst_.Word(3));
-        if (this_pointer_type && (*this_pointer_type == pointer_type)) {
-            return *type;
+            const Type* this_pointer_type = FindTypeById(type->inst_.Word(3));
+            if (this_pointer_type && (*this_pointer_type == pointer_type)) {
+                return *type;
+            }
         }
     }
 
@@ -385,10 +399,13 @@ const Type& TypeManager::GetTypePointerBuiltInInput(spv::BuiltIn built_in) {
         case spv::BuiltInInstanceIndex:
         case spv::BuiltInPrimitiveId:
         case spv::BuiltInInvocationId:
+        case spv::BuiltInLocalInvocationIndex:
+        case spv::BuiltInSubgroupSize:
         case spv::BuiltInSubgroupLocalInvocationId: {
             const Type& uint_32 = GetTypeInt(32, false);
             return GetTypePointer(spv::StorageClassInput, uint_32);
         }
+        case spv::BuiltInWorkgroupSize:
         case spv::BuiltInGlobalInvocationId:
         case spv::BuiltInLaunchIdKHR: {
             const Type& uint_32 = GetTypeInt(32, false);
@@ -412,29 +429,30 @@ const Type& TypeManager::GetTypePointerBuiltInInput(spv::BuiltIn built_in) {
     }
 }
 
-uint32_t TypeManager::TypeLength(const Type& type) {
-    switch (type.inst_.Opcode()) {
-        case spv::OpTypeFloat:
-        case spv::OpTypeInt:
-            return type.inst_.Operand(0) / 8u;
-        case spv::OpTypeVector:
-        case spv::OpTypeMatrix: {
-            const Type* count = FindTypeById(type.inst_.Operand(0));
-            return type.inst_.Operand(1) * TypeLength(*count);
+uint32_t TypeManager::GetTypeBytesSize(const Type& type) {
+    switch (type.spv_type_) {
+        case SpvType::kFloat:
+        case SpvType::kInt:
+        case SpvType::kBool:
+            return type.meta_.scalar.bit_width / 8u;
+        case SpvType::kVector:
+        case SpvType::kVectorIdEXT: {
+            const Type* count_type = FindTypeById(type.inst_.Operand(0));
+            return type.meta_.vector.component_count * GetTypeBytesSize(*count_type);
         }
-        case spv::OpTypePointer:
+        case SpvType::kMatrix: {
+            const Type* column_type = FindTypeById(type.inst_.Operand(0));
+            return type.meta_.matrix.component_count * GetTypeBytesSize(*column_type);
+        }
+        case SpvType::kPointer:
             assert(type.inst_.Operand(0) == spv::StorageClassPhysicalStorageBuffer && "unexpected pointer type");
             // always will be PhysicalStorageBuffer64 addressing model
             return 8u;
-        case spv::OpTypeArray: {
+        case SpvType::kArray: {
             const Type* element_type = FindTypeById(type.inst_.Operand(0));
-            const Constant* count = FindConstantById(type.inst_.Operand(1));
-            // TODO - Need to handle spec constant here, for now return zero to have things not blowup
-            assert(count && !count->is_spec_constant_);
-            const uint32_t array_length = (count && !count->is_spec_constant_) ? count->inst_.Operand(0) : 0;
-            return array_length * TypeLength(*element_type);
+            return type.meta_.array.length * GetTypeBytesSize(*element_type);
         }
-        case spv::OpTypeStruct: {
+        case SpvType::kStruct: {
             // Get the offset of the last member and then figure out it's size
             // Note: the largest offset doesn't have to be the last element index of the struct
             uint32_t last_offset = 0;
@@ -462,12 +480,12 @@ uint32_t TypeManager::TypeLength(const Type& type) {
             }
 
             const Type* last_element_type = FindTypeById(type.inst_.Operand(last_offset_index));
-            const uint32_t last_length = TypeLength(*last_element_type);
+            const uint32_t last_length = GetTypeBytesSize(*last_element_type);
             const uint32_t struct_size = last_offset + last_length;
             struct_size_map_[struct_id] = struct_size;
             return struct_size;
         }
-        case spv::OpTypeRuntimeArray:
+        case SpvType::kRuntimeArray:
             assert(false && "unsupported type");
             break;
         default:
@@ -484,12 +502,12 @@ const Constant& TypeManager::AddConstant(std::unique_ptr<Instruction> new_inst, 
     const Constant* new_constant = id_to_constant_[inst->ResultId()].get();
 
     if (inst->Opcode() == spv::OpConstant) {
-        if (type.inst_.Opcode() == spv::OpTypeInt && type.inst_.Word(2) == 32) {
+        if (type.spv_type_ == SpvType::kInt && type.meta_.scalar.bit_width == 32) {
             int_32bit_constants_.emplace_back(new_constant);
-        } else if (type.inst_.Opcode() == spv::OpTypeFloat) {
-            if (type.inst_.Word(2) == 16) {
+        } else if (type.spv_type_ == SpvType::kFloat) {
+            if (type.meta_.scalar.bit_width == 16) {
                 float_16bit_constants_.emplace_back(new_constant);
-            } else if (type.inst_.Word(2) == 32) {
+            } else if (type.meta_.scalar.bit_width == 32) {
                 float_32bit_constants_.emplace_back(new_constant);
             }
         }
@@ -540,6 +558,25 @@ const Constant& TypeManager::CreateConstantUInt32(uint32_t value) {
     return AddConstant(std::move(new_inst), type);
 }
 
+// Used when not sure if 8-bit float, 64-bit int, or something inbetween
+const Constant& TypeManager::CreateConstantScalar(uint64_t value, const Type& type, uint32_t result_id) {
+    const bool is_64bit = type.Is64Bit();
+
+    auto new_inst = std::make_unique<Instruction>(is_64bit ? 5 : 4, spv::OpConstant);
+
+    if (result_id == 0) {
+        result_id = module_.TakeNextId();
+    }
+
+    std::vector<uint32_t> words = {type.Id(), result_id, static_cast<uint32_t>(value & 0xFFFFFFFF)};
+    if (is_64bit) {
+        words.emplace_back(static_cast<uint32_t>(value >> 32));
+    }
+    new_inst->Fill(words);
+
+    return AddConstant(std::move(new_inst), type);
+}
+
 const Constant& TypeManager::GetConstantUInt32(uint32_t value) {
     if (value == 0) {
         return GetConstantZeroUint32();
@@ -551,6 +588,12 @@ const Constant& TypeManager::GetConstantUInt32(uint32_t value) {
         constant = &CreateConstantUInt32(value);
     }
     return *constant;
+}
+
+// Useful to canonicalize integer constants to uint32.
+uint32_t TypeManager::GetConstantUInt32FromId(uint32_t id) {
+    uint32_t value = FindConstantById(id)->GetValueUint32();
+    return GetConstantUInt32(value).Id();
 }
 
 // It is common to use uint32_t(0) as a default, so having it cached is helpful
@@ -681,6 +724,10 @@ const Variable& TypeManager::AddVariable(std::unique_ptr<Instruction> new_inst, 
         output_variables_.push_back(new_variable);
     } else if (new_variable->StorageClass() == spv::StorageClassPushConstant) {
         push_constant_variable_ = new_variable;
+    } else if (new_variable->StorageClass() == spv::StorageClassWorkgroup) {
+        shared_memory_variables_.push_back(new_variable);
+    } else if (new_variable->StorageClass() == spv::StorageClassTaskPayloadWorkgroupEXT) {
+        task_payload_variables_.push_back(new_variable);
     }
 
     return *new_variable;
@@ -693,9 +740,38 @@ const Variable* TypeManager::FindVariableById(uint32_t id) const {
 
 const Variable* TypeManager::FindPushConstantVariable() const { return push_constant_variable_; }
 
+Type::Meta Type::SetMeta(SpvType spv_type, const Instruction& inst, const TypeManager& type_manager) {
+    Meta m{};  // Zero-initialize (unions don't zero-init automatically)
+    if (spv_type == SpvType::kVector) {
+        m.vector.component_count = inst.Word(3);
+    } else if (spv_type == SpvType::kVectorIdEXT) {
+        const Constant* count = type_manager.FindConstantById(inst.Word(3));
+        assert(count && !count->is_spec_constant_);
+        m.vector.component_count = count->GetValueUint32();
+    } else if (spv_type == SpvType::kMatrix) {
+        m.matrix.component_count = inst.Word(3);
+    } else if (spv_type == SpvType::kArray) {
+        const Constant* count = type_manager.FindConstantById(inst.Word(3));
+        assert(count && !count->is_spec_constant_);
+        m.array.length = count->GetValueUint32();
+    } else if (spv_type == SpvType::kFloat) {
+        m.scalar.bit_width = inst.Word(2);
+    } else if (spv_type == SpvType::kInt) {
+        m.scalar.bit_width = inst.Word(2);
+        m.scalar.is_signed = inst.Word(3) == 1;
+    } else if (spv_type == SpvType::kBool) {
+        // "Boolean values considered as 32-bit integer values for the purpose of this calculation"
+        m.scalar.bit_width = 32;
+    }
+    return m;
+}
+
+Type::Type(SpvType spv_type, const Instruction& inst, const TypeManager& type_manager)
+    : spv_type_(spv_type), inst_(inst), meta_(SetMeta(spv_type, inst, type_manager)) {}
+
 bool Type::IsArray() const { return spv_type_ == SpvType::kArray || spv_type_ == SpvType::kRuntimeArray; }
 
-bool Type::IsSignedInt() const { return spv_type_ == SpvType::kInt && inst_.Word(3) == 1; }
+bool Type::IsSignedInt() const { return spv_type_ == SpvType::kInt && meta_.scalar.is_signed; }
 
 bool Type::IsIVec3(const TypeManager& type_manager) const {
     if (spv_type_ == SpvType::kVector) {
@@ -708,22 +784,61 @@ bool Type::IsIVec3(const TypeManager& type_manager) const {
 }
 
 uint32_t Type::VectorSize() const {
-    if (spv_type_ == SpvType::kVector) {
-        return inst_.Word(3);
-    }
-    return 0;
+    return (spv_type_ == SpvType::kVector || spv_type_ == SpvType::kVectorIdEXT) ? meta_.vector.component_count : 0;
 }
 
 bool Type::Is64Bit() const {
     if (spv_type_ == SpvType::kFloat || spv_type_ == SpvType::kInt) {
-        return inst_.Word(2) == 64;
+        return meta_.scalar.bit_width == 64;
     }
     return false;
+}
+
+uint32_t TypeManager::GetNumScalarElements(const Type& type) const {
+    switch (type.spv_type_) {
+        case SpvType::kStruct:
+            return GetNumScalarElementsBeforeCompositeMember(type, type.inst_.Length() - 2);
+        case SpvType::kArray: {
+            const Type* element_type = FindTypeById(type.inst_.Word(2));
+            return type.meta_.array.length * GetNumScalarElements(*element_type);
+        }
+        case SpvType::kVectorIdEXT:
+        case SpvType::kVector:
+            return type.meta_.vector.component_count;
+        case SpvType::kMatrix:
+            return type.meta_.matrix.component_count * GetNumScalarElements(*FindTypeById(type.inst_.Word(2)));
+        case SpvType::kInt:
+        case SpvType::kFloat:
+        case SpvType::kBool:
+            return 1;
+        default:
+            assert(false);
+            return 0;
+    }
 }
 
 uint32_t Constant::GetValueUint32() const {
     assert(inst_.Opcode() == spv::OpConstant || inst_.Opcode() == spv::OpConstantNull);
     return inst_.Opcode() == spv::OpConstantNull ? 0 : inst_.Word(3);
+}
+
+uint64_t Constant::GetValueUint64(bool is_signed) const {
+    const uint32_t bit_width = type_.meta_.scalar.bit_width;
+
+    uint64_t value = inst_.Word(3);
+    if (bit_width == 64) {
+        value |= (static_cast<uint64_t>(inst_.Word(4)) << 32);
+    }
+
+    // Sign-extend if necessary (8, 16, 32 bit negative numbers)
+    if (is_signed && bit_width < 64) {
+        uint64_t sign_bit = 1ULL << (bit_width - 1);
+        if (value & sign_bit) {
+            uint64_t mask = ~0ULL << bit_width;
+            value |= mask;
+        }
+    }
+    return value;
 }
 
 void TypeManager::AddUndef(std::unique_ptr<Instruction> new_inst) {
@@ -732,6 +847,44 @@ void TypeManager::AddUndef(std::unique_ptr<Instruction> new_inst) {
 }
 
 bool TypeManager::IsUndef(uint32_t id) const { return undef_ids_.find(id) != undef_ids_.end(); }
+
+const Type* TypeManager::FindChildType(const Type& type, uint32_t idx) const {
+    switch (type.spv_type_) {
+        case SpvType::kPointer:
+            assert(idx == 0);
+            return FindTypeById(type.inst_.Word(3));
+        case SpvType::kStruct:
+            return FindTypeById(type.inst_.Word(idx + 2));
+        case SpvType::kArray:
+            assert(idx == 0);
+            return FindTypeById(type.inst_.Word(2));
+        case SpvType::kVectorIdEXT:
+        case SpvType::kVector:
+        case SpvType::kMatrix:
+            assert(idx == 0);
+            return FindTypeById(type.inst_.Word(2));
+        case SpvType::kInt:
+        case SpvType::kFloat:
+        case SpvType::kBool:
+            return nullptr;
+        default:
+            assert(0);
+            return nullptr;
+    }
+}
+
+uint32_t TypeManager::GetNumScalarElementsBeforeCompositeMember(const Type& type, uint32_t idx) const {
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < idx; ++i) {
+        count += GetNumScalarElements(*FindChildType(type, i));
+    }
+    return count;
+}
+
+// This stems from the fact even if you have two OpTypeStruct that are the EXACT SAME, it is not valid to mix and match them
+// (https://gitlab.khronos.org/spirv/SPIR-V/-/issues/918) The idea is when linking, to ignore anything that has any reference to an
+// explicit layout types (like structs) that might collide with our incoming GLSL code
+bool TypeManager::IsExplicitLayoutType(const Type& type) const { return type.spv_type_ == SpvType::kStruct; }
 
 }  // namespace spirv
 }  // namespace gpuav

@@ -74,9 +74,14 @@ class PermissionPrompt {
     virtual void Deny(const PromptOptions& prompt_options) = 0;
     virtual void Dismiss(const PromptOptions& prompt_options) = 0;
     virtual void Ignore(const PromptOptions& prompt_options) = 0;
+    virtual void SwitchToLoudPrompt() = 0;
 
     virtual GeolocationAccuracy GetInitialGeolocationAccuracySelection()
         const = 0;
+
+    // Returns true if the location precision selector should be shown for the
+    // requests.
+    virtual bool ShouldShowLocationPrecisionSelector() const = 0;
 
     // Called to explicitly finalize the request, if
     // |ShouldFinalizeRequestAfterDecided| returns false.
@@ -151,6 +156,7 @@ class PermissionPrompt {
   static std::unique_ptr<PermissionPrompt> Create(
       content::WebContents* web_contents,
       Delegate* delegate);
+
   virtual ~PermissionPrompt() = default;
 
   // Updates where the prompt should be anchored. ex: fullscreen toggle.

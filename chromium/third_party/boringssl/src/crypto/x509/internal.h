@@ -21,6 +21,7 @@
 #include <openssl/x509.h>
 
 #include "../asn1/internal.h"
+#include "../mem_internal.h"
 #include "../internal.h"
 
 // Internal structures.
@@ -66,18 +67,17 @@ BSSL_NAMESPACE_BEGIN
 DECLARE_ASN1_ITEM(X509_NAME_ENTRY)
 
 struct X509_NAME_CACHE {
+  static constexpr bool kAllowUniquePtr = true;
   // canon contains the DER-encoded canonicalized X.509 Name, not including the
   // outermost TLV.
-  uint8_t *canon;
-  size_t canon_len;
+  Array<uint8_t> canon;
   // der contains the DER-encoded X.509 Name, including the outermost TLV.
-  uint8_t *der;
-  size_t der_len;
+  Array<uint8_t> der;
 };
 
 class X509Name : public X509_name_st {
  public:
-  STACK_OF(X509_NAME_ENTRY) *entries;
+  STACK_OF(X509_NAME_ENTRY) *entries = nullptr;
   mutable bssl::Atomic<bssl::X509_NAME_CACHE *> cache;
 } /* X509_NAME */;
 
@@ -121,14 +121,12 @@ BSSL_NAMESPACE_BEGIN
 // (RFC 5280) and C type is |STACK_OF(X509_EXTENSION)*|.
 DECLARE_ASN1_ITEM(X509_EXTENSIONS)
 
-class X509Impl : public x509_st {
+class X509Impl : public x509_st, public RefCounted<X509Impl> {
  public:
-  static constexpr bool kAllowUniquePtr = true;
-
-  ~X509Impl();
+  X509Impl();
 
   // TBSCertificate fields:
-  uint8_t version;  // One of the |X509_VERSION_*| constants.
+  uint8_t version = X509_VERSION_1;  // One of the |X509_VERSION_*| constants.
   ASN1_INTEGER serialNumber;
   X509_ALGOR tbs_sig_alg;
   X509Name issuer;
@@ -136,9 +134,9 @@ class X509Impl : public x509_st {
   ASN1_TIME notAfter;
   X509Name subject;
   X509_PUBKEY key;
-  ASN1_BIT_STRING *issuerUID;            // [ 1 ] optional in v2
-  ASN1_BIT_STRING *subjectUID;           // [ 2 ] optional in v2
-  STACK_OF(X509_EXTENSION) *extensions;  // [ 3 ] optional in v3
+  ASN1_BIT_STRING *issuerUID = nullptr;            // [ 1 ] optional in v2
+  ASN1_BIT_STRING *subjectUID = nullptr;           // [ 2 ] optional in v2
+  STACK_OF(X509_EXTENSION) *extensions = nullptr;  // [ 3 ] optional in v3
   // Certificate fields:
   X509_ALGOR sig_alg;
   ASN1_BIT_STRING signature;
@@ -146,22 +144,25 @@ class X509Impl : public x509_st {
   // buf, if not nullptr, contains a copy of the serialized Certificate.
   // TODO(davidben): Now every parsed |X509| has an underlying |CRYPTO_BUFFER|,
   // but |X509|s created peacemeal do not. Can we make this more uniform?
-  CRYPTO_BUFFER *buf;
-  bssl::CRYPTO_refcount_t references;
+  CRYPTO_BUFFER *buf = nullptr;
   CRYPTO_EX_DATA ex_data;
   // These contain copies of various extension values
-  long ex_pathlen;
-  uint32_t ex_flags;
-  uint32_t ex_kusage;
-  uint32_t ex_xkusage;
-  ASN1_OCTET_STRING *skid;
-  AUTHORITY_KEYID *akid;
-  STACK_OF(DIST_POINT) *crldp;
-  STACK_OF(GENERAL_NAME) *altname;
-  NAME_CONSTRAINTS *nc;
-  unsigned char cert_hash[SHA256_DIGEST_LENGTH];
-  bssl::X509_CERT_AUX *aux;
-  bssl::CRYPTO_MUTEX lock;
+  long ex_pathlen = -1;
+  uint32_t ex_flags = 0;
+  uint32_t ex_kusage = 0;
+  uint32_t ex_xkusage = 0;
+  ASN1_OCTET_STRING *skid = nullptr;
+  AUTHORITY_KEYID *akid = nullptr;
+  STACK_OF(DIST_POINT) *crldp = nullptr;
+  STACK_OF(GENERAL_NAME) *altname = nullptr;
+  NAME_CONSTRAINTS *nc = nullptr;
+  unsigned char cert_hash[SHA256_DIGEST_LENGTH] = {};
+  bssl::X509_CERT_AUX *aux = nullptr;
+  Mutex lock;
+
+ private:
+  friend RefCounted;
+  ~X509Impl();
 } /* X509 */;
 
 int x509_marshal_tbs_cert(CBB *cbb, const X509 *x509);
@@ -326,30 +327,28 @@ struct x509_lookup_method_st {
 
 BSSL_NAMESPACE_BEGIN
 
-DEFINE_NAMESPACED_STACK_OF(X509_LOOKUP)
-
-using StackOfX509Lookup = STACK_OF(X509_LOOKUP);
-
 // This is used to hold everything.  It is used for all certificate
 // validation.  Once we have a certificate chain, the 'verify'
 // function is then called to actually check the cert chain.
-class X509Store : public x509_store_st {
+class X509Store : public x509_store_st, public RefCounted<X509Store> {
  public:
-  ~X509Store();
+  X509Store();
 
   // The following is a cache of trusted certs
-  STACK_OF(X509_OBJECT) *objs;  // Cache of all objects
-  bssl::CRYPTO_MUTEX objs_lock;
+  UniquePtr<STACK_OF(X509_OBJECT)> objs;  // Cache of all objects
+  Mutex objs_lock;
 
   // These are external lookup methods
-  bssl::StackOfX509Lookup *get_cert_methods;
+  Vector<UniquePtr<X509_LOOKUP>> get_cert_methods;
 
-  X509_VERIFY_PARAM *param;
+  UniquePtr<X509_VERIFY_PARAM> param;
 
   // Callbacks for various operations
-  X509_STORE_CTX_verify_cb verify_cb;       // error callback
+  X509_STORE_CTX_verify_cb verify_cb = nullptr;  // error callback
 
-  bssl::CRYPTO_refcount_t references;
+ private:
+  friend RefCounted;
+  ~X509Store() = default;
 } /* X509_STORE */;
 
 BSSL_NAMESPACE_END

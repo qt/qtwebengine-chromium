@@ -35,6 +35,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/ascii_ctype.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_hasher.h"
+#include "third_party/simdutf/simdutf.h"
 
 namespace blink::unicode {
 
@@ -53,7 +54,7 @@ inline size_t InlineUtf8SequenceLengthNonAscii(uint8_t b0) {
 }
 
 inline size_t InlineUtf8SequenceLength(uint8_t b0) {
-  return IsASCII(b0) ? 1 : InlineUtf8SequenceLengthNonAscii(b0);
+  return IsAscii(b0) ? 1 : InlineUtf8SequenceLengthNonAscii(b0);
 }
 
 // Once the bits are split out into bytes of UTF-8, this is a mask OR-ed
@@ -120,6 +121,30 @@ ConversionStatus ConvertUtf16ToUtf8Internal(base::span<const UChar>& source,
   size_t target_end = target.size();
 
   while (source_cursor < source_end) {
+    // If we have enough space in target (3x source is always enough),
+    // attempt to use simdutf for conversion as it's way faster.
+    if ((target_end - target_cursor) >= (source_end - source_cursor) * 3 &&
+        (source_end - source_cursor) >= 16) {
+      simdutf::result res = simdutf::convert_utf16_to_utf8_with_errors(
+          reinterpret_cast<const char16_t*>(&source[source_cursor]),
+          source_end - source_cursor,
+          reinterpret_cast<char*>(&target[target_cursor]));
+      if (res.error == simdutf::SUCCESS) {
+        target_cursor += res.count;
+        source_cursor = source_end;
+        break;
+      }
+      // In case of error, use all of the converted characters that we can
+      // and let the slow path resolve the next character.
+      size_t bytes_written = simdutf::utf8_length_from_utf16(
+          reinterpret_cast<const char16_t*>(&source[source_cursor]), res.count);
+      source_cursor += res.count;
+      target_cursor += bytes_written;
+    }
+
+    // Fall back on the slow path of one character at a time processing
+    // when the buffer is too small, there are only a few characters left,
+    // or there are unpaired surrogates.
     UChar32 ch;
     uint8_t bytes_to_write = 0;
     const UChar32 kByteMask = 0xBF;
@@ -431,7 +456,7 @@ unsigned CalculateStringLengthFromUtf8(base::span<const uint8_t> data,
   size_t data_end = data.size();
 
   while (data_cursor < data_end) {
-    if (IsASCII(data[data_cursor])) {
+    if (IsAscii(data[data_cursor])) {
       data_cursor++;
       utf16_length++;
       continue;
@@ -451,7 +476,7 @@ unsigned CalculateStringLengthFromUtf8(base::span<const uint8_t> data,
 
     UChar32 character =
         ReadUtf8Sequence(data.subspan(data_cursor), utf8_sequence_length);
-    DCHECK(!IsASCII(character));
+    DCHECK(!IsAscii(character));
     data_cursor += utf8_sequence_length;
 
     if (character > 0xff) {

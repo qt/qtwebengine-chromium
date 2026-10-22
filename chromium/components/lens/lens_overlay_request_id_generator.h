@@ -63,6 +63,11 @@ class LensOverlayRequestIdGenerator {
   LensOverlayRequestIdGenerator();
   ~LensOverlayRequestIdGenerator();
 
+  // Decodes a base64 encoded request id and returns the proto as a unique_ptr.
+  // Returns nullptr if the decoding or parsing fails.
+  static std::unique_ptr<lens::LensOverlayRequestId> ParseRequestId(
+      const std::string& encoded_request_id);
+
   // Resets the request id generator, creating a new uuid and resetting the
   // sequence.
   void ResetRequestId();
@@ -77,10 +82,11 @@ class LensOverlayRequestIdGenerator {
       lens::LensOverlayRequestId::MediaType media_type);
 
   // Updates the request id based on the given update mode and returns the
-  // request id proto. Uses the mime type to determine the media type.
+  // request id proto. Uses both the mime type and the media type.
   std::unique_ptr<lens::LensOverlayRequestId> GetNextRequestId(
       RequestIdUpdateMode update_mode,
-      std::string mime_type);
+      std::string mime_type,
+      lens::LensOverlayRequestId::MediaType media_type);
 
   // Creates a new request id based on the previous request id and update mode.
   // This does not modify the generator's internal state.

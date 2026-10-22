@@ -90,7 +90,6 @@ class CFX_DIBitmap final : public CFX_DIBBase {
         .first(static_cast<size_t>(GetWidth()));
   }
 
-  void TakeOver(RetainPtr<CFX_DIBitmap>&& pSrcBitmap);
   bool ConvertFormat(FXDIB_Format format);
   void Clear(uint32_t color);
 
@@ -121,8 +120,18 @@ class CFX_DIBitmap final : public CFX_DIBBase {
                        RetainPtr<const CFX_DIBBase> source,
                        int src_left,
                        int src_top,
+                       BlendMode blend_type);
+
+  bool CompositeBitmap(int dest_left,
+                       int dest_top,
+                       int width,
+                       int height,
+                       RetainPtr<const CFX_DIBBase> source,
+                       int src_left,
+                       int src_top,
                        BlendMode blend_type,
-                       const CFX_AggClipRgn* pClipRgn,
+                       const FX_RECT* clip_rect,
+                       RetainPtr<CFX_DIBitmap> clip_mask,
                        bool bRgbByteOrder);
 
   bool CompositeMask(int dest_left,
@@ -133,8 +142,19 @@ class CFX_DIBitmap final : public CFX_DIBBase {
                      uint32_t color,
                      int src_left,
                      int src_top,
+                     BlendMode blend_type);
+
+  bool CompositeMask(int dest_left,
+                     int dest_top,
+                     int width,
+                     int height,
+                     RetainPtr<const CFX_DIBBase> pMask,
+                     uint32_t color,
+                     int src_left,
+                     int src_top,
                      BlendMode blend_type,
-                     const CFX_AggClipRgn* pClipRgn,
+                     const FX_RECT* clip_rect,
+                     RetainPtr<CFX_DIBitmap> clip_mask,
                      bool bRgbByteOrder);
 
   void CompositeOneBPPMask(int dest_left,

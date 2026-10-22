@@ -54,7 +54,8 @@ TEST_F(SpirvWriterTest, Discard) {
         b.Return(ep, 0.5_f);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
  %main_inner = OpFunction %float None %16
 %front_facing = OpFunctionParameter %bool
@@ -106,7 +107,8 @@ TEST_F(SpirvWriterTest, DiscardBeforeAtomic) {
         b.Return(ep, 0.5_f);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                ; Function main_inner
  %main_inner = OpFunction %float None %16
@@ -159,7 +161,8 @@ TEST_F(SpirvWriterTest, Discard_DemoteToHelperWithExtension) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate(opts)) << Error() << output_;
+    auto result = Generate(opts);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpDemoteToHelperInvocation");
 }
 
@@ -181,7 +184,8 @@ TEST_F(SpirvWriterTest, Discard_DemoteToHelperAsTransform) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate(opts)) << Error() << output_;
+    auto result = Generate(opts);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("continue_execution");
 }
 

@@ -7,8 +7,6 @@
 namespace openscreen {
 
 TlsConnection::TlsConnection() = default;
-TlsConnection::~TlsConnection() = default;
 
-TlsConnection::Client::~Client() = default;
 
 }  // namespace openscreen

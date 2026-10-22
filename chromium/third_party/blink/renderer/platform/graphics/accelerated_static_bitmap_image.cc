@@ -34,7 +34,6 @@
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkSamplingOptions.h"
 #include "third_party/skia/include/gpu/ganesh/GrBackendSurface.h"
-#include "third_party/skia/include/gpu/ganesh/GrDirectContext.h"
 #include "third_party/skia/include/gpu/ganesh/GrTypes.h"
 #include "third_party/skia/include/gpu/ganesh/SkImageGanesh.h"
 #include "third_party/skia/include/gpu/ganesh/gl/GrGLBackendSurface.h"
@@ -197,28 +196,6 @@ bool AcceleratedStaticBitmapImage::CopyToTexture(
   // mailbox is recycled or deleted, it is done after the copy operation above.
   mailbox_ref_->set_sync_token(sync_token);
 
-  return true;
-}
-
-bool AcceleratedStaticBitmapImage::CopyToResourceProvider(
-    CanvasNon2DResourceProviderSharedImage* resource_provider,
-    const gfx::Rect& copy_rect) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  DCHECK(resource_provider);
-
-  if (!IsValid())
-    return false;
-
-  const gpu::SyncToken& ready_sync_token = mailbox_ref_->sync_token();
-  gpu::SyncToken completion_sync_token;
-  if (!resource_provider->OverwriteImage(
-          shared_image_, copy_rect, ready_sync_token, completion_sync_token)) {
-    return false;
-  }
-
-  // We need to update the texture holder's sync token to ensure that when this
-  // mailbox is recycled or deleted, it is done after the copy operation above.
-  mailbox_ref_->set_sync_token(completion_sync_token);
   return true;
 }
 

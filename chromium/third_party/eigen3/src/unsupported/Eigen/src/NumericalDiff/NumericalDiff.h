@@ -66,7 +66,7 @@ class NumericalDiff : public Functor_ {
     const Scalar eps = sqrt(((std::max)(epsfcn, NumTraits<Scalar>::epsilon())));
     ValueType val1, val2;
     InputType x = _x;
-    // TODO : we should do this only if the size is not already known
+    // TODO: We should do this only if the size is not already known.
     val1.resize(Functor::values());
     val2.resize(Functor::values());
 

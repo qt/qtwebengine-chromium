@@ -90,7 +90,7 @@ class CPDF_FormControl {
   }
   CPDF_IconFit GetIconFit() const;
 
-  int GetTextPosition() const;
+  CPDF_ApSettings::TextPosition GetTextPosition() const;
   CPDF_DefaultAppearance GetDefaultAppearance() const;
 
   std::optional<WideString> GetDefaultControlFontName() const;

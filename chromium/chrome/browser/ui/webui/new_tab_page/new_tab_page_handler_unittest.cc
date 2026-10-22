@@ -23,6 +23,7 @@
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/token.h"
+#include "chrome/browser/desktop_to_mobile_promos/promos_pref_names.h"
 #include "chrome/browser/new_tab_page/microsoft_auth/microsoft_auth_service.h"
 #include "chrome/browser/new_tab_page/microsoft_auth/microsoft_auth_service_factory.h"
 #include "chrome/browser/new_tab_page/microsoft_auth/microsoft_auth_service_observer.h"
@@ -34,7 +35,6 @@
 #include "chrome/browser/new_tab_page/promos/promo_service_observer.h"
 #include "chrome/browser/optimization_guide/mock_optimization_guide_keyed_service.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
-#include "chrome/browser/promos/promos_pref_names.h"
 #include "chrome/browser/search/background/ntp_custom_background_service.h"
 #include "chrome/browser/search/background/ntp_custom_background_service_observer.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -90,6 +90,7 @@
 #include "ui/color/color_provider_source.h"
 #include "ui/color/color_recipe.h"
 #include "ui/color/color_transform.h"
+#include "ui/gfx/animation/animation.h"
 #include "ui/gfx/color_palette.h"
 #include "url/gurl.h"
 
@@ -135,7 +136,9 @@ class MockPage : public new_tab_page::mojom::Page {
 
 class MockLogoService : public search_provider_logos::LogoService {
  public:
-  MOCK_METHOD(void, GetLogo, (search_provider_logos::LogoCallbacks, bool));
+  MOCK_METHOD(void,
+              GetLogo,
+              (search_provider_logos::LogoCallbacks, bool, bool));
   MOCK_METHOD(void, GetLogo, (search_provider_logos::LogoObserver*));
 };
 
@@ -357,11 +360,11 @@ class NewTabPageHandlerTest : public testing::Test {
   new_tab_page::mojom::DoodlePtr GetDoodle(
       const search_provider_logos::EncodedLogo& logo) {
     search_provider_logos::EncodedLogoCallback on_cached_encoded_logo_available;
-    EXPECT_CALL(mock_logo_service_, GetLogo(testing::_, testing::_))
+    EXPECT_CALL(mock_logo_service_, GetLogo(testing::_, testing::_, testing::_))
         .Times(1)
         .WillOnce([&on_cached_encoded_logo_available](
                       search_provider_logos::LogoCallbacks callbacks,
-                      bool for_webui_ntp) {
+                      bool for_webui_ntp, bool enable_animated_logo) {
           on_cached_encoded_logo_available =
               std::move(callbacks.on_cached_encoded_logo_available);
         });
@@ -810,6 +813,52 @@ TEST_F(NewTabPageHandlerTest, Histograms) {
       1);
 }
 
+TEST_F(NewTabPageHandlerTest, GetDoodleAnimatedDoodlesFlagEnabled) {
+  base::test::ScopedFeatureList features;
+  features.InitAndEnableFeature(ntp_features::kNtpAnimatedDoodles);
+  gfx::Animation::SetPrefersReducedMotionForTesting(false);
+
+  EXPECT_CALL(mock_logo_service_, GetLogo(testing::_, testing::_, true))
+      .Times(1);
+  base::MockCallback<NewTabPageHandler::GetDoodleCallback> callback;
+  handler_->GetDoodle(callback.Get());
+}
+
+TEST_F(NewTabPageHandlerTest,
+       GetDoodleAnimatedDoodlesFlagEnabledAndPrefersReducedMotion) {
+  base::test::ScopedFeatureList features;
+  features.InitAndEnableFeature(ntp_features::kNtpAnimatedDoodles);
+  gfx::Animation::SetPrefersReducedMotionForTesting(true);
+
+  EXPECT_CALL(mock_logo_service_, GetLogo(testing::_, testing::_, false))
+      .Times(1);
+  base::MockCallback<NewTabPageHandler::GetDoodleCallback> callback;
+  handler_->GetDoodle(callback.Get());
+}
+
+TEST_F(NewTabPageHandlerTest, GetDoodleAnimatedDoodlesFlagDisabled) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(ntp_features::kNtpAnimatedDoodles);
+  gfx::Animation::SetPrefersReducedMotionForTesting(false);
+
+  EXPECT_CALL(mock_logo_service_, GetLogo(testing::_, testing::_, false))
+      .Times(1);
+  base::MockCallback<NewTabPageHandler::GetDoodleCallback> callback;
+  handler_->GetDoodle(callback.Get());
+}
+
+TEST_F(NewTabPageHandlerTest,
+       GetDoodleAnimatedDoodlesFlagDisabledAndPrefersReducedMotion) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(ntp_features::kNtpAnimatedDoodles);
+  gfx::Animation::SetPrefersReducedMotionForTesting(true);
+
+  EXPECT_CALL(mock_logo_service_, GetLogo(testing::_, testing::_, false))
+      .Times(1);
+  base::MockCallback<NewTabPageHandler::GetDoodleCallback> callback;
+  handler_->GetDoodle(callback.Get());
+}
+
 TEST_F(NewTabPageHandlerTest, GetAnimatedDoodle) {
   search_provider_logos::EncodedLogo logo;
   logo.encoded_image =
@@ -838,7 +887,6 @@ TEST_F(NewTabPageHandlerTest, GetAnimatedDoodle) {
 
   ASSERT_TRUE(doodle);
   ASSERT_TRUE(doodle->image);
-  ASSERT_FALSE(doodle->interactive);
   EXPECT_EQ("data:light_mime_type;base64,bGlnaHQgaW1hZ2U=",
             doodle->image->light->image_url);
   EXPECT_EQ("https://doodle.com/light_animation",
@@ -863,22 +911,6 @@ TEST_F(NewTabPageHandlerTest, GetAnimatedDoodle) {
             doodle->image->dark->animation_impression_log_url);
   EXPECT_EQ("https://doodle.com/on_click_url", doodle->image->on_click_url);
   EXPECT_EQ("https://doodle.com/short_link", doodle->image->share_url);
-  EXPECT_EQ("alt text", doodle->description);
-}
-
-TEST_F(NewTabPageHandlerTest, GetInteractiveDoodle) {
-  search_provider_logos::EncodedLogo logo;
-  logo.metadata.type = search_provider_logos::LogoType::INTERACTIVE;
-  logo.metadata.full_page_url = GURL("https://doodle.com/full_page_url");
-  logo.metadata.iframe_width_px = 1;
-  logo.metadata.iframe_height_px = 2;
-  logo.metadata.alt_text = "alt text";
-
-  auto doodle = GetDoodle(logo);
-
-  EXPECT_EQ("https://doodle.com/full_page_url", doodle->interactive->url);
-  EXPECT_EQ(1u, doodle->interactive->width);
-  EXPECT_EQ(2u, doodle->interactive->height);
   EXPECT_EQ("alt text", doodle->description);
 }
 
@@ -936,17 +968,26 @@ TEST_F(NewTabPageHandlerTest, UpdatePromoData) {
   EXPECT_EQ("blub", text->text);
 }
 
-TEST_F(NewTabPageHandlerTest, OnDoodleImageClicked) {
+TEST_F(NewTabPageHandlerTest, OnStaticDoodleImageClicked) {
   handler_->OnDoodleImageClicked(
-      /*type=*/new_tab_page::mojom::DoodleImageType::kCta,
+      /*type=*/new_tab_page::mojom::DoodleImageType::kStatic,
+      /*log_url=*/std::nullopt);
+
+  histogram_tester_.ExpectBucketCount("NewTabPage.LogoClick", 0, 1);
+  EXPECT_EQ(0, test_url_loader_factory_.NumPending());
+}
+
+TEST_F(NewTabPageHandlerTest, OnAnimatedDoodleImageClicked) {
+  handler_->OnDoodleImageClicked(
+      /*type=*/new_tab_page::mojom::DoodleImageType::kAnimation,
       /*log_url=*/GURL("https://doodle.com/log"));
 
-  histogram_tester_.ExpectTotalCount("NewTabPage.LogoClick", 1);
+  histogram_tester_.ExpectBucketCount("NewTabPage.LogoClick", 2, 1);
   EXPECT_TRUE(test_url_loader_factory_.SimulateResponseForPendingRequest(
       "https://doodle.com/log", ""));
 }
 
-TEST_F(NewTabPageHandlerTest, OnDoodleImageRendered) {
+TEST_F(NewTabPageHandlerTest, OnStaticDoodleImageRendered) {
   base::MockCallback<NewTabPageHandler::OnDoodleImageRenderedCallback> callback;
   std::optional<std::string> image_click_params;
   std::optional<GURL> interaction_log_url;
@@ -975,8 +1016,42 @@ TEST_F(NewTabPageHandlerTest, OnDoodleImageRendered) {
   EXPECT_THAT(interaction_log_url,
               Optional(GURL("https://www.google.com/bar_log")));
   EXPECT_THAT(shared_id, Optional(std::string("baz ei")));
-  histogram_tester_.ExpectTotalCount("NewTabPage.LogoShown", 1);
-  histogram_tester_.ExpectTotalCount("NewTabPage.LogoShown.FromCache", 1);
+  histogram_tester_.ExpectBucketCount("NewTabPage.LogoShown", 0, 1);
+  histogram_tester_.ExpectBucketCount("NewTabPage.LogoShown.FromCache", 0, 1);
+  histogram_tester_.ExpectTotalCount("NewTabPage.LogoShownTime2", 1);
+}
+
+TEST_F(NewTabPageHandlerTest, OnAnimatedDoodleImageRendered) {
+  base::MockCallback<NewTabPageHandler::OnDoodleImageRenderedCallback> callback;
+  std::optional<std::string> image_click_params;
+  std::optional<GURL> interaction_log_url;
+  std::optional<std::string> shared_id;
+  EXPECT_CALL(callback, Run(_, _, _))
+      .Times(1)
+      .WillOnce(DoAll(SaveArg<0>(&image_click_params),
+                      SaveArg<1>(&interaction_log_url),
+                      SaveArg<2>(&shared_id)));
+
+  handler_->OnDoodleImageRendered(
+      /*type=*/new_tab_page::mojom::DoodleImageType::kAnimation,
+      /*time=*/0,
+      /*log_url=*/GURL("https://doodle.com/log"), callback.Get());
+
+  EXPECT_TRUE(test_url_loader_factory_.SimulateResponseForPendingRequest(
+      "https://doodle.com/log", R"()]}'
+  {
+    "ddllog": {
+      "target_url_params": "foo params",
+      "interaction_log_url": "/bar_log",
+      "encoded_ei": "baz ei"
+    }
+  })"));
+  EXPECT_THAT(image_click_params, Optional(std::string("foo params")));
+  EXPECT_THAT(interaction_log_url,
+              Optional(GURL("https://www.google.com/bar_log")));
+  EXPECT_THAT(shared_id, Optional(std::string("baz ei")));
+  histogram_tester_.ExpectBucketCount("NewTabPage.LogoShown", 2, 1);
+  histogram_tester_.ExpectBucketCount("NewTabPage.LogoShown.FromCache", 2, 1);
   histogram_tester_.ExpectTotalCount("NewTabPage.LogoShownTime2", 1);
 }
 

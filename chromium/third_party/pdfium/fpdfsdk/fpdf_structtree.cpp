@@ -112,6 +112,20 @@ FPDF_StructElement_GetActualText(FPDF_STRUCTELEMENT struct_element,
 }
 
 FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDF_StructElement_GetExpansion(FPDF_STRUCTELEMENT struct_element,
+                                void* buffer,
+                                unsigned long buflen) {
+  CPDF_StructElement* elem =
+      CPDFStructElementFromFPDFStructElement(struct_element);
+  if (!elem) {
+    return 0;
+  }
+  // SAFETY: required from caller.
+  return UNSAFE_BUFFERS(
+      WideStringToBuffer(elem->GetExpansion(), buffer, buflen));
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
 FPDF_StructElement_GetID(FPDF_STRUCTELEMENT struct_element,
                          void* buffer,
                          unsigned long buflen) {

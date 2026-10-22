@@ -117,7 +117,12 @@ struct packet_traits<float> : default_packet_traits {
     HasASin = 1,
     HasATan = 1,
     HasATanh = 1,
+    HasSinh = 1,
+    HasCosh = 1,
+    HasASinh = 1,
+    HasACosh = 1,
     HasLog = 1,
+    HasLog10 = 1,
     HasExp = 1,
     HasLog1p = 1,
     HasExpm1 = 1,
@@ -148,10 +153,15 @@ struct packet_traits<double> : default_packet_traits {
     HasCos = EIGEN_FAST_MATH,
     HasTan = EIGEN_FAST_MATH,
 #endif
+    HasSinh = 1,
+    HasCosh = 1,
+    HasASinh = 1,
+    HasACosh = 1,
     HasTanh = EIGEN_FAST_MATH,
     HasErf = 1,
     HasErfc = 1,
     HasLog = 1,
+    HasLog10 = 1,
     HasExp = 1,
     HasLog1p = 1,
     HasExpm1 = 1,
@@ -1766,12 +1776,6 @@ template <>
 EIGEN_STRONG_INLINE Packet4d preverse(const Packet4d& a) {
   __m256d tmp = _mm256_shuffle_pd(a, a, 5);
   return _mm256_permute2f128_pd(tmp, tmp, 1);
-#if 0
-  // This version is unlikely to be faster as _mm256_shuffle_ps and _mm256_permute_pd
-  // exhibit the same latency/throughput, but it is here for future reference/benchmarking...
-  __m256d swap_halves = _mm256_permute2f128_pd(a,a,1);
-    return _mm256_permute_pd(swap_halves,5);
-#endif
 }
 template <>
 EIGEN_STRONG_INLINE Packet8i preverse(const Packet8i& a) {
@@ -2133,7 +2137,7 @@ EIGEN_STRONG_INLINE Packet8h ptrue(const Packet8h& a) {
 
 template <>
 EIGEN_STRONG_INLINE Packet8h pabs(const Packet8h& a) {
-  const __m128i sign_mask = _mm_set1_epi16(static_cast<numext::uint16_t>(0x8000));
+  const __m128i sign_mask = _mm_set1_epi16(static_cast<short>(0x8000u));
   return _mm_andnot_si128(sign_mask, a);
 }
 
@@ -2288,7 +2292,7 @@ EIGEN_STRONG_INLINE Packet8h pconj(const Packet8h& a) {
 
 template <>
 EIGEN_STRONG_INLINE Packet8h pnegate(const Packet8h& a) {
-  Packet8h sign_mask = _mm_set1_epi16(static_cast<numext::uint16_t>(0x8000));
+  Packet8h sign_mask = _mm_set1_epi16(static_cast<short>(0x8000u));
   return _mm_xor_si128(a, sign_mask);
 }
 
@@ -2567,7 +2571,7 @@ EIGEN_STRONG_INLINE Packet8bf ptrue(const Packet8bf& a) {
 
 template <>
 EIGEN_STRONG_INLINE Packet8bf pabs(const Packet8bf& a) {
-  const __m128i sign_mask = _mm_set1_epi16(static_cast<numext::uint16_t>(0x8000));
+  const __m128i sign_mask = _mm_set1_epi16(static_cast<short>(0x8000u));
   return _mm_andnot_si128(sign_mask, a);
 }
 
@@ -2660,7 +2664,7 @@ EIGEN_STRONG_INLINE Packet8bf pconj(const Packet8bf& a) {
 
 template <>
 EIGEN_STRONG_INLINE Packet8bf pnegate(const Packet8bf& a) {
-  Packet8bf sign_mask = _mm_set1_epi16(static_cast<numext::uint16_t>(0x8000));
+  Packet8bf sign_mask = _mm_set1_epi16(static_cast<short>(0x8000u));
   return _mm_xor_si128(a, sign_mask);
 }
 

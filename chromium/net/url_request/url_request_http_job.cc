@@ -473,6 +473,7 @@ void URLRequestHttpJob::Start() {
   request_info_.reporting_upload_depth = request_->reporting_upload_depth();
 #endif
   request_info_.is_shared_resource = request_->is_shared_resource();
+  request_info_.target_network = request_->target_network();
 
   CookieStore* cookie_store = request()->context()->cookie_store();
   const CookieAccessDelegate* delegate =
@@ -1581,6 +1582,14 @@ bool URLRequestHttpJob::CopyFragmentOnRedirect(const GURL& location) const {
 }
 
 bool URLRequestHttpJob::IsSafeRedirect(const GURL& location) {
+  // When the caller has indicated all redirects should be treated as safe,
+  // skip the scheme check. The caller is responsible for filtering unsafe
+  // redirects (e.g., returning an opaque-redirect response instead of
+  // following the redirect).
+  if (request_->treat_all_redirects_as_safe()) {
+    return true;
+  }
+
   // HTTP is always safe.
   // TODO(pauljensen): Remove once crbug.com/146591 is fixed.
   if (location.is_valid() &&

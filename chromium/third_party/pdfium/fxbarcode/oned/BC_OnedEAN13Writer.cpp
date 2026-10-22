@@ -166,13 +166,12 @@ bool CBC_OnedEAN13Writer::ShowChars(WideStringView contents,
   re = matr2.TransformRect(rect2).GetOuterRect();
   device->FillRect(re, kBackgroundColor);
 
-  float blank = 0.0f;
   length = tempStr.GetLength();
   int32_t strWidth = static_cast<int32_t>(kWidth * output_hscale_);
 
   pdfium::span<TextCharPos> charpos_span = pdfium::span(charpos);
   CalcTextInfo(tempStr, charpos_span.subspan<1u>(), font_, (float)strWidth,
-               iFontSize, blank);
+               iFontSize);
   {
     CFX_Matrix affine_matrix1(1.0, 0.0, 0.0, -1.0,
                               kLeftPosition * output_hscale_,
@@ -185,7 +184,7 @@ bool CBC_OnedEAN13Writer::ShowChars(WideStringView contents,
   tempStr = str.Substr(7, 6);
   length = tempStr.GetLength();
   CalcTextInfo(tempStr, charpos_span.subspan<7u>(), font_, (float)strWidth,
-               iFontSize, blank);
+               iFontSize);
   {
     CFX_Matrix affine_matrix1(1.0, 0.0, 0.0, -1.0,
                               (kLeftPosition + 47) * output_hscale_,
@@ -199,7 +198,7 @@ bool CBC_OnedEAN13Writer::ShowChars(WideStringView contents,
   length = tempStr.GetLength();
   strWidth = 7 * static_cast<int32_t>(strWidth * output_hscale_);
 
-  CalcTextInfo(tempStr, charpos, font_, (float)strWidth, iFontSize, blank);
+  CalcTextInfo(tempStr, charpos, font_, (float)strWidth, iFontSize);
   {
     CFX_Matrix affine_matrix1(1.0, 0.0, 0.0, -1.0, 0.0,
                               (float)(height_ - iTextHeight + iFontSize));

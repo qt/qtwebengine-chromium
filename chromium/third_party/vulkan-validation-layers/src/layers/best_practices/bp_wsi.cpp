@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -23,8 +23,8 @@
 #include "state_tracker/device_state.h"
 #include "state_tracker/wsi_state.h"
 
-bool bp_state::Instance::ValidateGetPhysicalDeviceDisplayPlanePropertiesKHRQuery(VkPhysicalDevice physicalDevice,
-                                                                                 const Location& loc) const {
+bool bp_state::Instance::ValidateGetPhysicalDeviceDisplayPlaneProperties(VkPhysicalDevice physicalDevice,
+                                                                         const Location& loc) const {
     bool skip = false;
     if (const auto bp_pd_state = Get<vvl::PhysicalDevice>(physicalDevice)) {
         if (bp_pd_state->WasUncalled(vvl::Func::vkGetPhysicalDeviceDisplayPlanePropertiesKHR) &&
@@ -43,7 +43,7 @@ bool bp_state::Instance::PreCallValidateGetDisplayPlaneSupportedDisplaysKHR(VkPh
                                                                             const ErrorObject& error_obj) const {
     bool skip = false;
 
-    skip |= ValidateGetPhysicalDeviceDisplayPlanePropertiesKHRQuery(physicalDevice, error_obj.location);
+    skip |= ValidateGetPhysicalDeviceDisplayPlaneProperties(physicalDevice, error_obj.location);
 
     return skip;
 }
@@ -54,7 +54,7 @@ bool bp_state::Instance::PreCallValidateGetDisplayPlaneCapabilitiesKHR(VkPhysica
                                                                        const ErrorObject& error_obj) const {
     bool skip = false;
 
-    skip |= ValidateGetPhysicalDeviceDisplayPlanePropertiesKHRQuery(physicalDevice, error_obj.location);
+    skip |= ValidateGetPhysicalDeviceDisplayPlaneProperties(physicalDevice, error_obj.location);
 
     return skip;
 }
@@ -65,7 +65,7 @@ bool bp_state::Instance::PreCallValidateGetDisplayPlaneCapabilities2KHR(VkPhysic
                                                                         const ErrorObject& error_obj) const {
     bool skip = false;
 
-    skip |= ValidateGetPhysicalDeviceDisplayPlanePropertiesKHRQuery(physicalDevice, error_obj.location);
+    skip |= ValidateGetPhysicalDeviceDisplayPlaneProperties(physicalDevice, error_obj.location);
 
     return skip;
 }
@@ -106,7 +106,8 @@ bool BestPractices::PreCallValidateCreateSwapchainKHR(VkDevice device, const VkS
     }
 
     const auto present_mode = pCreateInfo->presentMode;
-    if (((present_mode == VK_PRESENT_MODE_MAILBOX_KHR) || (present_mode == VK_PRESENT_MODE_FIFO_KHR)) &&
+    if (((present_mode == VK_PRESENT_MODE_MAILBOX_KHR) || (present_mode == VK_PRESENT_MODE_FIFO_KHR) ||
+         (present_mode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR)) &&
         (pCreateInfo->minImageCount == 2)) {
         skip |= LogPerformanceWarning(
             "BestPractices-vkCreateSwapchainKHR-suboptimal-swapchain-image-count", device, error_obj.location,

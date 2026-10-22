@@ -183,6 +183,10 @@ class CORE_EXPORT ChromeClient : public GarbageCollected<ChromeClient> {
   // empty document of a main frame.
   virtual void DidAccessInitialMainDocument() = 0;
 
+  virtual void DidChangeThemeColor(std::optional<SkColor> theme_color) = 0;
+  virtual void DidChangeBackgroundColor(SkColor4f background_color,
+                                        bool color_adjust) = 0;
+
   // This gives the rect of the top level window that the given LocalFrame is a
   // part of.
   virtual gfx::Rect RootWindowRect(LocalFrame&) = 0;
@@ -496,8 +500,6 @@ class CORE_EXPORT ChromeClient : public GarbageCollected<ChromeClient> {
                                        bool shrinks_layout) {}
   virtual void SetBrowserControlsShownRatio(float top_ratio,
                                             float bottom_ratio) {}
-
-  virtual String AcceptLanguages() = 0;
 
   enum class UIElementType {
     kAlertDialog = 0,

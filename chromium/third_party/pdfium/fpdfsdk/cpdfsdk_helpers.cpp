@@ -31,7 +31,7 @@
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 
 #if defined(PDF_USE_SKIA)
-#include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_gemodule.h"
 #endif
 
 namespace {
@@ -234,9 +234,8 @@ FXDIB_Format FXDIBFormatFromFPDFFormat(int format) {
       return FXDIB_Format::kBgra;
 #if defined(PDF_USE_SKIA)
     case FPDFBitmap_BGRA_Premul:
-      return CFX_DefaultRenderDevice::UseSkiaRenderer()
-                 ? FXDIB_Format::kBgraPremul
-                 : FXDIB_Format::kInvalid;
+      return CFX_GEModule::Get()->UseSkiaRenderer() ? FXDIB_Format::kBgraPremul
+                                                    : FXDIB_Format::kInvalid;
 #endif
     default:
       return FXDIB_Format::kInvalid;
@@ -246,7 +245,7 @@ FXDIB_Format FXDIBFormatFromFPDFFormat(int format) {
 void ValidateBitmapPremultiplyState(CFX_DIBitmap* bitmap) {
 #if defined(PDF_USE_SKIA)
   const bool should_be_premultiplied =
-      CFX_DefaultRenderDevice::UseSkiaRenderer() &&
+      CFX_GEModule::Get()->UseSkiaRenderer() &&
       bitmap->GetFormat() == FXDIB_Format::kBgraPremul;
   CHECK_EQ(should_be_premultiplied, bitmap->IsPremultiplied());
 #else

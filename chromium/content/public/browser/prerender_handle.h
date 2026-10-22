@@ -11,6 +11,7 @@
 #include "base/functional/callback_forward.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/preloading.h"
+#include "content/public/browser/prerender_host_id.h"
 #include "net/http/http_no_vary_search_data.h"
 
 class GURL;
@@ -24,7 +25,7 @@ class PrerenderHandle {
   PrerenderHandle() = default;
   virtual ~PrerenderHandle() = default;
 
-  virtual int32_t GetHandleId() const = 0;
+  virtual PrerenderHostId GetPrerenderHostId() const = 0;
 
   // Returns the initial URL that is passed to PrerenderHostRegistry for
   // starting a prerendering page.
@@ -49,6 +50,15 @@ class PrerenderHandle {
 
   // Returns true when prerendering has not been activated or canceled yet.
   virtual bool IsValid() const = 0;
+
+  // Returns true if the prerender is still waiting for its response headers.
+  virtual bool IsWaitingForResponseHeaders() const = 0;
+
+  // Adds a callback to be called when the response headers are received.
+  // The caller should call this only when IsWaitingForResponseHeaders() returns
+  // true.
+  virtual void AddOnResponseHeadersReceivedCallback(
+      base::OnceClosure callback) = 0;
 };
 
 }  // namespace content

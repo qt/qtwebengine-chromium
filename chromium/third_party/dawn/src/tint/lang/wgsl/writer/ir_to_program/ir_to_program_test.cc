@@ -27,6 +27,8 @@
 
 // GEN_BUILD:CONDITION(tint_build_wgsl_writer)
 
+#include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program.h"
+
 #include <limits>
 #include <sstream>
 #include <string>
@@ -37,7 +39,6 @@
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/ir/builtin_call.h"
-#include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program.h"
 #include "src/tint/lang/wgsl/writer/ir_to_program/ir_to_program_test.h"
 #include "src/tint/lang/wgsl/writer/writer.h"
 #include "src/tint/utils/text/string.h"
@@ -304,7 +305,9 @@ TEST_F(IRToProgramTest, EntryPoint_ParameterAttribute_Compute) {
         MakeBuiltinParam(b, ty.vec3u(), core::BuiltinValue::kLocalInvocationId),
         MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kLocalInvocationIndex),
         MakeBuiltinParam(b, ty.vec3u(), core::BuiltinValue::kGlobalInvocationId),
+        MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kGlobalInvocationIndex),
         MakeBuiltinParam(b, ty.vec3u(), core::BuiltinValue::kWorkgroupId),
+        MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kWorkgroupIndex),
         MakeBuiltinParam(b, ty.vec3u(), core::BuiltinValue::kNumWorkgroups),
         MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kSubgroupInvocationId),
         MakeBuiltinParam(b, ty.u32(), core::BuiltinValue::kSubgroupSize),
@@ -316,7 +319,7 @@ TEST_F(IRToProgramTest, EntryPoint_ParameterAttribute_Compute) {
 enable subgroups;
 
 @compute @workgroup_size(3u, 4u, 5u)
-fn f(@builtin(local_invocation_id) v : vec3<u32>, @builtin(local_invocation_index) v_1 : u32, @builtin(global_invocation_id) v_2 : vec3<u32>, @builtin(workgroup_id) v_3 : vec3<u32>, @builtin(num_workgroups) v_4 : vec3<u32>, @builtin(subgroup_invocation_id) v_5 : u32, @builtin(subgroup_size) v_6 : u32) {
+fn f(@builtin(local_invocation_id) v : vec3<u32>, @builtin(local_invocation_index) v_1 : u32, @builtin(global_invocation_id) v_2 : vec3<u32>, @builtin(global_invocation_index) v_3 : u32, @builtin(workgroup_id) v_4 : vec3<u32>, @builtin(workgroup_index) v_5 : u32, @builtin(num_workgroups) v_6 : vec3<u32>, @builtin(subgroup_invocation_id) v_7 : u32, @builtin(subgroup_size) v_8 : u32) {
 }
 )");
 }
@@ -3558,7 +3561,8 @@ TEST_F(IRToProgramTest, Override_BitcastInitializer) {
         auto* from = b.Override("from", 42_u);
         from->SetOverrideId(OverrideId{10});
 
-        o = b.Override("o", b.Bitcast(ty.i32(), from));
+        o = b.Override("o", b.CallExplicit<wgsl::ir::BuiltinCall>(
+                                ty.i32(), wgsl::BuiltinFn::kBitcast, Vector{ty.i32()}, from));
     });
 
     auto* fn = b.Function("f", ty.i32());

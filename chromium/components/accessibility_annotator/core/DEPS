@@ -1,0 +1,12 @@
+include_rules = [
+  "+components/account_settings",
+  "+components/history/core",
+  "+components/keyed_service/core",
+  "+components/optimization_guide/proto",
+  "+components/signin/public/identity_manager",
+  "+components/sync/base",
+  "+components/sync/model",
+  "+components/sync/protocol",
+  "+components/sync/test",
+  "+sql",
+]

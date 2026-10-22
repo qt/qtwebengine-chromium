@@ -19,6 +19,7 @@ class CWin32Platform final : public CFX_GEModule::PlatformIface {
 
   // CFX_GEModule::PlatformIface:
   void Init() override;
+  void Terminate() override;
   std::unique_ptr<SystemFontInfoIface> CreateDefaultSystemFontInfo() override;
 
   CGdiplusExt gdiplus_ext_;

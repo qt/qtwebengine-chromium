@@ -9,6 +9,11 @@ assert(!is_ios)
 assert(chrome_root_store_cert_management_ui)
 
 build_webui_tests("build") {
+  cc_test_files = [
+    "certificate_manager_browsertest.cc",
+    "certificate_manager_interactive_test.cc",
+  ]
+
   files = [
     "certificate_entry_test.ts",
     "certificate_list_test.ts",
@@ -31,7 +36,7 @@ build_webui_tests("build") {
 
   ts_deps = [
     "//chrome/browser/resources/certificate_manager:build_ts",
-    "//third_party/polymer/v3_0:library",
+    "//third_party/lit/v3_0:build_ts",
     "//ui/webui/resources/js:build_ts",
   ]
 

@@ -7,7 +7,9 @@
 #include <optional>
 #include <string_view>
 
+#include "base/byte_size.h"
 #include "base/command_line.h"
+#include "base/containers/lru_cache.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -18,9 +20,12 @@
 #include "content/browser/loader/browser_initiated_resource_request.h"
 #include "content/browser/service_worker/service_worker_consts.h"
 #include "content/browser/service_worker/service_worker_synthetic_response_manager.h"
+#include "content/browser/storage_partition_impl.h"
 #include "content/common/features.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/referrer.h"
@@ -35,9 +40,7 @@
 #include "third_party/blink/public/mojom/loader/resource_load_info.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 
-namespace content {
-
-namespace service_worker_loader_helpers {
+namespace content::service_worker_loader_helpers {
 
 namespace {
 
@@ -300,11 +303,12 @@ network::ResourceRequest CreateRequestForServiceWorkerScript(
                             network::kDefaultAcceptHeaderValue);
 
   request.referrer_policy = Referrer::ReferrerPolicyForUrlRequest(
-      fetch_client_settings_object.referrer_policy);
+      fetch_client_settings_object.policy_container_policies->referrer_policy);
   request.referrer =
       Referrer::SanitizeForRequest(
           script_url, Referrer(fetch_client_settings_object.outgoing_referrer,
-                               fetch_client_settings_object.referrer_policy))
+                               fetch_client_settings_object
+                                   .policy_container_policies->referrer_policy))
           .url;
   request.upgrade_if_insecure =
       fetch_client_settings_object.insecure_requests_policy ==
@@ -412,18 +416,20 @@ const base::flat_set<std::string> FetchHandlerBypassedHashStrings() {
 }
 
 bool IsEligibleForSyntheticResponse(BrowserContext* browser_context,
+                                    StoragePartitionImpl* storage_partition,
                                     const GURL& client_url) {
   if (!base::FeatureList::IsEnabled(
           blink::features::kServiceWorkerSyntheticResponse)) {
     return false;
   }
   return IsEligibleForSyntheticResponseInternal(
-      browser_context, client_url, GetSyntheticResponseAllowedUrl(),
-      GetSyntheticResponseDeniedUrlParams());
+      browser_context, storage_partition, client_url,
+      GetSyntheticResponseAllowedUrl(), GetSyntheticResponseDeniedUrlParams());
 }
 
 bool IsEligibleForSyntheticResponseForTesting(  // IN-TEST
     BrowserContext* browser_context,
+    StoragePartitionImpl* storage_partition,
     const GURL& client_url,
     const std::string& allowed_url,
     const std::string& denied_url_params) {
@@ -431,15 +437,21 @@ bool IsEligibleForSyntheticResponseForTesting(  // IN-TEST
       denied_url_params, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
 
   return IsEligibleForSyntheticResponseInternal(
-      browser_context, client_url, allowed_url,
+      browser_context, storage_partition, client_url, allowed_url,
       base::flat_set<std::string>(params.begin(), params.end()));
 }
 
 bool IsEligibleForSyntheticResponseInternal(
     BrowserContext* browser_context,
+    StoragePartitionImpl* storage_partition,
     const GURL& client_url,
     const std::string& allowed_url,
     const base::flat_set<std::string>& denied_url_params) {
+  // If this StoragePartition is for guests (e.g., for a <webview>
+  // tag). We don't enable it because the embedder may intercept the request.
+  if (storage_partition && storage_partition->is_guest()) {
+    return false;
+  }
   // If `client_url` should be either 1) allowed by the browser content
   // client, or 2) listed in the allowlist.
   if ((browser_context &&
@@ -467,8 +479,30 @@ bool IsSyntheticResponseDryRunModeEnabled() {
 }
 
 storage::mojom::ServiceWorkerFindRegistrationResultPtr
-CreateSyntheticRegistration(const GURL& client_url,
-                            const blink::StorageKey& key) {
+GetOrCreateSyntheticRegistration(const GURL& client_url,
+                                 const blink::StorageKey& key) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  // Cache registration IDs based on the StorageKey so that subsequent calls
+  // for the same key return the same registration object. Using LRUCache to
+  // prevent unbounded memory growth.
+  constexpr int kMaxCachedRegistrations = 100;
+  static base::NoDestructor<base::LRUCache<blink::StorageKey, int64_t>>
+      key_to_registration_id_map(kMaxCachedRegistrations);
+
+  static int64_t synthetic_id_counter = 0;
+  int64_t registration_id;
+
+  auto it = key_to_registration_id_map->Get(key);
+  if (it != key_to_registration_id_map->end()) {
+    registration_id = it->second;
+  } else {
+    registration_id =
+        blink::mojom::kSyntheticResponseServiceWorkerRegistrationId -
+        synthetic_id_counter;
+    synthetic_id_counter++;
+    key_to_registration_id_map->Put({key, registration_id});
+  }
+
   GURL::Replacements replacements_for_script;
   replacements_for_script.ClearQuery();
   replacements_for_script.SetPathStr(
@@ -482,14 +516,14 @@ CreateSyntheticRegistration(const GURL& client_url,
   std::vector<storage::mojom::ServiceWorkerResourceRecordPtr> resources;
   {
     auto resource = storage::mojom::ServiceWorkerResourceRecord::New(
-        blink::mojom::kSyntheticResponseServiceWorkerResourceId, kScript, 0,
+        blink::mojom::kSyntheticResponseServiceWorkerResourceId, kScript,
+        base::ByteSize(0),
         /*sha256_checksum=*/"");
     resources.push_back(std::move(resource));
   }
 
   auto data = storage::mojom::ServiceWorkerRegistrationData::New();
-  data->registration_id =
-      blink::mojom::kSyntheticResponseServiceWorkerRegistrationId;
+  data->registration_id = registration_id;
   data->scope = kScope;
   data->key = key;
   data->script = kScript;
@@ -503,11 +537,13 @@ CreateSyntheticRegistration(const GURL& client_url,
   data->navigation_preload_state = blink::mojom::NavigationPreloadState::New();
 
   {
-    int64_t resources_total_size_bytes = 0;
+    base::ByteSize resources_total_size;
     for (auto& resource : resources) {
-      resources_total_size_bytes += resource->size_bytes;
+      // `resource->size` can be unknown; sub in 0 here if so.
+      // TODO(https://crbug.com/474382520): Add in error handling.
+      resources_total_size += resource->size.value_or(base::ByteSize(0));
     }
-    data->resources_total_size_bytes = resources_total_size_bytes;
+    data->resources_total_size = resources_total_size;
   }
 
   data->script_response_time = base::Time::Now();
@@ -565,6 +601,4 @@ CreateSyntheticRegistration(const GURL& client_url,
       std::move(remote_reference), std::move(data), std::move(resources));
 }
 
-}  // namespace service_worker_loader_helpers
-
-}  // namespace content
+}  // namespace content::service_worker_loader_helpers

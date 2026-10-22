@@ -22,8 +22,8 @@ namespace media {
 
 // Implements a FrameResource that is backed by a gfx::NativePixmapDmaBuf. The
 // frame's pixel content is only accessible by mapping the frame using a
-// GenericDmaBufVideoFrameMapper. IsMappable() returns false and all data
-// accessors return nullptr.
+// GenericDmaBufVideoFrameMapper. HasDirectCpuAccess() returns false and all
+// data accessors return nullptr.
 class NativePixmapFrameResource : public FrameResource {
  public:
   // The underlying NativePixmap is constructed from `handle`.
@@ -78,9 +78,9 @@ class NativePixmapFrameResource : public FrameResource {
   // FrameResource implementation.
   const NativePixmapFrameResource* AsNativePixmapFrameResource() const override;
 
-  // IsMappable() returns false. There is no direct data access to the buffers
-  // without use of a GenericVideoFrameMapper.
-  bool IsMappable() const override;
+  // HasDirectCpuAccess() returns false. There is no direct data access to
+  // the buffers without use of a GenericVideoFrameMapper.
+  bool HasDirectCpuAccess() const override;
   const uint8_t* data(size_t plane) const override;
   uint8_t* writable_data(size_t plane) override;
   const uint8_t* visible_data(size_t plane) const override;
@@ -97,7 +97,7 @@ class NativePixmapFrameResource : public FrameResource {
   scoped_refptr<gpu::ClientSharedImage> GetSharedImage() const override;
   const VideoFrameLayout& layout() const override;
   VideoPixelFormat format() const override;
-  int stride(size_t plane) const override;
+  size_t stride(size_t plane) const override;
   VideoFrame::StorageType storage_type() const override;
   int row_bytes(size_t plane) const override;
   const gfx::Size& coded_size() const override;

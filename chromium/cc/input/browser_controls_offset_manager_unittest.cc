@@ -8,6 +8,7 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <optional>
 
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
@@ -1675,6 +1676,39 @@ TEST(BrowserControlsOffsetManagerTest, SmoothScrollPreventsInstantJump) {
   manager->ScrollEnd();
 }
 
+TEST(BrowserControlsOffsetManagerTest, ScrollWithLatencyCompensation) {
+  constexpr float kControlsHeight = 100.f;
+  MockBrowserControlsOffsetManagerClient client(
+      /*top_controls_height=*/kControlsHeight,
+      /*browser_controls_show_threshold=*/0.5f,
+      /*browser_controls_hide_threshold=*/0.5f);
+  BrowserControlsOffsetManager* manager = client.manager();
+
+  manager->ScrollBegin();
+  manager->ScrollBy(gfx::Vector2dF(0.f, kControlsHeight));
+  manager->ScrollEnd();
+  EXPECT_FLOAT_EQ(manager->TopControlsShownRatio(), 0.f);
+
+  manager->ScrollBegin();
+
+  // Scroll by a small amount that is not enough to show controls.
+  manager->ScrollBy(gfx::Vector2dF(0.f, -kControlsHeight * 0.01f));
+  EXPECT_LT(manager->TopControlsShownRatio(), 1.f);
+
+  // ScrollEnd with latency compensation should show the controls if the
+  // compensated delta is enough to show the controls.
+  EXPECT_FALSE(manager->HasAnimation());
+  manager->ScrollEnd(gfx::Vector2dF(0.f, -kControlsHeight * 0.5f));
+  EXPECT_TRUE(manager->HasAnimation());
+  base::TimeTicks time = base::TimeTicks::Now();
+  while (manager->HasAnimation()) {
+    time = base::Milliseconds(100) + time;
+    manager->Animate(time);
+  }
+  EXPECT_FALSE(manager->HasAnimation());
+  EXPECT_FLOAT_EQ(manager->TopControlsShownRatio(), 1.f);
+}
+
 class BrowserControlsOffsetManagerCancelAnimationTest : public testing::Test {
  public:
   BrowserControlsOffsetManagerCancelAnimationTest()
@@ -1742,6 +1776,118 @@ TEST_F(BrowserControlsOffsetManagerCancelAnimationTest,
 
   client_.SetBrowserControlsParams({120, 0, 0, 0, false, false});
   EXPECT_FALSE(manager->HasAnimation());
+}
+
+class BrowserControlsOffsetManagerSnapAnimationTest : public testing::Test {
+ public:
+  BrowserControlsOffsetManagerSnapAnimationTest()
+      : client_(kControlsHeight, 0.5f, 0.5f) {
+    feature_list_.InitAndEnableFeature(
+        features::kBrowserControlsScrollSnapAnimation);
+  }
+
+ protected:
+  // Returns true if scrolling the client by the given scroll delta triggered a
+  // snap animation. Also checks if the triggered animation is configured
+  // correctly.
+  bool ScrollDidAnimate(float scroll_y,
+                        std::optional<bool> animate_to_show = std::nullopt) {
+    BrowserControlsOffsetManager* manager = client_.manager();
+    client_.ScrollVerticallyBy(scroll_y);
+    if (!manager->HasAnimation()) {
+      return false;
+    }
+
+    EXPECT_TRUE(animate_to_show.has_value());
+    EXPECT_EQ(manager->IsAnimatingToShowControls(), *animate_to_show);
+    const float final_shown_ratio =
+        manager->IsAnimatingToShowControls() ? 1.f : 0.f;
+
+    // Let the animation run to completion.
+    base::TimeTicks time = base::TimeTicks::Now();
+    while (manager->HasAnimation()) {
+      time = base::Milliseconds(200) + time;
+      manager->Animate(time);
+    }
+    EXPECT_FALSE(manager->HasAnimation());
+    EXPECT_EQ(manager->TopControlsShownRatio(), final_shown_ratio);
+    EXPECT_EQ(manager->BottomControlsShownRatio(), final_shown_ratio);
+
+    return true;
+  }
+
+  constexpr static float kControlsHeight = 100.f;
+
+  MockBrowserControlsOffsetManagerClient client_;
+  base::test::ScopedFeatureList feature_list_;
+};
+
+TEST_F(BrowserControlsOffsetManagerSnapAnimationTest,
+       HideAnimationTriggeredOncePerScroll) {
+  BrowserControlsOffsetManager* manager = client_.manager();
+
+  // Start in the can-hide region.
+  client_.SetViewportScrollOffset(
+      0.f, manager->SnapAnimationCanHideRegionHeight() + 2 * kControlsHeight);
+
+  manager->ScrollBegin();
+  // Simulate the user scrolling up and down in succession. The expected
+  // behavior is:
+  //   1. Scrolling down in the can-hide region should hide the browser
+  //   controls.
+  //   2. Scrolling up so that net scroll is equal to controls height should
+  //   show controls.
+  //   3. The controls cannot be hidden more than once per scroll, so scrolling
+  //   down should have no effect.
+  EXPECT_TRUE(ScrollDidAnimate(kControlsHeight, /*animate_to_show=*/false));
+  EXPECT_TRUE(ScrollDidAnimate(-2 * kControlsHeight,
+                               /*animate_to_show=*/true));
+  EXPECT_FALSE(ScrollDidAnimate(2 * kControlsHeight));
+  manager->ScrollEnd();
+
+  manager->ScrollBegin();
+  // Internal state should be reset for the next scroll, so scrolling down
+  // should hide the browser controls.
+  EXPECT_TRUE(ScrollDidAnimate(kControlsHeight, /*animate_to_show=*/false));
+  manager->ScrollEnd();
+}
+
+TEST_F(BrowserControlsOffsetManagerSnapAnimationTest,
+       ControlsHideOnlyInCanHideRegion) {
+  BrowserControlsOffsetManager* manager = client_.manager();
+
+  client_.SetViewportScrollOffset(0.f, 0.f);
+  manager->ScrollBegin();
+
+  while (client_.ViewportScrollOffset().y() <=
+         manager->SnapAnimationCanHideRegionHeight()) {
+    EXPECT_FALSE(ScrollDidAnimate(1.f));
+  }
+
+  EXPECT_TRUE(ScrollDidAnimate(1.f, /*animate_to_show=*/false));
+  manager->ScrollEnd();
+}
+
+TEST_F(BrowserControlsOffsetManagerSnapAnimationTest,
+       ControlsShowInAlwaysShownRegion) {
+  BrowserControlsOffsetManager* manager = client_.manager();
+
+  client_.SetViewportScrollOffset(
+      0.f, manager->SnapAnimationCanHideRegionHeight() + kControlsHeight);
+  manager->ScrollBegin();
+  EXPECT_TRUE(ScrollDidAnimate(kControlsHeight, /*animate_to_show=*/false));
+  manager->ScrollEnd();
+
+  while (client_.ViewportScrollOffset().y() >
+         manager->SnapAnimationAlwaysShownRegionHeight()) {
+    manager->ScrollBegin();
+    EXPECT_FALSE(ScrollDidAnimate(-1.f));
+    manager->ScrollEnd();
+  }
+
+  manager->ScrollBegin();
+  EXPECT_TRUE(ScrollDidAnimate(-1.f, /*animate_to_show=*/true));
+  manager->ScrollEnd();
 }
 
 }  // namespace

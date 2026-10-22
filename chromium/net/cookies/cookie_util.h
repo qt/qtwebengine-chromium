@@ -59,7 +59,7 @@ enum class StorageAccessResult {
   ACCESS_ALLOWED_TOP_LEVEL_STORAGE_ACCESS_GRANT = 4,
   ACCESS_ALLOWED_3PCD_TRIAL = 5,
   ACCESS_ALLOWED_3PCD_METADATA_GRANT = 6,
-  ACCESS_ALLOWED_3PCD_HEURISTICS_GRANT = 7,
+  // ACCESS_ALLOWED_3PCD_HEURISTICS_GRANT = 7,  // Deprecated
   // ACCESS_ALLOWED_CORS_EXCEPTION = 8,  // Deprecated
   ACCESS_ALLOWED_TOP_LEVEL_3PCD_TRIAL = 9,
   ACCESS_ALLOWED_SCHEME = 10,
@@ -102,27 +102,6 @@ enum class StorageAccessStatusOutcome {
   kMaxValue = kValueActive
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/storage/enums.xml:StorageAccessStatusOutcome)
-
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-// The values of this enum correspond to possible reasons the
-// `Sec-Fetch-Storage-Access` header may be omitted from a request, as well as
-// the possible values of the header when it is included.
-enum class SecFetchStorageAccessOutcome {
-  // The request's storage access status is nullopt.
-  kOmittedStatusMissing = 0,
-  // The request's credentials mode is not "include".
-  kOmittedRequestOmitsCredentials = 1,
-  // The `Sec-Fetch-Storage-Access` header is included and has the value `none`.
-  kValueNone = 2,
-  // The `Sec-Fetch-Storage-Access` header is included and has the value
-  // `inactive`.
-  kValueInactive = 3,
-  // The `Sec-Fetch-Storage-Access` header is included and has the value
-  // `active`.
-  kValueActive = 4,
-  kMaxValue = kValueActive
-};
 
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.

@@ -142,7 +142,7 @@ void WebFormControlElement::SetValue(const WebString& value, bool send_events) {
                    ? TextFieldEventBehavior::kDispatchInputAndChangeEvent
                    : TextFieldEventBehavior::kDispatchNoEvent);
   } else if (auto* select = ::blink::DynamicTo<HTMLSelectElement>(*private_)) {
-    select->SetValue(value, send_events);
+    select->SelectOptionByValue(value, send_events);
   }
 }
 
@@ -325,6 +325,16 @@ WebFormElement WebFormControlElement::GetOwningFormForAutofill() const {
 
 int32_t WebFormControlElement::GetAxId() const {
   return ConstUnwrap<HTMLFormControlElement>()->GetAxId();
+}
+
+std::optional<WebFormControlElement::TextInfo>
+WebFormControlElement::GetTextInfo() const {
+  auto* textarea = ::blink::DynamicTo<HTMLTextAreaElement>(*private_);
+  if (!textarea) {
+    return std::nullopt;
+  }
+
+  return textarea->GetTextInfo();
 }
 
 WebFormControlElement::WebFormControlElement(HTMLFormControlElement* elem)

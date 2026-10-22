@@ -6,7 +6,7 @@ import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
-import type * as NetworkTimeCalculator from '../../models/network_time_calculator/network_time_calculator.js';
+import * as NetworkTimeCalculator from '../../models/network_time_calculator/network_time_calculator.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {
   deinitializeGlobalVars,
@@ -27,7 +27,7 @@ function renderNetworkItemView(request?: SDK.NetworkRequest.NetworkRequest): Net
         null);
   }
   const networkItemView =
-      new Network.NetworkItemView.NetworkItemView(request, {} as NetworkTimeCalculator.NetworkTimeCalculator);
+      new Network.NetworkItemView.NetworkItemView(request, new NetworkTimeCalculator.NetworkTimeCalculator(true));
   const div = document.createElement('div');
   renderElementIntoDOM(div);
   networkItemView.markAsRoot();

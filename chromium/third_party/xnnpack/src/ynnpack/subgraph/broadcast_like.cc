@@ -29,10 +29,13 @@ ynn_status ynn_define_broadcast_like(ynn_subgraph_t subgraph, size_t num_axes,
                                      uint32_t template_id, uint32_t* output_id,
                                      uint32_t flags) {
   // Validate arguments.
-  assert(subgraph);
-  assert(subgraph->is_valid_value(input_id));
-  assert(subgraph->is_valid_value(template_id));
-  assert(output_id);
+  YNN_RETURN_IF_ERROR(validate_subgraph("broadcast_like", subgraph));
+  YNN_RETURN_IF_ERROR(
+      validate_input_tensor("broadcast_like", subgraph, "input_id", input_id));
+  YNN_RETURN_IF_ERROR(validate_input_tensor("broadcast_like", subgraph,
+                                            "template_id", template_id));
+  YNN_RETURN_IF_ERROR(validate_output_tensor("broadcast_like", subgraph,
+                                             "output_id", output_id));
   const ynn_value& input = subgraph->value(input_id);
   const ynn_value& template_value = subgraph->value(template_id);
   ynn::axes_set axes_set;
@@ -79,7 +82,7 @@ ynn_status ynn_define_broadcast_like(ynn_subgraph_t subgraph, size_t num_axes,
       // We know the output extent is one, just use the template.
       output_extent = template_extent;
     } else {
-      output_extent = subgraph->make_global_variable(
+      output_extent = subgraph->globals.get(
           select(template_extent > 1, template_extent, output_extent), "b");
 
       node.checks.push_back({
@@ -119,7 +122,7 @@ ynn_status ynn_define_broadcast_like(ynn_subgraph_t subgraph, size_t num_axes,
 
     output.make_buffer(runtime, input.buffer->elem_size());
 
-    std::vector<slinky::var> dims = make_dims(output.rank(), runtime.symbols);
+    std::vector<slinky::var> dims = runtime.globals.make_dims(output.rank());
     slinky::box_expr bounds = make_elementwise_bounds(dims, input.extents);
 
     for (size_t i = 0; i < axes.size(); ++i) {

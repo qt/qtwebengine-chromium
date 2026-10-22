@@ -105,7 +105,9 @@ int32_t CXFA_LayoutProcessor::DoLayout() {
       pLayoutItem->s_pos_ = CFX_PointF(fPosX, fPosY);
     }
 
-    view_layout_processor_->SubmitContentItem(pLayoutItem, eStatus);
+    if (!view_layout_processor_->SubmitContentItem(pLayoutItem, eStatus)) {
+      return -1;
+    }
   } while (eStatus != CXFA_ContentLayoutProcessor::Result::kDone);
 
   if (eStatus == CXFA_ContentLayoutProcessor::Result::kDone) {

@@ -2,12 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "media/midi/midi_manager_win.h"
+
+#include "base/compiler_specific.h"
 
 // clang-format off
 #include <windows.h> // Must be in front of other Windows header files.
@@ -215,7 +212,7 @@ using ScopedMIDIHDR = std::unique_ptr<MIDIHDR, MIDIHDRDeleter>;
 
 ScopedMIDIHDR CreateMIDIHDR(size_t size) {
   ScopedMIDIHDR hdr(new MIDIHDR);
-  ZeroMemory(hdr.get(), sizeof(*hdr));
+  UNSAFE_TODO(ZeroMemory(hdr.get(), sizeof(*hdr)));
   hdr->lpData = new char[size];
   hdr->dwBufferLength = static_cast<DWORD>(size);
   return hdr;
@@ -664,7 +661,7 @@ MidiManagerWin::PortManager::HandleMidiInCallback(HMIDIIN hmi,
     const size_t len = GetMessageLength(status_byte);
     DCHECK_LE(len, std::size(kData));
     std::vector<uint8_t> data;
-    data.assign(kData, kData + len);
+    data.assign(kData, UNSAFE_TODO(kData + len));
     manager->PostReplyTask(base::BindOnce(
         &MidiManagerWin::ReceiveMidiData, base::Unretained(manager),
         static_cast<uint32_t>(index), data,
@@ -675,7 +672,7 @@ MidiManagerWin::PortManager::HandleMidiInCallback(HMIDIIN hmi,
     if (hdr->dwBytesRecorded > 0) {
       const uint8_t* src = reinterpret_cast<const uint8_t*>(hdr->lpData);
       std::vector<uint8_t> data;
-      data.assign(src, src + hdr->dwBytesRecorded);
+      data.assign(src, UNSAFE_TODO(src + hdr->dwBytesRecorded));
       manager->PostReplyTask(base::BindOnce(
           &MidiManagerWin::ReceiveMidiData, base::Unretained(manager),
           static_cast<uint32_t>(index), data,
@@ -726,6 +723,11 @@ MidiManagerWin::~MidiManagerWin() {
   if (instance_id_ == kInvalidInstanceId)
     return;
 
+  // Behind the lock below, we can safely access all members for finalization
+  // even on the I/O thread. This also ensures that no bound task runs on
+  // TaskRunner concurrently while destructing the instance.
+  base::AutoLock lock(*GetTaskLock());
+
   // Unregisters on the I/O thread. OnDevicesChanged() won't be called any more.
   CHECK(thread_runner_->BelongsToCurrentThread());
   base::SystemMonitor::Get()->RemoveDevicesChangedObserver(this);
@@ -741,20 +743,12 @@ MidiManagerWin::~MidiManagerWin() {
 
   // Invalidate instance bound tasks.
   {
-    base::AutoLock lock(*GetInstanceIdLock());
+    base::AutoLock lock_id(*GetInstanceIdLock());
     CHECK_EQ(instance_id_, g_active_instance_id);
     g_active_instance_id = kInvalidInstanceId;
     CHECK_EQ(this, g_manager_instance);
     g_manager_instance = nullptr;
   }
-
-  // Ensures that no bound task runs on TaskRunner so to destruct the instance
-  // safely.
-  // Tasks that did not started yet will do nothing after invalidate the
-  // instance ID above.
-  // Behind the lock below, we can safely access all members for finalization
-  // even on the I/O thread.
-  base::AutoLock lock(*GetTaskLock());
 }
 
 void MidiManagerWin::StartInitialization() {

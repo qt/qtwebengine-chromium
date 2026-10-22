@@ -73,13 +73,13 @@ TEST_F(FPDFFlattenEmbedderTest, Bug861842) {
   ASSERT_TRUE(page);
 
   ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-  CompareBitmapToPngWithExpectationSuffix(bitmap.get(), "bug_861842");
+  CompareBitmapWithExpectationSuffix(bitmap.get(), "bug_861842");
 
   EXPECT_EQ(FLATTEN_SUCCESS, FPDFPage_Flatten(page.get(), FLAT_PRINT));
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
 
   // TODO(crbug.com/861842): This should not render blank.
-  VerifySavedDocumentToPng("blank_100x120");
+  VerifySavedDocument("blank_100x120");
 }
 
 TEST_F(FPDFFlattenEmbedderTest, Bug889099) {
@@ -89,12 +89,12 @@ TEST_F(FPDFFlattenEmbedderTest, Bug889099) {
 
   // The original document has a malformed media box; the height is -400.
   ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-  CompareBitmapToPngWithExpectationSuffix(bitmap.get(), "bug_889099");
+  CompareBitmapWithExpectationSuffix(bitmap.get(), "bug_889099");
 
   EXPECT_EQ(FLATTEN_SUCCESS, FPDFPage_Flatten(page.get(), FLAT_PRINT));
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
 
-  VerifySavedDocumentToPngWithExpectationSuffix("bug_889099_flattened");
+  VerifySavedDocumentWithExpectationSuffix("bug_889099_flattened");
 }
 
 TEST_F(FPDFFlattenEmbedderTest, Bug890322) {
@@ -103,12 +103,12 @@ TEST_F(FPDFFlattenEmbedderTest, Bug890322) {
   ASSERT_TRUE(page);
 
   ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-  CompareBitmapToPngWithExpectationSuffix(bitmap.get(), pdfium::kBug890322Png);
+  CompareBitmapWithExpectationSuffix(bitmap.get(), pdfium::kBug890322Png);
 
   EXPECT_EQ(FLATTEN_SUCCESS, FPDFPage_Flatten(page.get(), FLAT_PRINT));
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
 
-  VerifySavedDocumentToPngWithExpectationSuffix(pdfium::kBug890322Png);
+  VerifySavedDocumentWithExpectationSuffix(pdfium::kBug890322Png);
 }
 
 TEST_F(FPDFFlattenEmbedderTest, Bug896366) {
@@ -117,10 +117,10 @@ TEST_F(FPDFFlattenEmbedderTest, Bug896366) {
   ASSERT_TRUE(page);
 
   ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page.get(), FPDF_ANNOT);
-  CompareBitmapToPngWithExpectationSuffix(bitmap.get(), "bug_896366");
+  CompareBitmapWithExpectationSuffix(bitmap.get(), "bug_896366");
 
   EXPECT_EQ(FLATTEN_SUCCESS, FPDFPage_Flatten(page.get(), FLAT_PRINT));
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
 
-  VerifySavedDocumentToPngWithExpectationSuffix("bug_896366");
+  VerifySavedDocumentWithExpectationSuffix("bug_896366");
 }

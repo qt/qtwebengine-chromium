@@ -90,6 +90,8 @@ const char* NetLogHttpStreamJobType(HttpStreamFactory::JobType job_type) {
       return "preconnect";
     case HttpStreamFactory::PRECONNECT_DNS_ALPN_H3:
       return "preconnect_dns_alpn_h3";
+    case HttpStreamFactory::WS_OVER_H3:
+      return "ws_over_h3";
   }
   return "";
 }
@@ -141,7 +143,8 @@ HttpStreamFactory::Job::Job(
       using_quic_(
           alternative_protocol == NextProto::kProtoQUIC ||
           session->ShouldForceQuic(destination_, proxy_info, is_websocket_) ||
-          job_type == DNS_ALPN_H3 || job_type == PRECONNECT_DNS_ALPN_H3),
+          job_type == DNS_ALPN_H3 || job_type == PRECONNECT_DNS_ALPN_H3 ||
+          job_type == WS_OVER_H3),
       quic_version_(quic_version),
       expect_spdy_(alternative_protocol == NextProto::kProtoHTTP2 &&
                    !using_quic_),
@@ -173,7 +176,8 @@ HttpStreamFactory::Job::Job(
 
   if (using_quic_) {
     DCHECK((quic_version_ != quic::ParsedQuicVersion::Unsupported()) ||
-           (job_type_ == DNS_ALPN_H3) || (job_type_ == PRECONNECT_DNS_ALPN_H3));
+           (job_type_ == DNS_ALPN_H3) ||
+           (job_type_ == PRECONNECT_DNS_ALPN_H3) || (job_type_ == WS_OVER_H3));
   }
 
   DCHECK(session);
@@ -339,6 +343,13 @@ bool HttpStreamFactory::Job::HasAvailableQuicSession() const {
       request_info_.socket_tag, request_info_.network_anonymization_key,
       request_info_.secure_dns_policy, require_dns_https_alpn,
       disable_cert_verification_network_fetches());
+
+  // `WS_OVER_H3` requires a QUIC session that supports Extended CONNECT.
+  if (job_type_ == WS_OVER_H3) {
+    return session_->quic_session_pool()->CanUseExistingSessionForWebSocket(
+        quic_session_key, destination_);
+  }
+
   return session_->quic_session_pool()->CanUseExistingSession(quic_session_key,
                                                               destination_);
 }
@@ -347,12 +358,13 @@ bool HttpStreamFactory::Job::TargettedSocketGroupHasActiveSocket() const {
   DCHECK(!using_quic_);
   DCHECK(!is_websocket_);
   ClientSocketPool* pool = session_->GetSocketPool(
-      HttpNetworkSession::NORMAL_SOCKET_POOL, proxy_info_.proxy_chain());
+      HttpNetworkSession::SocketPoolType::kNormal, proxy_info_.proxy_chain());
   DCHECK(pool);
   ClientSocketPool::GroupId connection_group(
       destination_, request_info_.privacy_mode,
       request_info_.network_anonymization_key, request_info_.secure_dns_policy,
-      disable_cert_verification_network_fetches());
+      disable_cert_verification_network_fetches(),
+      request_info_.target_network);
   return pool->HasActiveSocket(connection_group);
 }
 
@@ -362,6 +374,10 @@ NextProto HttpStreamFactory::Job::negotiated_protocol() const {
 
 bool HttpStreamFactory::Job::using_spdy() const {
   return negotiated_protocol_ == NextProto::kProtoHTTP2;
+}
+
+bool HttpStreamFactory::Job::is_preconnect() const {
+  return job_type_ == PRECONNECT || job_type_ == PRECONNECT_DNS_ALPN_H3;
 }
 
 url::SchemeHostPort HttpStreamFactory::Job::SchemeHostPortForSupportsSpdy()
@@ -541,7 +557,7 @@ void HttpStreamFactory::Job::RunLoop(int result) {
   // Record histograms which are required for the end of session creation.
   RecordCompletionHistograms(result);
 
-  if ((job_type_ == PRECONNECT) || (job_type_ == PRECONNECT_DNS_ALPN_H3)) {
+  if (is_preconnect()) {
     TaskRunner(priority_)->PostTask(
         FROM_HERE,
         base::BindOnce(&HttpStreamFactory::Job::OnPreconnectsComplete,
@@ -793,18 +809,18 @@ int HttpStreamFactory::Job::DoInitConnectionImpl() {
     DCHECK(!is_websocket_);
     DCHECK(request_info_.socket_tag == SocketTag());
 
-    // The lifeime of the preconnect tasks is not controlled by |connection_|.
-    // It may outlives |this|. So we can't use |io_callback_| which holds
+    // The lifetime of the preconnect tasks is not controlled by |connection_|.
+    // It may outlive |this|. So we can't use |io_callback_| which holds
     // base::Unretained(this).
-    auto callback =
-        base::BindOnce(&Job::OnIOComplete, ptr_factory_.GetWeakPtr());
+    auto preconnect_callback = base::BindOnce(&Job::OnPreconnectSocketsComplete,
+                                              ptr_factory_.GetWeakPtr());
 
     return PreconnectSocketsForHttpRequest(
         destination_, request_info_.load_flags, priority_, session_,
         proxy_info_, allowed_bad_certs_, request_info_.privacy_mode,
         request_info_.network_anonymization_key,
-        request_info_.secure_dns_policy, net_log_, num_streams_,
-        std::move(callback));
+        request_info_.secure_dns_policy, request_info_.target_network, net_log_,
+        num_streams_, std::move(preconnect_callback));
   }
 
   ClientSocketPool::ProxyAuthCallback proxy_auth_callback =
@@ -816,16 +832,16 @@ int HttpStreamFactory::Job::DoInitConnectionImpl() {
     return InitSocketHandleForWebSocketRequest(
         destination_, request_info_.load_flags, priority_, session_,
         proxy_info_, allowed_bad_certs_, request_info_.privacy_mode,
-        request_info_.network_anonymization_key, net_log_, connection_.get(),
-        io_callback_, proxy_auth_callback);
+        request_info_.network_anonymization_key, request_info_.target_network,
+        net_log_, connection_.get(), io_callback_, proxy_auth_callback);
   }
 
   return InitSocketHandleForHttpRequest(
       destination_, request_info_.load_flags, priority_, session_, proxy_info_,
       allowed_bad_certs_, request_info_.privacy_mode,
       request_info_.network_anonymization_key, request_info_.secure_dns_policy,
-      request_info_.socket_tag, net_log_, connection_.get(), io_callback_,
-      proxy_auth_callback);
+      request_info_.socket_tag, request_info_.target_network, net_log_,
+      connection_.get(), io_callback_, proxy_auth_callback);
 }
 
 int HttpStreamFactory::Job::DoInitConnectionImplQuic() {
@@ -853,15 +869,20 @@ int HttpStreamFactory::Job::DoInitConnectionImplQuic() {
                 proxy_info_.traffic_annotation())
           : std::nullopt;
 
-  auto initiator =
-      (job_type_ == PRECONNECT || job_type_ == PRECONNECT_DNS_ALPN_H3)
-          ? MultiplexedSessionCreationInitiator::kPreconnect
-          : MultiplexedSessionCreationInitiator::kUnknown;
+  auto initiator = is_preconnect()
+                       ? MultiplexedSessionCreationInitiator::kPreconnect
+                       : MultiplexedSessionCreationInitiator::kUnknown;
 
   SSLConfig server_ssl_config;
   server_ssl_config.disable_cert_verification_network_fetches =
       disable_cert_verification_network_fetches();
   int server_cert_verifier_flags = server_ssl_config.GetCertVerifyFlags();
+
+  // WS_OVER_H3 is reuse-only. If the session found during DoCreateJobs()
+  // is gone, fail immediately so OnStreamFailed() can resume `main_job_`.
+  if (job_type_ == WS_OVER_H3 && !HasAvailableQuicSession()) {
+    return ERR_CONNECTION_CLOSED;
+  }
 
   // The QuicSessionRequest will take care of connecting to any proxies in the
   // proxy chain.
@@ -878,6 +899,9 @@ int HttpStreamFactory::Job::DoInitConnectionImplQuic() {
   if (rv == OK) {
     using_existing_quic_session_ = true;
   } else if (rv == ERR_IO_PENDING) {
+    // WS_OVER_H3 never reaches here; the guard above returns
+    // ERR_CONNECTION_CLOSED if the session is gone.
+    CHECK_NE(job_type_, WS_OVER_H3);
     // There's no available QUIC session. Inform the delegate how long to
     // delay the main job.
     delegate_->MaybeSetWaitTimeForMainJob(
@@ -932,28 +956,44 @@ int HttpStreamFactory::Job::DoInitConnectionComplete(int result) {
   // established.
   spdy_session_request_.reset();
 
-  if (!using_quic_ && management_config_.has_value()) {
-    // If `DoInitConnection` has completed successfully, we should have a
-    // session in the pool. Note that we cannot rely on `result`, since we would
-    // always get `OK` for preconnects in this situation.
-    if (session_->spdy_session_pool()->FindAvailableSession(
-            spdy_session_key_, enable_ip_based_pooling_for_h2_, is_websocket_,
-            net_log_)) {
-      session_->spdy_session_pool()->AddConnectionManagementConfig(
-          spdy_session_key_, management_config_.value());
-    } else if (management_config_->connection_change_observer) {
-      // If we do not have a session, then we should notify the
-      // ConnectionChangeObserver that the connection establishment has failed.
-      management_config_->connection_change_observer->OnConnectionFailed();
-    }
-  }
-
-  if ((job_type_ == PRECONNECT) || (job_type_ == PRECONNECT_DNS_ALPN_H3)) {
+  if (is_preconnect()) {
     if (using_quic_) {
       return result;
     }
-    DCHECK_EQ(OK, result);
-    return OK;
+    // When the feature is enabled, the result of preconnect may not be OK.
+    if (!base::FeatureList::IsEnabled(
+            net::features::kEnableErrorCodePropagationForPreconnect)) {
+      DCHECK_EQ(OK, result);
+      return OK;
+    }
+
+    // If we have a session already, this means that the preconnect succeeded,
+    // but the connection was used immediately for a different request that came
+    // in later but was prioritized over the preconnect. In this case, we
+    // proceed to `DoCreateStream`.
+    if (existing_spdy_session_) {
+      CHECK_EQ(OK, result);
+      next_state_ = STATE_CREATE_STREAM;
+      return OK;
+    }
+
+    // Check if the result was not OK (i.e. preconnect failed), or if the
+    // connection was not initialized (i.e. the preconnect succeeded, but was
+    // immediately used for a different request that came in later but was
+    // prioritized over the preconnect. Since we already handle H2 cases above,
+    // we handle H1 cases here).
+    if (result != OK || !connection_->is_initialized()) {
+      // If we do not have a session, then we should notify the
+      // ConnectionChangeObserver that the connection establishment has
+      // failed.
+      if (base::FeatureList::IsEnabled(
+              net::features::kConnectionKeepAliveForHttp2) &&
+          management_config_.has_value() &&
+          management_config_->connection_change_observer) {
+        management_config_->connection_change_observer->OnConnectionFailed();
+      }
+      return result;
+    }
   }
 
   resolve_error_info_ = connection_->resolve_error_info();
@@ -1033,6 +1073,27 @@ int HttpStreamFactory::Job::DoInitConnectionComplete(int result) {
   if (using_quic_) {
     if (result < 0) {
       return result;
+    }
+
+    // Create a WebSocket handshake stream over the existing QUIC session using
+    // Extended CONNECT.
+    if (is_websocket_) {
+      CHECK_EQ(job_type_, WS_OVER_H3);
+      std::unique_ptr<QuicChromiumClientSession::Handle> session =
+          quic_request_.ReleaseSessionHandle();
+      if (!session) {
+        // QUIC session closed before stream could be created.
+        return ERR_CONNECTION_CLOSED;
+      }
+      auto dns_aliases =
+          session->GetDnsAliasesForSessionKey(quic_request_.session_key());
+      // Use the existing CreateHttp3Stream helper which creates a
+      // WebSocketHttp3HandshakeStream wrapping the QUIC session.
+      websocket_stream_ =
+          delegate_->websocket_handshake_stream_create_helper()
+              ->CreateHttp3Stream(std::move(session), std::move(dns_aliases));
+      next_state_ = STATE_CREATE_STREAM_COMPLETE;
+      return OK;
     }
 
     if (stream_type_ == HttpStreamRequest::BIDIRECTIONAL_STREAM) {
@@ -1127,6 +1188,11 @@ int HttpStreamFactory::Job::DoCreateStream() {
 
   if (!using_spdy()) {
     DCHECK(!expect_spdy_);
+    // If this is a preconnect, we do not want to create a stream since there is
+    // no request associated with the connection. Hence, we return early.
+    if (is_preconnect()) {
+      return OK;
+    }
     bool is_for_get_to_http_proxy = UsingHttpProxyWithoutTunnel();
     if (is_websocket_) {
       DCHECK_NE(job_type_, PRECONNECT);
@@ -1175,6 +1241,12 @@ int HttpStreamFactory::Job::DoCreateStream() {
     }
     connection_->Reset();
 
+    // If this is a preconnect, we do not want to create a stream since there is
+    // no request associated with the connection. Hence, we return early.
+    if (is_preconnect()) {
+      return OK;
+    }
+
     int set_result =
         SetSpdyHttpStreamOrBidirectionalStreamImpl(existing_spdy_session_);
     existing_spdy_session_.reset();
@@ -1187,10 +1259,9 @@ int HttpStreamFactory::Job::DoCreateStream() {
     connection_->CloseIdleSocketsInGroup("Switching to HTTP2 session");
   }
 
-  auto initiator =
-      (job_type_ == PRECONNECT || job_type_ == PRECONNECT_DNS_ALPN_H3)
-          ? MultiplexedSessionCreationInitiator::kPreconnect
-          : MultiplexedSessionCreationInitiator::kUnknown;
+  auto initiator = is_preconnect()
+                       ? MultiplexedSessionCreationInitiator::kPreconnect
+                       : MultiplexedSessionCreationInitiator::kUnknown;
 
   base::WeakPtr<SpdySession> spdy_session;
   int rv =
@@ -1206,6 +1277,12 @@ int HttpStreamFactory::Job::DoCreateStream() {
   session_->http_server_properties()->SetSupportsSpdy(
       SchemeHostPortForSupportsSpdy(), request_info_.network_anonymization_key,
       /*supports_spdy=*/true);
+
+  // If this is a preconnect, we do not want to create a stream since there is
+  // no request associated with the connection. Hence, we return early.
+  if (is_preconnect()) {
+    return OK;
+  }
 
   // Create a SpdyHttpStream or a BidirectionalStreamImpl attached to the
   // session.
@@ -1324,8 +1401,39 @@ bool HttpStreamFactory::Job::ShouldThrottleConnectForSpdy() const {
       SchemeHostPortForSupportsSpdy(), request_info_.network_anonymization_key);
 }
 
+void HttpStreamFactory::Job::OnPreconnectSocketsComplete(
+    bool success,
+    std::unique_ptr<ClientSocketHandle> handle) {
+  if (success) {
+    if (handle) {
+      CHECK(handle->is_initialized());
+      connection_ = std::move(handle);
+    } else {
+      // If the preconnect succeeded, but the handle is not initialized, then
+      // this means that the preconnected socket was used for a different
+      // request before creating the `ClientSocketHandle`. Find the existing
+      // session. Note that this will fail if the negotiated protocol is H1,
+      // since we do not create `SpdySession` for H1 sessions.
+      CHECK(!existing_spdy_session_);
+      existing_spdy_session_ =
+          session_->spdy_session_pool()->FindAvailableSession(
+              spdy_session_key_, enable_ip_based_pooling_for_h2_, is_websocket_,
+              net_log_);
+      if (existing_spdy_session_) {
+        negotiated_protocol_ = NextProto::kProtoHTTP2;
+      }
+    }
+  }
+
+  // The preconnect callback only provides a boolean indicating success or
+  // failure. We convert this to a `net::Error` to use the existing logic
+  // which uses `int` to pass around the errors as an argument including
+  // `OnIOComplete()` to be consistent with the rest of the job.
+  OnIOComplete(success ? OK : ERR_FAILED);
+}
+
 void HttpStreamFactory::Job::RecordPreconnectHistograms(int result) {
-  CHECK(job_type_ == PRECONNECT || job_type_ == PRECONNECT_DNS_ALPN_H3);
+  CHECK(is_preconnect());
   constexpr std::string_view kHistogramBase =
       "Net.SessionCreate.GoogleSearch.Preconnect2";
   if (!IsGoogleHostWithAlpnH3(destination_.host())) {

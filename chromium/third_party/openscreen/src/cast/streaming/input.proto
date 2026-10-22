@@ -1,0 +1,184 @@
+// Copyright 2026 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+syntax = "proto3";
+
+package openscreen.cast;
+
+option optimize_for = LITE_RUNTIME;
+
+// Messages used for sending input events (like touch, mouse, key) between a
+// Cast Sender and a Cast Receiver. This allows for interactive applications
+// where the user interacts with one device, and those interactions are
+// forwarded to the other device.
+message InputMessage {
+  enum InputType {
+    INPUT_TYPE_KEY_DOWN = 0;
+    INPUT_TYPE_KEY_UP = 1;
+    INPUT_TYPE_MOUSE_DOWN = 2;
+    INPUT_TYPE_MOUSE_UP = 3;
+    INPUT_TYPE_MOUSE_MOVE = 4;
+    INPUT_TYPE_MOUSE_ENTER = 5;
+    INPUT_TYPE_MOUSE_LEAVE = 6;
+    INPUT_TYPE_MOUSE_WHEEL = 7;
+    INPUT_TYPE_TOUCH = 8;
+  }
+
+  enum ModifierKeys {
+    MODIFIER_KEY_UNKNOWN = 0;
+    MODIFIER_KEY_ALT = 1;
+    MODIFIER_KEY_CTRL = 2;
+    MODIFIER_KEY_SHIFT = 3;
+    MODIFIER_KEY_META = 4;
+    MODIFIER_KEY_CAPS_LOCK = 5;
+  }
+
+  enum MouseButton {
+    MOUSE_BUTTON_UNKNOWN = 0;
+    MOUSE_BUTTON_PRIMARY = 1;
+    MOUSE_BUTTON_SECONDARY = 2;
+    MOUSE_BUTTON_AUXILIARY = 3;
+    MOUSE_BUTTON_BROWSER_BACK = 4;
+    MOUSE_BUTTON_BROWSER_FORWARD = 5;
+  }
+
+  enum TouchState {
+    TOUCH_STATE_UNKNOWN = 0;
+    TOUCH_STATE_START = 1;
+    TOUCH_STATE_MOVE = 2;
+    TOUCH_STATE_END = 3;
+    TOUCH_STATE_CANCEL = 4;
+  }
+
+  enum WheelMode {
+    WHEEL_MODE_UNKNOWN = 0;
+    WHEEL_MODE_PIXEL = 1;
+    WHEEL_MODE_LINE = 2;
+    WHEEL_MODE_PAGE = 3;
+  }
+
+  // Input events use normalized [0.0, 1.0] x and y coordinates, where origin
+  // (0, 0) is defined as the upper left of the viewport.
+  //
+  // The "viewport" is defined as the stream of pixels shared between a Cast
+  // sender and receiver.
+  message NormalizedPoint {
+    // The x-coordinate, normalized to [0.0, 1.0].
+    float x = 1;
+    // The y-coordinate, normalized to [0.0, 1.0].
+    float y = 2;
+  }
+
+  // A Timestamp represents a point in time independent of any time zone or
+  // local calendar, encoded as a count of seconds and fractions of seconds
+  // at nanosecond resolution. The count is relative to an epoch at UTC
+  // midnight on January 1, 1970, in the proleptic Gregorian calendar which
+  // extends the Gregorian calendar backwards to year one.
+  //
+  // Based on the google.protobuf.Timestamp type.
+  message Timestamp {
+    int64 seconds = 1;
+    int32 nanos = 2;
+  }
+
+  message Touch {
+    // Unique identifier to keep track of ongoing touch events.
+    int32 id = 1;
+
+    // Location of the touch event.
+    NormalizedPoint location = 2;
+
+    // The state of this specific touch point.
+    TouchState state = 3;
+  }
+
+  message TouchEvent {
+    // Touch objects related to this event.
+    repeated Touch touches = 1;
+
+    // Keys that were being pressed when the touch event fired.
+    repeated ModifierKeys modifiers = 2;
+  }
+
+  message MouseEvent {
+    // Location of the mouse event.
+    NormalizedPoint location = 1;
+
+    // Normalized change in x and y coordinates.
+    NormalizedPoint delta = 2;
+
+    // The buttons being pressed when the mouse event was fired.
+    repeated MouseButton buttons = 3;
+
+    // The modifier keys being pressed when the mouse event fired.
+    repeated ModifierKeys modifiers = 4;
+  }
+
+  message WheelEvent {
+    // Location of the wheel event.
+    NormalizedPoint location = 1;
+
+    // The buttons being pressed when the wheel event was fired.
+    repeated MouseButton buttons = 2;
+
+    // The modifier keys being pressed when the wheel event fired.
+    repeated ModifierKeys modifiers = 3;
+
+    // Scroll deltas.
+    float delta_x = 4;
+    float delta_y = 5;
+    float delta_z = 6;
+
+    // The units of the scroll delta values.
+    WheelMode delta_mode = 7;
+  }
+
+  message KeyEvent {
+    // The physical key that was pressed.
+    // Maps to the UI Events KeyboardEvent code
+    // https://www.w3.org/TR/uievents-code/#code-value-tables
+    string key_code = 1;
+
+    // The represented value of the key when pressed (depends on layout and caps
+    // lock status).
+    string key_value = 2;
+
+    // Modifier keys (CTRL, ALT, SHIFT, etc.).
+    repeated ModifierKeys modifiers = 3;
+
+    // True if the key is being held down and automatically repeating.
+    bool repeat = 4;
+  }
+
+  message InputEvent {
+    InputType type = 1;
+
+    // Timestamp of the system clock of the generating device.
+    // The receiver of this input event may wish to translate this value into
+    // its own system clock using a clock drift smoother.
+    Timestamp timestamp = 2;
+
+    oneof event {
+      TouchEvent touch_event = 3;
+      MouseEvent mouse_event = 4;
+      KeyEvent key_event = 5;
+      WheelEvent wheel_event = 6;
+    }
+
+    // ID of the device that generated this event, with `0` being a valid ID
+    // corresponding to the default or built-in device. Input event sources that
+    // do not differentiate between input devices may provide 0 for all events.
+    int32 device_id = 7;
+  }
+
+  // Batch of input events.
+  repeated InputEvent events = 1;
+
+  // All of the input events for a single input message should share the same
+  // viewport dimensions so that all NormalizedPoints are in the same domain.
+  // If a resize occurs while generating input events, it is encouraged to send
+  // two separate input event messages.
+  int32 viewport_width = 2;
+  int32 viewport_height = 3;
+}

@@ -38,7 +38,6 @@ if (toolchain_has_rust) {
     "getopts",
     "hashbrown",
     "panic_abort",
-    "panic_unwind",
     "rustc_demangle",
     "std_detect",
     "test",
@@ -49,17 +48,13 @@ if (toolchain_has_rust) {
     # These are no longer present in the Windows toolchain.
     stdlib_files += [
       "addr2line",
+      "adler2",
       "gimli",
       "libc",
       "memchr",
       "miniz_oxide",
       "object",
     ]
-    if (rustc_nightly_capability) {
-      stdlib_files += [ "adler2" ]
-    } else {
-      stdlib_files += [ "adler" ]
-    }
   }
 
   if (toolchain_for_rust_host_build_tools) {
@@ -234,6 +229,15 @@ if (toolchain_has_rust) {
         deps += [ "rules:$libname" ]
       }
     }
+    if (enable_cpp_api_from_rust) {
+      group("std_bindings") {
+        deps = [ ":std" ]
+        public_deps = []
+        foreach(libname, stdlib_files + skip_stdlib_files) {
+          public_deps += [ "rules:${libname}_bindings" ]
+        }
+      }
+    }
   } else {
     action("find_stdlib") {
       # Collect prebuilt Rust libraries from toolchain package and copy to a
@@ -262,6 +266,12 @@ if (toolchain_has_rust) {
       depfile = "$target_out_dir/stdlib.d"
       out_libdir = rebase_path(target_out_dir, root_build_dir)
       out_depfile = rebase_path(depfile, root_build_dir)
+
+      if (host_os == "win") {
+        inputs = [ "//third_party/rust-toolchain/bin/rustc.exe" ]
+      } else {
+        inputs = [ "//third_party/rust-toolchain/bin/rustc" ]
+      }
 
       # For the rustc sysroot we must include even the rlibs we don't pass to
       # the C++ linker.

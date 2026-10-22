@@ -7,12 +7,12 @@
 import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
 
 // TODO: b/295990177 - Make these absolute.
-import {waitForEvent} from '../async_helpers/async_helpers';
-import {assertExists} from '../helpers/helpers';
+import {waitForEvent} from '../async_helpers/async_helpers.js';
+import {assertExists} from '../helpers/helpers.js';
 
-import {addColorSchemeChangeListener, removeColorSchemeChangeListener} from './event_binders';
-import {ProcessedLottieJSON} from './lottie_processing_helpers';
-import {defaultGetWorker} from './worker';
+import {addColorSchemeChangeListener, removeColorSchemeChangeListener} from './event_binders.js';
+import {ProcessedLottieJSON} from './lottie_processing_helpers.js';
+import {defaultGetWorker} from './worker.js';
 
 /** The CustomEvent names that LottieRenderer can fire. */
 export enum CrosLottieEvent {

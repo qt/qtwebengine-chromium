@@ -17,12 +17,12 @@ import {HeavyAdIssue} from './HeavyAdIssue.js';
 import {Issue, IssueCategory, IssueKind, unionIssueKind} from './Issue.js';
 import type {EventTypes as IssuesManagerEventsTypes, IssueAddedEvent} from './IssuesManager.js';
 import {Events as IssuesManagerEvents} from './IssuesManagerEvents.js';
-import {LowTextContrastIssue} from './LowTextContrastIssue.js';
 import type {MarkdownIssueDescription} from './MarkdownIssueDescription.js';
 import {MixedContentIssue} from './MixedContentIssue.js';
 import {PartitioningBlobURLIssue} from './PartitioningBlobURLIssue.js';
 import {PermissionElementIssue} from './PermissionElementIssue.js';
 import {QuirksModeIssue} from './QuirksModeIssue.js';
+import {SelectivePermissionsInterventionIssue} from './SelectivePermissionsInterventionIssue.js';
 import {SharedArrayBufferIssue} from './SharedArrayBufferIssue.js';
 
 export interface IssuesProvider extends Common.EventTarget.EventTarget<IssuesManagerEventsTypes> {
@@ -64,11 +64,11 @@ export class AggregatedIssue extends Issue {
   #cspIssues = new Set<ContentSecurityPolicyIssue>();
   #deprecationIssues = new Set<DeprecationIssue>();
   #issueKind = IssueKind.IMPROVEMENT;
-  #lowContrastIssues = new Set<LowTextContrastIssue>();
   #cookieDeprecationMetadataIssues = new Set<CookieDeprecationMetadataIssue>();
   #mixedContentIssues = new Set<MixedContentIssue>();
   #partitioningBlobURLIssues = new Set<PartitioningBlobURLIssue>();
   #permissionElementIssues = new Set<PermissionElementIssue>();
+  #selectivePermissionsInterventionIssues = new Set<SelectivePermissionsInterventionIssue>();
   #sharedArrayBufferIssues = new Set<SharedArrayBufferIssue>();
   #quirksModeIssues = new Set<QuirksModeIssue>();
   #attributionReportingIssues = new Set<AttributionReportingIssue>();
@@ -142,12 +142,12 @@ export class AggregatedIssue extends Issue {
     return this.#deprecationIssues;
   }
 
-  getLowContrastIssues(): Iterable<LowTextContrastIssue> {
-    return this.#lowContrastIssues;
-  }
-
   override requests(): Iterable<Protocol.Audits.AffectedRequest> {
     return this.#affectedRequests.values();
+  }
+
+  getSelectivePermissionsInterventionIssues(): Iterable<SelectivePermissionsInterventionIssue> {
+    return this.#selectivePermissionsInterventionIssues;
   }
 
   getSharedArrayBufferIssues(): Iterable<SharedArrayBufferIssue> {
@@ -267,9 +267,6 @@ export class AggregatedIssue extends Issue {
     if (issue instanceof SharedArrayBufferIssue) {
       this.#sharedArrayBufferIssues.add(issue);
     }
-    if (issue instanceof LowTextContrastIssue) {
-      this.#lowContrastIssues.add(issue);
-    }
     if (issue instanceof CorsIssue) {
       this.#corsIssues.add(issue);
     }
@@ -290,6 +287,9 @@ export class AggregatedIssue extends Issue {
     }
     if (issue instanceof PermissionElementIssue) {
       this.#permissionElementIssues.add(issue);
+    }
+    if (issue instanceof SelectivePermissionsInterventionIssue) {
+      this.#selectivePermissionsInterventionIssues.add(issue);
     }
   }
 

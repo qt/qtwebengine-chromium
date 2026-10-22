@@ -119,24 +119,6 @@ TEST_F(AutofillFieldTest, IsFieldFillable) {
   EXPECT_TRUE(field.IsFieldFillable());
 }
 
-TEST_F(AutofillFieldTest, LoyaltyCardPredictionsIgnoredIfFlagIsDisabled) {
-  base::test::ScopedFeatureList feature_;
-  feature_.InitWithFeatures(
-      /*enabled_features=*/{},
-      /*disabled_features=*/{
-          features::kAutofillEnableLoyaltyCardsFilling,
-          features::kAutofillEnableEmailOrLoyaltyCardsFilling});
-
-  AutofillField field;
-  EXPECT_THAT(field.Type().GetTypes(), ElementsAre(UNKNOWN_TYPE));
-
-  // Both types set.
-  field.set_heuristic_type(GetActiveHeuristicSource(), NAME_FIRST);
-  field.set_server_predictions({CreateFieldPrediction(LOYALTY_MEMBERSHIP_ID)});
-
-  EXPECT_THAT(field.Type().GetTypes(), ElementsAre(NAME_FIRST));
-}
-
 TEST_F(AutofillFieldTest, NoPredictions) {
   AutofillField field;
   EXPECT_THAT(field.Type().GetTypes(), ElementsAre(UNKNOWN_TYPE));
@@ -178,7 +160,7 @@ TEST_F(AutofillFieldTest, UnionTypesFromServerTypes) {
 
   constexpr FieldType kInvalidFieldType =
       static_cast<FieldType>(15);  // nocheck
-  ASSERT_EQ(ToSafeFieldType(kInvalidFieldType, NO_SERVER_DATA), NO_SERVER_DATA);
+  ASSERT_FALSE(ToSafeFieldType(kInvalidFieldType));
 
   EXPECT_THAT(f(), ElementsAre(UNKNOWN_TYPE));
 
@@ -339,7 +321,7 @@ TEST_F(AutofillFieldTest, UpdateFieldData) {
 
   // Update information in `AutofillField` that come from `FormFieldData`.
   field.set_value(u"John Doe");
-  field.set_is_autofilled(true);
+  field.set_is_autofilled_according_to_renderer(true);
   ASSERT_FALSE(
       FormFieldData::IdenticalAndEquivalentDomElements(field, autofill_field));
 
@@ -596,10 +578,11 @@ TEST(AutocompleteUnrecognizedTypeKillSwitchTest,
       AutocompleteUnrecognizedBehavior::kSuggestionsAllowed));
 }
 
-// Parameters for `AutofillLocalHeuristicsOverridesTest`
-struct AutofillLocalHeuristicsOverridesParams {
+// Parameters for `AutofillPredictionPreferenceTest`
+struct AutofillPredictionPreferenceTestParams {
   // These values denote what type the field was classified as html, server and
   // heuristic prediction.
+  const FormControlType form_control_type = FormControlType::kInputText;
   const HtmlFieldType html_field_type;
   const FieldType server_type;
   const FieldType heuristic_type;
@@ -608,22 +591,21 @@ struct AutofillLocalHeuristicsOverridesParams {
   const AutofillPredictionSource expected_source;
 };
 
-class AutofillLocalHeuristicsOverridesTest
-    : public testing::TestWithParam<AutofillLocalHeuristicsOverridesParams> {
+class AutofillPredictionPreferenceTest
+    : public testing::TestWithParam<AutofillPredictionPreferenceTestParams> {
  public:
-  AutofillLocalHeuristicsOverridesTest() = default;
-
- private:
-  base::test::ScopedFeatureList feature_{
-      features::kAutofillEnableEmailOrLoyaltyCardsFilling};
+  AutofillPredictionPreferenceTest() = default;
 };
 
 // Tests the correctness of local heuristic overrides while computing the
 // overall field type.
-TEST_P(AutofillLocalHeuristicsOverridesTest,
-       AutofillLocalHeuristicsOverridesParams) {
-  AutofillLocalHeuristicsOverridesParams test_case = GetParam();
+TEST_P(AutofillPredictionPreferenceTest,
+       AutofillPredictionPreferenceTestParams) {
+  base::test::ScopedFeatureList scoped_feature_list{
+      features::kAutofillPreferPhoneCountryCodeTypeOverCountryHtmlType};
+  AutofillPredictionPreferenceTestParams test_case = GetParam();
   AutofillField field;
+  field.set_form_control_type(test_case.form_control_type);
   field.SetHtmlType(test_case.html_field_type, HtmlFieldMode::kNone);
   field.set_server_predictions({CreateFieldPrediction(test_case.server_type)});
   field.set_heuristic_type(GetActiveHeuristicSource(),
@@ -638,221 +620,192 @@ TEST_P(AutofillLocalHeuristicsOverridesTest,
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    AutofillHeuristicsOverrideTest,
-    AutofillLocalHeuristicsOverridesTest,
+    FieldPredictionTest,
+    AutofillPredictionPreferenceTest,
     testing::Values(
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
+            .form_control_type = FormControlType::kSelectOne,
+            .html_field_type = HtmlFieldType::kCountryCode,
+            .server_type = ADDRESS_HOME_COUNTRY,
+            .heuristic_type = PHONE_HOME_COUNTRY_CODE,
+            .expected_result = PHONE_HOME_COUNTRY_CODE,
+            .expected_source = AutofillPredictionSource::kHeuristics},
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = ADDRESS_HOME_CITY,
             .heuristic_type = ADDRESS_HOME_ADMIN_LEVEL2,
             .expected_result = ADDRESS_HOME_ADMIN_LEVEL2,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = ADDRESS_HOME_HOUSE_NUMBER,
             .heuristic_type = ADDRESS_HOME_APT_NUM,
             .expected_result = ADDRESS_HOME_APT_NUM,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = ADDRESS_HOME_STREET_ADDRESS,
             .heuristic_type = ADDRESS_HOME_BETWEEN_STREETS,
             .expected_result = ADDRESS_HOME_BETWEEN_STREETS,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = ADDRESS_HOME_LINE1,
             .heuristic_type = ADDRESS_HOME_BETWEEN_STREETS,
             .expected_result = ADDRESS_HOME_BETWEEN_STREETS,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = ADDRESS_HOME_LINE2,
             .heuristic_type = ADDRESS_HOME_BETWEEN_STREETS,
             .expected_result = ADDRESS_HOME_BETWEEN_STREETS,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kAddressLevel1,
             .server_type = ADDRESS_HOME_STREET_ADDRESS,
             .heuristic_type = ADDRESS_HOME_ADMIN_LEVEL2,
             .expected_result = ADDRESS_HOME_ADMIN_LEVEL2,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kAddressLine2,
             .server_type = ADDRESS_HOME_STREET_ADDRESS,
             .heuristic_type = ADDRESS_HOME_APT_NUM,
             .expected_result = ADDRESS_HOME_APT_NUM,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kAddressLevel2,
             .server_type = ADDRESS_HOME_STREET_ADDRESS,
             .heuristic_type = ADDRESS_HOME_BETWEEN_STREETS,
             .expected_result = ADDRESS_HOME_BETWEEN_STREETS,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kAddressLevel1,
             .server_type = ADDRESS_HOME_STREET_ADDRESS,
             .heuristic_type = ADDRESS_HOME_DEPENDENT_LOCALITY,
             .expected_result = ADDRESS_HOME_DEPENDENT_LOCALITY,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kAddressLine1,
             .server_type = ADDRESS_HOME_STREET_ADDRESS,
             .heuristic_type = ADDRESS_HOME_DEPENDENT_LOCALITY,
             .expected_result = ADDRESS_HOME_DEPENDENT_LOCALITY,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kAddressLine2,
             .server_type = ADDRESS_HOME_LINE2,
             .heuristic_type = ADDRESS_HOME_OVERFLOW_AND_LANDMARK,
             .expected_result = ADDRESS_HOME_OVERFLOW_AND_LANDMARK,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kAddressLine2,
             .server_type = ADDRESS_HOME_LINE2,
             .heuristic_type = ADDRESS_HOME_OVERFLOW,
             .expected_result = ADDRESS_HOME_OVERFLOW,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnrecognized,
             .server_type = EMAIL_ADDRESS,
             .heuristic_type = EMAIL_OR_LOYALTY_MEMBERSHIP_ID,
             .expected_result = EMAIL_OR_LOYALTY_MEMBERSHIP_ID,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kEmail,
             .server_type = NO_SERVER_DATA,
             .heuristic_type = EMAIL_OR_LOYALTY_MEMBERSHIP_ID,
             .expected_result = EMAIL_OR_LOYALTY_MEMBERSHIP_ID,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnrecognized,
             .server_type = NO_SERVER_DATA,
             .heuristic_type = LOYALTY_MEMBERSHIP_ID,
             .expected_result = LOYALTY_MEMBERSHIP_ID,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnrecognized,
             .server_type = UNKNOWN_TYPE,
             .heuristic_type = LOYALTY_MEMBERSHIP_ID,
             .expected_result = LOYALTY_MEMBERSHIP_ID,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnrecognized,
             .server_type = PHONE_HOME_NUMBER,
             .heuristic_type = LOYALTY_MEMBERSHIP_ID,
             .expected_result = PHONE_HOME_NUMBER,
             .expected_source = AutofillPredictionSource::kServerCrowdsourcing},
         // Test non-override behavior.
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kStreetAddress,
             .server_type = ADDRESS_HOME_STREET_ADDRESS,
             .heuristic_type = ADDRESS_HOME_STREET_ADDRESS,
             .expected_result = ADDRESS_HOME_STREET_ADDRESS,
             .expected_source = AutofillPredictionSource::kAutocomplete},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = ADDRESS_HOME_CITY,
             .heuristic_type = ADDRESS_HOME_APT_NUM,
             .expected_result = ADDRESS_HOME_CITY,
             .expected_source = AutofillPredictionSource::kServerCrowdsourcing},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = ADDRESS_HOME_HOUSE_NUMBER,
             .heuristic_type = ADDRESS_HOME_HOUSE_NUMBER_AND_APT,
             .expected_result = ADDRESS_HOME_HOUSE_NUMBER_AND_APT,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = ADDRESS_HOME_APT_NUM,
             .heuristic_type = ADDRESS_HOME_HOUSE_NUMBER_AND_APT,
             .expected_result = ADDRESS_HOME_HOUSE_NUMBER_AND_APT,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = NAME_FULL,
             .heuristic_type = ALTERNATIVE_FULL_NAME,
             .expected_result = ALTERNATIVE_FULL_NAME,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = NAME_FIRST,
             .heuristic_type = ALTERNATIVE_GIVEN_NAME,
             .expected_result = ALTERNATIVE_GIVEN_NAME,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = NAME_LAST,
             .heuristic_type = ALTERNATIVE_FAMILY_NAME,
             .expected_result = ALTERNATIVE_FAMILY_NAME,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = NAME_LAST_SECOND,
             .heuristic_type = ALTERNATIVE_FAMILY_NAME,
             .expected_result = ALTERNATIVE_FAMILY_NAME,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
-            .html_field_type = HtmlFieldType::kUnspecified,
-            .server_type = NAME_LAST_CORE,
-            .heuristic_type = ALTERNATIVE_FAMILY_NAME,
-            .expected_result = ALTERNATIVE_FAMILY_NAME,
-            .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
-            .html_field_type = HtmlFieldType::kAdditionalName,
-            .server_type = NAME_LAST_PREFIX,
-            .heuristic_type = NAME_LAST_PREFIX,
-            .expected_result = NAME_LAST_PREFIX,
-            .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
-            .html_field_type = HtmlFieldType::kAdditionalNameInitial,
-            .server_type = NAME_LAST_PREFIX,
-            .heuristic_type = NAME_LAST_PREFIX,
-            .expected_result = NAME_LAST_PREFIX,
-            .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
-            .html_field_type = HtmlFieldType::kFamilyName,
-            .server_type = NAME_LAST_CORE,
-            .heuristic_type = NAME_LAST_CORE,
-            .expected_result = NAME_LAST_CORE,
-            .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
-            .html_field_type = HtmlFieldType::kUnspecified,
-            .server_type = NAME_MIDDLE,
-            .heuristic_type = NAME_LAST_PREFIX,
-            .expected_result = NAME_LAST_PREFIX,
-            .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
-            .html_field_type = HtmlFieldType::kUnspecified,
-            .server_type = NAME_LAST,
-            .heuristic_type = NAME_LAST_CORE,
-            .expected_result = NAME_LAST_CORE,
-            .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = NAME_FULL,
             .heuristic_type = NAME_FIRST,
             .expected_result = NAME_FULL,
             .expected_source = AutofillPredictionSource::kServerCrowdsourcing},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = NAME_FULL,
             .heuristic_type = UNKNOWN_TYPE,
             .expected_result = NAME_FULL,
             .expected_source = AutofillPredictionSource::kServerCrowdsourcing},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kName,
             .server_type = NO_SERVER_DATA,
             .heuristic_type = ALTERNATIVE_FULL_NAME,
             .expected_result = ALTERNATIVE_FULL_NAME,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kGivenName,
             .server_type = NO_SERVER_DATA,
             .heuristic_type = ALTERNATIVE_GIVEN_NAME,
             .expected_result = ALTERNATIVE_GIVEN_NAME,
             .expected_source = AutofillPredictionSource::kHeuristics},
-        AutofillLocalHeuristicsOverridesParams{
+        AutofillPredictionPreferenceTestParams{
             .html_field_type = HtmlFieldType::kFamilyName,
             .server_type = NO_SERVER_DATA,
             .heuristic_type = ALTERNATIVE_FAMILY_NAME,
@@ -1028,6 +981,67 @@ INSTANTIATE_TEST_SUITE_P(
             .password_manager_predicted_type = PASSWORD,
             .expected_result = PHONE_HOME_NUMBER,
             .expected_source = AutofillPredictionSource::kHeuristics}));
+
+// Tests the behavior of `AutofillField::last_modifier()` when the purpose is to
+// figure out whether a field was last modified by autofill.
+TEST_F(AutofillFieldTest, IsLastModifierAutofill) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kAutofillFixIsAutofilled);
+  AutofillField field;
+  EXPECT_NE(field.last_modifier(), FieldModifier::kAutofill);
+
+  field.AddFieldModifier(FieldModifier::kUser);
+  EXPECT_NE(field.last_modifier(), FieldModifier::kAutofill);
+
+  field.AddFieldModifier(FieldModifier::kAutofill);
+  EXPECT_EQ(field.last_modifier(), FieldModifier::kAutofill);
+
+  field.AddFieldModifier(FieldModifier::kUser);
+  EXPECT_NE(field.last_modifier(), FieldModifier::kAutofill);
+}
+
+// Tests the behavior of `AutofillField::[last|all]_modifier()` when the purpose
+// is to figure out whether a field was previously autofilled (but now is not).
+TEST_F(AutofillFieldTest, PreviouslyAutofilled) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kAutofillFixIsAutofilled);
+  AutofillField field;
+  auto previously_autofilled = [](const AutofillField& field) {
+    return field.all_modifiers().contains(FieldModifier::kAutofill) &&
+           field.last_modifier() != FieldModifier::kAutofill;
+  };
+  EXPECT_FALSE(previously_autofilled(field));
+
+  field.AddFieldModifier(FieldModifier::kUser);
+  EXPECT_FALSE(previously_autofilled(field));
+
+  field.AddFieldModifier(FieldModifier::kAutofill);
+  EXPECT_FALSE(previously_autofilled(field));
+
+  field.AddFieldModifier(FieldModifier::kUser);
+  EXPECT_TRUE(previously_autofilled(field));
+
+  field.AddFieldModifier(FieldModifier::kAutofill);
+  EXPECT_FALSE(previously_autofilled(field));
+}
+
+// Tests the behavior of `AutofillField::[last|all]_modifier()` when the purpose
+// is to figure out whether a field was ever edited by the user.
+TEST_F(AutofillFieldTest, IsUserEdited) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(features::kAutofillFixIsAutofilled);
+  AutofillField field;
+  EXPECT_FALSE(field.all_modifiers().contains(FieldModifier::kUser));
+
+  field.AddFieldModifier(FieldModifier::kAutofill);
+  EXPECT_FALSE(field.all_modifiers().contains(FieldModifier::kUser));
+
+  field.AddFieldModifier(FieldModifier::kUser);
+  EXPECT_TRUE(field.all_modifiers().contains(FieldModifier::kUser));
+
+  field.AddFieldModifier(FieldModifier::kAutofill);
+  EXPECT_TRUE(field.all_modifiers().contains(FieldModifier::kUser));
+}
 
 }  // namespace
 }  // namespace autofill

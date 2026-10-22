@@ -108,10 +108,13 @@ void ChromeProfileRequestGenerator::Generate(
   request->GetChromeProfileReportRequest().set_report_type(
       GetReportTypeFromSignalsMode(generation_config.security_signals_mode));
 
-  bool policies_enabled =
-      enterprise_signals::features::IsPolicyDataCollectionEnabled();
+  bool is_signals_only = generation_config.security_signals_mode ==
+                         SecuritySignalsMode::kSignalsOnly;
 
-  profile_report_generator_.set_policies_enabled(policies_enabled);
+  profile_report_generator_.set_policies_enabled(
+      is_signals_only
+          ? enterprise_signals::features::IsPolicyDataCollectionEnabled()
+          : true);
 
   auto barrier_callback = base::BarrierCallback<
       std::variant<std::unique_ptr<em::BrowserReport>,
@@ -122,8 +125,7 @@ void ChromeProfileRequestGenerator::Generate(
                             weak_ptr_factory_.GetWeakPtr(), std::move(request),
                             std::move(callback), generation_config)));
 
-  if (generation_config.security_signals_mode ==
-      SecuritySignalsMode::kSignalsOnly) {
+  if (is_signals_only) {
     barrier_callback.Run(std::make_unique<em::BrowserReport>());
   } else {
     browser_report_generator_.Generate(
@@ -160,6 +162,23 @@ void ChromeProfileRequestGenerator::OnBaseReportsReady(
     ReportGenerationConfig generation_config,
     std::unique_ptr<em::BrowserReport> browser_report,
     std::unique_ptr<em::ChromeUserProfileInfo> profile_report) {
+  // Safely abort if the base reports are empty.
+  if (!profile_report) {
+    VLOG_POLICY(1, REPORTING)
+        << "Aborting report generation: profile report is empty.";
+    std::move(callback).Run(
+        base::unexpected(ReportGenerationError::kProfileEmptyReport));
+    return;
+  }
+
+  if (!browser_report) {
+    VLOG_POLICY(1, REPORTING)
+        << "Aborting report generation: browser report is empty.";
+    std::move(callback).Run(
+        base::unexpected(ReportGenerationError::kBrowserEmptyReport));
+    return;
+  }
+
   if (generation_config.security_signals_mode ==
           SecuritySignalsMode::kNoSignals ||
       !signals_aggregator_) {

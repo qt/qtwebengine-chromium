@@ -145,6 +145,11 @@ wgpu::Status AdapterBase::APIGetInfo(AdapterInfo* info) const {
         hadError |= mInstance->ConsumedError(
             DAWN_VALIDATION_ERROR("Feature AdapterPropertiesVk is not available."));
     }
+    if (unpacked.Has<AdapterPropertiesDrm>() &&
+        !mSupportedFeatures.IsEnabled(wgpu::FeatureName::AdapterPropertiesDrm)) {
+        hadError |= mInstance->ConsumedError(
+            DAWN_VALIDATION_ERROR("Feature AdapterPropertiesDrm is not available."));
+    }
     if (unpacked.Has<AdapterPropertiesSubgroupMatrixConfigs>() &&
         !mSupportedFeatures.IsEnabled(wgpu::FeatureName::ChromiumExperimentalSubgroupMatrix)) {
         hadError |= mInstance->ConsumedError(
@@ -283,6 +288,10 @@ ResultOrError<Ref<DeviceBase>> AdapterBase::CreateDeviceInternal(
     // TODO(crbug.com/429938352): Disable default hash validation to prevent performance cost when
     // no longer necessary.
     deviceToggles.Default(Toggle::BlobCacheHashValidation, true);
+
+#if defined(DAWN_ENABLE_ASSERTS)
+    deviceToggles.Default(Toggle::EnableTintIRValidationAsserts, true);
+#endif
 
     // Backend-specific forced and default device toggles
     mPhysicalDevice->SetupBackendDeviceToggles(mInstance->GetPlatform(), &deviceToggles);
@@ -444,7 +453,7 @@ wgpu::Status AdapterBase::APIGetFormatCapabilities(wgpu::TextureFormat format,
         return wgpu::Status::Error;
     }
 
-    if (unpacked.Get<DawnDrmFormatCapabilities>() != nullptr &&
+    if (unpacked.Has<DawnDrmFormatCapabilities>() &&
         !mSupportedFeatures.IsEnabled(wgpu::FeatureName::DawnDrmFormatCapabilities)) {
         [[maybe_unused]] bool hadError = mInstance->ConsumedError(
             DAWN_VALIDATION_ERROR("Feature DawnDrmFormatCapabilities is not available."));

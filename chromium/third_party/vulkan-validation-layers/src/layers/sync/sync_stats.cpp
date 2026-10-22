@@ -18,7 +18,7 @@
 #include "sync_stats.h"
 
 #if VVL_ENABLE_SYNCVAL_STATS != 0
-#include "sync_commandbuffer.h"
+#include "sync_command_buffer.h"
 #include "sync_validation.h"
 #include "state_tracker/state_tracker.h"
 
@@ -29,10 +29,9 @@ namespace vvl {
 // https://en.cppreference.com/w/cpp/atomic/atomic/fetch_max
 // https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p0493r5.pdf
 template <typename T>
-inline T atomic_fetch_max(std::atomic<T> &current_max, const T &value) noexcept {
+inline T atomic_fetch_max(std::atomic<T>& current_max, const T& value) noexcept {
     T t = current_max.load();
-    while (!current_max.compare_exchange_weak(t, std::max(t, value)))
-        ;
+    while (!current_max.compare_exchange_weak(t, std::max(t, value)));
     return t;
 }
 }  // namespace vvl

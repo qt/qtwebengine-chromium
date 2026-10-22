@@ -140,6 +140,9 @@ class LoopingFileCastAgent final
                         capture_recommendations) override;
   void OnError(const SenderSession* session, const Error& error) override;
 
+  // Input message handler.
+  void OnInputMessage(InputMessage message);
+
   // SenderStatsClient overrides.
   void OnStatisticsUpdated(const SenderStats& updated_stats) override;
 

@@ -45,6 +45,14 @@ const core::ir::Capabilities kDirectVariableAccessCapabilities{
     core::ir::Capability::kAllowDuplicateBindings,
     core::ir::Capability::kAllowNonCoreTypes,
     core::ir::Capability::kAllow8BitIntegers,
+    core::ir::Capability::kAllow16BitIntegers,
+};
+
+/// The level of handle workspace change
+enum class HandleTransformLevel {
+    kNone,
+    kExternal,
+    kFull,
 };
 
 /// DirectVariableAccessOptions adjusts the behaviour of the transform.
@@ -53,8 +61,9 @@ struct DirectVariableAccessOptions {
     bool transform_private = false;
     /// If true, then 'function' sub-object pointer arguments will be transformed.
     bool transform_function = false;
-    /// If true, then 'handle' sub-object handle type arguments will be transformed.
-    bool transform_handle = false;
+    /// If `kExternal` the external textures are transformed, if `kFull` then all 'handle'
+    /// sub-object handle type arguments will be transformed.
+    HandleTransformLevel transform_handle = HandleTransformLevel::kNone;
 
     /// Reflection for this class
     TINT_REFLECT(DirectVariableAccessOptions,
@@ -81,5 +90,9 @@ Result<SuccessType> DirectVariableAccess(Module& module,
                                          const DirectVariableAccessOptions& options);
 
 }  // namespace tint::core::ir::transform
+
+namespace tint {
+TINT_REFLECT_ENUM_RANGE(tint::core::ir::transform::HandleTransformLevel, kNone, kFull);
+}
 
 #endif  // SRC_TINT_LANG_CORE_IR_TRANSFORM_DIRECT_VARIABLE_ACCESS_H_

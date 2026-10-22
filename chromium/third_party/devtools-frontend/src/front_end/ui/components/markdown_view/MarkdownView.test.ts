@@ -137,10 +137,12 @@ describeWithEnvironment('MarkdownView', () => {
 
     it('renders link with valid key', () => {
       MarkdownView.MarkdownLinksMap.markdownLinks.set('exampleLink', 'https://web.dev/');
-      const renderResult =
-          getRenderedResultString(getFakeToken({type: 'link', text: 'learn more', href: 'exampleLink'}));
-
-      assert.isTrue(renderResult.includes('<devtools-markdown-link'));
+      const renderResult = renderer.renderToken(getFakeToken({type: 'link', text: 'learn more', href: 'exampleLink'}));
+      const container = renderTemplateResult(renderResult);
+      const linkElement = container.querySelector('devtools-link');
+      assert.isNotNull(linkElement);
+      assert.strictEqual(linkElement.getAttribute('href'), 'https://web.dev/');
+      assert.strictEqual(linkElement.textContent, 'learn more');
     });
 
     it('throws an error if invalid link key is provided', () => {

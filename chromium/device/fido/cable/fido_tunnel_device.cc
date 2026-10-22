@@ -143,9 +143,9 @@ FidoTunnelDevice::FidoTunnelDevice(
       base::BindRepeating(&FidoTunnelDevice::OnTunnelData,
                           base::Unretained(this)));
   network_context_factory.Run()->CreateWebSocket(
-      url, {kCableWebSocketProtocol}, net::SiteForCookies(),
-      net::StorageAccessApiStatus::kNone, net::IsolationInfo(),
-      /*additional_headers=*/{}, network::OriginatingProcess::browser(),
+      url, {kCableWebSocketProtocol}, net::StorageAccessApiStatus::kNone,
+      net::IsolationInfo(),
+      /*additional_headers=*/{}, network::OriginatingProcessId::browser(),
       url::Origin::Create(url), network::mojom::ClientSecurityState::New(),
       network::mojom::kWebSocketOptionBlockAllCookies,
       net::MutableNetworkTrafficAnnotationTag(kTrafficAnnotation),
@@ -153,7 +153,8 @@ FidoTunnelDevice::FidoTunnelDevice(
       /*url_loader_network_observer=*/mojo::NullRemote(),
       /*auth_handler=*/mojo::NullRemote(),
       /*header_client=*/mojo::NullRemote(),
-      /*throttling_profile_id=*/std::nullopt);
+      /*throttling_profile_id=*/std::nullopt,
+      /*network_restrictions_id=*/std::nullopt);
 }
 
 FidoTunnelDevice::FidoTunnelDevice(
@@ -201,17 +202,18 @@ FidoTunnelDevice::FidoTunnelDevice(
   headers.emplace_back(
       network::mojom::HttpHeader::New(kCableSignalConnectionHeader, "true"));
   network_context_factory.Run()->CreateWebSocket(
-      url, {kCableWebSocketProtocol}, net::SiteForCookies(),
-      net::StorageAccessApiStatus::kNone, net::IsolationInfo(),
-      std::move(headers), network::OriginatingProcess::browser(),
-      url::Origin::Create(url), network::mojom::ClientSecurityState::New(),
+      url, {kCableWebSocketProtocol}, net::StorageAccessApiStatus::kNone,
+      net::IsolationInfo(), std::move(headers),
+      network::OriginatingProcessId::browser(), url::Origin::Create(url),
+      network::mojom::ClientSecurityState::New(),
       network::mojom::kWebSocketOptionBlockAllCookies,
       net::MutableNetworkTrafficAnnotationTag(kTrafficAnnotation),
       websocket_client_->BindNewHandshakeClientPipe(),
       /*url_loader_network_observer=*/mojo::NullRemote(),
       /*auth_handler=*/mojo::NullRemote(),
       /*header_client=*/mojo::NullRemote(),
-      /*throttling_profile_id=*/std::nullopt);
+      /*throttling_profile_id=*/std::nullopt,
+      /*network_restrictions_id=*/std::nullopt);
 }
 
 FidoTunnelDevice::~FidoTunnelDevice() {

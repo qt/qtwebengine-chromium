@@ -7,6 +7,7 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/ui.gni")
 import("//content/common/features.gni")
 import("//media/media_options.gni")
+import("//printing/buildflags/buildflags.gni")
 import("//sandbox/features.gni")
 import("//services/screen_ai/buildflags/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
@@ -95,8 +96,8 @@ target(link_target_type, "renderer") {
     "media/renderer_web_media_player_delegate.h",
     "media/renderer_webaudiodevice_impl.cc",
     "media/renderer_webaudiodevice_impl.h",
-    "memory_coordinator/renderer_memory_coordinator_policy.cc",
-    "memory_coordinator/renderer_memory_coordinator_policy.h",
+    "memory_coordinator/last_resort_gc_policy.cc",
+    "memory_coordinator/last_resort_gc_policy.h",
     "memory_reclaimer_pressure_listener.cc",
     "memory_reclaimer_pressure_listener.h",
     "mhtml_handle_writer.cc",
@@ -280,7 +281,6 @@ target(link_target_type, "renderer") {
     "//media/webrtc",
     "//mojo/public/cpp/bindings",
     "//net",
-    "//printing/buildflags",
     "//sandbox",
     "//services/audio/public/mojom",
     "//services/device/public/cpp/generic_sensor",
@@ -414,13 +414,18 @@ target(link_target_type, "renderer") {
       "//chromeos:chromeos_export",
       "//chromeos/system",
     ]
-    if (target_cpu == "x64") {
-      deps += [ "//chromeos/ash/components/memory/userspace_swap" ]
-    }
   }
 
   if (use_ozone) {
     deps += [ "//ui/ozone" ]
+  }
+
+  if (enable_printing) {
+    deps += [
+      "//printing:metafile",
+      "//printing:settings",
+    ]
+    defines += [ "ENABLE_PRINTING" ]
   }
 
   if (enable_ipc_fuzzer) {

@@ -25,9 +25,9 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/tint/lang/msl/writer/helper_test.h"
-
 #include "gmock/gmock.h"
+#include "src/tint/lang/msl/validate/validate.h"
+#include "src/tint/lang/msl/writer/helper_test.h"
 
 namespace tint::msl::writer {
 namespace {
@@ -45,7 +45,8 @@ TEST_F(MslWriterTest, WorkgroupAllocations_NoAllocations) {
     auto* bar = b.ComputeFunction("entry");
     b.Append(bar->Block(), [&] { b.Return(bar); });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.msl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_.msl;
     EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
 using namespace metal;
 
@@ -71,7 +72,8 @@ TEST_F(MslWriterTest, WorkgroupAllocations) {
         b.Return(foo);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.msl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_.msl;
     EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
 using namespace metal;
 
@@ -104,6 +106,67 @@ kernel void entry(uint tint_local_index [[thread_index_in_threadgroup]], threadg
     EXPECT_THAT(output_.workgroup_allocations, testing::ElementsAre(8u));
 }
 
+TEST_F(MslWriterTest, WorkgroupStorageSize_OverflowAfterAlign) {
+    auto* var = mod.root_block->Append(b.Var<workgroup, array<u32, 0x3FFFFFFFu>>("a"));
+    auto* foo = b.ComputeFunction("entry", 64_u, 1_u, 1_u);
+    b.Append(foo->Block(), [&] {  //
+        b.Load(b.Access<ptr<workgroup, u32>>(var, 0_u));
+        b.Return(foo);
+    });
+
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_.msl;
+    EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
+using namespace metal;
+
+template<typename T, size_t N>
+struct tint_array {
+  const constant T& operator[](size_t i) const constant { return elements[i]; }
+  device T& operator[](size_t i) device { return elements[i]; }
+  const device T& operator[](size_t i) const device { return elements[i]; }
+  thread T& operator[](size_t i) thread { return elements[i]; }
+  const thread T& operator[](size_t i) const thread { return elements[i]; }
+  threadgroup T& operator[](size_t i) threadgroup { return elements[i]; }
+  const threadgroup T& operator[](size_t i) const threadgroup { return elements[i]; }
+  T elements[N];
+};
+
+struct tint_module_vars_struct {
+  threadgroup tint_array<uint, 1073741823>* a;
+};
+
+struct tint_symbol_1 {
+  tint_array<uint, 1073741823> tint_symbol;
+};
+
+void entry_inner(uint tint_local_index, tint_module_vars_struct tint_module_vars) {
+  {
+    uint v = 0u;
+    v = tint_local_index;
+    while(true) {
+      uint const v_1 = v;
+      if ((v_1 >= 1073741823u)) {
+        break;
+      }
+      (*tint_module_vars.a)[v_1] = 0u;
+      {
+        v = (v_1 + 64u);
+      }
+    }
+  }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+}
+
+[[max_total_threads_per_threadgroup(64)]]
+kernel void entry(uint tint_local_index [[thread_index_in_threadgroup]], threadgroup tint_symbol_1* v_2 [[threadgroup(0)]]) {
+  tint_module_vars_struct const tint_module_vars = tint_module_vars_struct{.a=(&(*v_2).tint_symbol)};
+  entry_inner(tint_local_index, tint_module_vars);
+}
+)");
+
+    EXPECT_EQ(output_.workgroup_info.storage_size, 0x100000000ull);
+}
+
 TEST_F(MslWriterTest, NeedsStorageBufferSizes_False) {
     auto* var = b.Var("a", ty.ptr<storage, array<u32>>());
     var->SetBindingPoint(0, 0);
@@ -120,7 +183,8 @@ TEST_F(MslWriterTest, NeedsStorageBufferSizes_False) {
     options.array_length_from_constants.bindpoint_to_size_index[{0u, 0u}] = 0u;
     options.array_length_from_constants.buffer_sizes_offset = 64u;
     options.disable_robustness = true;
-    ASSERT_TRUE(Generate(options)) << err_ << output_.msl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_.msl;
     EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
 using namespace metal;
 
@@ -171,7 +235,8 @@ TEST_F(MslWriterTest, NeedsStorageBufferSizes_True) {
     options.array_length_from_constants.bindpoint_to_size_index[{0u, 0u}] = 0u;
     options.array_length_from_constants.buffer_sizes_offset = 64u;
     options.disable_robustness = true;
-    ASSERT_TRUE(Generate(options)) << err_ << output_.msl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_.msl;
     EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
 using namespace metal;
 
@@ -239,7 +304,8 @@ TEST_F(MslWriterTest, StripAllNames) {
     Options options;
     options.remapped_entry_point_name = "tint_entry_point";
     options.strip_all_names = true;
-    ASSERT_TRUE(Generate(options)) << err_ << output_.msl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_.msl;
     EXPECT_EQ(output_.msl, MetalHeader() + R"(
 struct tint_struct {
   int tint_member;
@@ -285,7 +351,8 @@ TEST_F(MslWriterTest, VertexPulling) {
     options.immediate_binding_point = BindingPoint{0, 30};
     options.array_length_from_constants = std::move(array_length_config);
 
-    ASSERT_TRUE(Generate(options)) << err_ << output_.msl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_.msl;
     EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
 using namespace metal;
 
@@ -345,10 +412,90 @@ TEST_F(MslWriterTest, CanGenerate_TexelBufferUnsupported) {
 
     Options options;
     options.entry_point_name = "main";
-    auto result = CanGenerate(mod, options);
+    auto result = Generate(options);
     ASSERT_NE(result, Success);
     EXPECT_THAT(result.Failure().reason,
                 testing::HasSubstr("texel buffers are not supported by the MSL backend"));
+}
+
+TEST_F(MslWriterTest, AtomicStoreMax_Supported) {
+    auto* sb =
+        ty.Struct(mod.symbols.New("SB"), {
+                                             {mod.symbols.Register("a"), ty.atomic(ty.u64())},
+                                         });
+    auto* var = b.Var("sb", ty.ptr<storage, read_write>(sb));
+    var->SetBindingPoint(0, 0);
+    mod.root_block->Append(var);
+
+    auto* func = b.ComputeFunction("main");
+    b.Append(func->Block(), [&] {
+        auto* access = b.Access(ty.ptr<storage, read_write>(ty.atomic(ty.u64())), var, 0_u);
+        b.Call<void>(core::BuiltinFn::kAtomicStoreMax, access,
+                     b.Bitcast(ty.u64(), b.Splat(ty.vec2u(), 1_u)));
+        b.Return(func);
+    });
+
+    Options options;
+    options.entry_point_name = "main";
+    auto result = Generate(options, validate::MslVersion::kMsl_2_4);
+    ASSERT_EQ(result, Success);
+    EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
+using namespace metal;
+
+struct SB {
+  /* 0x0000 */ atomic_ulong a;
+};
+
+struct tint_module_vars_struct {
+  device SB* sb;
+};
+
+[[max_total_threads_per_threadgroup(1)]]
+kernel void v(device SB* sb [[buffer(0)]]) {
+  tint_module_vars_struct const tint_module_vars = tint_module_vars_struct{.sb=sb};
+  atomic_max_explicit((&(*tint_module_vars.sb).a), as_type<ulong>(uint2(1u)), memory_order_relaxed);
+}
+)");
+}
+
+TEST_F(MslWriterTest, AtomicStoreMin_Supported) {
+    auto* sb =
+        ty.Struct(mod.symbols.New("SB"), {
+                                             {mod.symbols.Register("a"), ty.atomic(ty.u64())},
+                                         });
+    auto* var = b.Var("sb", ty.ptr<storage, read_write>(sb));
+    var->SetBindingPoint(0, 0);
+    mod.root_block->Append(var);
+
+    auto* func = b.ComputeFunction("main");
+    b.Append(func->Block(), [&] {
+        auto* access = b.Access(ty.ptr<storage, read_write>(ty.atomic(ty.u64())), var, 0_u);
+        b.Call<void>(core::BuiltinFn::kAtomicStoreMin, access,
+                     b.Bitcast(ty.u64(), b.Splat(ty.vec2u(), 1_u)));
+        b.Return(func);
+    });
+
+    Options options;
+    options.entry_point_name = "main";
+    auto result = Generate(options, validate::MslVersion::kMsl_2_4);
+    ASSERT_EQ(result, Success);
+    EXPECT_EQ(output_.msl, R"(#include <metal_stdlib>
+using namespace metal;
+
+struct SB {
+  /* 0x0000 */ atomic_ulong a;
+};
+
+struct tint_module_vars_struct {
+  device SB* sb;
+};
+
+[[max_total_threads_per_threadgroup(1)]]
+kernel void v(device SB* sb [[buffer(0)]]) {
+  tint_module_vars_struct const tint_module_vars = tint_module_vars_struct{.sb=sb};
+  atomic_min_explicit((&(*tint_module_vars.sb).a), as_type<ulong>(uint2(1u)), memory_order_relaxed);
+}
+)");
 }
 
 }  // namespace

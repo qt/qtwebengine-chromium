@@ -197,16 +197,19 @@ ResourceRequest FrameLoader::ResourceRequestForReload(
 
   // ClientRedirectPolicy is an indication that this load was triggered by some
   // direct interaction with the page. If this reload is not a client redirect,
-  // we should reuse the referrer from the original load of the current
-  // document. If this reload is a client redirect (e.g., location.reload()), it
-  // was initiated by something in the current document and should therefore
-  // show the current document's url as the referrer.
+  // we should reuse the referrer and (if applicable) `Origin` header from the
+  // original load of the current document. If this reload is a client redirect
+  // (e.g., location.reload()), it was initiated by something in the current
+  // document and should therefore show the current document's url as the
+  // referrer, and, when applicable (i.e., non-HEAD or -GET request), use its
+  // current origin as the `Origin` header.
   if (client_redirect_policy == ClientRedirectPolicy::kClientRedirect) {
     LocalDOMWindow* window = frame_->DomWindow();
     Referrer referrer = SecurityPolicy::GenerateReferrer(
         window->GetReferrerPolicy(), window->Url(), window->OutgoingReferrer());
     request.SetReferrerString(referrer.referrer);
     request.SetReferrerPolicy(referrer.referrer_policy);
+    request.ClearHTTPOrigin();
   }
 
   request.SetSkipServiceWorker(frame_load_type ==
@@ -238,11 +241,13 @@ void FrameLoader::Trace(Visitor* visitor) const {
   visitor->Trace(document_loader_);
 }
 
-void FrameLoader::Init(const DocumentToken& document_token,
-                       std::unique_ptr<PolicyContainer> policy_container,
-                       const StorageKey& storage_key,
-                       ukm::SourceId document_ukm_source_id,
-                       const KURL& creator_base_url) {
+void FrameLoader::Init(
+    const DocumentToken& document_token,
+    std::unique_ptr<PolicyContainer> policy_container,
+    const StorageKey& storage_key,
+    ukm::SourceId document_ukm_source_id,
+    const KURL& creator_base_url,
+    std::unique_ptr<base::UnguessableToken> sandbox_origin_token) {
   DCHECK(policy_container);
   ScriptForbiddenScope forbid_scripts;
 
@@ -257,6 +262,15 @@ void FrameLoader::Init(const DocumentToken& document_token,
   navigation_params->frame_policy =
       frame_->Owner() ? frame_->Owner()->GetFramePolicy() : FramePolicy();
   navigation_params->document_ukm_source_id = document_ukm_source_id;
+  if (base::FeatureList::IsEnabled(
+          blink::features::kUseSandboxTokenForOriginDerivation)) {
+    if ((policy_container->GetPolicies().sandbox_flags &
+         network::mojom::blink::WebSandboxFlags::kOrigin) !=
+        network::mojom::blink::WebSandboxFlags::kNone) {
+      CHECK(sandbox_origin_token);
+      navigation_params->sandbox_origin_token = std::move(sandbox_origin_token);
+    }
+  }
 
   DocumentLoader* new_document_loader = MakeGarbageCollected<DocumentLoader>(
       frame_, kWebNavigationTypeOther, std::move(navigation_params),
@@ -817,7 +831,7 @@ void FrameLoader::StartNavigation(FrameLoadRequest& request,
 
   DCHECK(Client()->HasWebView());
   // Check for non-escaped new lines in the url.
-  if (url.PotentiallyDanglingMarkup() && url.ProtocolIsInHTTPFamily()) {
+  if (url.PotentiallyDanglingMarkup() && url.ProtocolIsInHttpFamily()) {
     Deprecation::CountDeprecation(
         origin_window, WebFeature::kCanRequestURLHTTPContainingNewline);
     return;
@@ -865,6 +879,17 @@ void FrameLoader::StartNavigation(FrameLoadRequest& request,
   // See wpt/url/javascript-urls.window.js test for the standard compliant
   // behaviors.
   if (ProtocolIsJavaScript(url.GetString()) && !url.IsValid()) {
+    return;
+  }
+
+  // A sandboxed iframe without `allow-popups` should not be able to
+  // open a new browsing context by emulating a user gesture in JS.
+  // (e.g. Ctrl+click).
+  if (request.GetNavigationPolicy() != kNavigationPolicyCurrentTab &&
+      request.GetTriggeringEventInfo() ==
+          mojom::blink::TriggeringEventInfo::kFromUntrustedEvent &&
+      frame_->GetSecurityContext()->IsSandboxed(
+          network::mojom::blink::WebSandboxFlags::kPopups)) {
     return;
   }
 
@@ -974,7 +999,7 @@ static void FillStaticResponseIfNeeded(WebNavigationParams* params,
 
   const KURL& url = params->url;
   // See WebNavigationParams for special case explanations.
-  if (url.IsAboutSrcdocURL()) {
+  if (url.IsAboutSrcdocUrl()) {
     CHECK(params->body_loader);
     // Originally, this branch was responsible for retrieving the value of the
     // srcdoc attribute and turning it into a body loader when committing a
@@ -1217,7 +1242,7 @@ void FrameLoader::CommitNavigation(
 
   if (!navigation_params->is_synchronous_commit_for_bug_778318 ||
       (!navigation_params->url.IsEmpty() &&
-       !KURL(navigation_params->url).IsAboutBlankURL())) {
+       !KURL(navigation_params->url).IsAboutBlankUrl())) {
     // The new document is not the synchronously committed about:blank document,
     // so lose the initial empty document status.
     // Note 1: The actual initial empty document commit (with commit_reason set
@@ -1550,7 +1575,7 @@ bool FrameLoader::ShouldPerformFragmentNavigation(bool is_form_submission,
   // We don't do this if we are submitting a form with method other than "GET",
   // explicitly reloading, currently displaying a frameset, or if the URL does
   // not have a fragment.
-  return EqualIgnoringASCIICase(http_method, http_names::kGET) &&
+  return EqualIgnoringAsciiCase(http_method, http_names::kGET) &&
          !IsReloadLoadType(load_type) && !IsBackForwardOrRestore(load_type) &&
          url.HasFragmentIdentifier() &&
          // For provisional LocalFrame, there is no real document loaded and
@@ -1612,9 +1637,11 @@ void FrameLoader::ProcessFragment(const KURL& url,
 
 bool FrameLoader::ShouldClose(
     bool is_reload,
+    bool force_to_proceed,
     base::TimeTicks& out_before_unload_dialog_opened_time,
     base::TimeTicks& out_before_unload_dialog_closed_time) {
-  TRACE_EVENT1("loading", "FrameLoader::ShouldClose", "is_reload", is_reload);
+  TRACE_EVENT("loading", "FrameLoader::ShouldClose", "is_reload", is_reload,
+              "force_to_proceed", force_to_proceed);
   const base::TimeTicks before_unload_events_start = base::TimeTicks::Now();
 
   Page* page = frame_->GetPage();
@@ -1640,8 +1667,8 @@ bool FrameLoader::ShouldClose(
     IgnoreOpensDuringUnloadCountIncrementer ignore_opens_during_unload(
         frame_->GetDocument());
     if (!frame_->GetDocument()->DispatchBeforeUnloadEvent(
-            &page->GetChromeClient(), is_reload, did_allow_navigation,
-            out_before_unload_dialog_opened_time,
+            &page->GetChromeClient(), is_reload, force_to_proceed,
+            did_allow_navigation, out_before_unload_dialog_opened_time,
             out_before_unload_dialog_closed_time)) {
       frame_->DomWindow()->navigation()->InformAboutCanceledNavigation();
       return false;
@@ -1666,8 +1693,8 @@ bool FrameLoader::ShouldClose(
           ignore_opens_during_unload_descendant(
               descendant_frame->GetDocument());
       if (!descendant_frame->GetDocument()->DispatchBeforeUnloadEvent(
-              &page->GetChromeClient(), is_reload, did_allow_navigation,
-              out_before_unload_dialog_opened_time,
+              &page->GetChromeClient(), is_reload, force_to_proceed,
+              did_allow_navigation, out_before_unload_dialog_opened_time,
               out_before_unload_dialog_closed_time)) {
         frame_->DomWindow()->navigation()->InformAboutCanceledNavigation();
         return false;
@@ -1803,8 +1830,7 @@ void FrameLoader::DispatchDidClearDocumentOfWindowObject() {
       &dispatching_did_clear_window_object_in_main_world_, true);
   // We just cleared the document, not the entire window object, but for the
   // embedder that's close enough.
-  Client()->DispatchDidClearWindowObjectInMainWorld(
-      window->GetIsolate(), window->GetMicrotaskQueue());
+  Client()->DispatchDidClearWindowObjectInMainWorld(window);
 }
 
 void FrameLoader::DispatchDidClearWindowObjectInMainWorld() {
@@ -1816,8 +1842,7 @@ void FrameLoader::DispatchDidClearWindowObjectInMainWorld() {
     return;
   base::AutoReset<bool> in_did_clear_window_object(
       &dispatching_did_clear_window_object_in_main_world_, true);
-  Client()->DispatchDidClearWindowObjectInMainWorld(
-      window->GetIsolate(), window->GetMicrotaskQueue());
+  Client()->DispatchDidClearWindowObjectInMainWorld(window);
 }
 
 network::mojom::blink::WebSandboxFlags

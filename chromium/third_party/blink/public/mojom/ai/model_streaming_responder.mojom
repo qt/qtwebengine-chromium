@@ -4,6 +4,7 @@
 
 module blink.mojom;
 
+import "mojo/public/mojom/base/values.mojom";
 import "third_party/blink/public/mojom/ai/ai_common.mojom";
 
 // The status of the ModelStreamingResponder response.
@@ -47,6 +48,16 @@ enum ModelStreamingResponseStatus {
   kErrorInputTooLarge = 14,
   // Response was retracted due to low quality.
   kErrorResponseLowQuality = 15,
+  // The response exceeded output limits and was truncated.
+  kErrorResponseExceedsMaxTokens = 16,
+  // The response exceeded the remaining available context.
+  kErrorResponseExceedsRemainingContext = 17,
+  // Failed to parse the response.
+  kErrorResponseParsingFailed = 18,
+  // Failed to run safety checks.
+  kErrorFailedToRunSafety = 19,
+  // Failed to count tokens.
+  kErrorFailedToCountTokens = 20,
   // Append new items here.
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/ai/enums.xml:AIModelStreamingResponseStatus)
@@ -55,6 +66,16 @@ enum ModelStreamingResponseStatus {
 struct ModelExecutionContextInfo {
   // The latest number of existing tokens.
   uint64 current_tokens;
+};
+
+// Represents a tool call requested by the language model during execution.
+struct ToolCall {
+  // Unique identifier for this tool call within the session.
+  string call_id;
+  // The tool name to be invoked.
+  string name;
+  // Arguments as structured data fitting the tool's input schema.
+  mojo_base.mojom.DictionaryValue arguments;
 };
 
 // Provides methods for the model session to pass the information back to the
@@ -88,8 +109,13 @@ interface ModelStreamingResponder {
   // Called when there is a new chunk of data available for streaming.
   OnStreaming(string text);
 
+  // Called when the model requests tool execution.
+  // Clients should validate and then execute or surface calls to JS API client.
+  // Model sessions typically expect a tool result or error input thereafter.
+  OnToolCalls(array<ToolCall> tool_calls);
+
   // Called when the context overflows when reserving the space for the newly
   // added items. It does not indicate a failure or guarantee the success.
   // Used by Prompt API only.
-  OnQuotaOverflow();
+  OnContextOverflow();
 };

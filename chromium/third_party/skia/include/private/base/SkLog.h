@@ -26,15 +26,24 @@ void SK_SPI SkLog(SkLogPriority priority, const char format[], ...) SK_PRINTF_LI
  * priority, so we check for that define as well. Eventually, we should move clients using this
  * define to the new one.
  */
- #if defined (SKGPU_GRAPHITE_LOWEST_ACTIVE_LOG_PRIORITY)
-   #define SKIA_LOWEST_ACTIVE_LOG_PRIORITY SKGPU_GRAPHITE_LOWEST_ACTIVE_LOG_PRIORITY
+#if defined(SKGPU_GRAPHITE_LOWEST_ACTIVE_LOG_PRIORITY)
+    static constexpr SkLogPriority MapGraphitePriority(skgpu::graphite::LogPriority priority) {
+        switch (priority) {
+            case skgpu::graphite::LogPriority::kError:   return SkLogPriority::kError;
+            case skgpu::graphite::LogPriority::kWarning: return SkLogPriority::kWarning;
+            case skgpu::graphite::LogPriority::kInfo:    return SkLogPriority::kInfo;
+            case skgpu::graphite::LogPriority::kDebug:   return SkLogPriority::kDebug;
+            default: return SkLogPriority::kDebug;
+        }
+    }
+    #define SKIA_LOWEST_ACTIVE_LOG_PRIORITY MapGraphitePriority(SKGPU_GRAPHITE_LOWEST_ACTIVE_LOG_PRIORITY)
 #endif
 
 #if !defined(SKIA_LOWEST_ACTIVE_LOG_PRIORITY)
 #ifdef SK_DEBUG
-    #define SKIA_LOWEST_ACTIVE_LOG_PRIORITY SkLogPriority::kWarning
+    #define SKIA_LOWEST_ACTIVE_LOG_PRIORITY SkLogPriority::kDebug
 #else
-    #define SKIA_LOWEST_ACTIVE_LOG_PRIORITY SkLogPriority::kError
+    #define SKIA_LOWEST_ACTIVE_LOG_PRIORITY SkLogPriority::kInfo
 #endif
 #endif
 
@@ -53,6 +62,7 @@ void SK_SPI SkLog(SkLogPriority priority, const char format[], ...) SK_PRINTF_LI
 #define SKIA_LOG_F(fmt, ...) SKIA_LOG(SkLogPriority::kFatal, "** ERROR ** " fmt, ##__VA_ARGS__)
 #define SKIA_LOG_E(fmt, ...) SKIA_LOG(SkLogPriority::kError, "** ERROR ** " fmt, ##__VA_ARGS__)
 #define SKIA_LOG_W(fmt, ...) SKIA_LOG(SkLogPriority::kWarning, "WARNING - " fmt, ##__VA_ARGS__)
+#define SKIA_LOG_I(fmt, ...) SKIA_LOG(SkLogPriority::kInfo, fmt, ##__VA_ARGS__)
 #define SKIA_LOG_D(fmt, ...) SKIA_LOG(SkLogPriority::kDebug, fmt, ##__VA_ARGS__)
 
 #endif // SkLog_DEFINED

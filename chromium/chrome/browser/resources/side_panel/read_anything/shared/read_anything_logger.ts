@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {isEspeak, isNatural} from '../read_aloud/voice_language_conversions.js';
+import {hasEspeakIdentifier, hasNaturalIdentifier} from '../read_aloud/voice_language_conversions.js';
 
 import {MetricsBrowserProxyImpl, ReadAnythingSpeechError, ReadAnythingVoiceType} from './metrics_browser_proxy.js';
 import type {MetricsBrowserProxy, ReadAloudSettingsChange, ReadAnythingSettingsChange} from './metrics_browser_proxy.js';
@@ -19,11 +19,30 @@ export enum SpeechControls {
   PREVIOUS = 'PreviousButton',
 }
 
+export enum LinkStatus {
+  SUCCESS = 'Success',
+  NO_HREF = 'NoHref',
+  NO_MATCH = 'NoMatch',
+  TOO_MANY_MATCHES = 'TooManyMatches',
+}
+
 // Handles the business logic for logging.
 export class ReadAnythingLogger {
   private metrics: MetricsBrowserProxy = MetricsBrowserProxyImpl.getInstance();
+  // When this class is first instantiated, it will be because reading mode
+  // is visible, so isHidden_ should be false be default.
+  private isHidden_: boolean = false;
+
+  setHidden(hidden: boolean) {
+    this.isHidden_ = hidden;
+  }
 
   logEmptyState() {
+    // Don't log the empty state if the UI is hidden;
+    if (this.isHidden_) {
+      return;
+    }
+
     this.metrics.recordEmptyState();
   }
 
@@ -61,6 +80,12 @@ export class ReadAnythingLogger {
       case 'network':
         error = ReadAnythingSpeechError.NETWORK;
         break;
+      case 'timeout-engine-stalled':
+        error = ReadAnythingSpeechError.TIMEOUT_ENGINE_STALLED;
+        break;
+      case 'timeout-stalled-after-recovery':
+        error = ReadAnythingSpeechError.TIMEOUT_STALLED_AFTER_ENGINE_RECOVERY;
+        break;
       default:
         return;
     }
@@ -71,12 +96,16 @@ export class ReadAnythingLogger {
   }
 
   logTimeFrom(from: TimeFrom, startTime: number, endTime: number) {
-    const umaName = 'Accessibility.ReadAnything.' +
-        'TimeFrom' + from + 'StartedToConstructor';
+    const umaName =
+        `Accessibility.ReadAnything.TimeFrom${from}StartedToConstructor`;
     this.metrics.recordTime(umaName, endTime - startTime);
   }
 
   logNewPage(speechPlayed: boolean) {
+    // Don't log the new page if the UI is hidden.
+    if (this.isHidden_) {
+      return;
+    }
     speechPlayed ? this.metrics.recordNewPageWithSpeech() :
                    this.metrics.recordNewPage();
   }
@@ -85,15 +114,24 @@ export class ReadAnythingLogger {
     this.metrics.recordHighlightGranularity(highlight);
   }
 
+  logVoiceLanguageChange(
+      currentVoice: SpeechSynthesisVoice|null,
+      newVoice: SpeechSynthesisVoice|null) {
+    if (currentVoice && newVoice &&
+        (currentVoice.lang.toLowerCase() !== newVoice.lang.toLowerCase())) {
+      this.metrics.recordVoiceLanguageChange();
+    }
+  }
+
   private logVoiceTypeUsedForReading_(voice: SpeechSynthesisVoice|null) {
     if (!voice) {
       return;
     }
 
     let voiceType: ReadAnythingVoiceType;
-    if (isNatural(voice)) {
+    if (hasNaturalIdentifier(voice)) {
       voiceType = ReadAnythingVoiceType.NATURAL;
-    } else if (isEspeak(voice)) {
+    } else if (hasEspeakIdentifier(voice)) {
       voiceType = ReadAnythingVoiceType.ESPEAK;
     } else {
       // <if expr="is_chromeos">
@@ -150,13 +188,25 @@ export class ReadAnythingLogger {
 
   logSpeechControlClick(control: SpeechControls) {
     this.metrics.incrementMetricCount(
-        'Accessibility.ReadAnything.ReadAloud' + control + 'SessionCount');
+        `Accessibility.ReadAnything.ReadAloud${control}SessionCount`);
   }
 
   logLineFocusSession() {
     if (chrome.readingMode.isLineFocusEnabled) {
       this.metrics.recordLineFocusSession();
     }
+  }
+
+  logLineFocusToggled(enabled: boolean) {
+    if (chrome.readingMode.isLineFocusEnabled) {
+      this.metrics.recordLineFocusToggled(enabled);
+    }
+  }
+
+  logLinkStatusCount(status: LinkStatus, count: number) {
+    const umaName =
+        `Accessibility.ReadAnything.Readability.PageLinks${status}Count`;
+    this.metrics.recordCount(umaName, count);
   }
 
   static getInstance(): ReadAnythingLogger {

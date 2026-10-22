@@ -9,7 +9,6 @@ load(
     "xnnpack_cc_library",
     "xnnpack_cxx_library",
     "xnnpack_if_kleidiai_enabled",
-    "xnnpack_kleidiai_defines",
     "xnnpack_optional_dnnl_copts",
     "xnnpack_optional_dnnl_deps",
     "xnnpack_optional_gemmlowp_copts",
@@ -76,6 +75,7 @@ xnnpack_cc_library(
     name = "conv",
     hdrs = ["conv.h"],
     deps = [
+        ":bench_utils",
         "@com_google_benchmark//:benchmark",
     ],
 )
@@ -171,6 +171,8 @@ xnnpack_cxx_library(
     "qd8_f16_qc4w_gemm",
     "qd8_f32_qc4w_gemm",
     "qd8_f32_qc2w_gemm",
+    "qd8_f16_qc2w_gemm",
+    "qs8_qc2w_gemm_fp32",
     "qs8_qc4w_gemm_fp32",
     "qs8_qc8w_gemm_fp32",
     "qu8_gemm_fp32",
@@ -217,7 +219,6 @@ xnnpack_benchmark(
     srcs = [
         "qp8-f32-qc4w-gemm.cc",
     ],
-    defines = xnnpack_kleidiai_defines(),
     tags = xnnpack_slow_benchmark_tags(),
     deps = MICROKERNEL_BENCHMARK_DEPS + [
         ":gemm_benchmark",
@@ -231,7 +232,6 @@ xnnpack_benchmark(
     srcs = [
         "qp8-f32-qc8w-gemm.cc",
     ],
-    defines = xnnpack_kleidiai_defines(),
     tags = xnnpack_slow_benchmark_tags(),
     deps = MICROKERNEL_BENCHMARK_DEPS + [
         ":gemm_benchmark",
@@ -243,7 +243,6 @@ xnnpack_benchmark(
 xnnpack_benchmark(
     name = "qp8_f32_qb4w_gemm_bench",
     srcs = ["qp8-f32-qb4w-gemm.cc"],
-    defines = xnnpack_kleidiai_defines(),
     tags = xnnpack_slow_benchmark_tags(),
     deps = MICROKERNEL_BENCHMARK_DEPS + [
         ":gemm_benchmark",
@@ -255,7 +254,6 @@ xnnpack_benchmark(
 xnnpack_benchmark(
     name = "pf32_gemm_minmax_bench",
     srcs = ["pf32-gemm-minmax.cc"],
-    defines = xnnpack_kleidiai_defines(),
     tags = xnnpack_slow_benchmark_tags(),
     deps = MICROKERNEL_BENCHMARK_DEPS + [
         ":gemm_benchmark",
@@ -267,7 +265,6 @@ xnnpack_benchmark(
 xnnpack_benchmark(
     name = "pf16_gemm_minmax_bench",
     srcs = ["pf16-gemm-minmax.cc"],
-    defines = xnnpack_kleidiai_defines(),
     tags = xnnpack_slow_benchmark_tags(),
     deps = MICROKERNEL_BENCHMARK_DEPS + [
         ":gemm_benchmark",

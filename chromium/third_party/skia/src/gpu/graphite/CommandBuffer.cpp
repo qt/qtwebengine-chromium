@@ -6,6 +6,7 @@
  */
 #include "src/gpu/graphite/CommandBuffer.h"
 
+#include "include/core/SkRect.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkTileMode.h"
@@ -23,6 +24,10 @@
 #include "src/gpu/graphite/Sampler.h"  // IWYU pragma: keep
 #include "src/gpu/graphite/Texture.h"
 
+#if defined(SK_DEBUG)
+#include "src/gpu/graphite/SharedContext.h"
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -38,7 +43,6 @@ CommandBuffer::~CommandBuffer() {
 void CommandBuffer::releaseResources() {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
 
-    fTrackedUsageResources.clear();
     fCommandBufferResources.clear();
 }
 
@@ -55,12 +59,22 @@ void CommandBuffer::resetCommandBuffer() {
 }
 
 void CommandBuffer::trackResource(sk_sp<Resource> resource) {
-    fTrackedUsageResources.push_back(std::move(resource));
-}
-
-void CommandBuffer::trackCommandBufferResource(sk_sp<Resource> resource) {
     fCommandBufferResources.push_back(std::move(resource));
 }
+
+#if defined(SK_DEBUG)
+bool CommandBuffer::isResourceTracked(const Resource* resource) {
+    for (const gr_cb<Resource>& trackedResource : fCommandBufferResources) {
+        if (trackedResource.get() == resource)
+            return true;
+    }
+
+    // If not tracked on this CommandBuffer then tracked globally?
+    const auto* globalCache =
+        this->resourceProvider()->sharedContext()->globalCache();
+    return globalCache->isResourceTracked(resource);
+}
+#endif
 
 void CommandBuffer::addFinishedProc(sk_sp<RefCntedCallback> finishedProc) {
     fFinishedProcs.push_back(std::move(finishedProc));
@@ -104,23 +118,24 @@ bool CommandBuffer::addRenderPass(const RenderPassDesc& renderPassDesc,
                                   SkISize viewportDims,
                                   const DrawPassList& drawPasses) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+    SkASSERT(!dstCopy || this->isResourceTracked(dstCopy));
 
-    SkIRect renderPassBounds;
+    fRenderAreaBounds = SkIRect::MakeEmpty();
     for (const auto& drawPass : drawPasses) {
-        renderPassBounds.join(drawPass->bounds());
+        fRenderAreaBounds.join(drawPass->bounds());
     }
     if (renderPassDesc.fColorAttachment.fLoadOp == LoadOp::kClear) {
-        renderPassBounds.join(fRenderPassBounds);
+        fRenderAreaBounds.join(fRenderTargetBounds);
     }
-    renderPassBounds.offset(fReplayTranslation.x(), fReplayTranslation.y());
-    if (!renderPassBounds.intersect(fRenderPassBounds)) {
+    fRenderAreaBounds.offset(fReplayTranslation.x(), fReplayTranslation.y());
+    if (!fRenderAreaBounds.intersect(fRenderTargetBounds)) {
         // The entire RenderPass is offscreen given the replay translation so skip adding the pass
         // at all
         return true;
     }
 
     dstReadBounds.offset(fReplayTranslation);
-    if (!dstReadBounds.intersect(fRenderPassBounds)) {
+    if (!dstReadBounds.intersect(fRenderTargetBounds)) {
         // The draws within the RenderPass that would sample from the dstCopy have been translated
         // off screen. Set the bounds to empty and let the GPU clipping do its job.
         dstReadBounds = SkIRect::MakeEmpty();
@@ -144,7 +159,6 @@ bool CommandBuffer::addRenderPass(const RenderPassDesc& renderPassDesc,
     // to a region that gets clipped.
     SkIRect viewport = SkIRect::MakePtSize(fReplayTranslation, viewportDims);
     if (!this->onAddRenderPass(renderPassDesc,
-                               renderPassBounds,
                                colorTexture.get(),
                                resolveTexture.get(),
                                depthStencilTexture.get(),
@@ -155,13 +169,13 @@ bool CommandBuffer::addRenderPass(const RenderPassDesc& renderPassDesc,
     }
 
     if (colorTexture) {
-        this->trackCommandBufferResource(std::move(colorTexture));
+        this->trackResource(std::move(colorTexture));
     }
     if (resolveTexture) {
-        this->trackCommandBufferResource(std::move(resolveTexture));
+        this->trackResource(std::move(resolveTexture));
     }
     if (depthStencilTexture) {
-        this->trackCommandBufferResource(std::move(depthStencilTexture));
+        this->trackResource(std::move(depthStencilTexture));
     }
     // We just assume if you are adding a render pass that the render pass will actually do work. In
     // theory we could have a discard load that doesn't submit any draws, clears, etc. But hopefully
@@ -189,13 +203,14 @@ bool CommandBuffer::copyBufferToBuffer(const Buffer* srcBuffer,
                                        size_t dstOffset,
                                        size_t size) {
     SkASSERT(srcBuffer);
+    SkASSERT(this->isResourceTracked(srcBuffer));
     SkASSERT(dstBuffer);
 
     if (!this->onCopyBufferToBuffer(srcBuffer, srcOffset, dstBuffer.get(), dstOffset, size)) {
         return false;
     }
 
-    this->trackCommandBufferResource(std::move(dstBuffer));
+    this->trackResource(std::move(dstBuffer));
 
     SkDEBUGCODE(fHasWork = true;)
 
@@ -215,8 +230,8 @@ bool CommandBuffer::copyTextureToBuffer(sk_sp<Texture> texture,
         return false;
     }
 
-    this->trackCommandBufferResource(std::move(texture));
-    this->trackCommandBufferResource(std::move(buffer));
+    this->trackResource(std::move(texture));
+    this->trackResource(std::move(buffer));
 
     SkDEBUGCODE(fHasWork = true;)
 
@@ -228,6 +243,7 @@ bool CommandBuffer::copyBufferToTexture(const Buffer* buffer,
                                         const BufferTextureCopyData* copyData,
                                         int count) {
     SkASSERT(buffer);
+    SkASSERT(this->isResourceTracked(buffer));
     SkASSERT(texture);
     SkASSERT(count > 0 && copyData);
 
@@ -235,7 +251,7 @@ bool CommandBuffer::copyBufferToTexture(const Buffer* buffer,
         return false;
     }
 
-    this->trackCommandBufferResource(std::move(texture));
+    this->trackResource(std::move(texture));
 
     SkDEBUGCODE(fHasWork = true;)
 
@@ -259,8 +275,8 @@ bool CommandBuffer::copyTextureToTexture(sk_sp<Texture> src,
         return false;
     }
 
-    this->trackCommandBufferResource(std::move(src));
-    this->trackCommandBufferResource(std::move(dst));
+    this->trackResource(std::move(src));
+    this->trackResource(std::move(dst));
 
     SkDEBUGCODE(fHasWork = true;)
 
@@ -276,7 +292,7 @@ bool CommandBuffer::synchronizeBufferToCpu(sk_sp<Buffer> buffer) {
     }
 
     if (didResultInWork) {
-        this->trackCommandBufferResource(std::move(buffer));
+        this->trackResource(std::move(buffer));
         SkDEBUGCODE(fHasWork = true;)
     }
 
@@ -285,6 +301,7 @@ bool CommandBuffer::synchronizeBufferToCpu(sk_sp<Buffer> buffer) {
 
 bool CommandBuffer::clearBuffer(const Buffer* buffer, size_t offset, size_t size) {
     SkASSERT(buffer);
+    SkASSERT(this->isResourceTracked(buffer));
 
     if (!this->onClearBuffer(buffer, offset, size)) {
         return false;
@@ -299,11 +316,11 @@ bool CommandBuffer::setReplayTranslationAndClip(const SkIVector& translation,
                                                 const SkIRect& clip,
                                                 const SkIRect& renderTargetBounds) {
     fReplayTranslation = translation;
-    fRenderPassBounds = renderTargetBounds;
+    fRenderTargetBounds = renderTargetBounds;
 
     // If a replay clip is defined, we intersect it with the render target bounds.
     if (!clip.isEmpty()) {
-        if (!fRenderPassBounds.intersect(clip.makeOffset(translation))) {
+        if (!fRenderTargetBounds.intersect(clip.makeOffset(translation))) {
             return false;
         }
     }

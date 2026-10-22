@@ -156,7 +156,6 @@ export class CommandMenu {
       jslogContext: action.id(),
       executeHandler: action.execute.bind(action),
       userActionCode,
-      availableHandler: undefined,
       isPanelOrDrawer: panelOrDrawer,
     });
   }
@@ -191,7 +190,6 @@ export class CommandMenu {
       jslogContext: id,
       executeHandler,
       userActionCode,
-      availableHandler: undefined,
       isPanelOrDrawer: panelOrDrawer,
       featurePromotionId,
     });
@@ -276,7 +274,7 @@ export class CommandMenuProvider extends Provider {
   private commands: Command[];
 
   constructor(commandsForTest: Command[] = []) {
-    super('command');
+    super();
     this.commands = commandsForTest;
   }
 
@@ -459,4 +457,5 @@ registerProvider({
   helpTitle: () => i18nString(UIStrings.runCommand),
   titlePrefix: () => i18nString(UIStrings.run),
   titleSuggestion: () => i18nString(UIStrings.command),
+  jslogContext: 'command',
 });

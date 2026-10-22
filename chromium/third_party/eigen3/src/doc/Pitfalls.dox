@@ -112,17 +112,19 @@ In this very particular case, a workaround would be to call A.reverse().eval() f
 
 If you don't know why passing-by-value is wrong with %Eigen, read this \link TopicPassingByValue page \endlink first.
 
-While you may be extremely careful and use care to make sure that all of your code that explicitly uses %Eigen types is pass-by-reference you have to watch out for templates which define the argument types at compile time.
+\note If you are compiling in C++17 mode with a sufficiently recent compiler (GCC >= 7, Clang >= 5, MSVC >= 19.12),
+the alignment issues described below are handled automatically by the compiler via over-aligned operator new,
+and pass-by-value is safe.
 
-If a template has a function that takes arguments pass-by-value, and the relevant template parameter ends up being an %Eigen type, then you will of course have the same alignment problems that you would in an explicitly defined function passing %Eigen types by reference.
+For pre-C++17 code, you have to watch out for templates which define argument types at compile time.
+If a template has a function that takes arguments pass-by-value, and the relevant template parameter ends up being an %Eigen type, then you will have the same alignment problems that you would in an explicitly defined function passing %Eigen types by value.
 
 Using %Eigen types with other third party libraries or even the STL can present the same problem.
-<code>boost::bind</code> for example uses pass-by-value to store arguments in the returned functor.
-This will of course be a problem.
+\c std::bind for example uses pass-by-value to store arguments in the returned functor.
 
 There are at least two ways around this:
-  - If the value you are passing is guaranteed to be around for the life of the functor, you can use boost::ref() to wrap the value as you pass it to boost::bind. Generally this is not a solution for values on the stack as if the functor ever gets passed to a lower or independent scope, the object may be gone by the time it's attempted to be used.
-  - The other option is to make your functions take a reference counted pointer like boost::shared_ptr as the argument. This avoids needing to worry about managing the lifetime of the object being passed.
+  - If the value you are passing is guaranteed to be around for the life of the functor, you can use \c std::ref() to wrap the value as you pass it to \c std::bind. Generally this is not a solution for values on the stack as if the functor ever gets passed to a lower or independent scope, the object may be gone by the time it's attempted to be used.
+  - The other option is to make your functions take a reference counted pointer like \c std::shared_ptr as the argument. This avoids needing to worry about managing the lifetime of the object being passed.
 
 
 \section TopicPitfalls_matrix_bool Matrices with boolean coefficients

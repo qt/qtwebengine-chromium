@@ -8,17 +8,23 @@ For performance tests, this tool is generally not used directly. Instead, we use
 
 ## Getting the code
 
-The first way is to use `go get`. This will use your default GOPATH, which is
+The first way is to use `go install`. This will use your default GOPATH, which is
 typically `$HOME/go`:
 
 ```shell
-go get go.chromium.org/webpagereplay
+go install go.chromium.org/webpagereplay@latest
 ```
 
-The second way is to clone the repository.
+The second way is to download the repository. Don't just `git clone`! Use
+depot_tools to set everything up correctly for you.
 
-```shell
-git clone https://chromium.googlesource.com/webpagereplay
+- Install [Chromium depot_tools](https://commondatastorage.googleapis.com/chrome-infra-docs/flat/depot_tools/docs/html/depot_tools_tutorial.html#_setting_up).
+- Get webpagereplay code with all dependencies:
+```
+mkdir webpagereplay
+cd webpagereplay
+fetch webpagereplay
+cd webpagereplay
 ```
 
 ## Sample usage
@@ -27,12 +33,12 @@ git clone https://chromium.googlesource.com/webpagereplay
 * Terminal 1:
 
   Start wpr in record mode. By default wpr uses both rsa and ecdsa certificates,
-  or provide your certificate directly with --https_cert_file and --https_key_file
+  or provide your certificate directly with --https-cert-file and --https-key-file
   parameters.
 
   ```shell
   cd path/to/webpagereplay
-  go run src/wpr.go record --http_port=8080 --https_port=8081 /tmp/archive.wprgo
+  go run src/wpr.go record --http-port=8080 --https-port=8081 /tmp/archive.wprgo
   ```
   ...
 
@@ -53,7 +59,7 @@ git clone https://chromium.googlesource.com/webpagereplay
   Start wpr in replay mode.
   ```shell
   cd path/to/webpagereplay
-  go run src/wpr.go replay --http_port=8080 --https_port=8081 /tmp/archive.wprgo
+  go run src/wpr.go replay --http-port=8080 --https-port=8081 /tmp/archive.wprgo
   ```
 
 * Terminal 2:
@@ -95,13 +101,13 @@ authority as a local trust anchor. **Note:** Please do this with care because
 installing the test root CA compromises your machine. This is currently only
 supported on Linux and Android.
 
-Installing the test CA. Specify a `--android_device_id` if you'd like to install
+Installing the test CA. Specify a `--android-device-id` if you'd like to install
 the root CA on an android device.
 ```shell
 cd path/to/webpagereplay
 go run src/wpr.go installroot
 ```
-Uninstall the test CA. Specify a `--android_device_id` if you'd like to remove
+Uninstall the test CA. Specify a `--android-device-id` if you'd like to remove
 the root CA from an android device.
 
 ```shell
@@ -116,7 +122,7 @@ go run src/wpr.go removeroot
 * Terminal 1:
 ```shell
 cd path/to/webpagereplay
-go run src/wpr.go replay --https_port=8081 --https_to_http_port=8082 \
+go run src/wpr.go replay --https-port=8081 --https-to-http-port=8082 \
   /tmp/archive.wprgo
 ```
 

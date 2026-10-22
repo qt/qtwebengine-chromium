@@ -16,14 +16,15 @@
 #include "base/functional/callback.h"
 #include "base/logging.h"
 #include "base/memory/scoped_policy.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "net/base/features.h"
+#include "net/base/network_change_notifier_apple_buildflags.h"
 #include "net/base/network_interfaces_getifaddrs.h"
 #include "net/dns/dns_config_service.h"
 #include "net/log/net_log.h"
@@ -31,12 +32,6 @@
 #if BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_IOS_TVOS)
 #import <CoreTelephony/CTTelephonyNetworkInfo.h>
 #endif
-
-#if BUILDFLAG(IS_MAC) || !defined(__IPHONE_17_4) || \
-    __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_17_4
-#define COMPILE_OLD_NOTIFIER_IMPL 1
-#endif  // BUILDFLAG(IS_MAC) || !defined(__IPHONE_17_4) ||
-        // __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_17_4
 
 namespace net {
 
@@ -355,12 +350,12 @@ void NetworkChangeNotifierApple::Forwarder::CleanUpOnNotifierThread() {
 
 void NetworkChangeNotifierApple::SetInitialConnectionType() {
   // Called on notifier thread.
-#if defined(COMPILE_OLD_NOTIFIER_IMPL)
   if (EnsureNetworkPathMonitorStarted()) {
     WaitOnInitialConnectionType();
     return;
   }
 
+#if defined(COMPILE_OLD_NOTIFIER_IMPL)
   // Try to reach 0.0.0.0. This is the approach taken by Firefox:
   //
   // http://mxr.mozilla.org/mozilla2.0/source/netwerk/system/mac/nsNetworkLinkService.mm
@@ -387,8 +382,6 @@ void NetworkChangeNotifierApple::SetInitialConnectionType() {
     connection_type_initialized_ = true;
     initial_connection_type_cv_.Broadcast();
   }
-#else
-  WaitOnInitialConnectionType();
 #endif  // defined(COMPILE_OLD_NOTIFIER_IMPL)
 }
 

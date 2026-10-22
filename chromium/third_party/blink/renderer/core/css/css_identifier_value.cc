@@ -58,17 +58,13 @@ CSSIdentifierValue::CSSIdentifierValue(const Length& length)
     case Length::kContent:
       value_id_ = CSSValueID::kContent;
       break;
-    case Length::kExtendToZoom:
-      value_id_ = CSSValueID::kInternalExtendToZoom;
-      break;
     case Length::kPercent:
     case Length::kFixed:
     case Length::kCalculated:
     case Length::kFlex:
-    case Length::kDeviceWidth:
-    case Length::kDeviceHeight:
     case Length::kMinIntrinsic:
     case Length::kNone:
+    case Length::kOverlapJoin:
       NOTREACHED();
   }
 }

@@ -27,12 +27,14 @@ constexpr char kRemotingRpcNamespace[] = "urn:x-cast:com.google.cast.remoting";
 MirroringApplication::MirroringApplication(TaskRunner& task_runner,
                                            const IPAddress& interface_address,
                                            ApplicationAgent& agent,
-                                           bool enable_dscp)
+                                           bool enable_dscp,
+                                           bool enable_input_events)
     : task_runner_(task_runner),
       interface_address_(interface_address),
       app_ids_(GetCastStreamingAppIds()),
       agent_(agent),
-      enable_dscp_(enable_dscp) {
+      enable_dscp_(enable_dscp),
+      enable_input_events_(enable_input_events) {
   agent_.RegisterApplication(this);
 }
 
@@ -59,16 +61,18 @@ bool MirroringApplication::Launch(const std::string& app_id,
       &Clock::now, task_runner_,
       IPEndpoint{interface_address_, kDefaultCastStreamingPort});
 #if defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
-  controller_ =
-      std::make_unique<StreamingPlaybackController>(task_runner_, this);
+  controller_ = std::make_unique<StreamingPlaybackController>(
+      task_runner_, this, enable_input_events_);
 #else
-  controller_ = std::make_unique<StreamingPlaybackController>(this);
+  controller_ =
+      std::make_unique<StreamingPlaybackController>(this, enable_input_events_);
 #endif  // defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
   ReceiverConstraints constraints;
   constraints.video_codecs.insert(constraints.video_codecs.begin(),
                                   {VideoCodec::kAv1, VideoCodec::kVp9});
   constraints.remoting = std::make_unique<RemotingConstraints>();
   constraints.enable_dscp = enable_dscp_;
+  constraints.supports_input_events = enable_input_events_;
   current_session_ = std::make_unique<ReceiverSession>(
       *controller_, *environment_, *message_port, std::move(constraints));
   return true;

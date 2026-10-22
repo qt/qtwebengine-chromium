@@ -25,10 +25,9 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "gmock/gmock.h"
 #include "src/tint/lang/wgsl/resolver/resolver.h"
 #include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
-
-#include "gmock/gmock.h"
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -354,7 +353,7 @@ TEST_F(ResolverSubgroupsExtensionTest, NumSubgroupsComputeShaderOutput) {
 
 // Using the subgroup_uniformity diagnostic rule without subgroups enabled should succeed.
 TEST_F(ResolverSubgroupsExtensionTest, UseSubgroupUniformityRuleWithoutExtensionError) {
-    DiagnosticDirective(wgsl::DiagnosticSeverity::kOff, "subgroup_uniformity");
+    DiagnosticDirective(wgsl::DiagnosticSeverity::kOff, DiagnosticRuleName("subgroup_uniformity"));
     EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 

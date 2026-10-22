@@ -122,7 +122,14 @@ IN_PROC_BROWSER_TEST_F(StorageServiceRestartBrowserTest,
                          R"(getSessionStorageValue("foo"))"));
 }
 
-IN_PROC_BROWSER_TEST_F(StorageServiceRestartBrowserTest, LocalStorageRecovery) {
+// TODO(crbug.com/40678245): Flaky on Mac.
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_LocalStorageRecovery DISABLED_LocalStorageRecovery
+#else
+#define MAYBE_LocalStorageRecovery LocalStorageRecovery
+#endif
+IN_PROC_BROWSER_TEST_F(StorageServiceRestartBrowserTest,
+                       MAYBE_LocalStorageRecovery) {
   // Tests that the Local Storage API can recover and continue normal operation
   // after a Storage Service crash.
   EXPECT_TRUE(
@@ -140,7 +147,7 @@ IN_PROC_BROWSER_TEST_F(StorageServiceRestartBrowserTest, LocalStorageRecovery) {
   // unpredictable.
   EvalJsResult result =
       EvalJs(shell()->web_contents(), R"(getLocalStorageValue("foo"))");
-  ASSERT_THAT(result, content::EvalJsResult::IsOk());
+  ASSERT_TRUE(result.is_ok());
   EXPECT_THAT(result, testing::AnyOf(testing::Eq(""), testing::Eq("42")));
 
   // Local Storage should resume working as expected after the service is

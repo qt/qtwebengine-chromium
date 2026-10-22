@@ -976,7 +976,7 @@ export class PdfViewerElement extends PdfViewerBaseElement {
 
   handlePluginMessage(e: CustomEvent<MessageData>) {
     const data = e.detail;
-    switch (data.type.toString()) {
+    switch (data.type) {
       case 'attachments':
         const attachmentsData =
             data as unknown as {attachmentsData: Attachment[]};
@@ -1486,6 +1486,10 @@ export class PdfViewerElement extends PdfViewerBaseElement {
   }
   // </if> enable_pdf_save_to_drive
 
+  protected onRotateLeft_() {
+    this.rotateCounterclockwise();
+  }
+
   protected onChangePage_(e: CustomEvent<ChangePageDetail>) {
     this.viewport.goToPage(e.detail.page);
     if (e.detail.origin === ChangePageOrigin.BOOKMARK) {
@@ -1646,6 +1650,8 @@ export class PdfViewerElement extends PdfViewerBaseElement {
       this.hasUnsavedEdits_ = false;
     }
     // </if>
+
+    this.fire('save-initiated-for-testing');
 
     if (this.pdfGetSaveDataInBlocks_) {
       this.saveInBlocks_(requestType);
@@ -1867,11 +1873,9 @@ export class PdfViewerElement extends PdfViewerBaseElement {
     }
   }
 
-  // <if expr="enable_glic">
   protected onGlicSummarize_() {
     PdfViewerPrivateProxyImpl.getInstance().glicSummarize();
   }
-  // </if>
 
   protected onPrint_() {
     record(UserAction.PRINT);

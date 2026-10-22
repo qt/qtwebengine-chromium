@@ -56,8 +56,9 @@ struct ArrayLengthOptions {
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(ArrayLengthOptions, ubo_binding, buffer_sizes_offset, bindpoint_to_size_index);
-    TINT_REFLECT_EQUALS(ArrayLengthOptions);
     TINT_REFLECT_HASH_CODE(ArrayLengthOptions);
+
+    bool operator==(const ArrayLengthOptions&) const = default;
 };
 
 /// Information to configure an argument buffer
@@ -68,12 +69,13 @@ struct ArgumentBufferInfo {
     /// The buffer ID to use for the dynamic buffer if needed
     std::optional<uint32_t> dynamic_buffer_id{};
 
-    /// Dynamic offsets map. The map is binding number -> offset index
+    /// Dynamic offsets map. The map is BindingIndex -> dynamic offsets array index
     std::unordered_map<uint32_t, uint32_t> binding_info_to_offset_index{};
 
     TINT_REFLECT(ArgumentBufferInfo, id, dynamic_buffer_id, binding_info_to_offset_index);
-    TINT_REFLECT_EQUALS(ArgumentBufferInfo);
     TINT_REFLECT_HASH_CODE(ArgumentBufferInfo);
+
+    bool operator==(const ArgumentBufferInfo&) const = default;
 };
 
 /// Configuration options used for generating MSL.
@@ -86,8 +88,9 @@ struct Options {
 
         /// Reflect the fields of this class so that it can be used by tint::ForeachField()
         TINT_REFLECT(RangeOffsets, min, max);
-        TINT_REFLECT_EQUALS(RangeOffsets);
         TINT_REFLECT_HASH_CODE(RangeOffsets);
+
+        bool operator==(const RangeOffsets&) const = default;
     };
 
     /// The set of options which control workarounds for driver issues.
@@ -115,15 +118,28 @@ struct Options {
         /// Set to `true` to polyfill `unpack2x16unorm()`.
         bool polyfill_unpack_2x16_unorm = false;
 
+        /// Set to `true` to polyfill tanh with an f16 value
+        bool polyfill_tanh_f16 = false;
+
+        /// Set to `true` to replace bool types in workgroup storage with u32.
+        bool replace_workgroup_bool_with_u32 = false;
+
+        /// Set to `true` to collapse nested subgroupMin and subgroupMax operations.
+        bool collapse_subgroup_min_max = false;
+
         TINT_REFLECT(Workarounds,
                      scalarize_max_min_clamp,
                      disable_module_constant_f16,
                      polyfill_subgroup_broadcast_f16,
                      polyfill_clamp_float,
                      polyfill_unpack_2x16_snorm,
-                     polyfill_unpack_2x16_unorm);
-        TINT_REFLECT_EQUALS(Workarounds);
+                     polyfill_unpack_2x16_unorm,
+                     polyfill_tanh_f16,
+                     replace_workgroup_bool_with_u32,
+                     collapse_subgroup_min_max);
         TINT_REFLECT_HASH_CODE(Workarounds);
+
+        bool operator==(const Workarounds&) const = default;
     };
 
     /// Any options which are controlled by the current Metal version.
@@ -137,8 +153,9 @@ struct Options {
         bool disable_demote_to_helper = false;
 
         TINT_REFLECT(Extensions, disable_demote_to_helper);
-        TINT_REFLECT_EQUALS(Extensions);
         TINT_REFLECT_HASH_CODE(Extensions);
+
+        bool operator==(const Extensions&) const = default;
     };
 
     /// Constructor
@@ -241,8 +258,9 @@ struct Options {
                  depth_range_offsets,
                  bindings,
                  substitute_overrides_config);
-    TINT_REFLECT_EQUALS(Options);
     TINT_REFLECT_HASH_CODE(Options);
+
+    bool operator==(const Options&) const = default;
 };
 
 }  // namespace tint::msl::writer

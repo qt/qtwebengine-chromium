@@ -292,12 +292,6 @@ describeWithEnvironment('AiAgent', () => {
 
         assert.deepEqual(responses, [
           {
-            type: AiAssistance.AiAgent.ResponseType.USER_QUERY,
-            query: 'query',
-            imageInput: undefined,
-            imageId: undefined,
-          },
-          {
             type: AiAssistance.AiAgent.ResponseType.QUERYING,
           },
           {
@@ -350,12 +344,6 @@ describeWithEnvironment('AiAgent', () => {
       const responses = await Array.fromAsync(agent.run('query', {selected: mockConversationContext()}));
 
       assert.deepEqual(responses, [
-        {
-          type: AiAssistance.AiAgent.ResponseType.USER_QUERY,
-          query: 'query',
-          imageInput: undefined,
-          imageId: undefined,
-        },
         {
           type: AiAssistance.AiAgent.ResponseType.QUERYING,
         },

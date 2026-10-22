@@ -23,9 +23,6 @@ use crate::decoder::track::*;
 #[cfg(feature = "dav1d")]
 use crate::codecs::dav1d::Dav1d;
 
-#[cfg(feature = "libgav1")]
-use crate::codecs::libgav1::Libgav1;
-
 #[cfg(feature = "android_mediacodec")]
 use crate::codecs::android_mediacodec::MediaCodec;
 
@@ -45,6 +42,7 @@ use crate::parser::mp4box;
 use crate::parser::mp4box::*;
 use crate::parser::obu::Av1SequenceHeader;
 use crate::utils::pixels::ChannelIdc;
+use crate::utils::pixels::Pixels;
 use crate::*;
 
 use std::cmp::max;
@@ -75,16 +73,20 @@ pub(crate) type Codec = Box<dyn crate::codecs::Decoder>;
 impl CodecChoice {
     fn get_decoder_codec(&self, compression_format: CompressionFormat) -> Option<Codec> {
         match compression_format {
-            CompressionFormat::Avif => match self {
-                CodecChoice::Aom => None, // Not used as a decoder.
+            CompressionFormat::Avif => {
+                if matches!(self, CodecChoice::Aom) {
+                    return None; // Not used as a decoder.
+                }
                 #[cfg(feature = "android_mediacodec")]
-                CodecChoice::Auto | CodecChoice::MediaCodec => Some(Box::<MediaCodec>::default()),
+                if matches!(self, CodecChoice::Auto | CodecChoice::MediaCodec) {
+                    return Some(Box::<MediaCodec>::default());
+                }
                 #[cfg(feature = "dav1d")]
-                CodecChoice::Auto | CodecChoice::Dav1d => Some(Box::<Dav1d>::default()),
-                #[cfg(feature = "libgav1")]
-                CodecChoice::Auto | CodecChoice::Libgav1 => Some(Box::<Libgav1>::default()),
-                _ => None,
-            },
+                if matches!(self, CodecChoice::Auto | CodecChoice::Dav1d) {
+                    return Some(Box::<Dav1d>::default());
+                }
+                None
+            }
             #[cfg(feature = "avm")]
             CompressionFormat::Avif2 => match self {
                 CodecChoice::Auto | CodecChoice::Avm => Some(Box::<Avm>::default()),
@@ -388,6 +390,21 @@ pub(crate) struct GridImageHelper<'a> {
     first_cell_image: Option<Image>,
     tile_width: u32,
     tile_height: u32,
+}
+
+impl Image {
+    fn copy_properties_from(&mut self, image: &Image, codec_config: &CodecConfiguration) {
+        self.yuv_format = image.yuv_format;
+        self.depth = image.depth;
+        if cfg!(feature = "heic") && codec_config.compression_format() == CompressionFormat::Heic {
+            // For AVIF, the information in the `colr` box takes precedence over what is reported
+            // by the decoder. For HEIC, we always honor what is reported by the decoder.
+            self.yuv_range = image.yuv_range;
+            self.color_primaries = image.color_primaries;
+            self.transfer_characteristics = image.transfer_characteristics;
+            self.matrix_coefficients = image.matrix_coefficients;
+        }
+    }
 }
 
 // These functions are not used in all configurations.
@@ -964,6 +981,9 @@ impl Decoder {
     }
 
     pub fn parse(&mut self) -> AvifResult<()> {
+        if self.settings.codec_choice == CodecChoice::Libgav1 {
+            return Err(AvifError::NotImplemented);
+        }
         if self.parsing_complete() {
             // Parse was called again. Reset the data and start over.
             self.parse_state = ParseState::None;
@@ -1741,6 +1761,10 @@ impl Decoder {
         };
 
         if self.tile_info[decoding_item.usize()].is_grid() {
+            if self.tile_info[decoding_item.usize()].is_overlay() {
+                return AvifError::not_implemented();
+            }
+
             if tile_index == 0 {
                 let grid = &self.tile_info[decoding_item.usize()].grid;
                 validate_grid_image_dimensions(&tile.image, grid)?;
@@ -1817,19 +1841,55 @@ impl Decoder {
                 category,
             )?;
         } else {
-            // Non grid/overlay path, steal or copy planes from the only tile.
+            // Non-grid, non-overlay path.
+            // The only tile is the whole image. The memory is owned by the
+            // underlying codec or its CrabbyAvif wrapper. It will stay valid
+            // until the next frame or until the Decoder instance destruction.
+            // dst_image can just point to that memory.
+            //
+            // If dst_image is Decoder::image or Decoder::gainmap::image:
+            //   The user can only access that memory through read-only
+            //   Decoder::image() and Decoder::gainmap(), and the lifetimes of
+            //   the returned references cannot exceed Decoder::next_image() nor
+            //   the Decoder instance's own lifetime (and thus its codecs').
+            //
+            // If there are Sample Transforms:
+            //   dst_image is Decoder::extra_inputs with its own codec instance.
+            //   All the tiles are combined in apply_sample_transform() into
+            //   Decoder::image which owns its buffer.
+
             match category {
                 Category::Color | Category::Gainmap => {
                     dst_image.width = tile.image.width;
                     dst_image.height = tile.image.height;
                     dst_image.copy_properties_from(&tile.image, &tile.codec_config);
-                    dst_image.steal_or_copy_planes_from(&tile.image, category)?;
                 }
                 Category::Alpha => {
                     if !dst_image.has_same_properties(&tile.image) {
                         return AvifError::decode_alpha_failed();
                     }
-                    dst_image.steal_or_copy_planes_from(&tile.image, category)?;
+                }
+            }
+
+            for plane in category.planes() {
+                let plane = plane.as_usize();
+                if let Some(src_plane) = &tile.image.planes[plane] {
+                    dst_image.planes[plane] = Some(match src_plane {
+                        Pixels::Pointer(p) => Pixels::Pointer(*p),
+                        Pixels::Pointer16(p) => Pixels::Pointer16(*p),
+                        // SAFETY: Bounded lifetime and read-only access.
+                        Pixels::Buffer(b) => Pixels::Pointer(unsafe {
+                            PointerSlice::create(b.as_ptr() as *mut _, b.len())?
+                        }),
+                        // SAFETY: Bounded lifetime and read-only access.
+                        Pixels::Buffer16(b) => Pixels::Pointer16(unsafe {
+                            PointerSlice::create(b.as_ptr() as *mut _, b.len())?
+                        }),
+                    });
+                    dst_image.row_bytes[plane] = tile.image.row_bytes[plane];
+                } else {
+                    dst_image.planes[plane] = None;
+                    dst_image.row_bytes[plane] = 0;
                 }
             }
         }
@@ -1929,16 +1989,6 @@ impl Decoder {
         }
     }
 
-    fn apply_sample_transform(&mut self) -> AvifResult<()> {
-        if self.settings.allow_sample_transform {
-            self.tile_info[DecodingItem::COLOR.usize()]
-                .sample_transform
-                .allocate_planes_and_apply(&self.extra_inputs, &mut self.image)
-        } else {
-            AvifError::not_implemented()
-        }
-    }
-
     fn can_use_decode_grid(&self, decoding_item: DecodingItem) -> bool {
         let first_tile = &self.tiles[decoding_item.usize()][0];
         let codec = self.codecs[first_tile.codec_index].codec();
@@ -2029,7 +2079,14 @@ impl Decoder {
             .tokens
             .is_empty()
         {
-            self.apply_sample_transform()?;
+            // The tokens were created in parse_sato() which was only called
+            // if a sato item was processed in find_and_parse_item(), meaning
+            // allow_sample_transform is true.
+            assert!(self.settings.allow_sample_transform);
+
+            self.tile_info[DecodingItem::COLOR.usize()]
+                .sample_transform
+                .allocate_planes_and_apply(&self.extra_inputs, &mut self.image)?;
         }
 
         self.image_index = next_image_index;

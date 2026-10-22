@@ -168,7 +168,7 @@ class SparseVector : public SparseCompressedBase<SparseVector<Scalar_, Options_,
 
     Index startId = 0;
     Index p = Index(m_data.size()) - 1;
-    // TODO smart realloc
+    // TODO: implement smart reallocation.
     m_data.resize(p + 2, 1);
 
     while ((p >= startId) && (m_data.index(p) > i)) {
@@ -487,12 +487,16 @@ class Serializer<SparseVector<Scalar, Options, StorageIndex>, void> {
 
     // Inner indices.
     std::size_t data_bytes = sizeof(StorageIndex) * header.num_non_zeros;
-    memcpy(dest, value.innerIndexPtr(), data_bytes);
+    if (data_bytes != 0) {
+      memcpy(dest, value.innerIndexPtr(), data_bytes);
+    }
     dest += data_bytes;
 
     // Values.
     data_bytes = sizeof(Scalar) * header.num_non_zeros;
-    memcpy(dest, value.valuePtr(), data_bytes);
+    if (data_bytes != 0) {
+      memcpy(dest, value.valuePtr(), data_bytes);
+    }
     dest += data_bytes;
 
     return dest;
@@ -515,13 +519,17 @@ class Serializer<SparseVector<Scalar, Options, StorageIndex>, void> {
     // Inner indices.
     std::size_t data_bytes = sizeof(StorageIndex) * header.num_non_zeros;
     if (EIGEN_PREDICT_FALSE(src + data_bytes > end)) return nullptr;
-    memcpy(value.innerIndexPtr(), src, data_bytes);
+    if (data_bytes != 0) {
+      memcpy(value.innerIndexPtr(), src, data_bytes);
+    }
     src += data_bytes;
 
     // Values.
     data_bytes = sizeof(Scalar) * header.num_non_zeros;
     if (EIGEN_PREDICT_FALSE(src + data_bytes > end)) return nullptr;
-    memcpy(value.valuePtr(), src, data_bytes);
+    if (data_bytes != 0) {
+      memcpy(value.valuePtr(), src, data_bytes);
+    }
     src += data_bytes;
     return src;
   }

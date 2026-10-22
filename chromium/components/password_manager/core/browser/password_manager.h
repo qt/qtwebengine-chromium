@@ -18,6 +18,7 @@
 #include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/observer_list.h"
 #include "build/blink_buildflags.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_type.h"
@@ -216,6 +217,9 @@ class PasswordManager : public PasswordManagerInterface {
   // Returns true if password element is detected on the current page.
   bool IsPasswordFieldDetectedOnPage() const override;
 
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+
 #if BUILDFLAG(USE_BLINK)
   // Reports the success from the renderer's PasswordAutofillAgent to fill
   // credentials into a site. This may be called multiple times, but only
@@ -266,7 +270,7 @@ class PasswordManager : public PasswordManagerInterface {
     return GetSubmittedManager();
   }
 
-  const std::map<autofill::FormSignature, FormPredictions>&
+  const std::map<std::pair<autofill::FormSignature, int>, FormPredictions>&
   GetServerPredictionsForTesting() const {
     return server_predictions_;
   }
@@ -480,7 +484,8 @@ class PasswordManager : public PasswordManagerInterface {
   const base::CallbackListSubscription account_store_cb_list_subscription_;
 
   // Server predictions for the forms on the page.
-  std::map<autofill::FormSignature, FormPredictions> server_predictions_;
+  std::map<std::pair<autofill::FormSignature, int>, FormPredictions>
+      server_predictions_;
 
   // Classification model predictions for the forms on the page, keyed by
   // the combination of the driver and the renderer id of the form, that allow
@@ -505,6 +510,8 @@ class PasswordManager : public PasswordManagerInterface {
       possible_usernames_ =
           base::LRUCache<PossibleUsernameFieldIdentifier, PossibleUsernameData>(
               kMaxSingleUsernameFieldsToStore);
+
+  base::ObserverList<Observer> observers_;
 };
 
 }  // namespace password_manager

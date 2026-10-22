@@ -36,8 +36,11 @@
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/element_rare_data_field.h"
 #include "third_party/blink/renderer/core/dom/tree_scope.h"
+#include "third_party/blink/renderer/core/html/parser/fragment_parser.h"
+#include "third_party/blink/renderer/core/trustedtypes/trusted_parser_options.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
+#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 
 namespace blink {
 
@@ -125,12 +128,15 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment,
   String GetInnerHTMLString() const;
   void SetInnerHTMLWithoutTrustedTypes(const String&,
                                        ExceptionState& = ASSERT_NO_EXCEPTION);
-  V8UnionStringLegacyNullToEmptyStringOrTrustedHTML* innerHTML() const;
+  String innerHTML() const;
   void setInnerHTML(const V8UnionStringLegacyNullToEmptyStringOrTrustedHTML*,
                     ExceptionState&);
   void setHTMLUnsafe(const V8UnionStringOrTrustedHTML* html, ExceptionState&);
   void setHTMLUnsafe(const V8UnionStringOrTrustedHTML* html,
                      SetHTMLUnsafeOptions*,
+                     ExceptionState&);
+  void setHTMLUnsafe(const V8UnionStringOrTrustedHTML* html,
+                     TrustedParserOptions*,
                      ExceptionState&);
   void setHTML(const String& html, SetHTMLOptions*, ExceptionState&);
 
@@ -204,7 +210,7 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment,
  private:
   friend class ReferenceTargetIdObserver;
 
-  HeapVector<Member<CSSStyleSheet>> GetFetchedStyleSheetsFromModuleMap(
+  HeapVector<Member<CSSStyleSheet>> ResolveAdoptedStyleSheets(
       const AtomicString& shadowrootadoptedstylesheets_attribute_value);
 
   void ChildrenChanged(const ChildrenChange&) override;
@@ -218,6 +224,21 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment,
   }
 
   void ReferenceTargetChanged();
+  void SetInnerHTMLInternal(const String& html,
+                            FragmentParserOptions,
+                            Sanitizer::Mode,
+                            FragmentParserConfig::ParseDeclarativeShadowRoots,
+                            const AtomicString& property_name,
+                            ExceptionState&);
+
+  template <class T>
+  String CheckHTML(const T* html,
+                   const AtomicString& property_name,
+                   ExceptionState& exception_state) const {
+    return TrustedTypesCheckForHTML(html, GetExecutionContext(),
+                                    trusted_types_names::kShadowRoot,
+                                    property_name, exception_state);
+  }
 
   Member<SlotAssignment> slot_assignment_;
   Member<ReferenceTargetIdObserver> reference_target_id_observer_;

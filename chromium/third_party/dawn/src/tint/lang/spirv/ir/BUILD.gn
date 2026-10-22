@@ -51,8 +51,6 @@ libtint_source_set("ir") {
     "builtin_call.h",
     "copy_logical.cc",
     "copy_logical.h",
-    "literal_operand.cc",
-    "literal_operand.h",
   ]
   deps = [
     "${dawn_root}/src/utils",

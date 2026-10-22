@@ -14,6 +14,7 @@
 namespace contextual_tasks {
 
 BASE_DECLARE_FEATURE(kContextualTasks);
+BASE_DECLARE_FEATURE(kEnableContextualTasksPinButtonInToolbar);
 // When enabled, it should instead request the kSearchResultsOAuth2Scope instead
 // of the kChromeSyncOAuth2Scope
 BASE_DECLARE_FEATURE(kContextualTasksScopeChange);
@@ -43,10 +44,6 @@ BASE_DECLARE_FEATURE(
 // param.
 BASE_DECLARE_FEATURE(kEnableNotifyZeroStateRenderedCapability);
 
-// Replace the overflow menu in the side panel with an explicit button to move
-// the thread to a new tab.
-BASE_DECLARE_FEATURE(kContextualTasksExpandButton);
-
 // If enabled, adds the Sec-CH-UA-Full-Version-List header to all network
 // requests initiated from within an embedded Co-Browse <webview>.
 BASE_DECLARE_FEATURE(kContextualTasksSendFullVersionListEnabled);
@@ -55,15 +52,56 @@ BASE_DECLARE_FEATURE(kContextualTasksSendFullVersionListEnabled);
 // contextual tasks URL and redirect to aim URL.
 BASE_DECLARE_FEATURE(kContextualTasksUrlRedirectToAimUrl);
 
+// Enables the use of Stratus dark mode colors.
+BASE_DECLARE_FEATURE(kContextualTasksUseStratusDarkModeColors);
+
 // If enabled, animates the caret.
 BASE_DECLARE_FEATURE(kContextualTasksAnimatedCaret);
+
+// Enables energy effect in Nextbox.
+BASE_DECLARE_FEATURE(kEnergyEffectInNextbox);
+
+// Fixes the composebox jump.
+BASE_DECLARE_FEATURE(kContextualTasksComposeboxJumpFix);
+
+// Enables the use of a rounded clip-path for the composebox.
+BASE_DECLARE_FEATURE(kContextualTasksRoundedClipPath);
+
+// Hides the the 3-dot (overflow) menu when viewing an ai page in the side
+// panel. The menu is still shown for lens flows.
+BASE_DECLARE_FEATURE(kContextualTasksHideMenuOnAiPage);
+
+// Enables updating the model from URL parameters on every inner navigation.
+BASE_DECLARE_FEATURE(kContextualTasksUpdateModelOnNavigation);
+
+// Enables intercepting YouTube links with timestamps to seek video instead of
+// navigating.
+BASE_DECLARE_FEATURE(kContextualTasksVideoCitations);
+
+// Enables intercepting PDF links with page numbers to scroll to page instead of
+// navigating.
+BASE_DECLARE_FEATURE(kContextualTasksPdfCitations);
+
+// Enables lazy fetching of cluster info for multimodal queries.
+BASE_DECLARE_FEATURE(kContextualTasksLazyFetchClusterInfo);
+
+// Enables the use of APC comparison for webpages in the recontextualization
+// flow.
+BASE_DECLARE_FEATURE(kContextualTasksWebpageApcComparison);
+
+bool GetIsContextualTasksUpdateModeOnNavigationEnabled();
+
+bool GetIsContextualTasksPdfCitationsEnabled();
+
+bool GetIsContextualTasksLazyFetchClusterInfoEnabled();
 
 // Enum denoting which entry point can show when enabled.
 enum class EntryPointOption {
   kNoEntryPoint,
   kPageActionRevisit,
   kToolbarRevisit,
-  kToolbarPermanent
+  kToolbarPermanent,
+  kToolbarEphemeralBranded,
 };
 
 // Enum of expand button UI option
@@ -79,6 +117,9 @@ extern const base::FeatureParam<double> kTabSelectionScoreThreshold;
 // Minimum score required for a tab to be considered visible.
 extern const base::FeatureParam<double> kContentVisibilityThreshold;
 
+// Task string to use for formatting the query embedding.
+extern const base::FeatureParam<std::string> kQueryEmbeddingTask;
+
 // The sample rate for logging contextual tasks context quality.
 extern const base::FeatureParam<double>
     kContextualTasksContextLoggingSampleRate;
@@ -88,17 +129,6 @@ extern const base::FeatureParam<EntryPointOption, true> kShowEntryPoint;
 
 // UI Options to expand the contextual tasks side panel to tab.
 extern const base::FeatureParam<ExpandButtonOption, true> kExpandButtonOptions;
-
-// If true, the side panel is task scoped. Meaning that for all tabs associated
-// with the same task, they will share the same side panel. If the side panel
-// changed to another task for one tab, all tabs associated with the former task
-// will become associated with the new task. When set to false, task change in
-// the side panel only affects the current tab.
-extern const base::FeatureParam<bool> kTaskScopedSidePanel;
-
-// Whether to open side panel when an external link is clicked on the contextual
-// task page.
-extern const base::FeatureParam<bool> kOpenSidePanelOnLinkClicked;
 
 // Whether the context menu is enabled for Nextbox.
 extern bool GetIsContextualTasksNextboxContextMenuEnabled();
@@ -113,9 +143,6 @@ extern const base::FeatureParam<std::string>
 
 // The maximum size of a file that can be attached to a Nextbox.
 extern const base::FeatureParam<int> kContextualTasksNextboxMaxFileSize;
-
-// The maximum number of files that can be attached to a Nextbox.
-extern const base::FeatureParam<int> kContextualTasksNextboxMaxFileCount;
 
 // The user agent suffix to use for requests from the contextual tasks UI.
 extern const base::FeatureParam<std::string> kContextualTasksUserAgentSuffix;
@@ -147,14 +174,6 @@ extern int GetContextualTasksOnboardingTooltipImpressionDelay();
 // Expired side panel WebContents will be destroyed.
 extern int ContextualTasksInactiveSidePanelKeepInCacheMinutes();
 
-// Returns if voice search is allowed in expanded composebox.
-extern bool GetIsExpandedComposeboxVoiceSearchEnabled();
-
-// Returns if voice search is allowed in base steady composebox.
-extern bool GetIsSteadyComposeboxVoiceSearchEnabled();
-
-// Returns if voice search queries should be auto submitted.
-extern bool GetAutoSubmitVoiceSearchQuery();
 
 // Returns if the protected page error is enabled.
 extern bool GetIsProtectedPageErrorEnabled();
@@ -168,6 +187,9 @@ extern bool ShouldForceBasicModeIfOpeningThreadHistory();
 
 // Returns the base URL for the AI page.
 extern std::string GetContextualTasksAiPageUrl();
+
+// Returns the base URL for a Gemini thread.
+extern std::string GetContextualTasksGeminiBaseUrl();
 
 // Returns scheme component of the "display url" associated with the contextual
 // tasks page.
@@ -189,11 +211,23 @@ extern bool ShouldShowExpandedSecurityChip();
 // Tasks WebUi should be routed to.
 extern std::string GetForcedEmbeddedPageHost();
 
+// Allows overriding the embedded page host at runtime for debugging.
+extern void SetForcedEmbeddedPageHostOverride(const std::string& host);
+
 // Returns the domains for the sign in page.
 extern std::vector<std::string> GetContextualTasksSignInDomains();
 
 // Whether the suggestions are enabled for Nextbox.
 extern bool GetIsContextualTasksSuggestionsEnabled();
+
+// Whether Smart Tab Sharing is enabled for the ContextualTasksContext feature.
+extern bool GetIsSmartTabSharingEnabled();
+
+// Returns the timeout for smart tab sharing tab selection.
+extern base::TimeDelta GetSmartTabSharingTabSelectionTimeout();
+
+// Returns the score threshold required to display the smart tab sharing promo.
+extern double GetSmartTabSharingPromoScoreThreshold();
 
 // Enables tab auto-chip for contextual tasks. When disabled, no suggested
 // chips will be shown in the composebox automatically.
@@ -213,6 +247,10 @@ extern bool ShouldForceCountryCodeUS();
 
 // Returns the user agent suffix to use for requests.
 extern std::string GetContextualTasksUserAgentSuffix();
+
+// Returns the URL parameter name to check for NLM mode.
+extern std::string GetContextualTasksNlmUrlParam();
+extern bool IsCustomNlmUiEnabled();
 
 // Whether the contextual tasks context quality should be logged.
 extern bool ShouldLogContextualTasksContextQuality();
@@ -237,18 +275,40 @@ extern bool ShouldUseSearchResultsScope();
 // Returns whether basic mode should be enabled.
 extern bool GetIsBasicModeEnabled();
 
-// Returns whether the z-order of the composebox should be changed in basic mode.
+// Returns whether the z-order of the composebox should be changed in basic
+// mode.
 extern bool ShouldEnableBasicModeZOrder();
 
 // Returns whether the cookie sync should be enabled.
 extern bool ShouldEnableCookieSync();
 
+// Returns whether the cookie prefetch should be enabled.
+extern bool ShouldEnableCookiePrefetch();
+
 // Returns whether the input plate can be locked and unlocked by a message
 // from AIM.
 extern bool ShouldEnableLockAndUnlockInputCapability();
 
+// Returns whether the Stratus dark mode colors should be used.
+extern bool ShouldUseStratusDarkModeColors();
+
+// Returns whether the file hint is enabled in the composebox.
+extern bool GetEnableFileHint();
+
+// Returns whether the composebox jump fix is enabled.
+extern bool GetEnableComposeboxJumpFix();
+
 // Returns the UI option to expand contextual tasks side panel to tab.
 extern ExpandButtonOption GetExpandButtonOption();
+
+// Returns whether the rounded clip-path is enabled.
+extern bool IsRoundedClipPathEnabled();
+
+// Returns whether the pin button in toolbar is enabled.
+extern bool IsContextualTasksPinButtonInToolbarEnabled();
+
+// Returns whether the webpage APC comparison is enabled.
+extern bool GetIsWebpageApcComparisonEnabled();
 
 namespace flag_descriptions {
 
@@ -258,8 +318,6 @@ extern const char kContextualTasksContextLibraryName[];
 extern const char kContextualTasksContextLibraryDescription[];
 extern const char kContextualTasksContextName[];
 extern const char kContextualTasksContextDescription[];
-extern const char kContextualTasksExpandButtonName[];
-extern const char kContextualTasksExpandButtonDescription[];
 extern const char kContextualTasksSuggestionsEnabledName[];
 extern const char kContextualTasksSuggestionsEnabledDescription[];
 

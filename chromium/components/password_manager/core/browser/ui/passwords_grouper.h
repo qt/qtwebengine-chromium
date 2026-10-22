@@ -7,6 +7,7 @@
 
 #include "base/functional/callback_forward.h"
 #include "base/memory/weak_ptr.h"
+#include "base/types/strong_alias.h"
 #include "components/affiliations/core/browser/affiliation_utils.h"
 #include "components/password_manager/core/browser/passkey_credential.h"
 #include "components/password_manager/core/browser/ui/affiliated_group.h"
@@ -81,7 +82,8 @@ class PasswordsGrouper {
     ~Credentials();
 
     // Password forms grouped by username-password keys.
-    std::map<UsernamePasswordKey, std::vector<PasswordForm>> forms;
+    std::map<UsernamePasswordKey, std::vector<std::unique_ptr<PasswordForm>>>
+        forms;
 
     // List of passkeys associated to the group.
     std::vector<PasskeyCredential> passkeys;
@@ -116,7 +118,8 @@ class PasswordsGrouper {
 
   // Structure to keep track of the blocked sites by user. Key represents a name
   // displayed in the UI.
-  std::map<std::string, std::vector<PasswordForm>> blocked_sites_;
+  std::map<std::string, std::vector<std::unique_ptr<PasswordForm>>>
+      blocked_sites_;
 
   // The set of domains that the server uses as an extension to the PSL.
   base::flat_set<std::string> psl_extensions_;

@@ -17,7 +17,7 @@ namespace openscreen::cast {
 
 // A resolution in pixels.
 struct Resolution {
-  static bool TryParse(const Json::Value& value, Resolution* out);
+  static ErrorOr<Resolution> TryParse(const Json::Value& value);
   bool IsValid() const;
   Json::Value ToJson() const;
 
@@ -35,7 +35,7 @@ struct Resolution {
 
 // A resolution in pixels and a frame rate.
 struct Dimensions {
-  static bool TryParse(const Json::Value& value, Dimensions* out);
+  static ErrorOr<Dimensions> TryParse(const Json::Value& value);
   bool IsValid() const;
   Json::Value ToJson() const;
 

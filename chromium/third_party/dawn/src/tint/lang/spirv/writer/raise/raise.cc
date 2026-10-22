@@ -34,6 +34,7 @@
 #include "src/tint/lang/core/ir/transform/block_decorated_structs.h"
 #include "src/tint/lang/core/ir/transform/builtin_polyfill.h"
 #include "src/tint/lang/core/ir/transform/builtin_scalarize.h"
+#include "src/tint/lang/core/ir/transform/collapse_subgroup_min_max.h"
 #include "src/tint/lang/core/ir/transform/combine_access_instructions.h"
 #include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
 #include "src/tint/lang/core/ir/transform/decompose_access.h"
@@ -94,11 +95,8 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         TINT_CHECK_RESULT(core::ir::transform::PreventInfiniteLoops(module));
     }
 
-    if (options.resource_table.has_value()) {
-        spirv::writer::raise::ResourceTableHelper helper;
-        TINT_CHECK_RESULT(
-            core::ir::transform::ResourceTable(module, options.resource_table.value(), &helper));
-    }
+    spirv::writer::raise::ResourceTableHelper helper;
+    TINT_CHECK_RESULT(core::ir::transform::ResourceTable(module, options.resource_table, &helper));
 
     // PrepareImmediateData must come before any transform that needs internal immediate data.
     core::ir::transform::PrepareImmediateDataConfig immediate_data_config;
@@ -133,6 +131,8 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     core_polyfills.pack_4xu8_clamp = true;
     core_polyfills.pack_unpack_4x8_norm = options.workarounds.polyfill_pack_unpack_4x8_norm;
     core_polyfills.abs_signed_int = true;
+    core_polyfills.length_scalar_float = options.workarounds.polyfill_length_scalar_float;
+    core_polyfills.distance_scalar_float = options.workarounds.polyfill_distance_scalar_float;
     core_polyfills.subgroup_broadcast_f16 = options.workarounds.polyfill_subgroup_broadcast_f16;
     core_polyfills.saturate_as_min_max = options.workarounds.polyfill_saturate_as_min_max_f16;
     TINT_CHECK_RESULT(core::ir::transform::BuiltinPolyfill(module, core_polyfills));
@@ -140,8 +140,6 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     core::ir::transform::ConversionPolyfillConfig conversion_polyfills;
     conversion_polyfills.ftoi = true;
     TINT_CHECK_RESULT(core::ir::transform::ConversionPolyfill(module, conversion_polyfills));
-
-    TINT_CHECK_RESULT(core::ir::transform::MultiplanarExternalTexture(module, multiplanar_map));
 
     if (!options.disable_workgroup_init &&
         !options.extensions.use_zero_initialize_workgroup_memory) {
@@ -154,8 +152,14 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     core::ir::transform::DirectVariableAccessOptions dva_options;
     dva_options.transform_function = true;
     dva_options.transform_private = true;
-    dva_options.transform_handle = options.workarounds.dva_transform_handle;
+    dva_options.transform_handle = options.workarounds.dva_transform_handle
+                                       ? core::ir::transform::HandleTransformLevel::kFull
+                                       : core::ir::transform::HandleTransformLevel::kExternal;
     TINT_CHECK_RESULT(core::ir::transform::DirectVariableAccess(module, dva_options));
+
+    // Must come after DirectVariableAccess as we need all ExternalTextures to have their functions
+    // flattened.
+    TINT_CHECK_RESULT(core::ir::transform::MultiplanarExternalTexture(module, multiplanar_map));
 
     // Fixup loads of binding_arrays of handles that may have been introduced by
     // DirectVariableAccess (DVA). Vulkan drivers that need DVA of handle expect binding_arrays to
@@ -197,12 +201,19 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         TINT_CHECK_RESULT(core::ir::transform::DemoteToHelper(module));
     }
 
+    if (options.workarounds.collapse_subgroup_min_max) {
+        TINT_CHECK_RESULT(core::ir::transform::CollapseSubgroupMinMax(module));
+    }
+
     raise::PolyfillConfig config = {
         .use_vulkan_memory_model = options.extensions.use_vulkan_memory_model,
         .version = options.spirv_version,
         .subgroup_shuffle_clamped = options.workarounds.subgroup_shuffle_clamped,
         .texture_sample_compare_depth_cube_array =
-            options.workarounds.texture_sample_compare_depth_cube_array};
+            options.workarounds.texture_sample_compare_depth_cube_array,
+        .cooperative_matrix_stride_is_matrix_elements =
+            options.workarounds.cooperative_matrix_stride_is_matrix_elements,
+    };
     TINT_CHECK_RESULT(raise::BuiltinPolyfill(module, config));
     TINT_CHECK_RESULT(raise::ExpandImplicitSplats(module));
 
@@ -216,11 +227,11 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
         .signed_negation = true, .signed_arithmetic = true, .signed_shiftleft = true};
     TINT_CHECK_RESULT(core::ir::transform::SignedIntegerPolyfill(module, signed_integer_cfg));
 
-    // AMD mesa front end optimizer bug for unary negation and abs.
-    // Fixed in 25.3 - See crbug.com/448294721
+    // AMD Mesa front end optimizer bug for unary f32 and f16 negation and abs.
+    // Fixed in 25.3 - See crbug.com/448294721 and crbug.com/500099471
     raise::UnaryPolyfillConfig unary_polyfill_cfg = {
-        .polyfill_f32_negation = options.workarounds.polyfill_unary_f32_negation,
-        .polyfill_f32_abs = options.workarounds.polyfill_f32_abs};
+        .polyfill_float_negation = options.workarounds.polyfill_float_negation,
+        .polyfill_float_abs = options.workarounds.polyfill_float_abs};
 
     TINT_CHECK_RESULT(raise::UnaryPolyfill(module, unary_polyfill_cfg));
 
@@ -232,9 +243,15 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
     }
     TINT_CHECK_RESULT(raise::RemoveUnreachableInLoopContinuing(module));
     TINT_CHECK_RESULT(raise::ShaderIO(
-        module, raise::ShaderIOConfig{immediate_data_layout, options.emit_vertex_point_size,
-                                      !options.extensions.use_storage_input_output_16,
-                                      options.polyfill_pixel_center, options.depth_range_offsets}));
+        module, raise::ShaderIOConfig{
+                    .immediate_data_layout = immediate_data_layout,
+                    .colour_index_to_binding_point = options.colour_index_to_binding_point,
+                    .emit_vertex_point_size = options.emit_vertex_point_size,
+                    .polyfill_f16_io = !options.extensions.use_storage_input_output_16,
+                    .polyfill_pixel_center = options.polyfill_pixel_center,
+                    .multisampled_framebuffer_fetch = options.multisampled_framebuffer_fetch,
+                    .depth_range_offsets = options.depth_range_offsets,
+                }));
 
     // ForkExplicitLayoutTypes must come after DecomposeAccess, since it rewrites
     // host-shareable array types to use the explicitly laid array type defined by the SPIR-V

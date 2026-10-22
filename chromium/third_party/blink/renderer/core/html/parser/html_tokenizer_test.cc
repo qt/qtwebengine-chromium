@@ -27,4 +27,50 @@ TEST(HTMLTokenizerTest, ZeroOffsetAttributeNameRange) {
   EXPECT_EQ(nullptr, tokenizer->NextToken(input2));
 }
 
+TEST(HTMLTokenizerTest, ProcessingInstruction) {
+  test::TaskEnvironment task_environment;
+  HTMLParserOptions options;
+  std::unique_ptr<HTMLTokenizer> tokenizer =
+      std::make_unique<HTMLTokenizer>(options);
+  SegmentedString input("<?target data?>");
+  HTMLToken* token = tokenizer->NextToken(input);
+  ASSERT_TRUE(token);
+  EXPECT_EQ(HTMLToken::kProcessingInstruction, token->GetType());
+  EXPECT_EQ("target", token->GetProcessingInstructionTarget().AsString());
+  EXPECT_EQ("data", String(token->Data().AsString()));
+}
+
+TEST(HTMLTokenizerTest, HasEntity) {
+  test::TaskEnvironment task_environment;
+  HTMLParserOptions options;
+
+  std::unique_ptr<HTMLTokenizer> tokenizer =
+      std::make_unique<HTMLTokenizer>(options);
+  SegmentedString input1("a<");
+  HTMLToken* token1 = tokenizer->NextToken(input1);
+  EXPECT_TRUE(token1);
+  if (token1) {
+    EXPECT_EQ(HTMLToken::kCharacter, token1->GetType());
+    EXPECT_FALSE(token1->HasEntity());
+  }
+
+  tokenizer = std::make_unique<HTMLTokenizer>(options);
+  SegmentedString input2("&amp;<");
+  HTMLToken* token2 = tokenizer->NextToken(input2);
+  EXPECT_TRUE(token2);
+  if (token2) {
+    EXPECT_EQ(HTMLToken::kCharacter, token2->GetType());
+    EXPECT_TRUE(token2->HasEntity());
+  }
+
+  tokenizer = std::make_unique<HTMLTokenizer>(options);
+  SegmentedString input3("&auml;<");
+  HTMLToken* token3 = tokenizer->NextToken(input3);
+  EXPECT_TRUE(token3);
+  if (token3) {
+    EXPECT_EQ(HTMLToken::kCharacter, token3->GetType());
+    EXPECT_TRUE(token3->HasEntity());
+  }
+}
+
 }  // namespace blink

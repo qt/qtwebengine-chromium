@@ -121,10 +121,12 @@ Node* DOMPatchSupport::PatchNode(Node* node,
   auto* target_element = To<Element>(target_node);
 
   // FIXME: This code should use one of createFragment* in Serialization.h
-  if (IsA<HTMLDocument>(GetDocument()))
-    fragment->ParseHTML(markup, target_element, /*registry*/ nullptr);
-  else
+  if (IsA<HTMLDocument>(GetDocument())) {
+    fragment->ParseHTML(markup, target_element,
+                        node->GetTreeScope().customElementRegistry());
+  } else {
     fragment->ParseXML(markup, target_element, IGNORE_EXCEPTION);
+  }
 
   // Compose the old list.
   ContainerNode* parent_node = node->parentNode();
@@ -134,7 +136,7 @@ Node* DOMPatchSupport::PatchNode(Node* node,
     old_list.push_back(CreateDigest(child, nullptr));
 
   // Compose the new list.
-  String markup_copy = markup.LowerASCII();
+  String markup_copy = markup.ToAsciiLower();
   HeapVector<Member<Digest>> new_list;
   for (Node* child = parent_node->firstChild(); child != node;
        child = child->nextSibling())
@@ -142,12 +144,12 @@ Node* DOMPatchSupport::PatchNode(Node* node,
   for (Node* child = fragment->firstChild(); child;
        child = child->nextSibling()) {
     if (IsA<HTMLHeadElement>(*child) && !child->hasChildren() &&
-        markup_copy.Find("</head>") == kNotFound) {
+        !markup_copy.contains("</head>")) {
       // HTML5 parser inserts empty <head> tag whenever it parses <body>
       continue;
     }
     if (IsA<HTMLBodyElement>(*child) && !child->hasChildren() &&
-        markup_copy.Find("</body>") == kNotFound) {
+        !markup_copy.contains("</body>")) {
       // HTML5 parser inserts empty <body> tag whenever it parses </head>
       continue;
     }

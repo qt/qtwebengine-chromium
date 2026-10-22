@@ -5,6 +5,7 @@
 #ifndef CAST_STREAMING_PUBLIC_SENDER_SESSION_H_
 #define CAST_STREAMING_PUBLIC_SENDER_SESSION_H_
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -14,9 +15,10 @@
 #include "cast/streaming/capture_configs.h"
 #include "cast/streaming/impl/session_config.h"
 #include "cast/streaming/impl/statistics_analyzer.h"
+#include "cast/streaming/input.pb.h"
 #include "cast/streaming/public/answer_messages.h"
 #include "cast/streaming/public/capture_recommendations.h"
-#include "cast/streaming/public/offer_messages.h"
+#include "cast/streaming/public/protobuf_messenger.h"
 #include "cast/streaming/public/rpc_messenger.h"
 #include "cast/streaming/public/sender.h"
 #include "cast/streaming/public/session_messenger.h"
@@ -173,6 +175,16 @@ class SenderSession final {
   // recorded unless this field is set.
   void SetStatsClient(SenderStatsClient* client);
 
+  // Set the callback for handling input events. If set, future negotiations
+  // will include support for input events. If not set, the sender will not
+  // request input messaging with the receiver.
+  // NOTE: resetting the callback to null will not force a renegotiation -- the
+  // embedder is responsible for deciding what happens next with the session.
+  void SetInputCallback(std::function<void(InputMessage)> callback);
+
+  // Sends an input message to the remote.
+  void SendInputMessage(const InputMessage& message);
+
   // The RPC messenger for this session. NOTE: RPC messages may come at
   // any time from the receiver, so subscriptions to RPC remoting messages
   // should be done before calling `NegotiateRemoting`.
@@ -229,6 +241,7 @@ class SenderSession final {
   void OnAnswer(ErrorOr<ReceiverMessage> message);
   void OnCapabilitiesResponse(ErrorOr<ReceiverMessage> message);
   void OnRpcMessage(ErrorOr<ReceiverMessage> message);
+  void OnInputMessage(ErrorOr<ReceiverMessage> message);
 
   // Handles an error `message` response from a receiver. If the receiver does
   // not contain any error information, `default_error` will be reported
@@ -253,9 +266,6 @@ class SenderSession final {
   // Spawn a set of configured senders from the currently stored negotiation.
   ConfiguredSenders SelectSenders(const Answer& answer);
 
-  // Used by the RPC messenger to send outbound messages.
-  void SendRpcMessage(std::vector<uint8_t> message_body);
-
   // This session's configuration.
   Configuration config_;
 
@@ -264,9 +274,13 @@ class SenderSession final {
   // cast/protocol/castv2/streaming_schema.json.
   SenderSessionMessenger messenger_;
 
-  // The RPC messenger, which uses the session messager for sending RPC messages
-  // and handles subscriptions to RPC messages.
+  // The RPC messenger, which uses the session messenger for sending RPC
+  // messages and handles subscriptions to RPC messages.
   RpcMessenger rpc_messenger_;
+
+  // The INPUT messenger, which uses the session messenger for sending INPUT
+  // messages.
+  ProtobufMessenger<InputMessage> input_messenger_;
 
   // The packet router used for RTP/RTCP messaging across all senders.
   SenderPacketRouter packet_router_;

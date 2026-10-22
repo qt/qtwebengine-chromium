@@ -12,10 +12,8 @@
 #include "components/guest_view/browser/guest_view.h"
 #include "content/public/browser/global_routing_id.h"
 #include "extensions/common/api/mime_handler.mojom.h"
-#include "extensions/common/extension_id.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
-#include "third_party/blink/public/mojom/loader/transferrable_url_loader.mojom.h"
 
 namespace content {
 class WebContents;
@@ -24,62 +22,7 @@ struct ContextMenuParams;
 
 namespace extensions {
 class MimeHandlerViewGuestDelegate;
-
-// A container for a information necessary for a MimeHandler to handle a
-// resource stream.
-class StreamContainer {
- public:
-  StreamContainer(int tab_id,
-                  bool embedded,
-                  const GURL& handler_url,
-                  const ExtensionId& extension_id,
-                  blink::mojom::TransferrableURLLoaderPtr transferrable_loader,
-                  const GURL& original_url);
-
-  StreamContainer(const StreamContainer&) = delete;
-  StreamContainer& operator=(const StreamContainer&) = delete;
-
-  ~StreamContainer();
-
-  base::WeakPtr<StreamContainer> GetWeakPtr();
-
-  blink::mojom::TransferrableURLLoaderPtr TakeTransferrableURLLoader();
-
-  bool embedded() const { return embedded_; }
-  int tab_id() const { return tab_id_; }
-  GURL handler_url() const { return handler_url_; }
-  ExtensionId extension_id() const { return extension_id_; }
-
-  const std::string& mime_type() const { return mime_type_; }
-  const GURL& original_url() const { return original_url_; }
-  const GURL& stream_url() const { return stream_url_; }
-  net::HttpResponseHeaders* response_headers() const {
-    return response_headers_.get();
-  }
-
-  const mime_handler::PdfPluginAttributesPtr& pdf_plugin_attributes() const {
-    return pdf_plugin_attributes_;
-  }
-  void set_pdf_plugin_attributes(
-      mime_handler::PdfPluginAttributesPtr pdf_plugin_attributes) {
-    pdf_plugin_attributes_ = std::move(pdf_plugin_attributes);
-  }
-
- private:
-  const bool embedded_;
-  const int tab_id_;
-  const GURL handler_url_;
-  const ExtensionId extension_id_;
-  blink::mojom::TransferrableURLLoaderPtr transferrable_loader_;
-
-  std::string mime_type_;
-  GURL original_url_;
-  GURL stream_url_;
-  scoped_refptr<net::HttpResponseHeaders> response_headers_;
-  mime_handler::PdfPluginAttributesPtr pdf_plugin_attributes_;
-
-  base::WeakPtrFactory<StreamContainer> weak_factory_{this};
-};
+class StreamContainer;
 
 class MimeHandlerViewGuest
     : public guest_view::GuestView<MimeHandlerViewGuest> {
@@ -167,8 +110,6 @@ class MimeHandlerViewGuest
                               content::InvalidateTypes changed_flags) final;
   bool HandleContextMenu(content::RenderFrameHost& render_frame_host,
                          const content::ContextMenuParams& params) final;
-  bool PreHandleGestureEvent(content::WebContents* source,
-                             const blink::WebGestureEvent& event) final;
   content::JavaScriptDialogManager* GetJavaScriptDialogManager(
       content::WebContents* source) final;
   bool GuestSaveFrame(content::WebContents* guest_web_contents) final;
@@ -196,6 +137,8 @@ class MimeHandlerViewGuest
       const GURL& opener_url,
       const std::string& frame_name,
       const GURL& target_url,
+      WindowOpenDisposition disposition,
+      const blink::mojom::WindowFeatures& window_features,
       const content::StoragePartitionConfig& partition_config,
       content::SessionStorageNamespace* session_storage_namespace) override;
 

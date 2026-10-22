@@ -14,6 +14,8 @@
 
 #include "base/apple/scoped_dispatch_object.h"
 #include "base/files/file_path.h"
+#include "base/logging.h"
+#include "base/memory/safety_checks.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/file_system_access/file_path_watcher/file_path_watcher.h"
 #include "content/browser/file_system_access/file_path_watcher/file_path_watcher_fsevents_change_tracker.h"
@@ -28,6 +30,9 @@ namespace content {
 // directory. See file_path_watcher_mac.cc for the code that decides when to
 // use which one.
 class FilePathWatcherFSEvents : public FilePathWatcher::PlatformDelegate {
+  // TODO(https://crbug.com/495782021): Remove this macro.
+  ADVANCED_MEMORY_SAFETY_CHECKS();
+
  public:
   using ChangeEvent = FilePathWatcherFSEventsChangeTracker::ChangeEvent;
 
@@ -53,6 +58,12 @@ class FilePathWatcherFSEvents : public FilePathWatcher::PlatformDelegate {
       const FilePathWatcher::CallbackWithChangeInfo& callback,
       const FilePathWatcher::UsageChangeCallback& usage_callback) override;
   void Cancel() override;
+
+  // Sets the hook to be called by the FSEvents callback. This is used by
+  // unit tests to deterministically trigger race conditions.
+  void SetOnFSEventsCallbackForTesting(base::RepeatingClosure hook) {
+    on_fsevents_callback_for_testing_ = std::move(hook);
+  }
 
  private:
   static void FSEventsCallback(ConstFSEventStreamRef stream,
@@ -102,6 +113,9 @@ class FilePathWatcherFSEvents : public FilePathWatcher::PlatformDelegate {
   // Backend stream we receive event callbacks from (strong reference).
   // (Only accessed from the libdispatch queue.)
   FSEventStreamRef fsevent_stream_ = nullptr;
+
+  // Hook to be called by the FSEvents callback.
+  base::RepeatingClosure on_fsevents_callback_for_testing_;
 
   base::WeakPtrFactory<FilePathWatcherFSEvents> weak_factory_{this};
 };

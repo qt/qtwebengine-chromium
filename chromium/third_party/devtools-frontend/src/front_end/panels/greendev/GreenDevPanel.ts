@@ -4,6 +4,8 @@
 /* eslint-disable @devtools/no-imperative-dom-api */
 
 import type * as Common from '../../core/common/common.js';
+import * as Host from '../../core/host/host.js';
+import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -186,7 +188,34 @@ export class GreenDevPanel extends UI.Panel.Panel {
 
       const disclaimer = document.createElement('div');
       disclaimer.className = 'green-dev-floaty-disclaimer';
-      disclaimer.textContent = 'Relevant data is sent to Google';
+
+      const link = document.createElement('span');
+      link.className = 'disclaimer-link';
+      link.textContent = 'Relevant data';
+      disclaimer.appendChild(link);
+
+      disclaimer.appendChild(document.createTextNode(' is sent to Google'));
+
+      const tooltip = document.createElement('div');
+      tooltip.className = 'disclaimer-tooltip';
+
+      tooltip.appendChild(document.createTextNode(
+          'Chat messages and any data the inspected page can access via Web APIs are sent to Google and may be seen by human reviewers to improve this feature. This is an experimental AI feature and won\'t always get it right.'));
+      tooltip.appendChild(document.createElement('br'));
+      tooltip.appendChild(document.createElement('br'));
+
+      const learnMore = document.createElement('a');
+      const href = 'https://developer.chrome.com/docs/devtools/ai-assistance' as Platform.DevToolsPath.UrlString;
+      learnMore.href = href;
+      learnMore.className = 'learn-more-link';
+      learnMore.textContent = 'Learn about AI in DevTools';
+      learnMore.addEventListener('click', event => {
+        event.preventDefault();
+        Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(href);
+      });
+      tooltip.appendChild(learnMore);
+
+      disclaimer.appendChild(tooltip);
       blueCard.appendChild(disclaimer);
 
       content.appendChild(blueCard);

@@ -96,7 +96,7 @@ std::unique_ptr<ProcessDiceHeaderDelegateImpl>
 ProcessDiceHeaderDelegateImpl::Create(content::WebContents* web_contents) {
   bool is_sync_signin_tab = false;
   signin_metrics::AccessPoint access_point =
-      signin_metrics::AccessPoint::kUnknown;
+      signin_metrics::AccessPoint::kWebSignin;
   signin_metrics::PromoAction promo_action =
       signin_metrics::PromoAction::PROMO_ACTION_NO_SIGNIN_PROMO;
   GURL redirect_url;
@@ -121,9 +121,6 @@ ProcessDiceHeaderDelegateImpl::Create(content::WebContents* web_contents) {
     }
 
     on_signin_header_received = tab_helper->GetOnSigninHeaderReceived();
-
-  } else {
-    access_point = signin_metrics::AccessPoint::kWebSignin;
   }
 
   // If there is no active `DiceTabHelper`, default to the in-browser error
@@ -191,8 +188,7 @@ bool ProcessDiceHeaderDelegateImpl::ShouldEnableSync() {
 }
 
 bool ProcessDiceHeaderDelegateImpl::ShouldEnableHistorySync() {
-  if (!base::FeatureList::IsEnabled(
-          syncer::kReplaceSyncPromosWithSignInPromos)) {
+  if (!syncer::IsReplaceSyncPromosWithSignInPromosEnabled()) {
     return false;
   }
   if (!is_sync_signin_tab_) {
@@ -221,8 +217,7 @@ bool ProcessDiceHeaderDelegateImpl::AttemptSettingPrimaryAccount(
   const SigninUIError error = CanOfferSignin(
       &profile_.get(), account_info.gaia, account_info.email,
       /*allow_account_from_other_profile=*/allow_account_from_other_profile);
-  if (error.IsOk() || !base::FeatureList::IsEnabled(
-                          syncer::kReplaceSyncPromosWithSignInPromos)) {
+  if (error.IsOk() || !syncer::IsReplaceSyncPromosWithSignInPromosEnabled()) {
     signin::IdentityManager* identity_manager =
         IdentityManagerFactory::GetForProfile(&profile_.get());
     identity_manager->GetPrimaryAccountMutator()->SetPrimaryAccount(
@@ -247,12 +242,7 @@ bool ProcessDiceHeaderDelegateImpl::AttemptSettingPrimaryAccount(
 // signin to browser is cleaned-up.
 void ProcessDiceHeaderDelegateImpl::AttemptChromeSignin(
     CoreAccountId account_id) {
- CHECK(!account_id.empty());
-
-  // Do not sign in if the access point is unknown.
-  if (access_point_ == signin_metrics::AccessPoint::kUnknown) {
-    return;
-  }
+  CHECK(!account_id.empty());
 
   signin::IdentityManager* identity_manager =
       IdentityManagerFactory::GetForProfile(&profile_.get());
@@ -346,8 +336,7 @@ void ProcessDiceHeaderDelegateImpl::CompleteChromeSignInAfterGaiaSignin(
     tab_helper->OnSyncSigninFlowComplete();
   }
 
-  if (base::FeatureList::IsEnabled(
-          syncer::kReplaceSyncPromosWithSignInPromos)) {
+  if (syncer::IsReplaceSyncPromosWithSignInPromosEnabled()) {
     if (!ShouldEnableHistorySync()) {
       return;
     }

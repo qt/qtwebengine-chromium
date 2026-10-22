@@ -9,6 +9,7 @@
 #include "base/containers/span.h"
 #include "third_party/jni_zero/jni_zero.h"
 #include "url/gurl.h"
+#include "url/url_jni_headers/GURL_shared_jni.h"
 
 namespace url {
 
@@ -16,9 +17,9 @@ class COMPONENT_EXPORT(URL) GURLAndroid {
  public:
   static GURL ToNativeGURL(JNIEnv* env,
                            const jni_zero::JavaRef<jobject>& j_gurl);
-  static jni_zero::ScopedJavaLocalRef<jobject> FromNativeGURL(JNIEnv* env,
-                                                              const GURL& gurl);
-  static jni_zero::ScopedJavaLocalRef<jobject> EmptyGURL(JNIEnv* env);
+  static jni_zero::ScopedJavaLocalRef<JGURL> FromNativeGURL(JNIEnv* env,
+                                                            const GURL& gurl);
+  static jni_zero::ScopedJavaLocalRef<JGURL> EmptyGURL(JNIEnv* env);
 };
 
 }  // namespace url

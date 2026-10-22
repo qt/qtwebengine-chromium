@@ -6,13 +6,16 @@
 
 #include <algorithm>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/command_line.h"
 #include "base/containers/flat_map.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/values.h"
 #include "chrome/browser/accessibility/phrase_segmentation/dependency_parser_model_loader.h"
@@ -28,6 +31,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/read_anything/read_anything_controller.h"
+#include "chrome/browser/ui/read_anything/read_anything_enums.h"
 #include "chrome/browser/ui/read_anything/read_anything_prefs.h"
 #include "chrome/browser/ui/read_anything/read_anything_side_panel_controller.h"
 #include "chrome/browser/ui/tabs/public/tab_features.h"
@@ -46,15 +50,20 @@
 #include "components/language/core/browser/language_model_manager.h"
 #include "components/language/core/common/locale_util.h"
 #include "components/language_detection/core/constants.h"
+#include "components/pdf/browser/pdf_frame_util.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/translate/core/browser/language_state.h"
 #include "components/translate/core/browser/translate_driver.h"
 #include "content/public/browser/browser_accessibility_state.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/scoped_accessibility_mode.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
 #include "net/http/http_status_code.h"
 #include "pdf/buildflags.h"
@@ -106,6 +115,7 @@ class ReadAnythingUntrustedPageHandler::DistillerDelegate
 
   void StartDistillation(dom_distiller::DomDistillerService* service,
                          content::WebContents* contents) {
+    start_time_ = base::TimeTicks::Now();
     // If existing distillation request, cancel it. This removes delegate as
     // observer of previous request and allow it to observe new request.
     viewer_handle_.reset();
@@ -121,6 +131,10 @@ class ReadAnythingUntrustedPageHandler::DistillerDelegate
   // dom_distiller::ViewRequestDelegate:
   void OnArticleReady(
       const dom_distiller::DistilledArticleProto* article_proto) override {
+    CHECK(!start_time_.is_null());
+    base::UmaHistogramMediumTimes(
+        "Accessibility.ReadAnything.TimeFromStartDistillationToOnArticleReady",
+        base::TimeTicks::Now() - start_time_);
     handler_->ProcessDistilledArticle(article_proto);
     viewer_handle_.reset();
   }
@@ -133,6 +147,7 @@ class ReadAnythingUntrustedPageHandler::DistillerDelegate
  private:
   raw_ptr<ReadAnythingUntrustedPageHandler> handler_;
   std::unique_ptr<dom_distiller::ViewerHandle> viewer_handle_;
+  base::TimeTicks start_time_;
 };
 
 namespace {
@@ -228,6 +243,17 @@ InstallationState GetInstallationStateFromStatusCode(
 }
 #endif
 
+constexpr std::string_view kRendererLinkRequestHistogram =
+    "Accessibility.ReadAnything.RendererRequestForLinkClick.IsFromObservedTree";
+constexpr std::string_view kRendererImageRequestHistogram =
+    "Accessibility.ReadAnything.RendererRequestForImageDataDownload."
+    "IsFromObservedTree";
+constexpr std::string_view kRendererScrollRequestHistogram =
+    "Accessibility.ReadAnything.RendererRequestForScrollToTargetNode."
+    "IsFromObservedTree";
+constexpr std::string_view kRendererSelectionRequestHistogram =
+    "Accessibility.ReadAnything.RendererRequestForSelection.IsFromObservedTree";
+
 }  // namespace
 
 ReadAnythingWebContentsObserver::ReadAnythingWebContentsObserver(
@@ -258,6 +284,8 @@ ReadAnythingWebContentsObserver::ReadAnythingWebContentsObserver(
   if (need_reset) {
     web_contents->ResetAccessibility();
   }
+
+  DidUpdateAudioMutingState(web_contents->IsAudioMuted());
 }
 
 ReadAnythingWebContentsObserver::~ReadAnythingWebContentsObserver() = default;
@@ -334,9 +362,7 @@ ReadAnythingUntrustedPageHandler::ReadAnythingUntrustedPageHandler(
 
   extensions::ExtensionRegistry::Get(profile_)->AddObserver(this);
 #else
-  if (features::IsReadAnythingReadAloudEnabled()) {
-    extension_wrapper_->ActivateSpeechEngine(profile_);
-  }
+  extension_wrapper_->ActivateSpeechEngine(profile_);
 #endif
   if (features::IsImmersiveReadAnythingEnabled()) {
     read_anything_controller_ =
@@ -359,25 +385,23 @@ ReadAnythingUntrustedPageHandler::ReadAnythingUntrustedPageHandler(
     tab_ = side_panel_controller_->tab();
   }
 
+  tab_discard_subscription_ = tab_->RegisterWillDiscardContents(
+      base::BindRepeating(&ReadAnythingUntrustedPageHandler::OnTabDiscarded,
+                          weak_factory_.GetWeakPtr()));
+
   PrefService* prefs = profile_->GetPrefs();
-  double speech_rate =
-      features::IsReadAnythingReadAloudEnabled()
-          ? prefs->GetDouble(prefs::kAccessibilityReadAnythingSpeechRate)
-          : 1.0;
-  read_anything::mojom::HighlightGranularity highlight_granularity =
-      features::IsReadAnythingReadAloudEnabled()
-          ? static_cast<read_anything::mojom::HighlightGranularity>(
-                prefs->GetDouble(
-                    prefs::kAccessibilityReadAnythingHighlightGranularity))
-          : read_anything::mojom::HighlightGranularity::kDefaultValue;
   base::DictValue voices = base::DictValue();
-  if (features::IsReadAnythingReadAloudEnabled()) {
-    voices = prefs->GetDict(prefs::kAccessibilityReadAnythingVoiceName).Clone();
-  }
+  voices = prefs->GetDict(prefs::kAccessibilityReadAnythingVoiceName).Clone();
   read_anything::mojom::LineFocus line_focus =
       features::IsReadAnythingLineFocusEnabled()
           ? static_cast<read_anything::mojom::LineFocus>(
                 prefs->GetInteger(prefs::kAccessibilityReadAnythingLineFocus))
+          : read_anything::mojom::LineFocus::kDefaultValue;
+  bool line_focus_enabled = line_focus != read_anything::mojom::LineFocus::kOff;
+  read_anything::mojom::LineFocus last_non_disabled_line_focus =
+      features::IsReadAnythingLineFocusEnabled()
+          ? static_cast<read_anything::mojom::LineFocus>(prefs->GetInteger(
+                prefs::kAccessibilityReadAnythingLastNonDisabledLineFocus))
           : read_anything::mojom::LineFocus::kDefaultValue;
 
   page_->OnSettingsRestoredFromPrefs(
@@ -391,12 +415,12 @@ ReadAnythingUntrustedPageHandler::ReadAnythingUntrustedPageHandler(
       prefs->GetBoolean(prefs::kAccessibilityReadAnythingImagesEnabled),
       static_cast<read_anything::mojom::Colors>(
           prefs->GetInteger(prefs::kAccessibilityReadAnythingColorInfo)),
-      speech_rate, std::move(voices),
-      features::IsReadAnythingReadAloudEnabled()
-          ? prefs->GetList(prefs::kAccessibilityReadAnythingLanguagesEnabled)
-                .Clone()
-          : base::ListValue(),
-      highlight_granularity, line_focus);
+      prefs->GetDouble(prefs::kAccessibilityReadAnythingSpeechRate),
+      std::move(voices),
+      prefs->GetList(prefs::kAccessibilityReadAnythingLanguagesEnabled).Clone(),
+      static_cast<read_anything::mojom::HighlightGranularity>(prefs->GetDouble(
+          prefs::kAccessibilityReadAnythingHighlightGranularity)),
+      last_non_disabled_line_focus, line_focus_enabled);
 
   // Get user's default language to check for compatible fonts.
   language::LanguageModel* language_model =
@@ -415,7 +439,8 @@ ReadAnythingUntrustedPageHandler::ReadAnythingUntrustedPageHandler(
                 weak_factory_.GetWeakPtr()));
   }
 
-  if (features::IsReadAnythingWithReadabilityEnabled()) {
+  if (features::IsReadAnythingWithReadabilityEnabled() &&
+      !features::IsReadAnythingReadAloudPhraseHighlightingEnabled()) {
     // Set the JavaScript world ID.
     if (!dom_distiller::DistillerJavaScriptWorldIdIsSet()) {
       dom_distiller::SetDistillerJavaScriptWorldId(
@@ -470,9 +495,7 @@ ReadAnythingUntrustedPageHandler::~ReadAnythingUntrustedPageHandler() {
   if (session_controller) {
     session_controller->RemoveObserver(this);
   }
-  if (features::IsReadAnythingReadAloudEnabled()) {
-    extension_wrapper_->ReleaseSpeechEngine(profile_);
-  }
+  extension_wrapper_->ReleaseSpeechEngine(profile_);
   extension_wrapper_.reset();
 #endif
 }
@@ -502,22 +525,14 @@ void ReadAnythingUntrustedPageHandler::DidStopLoading() {
 }
 
 bool ReadAnythingUntrustedPageHandler::CheckForPdfContentAfterLoad() {
-#if BUILDFLAG(ENABLE_PDF)
-  content::WebContents* main_contents = main_observer_->web_contents();
-  if (!chrome_pdf::features::IsOopifPdfEnabled()) {
-    std::vector<content::WebContents*> inner_contents =
-        main_contents ? main_contents->GetInnerWebContents()
-                      : std::vector<content::WebContents*>();
-    // If this page was previously recognized as not a pdf from the original
-    // call to PrimaryPageChanged() but it's now recognized as a PDF after the
-    // page has finished loaded, call PrimaryPageChanged() again to redistill.
-    if (!is_pdf_ && AreInnerContentsPdfContent(inner_contents)) {
-      PrimaryPageChanged();
-      return true;
-    }
+  // If this page was previously recognized as not a pdf from the original
+  // call to PrimaryPageChanged() but it's now recognized as a PDF after the
+  // page has finished loaded, notify the page of the new tree as a PDF.
+  if (!is_pdf_with_frame_) {
+    SetUpPdfObserver();
+    CheckIfActiveAXTreeChangedToPdf();
   }
-#endif
-  return false;
+  return is_pdf_with_frame_;
 }
 
 void ReadAnythingUntrustedPageHandler::DidUpdateAudioMutingState(bool muted) {
@@ -538,6 +553,7 @@ bool ReadAnythingUntrustedPageHandler::AreInnerContentsPdfContent(
 
 void ReadAnythingUntrustedPageHandler::WebContentsDestroyed() {
   translate_observation_.Reset();
+  audible_closure_.RunAndReset();
 }
 
 void ReadAnythingUntrustedPageHandler::AccessibilityEventReceived(
@@ -817,6 +833,38 @@ void ReadAnythingUntrustedPageHandler::OnCopy() {
   }
 }
 
+bool ReadAnythingUntrustedPageHandler::IsObservingTree(
+    const ui::AXTreeID& tree_id) const {
+  content::RenderFrameHost* rfh =
+      content::RenderFrameHost::FromAXTreeID(tree_id);
+  if (!rfh) {
+    return false;
+  }
+
+  content::WebContents* contents = !!pdf_observer_
+                                       ? pdf_observer_->web_contents()
+                                       : main_observer_->web_contents();
+
+  if (!contents) {
+    return false;
+  }
+
+  bool are_contents_pdf =
+      chrome_pdf::features::IsOopifPdfEnabled()
+          ? !!pdf::PdfViewerStreamManager::FromWebContents(contents)
+          : !!pdf_observer_;
+
+  if (!are_contents_pdf) {
+    return rfh == contents->GetPrimaryMainFrame();
+  }
+
+  content::RenderFrameHost* pdf_rfh =
+      chrome_pdf::features::IsOopifPdfEnabled()
+          ? pdf_frame_util::FindFullPagePdfExtensionHost(contents)
+          : pdf_frame_util::FindPdfChildFrame(contents->GetPrimaryMainFrame());
+  return pdf_rfh && rfh == pdf_rfh;
+}
+
 void ReadAnythingUntrustedPageHandler::OnLineSpaceChange(
     read_anything::mojom::LineSpacing line_spacing) {
   profile_->GetPrefs()->SetInteger(prefs::kAccessibilityReadAnythingLineSpacing,
@@ -894,6 +942,11 @@ void ReadAnythingUntrustedPageHandler::OnLineFocusChanged(
   if (features::IsReadAnythingLineFocusEnabled()) {
     profile_->GetPrefs()->SetInteger(prefs::kAccessibilityReadAnythingLineFocus,
                                      static_cast<size_t>(line_focus));
+    if (line_focus != read_anything::mojom::LineFocus::kOff) {
+      profile_->GetPrefs()->SetInteger(
+          prefs::kAccessibilityReadAnythingLastNonDisabledLineFocus,
+          static_cast<size_t>(line_focus));
+    }
   }
 }
 
@@ -916,6 +969,13 @@ void ReadAnythingUntrustedPageHandler::OnReadAloudAudioStateChange(
 void ReadAnythingUntrustedPageHandler::OnLinkClicked(
     const ui::AXTreeID& target_tree_id,
     ui::AXNodeID target_node_id) {
+  bool is_observing_tree = IsObservingTree(target_tree_id);
+  base::UmaHistogramBoolean(kRendererLinkRequestHistogram, is_observing_tree);
+  if (!is_observing_tree) {
+    VLOG(1) << "Received link click request for tree_id " << target_tree_id
+            << " which is not currently being observed";
+    return;
+  }
   ui::AXActionData action_data;
   action_data.target_tree_id = target_tree_id;
   action_data.action = ax::mojom::Action::kDoDefault;
@@ -927,6 +987,13 @@ void ReadAnythingUntrustedPageHandler::OnLinkClicked(
 void ReadAnythingUntrustedPageHandler::OnImageDataRequested(
     const ui::AXTreeID& target_tree_id,
     ui::AXNodeID target_node_id) {
+  bool is_observing_tree = IsObservingTree(target_tree_id);
+  base::UmaHistogramBoolean(kRendererImageRequestHistogram, is_observing_tree);
+  if (!is_observing_tree) {
+    VLOG(1) << "Received image data request for tree_id " << target_tree_id
+            << " which is not currently being observed";
+    return;
+  }
   main_observer_->web_contents()->DownloadImageFromAxNode(
       target_tree_id, target_node_id,
       /*preferred_size=*/gfx::Size(),
@@ -944,6 +1011,7 @@ void ReadAnythingUntrustedPageHandler::OnImageDataDownloaded(
     const GURL& image_url,
     const std::vector<SkBitmap>& bitmaps,
     const std::vector<gfx::Size>& sizes) {
+  CHECK(IsObservingTree(target_tree_id));
   bool download_was_successful =
       network::IsSuccessfulStatus(http_status_code) || http_status_code == 0;
 
@@ -963,6 +1031,13 @@ void ReadAnythingUntrustedPageHandler::OnImageDataDownloaded(
 void ReadAnythingUntrustedPageHandler::ScrollToTargetNode(
     const ui::AXTreeID& target_tree_id,
     ui::AXNodeID target_node_id) {
+  bool is_observing_tree = IsObservingTree(target_tree_id);
+  base::UmaHistogramBoolean(kRendererScrollRequestHistogram, is_observing_tree);
+  if (!is_observing_tree) {
+    VLOG(1) << "Received scroll request for tree_id " << target_tree_id
+            << " which is not currently being observed";
+    return;
+  }
   ui::AXActionData action_data;
   action_data.target_tree_id = target_tree_id;
   action_data.target_node_id = target_node_id;
@@ -982,7 +1057,8 @@ void ReadAnythingUntrustedPageHandler::CloseUI() {
   CHECK(read_anything_controller_);
   DCHECK(read_anything_controller_->GetPresentationState() ==
          ReadAnythingController::PresentationState::kInImmersiveOverlay);
-  read_anything_controller_->CloseImmersiveUI();
+  read_anything_controller_->CloseImmersiveUI(
+      ReadAnythingCloseReason::kClosedByUser);
 }
 
 void ReadAnythingUntrustedPageHandler::TogglePinState() {
@@ -1013,8 +1089,21 @@ void ReadAnythingUntrustedPageHandler::AckReadingModeHidden() {
   }
 }
 
+void ReadAnythingUntrustedPageHandler::OnSpeechEngineStalled() {
+#if !BUILDFLAG(IS_CHROMEOS)
+  extensions::ExtensionRegistrar* extension_registrar =
+      extensions::ExtensionRegistrar::Get(profile_);
+
+  if (extension_registrar) {
+    extension_registrar->ReloadExtension(
+        extension_misc::kComponentUpdaterTTSEngineExtensionId);
+  }
+#endif
+}
+
 void ReadAnythingUntrustedPageHandler::PerformActionInTargetTree(
     const ui::AXActionData& data) {
+  CHECK(IsObservingTree(data.target_tree_id));
   ui::AXActionHandlerBase* handler =
       ui::AXActionHandlerRegistry::GetInstance()->GetActionHandler(
           data.target_tree_id);
@@ -1030,6 +1119,14 @@ void ReadAnythingUntrustedPageHandler::OnSelectionChange(
     int anchor_offset,
     ui::AXNodeID focus_node_id,
     int focus_offset) {
+  bool is_observing_tree = IsObservingTree(target_tree_id);
+  base::UmaHistogramBoolean(kRendererSelectionRequestHistogram,
+                            is_observing_tree);
+  if (!is_observing_tree) {
+    VLOG(1) << "Received selection request for tree_id " << target_tree_id
+            << " which is not currently being observed";
+    return;
+  }
   ui::AXActionData action_data;
   action_data.target_tree_id = target_tree_id;
   action_data.action = ax::mojom::Action::kSetSelection;
@@ -1037,13 +1134,8 @@ void ReadAnythingUntrustedPageHandler::OnSelectionChange(
   action_data.anchor_offset = anchor_offset;
   action_data.focus_node_id = focus_node_id;
   action_data.focus_offset = focus_offset;
-  ui::AXActionHandlerBase* handler =
-      ui::AXActionHandlerRegistry::GetInstance()->GetActionHandler(
-          target_tree_id);
-  if (!handler) {
-    return;
-  }
-  handler->PerformAction(action_data);
+
+  PerformActionInTargetTree(action_data);
 }
 
 void ReadAnythingUntrustedPageHandler::OnCollapseSelection() {
@@ -1099,9 +1191,13 @@ void ReadAnythingUntrustedPageHandler::Activate(
   if (active_) {
     last_open_trigger_ = open_trigger;
     tab_will_detach_ = false;
+    if (features::IsImmersiveReadAnythingEnabled()) {
+      // Signal that reading mode has been re-opened and is no longer hidden if
+      // it was previously marked as hidden.
+      OnGetPresentationState();
+    }
   }
-  if (features::IsReadAnythingReadAloudEnabled() && !active &&
-      !tab_will_detach_) {
+  if (!active && !tab_will_detach_) {
     page_->OnReadingModeHidden(tab_->IsActivated());
 
     // When Reading mode is hidden (with immersive flag enabled), we need to
@@ -1137,16 +1233,22 @@ void ReadAnythingUntrustedPageHandler::OnReadingModePresenterChanged() {
   OnGetPresentationState();
 }
 
+void ReadAnythingUntrustedPageHandler::OnTabDiscarded(
+    tabs::TabInterface* tab,
+    content::WebContents* old_contents,
+    content::WebContents* new_contents) {
+  main_observer_ = std::make_unique<ReadAnythingWebContentsObserver>(
+      weak_factory_.GetSafeRef(), new_contents, kReadAnythingAXMode);
+  SetUpPdfObserver();
+  OnActiveAXTreeIDChanged();
+}
+
 void ReadAnythingUntrustedPageHandler::OnDestroyed() {
   side_panel_controller_ = nullptr;
   read_anything_controller_ = nullptr;
 }
 
 void ReadAnythingUntrustedPageHandler::OnTabWillDetach() {
-  if (!features::IsReadAnythingReadAloudEnabled()) {
-    return;
-  }
-
   OnReadAloudAudioStateChange(false);
 
   // When multiple tabs are open, we receive this call multiple times, so only
@@ -1188,8 +1290,40 @@ void ReadAnythingUntrustedPageHandler::SetUpPdfObserver() {
 #endif  // BUILDFLAG(ENABLE_PDF)
 }
 
+void ReadAnythingUntrustedPageHandler::CheckIfActiveAXTreeChangedToPdf() {
+#if BUILDFLAG(ENABLE_PDF)
+  content::WebContents* contents = !!pdf_observer_
+                                       ? pdf_observer_->web_contents()
+                                       : main_observer_->web_contents();
+  bool are_contents_pdf =
+      chrome_pdf::features::IsOopifPdfEnabled()
+          ? !!pdf::PdfViewerStreamManager::FromWebContents(contents)
+          : !!pdf_observer_;
+  if (!are_contents_pdf) {
+    return;
+  }
+
+  content::RenderFrameHost* pdf_rfh =
+      chrome_pdf::features::IsOopifPdfEnabled()
+          ? pdf_frame_util::FindFullPagePdfExtensionHost(contents)
+          : pdf_frame_util::FindPdfChildFrame(contents->GetPrimaryMainFrame());
+  if (pdf_rfh) {
+    is_pdf_with_frame_ = true;
+    is_waiting_for_pdf_frame_ = false;
+    VLOG(1) << "Sending pdf tree with id " << pdf_rfh->GetAXTreeID();
+    page_->OnActiveAXTreeIDChanged(
+        pdf_rfh->GetAXTreeID(), pdf_rfh->GetPageUkmSourceId(), /*is_pdf=*/true);
+  } else {
+    VLOG(1) << "Page is a pdf, but has no pdf frame yet";
+    is_waiting_for_pdf_frame_ = true;
+  }
+#endif  // BUILDFLAG(ENABLE_PDF)
+}
+
 void ReadAnythingUntrustedPageHandler::OnActiveAXTreeIDChanged() {
-  is_pdf_ = false;
+  is_pdf_with_frame_ = false;
+  is_waiting_for_pdf_frame_ = false;
+
   // If the side panel is not active, we should not send the active tree id.
   // This check is skipped when immersive read anything is enabled because
   // there are times when the side panel is inactive but the Reading Mode
@@ -1238,39 +1372,69 @@ void ReadAnythingUntrustedPageHandler::OnActiveAXTreeIDChanged() {
   }
 
 #if BUILDFLAG(ENABLE_PDF)
-  bool is_pdf = chrome_pdf::features::IsOopifPdfEnabled()
-                    ? !!pdf::PdfViewerStreamManager::FromWebContents(contents)
-                    : !!pdf_observer_;
-  if (is_pdf) {
-    // What happens if there are multiple such `rfhs`?
-    contents->ForEachRenderFrameHost([this](content::RenderFrameHost* rfh) {
-      if (rfh->GetProcess()->IsPdf()) {
-        is_pdf_ = true;
-        VLOG(1) << "Sending pdf tree with id " << rfh->GetAXTreeID();
-        page_->OnActiveAXTreeIDChanged(rfh->GetAXTreeID(),
-                                       rfh->GetPageUkmSourceId(),
-                                       /*is_pdf=*/true);
-      }
-    });
+  CheckIfActiveAXTreeChangedToPdf();
+  // If is_waiting_for_pdf_frame_ is true, we know the current page is a pdf,
+  // but we don't have the necessary info to call OnActiveAXTreeIDChanged
+  // accurately, so wait until the pdf frame is loaded.
+  if (is_pdf_with_frame_ || is_waiting_for_pdf_frame_) {
     return;
   }
 #endif  // BUILDFLAG(ENABLE_PDF)
 
-  // When IsReadAnythingWithReadabilityEnabled is true, we still send AX tree
-  // for text selection.
   content::RenderFrameHost* rfh = contents->GetPrimaryMainFrame();
   VLOG(1) << "Sending non-pdf tree with id " << rfh->GetAXTreeID();
+
+  // TODO: crbug.com/444029483- Phrase highlighting currently doesn't work
+  // with the TS text segmentation method. Therefore, it doesn't work with
+  // Readability. Until phrase highlighting works with TSTextSegmentation,
+  // default to using Screen2x when the phrase highlighting flag is enabled.
+  const bool use_readability =
+      features::IsReadAnythingWithReadabilityEnabled() && !is_pdf_with_frame_ &&
+      !features::IsReadAnythingReadAloudPhraseHighlightingEnabled();
+
+  if (use_readability) {
+    // We must emit `kDistillationInProgress` before sending the new tree ID
+    // to the renderer with page_->OnActiveAXTreeIDChanged. This ensures the
+    // renderer pauses its update processing
+    // (`ReadAnythingAppController::IsUpdateProcessingPaused() == true`) for the
+    // new tree. If we reverse this order, any A11y events arriving in the gap
+    // will be processed on an incomplete tree and cause a crash.
+    page_->OnReadabilityDistillationStateChanged(
+        read_anything::mojom::ReadAnythingDistillationState::
+            kDistillationInProgress);
+  }
+
+  // When IsReadAnythingWithReadabilityEnabled is true, we still send AX tree
+  // for text selection.
   page_->OnActiveAXTreeIDChanged(rfh->GetAXTreeID(), rfh->GetPageUkmSourceId(),
                                  /*is_pdf=*/false);
 
-  RequestDomDistillerDistillation(contents);
+  if (use_readability) {
+    // Now that the renderer is prepped, request distillation. If this fails
+    // synchronously, the renderer will correctly fall back to Screen2x for the
+    // *new* tree.
+    RequestDomDistillerDistillation(contents);
+  }
 }
-
 void ReadAnythingUntrustedPageHandler::RequestDomDistillerDistillation(
     content::WebContents* content) {
-  if (!features::IsReadAnythingWithReadabilityEnabled() || is_pdf_) {
+  if (!features::IsReadAnythingWithReadabilityEnabled() ||
+      features::IsReadAnythingReadAloudPhraseHighlightingEnabled() ||
+      is_pdf_with_frame_) {
     return;
   }
+
+  // Don't attempt Readability distillation in automated tests. This is to prevent internal
+  // scripts from leaking.
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableAutomation)) {
+    page_->OnReadabilityDistillationStateChanged(
+        read_anything::mojom::ReadAnythingDistillationState::
+            kDistillationEmpty);
+    page_->UpdateContent("", "");
+    return;
+  }
+
   const GURL& url = content->GetLastCommittedURL();
   RecordDistillationSchemeHistogram(url);
 
@@ -1323,7 +1487,9 @@ void ReadAnythingUntrustedPageHandler::RecordDistillationSchemeHistogram(
 
 void ReadAnythingUntrustedPageHandler::ProcessDistilledArticle(
     const dom_distiller::DistilledArticleProto* article_proto) {
-  CHECK(features::IsReadAnythingWithReadabilityEnabled() && !is_pdf_);
+  CHECK(features::IsReadAnythingWithReadabilityEnabled() &&
+        !is_pdf_with_frame_ &&
+        !features::IsReadAnythingReadAloudPhraseHighlightingEnabled());
   if (article_proto && article_proto->pages_size() > 0) {
     dom_distiller_title_ = article_proto->title();
 

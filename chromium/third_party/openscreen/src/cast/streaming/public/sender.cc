@@ -157,7 +157,7 @@ Sender::EnqueueFrameResult Sender::EnqueueFrame(const EncodedFrame& frame) {
     slot.frame.reset();
     return PAYLOAD_TOO_LARGE;
   }
-  slot.send_flags.Resize(packet_count, YetAnotherBitVector::SET);
+  slot.send_flags.Resize(packet_count, BitVector::SET);
   slot.packet_sent_times.assign(packet_count, SenderPacketRouter::kNever);
 
   // Officially record the "enqueue."

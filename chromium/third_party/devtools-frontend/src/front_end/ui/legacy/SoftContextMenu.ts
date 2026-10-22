@@ -224,13 +224,7 @@ export class SoftContextMenu {
     if (item.tooltip) {
       Tooltip.install(menuItemElement, item.tooltip);
     }
-    const detailsForElement: ElementMenuDetails = {
-      actionId: undefined,
-      isSeparator: undefined,
-      customElement: undefined,
-      subItems: undefined,
-      subMenuTimer: undefined,
-    };
+    const detailsForElement: ElementMenuDetails = {};
 
     // Only add a jslog context if the item has a label. Menu items without a
     // label are containers for custom elements, which are responsible for adding
@@ -309,10 +303,6 @@ export class SoftContextMenu {
     ARIAUtils.markAsMenuItemSubMenu(menuItemElement);
     this.detailsForElementMap.set(menuItemElement, {
       subItems: item.subItems,
-      actionId: undefined,
-      isSeparator: undefined,
-      customElement: undefined,
-      subMenuTimer: undefined,
     });
 
     // If the menu contains a checkbox, add checkbox space in front of the label to align the items
@@ -335,7 +325,8 @@ export class SoftContextMenu {
     menuItemElement.addEventListener('mouseleave', (this.menuItemMouseLeave.bind(this) as EventListener), false);
 
     if (item.jslogContext) {
-      menuItemElement.setAttribute('jslog', `${VisualLogging.item().context(item.jslogContext)}`);
+      menuItemElement.setAttribute(
+          'jslog', `${VisualLogging.item(item.jslogContext).track({click: true, resize: true})}`);
     }
     return menuItemElement;
   }
@@ -344,11 +335,7 @@ export class SoftContextMenu {
     const separatorElement = document.createElement('div');
     separatorElement.classList.add('soft-context-menu-separator');
     this.detailsForElementMap.set(separatorElement, {
-      subItems: undefined,
-      actionId: undefined,
       isSeparator: true,
-      customElement: undefined,
-      subMenuTimer: undefined,
     });
     separatorElement.createChild('div', 'separator-line');
     return separatorElement;

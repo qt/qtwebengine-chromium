@@ -9,18 +9,17 @@ import {assert} from 'chrome://resources/js/assert.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {CustomizeChromeAction, recordCustomizeChromeAction} from './common.js';
-import type {CustomizeChromePageCallbackRouter, CustomizeChromePageHandlerInterface} from './customize_chrome.mojom-webui.js';
 import {CustomizeChromeApiProxy} from './customize_chrome_api_proxy.js';
 import {getCss} from './tools.css.js';
 import {getHtml} from './tools.html.js';
 
-export interface ToolChipsElement {
+export interface CustomizeChromeToolsElement {
   $: {
     showChipsToggle: CrToggleElement,
   };
 }
 
-export class ToolChipsElement extends CrLitElement {
+export class CustomizeChromeToolsElement extends CrLitElement {
   static get is() {
     return 'customize-chrome-tools';
   }
@@ -41,15 +40,9 @@ export class ToolChipsElement extends CrLitElement {
 
   protected accessor isChipsEnabled_: boolean = false;
 
-  private callbackRouter_: CustomizeChromePageCallbackRouter;
-  private pageHandler_: CustomizeChromePageHandlerInterface;
+  private apiProxy_: CustomizeChromeApiProxy =
+      CustomizeChromeApiProxy.getInstance();
   private setToolsSettingsListenerId_: number|null = null;
-
-  constructor() {
-    super();
-    this.pageHandler_ = CustomizeChromeApiProxy.getInstance().handler;
-    this.callbackRouter_ = CustomizeChromeApiProxy.getInstance().callbackRouter;
-  }
 
   // This function gets called when the element is attached to the DOM, which
   // allows the element to actively listen for changes to the tools visibility
@@ -58,10 +51,10 @@ export class ToolChipsElement extends CrLitElement {
     super.connectedCallback();
 
     this.setToolsSettingsListenerId_ =
-        this.callbackRouter_.setToolsSettings.addListener(
+        this.apiProxy_.callbackRouter.setToolsSettings.addListener(
             (isEnabled: boolean) => this.isChipsEnabled_ = isEnabled);
 
-    this.pageHandler_.updateToolChipsSettings();
+    this.apiProxy_.handler.updateToolChipsSettings();
   }
 
   // This function gets called when the element is detached from the DOM, so we
@@ -69,7 +62,8 @@ export class ToolChipsElement extends CrLitElement {
   override disconnectedCallback() {
     super.disconnectedCallback();
     assert(this.setToolsSettingsListenerId_);
-    this.callbackRouter_.removeListener(this.setToolsSettingsListenerId_);
+    this.apiProxy_.callbackRouter.removeListener(
+        this.setToolsSettingsListenerId_);
   }
 
   // This function updates the state of the toggle on this instance and sends
@@ -81,7 +75,7 @@ export class ToolChipsElement extends CrLitElement {
     chrome.metricsPrivate.recordBoolean(
         'NewTabPage.ActionChips.ToggledVisibility', isEnabled);
     this.isChipsEnabled_ = isEnabled;
-    this.pageHandler_.setToolChipsVisible(this.isChipsEnabled_);
+    this.apiProxy_.handler.setToolChipsVisible(this.isChipsEnabled_);
   }
 
   // This function gets called whenever the toggle is changed.
@@ -98,8 +92,9 @@ export class ToolChipsElement extends CrLitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'customize-chrome-tools': ToolChipsElement;
+    'customize-chrome-tools': CustomizeChromeToolsElement;
   }
 }
 
-customElements.define(ToolChipsElement.is, ToolChipsElement);
+customElements.define(
+    CustomizeChromeToolsElement.is, CustomizeChromeToolsElement);

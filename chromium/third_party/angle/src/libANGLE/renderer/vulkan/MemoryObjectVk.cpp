@@ -180,8 +180,11 @@ angle::Result MemoryObjectVk::createImage(
 {
     vk::Renderer *renderer = contextVk->getRenderer();
 
+    // The format of the image is dictated by |internalFormat|, we can't fall back to a renderable
+    // format if any, because the image must match the external one.
     const vk::Format &vkFormat     = renderer->getFormat(internalFormat);
-    angle::FormatID actualFormatID = vkFormat.getActualRenderableImageFormatID();
+    angle::FormatID actualFormatID =
+        vkFormat.getActualImageFormatID(vk::ImageFormatSupport::SampleOnly);
 
     VkExternalMemoryImageCreateInfo externalMemoryImageCreateInfo = {};
     externalMemoryImageCreateInfo.sType       = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
@@ -228,6 +231,7 @@ angle::Result MemoryObjectVk::createImage(
             importMemoryFdInfo.handleType = ToVulkanHandleType(mHandleType);
             importMemoryFdInfo.fd         = dup(mFd);
             importMemoryInfo              = &importMemoryFdInfo;
+            ANGLE_VK_CHECK(contextVk, importMemoryFdInfo.fd >= 0, VK_ERROR_OUT_OF_HOST_MEMORY);
             break;
         case gl::HandleType::ZirconVmo:
             ASSERT(mZirconHandle != ZX_HANDLE_INVALID);
@@ -243,16 +247,13 @@ angle::Result MemoryObjectVk::createImage(
             UNREACHABLE();
     }
 
-    // TODO(jmadill, spang): Memory sub-allocation. http://anglebug.com/40096464
     ASSERT(offset == 0);
     ASSERT(externalMemoryRequirements.size == mSize);
 
     VkMemoryPropertyFlags flags = hasProtectedContent ? VK_MEMORY_PROPERTY_PROTECTED_BIT : 0;
-    ANGLE_TRY(image->initExternalMemory(contextVk, renderer->getMemoryProperties(),
-                                        externalMemoryRequirements, 1, &importMemoryInfo,
-                                        contextVk->getDeviceQueueIndex(), flags));
-
-    return angle::Result::Continue;
+    return image->initExternalMemory(contextVk, renderer->getMemoryProperties(),
+                                     externalMemoryRequirements, 1, &importMemoryInfo,
+                                     contextVk->getDeviceQueueIndex(), flags);
 }
 
 }  // namespace rx

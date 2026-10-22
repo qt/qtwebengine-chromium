@@ -36,12 +36,6 @@
 #include <new>
 #endif
 
-// Disable the ipa-cp-clone optimization flag with MinGW 6.x or older (enabled by default with -O3)
-// See http://eigen.tuxfamily.org/bz/show_bug.cgi?id=556 for details.
-#if EIGEN_COMP_MINGW && EIGEN_GNUC_STRICT_LESS_THAN(6, 0, 0)
-#pragma GCC optimize("-fno-ipa-cp-clone")
-#endif
-
 // Prevent ICC from specializing std::complex operators that silently fail
 // on device. This allows us to use our own device-compatible specializations
 // instead.
@@ -53,7 +47,7 @@
 // this include file manages BLAS and MKL related macros
 // and inclusion of their respective header files
 #include "src/Core/util/MKL_support.h"
-#include "src/Core/util/AOCL_Support.h"    // ← ADD THIS
+#include "src/Core/util/AOCL_Support.h"
 
 
 #if defined(EIGEN_HAS_CUDA_FP16) || defined(EIGEN_HAS_HIP_FP16)
@@ -73,8 +67,7 @@
 #include <omp.h>
 #endif
 
-// MSVC for windows mobile does not have the errno.h file
-#if !(EIGEN_COMP_MSVC && EIGEN_OS_WINCE) && !EIGEN_COMP_ARM
+#if !EIGEN_COMP_ARM
 #define EIGEN_HAS_ERRNO
 #endif
 
@@ -125,8 +118,16 @@
 
 // required for __cpuid, needs to be included after cmath
 // also required for _BitScanReverse on Windows on ARM
-#if EIGEN_COMP_MSVC && (EIGEN_ARCH_i386_OR_x86_64 || EIGEN_ARCH_ARM64) && !EIGEN_OS_WINCE
+#if EIGEN_COMP_MSVC && (EIGEN_ARCH_i386_OR_x86_64 || EIGEN_ARCH_ARM64)
 #include <intrin.h>
+#endif
+
+// Required for querying cache sizes on Linux and macOS.
+#if EIGEN_OS_LINUX
+#include <unistd.h>
+#elif EIGEN_OS_MAC
+#include <sys/types.h>
+#include <sys/sysctl.h>
 #endif
 
 #if defined(EIGEN_USE_SYCL)
@@ -147,19 +148,9 @@
 #endif
 #endif
 
-#if defined EIGEN2_SUPPORT_STAGE40_FULL_EIGEN3_STRICTNESS || defined EIGEN2_SUPPORT_STAGE30_FULL_EIGEN3_API || \
-    defined EIGEN2_SUPPORT_STAGE20_RESOLVE_API_CONFLICTS || defined EIGEN2_SUPPORT_STAGE10_FULL_EIGEN2_API ||  \
-    defined EIGEN2_SUPPORT
-// This will generate an error message:
-#error Eigen2-support is only available up to version 3.2. Please go to "http://eigen.tuxfamily.org/index.php?title=Eigen2" for further information
-#endif
-
 namespace Eigen {
 
-// we use size_t frequently and we'll never remember to prepend it with std:: every time just to
-// ensure QNX/QCC support
 using std::size_t;
-// gcc 4.6.0 wants std:: for ptrdiff_t
 using std::ptrdiff_t;
 
 }  // namespace Eigen
@@ -177,6 +168,8 @@ using std::ptrdiff_t;
 #ifdef EIGEN_USE_LAPACKE
 #ifdef EIGEN_USE_MKL
 #include "mkl_lapacke.h"
+#elif defined(EIGEN_LAPACKE_SYSTEM)
+#include <lapacke.h>
 #else
 #include "src/misc/lapacke.h"
 #endif
@@ -362,8 +355,6 @@ using std::ptrdiff_t;
 #include "src/Core/util/BlasUtil.h"
 #include "src/Core/DenseStorage.h"
 #include "src/Core/NestByValue.h"
-
-// #include "src/Core/ForceAlignedAccess.h"
 
 #include "src/Core/ReturnByValue.h"
 #include "src/Core/NoAlias.h"

@@ -23,18 +23,18 @@ func getDbPath() string {
 // TODO: Implement root CA installation for platforms other than Linux and Android.
 func (i *Installer) InstallRoot(certFile string, keyFile string) error {
 	if runtime.GOOS != "linux" {
-		fmt.Printf("Root certificate is skipped for %s\n", runtime.GOOS)
+		Log().Info("Root certificate is skipped", "os", runtime.GOOS)
 		return nil
 	}
 	if i.AndroidDeviceId != "" {
 		if runtime.GOOS != "linux" {
 			return fmt.Errorf("test root CA for Android is only supported on a Linux host machine")
 		}
-		fmt.Println("Installing test root CA on Android...")
+		Log().Info("Installing test root CA on Android")
 		return i.AdbInstallRoot(certFile)
 	}
-	fmt.Printf("Loading cert from %v\n", certFile)
-	fmt.Printf("Loading key from %v\n", keyFile)
+	Log().Info("Loading cert", "path", certFile)
+	Log().Info("Loading key", "path", keyFile)
 	rootCert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return fmt.Errorf("error opening cert or key files: %v", err)
@@ -43,7 +43,7 @@ func (i *Installer) InstallRoot(certFile string, keyFile string) error {
 	CAName := getCAName()
 	dbPath := getDbPath()
 
-	fmt.Printf("Attempting to install root certificate in %q\n", dbPath)
+	Log().Info("Attempting to install root certificate", "path", dbPath)
 
 	i.RemoveRoot()
 	cmd := exec.Command(i.CertUtilBinaryPath, "-d", dbPath, "-A", "-n", CAName, "-t", "C,p,p")
@@ -65,28 +65,28 @@ func (i *Installer) InstallRoot(certFile string, keyFile string) error {
 		return fmt.Errorf("NSS certutil failed: %s\n", err)
 	}
 
-	fmt.Println("Root certificate should now be installed for NSS (i.e. Chrome).")
+	Log().Info("Root certificate should now be installed for NSS (i.e. Chrome)")
 	return err
 }
 
 func (i *Installer) RemoveRoot() {
 	if runtime.GOOS != "linux" {
-		fmt.Printf("Root certificate is skipped for %s\n", runtime.GOOS)
+		Log().Info("Root certificate is skipped", "os", runtime.GOOS)
 		return
 	}
 	if i.AndroidDeviceId != "" {
 		if runtime.GOOS != "linux" {
-			fmt.Printf("test root CA for Android is only supported on a Linux host machine")
+			Log().Info("test root CA for Android is only supported on a Linux host machine")
 			return
 		}
-		fmt.Println("Uninstalling test root CA on Android...")
+		Log().Info("Uninstalling test root CA on Android")
 		err := i.AdbUninstallRoot()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "remove test root CA on android device failed %v", err)
+			Log().Error("Remove test root CA on android device failed", "error", err)
 		}
 		return
 	}
-	fmt.Printf("Removing root certificate %s from NSS (i.e. Chrome)\n", getCAName())
+	Log().Info("Removing root certificate from NSS (i.e. Chrome)", "name", getCAName())
 	// Try to delete any existing certificate. We ignore failures since the
 	// root might not yet exist.
 	cmd := exec.Command(i.CertUtilBinaryPath, "-d", getDbPath(), "-D", "-n", getCAName())

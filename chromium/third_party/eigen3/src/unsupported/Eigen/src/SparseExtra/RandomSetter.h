@@ -177,7 +177,7 @@ class RandomSetter {
    * a sparse matrix from scratch, then you must set it to zero first using the
    * setZero() function.
    */
-  inline RandomSetter(SparseMatrixType& target) : mp_target(&target) {
+  inline RandomSetter(SparseMatrixType& target) : m_target(&target) {
     const Index outerSize = SwapStorage ? target.innerSize() : target.outerSize();
     const Index innerSize = SwapStorage ? target.outerSize() : target.innerSize();
     m_outerPackets = outerSize >> OuterPacketBits;
@@ -194,8 +194,8 @@ class RandomSetter {
     for (Index k = 0; k < m_outerPackets; ++k) MapTraits<ScalarWrapper>::setInvalidKey(m_hashmaps[k], ik);
 
     // insert current coeffs
-    for (Index j = 0; j < mp_target->outerSize(); ++j)
-      for (typename SparseMatrixType::InnerIterator it(*mp_target, j); it; ++it)
+    for (Index j = 0; j < m_target->outerSize(); ++j)
+      for (typename SparseMatrixType::InnerIterator it(*m_target, j); it; ++it)
         (*this)(TargetRowMajor ? j : it.index(), TargetRowMajor ? it.index() : j) = it.value();
   }
 
@@ -204,9 +204,9 @@ class RandomSetter {
     KeyType keyBitsMask = (1 << m_keyBitsOffset) - 1;
     if (!SwapStorage)  // also means the map is sorted
     {
-      mp_target->setZero();
-      mp_target->makeCompressed();
-      mp_target->reserve(nonZeros());
+      m_target->setZero();
+      m_target->makeCompressed();
+      m_target->reserve(nonZeros());
       Index prevOuter = -1;
       for (Index k = 0; k < m_outerPackets; ++k) {
         const Index outerOffset = (1 << OuterPacketBits) * k;
@@ -215,15 +215,15 @@ class RandomSetter {
           const Index outer = (it->first >> m_keyBitsOffset) + outerOffset;
           const Index inner = it->first & keyBitsMask;
           if (prevOuter != outer) {
-            for (Index j = prevOuter + 1; j <= outer; ++j) mp_target->startVec(j);
+            for (Index j = prevOuter + 1; j <= outer; ++j) m_target->startVec(j);
             prevOuter = outer;
           }
-          mp_target->insertBackByOuterInner(outer, inner) = it->second.value;
+          m_target->insertBackByOuterInner(outer, inner) = it->second.value;
         }
       }
-      mp_target->finalize();
+      m_target->finalize();
     } else {
-      VectorXi positions(mp_target->outerSize());
+      VectorXi positions(m_target->outerSize());
       positions.setZero();
       // pass 1
       for (Index k = 0; k < m_outerPackets; ++k) {
@@ -235,15 +235,15 @@ class RandomSetter {
       }
       // prefix sum
       StorageIndex count = 0;
-      for (Index j = 0; j < mp_target->outerSize(); ++j) {
+      for (Index j = 0; j < m_target->outerSize(); ++j) {
         StorageIndex tmp = positions[j];
-        mp_target->outerIndexPtr()[j] = count;
+        m_target->outerIndexPtr()[j] = count;
         positions[j] = count;
         count += tmp;
       }
-      mp_target->makeCompressed();
-      mp_target->outerIndexPtr()[mp_target->outerSize()] = count;
-      mp_target->resizeNonZeros(count);
+      m_target->makeCompressed();
+      m_target->outerIndexPtr()[m_target->outerSize()] = count;
+      m_target->resizeNonZeros(count);
       // pass 2
       for (Index k = 0; k < m_outerPackets; ++k) {
         const Index outerOffset = (1 << OuterPacketBits) * k;
@@ -255,15 +255,15 @@ class RandomSetter {
           // Note that we have to deal with at most 2^OuterPacketBits unsorted coefficients,
           // moreover those 2^OuterPacketBits coeffs are likely to be sparse, an so only a
           // small fraction of them have to be sorted, whence the following simple procedure:
-          Index posStart = mp_target->outerIndexPtr()[outer];
+          Index posStart = m_target->outerIndexPtr()[outer];
           Index i = (positions[outer]++) - 1;
-          while ((i >= posStart) && (mp_target->innerIndexPtr()[i] > inner)) {
-            mp_target->valuePtr()[i + 1] = mp_target->valuePtr()[i];
-            mp_target->innerIndexPtr()[i + 1] = mp_target->innerIndexPtr()[i];
+          while ((i >= posStart) && (m_target->innerIndexPtr()[i] > inner)) {
+            m_target->valuePtr()[i + 1] = m_target->valuePtr()[i];
+            m_target->innerIndexPtr()[i + 1] = m_target->innerIndexPtr()[i];
             --i;
           }
-          mp_target->innerIndexPtr()[i + 1] = internal::convert_index<StorageIndex>(inner);
-          mp_target->valuePtr()[i + 1] = it->second.value;
+          m_target->innerIndexPtr()[i + 1] = internal::convert_index<StorageIndex>(inner);
+          m_target->valuePtr()[i + 1] = it->second.value;
         }
       }
     }
@@ -298,7 +298,7 @@ class RandomSetter {
 
  protected:
   HashMapType* m_hashmaps;
-  SparseMatrixType* mp_target;
+  SparseMatrixType* m_target;
   Index m_outerPackets;
   unsigned char m_keyBitsOffset;
 };

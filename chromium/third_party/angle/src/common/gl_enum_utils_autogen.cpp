@@ -2909,7 +2909,7 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                 case 0x96E6:
                     return "GL_STORE_OP_STORE_ANGLE";
                 case 0x96E7:
-                    return "GL_PIXEL_LOCAL_FORMAT_ANGLE";
+                    return "GL_PIXEL_LOCAL_INTERNAL_FORMAT_ANGLE";
                 case 0x96E8:
                     return "GL_PIXEL_LOCAL_TEXTURE_NAME_ANGLE";
                 case 0x96E9:
@@ -2917,10 +2917,12 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                 case 0x96EA:
                     return "GL_PIXEL_LOCAL_TEXTURE_LAYER_ANGLE";
                 case 0x96EB:
-                    return "GL_PIXEL_LOCAL_CLEAR_VALUE_FLOAT_ANGLE";
+                    return "GL_PIXEL_LOCAL_USAGE_ANGLE";
                 case 0x96EC:
-                    return "GL_PIXEL_LOCAL_CLEAR_VALUE_INT_ANGLE";
+                    return "GL_PIXEL_LOCAL_CLEAR_VALUE_FLOAT_ANGLE";
                 case 0x96ED:
+                    return "GL_PIXEL_LOCAL_CLEAR_VALUE_INT_ANGLE";
+                case 0x96EE:
                     return "GL_PIXEL_LOCAL_CLEAR_VALUE_UNSIGNED_INT_ANGLE";
                 case 0x9EA0:
                     return "GL_RENDERABILITY_VALIDATION_ANGLE";
@@ -5599,6 +5601,22 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_RGB16F";
                 case 0x88F0:
                     return "GL_DEPTH24_STENCIL8";
+                case 0x8A54:
+                    return "GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT";
+                case 0x8A55:
+                    return "GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT";
+                case 0x8A56:
+                    return "GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT";
+                case 0x8A57:
+                    return "GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT";
+                case 0x8C00:
+                    return "GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG";
+                case 0x8C01:
+                    return "GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG";
+                case 0x8C02:
+                    return "GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG";
+                case 0x8C03:
+                    return "GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG";
                 case 0x8C3A:
                     return "GL_R11F_G11F_B10F";
                 case 0x8C3D:
@@ -5691,6 +5709,10 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_SRG8_EXT";
                 case 0x906F:
                     return "GL_RGB10_A2UI";
+                case 0x9137:
+                    return "GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG";
+                case 0x9138:
+                    return "GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG";
                 case 0x9270:
                     return "GL_COMPRESSED_R11_EAC";
                 case 0x9271:
@@ -5807,6 +5829,10 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x5_OES";
                 case 0x93E9:
                     return "GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x6_OES";
+                case 0x93F0:
+                    return "GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG";
+                case 0x93F1:
+                    return "GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG";
                 case 0x9690:
                     return "GL_ETC1_RGB8_LOSSY_DECODE_ANGLE";
                 case 0x9691:
@@ -6275,32 +6301,25 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
             }
         }
 
-        case GLESEnum::PLSQueryFloat:
-        {
-            switch (value)
-            {
-                case 0x96EB:
-                    return "GL_PIXEL_LOCAL_CLEAR_VALUE_FLOAT_ANGLE";
-                default:
-                    return UnknownEnumToString(value);
-            }
-        }
-
-        case GLESEnum::PLSQueryInt:
+        case GLESEnum::PLSPlaneParameterName:
         {
             switch (value)
             {
                 case 0x96E7:
-                    return "GL_PIXEL_LOCAL_FORMAT_ANGLE";
+                    return "GL_PIXEL_LOCAL_INTERNAL_FORMAT_ANGLE";
                 case 0x96E8:
                     return "GL_PIXEL_LOCAL_TEXTURE_NAME_ANGLE";
                 case 0x96E9:
                     return "GL_PIXEL_LOCAL_TEXTURE_LEVEL_ANGLE";
                 case 0x96EA:
                     return "GL_PIXEL_LOCAL_TEXTURE_LAYER_ANGLE";
+                case 0x96EB:
+                    return "GL_PIXEL_LOCAL_USAGE_ANGLE";
                 case 0x96EC:
-                    return "GL_PIXEL_LOCAL_CLEAR_VALUE_INT_ANGLE";
+                    return "GL_PIXEL_LOCAL_CLEAR_VALUE_FLOAT_ANGLE";
                 case 0x96ED:
+                    return "GL_PIXEL_LOCAL_CLEAR_VALUE_INT_ANGLE";
+                case 0x96EE:
                     return "GL_PIXEL_LOCAL_CLEAR_VALUE_UNSIGNED_INT_ANGLE";
                 default:
                     return UnknownEnumToString(value);
@@ -7266,6 +7285,22 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_RGB16F";
                 case 0x88F0:
                     return "GL_DEPTH24_STENCIL8";
+                case 0x8A54:
+                    return "GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT";
+                case 0x8A55:
+                    return "GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT";
+                case 0x8A56:
+                    return "GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT";
+                case 0x8A57:
+                    return "GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT";
+                case 0x8C00:
+                    return "GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG";
+                case 0x8C01:
+                    return "GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG";
+                case 0x8C02:
+                    return "GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG";
+                case 0x8C03:
+                    return "GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG";
                 case 0x8C3A:
                     return "GL_R11F_G11F_B10F";
                 case 0x8C3D:
@@ -7350,6 +7385,10 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_RGBA16_SNORM_EXT";
                 case 0x906F:
                     return "GL_RGB10_A2UI";
+                case 0x9137:
+                    return "GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG";
+                case 0x9138:
+                    return "GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG";
                 case 0x9270:
                     return "GL_COMPRESSED_R11_EAC";
                 case 0x9271:
@@ -7466,6 +7505,10 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x5_OES";
                 case 0x93E9:
                     return "GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x6_OES";
+                case 0x93F0:
+                    return "GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG";
+                case 0x93F1:
+                    return "GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG";
                 case 0x9690:
                     return "GL_ETC1_RGB8_LOSSY_DECODE_ANGLE";
                 case 0x9691:
@@ -7839,6 +7882,53 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
             }
         }
 
+        case GLESEnum::TextureImageParameterName:
+        {
+            switch (value)
+            {
+                case 0x1000:
+                    return "GL_TEXTURE_WIDTH_ANGLE";
+                case 0x1001:
+                    return "GL_TEXTURE_HEIGHT_ANGLE";
+                case 0x1003:
+                    return "GL_TEXTURE_INTERNAL_FORMAT_ANGLE";
+                case 0x805C:
+                    return "GL_TEXTURE_RED_SIZE_ANGLE";
+                case 0x805D:
+                    return "GL_TEXTURE_GREEN_SIZE_ANGLE";
+                case 0x805E:
+                    return "GL_TEXTURE_BLUE_SIZE_ANGLE";
+                case 0x805F:
+                    return "GL_TEXTURE_ALPHA_SIZE_ANGLE";
+                case 0x8071:
+                    return "GL_TEXTURE_DEPTH_ANGLE";
+                case 0x86A1:
+                    return "GL_TEXTURE_COMPRESSED_ANGLE";
+                case 0x884A:
+                    return "GL_TEXTURE_DEPTH_SIZE_ANGLE";
+                case 0x88F1:
+                    return "GL_TEXTURE_STENCIL_SIZE_ANGLE";
+                case 0x8C10:
+                    return "GL_TEXTURE_RED_TYPE_ANGLE";
+                case 0x8C11:
+                    return "GL_TEXTURE_GREEN_TYPE_ANGLE";
+                case 0x8C12:
+                    return "GL_TEXTURE_BLUE_TYPE_ANGLE";
+                case 0x8C13:
+                    return "GL_TEXTURE_ALPHA_TYPE_ANGLE";
+                case 0x8C16:
+                    return "GL_TEXTURE_DEPTH_TYPE_ANGLE";
+                case 0x8C3F:
+                    return "GL_TEXTURE_SHARED_SIZE_ANGLE";
+                case 0x9106:
+                    return "GL_TEXTURE_SAMPLES_ANGLE";
+                case 0x9107:
+                    return "GL_TEXTURE_FIXED_SAMPLE_LOCATIONS_ANGLE";
+                default:
+                    return UnknownEnumToString(value);
+            }
+        }
+
         case GLESEnum::TextureLayout:
         {
             switch (value)
@@ -8110,6 +8200,8 @@ const char *GLenumToString(GLESEnum enumGroup, unsigned int value)
                     return "GL_CLAMP_TO_EDGE";
                 case 0x8370:
                     return "GL_MIRRORED_REPEAT";
+                case 0x8743:
+                    return "GL_MIRROR_CLAMP_TO_EDGE_EXT";
                 default:
                     return UnknownEnumToString(value);
             }
@@ -8925,6 +9017,7 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_BUFFER_ACCESS_FLAGS", 0x911F},
     {"GL_BUFFER_ACCESS_OES", 0x88BB},
     {"GL_BUFFER_BINDING", 0x9302},
+    {"GL_BUFFER_CLIENT_POINTER_SIZE_MESA", 0x9790},
     {"GL_BUFFER_DATA_SIZE", 0x9303},
     {"GL_BUFFER_FLUSHING_UNMAP_APPLE", 0x8A13},
     {"GL_BUFFER_GPU_ADDRESS_NV", 0x8F1D},
@@ -10645,8 +10738,6 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_HSL_SATURATION", 0x92AE},
     {"GL_HSL_SATURATION_KHR", 0x92AE},
     {"GL_HSL_SATURATION_NV", 0x92AE},
-    {"GL_HUAWEI_PROGRAM_BINARY", 0x9771},
-    {"GL_HUAWEI_SHADER_BINARY", 0x9770},
     {"GL_IDENTITY_NV", 0x862A},
     {"GL_IGNORE_BORDER_HP", 0x8150},
     {"GL_IMAGE_1D", 0x904C},
@@ -11183,6 +11274,7 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_MAP2_VERTEX_ATTRIB9_4_NV", 0x8679},
     {"GL_MAP_ATTRIB_U_ORDER_NV", 0x86C3},
     {"GL_MAP_ATTRIB_V_ORDER_NV", 0x86C4},
+    {"GL_MAP_CLIENT_POINTER_BIT_MESA", 0x4000},
     {"GL_MAP_COHERENT_BIT", 0x0080},
     {"GL_MAP_COHERENT_BIT_EXT", 0x0080},
     {"GL_MAP_COLOR", 0x0D10},
@@ -12340,14 +12432,16 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_PIXEL_FRAGMENT_ALPHA_SOURCE_SGIS", 0x8355},
     {"GL_PIXEL_FRAGMENT_RGB_SOURCE_SGIS", 0x8354},
     {"GL_PIXEL_GROUP_COLOR_SGIS", 0x8356},
-    {"GL_PIXEL_LOCAL_CLEAR_VALUE_FLOAT_ANGLE", 0x96EB},
-    {"GL_PIXEL_LOCAL_CLEAR_VALUE_INT_ANGLE", 0x96EC},
-    {"GL_PIXEL_LOCAL_CLEAR_VALUE_UNSIGNED_INT_ANGLE", 0x96ED},
-    {"GL_PIXEL_LOCAL_FORMAT_ANGLE", 0x96E7},
+    {"GL_PIXEL_LOCAL_CLEAR_VALUE_FLOAT_ANGLE", 0x96EC},
+    {"GL_PIXEL_LOCAL_CLEAR_VALUE_INT_ANGLE", 0x96ED},
+    {"GL_PIXEL_LOCAL_CLEAR_VALUE_UNSIGNED_INT_ANGLE", 0x96EE},
+    {"GL_PIXEL_LOCAL_INTERNAL_FORMAT_ANGLE", 0x96E7},
     {"GL_PIXEL_LOCAL_STORAGE_ACTIVE_PLANES_ANGLE", 0x96E2},
     {"GL_PIXEL_LOCAL_TEXTURE_LAYER_ANGLE", 0x96EA},
     {"GL_PIXEL_LOCAL_TEXTURE_LEVEL_ANGLE", 0x96E9},
     {"GL_PIXEL_LOCAL_TEXTURE_NAME_ANGLE", 0x96E8},
+    {"GL_PIXEL_LOCAL_USAGE_ALWAYS_NONCOHERENT_BIT_ANGLE", 0x0001},
+    {"GL_PIXEL_LOCAL_USAGE_ANGLE", 0x96EB},
     {"GL_PIXEL_MAG_FILTER_EXT", 0x8331},
     {"GL_PIXEL_MAP_A_TO_A", 0x0C79},
     {"GL_PIXEL_MAP_A_TO_A_SIZE", 0x0CB9},
@@ -12565,6 +12659,7 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_PROGRAM_BINARY_FORMATS", 0x87FF},
     {"GL_PROGRAM_BINARY_FORMATS_OES", 0x87FF},
     {"GL_PROGRAM_BINARY_FORMAT_MESA", 0x875F},
+    {"GL_PROGRAM_BINARY_HUAWEI", 0x9771},
     {"GL_PROGRAM_BINARY_LENGTH", 0x8741},
     {"GL_PROGRAM_BINARY_LENGTH_OES", 0x8741},
     {"GL_PROGRAM_BINARY_READY_ANGLE", 0x96BE},
@@ -13271,6 +13366,7 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_SHADER_BINARY_FORMATS", 0x8DF8},
     {"GL_SHADER_BINARY_FORMAT_SPIR_V", 0x9551},
     {"GL_SHADER_BINARY_FORMAT_SPIR_V_ARB", 0x9551},
+    {"GL_SHADER_BINARY_HUAWEI", 0x9770},
     {"GL_SHADER_BINARY_VIV", 0x8FC4},
     {"GL_SHADER_COMPILER", 0x8DFA},
     {"GL_SHADER_CONSISTENT_NV", 0x86DD},
@@ -13372,6 +13468,7 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_SIGNED_LUMINANCE_NV", 0x8701},
     {"GL_SIGNED_NEGATE_NV", 0x853D},
     {"GL_SIGNED_NORMALIZED", 0x8F9C},
+    {"GL_SIGNED_NORMALIZED_ANGLE", 0x8F9C},
     {"GL_SIGNED_RGB8_NV", 0x86FF},
     {"GL_SIGNED_RGB8_UNSIGNED_ALPHA8_NV", 0x870D},
     {"GL_SIGNED_RGBA8_NV", 0x86FC},
@@ -13818,8 +13915,10 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_TEXTURE_4D_SGIS", 0x8134},
     {"GL_TEXTURE_ALPHA_MODULATE_IMG", 0x8C06},
     {"GL_TEXTURE_ALPHA_SIZE", 0x805F},
+    {"GL_TEXTURE_ALPHA_SIZE_ANGLE", 0x805F},
     {"GL_TEXTURE_ALPHA_SIZE_EXT", 0x805F},
     {"GL_TEXTURE_ALPHA_TYPE", 0x8C13},
+    {"GL_TEXTURE_ALPHA_TYPE_ANGLE", 0x8C13},
     {"GL_TEXTURE_ALPHA_TYPE_ARB", 0x8C13},
     {"GL_TEXTURE_APPLICATION_MODE_EXT", 0x834F},
     {"GL_TEXTURE_ASTC_DECODE_PRECISION_EXT", 0x8F69},
@@ -13856,8 +13955,10 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_TEXTURE_BINDING_RENDERBUFFER_NV", 0x8E53},
     {"GL_TEXTURE_BIT", 0x40000},
     {"GL_TEXTURE_BLUE_SIZE", 0x805E},
+    {"GL_TEXTURE_BLUE_SIZE_ANGLE", 0x805E},
     {"GL_TEXTURE_BLUE_SIZE_EXT", 0x805E},
     {"GL_TEXTURE_BLUE_TYPE", 0x8C12},
+    {"GL_TEXTURE_BLUE_TYPE_ANGLE", 0x8C12},
     {"GL_TEXTURE_BLUE_TYPE_ARB", 0x8C12},
     {"GL_TEXTURE_BORDER", 0x1005},
     {"GL_TEXTURE_BORDER_COLOR", 0x1004},
@@ -13908,6 +14009,7 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_TEXTURE_COMPARE_SGIX", 0x819A},
     {"GL_TEXTURE_COMPONENTS", 0x1003},
     {"GL_TEXTURE_COMPRESSED", 0x86A1},
+    {"GL_TEXTURE_COMPRESSED_ANGLE", 0x86A1},
     {"GL_TEXTURE_COMPRESSED_ARB", 0x86A1},
     {"GL_TEXTURE_COMPRESSED_BLOCK_HEIGHT", 0x82B2},
     {"GL_TEXTURE_COMPRESSED_BLOCK_SIZE", 0x82B3},
@@ -13974,11 +14076,14 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_TEXTURE_DEFORMATION_BIT_SGIX", 0x0001},
     {"GL_TEXTURE_DEFORMATION_SGIX", 0x8195},
     {"GL_TEXTURE_DEPTH", 0x8071},
+    {"GL_TEXTURE_DEPTH_ANGLE", 0x8071},
     {"GL_TEXTURE_DEPTH_EXT", 0x8071},
     {"GL_TEXTURE_DEPTH_QCOM", 0x8BD4},
     {"GL_TEXTURE_DEPTH_SIZE", 0x884A},
+    {"GL_TEXTURE_DEPTH_SIZE_ANGLE", 0x884A},
     {"GL_TEXTURE_DEPTH_SIZE_ARB", 0x884A},
     {"GL_TEXTURE_DEPTH_TYPE", 0x8C16},
+    {"GL_TEXTURE_DEPTH_TYPE_ANGLE", 0x8C16},
     {"GL_TEXTURE_DEPTH_TYPE_ARB", 0x8C16},
     {"GL_TEXTURE_DS_SIZE_NV", 0x871D},
     {"GL_TEXTURE_DT_SIZE_NV", 0x871E},
@@ -14014,10 +14119,13 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_TEXTURE_GEN_T", 0x0C61},
     {"GL_TEXTURE_GEQUAL_R_SGIX", 0x819D},
     {"GL_TEXTURE_GREEN_SIZE", 0x805D},
+    {"GL_TEXTURE_GREEN_SIZE_ANGLE", 0x805D},
     {"GL_TEXTURE_GREEN_SIZE_EXT", 0x805D},
     {"GL_TEXTURE_GREEN_TYPE", 0x8C11},
+    {"GL_TEXTURE_GREEN_TYPE_ANGLE", 0x8C11},
     {"GL_TEXTURE_GREEN_TYPE_ARB", 0x8C11},
     {"GL_TEXTURE_HEIGHT", 0x1001},
+    {"GL_TEXTURE_HEIGHT_ANGLE", 0x1001},
     {"GL_TEXTURE_HEIGHT_QCOM", 0x8BD3},
     {"GL_TEXTURE_HI_SIZE_NV", 0x871B},
     {"GL_TEXTURE_IMAGE_FORMAT", 0x828F},
@@ -14032,6 +14140,7 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_TEXTURE_INTENSITY_TYPE", 0x8C15},
     {"GL_TEXTURE_INTENSITY_TYPE_ARB", 0x8C15},
     {"GL_TEXTURE_INTERNAL_FORMAT", 0x1003},
+    {"GL_TEXTURE_INTERNAL_FORMAT_ANGLE", 0x1003},
     {"GL_TEXTURE_INTERNAL_FORMAT_QCOM", 0x8BD5},
     {"GL_TEXTURE_LEQUAL_R_SGIX", 0x819C},
     {"GL_TEXTURE_LIGHTING_MODE_HP", 0x8167},
@@ -14084,8 +14193,10 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_TEXTURE_REDUCTION_MODE_ARB", 0x9366},
     {"GL_TEXTURE_REDUCTION_MODE_EXT", 0x9366},
     {"GL_TEXTURE_RED_SIZE", 0x805C},
+    {"GL_TEXTURE_RED_SIZE_ANGLE", 0x805C},
     {"GL_TEXTURE_RED_SIZE_EXT", 0x805C},
     {"GL_TEXTURE_RED_TYPE", 0x8C10},
+    {"GL_TEXTURE_RED_TYPE_ANGLE", 0x8C10},
     {"GL_TEXTURE_RED_TYPE_ARB", 0x8C10},
     {"GL_TEXTURE_RENDERBUFFER_DATA_STORE_BINDING_NV", 0x8E54},
     {"GL_TEXTURE_RENDERBUFFER_NV", 0x8E55},
@@ -14097,12 +14208,14 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_TEXTURE_SHADER_NV", 0x86DE},
     {"GL_TEXTURE_SHADOW", 0x82A1},
     {"GL_TEXTURE_SHARED_SIZE", 0x8C3F},
+    {"GL_TEXTURE_SHARED_SIZE_ANGLE", 0x8C3F},
     {"GL_TEXTURE_SHARED_SIZE_EXT", 0x8C3F},
     {"GL_TEXTURE_SPARSE_ARB", 0x91A6},
     {"GL_TEXTURE_SPARSE_EXT", 0x91A6},
     {"GL_TEXTURE_SRGB_DECODE_EXT", 0x8A48},
     {"GL_TEXTURE_STACK_DEPTH", 0x0BA5},
     {"GL_TEXTURE_STENCIL_SIZE", 0x88F1},
+    {"GL_TEXTURE_STENCIL_SIZE_ANGLE", 0x88F1},
     {"GL_TEXTURE_STENCIL_SIZE_EXT", 0x88F1},
     {"GL_TEXTURE_STORAGE_HINT_APPLE", 0x85BC},
     {"GL_TEXTURE_STORAGE_SPARSE_BIT_AMD", 0x0001},
@@ -14141,6 +14254,7 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_TEXTURE_VIEW_NUM_LEVELS_EXT", 0x82DC},
     {"GL_TEXTURE_VIEW_NUM_LEVELS_OES", 0x82DC},
     {"GL_TEXTURE_WIDTH", 0x1000},
+    {"GL_TEXTURE_WIDTH_ANGLE", 0x1000},
     {"GL_TEXTURE_WIDTH_QCOM", 0x8BD2},
     {"GL_TEXTURE_WRAP_Q_SGIS", 0x8137},
     {"GL_TEXTURE_WRAP_R", 0x8072},
@@ -14448,6 +14562,7 @@ static StringEnumEntry g_stringEnumTable[] = {
     {"GL_UNSIGNED_INT_VEC4_EXT", 0x8DC8},
     {"GL_UNSIGNED_INVERT_NV", 0x8537},
     {"GL_UNSIGNED_NORMALIZED", 0x8C17},
+    {"GL_UNSIGNED_NORMALIZED_ANGLE", 0x8C17},
     {"GL_UNSIGNED_NORMALIZED_ARB", 0x8C17},
     {"GL_UNSIGNED_NORMALIZED_EXT", 0x8C17},
     {"GL_UNSIGNED_SHORT", 0x1403},

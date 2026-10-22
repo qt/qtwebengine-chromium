@@ -4,6 +4,9 @@
 
 module network.mojom;
 
+import "mojo/public/mojom/base/unguessable_token.mojom";
+import "url/mojom/url.mojom";
+
 // `Connection-Allowlist` headers govern the set of connections which can be
 // established from a given context. The design is in flux, and the
 // implementation here should be considered a flag-guarded prototype as
@@ -19,6 +22,18 @@ enum ConnectionAllowlistIssue {
   kInvalidUrlPattern,
 };
 
+// Global behavior for redirects when an allowlist is active.
+enum RedirectBehavior {
+  kAllow,
+  kBlock,
+};
+
+// Global behavior for WebRTC when an allowlist is active.
+enum WebRtcBehavior {
+  kAllow,
+  kBlock,
+};
+
 // The result of parsing an allowlist header,
 //
 // https://github.com/mikewest/anti-exfil
@@ -29,14 +44,29 @@ struct ConnectionAllowlist {
   //
   // Unparsable headers will result in an empty allowlist, which, in turn,
   // will result in fairly complete breakage.
+  //
+  // TODO(crbug.com/447954811): It would be ideal for us to have a URLPattern
+  // representation in mojo rather than using a string here. Moving
+  // `blink::SafeUrlPattern` somewhere usable by both the network service
+  // and Blink might be a reasonable approach in the future.
   array<string> allowlist;
   string? reporting_endpoint;
   array<ConnectionAllowlistIssue> issues;
+  RedirectBehavior redirect_behavior;
+  WebRtcBehavior webrtc_behavior;
 };
 
 // The set of allowlists associated with a given response.
 struct ConnectionAllowlists {
+  url.mojom.Url response_url;
   ConnectionAllowlist? enforced;
   ConnectionAllowlist? report_only;
+
+  // We should always have a reporting_source token when Connection Allowlists
+  // are applied to a document. We do not, however, have access to that token
+  // when we're originally parsing the headers, as the source isn't created
+  // until the document commits. This will therefore be empty until it's
+  // populated lower in the stack.
+  mojo_base.mojom.UnguessableToken? reporting_source;
 };
 

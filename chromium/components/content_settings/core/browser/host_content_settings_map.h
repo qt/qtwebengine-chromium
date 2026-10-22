@@ -34,7 +34,6 @@
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/keyed_service/core/refcounted_keyed_service.h"
-#include "components/prefs/pref_change_registrar.h"
 
 // In the context of active expiry enforcement, content settings are considered
 // expired if their expiration time is before 'Now() + `kEagerExpiryBuffer` at
@@ -151,6 +150,13 @@ class HostContentSettingsMap : public content_settings::Observer,
       const GURL& secondary_url,
       ContentSettingsType content_type,
       content_settings::SettingInfo* info = nullptr) const;
+
+  // This is the same as GetPermissionSetting() but ignores providers which are
+  // not user-controllable (e.g. policy and extensions).
+  PermissionSetting GetUserModifiablePermissionSetting(
+      const GURL& primary_url,
+      const GURL& secondary_url,
+      ContentSettingsType content_type) const;
 
   // Returns a single content setting |Value| which applies to the given URLs.
   // If |info| is not NULL, then the |source| field of |info| is set to the
@@ -325,15 +331,17 @@ class HostContentSettingsMap : public content_settings::Observer,
                           ContentSettingsType type,
                           const base::Time time);
 
-  // Reset the last visited time to base::Time().
-  void ResetLastVisitedTime(const ContentSettingsPattern& primary_pattern,
-                            const ContentSettingsPattern& secondary_pattern,
-                            ContentSettingsType type);
   // Updates the last visited time to a recent coarse timestamp
   // (week-precision).
   void UpdateLastVisitedTime(const ContentSettingsPattern& primary_pattern,
                              const ContentSettingsPattern& secondary_pattern,
                              ContentSettingsType type);
+
+  // Sets the `autorevocation_bypassed_by_user` field for the given setting.
+  void SetAutorevocationBypassedByUser(
+      const ContentSettingsPattern& primary_pattern,
+      const ContentSettingsPattern& secondary_pattern,
+      ContentSettingsType type);
 
   // Updates the expiration to `lifetime + now()`, if `setting_to_match` is
   // nullopt or if it matches the rule's value. Returns the TimeDelta between
@@ -579,8 +587,12 @@ class HostContentSettingsMap : public content_settings::Observer,
 
   base::ThreadChecker thread_checker_;
 
-  base::ObserverList<content_settings::Observer>::UncheckedAndDanglingUntriaged
-      observers_;
+  // TODO(crbug.com/484371187): Investigate if reentrancy can be removed.
+  base::ObserverList<
+      content_settings::Observer,
+      /*check_empty=*/false,
+      base::ObserverListReentrancyPolicy::kAllowReentrancyUntriaged>::
+      UncheckedAndDanglingUntriaged observers_;
 
   // When true, allows setting secondary patterns even for types that should not
   // allow them. Only used for testing that inserts previously valid patterns in

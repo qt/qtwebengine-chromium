@@ -4,11 +4,16 @@
 
 #include "content/browser/service_worker/service_worker_loader_helpers.h"
 
+#include "content/browser/storage_partition_impl.h"
 #include "content/public/common/content_client.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_browser_context.h"
-#include "content/test/test_content_browser_client.h"
+#include "content/public/test/test_content_browser_client.h"
+#include "content/test/test_render_view_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 namespace content {
 
@@ -327,8 +332,39 @@ TEST(ServiceWorkerLoaderHelpersTest, PathRestriction_ServiceWorkerAllowed) {
       "http://other.com/foo/"));
 }
 
+TEST(ServiceWorkerLoaderHelpersTest, SyntheticResponseRegistrationCollision) {
+  content::BrowserTaskEnvironment task_environment;
+
+  // 1. Create a synthetic registration for origin A using the helper.
+  const GURL kClientUrlA("https://a.test/search?q=test");
+  const blink::StorageKey kKeyA =
+      blink::StorageKey::CreateFirstParty(url::Origin::Create(kClientUrlA));
+  auto resultA = GetOrCreateSyntheticRegistration(kClientUrlA, kKeyA);
+  ASSERT_TRUE(resultA);
+  ASSERT_TRUE(resultA->registration);
+
+  // Subsequent call for the same storage key should return the same registration ID.
+  auto resultA_again = GetOrCreateSyntheticRegistration(kClientUrlA, kKeyA);
+  ASSERT_TRUE(resultA_again);
+  ASSERT_TRUE(resultA_again->registration);
+  EXPECT_EQ(resultA->registration->registration_id,
+            resultA_again->registration->registration_id);
+
+  // It should automatically get a different ID for a different key.
+  const GURL kClientUrlB("https://b.test/search?q=test");
+  const blink::StorageKey kKeyB =
+      blink::StorageKey::CreateFirstParty(url::Origin::Create(kClientUrlB));
+  auto resultB = GetOrCreateSyntheticRegistration(kClientUrlB, kKeyB);
+  ASSERT_TRUE(resultB);
+  ASSERT_TRUE(resultB->registration);
+
+  // They should have different IDs.
+  EXPECT_NE(resultA->registration->registration_id,
+            resultB->registration->registration_id);
+}
+
 class ServiceWorkerLoaderHelpersSyntheticResponseTest
-    : public testing::Test,
+    : public RenderViewHostTestHarness,
       public testing::WithParamInterface<bool> {
  public:
   ServiceWorkerLoaderHelpersSyntheticResponseTest() = default;
@@ -339,10 +375,15 @@ class ServiceWorkerLoaderHelpersSyntheticResponseTest
   ~ServiceWorkerLoaderHelpersSyntheticResponseTest() override = default;
 
   void SetUp() override {
+    RenderViewHostTestHarness::SetUp();
     browser_client_ = std::make_unique<SyntheticResponseTestBrowserClient>(
         IsAllowedInContentBrowserClient());
-    browser_context_ = std::make_unique<TestBrowserContext>();
     SetBrowserClientForTesting(browser_client_.get());
+  }
+
+  void TearDown() override {
+    RenderViewHostTestHarness::TearDown();
+    SetBrowserClientForTesting(nullptr);
   }
 
  protected:
@@ -352,9 +393,15 @@ class ServiceWorkerLoaderHelpersSyntheticResponseTest
       const std::string& denied_url_params = "") {
     return service_worker_loader_helpers::
         IsEligibleForSyntheticResponseForTesting(
-            browser_context_.get(), client_url, allowed_url, denied_url_params);
+            browser_context(), GetTestStoragePartitionImpl(), client_url,
+            allowed_url, denied_url_params);
   }
   bool IsAllowedInContentBrowserClient() { return GetParam(); }
+
+  StoragePartitionImpl* GetTestStoragePartitionImpl() {
+    StoragePartition* partition = browser_context()->GetDefaultStoragePartition();
+    return static_cast<StoragePartitionImpl*>(partition);
+  }
 
  private:
   class SyntheticResponseTestBrowserClient : public TestContentBrowserClient {
@@ -372,8 +419,6 @@ class ServiceWorkerLoaderHelpersSyntheticResponseTest
     bool is_allowed_ = false;
   };
 
-  BrowserTaskEnvironment task_environment_{BrowserTaskEnvironment::IO_MAINLOOP};
-  std::unique_ptr<TestBrowserContext> browser_context_;
   std::unique_ptr<SyntheticResponseTestBrowserClient> browser_client_;
 };
 
@@ -475,6 +520,14 @@ TEST_P(ServiceWorkerLoaderHelpersSyntheticResponseTest,
   // Denied string is in the value of "q". This should be allowed.
   EXPECT_TRUE(IsEligibleForSyntheticResponse(
       GURL("https://example.com/search?q=foo"), kAllowedUrl, kDeniedUrlParams));
+}
+
+TEST_P(ServiceWorkerLoaderHelpersSyntheticResponseTest,
+       IsEligibleForSyntheticResponse_Guest) {
+  // Set the storage partition to be guest e.g. <webview>.
+  GetTestStoragePartitionImpl()->set_is_guest();
+  EXPECT_FALSE(IsEligibleForSyntheticResponse(GURL("http://example.com/"),
+                                              "http://example.com/"));
 }
 
 }  // namespace service_worker_loader_helpers

@@ -30,6 +30,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_AUDIO_REVERB_CONVOLVER_STAGE_H_
 
 #include <memory>
+
+#include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
 #include "third_party/blink/renderer/platform/audio/audio_array.h"
 #include "third_party/blink/renderer/platform/audio/fft_frame.h"
@@ -53,8 +55,7 @@ class ReverbConvolverStage final {
   // renderPhase is useful to know so that we can manipulate the pre versus post
   // delay so that stages will perform their heavy work (FFT processing) on
   // different slices to balance the load in a real-time thread.
-  ReverbConvolverStage(const float* impulse_response,
-                       size_t response_length,
+  ReverbConvolverStage(base::span<const float> impulse_response,
                        size_t reverb_total_latency,
                        size_t stage_offset,
                        unsigned stage_length,
@@ -67,9 +68,9 @@ class ReverbConvolverStage final {
   ReverbConvolverStage(const ReverbConvolverStage&) = delete;
   ReverbConvolverStage& operator=(const ReverbConvolverStage&) = delete;
 
-  // WARNING: framesToProcess must be such that it evenly divides the delay
+  // WARNING: `source.size()` must be such that it evenly divides the delay
   // buffer size (stage_offset).
-  void Process(const float* source, uint32_t frames_to_process);
+  void Process(base::span<const float> source);
 
   void ProcessInBackground(ReverbConvolver* convolver,
                            uint32_t frames_to_process);

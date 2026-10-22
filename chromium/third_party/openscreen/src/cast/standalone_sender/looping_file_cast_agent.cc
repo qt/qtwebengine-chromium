@@ -293,6 +293,10 @@ void LoopingFileCastAgent::CreateAndStartSession() {
       connection_settings_->enable_dscp};
   current_session_ = std::make_unique<SenderSession>(std::move(config));
   current_session_->SetStatsClient(this);
+  if (connection_settings_->enable_input_events) {
+    current_session_->SetInputCallback(
+        [this](InputMessage message) { OnInputMessage(std::move(message)); });
+  }
   OSP_CHECK(!message_port_.source_id().empty());
 
   AudioCaptureConfig audio_config;
@@ -346,6 +350,40 @@ void LoopingFileCastAgent::OnError(const SenderSession* session,
                                    const Error& error) {
   OSP_LOG_ERROR << "SenderSession fatal error: " << error;
   Shutdown();
+}
+
+void LoopingFileCastAgent::OnInputMessage(InputMessage message) {
+  if (file_sender_) {
+    file_sender_->OnInputMessage(message);
+  }
+  for (const auto& event : message.events()) {
+    std::string type_name;
+    switch (event.type()) {
+      case InputMessage::INPUT_TYPE_MOUSE_DOWN:
+        type_name = "MOUSE_DOWN";
+        break;
+      case InputMessage::INPUT_TYPE_MOUSE_UP:
+        type_name = "MOUSE_UP";
+        break;
+      case InputMessage::INPUT_TYPE_MOUSE_MOVE:
+        type_name = "MOUSE_MOVE";
+        break;
+      default:
+        type_name = "OTHER";
+        break;
+    }
+
+    if (event.has_mouse_event()) {
+      const auto& mouse = event.mouse_event();
+      OSP_LOG_INFO << "[Input] Received " << type_name << " at ("
+                   << mouse.location().x() << ", " << mouse.location().y()
+                   << ") buttons=" << mouse.buttons_size()
+                   << " viewport_size=" << message.viewport_width() << "x"
+                   << message.viewport_height();
+    } else {
+      OSP_LOG_INFO << "[Input] Received event type=" << type_name;
+    }
+  }
 }
 
 void LoopingFileCastAgent::OnStatisticsUpdated(

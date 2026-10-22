@@ -32,12 +32,14 @@ import com.google.android.gms.cast.framework.media.RemoteMediaClient;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 import org.mockito.invocation.InvocationOnMock;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 import org.mockito.stubbing.Answer;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
@@ -51,6 +53,8 @@ import org.chromium.components.media_router.MediaRouterClient;
 import org.chromium.components.media_router.MediaSink;
 import org.chromium.components.media_router.TestMediaRouterClient;
 
+import java.util.function.Function;
+
 /** Robolectric tests for CafMediaRouteProvider. */
 @RunWith(BaseRobolectricTestRunner.class)
 @Config(
@@ -59,9 +63,9 @@ import org.chromium.components.media_router.TestMediaRouterClient;
             ShadowMediaRouter.class,
             ShadowCastContext.class,
             ShadowLooper.class,
-            ShadowCastMediaSource.class
         })
 public class CafMediaRouteProviderTest {
+    @Rule public MockitoRule mMockitoRule = MockitoJUnit.rule();
     private Context mContext;
     private CafMediaRouteProvider mProvider;
     private MediaRouterTestHelper mMediaRouterHelper;
@@ -75,7 +79,7 @@ public class CafMediaRouteProviderTest {
     @Mock private SessionManager mSessionManager;
     @Mock private RemoteMediaClient mRemoteMediaClient;
     @Mock private BaseSessionController mSessionController;
-    @Mock private ShadowCastMediaSource.ShadowImplementation mShadowCastMediaSource;
+    @Mock private Function<String, CastMediaSource> mMockCastMediaSource;
     @Mock private CafMessageHandler mMessageHandler;
     @Mock private CastMediaSource mSource1;
     @Mock private CastMediaSource mSource2;
@@ -83,13 +87,12 @@ public class CafMediaRouteProviderTest {
 
     @Before
     public void setUp() {
-        MockitoAnnotations.initMocks(this);
 
         MediaRouterClient.setInstance(new TestMediaRouterClient());
 
         mContext = RuntimeEnvironment.application;
         ShadowCastContext.setInstance(mCastContext);
-        ShadowCastMediaSource.setImplementation(mShadowCastMediaSource);
+        CastMediaSource.setMockBuilderForTesting(mMockCastMediaSource);
         mMediaRouterHelper = new MediaRouterTestHelper();
         mMediaRouter = MediaRouter.getInstance(mContext);
         mProvider = spy(CafMediaRouteProvider.create(mManager));
@@ -97,8 +100,8 @@ public class CafMediaRouteProviderTest {
 
         mRoute1 = new MediaRoute("sink-id", "source-id-1", "presentation-id-1");
         mRoute2 = new MediaRoute("sink-id", "source-id-2", "presentation-id-2");
-        doReturn(mSource1).when(mShadowCastMediaSource).from("source-id-1");
-        doReturn(mSource2).when(mShadowCastMediaSource).from("source-id-2");
+        doReturn(mSource1).when(mMockCastMediaSource).apply("source-id-1");
+        doReturn(mSource2).when(mMockCastMediaSource).apply("source-id-2");
         doReturn("client-id-1").when(mSource1).getClientId();
         doReturn("client-id-2").when(mSource2).getClientId();
         doReturn("app-id-1").when(mSource1).getApplicationId();
@@ -119,7 +122,7 @@ public class CafMediaRouteProviderTest {
     public void testJoinRoute() {
         InOrder inOrder = inOrder(mManager);
 
-        doReturn(mSource1).when(mShadowCastMediaSource).from("source-id-1");
+        doReturn(mSource1).when(mMockCastMediaSource).apply("source-id-1");
         doReturn(mSink).when(mSessionController).getSink();
         doReturn(true).when(mSessionController).isConnected();
         doReturn(true)
@@ -140,7 +143,7 @@ public class CafMediaRouteProviderTest {
 
         // No source.
         mProvider.mRoutes.clear();
-        doReturn(null).when(mShadowCastMediaSource).from("source-id-1");
+        doReturn(null).when(mMockCastMediaSource).apply("source-id-1");
 
         mProvider.joinRoute("source-id-1", "presentation-id-1", "origin", 1, 1);
 
@@ -148,7 +151,7 @@ public class CafMediaRouteProviderTest {
         assertTrue(mProvider.mRoutes.isEmpty());
 
         // No client ID.
-        doReturn(mSource1).when(mShadowCastMediaSource).from("source-id-1");
+        doReturn(mSource1).when(mMockCastMediaSource).apply("source-id-1");
         doReturn(null).when(mSource1).getClientId();
 
         mProvider.joinRoute("source-id-1", "presentation-id-1", "origin", 1, 1);

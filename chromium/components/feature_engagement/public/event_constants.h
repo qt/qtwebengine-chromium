@@ -173,9 +173,6 @@ extern const char kBlueDotPromoOverflowMenuDismissed[];
 // The user snoozed the Credential Provider Extension Promo.
 extern const char kCredentialProviderExtensionPromoSnoozed[];
 
-// The user tapped Remind Me Later on the Docking Promo.
-extern const char kDockingPromoRemindMeLater[];
-
 // The user opened an url from omnibox.
 extern const char kOpenUrlFromOmnibox[];
 
@@ -278,6 +275,9 @@ extern const char kMadeForIOSPromoTrigger[];
 
 // The stay safe default browser promo was triggered.
 extern const char kStaySafePromoTrigger[];
+
+// The default browser promos group was triggered.
+extern const char kDefaultBrowserPromosGroupTrigger[];
 
 // The tailored default browser promo group was triggered.
 extern const char kTailoredDefaultBrowserPromosGroupTrigger[];
@@ -430,6 +430,8 @@ extern const char kIOSChromeOpenedFromIcon[];
 // The user has explicitly used the Install menu item under the App Menu.
 extern const char kPwaInstallMenuSelected[];
 #endif  // BUILDFLAG(IS_ANDROID)
+
+extern const char kTabSearchComboButtonUsed[];
 
 }  // namespace events
 

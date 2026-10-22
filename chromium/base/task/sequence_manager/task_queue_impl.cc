@@ -17,7 +17,6 @@
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/observer_list.h"
 #include "base/sequence_token.h"
@@ -329,6 +328,8 @@ void TaskQueueImpl::UnregisterTaskQueue() {
     any_thread_.on_task_posted_handlers.swap(on_task_posted_handlers);
   }
 
+  main_thread_only().unregistered = true;
+
   if (main_thread_only().wake_up_queue) {
     main_thread_only().wake_up_queue->UnregisterQueue(this);
   }
@@ -383,6 +384,12 @@ void TaskQueueImpl::PostTask(PostedTask task) {
 void TaskQueueImpl::RemoveCancelableTask(HeapHandle heap_handle) {
   associated_thread_->AssertInSequenceWithCurrentThread();
   DCHECK(heap_handle.IsValid());
+
+  if (main_thread_only().unregistered) {
+    // During shutdown, UnregisterQueue() swaps the tasks to the stack for safe
+    // destruction. Return early as the member queue is now empty.
+    return;
+  }
 
   main_thread_only().delayed_incoming_queue.remove(heap_handle);
 

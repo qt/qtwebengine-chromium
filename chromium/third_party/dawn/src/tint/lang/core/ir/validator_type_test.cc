@@ -25,17 +25,15 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/tint/lang/core/ir/validator_test.h"
-
 #include <string>
 #include <tuple>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/ir/ir_helper_test.h"
 #include "src/tint/lang/core/ir/validator.h"
+#include "src/tint/lang/core/ir/validator_test.h"
 #include "src/tint/lang/core/number.h"
 #include "src/tint/lang/core/type/abstract_float.h"
 #include "src/tint/lang/core/type/abstract_int.h"
@@ -729,6 +727,28 @@ INSTANTIATE_TEST_SUITE_P(IR_ValidatorTest,
                                          std::make_tuple(true, TypeBuilder<core::type::Bool>),
                                          std::make_tuple(false, TypeBuilder<core::type::Void>)));
 
+// Test that validation time does not increase in relation to the size of the array.
+TEST_F(IR_ValidatorTest, LargeArrays) {
+    // The arrays are all different sizes so that they don't get skipped over by CheckType for
+    // having been "seen" already.
+    auto* str_ty =
+        ty.Struct(mod.symbols.New("MyStruct"),
+                  {
+                      {mod.symbols.New("a0"), ty.u32(), {}},
+                      {mod.symbols.New("a1"), ty.array<u32, (1ull << 32ull) - 4u>(), {}},
+                      {mod.symbols.New("a2"), ty.array<u32, (1ull << 32ull) - 8u>(), {}},
+                      {mod.symbols.New("a3"), ty.array<u32, (1ull << 32ull) - 12u>(), {}},
+                      {mod.symbols.New("a4"), ty.array<u32, (1ull << 32ull) - 16u>(), {}},
+                      {mod.symbols.New("a5"), ty.array<u32, (1ull << 32ull) - 20u>(), {}},
+                      {mod.symbols.New("a6"), ty.array<u32, (1ull << 32ull) - 24u>(), {}},
+                      {mod.symbols.New("a7"), ty.array<u32, (1ull << 32ull) - 28u>(), {}},
+                      {mod.symbols.New("a8"), ty.array<u32, (1ull << 32ull) - 32u>(), {}},
+                  });
+    mod.root_block->Append(b.Var(ty.ptr<workgroup>(str_ty)));
+    auto res = ir::Validate(mod);
+    ASSERT_EQ(res, Success) << res.Failure();
+}
+
 using Type_VectorElements = TypeTest;
 
 TEST_P(Type_VectorElements, Test) {
@@ -832,7 +852,7 @@ TEST_P(Type_AtomicSubType, Test) {
     } else {
         ASSERT_NE(res, Success);
         EXPECT_THAT(res.Failure().reason,
-                    testing::HasSubstr("error: var: atomic subtype must be i32 or u32"))
+                    testing::HasSubstr("error: var: atomic subtype must be i32, u32 or u64"))
             << res.Failure();
     }
 }

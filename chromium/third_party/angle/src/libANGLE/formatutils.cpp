@@ -22,12 +22,6 @@ using namespace angle;
 
 namespace gl
 {
-
-// ES2 requires that format is equal to internal format at all glTex*Image2D entry points and the
-// implementation can decide the true, sized, internal format. The ES2FormatMap determines the
-// internal format for all valid format and type combinations.
-GLenum GetSizedFormatInternal(GLenum format, GLenum type);
-
 namespace
 {
 bool CheckedMathResult(const CheckedNumeric<GLuint> &value, GLuint *resultOut)
@@ -1459,8 +1453,8 @@ static InternalFormatInfoMap BuildInternalFormatInfoMap()
 
     // Non-standard YUV formats
     //                 | Internal format                             | sized | Cr | Y | Cb | A | S | Format                              | Type            | Comp                  | SRGB | Texture supported                                       | Filterable                                              | Texture attachment                                      | Renderbuffer  | Blend
-    AddYUVFormat(&map,  GL_G8_B8R8_2PLANE_420_UNORM_ANGLE,            true,   8,   8,  8,   0,  0,  GL_G8_B8R8_2PLANE_420_UNORM_ANGLE,    GL_UNSIGNED_BYTE, GL_UNSIGNED_NORMALIZED, false, RequireExt<&Extensions::yuvInternalFormatANGLE>,          RequireExt<&Extensions::yuvInternalFormatANGLE>,          RequireExt<&Extensions::yuvInternalFormatANGLE>,          NeverSupported, NeverSupported);
-    AddYUVFormat(&map,  GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE,           true,   8,   8,  8,   0,  0,  GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE,   GL_UNSIGNED_BYTE, GL_UNSIGNED_NORMALIZED, false, RequireExt<&Extensions::yuvInternalFormatANGLE>,          RequireExt<&Extensions::yuvInternalFormatANGLE>,          RequireExt<&Extensions::yuvInternalFormatANGLE>,          NeverSupported, NeverSupported);
+    AddYUVFormat(&map,  GL_G8_B8R8_2PLANE_420_UNORM_ANGLE,            true,   8,   8,  8,   0,  0,  GL_G8_B8R8_2PLANE_420_UNORM_ANGLE,    GL_UNSIGNED_BYTE, GL_UNSIGNED_NORMALIZED, false, RequireExt<&Extensions::yuvInternalFormatANGLE>,          RequireExt<&Extensions::yuvInternalFormatANGLE>,          NeverSupported,                                          NeverSupported, NeverSupported);
+    AddYUVFormat(&map,  GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE,           true,   8,   8,  8,   0,  0,  GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE,   GL_UNSIGNED_BYTE, GL_UNSIGNED_NORMALIZED, false, RequireExt<&Extensions::yuvInternalFormatANGLE>,          RequireExt<&Extensions::yuvInternalFormatANGLE>,          NeverSupported,                                          NeverSupported, NeverSupported);
 
     // clang-format on
 
@@ -1680,6 +1674,84 @@ const InternalFormat &GetInternalFormatInfo(GLenum internalFormat, GLenum type)
     }
 
     return typeIter->second;
+}
+
+// Used by validation to determine if an internal format is internal to ANGLE and should not be
+// allowed for app use.
+bool IsAngleInternalFormat(GLenum internalFormat)
+{
+    switch (internalFormat)
+    {
+        case GL_A1RGB5_ANGLEX:
+        case GL_BGRX8_ANGLEX:
+        case GL_BGR565_ANGLEX:
+        case GL_BGRA4_ANGLEX:
+        case GL_BGR5_A1_ANGLEX:
+        case GL_INT_64_ANGLEX:
+        case GL_UINT_64_ANGLEX:
+        case GL_BGRA8_SRGB_ANGLEX:
+        case GL_BGR10_A2_ANGLEX:
+        case GL_BGRX8_SRGB_ANGLEX:
+        case GL_RGBX8_SRGB_ANGLEX:
+        case GL_R10X6G10X6B10X6A10X6_UNORM_ANGLEX:
+        case GL_RGBA8_TYPELESS_ANGLEX:
+        case GL_RGBA8_TYPELESS_SRGB_ANGLEX:
+        case GL_BGRA8_TYPELESS_ANGLEX:
+        case GL_BGRA8_TYPELESS_SRGB_ANGLEX:
+        case GL_R8_SSCALED_ANGLEX:
+        case GL_RG8_SSCALED_ANGLEX:
+        case GL_RGB8_SSCALED_ANGLEX:
+        case GL_RGBA8_SSCALED_ANGLEX:
+        case GL_R8_USCALED_ANGLEX:
+        case GL_RG8_USCALED_ANGLEX:
+        case GL_RGB8_USCALED_ANGLEX:
+        case GL_RGBA8_USCALED_ANGLEX:
+        case GL_R16_SSCALED_ANGLEX:
+        case GL_RG16_SSCALED_ANGLEX:
+        case GL_RGB16_SSCALED_ANGLEX:
+        case GL_RGBA16_SSCALED_ANGLEX:
+        case GL_R16_USCALED_ANGLEX:
+        case GL_RG16_USCALED_ANGLEX:
+        case GL_RGB16_USCALED_ANGLEX:
+        case GL_RGBA16_USCALED_ANGLEX:
+        case GL_R32_SSCALED_ANGLEX:
+        case GL_RG32_SSCALED_ANGLEX:
+        case GL_RGB32_SSCALED_ANGLEX:
+        case GL_RGBA32_SSCALED_ANGLEX:
+        case GL_R32_USCALED_ANGLEX:
+        case GL_RG32_USCALED_ANGLEX:
+        case GL_RGB32_USCALED_ANGLEX:
+        case GL_RGBA32_USCALED_ANGLEX:
+        case GL_R32_SNORM_ANGLEX:
+        case GL_RG32_SNORM_ANGLEX:
+        case GL_RGB32_SNORM_ANGLEX:
+        case GL_RGBA32_SNORM_ANGLEX:
+        case GL_R32_UNORM_ANGLEX:
+        case GL_RG32_UNORM_ANGLEX:
+        case GL_RGB32_UNORM_ANGLEX:
+        case GL_RGBA32_UNORM_ANGLEX:
+        case GL_R32_FIXED_ANGLEX:
+        case GL_RG32_FIXED_ANGLEX:
+        case GL_RGB32_FIXED_ANGLEX:
+        case GL_RGBA32_FIXED_ANGLEX:
+        case GL_RGB10_A2_SINT_ANGLEX:
+        case GL_RGB10_A2_SNORM_ANGLEX:
+        case GL_RGB10_A2_SSCALED_ANGLEX:
+        case GL_RGB10_A2_USCALED_ANGLEX:
+        case GL_A2_RGB10_UNORM_ANGLEX:
+        case GL_A2_RGB10_SNORM_ANGLEX:
+        case GL_A2_RGB10_USCALED_ANGLEX:
+        case GL_A2_RGB10_SSCALED_ANGLEX:
+        case GL_X2_RGB10_UINT_ANGLEX:
+        case GL_X2_RGB10_SINT_ANGLEX:
+        case GL_X2_RGB10_USCALED_ANGLEX:
+        case GL_X2_RGB10_SSCALED_ANGLEX:
+        case GL_X2_RGB10_UNORM_ANGLEX:
+        case GL_X2_RGB10_SNORM_ANGLEX:
+            return true;
+        default:
+            return false;
+    }
 }
 
 GLuint InternalFormat::computePixelBytes(GLenum formatType) const

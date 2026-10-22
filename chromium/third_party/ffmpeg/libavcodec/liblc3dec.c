@@ -43,14 +43,6 @@ static av_cold int liblc3_decode_init(AVCodecContext *avctx)
     int ep_mode;
     unsigned decoder_size;
 
-    static const struct {
-        enum AVSampleFormat av_format;
-        enum lc3_pcm_format lc3_format;
-    } format_map[] = {
-        { AV_SAMPLE_FMT_FLT,  LC3_PCM_FORMAT_FLOAT },
-        { AV_SAMPLE_FMT_FLTP, LC3_PCM_FORMAT_FLOAT },
-    };
-
     if (avctx->extradata_size < 6)
         return AVERROR_INVALIDDATA;
     if (channels < 0 || channels > DECODER_MAX_CHANNELS) {
@@ -90,19 +82,11 @@ static av_cold int liblc3_decode_init(AVCodecContext *avctx)
             (char *)liblc3->decoder_mem + ch * decoder_size);
     }
 
-    avctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
-    if (avctx->request_sample_fmt != AV_SAMPLE_FMT_NONE) {
-        for (int i = 0; i < FF_ARRAY_ELEMS(format_map); i++) {
-            if (format_map[i].av_format == avctx->request_sample_fmt) {
-                avctx->sample_fmt = avctx->request_sample_fmt;
-                break;
-            }
-        }
-    }
+    avctx->sample_fmt = avctx->request_sample_fmt == AV_SAMPLE_FMT_FLT ?
+                            AV_SAMPLE_FMT_FLT : AV_SAMPLE_FMT_FLTP;
 
     avctx->delay = lc3_hr_delay_samples(
         liblc3->hr_mode, liblc3->frame_us, liblc3->srate_hz);
-    avctx->internal->skip_samples = avctx->delay;
 
     return 0;
 }
@@ -123,8 +107,6 @@ static int liblc3_decode(AVCodecContext *avctx, AVFrame *frame,
     int channels = avctx->ch_layout.nb_channels;
     uint8_t *in = avpkt->data;
     int block_bytes, ret;
-    size_t sample_size;
-    int is_planar;
 
     frame->nb_samples = av_rescale(
         liblc3->frame_us, liblc3->srate_hz, 1000*1000);
@@ -132,13 +114,12 @@ static int liblc3_decode(AVCodecContext *avctx, AVFrame *frame,
         return ret;
 
     block_bytes = avpkt->size;
-    is_planar = av_sample_fmt_is_planar(avctx->sample_fmt);
-    sample_size = av_get_bytes_per_sample(avctx->sample_fmt);
+    int is_planar = avctx->sample_fmt == AV_SAMPLE_FMT_FLTP;
 
     for (int ch = 0; ch < channels; ch++) {
         int nbytes = block_bytes / channels + (ch < block_bytes % channels);
-        void *pcm_data = is_planar ? frame->extended_data[ch] :
-                                frame->extended_data[0] + ch * sample_size;
+        float *pcm_data = is_planar ? (float*)frame->extended_data[ch] :
+                                      (float*)frame->extended_data[0] + ch;
         int stride = is_planar ? 1 : channels;
 
         ret = lc3_decode(liblc3->decoder[ch], in, nbytes,

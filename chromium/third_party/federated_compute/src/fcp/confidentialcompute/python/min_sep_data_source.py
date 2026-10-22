@@ -13,17 +13,25 @@
 # limitations under the License.
 """Utilities for representing data sources with min-sep round participation."""
 
+import concurrent.futures
 import os
 import random
 from typing import Optional
 
+from absl import logging
 import federated_language
+from federated_language.proto import array_pb2
 from federated_language.proto import computation_pb2
 from federated_language.proto import data_type_pb2
 
 from google.protobuf import any_pb2
 from fcp.confidentialcompute.python import constants
+from fcp.confidentialcompute.python import program_input_provider
 from fcp.protos.confidentialcompute import file_info_pb2
+from tensorflow_federated.cc.core.impl.aggregation.core import tensor_pb2
+
+
+_RESOLVE_URI_ERROR_MESSAGE_SUBSTRING = 'Failed to fetch Tensor'
 
 
 class MinSepDataSourceIterator(
@@ -41,23 +49,24 @@ class MinSepDataSourceIterator(
   def __init__(
       self,
       min_sep: int,
-      client_ids: list[str],
-      client_data_directory: str,
+      input_provider: program_input_provider.ProgramInputProvider,
       computation_type: computation_pb2.Type,
       key_name: str = constants.OUTPUT_TENSOR_NAME,
+      use_data_pointers: bool = False,
   ):
     """Returns an initialized `tff.program.MinSepDataSourceIterator`.
 
     Args:
       min_sep: The number of rounds that must elapse between successive
         participations for the same client. Must be a positive integer.
-      client_ids: A list of strings representing the clients from this data
-        source. Must not be empty.
-      client_data_directory: The directory containing the client data.
+      input_provider: The program input provider that provides the client ids
+        and client data directory.
       computation_type: The type of data represented by this data source.
       key_name: The name of the key to use when creating pointers to the
         underlying data. This should match the tensor name used when creating
         the federated checkpoint for the uploaded client data.
+      use_data_pointers: Whether to return TFF value data pointers or return
+        resolved TFF value literals.
 
     Raises:
       ValueError: If `client_ids` is empty or if `min_sep` is not a positive
@@ -69,7 +78,7 @@ class MinSepDataSourceIterator(
           f'{min_sep}.'
       )
 
-    if not client_ids:
+    if not input_provider.client_ids:
       raise ValueError('Expected `client_ids` to not be empty.')
 
     # The client ids are randomly assigned to `min_sep` rounds.
@@ -84,14 +93,15 @@ class MinSepDataSourceIterator(
     # A client id will be eligible for participation in round `i` if it is
     # assigned to the `i % min_sep`th entry in `_client_id_round_assignments`.
     self._client_id_round_assignments = [[] for _ in range(min_sep)]
-    random.shuffle(client_ids)
-    for i, client_id in enumerate(client_ids):
+    random.shuffle(input_provider.client_ids)
+    for i, client_id in enumerate(input_provider.client_ids):
       self._client_id_round_assignments[i % min_sep].append(client_id)
 
     self._min_sep = min_sep
-    self._client_data_directory = client_data_directory
+    self._input_provider = input_provider
     self._computation_type = computation_type
     self._key_name = key_name
+    self._use_data_pointers = use_data_pointers
     self._round_index = 0
 
   @classmethod
@@ -148,26 +158,76 @@ class MinSepDataSourceIterator(
     selected_ids = random.sample(eligible_ids, min(len(eligible_ids), k))
     self._round_index += 1
 
-    # Create a list of `federated_language.framework.Data` protos for the
-    # selected client ids. This is how the trusted execution stack expects to
-    # receive client data.
-    selected_data_protos = []
-    for client_id in selected_ids:
-      any_proto = any_pb2.Any()
-      any_proto.Pack(
-          file_info_pb2.FileInfo(
-              uri=os.path.join(self._client_data_directory, client_id),
-              key=self._key_name,
-          )
-      )
-      selected_data_protos.append(
-          computation_pb2.Computation(
-              type=self._computation_type,
-              data=computation_pb2.Data(content=any_proto),
-          )
-      )
+    selected_values = []
+    if self._use_data_pointers:
+      for client_id in selected_ids:
+        any_proto = any_pb2.Any()
+        any_proto.Pack(
+            file_info_pb2.FileInfo(
+                uri=os.path.join(
+                    self._input_provider.client_data_directory, client_id
+                ),
+                key=self._key_name,
+            )
+        )
+        selected_values.append(
+            computation_pb2.Computation(
+                type=self._computation_type,
+                data=computation_pb2.Data(content=any_proto),
+            )
+        )
+      return selected_values
 
-    return selected_data_protos
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=os.cpu_count() * 4
+    ) as executor:
+      future_to_uri = {}
+      for client_id in selected_ids:
+        uri = os.path.join(
+            self._input_provider.client_data_directory, client_id
+        )
+        future = executor.submit(
+            self._input_provider.resolve_uri_to_tensor,
+            uri,
+            self._key_name,
+        )
+        future_to_uri[future] = uri
+
+      # Wait for all futures to complete. The order in which the results are
+      # added does not matter.
+      failure_count = 0
+      for future in concurrent.futures.as_completed(future_to_uri):
+        try:
+          tensor = future.result()
+          selected_values.append(
+              array_pb2.Array(
+                  dtype=data_type_pb2.DataType.Value(
+                      tensor_pb2.DataType.Name(tensor.dtype)
+                  ),
+                  shape=array_pb2.ArrayShape(
+                      dim=tensor.shape.dim_sizes, unknown_rank=False
+                  ),
+                  content=tensor.content,
+              )
+          )
+        except RuntimeError as e:
+          if _RESOLVE_URI_ERROR_MESSAGE_SUBSTRING in str(e):
+            logging.warning(
+                'Skipping URI: %s due to resolve error: %s',
+                future_to_uri[future],
+                e,
+            )
+            failure_count += 1
+            continue
+          else:
+            raise
+    if failure_count > 0:
+      logging.warning(
+          'Skipped %d inputs due to resolve errors in total of %d inputs.',
+          failure_count,
+          len(selected_ids),
+      )
+    return selected_values
 
 
 class MinSepDataSource(federated_language.program.FederatedDataSource):
@@ -176,8 +236,7 @@ class MinSepDataSource(federated_language.program.FederatedDataSource):
   def __init__(
       self,
       min_sep: int,
-      client_ids: list[str],
-      client_data_directory: str,
+      input_provider: program_input_provider.ProgramInputProvider,
       computation_type: computation_pb2.Type = computation_pb2.Type(
           federated=computation_pb2.FederatedType(
               placement=computation_pb2.PlacementSpec(
@@ -194,26 +253,21 @@ class MinSepDataSource(federated_language.program.FederatedDataSource):
           )
       ),
       key_name: str = constants.OUTPUT_TENSOR_NAME,
+      use_data_pointers: bool = False,
   ):
     """Returns an initialized `tff.program.MinSepDataSource`.
-
-    # TODO: b/421023553 - Add support for specifying the underlying data type
-    # for the Data protos we will return. For now, we know that the underlying
-    # data type is a string tensor (in reality, a serialized federated compute
-    # checkpoint), but this data type will likely change in the future.
-    # Packaging a custom data type into the Data proto will become easier once
-    # we are able to update the federated_language version.
 
     Args:
       min_sep: The number of rounds that must elapse between successive
         participations for the same client. Must be a positive integer.
-      client_ids: A list of strings representing the clients from this data
-        source. Must not be empty.
-      client_data_directory: The directory containing the client data.
+      input_provider: The program input provider that provides the client ids
+        and client data directory.
       computation_type: The type of data represented by this data source.
       key_name: The name of the key to use when creating pointers to the
         underlying data. This should match the tensor name used when creating
         the federated checkpoint for the uploaded client data.
+      use_data_pointers: Whether to return TFF value data pointers or return
+        resolved TFF value literals.
 
     Raises:
       ValueError: If `client_ids` is empty or if `min_sep` is not a positive
@@ -225,14 +279,14 @@ class MinSepDataSource(federated_language.program.FederatedDataSource):
           f'{min_sep}.'
       )
 
-    if not client_ids:
-      raise ValueError('Expected `client_ids` to not be empty.')
+    if not input_provider.client_ids:
+      raise ValueError('Expected `input_provider.client_ids` to not be empty.')
 
     self._min_sep = min_sep
-    self._client_ids = client_ids
-    self._client_data_directory = client_data_directory
+    self._input_provider = input_provider
     self._computation_type = computation_type
     self._key_name = key_name
+    self._use_data_pointers = use_data_pointers
 
   @property
   def federated_type(self) -> federated_language.FederatedType:
@@ -244,8 +298,8 @@ class MinSepDataSource(federated_language.program.FederatedDataSource):
   def iterator(self) -> MinSepDataSourceIterator:
     return MinSepDataSourceIterator(
         self._min_sep,
-        self._client_ids,
-        self._client_data_directory,
+        self._input_provider,
         self._computation_type,
         self._key_name,
+        self._use_data_pointers,
     )

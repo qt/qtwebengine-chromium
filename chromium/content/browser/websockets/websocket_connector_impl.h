@@ -38,13 +38,13 @@ class WebSocketConnectorImpl final : public blink::mojom::WebSocketConnector {
       const content::GlobalRenderFrameHostId& frame_id,
       const url::Origin& origin,
       const net::IsolationInfo& isolation_info,
-      network::mojom::ClientSecurityStatePtr client_security_state);
+      network::mojom::ClientSecurityStatePtr client_security_state,
+      std::optional<base::UnguessableToken> network_restrictions_id);
   ~WebSocketConnectorImpl() override;
 
   // WebSocketConnector implementation
   void Connect(const GURL& url,
                const std::vector<std::string>& requested_protocols,
-               const net::SiteForCookies& site_for_cookies,
                const std::optional<std::string>& user_agent,
                net::StorageAccessApiStatus storage_access_api_status,
                mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
@@ -55,7 +55,6 @@ class WebSocketConnectorImpl final : public blink::mojom::WebSocketConnector {
  private:
   static void ConnectCalledByContentBrowserClient(
       const std::vector<std::string>& requested_protocols,
-      const net::SiteForCookies& site_for_cookies,
       net::StorageAccessApiStatus storage_access_api_status,
       const net::IsolationInfo& isolation_info,
       const content::GlobalRenderFrameHostId& frame_id,
@@ -63,6 +62,7 @@ class WebSocketConnectorImpl final : public blink::mojom::WebSocketConnector {
       network::mojom::ClientSecurityStatePtr client_security_state,
       uint32_t options,
       std::optional<base::UnguessableToken> throttling_profile_id,
+      std::optional<base::UnguessableToken> network_restrictions_id,
       const GURL& url,
       std::vector<network::mojom::HttpHeaderPtr> additional_headers,
       mojo::PendingRemote<network::mojom::WebSocketHandshakeClient>
@@ -76,6 +76,7 @@ class WebSocketConnectorImpl final : public blink::mojom::WebSocketConnector {
   const url::Origin origin_;
   const net::IsolationInfo isolation_info_;
   const network::mojom::ClientSecurityStatePtr client_security_state_;
+  const std::optional<base::UnguessableToken> network_restrictions_id_;
 };
 
 }  // namespace content

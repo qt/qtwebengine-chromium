@@ -25,16 +25,19 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <atomic>
-#include <mutex>
+#include "dawn/native/ObjectBase.h"
+
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "absl/strings/str_format.h"
 #include "dawn/native/Adapter.h"
 #include "dawn/native/Device.h"
-#include "dawn/native/ObjectBase.h"
+#include "dawn/native/DeviceGuard.h"
+#include "dawn/native/ObjectLabel.h"
 #include "dawn/native/ObjectType_autogen.h"
+#include "dawn/native/Toggles.h"
 #include "dawn/native/utils/WGPUHelpers.h"
 
 namespace dawn::native {
@@ -145,42 +148,77 @@ void ApiObjectList::Destroy(DestroyReason reason) {
 }
 
 ApiObjectBase::ApiObjectBase(DeviceBase* device, StringView label) : ObjectBase(device) {
-    mLabel = std::string(label);
+    if (!label.IsUndefined()) {
+        SetLabel(std::string(label));
+    }
 }
 
 ApiObjectBase::ApiObjectBase(DeviceBase* device, ErrorTag tag, StringView label)
     : ObjectBase(device, tag) {
-    mLabel = std::string(label);
+    if (!label.IsUndefined()) {
+        SetLabel(std::string(label));
+    }
 }
 
 ApiObjectBase::ApiObjectBase(DeviceBase* device, DelayedInitializationTag tag, StringView label)
     : ObjectBase(device, tag) {
-    mLabel = std::string(label);
+    if (!label.IsUndefined()) {
+        SetLabel(std::string(label));
+    }
 }
 
 ApiObjectBase::ApiObjectBase(DeviceBase* device, LabelNotImplementedTag tag) : ObjectBase(device) {}
 
 ApiObjectBase::~ApiObjectBase() {
     DAWN_ASSERT(!IsAlive());
+    delete mLabel.load(std::memory_order_acquire);
 }
 
 void ApiObjectBase::APISetLabel(StringView label) {
+    // TODO(crbug.com/479457809): remove this once all backends' SetLabelImpl() implementations are
+    // thread safe. We only need the device guard to protect the backend's label.
+    std::optional<DeviceGuard> deviceGuard;
+    if (GetDevice()->IsToggleEnabled(Toggle::UseUserDefinedLabelsInBackend)) {
+        deviceGuard.emplace(GetDevice()->GetGuard());
+    }
     SetLabel(std::string(utils::NormalizeMessageString(label)));
 }
 
 void ApiObjectBase::SetLabel(std::string label) {
-    mLabel = std::move(label);
+    auto* labelObj = mLabel.load(std::memory_order_acquire);
+    if (labelObj == nullptr) {
+        auto* newLabel = new ObjectLabel();
+        ObjectLabel* expected = nullptr;
+        if (mLabel.compare_exchange_strong(expected, newLabel, std::memory_order_acq_rel,
+                                           std::memory_order_acquire)) {
+            labelObj = newLabel;
+        } else {
+            delete newLabel;
+            labelObj = expected;
+        }
+    }
+    labelObj->SetValue(std::move(label));
+
+    if (!GetDevice()->IsToggleEnabled(Toggle::UseUserDefinedLabelsInBackend)) {
+        return;
+    }
+
     SetLabelImpl();
 }
 
-const std::string& ApiObjectBase::GetLabel() const {
-    return mLabel;
+std::string ApiObjectBase::GetLabel() const {
+    auto* label = mLabel.load(std::memory_order_acquire);
+    if (label == nullptr) {
+        return "";
+    }
+    return label->GetValue();
 }
 
 void ApiObjectBase::FormatLabel(absl::FormatSink* s) const {
     s->Append(ObjectTypeAsString(GetType()));
-    if (!mLabel.empty()) {
-        s->Append(absl::StrFormat(" \"%s\"", mLabel));
+    const std::string& label = GetLabel();
+    if (!label.empty()) {
+        s->Append(absl::StrFormat(" \"%s\"", label));
     } else {
         s->Append(" (unlabeled)");
     }

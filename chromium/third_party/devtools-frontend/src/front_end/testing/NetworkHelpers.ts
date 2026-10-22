@@ -17,11 +17,15 @@ export async function createNetworkPanelForMockConnection(): Promise<Network.Net
   const dummyStorage = new Common.Settings.SettingsStorage({});
   for (const settingName
            of ['network-color-code-resource-types', 'network.group-by-frame', 'network-record-film-strip-setting']) {
-    Common.Settings.registerSettingExtension({
-      settingName,
-      settingType: Common.Settings.SettingType.BOOLEAN,
-      defaultValue: false,
-    });
+    try {
+      Common.Settings.registerSettingExtension({
+        settingName,
+        settingType: Common.Settings.SettingType.BOOLEAN,
+        defaultValue: false,
+      });
+    } catch {
+      // ignore duplicate errors.
+    }
   }
   Common.Settings.Settings.instance({
     forceNew: true,
@@ -31,7 +35,7 @@ export async function createNetworkPanelForMockConnection(): Promise<Network.Net
     settingRegistrations: Common.SettingRegistration.getRegisteredSettings(),
   });
   const networkPanel = Network.NetworkPanel.NetworkPanel.instance({forceNew: true, displayScreenshotDelay: 0});
-  renderElementIntoDOM(networkPanel);
+  renderElementIntoDOM(networkPanel, {allowMultipleChildren: true});
   await RenderCoordinator.done();
   return networkPanel;
 }

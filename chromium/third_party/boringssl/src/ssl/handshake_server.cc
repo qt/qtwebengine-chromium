@@ -35,6 +35,7 @@
 #include <openssl/rand.h>
 #include <openssl/x509.h>
 
+#include "../crypto/bytestring/internal.h"
 #include "../crypto/internal.h"
 #include "internal.h"
 
@@ -843,9 +844,14 @@ static enum ssl_hs_wait_t do_select_parameters(SSL_HANDSHAKE *hs) {
     }
   }
 
+  uint8_t alert = SSL_AD_DECODE_ERROR;
+  if (!ssl_negotiate_client_certificate_type(hs, &alert, &client_hello)) {
+    ssl_send_alert(ssl, SSL3_AL_FATAL, alert);
+    return ssl_hs_error;
+  }
+
   // HTTP/2 negotiation depends on the cipher suite, so ALPN negotiation was
   // deferred. Complete it now.
-  uint8_t alert = SSL_AD_DECODE_ERROR;
   if (!ssl_negotiate_alpn(hs, &alert, &client_hello)) {
     ssl_send_alert(ssl, SSL3_AL_FATAL, alert);
     return ssl_hs_error;
@@ -1058,8 +1064,7 @@ static enum ssl_hs_wait_t do_send_server_certificate(SSL_HANDSHAKE *hs) {
         // If generating hints, save the ECDHE key.
         if (hints && hs->hints_requested) {
           bssl::ScopedCBB private_key_cbb;
-          if (!hints->ecdhe_public_key.CopyFrom(
-                  Span(CBB_data(&child), CBB_len(&child))) ||
+          if (!hints->ecdhe_public_key.CopyFrom(CBBAsSpan(&child)) ||
               !CBB_init(private_key_cbb.get(), 32) ||
               !hs->key_shares[0]->SerializePrivateKey(private_key_cbb.get()) ||
               !CBBFinishArray(private_key_cbb.get(),

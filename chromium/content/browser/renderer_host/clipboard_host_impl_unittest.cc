@@ -23,9 +23,9 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/navigation_simulator.h"
+#include "content/public/test/test_content_browser_client.h"
 #include "content/public/test/test_renderer_host.h"
 #include "content/public/test/test_utils.h"
-#include "content/test/test_content_browser_client.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "skia/ext/skia_utils_base.h"
@@ -101,8 +101,8 @@ class ClipboardHostImplTest : public RenderViewHostTestHarness {
   }
 
   bool IsFormatAvailable(ui::ClipboardFormatType type) {
-    return system_clipboard()->IsFormatAvailable(
-        type, ui::ClipboardBuffer::kCopyPaste,
+    return ui::clipboard_test_util::IsFormatAvailable(
+        system_clipboard(), type, ui::ClipboardBuffer::kCopyPaste,
         /* data_dst=*/nullptr);
   }
 
@@ -134,18 +134,22 @@ TEST_F(ClipboardHostImplTest, SimpleImage_ReadPng) {
 
   EXPECT_NE(sequence_number, system_clipboard()->GetSequenceNumber(
                                  ui::ClipboardBuffer::kCopyPaste));
-  EXPECT_FALSE(system_clipboard()->IsFormatAvailable(
-      ui::ClipboardFormatType::PlainTextType(), ui::ClipboardBuffer::kCopyPaste,
+  EXPECT_FALSE(ui::clipboard_test_util::IsFormatAvailable(
+      system_clipboard(), ui::ClipboardFormatType::PlainTextType(),
+      ui::ClipboardBuffer::kCopyPaste,
       /* data_dst=*/nullptr));
-  EXPECT_TRUE(system_clipboard()->IsFormatAvailable(
-      ui::ClipboardFormatType::BitmapType(), ui::ClipboardBuffer::kCopyPaste,
+  EXPECT_TRUE(ui::clipboard_test_util::IsFormatAvailable(
+      system_clipboard(), ui::ClipboardFormatType::BitmapType(),
+      ui::ClipboardBuffer::kCopyPaste,
       /*data_dst=*/nullptr));
-  EXPECT_TRUE(system_clipboard()->IsFormatAvailable(
-      ui::ClipboardFormatType::PngType(), ui::ClipboardBuffer::kCopyPaste,
+  EXPECT_TRUE(ui::clipboard_test_util::IsFormatAvailable(
+      system_clipboard(), ui::ClipboardFormatType::PngType(),
+      ui::ClipboardBuffer::kCopyPaste,
       /*data_dst=*/nullptr));
 
-  std::vector<uint8_t> png =
-      ui::clipboard_test_util::ReadPng(system_clipboard());
+  std::vector<uint8_t> png = ui::clipboard_test_util::ReadPng(
+      system_clipboard(), ui::ClipboardBuffer::kCopyPaste,
+      /*data_dst=*/nullptr);
   SkBitmap actual = gfx::PNGCodec::Decode(png);
   ASSERT_TRUE(!actual.isNull());
   EXPECT_TRUE(gfx::BitmapsAreEqual(bitmap, actual));
@@ -275,8 +279,10 @@ class ClipboardHostImplWriteTest : public RenderViewHostTestHarness {
   RenderFrameHost& rfh() { return *web_contents()->GetPrimaryMainFrame(); }
 
   void ValidateClipboardSource() {
-    ClipboardEndpoint source_endpoint =
-        GetSourceClipboardEndpoint(nullptr, ui::ClipboardBuffer::kCopyPaste);
+    base::test::TestFuture<ClipboardEndpoint> future;
+    GetSourceClipboardEndpoint(nullptr, ui::ClipboardBuffer::kCopyPaste,
+                               future.GetCallback());
+    ClipboardEndpoint source_endpoint = future.Take();
     EXPECT_TRUE(source_endpoint.data_transfer_endpoint());
     EXPECT_TRUE(source_endpoint.data_transfer_endpoint()->IsUrlType());
     EXPECT_EQ(source_endpoint.web_contents(),
@@ -299,8 +305,10 @@ TEST_F(ClipboardHostImplWriteTest, NoSourceWithoutDataWrite) {
                                   future.GetCallback());
   EXPECT_EQ(u"", future.Take());
 
-  ClipboardEndpoint source_endpoint =
-      GetSourceClipboardEndpoint(nullptr, ui::ClipboardBuffer::kCopyPaste);
+  base::test::TestFuture<ClipboardEndpoint> source_future;
+  GetSourceClipboardEndpoint(nullptr, ui::ClipboardBuffer::kCopyPaste,
+                             source_future.GetCallback());
+  ClipboardEndpoint source_endpoint = source_future.Take();
   EXPECT_FALSE(source_endpoint.data_transfer_endpoint());
   EXPECT_FALSE(source_endpoint.web_contents());
   EXPECT_FALSE(source_endpoint.browser_context());
@@ -434,8 +442,9 @@ TEST_F(ClipboardHostImplWriteTest, WriteBitmap) {
   clipboard_host_impl()->WriteImage(kBitmap);
   clipboard_host_impl()->CommitWrite();
 
-  std::vector<uint8_t> png =
-      ui::clipboard_test_util::ReadPng(system_clipboard());
+  std::vector<uint8_t> png = ui::clipboard_test_util::ReadPng(
+      system_clipboard(), ui::ClipboardBuffer::kCopyPaste,
+      /*data_dst=*/nullptr);
   SkBitmap actual = gfx::PNGCodec::Decode(png);
   ASSERT_FALSE(actual.isNull());
   EXPECT_TRUE(gfx::BitmapsAreEqual(kBitmap, actual));
@@ -447,8 +456,9 @@ TEST_F(ClipboardHostImplWriteTest, WriteBitmap_Empty) {
   clipboard_host_impl()->WriteImage(SkBitmap());
   clipboard_host_impl()->CommitWrite();
 
-  std::vector<uint8_t> png =
-      ui::clipboard_test_util::ReadPng(system_clipboard());
+  std::vector<uint8_t> png = ui::clipboard_test_util::ReadPng(
+      system_clipboard(), ui::ClipboardBuffer::kCopyPaste,
+      /*data_dst=*/nullptr);
   SkBitmap actual = gfx::PNGCodec::Decode(png);
   EXPECT_TRUE(actual.isNull());
   EXPECT_TRUE(gfx::BitmapsAreEqual(kBitmap, actual));

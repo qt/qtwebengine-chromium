@@ -13,7 +13,6 @@
 #include "base/functional/callback.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
 #include "base/strings/span_printf.h"
 #include "base/strings/string_split.h"
@@ -32,8 +31,8 @@ namespace {
 // The prefix "e::" is used so that the crash can be quickly located.
 //
 // This is provided in feature_util because for some reason features are prone
-// to mysterious crashes in named map lookups. For example see crbug.com/365192
-// and crbug.com/461915.
+// to mysterious crashes in named map lookups. For example see
+// crbug.com/40361738 and crbug.com/40407279.
 #define CRASH_WITH_MINIDUMP(message)                                  \
   {                                                                   \
     std::string message_copy(message);                                \
@@ -83,7 +82,7 @@ const Feature* GetFeatureFromProviderByName(const std::string& provider_name,
   const Feature* feature =
       FeatureProvider::GetByName(provider_name)->GetFeature(feature_name);
   // We should always refer to existing features, but we can't CHECK here
-  // due to flaky JSONReader fails, see: crbug.com/176381, crbug.com/602936
+  // due to flaky JSONReader fails, see: crbug.com/40302033, crbug.com/41248827
   DCHECK(feature) << "Feature \"" << feature_name << "\" not found in "
                   << "FeatureProvider \"" << provider_name << "\"";
   return feature;

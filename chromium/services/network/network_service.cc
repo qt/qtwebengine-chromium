@@ -325,10 +325,6 @@ class RestrictedCookieManagerMetrics
 
 }  // namespace
 
-// static
-const base::TimeDelta NetworkService::kInitialDohProbeTimeout =
-    base::Seconds(5);
-
 // Handler of delaying calls to NetworkContext::ActivateDohProbes() until after
 // an initial service startup delay.
 class NetworkService::DelayedDohProbeActivator {
@@ -337,11 +333,17 @@ class NetworkService::DelayedDohProbeActivator {
       : network_service_(network_service) {
     DCHECK(network_service_);
 
-    // Delay initial DoH probes to prevent interference with startup tasks.
-    doh_probes_timer_.Start(
-        FROM_HERE, NetworkService::kInitialDohProbeTimeout,
-        base::BindOnce(&DelayedDohProbeActivator::ActivateAllDohProbes,
-                       base::Unretained(this)));
+    base::TimeDelta delay = features::kDelayInitialDohProbeTimeoutParam.Get();
+    // If we don't start the timer here, DoH probes are activated immediately
+    // upon NetworkContext registration in RegisterNetworkContext().
+    if (base::FeatureList::IsEnabled(features::kDelayInitialDohProbeTimeout) &&
+        !delay.is_zero()) {
+      // Delay initial DoH probes to prevent interference with startup tasks.
+      doh_probes_timer_.Start(
+          FROM_HERE, delay,
+          base::BindOnce(&DelayedDohProbeActivator::ActivateAllDohProbes,
+                         base::Unretained(this)));
+    }
   }
 
   DelayedDohProbeActivator(const DelayedDohProbeActivator&) = delete;
@@ -638,8 +640,13 @@ void NetworkService::CreateNetLogEntriesForActiveObjects(
   std::set<net::URLRequestContext*> contexts;
   for (NetworkContext* nc : network_contexts_) {
     contexts.insert(nc->url_request_context());
+#if BUILDFLAG(ENABLE_WEBSOCKETS)
+    nc->CreateNetLogEntriesForActiveWebSockets(observer);
+#endif  // BUILDFLAG(ENABLE_WEBSOCKETS)
   }
-  return net::CreateNetLogEntriesForActiveObjects(contexts, observer);
+
+  // Log active URLRequests
+  net::CreateNetLogEntriesForActiveObjects(contexts, observer);
 }
 
 void NetworkService::SetParams(mojom::NetworkServiceParamsPtr params) {
@@ -718,6 +725,20 @@ void NetworkService::SetSSLKeyLogFile(base::File file) {
 void NetworkService::CreateNetworkContext(
     mojo::PendingReceiver<mojom::NetworkContext> receiver,
     mojom::NetworkContextParamsPtr params) {
+#if BUILDFLAG(IS_ANDROID)
+  if (params->cookie_store_ready_callback) {
+    auto pending = std::make_unique<PendingNetworkContext>(
+        this, std::move(receiver), std::move(params));
+    pending->ready_receiver.Bind(
+        std::move(pending->params->cookie_store_ready_callback));
+    auto* raw = pending.get();
+    pending->ready_receiver.set_disconnect_handler(
+        base::BindOnce(&NetworkService::OnPendingNetworkContextDisconnected,
+                       base::Unretained(this), raw));
+    pending_network_contexts_.emplace(std::move(pending));
+    return;
+  }
+#endif  // BUILDFLAG(IS_ANDROID)
   owned_network_contexts_.emplace(std::make_unique<NetworkContext>(
       this, std::move(receiver), std::move(params),
       base::BindOnce(&NetworkService::OnNetworkContextConnectionClosed,
@@ -792,7 +813,7 @@ void NetworkService::ConfigureHttpAuthPrefs(
 }
 
 void NetworkService::SetRawHeadersAccess(
-    network::RendererProcess process_id,
+    network::RendererProcessId process_id,
     const std::vector<url::Origin>& origins) {
   DCHECK(process_id);
   if (!origins.size()) {
@@ -803,28 +824,36 @@ void NetworkService::SetRawHeadersAccess(
   }
 }
 
-void NetworkService::SetMaxConnectionsPerProxyChain(uint32_t max_connections) {
-  // Clamp the value between min_limit and max_limit.
-  size_t max_limit = 99;
-  size_t min_limit = net::ClientSocketPoolManager::max_sockets_per_group(
-      net::HttpNetworkSession::NORMAL_SOCKET_POOL);
-  size_t new_limit = std::clamp(base::saturated_cast<size_t>(max_connections),
-                                min_limit, max_limit);
-
-  // Assign the global limit.
-  net::ClientSocketPoolManager::set_max_sockets_per_proxy_chain(
-      net::HttpNetworkSession::NORMAL_SOCKET_POOL, new_limit);
+void NetworkService::SetMaxConnectionsPerProxyChain(
+    std::optional<uint32_t> max_connection_normal,
+    std::optional<uint32_t> max_connection_websocket) {
+  // LINT.IfChange(SetMaxConnectionsPerProxyChain)
+  // We set out explicit limits here because they are hard coded in the
+  // enterprise policy MaxConnectionsPerProxy(ForWebSocket).
+  if (max_connection_normal) {
+    size_t new_limit = base::saturated_cast<size_t>(
+        std::clamp(*max_connection_normal, 6u, 256u));
+    net::ClientSocketPoolManager::set_max_sockets_per_proxy_chain(
+        net::HttpNetworkSession::SocketPoolType::kNormal, new_limit);
+  }
+  if (max_connection_websocket) {
+    size_t new_limit = base::saturated_cast<size_t>(
+        std::clamp(*max_connection_websocket, 6u, 256u));
+    net::ClientSocketPoolManager::set_max_sockets_per_proxy_chain(
+        net::HttpNetworkSession::SocketPoolType::kWebSocket, new_limit);
+  }
+  // LINT.ThenChange(/net/socket/client_socket_pool_manager.cc:set_max_sockets_per_proxy_chain)
 }
 
 bool NetworkService::HasRawHeadersAccess(
-    const network::OriginatingProcess& process_id,
+    const network::OriginatingProcessId& process_id,
     const GURL& resource_url) const {
   // Allow raw headers for browser-initiated requests.
   if (process_id.is_browser()) {
     return true;
   }
   auto it =
-      raw_headers_access_origins_by_pid_.find(process_id.renderer_process());
+      raw_headers_access_origins_by_pid_.find(process_id.renderer_process_id());
   if (it == raw_headers_access_origins_by_pid_.end()) {
     return false;
   }
@@ -1170,6 +1199,9 @@ void NetworkService::InitMockNetworkChangeNotifierForTesting() {
 }
 
 void NetworkService::DestroyNetworkContexts() {
+#if BUILDFLAG(IS_ANDROID)
+  pending_network_contexts_.clear();
+#endif  // BUILDFLAG(IS_ANDROID)
   owned_network_contexts_.clear();
 }
 
@@ -1183,6 +1215,42 @@ void NetworkService::OnNetworkContextConnectionClosed(
   }
   owned_network_contexts_.erase(it);
 }
+
+#if BUILDFLAG(IS_ANDROID)
+NetworkService::PendingNetworkContext::PendingNetworkContext(
+    NetworkService* service,
+    mojo::PendingReceiver<mojom::NetworkContext> receiver,
+    mojom::NetworkContextParamsPtr params)
+    : service(service),
+      context_receiver(std::move(receiver)),
+      params(std::move(params)) {}
+
+NetworkService::PendingNetworkContext::~PendingNetworkContext() = default;
+
+void NetworkService::PendingNetworkContext::OnCookieStoreReady() {
+  service->OnPendingNetworkContextReady(this);
+}
+
+void NetworkService::OnPendingNetworkContextReady(
+    PendingNetworkContext* pending) {
+  auto it = pending_network_contexts_.find(pending);
+  CHECK(it != pending_network_contexts_.end());
+  auto node = pending_network_contexts_.extract(it);
+  std::unique_ptr<PendingNetworkContext> owned = std::move(node.value());
+
+  owned_network_contexts_.emplace(std::make_unique<NetworkContext>(
+      this, std::move(owned->context_receiver), std::move(owned->params),
+      base::BindOnce(&NetworkService::OnNetworkContextConnectionClosed,
+                     base::Unretained(this))));
+}
+
+void NetworkService::OnPendingNetworkContextDisconnected(
+    PendingNetworkContext* pending) {
+  auto it = pending_network_contexts_.find(pending);
+  CHECK(it != pending_network_contexts_.end());
+  pending_network_contexts_.erase(it);
+}
+#endif  // BUILDFLAG(IS_ANDROID)
 
 void NetworkService::Bind(
     mojo::PendingReceiver<mojom::NetworkService> receiver) {

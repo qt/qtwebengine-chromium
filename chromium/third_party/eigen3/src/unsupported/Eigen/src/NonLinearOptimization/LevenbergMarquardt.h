@@ -105,7 +105,7 @@ class LevenbergMarquardt {
   Scalar fnorm, gnorm;
   bool useExternalScaling;
 
-  Scalar lm_param(void) { return par; }
+  Scalar lm_param(void) const { return par; }
 
  private:
   FunctorType &functor;
@@ -421,14 +421,14 @@ LevenbergMarquardtSpace::Status LevenbergMarquardt<FunctorType, Scalar>::minimiz
   permutation.setIdentity(n);
   if (sing) {
     wa2 = fjac.colwise().blueNorm();
-    // TODO We have no unit test covering this code path, do not modify
+    // TODO: We have no unit test covering this code path, do not modify
     // until it is carefully tested
     ColPivHouseholderQR<JacobianType> qrfac(fjac);
     fjac = qrfac.matrixQR();
     wa1 = fjac.diagonal();
     fjac.diagonal() = qrfac.hCoeffs();
     permutation = qrfac.colsPermutation();
-    // TODO : avoid this:
+    // TODO: Avoid this:
     for (Index ii = 0; ii < fjac.cols(); ii++)
       fjac.col(ii).segment(ii + 1, fjac.rows() - ii - 1) *= fjac(ii, ii);  // rescale vectors
 

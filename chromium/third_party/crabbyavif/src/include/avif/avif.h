@@ -1016,7 +1016,7 @@ void crabby_avifGetPixelFormatInfo(avifPixelFormat format, avifPixelFormatInfo *
 void crabby_avifDiagnosticsClearError(avifDiagnostics *diag);
 
 /// # Safety
-/// C API function that does not perform any unsafe operation.
+/// C API function.
 void *crabby_avifAlloc(size_t size);
 
 /// # Safety

@@ -26,25 +26,31 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_CONTAINER_NODE_H_
 
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink-forward.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_set_html_options.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/css_value.h"
 #include "third_party/blink/renderer/core/css/style_recalc_change.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/static_node_list.h"
 #include "third_party/blink/renderer/core/html/collection_type.h"
+#include "third_party/blink/renderer/core/trustedtypes/trusted_types_util.h"
 #include "third_party/blink/renderer/platform/heap/heap_traits.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
+#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
 
 class Element;
 class ExceptionState;
+class FragmentParserConfig;
+class FragmentParserOptions;
 class GetHTMLOptions;
 class HTMLCollection;
 class RadioNodeList;
 class ScriptState;
-class SetHTMLUnsafeOptions;
+class SetHTMLOptions;
+class V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions;
 class StyleRecalcContext;
 class WhitespaceAttacher;
 class WritableStream;
@@ -395,12 +401,53 @@ class CORE_EXPORT ContainerNode : public Node {
   // only.
   String getHTML(const GetHTMLOptions*, ExceptionState&) const;
 
-  WritableStream* streamAppendHTMLUnsafe(ScriptState*,
-                                         SetHTMLUnsafeOptions*,
-                                         ExceptionState&);
-  WritableStream* streamHTMLUnsafe(ScriptState*,
-                                   SetHTMLUnsafeOptions*,
+  WritableStream* streamAppendHTMLUnsafe(
+      ScriptState*,
+      V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions*,
+      ExceptionState&);
+  WritableStream* streamHTMLUnsafe(
+      ScriptState*,
+      V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions*,
+      ExceptionState&);
+  WritableStream* streamHTML(ScriptState*, SetHTMLOptions*, ExceptionState&);
+  WritableStream* streamAppendHTML(ScriptState*,
+                                   SetHTMLOptions*,
                                    ExceptionState&);
+  void appendHTML(const String& html,
+                  SetHTMLOptions* options,
+                  ExceptionState& exception_state);
+  WritableStream* streamPrependHTMLUnsafe(
+      ScriptState*,
+      V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions*,
+      ExceptionState&);
+  WritableStream* streamPrependHTML(ScriptState*,
+                                    SetHTMLOptions*,
+                                    ExceptionState&);
+
+  void appendHTMLUnsafe(
+      const V8UnionStringOrTrustedHTML* html,
+      V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions* options,
+      ExceptionState& exception_state);
+
+  void prependHTML(const String& html,
+                   SetHTMLOptions* options,
+                   ExceptionState& exception_state);
+
+  void prependHTMLUnsafe(
+      const V8UnionStringOrTrustedHTML* html,
+      V8UnionSetHTMLUnsafeOptionsOrTrustedParserOptions* options,
+      ExceptionState& exception_state);
+
+  void InsertHTMLBefore(Node* ref_child,
+                        const String& html,
+                        const FragmentParserConfig&,
+                        const FragmentParserOptions&,
+                        ExceptionState&);
+  void ReplaceChildWithHTML(Node* ref_child,
+                            const String& html,
+                            const FragmentParserConfig&,
+                            const FragmentParserOptions&,
+                            ExceptionState&);
 
   // DocumentOrElementEventHandlers:
   // These event listeners are only actually web-exposed on interfaces that

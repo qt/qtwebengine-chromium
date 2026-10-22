@@ -11,6 +11,7 @@
 #include "base/callback_list.h"
 #include "base/check.h"
 #include "base/functional/callback.h"
+#include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/notimplemented.h"
@@ -177,7 +178,7 @@ HelpBubbleHandlerBase::HelpBubbleHandlerBase(
 HelpBubbleHandlerBase::~HelpBubbleHandlerBase() {
   for (auto& [id, data] : element_data_) {
     if (data.help_bubble) {
-      data.help_bubble->Close();
+      data.help_bubble->Close(HelpBubble::CloseReason::kBubbleDestroyed);
     }
   }
 }
@@ -213,7 +214,7 @@ std::unique_ptr<HelpBubbleWebUI> HelpBubbleHandlerBase::CreateHelpBubble(
     LOG(WARNING) << "A help bubble is already being shown for " << identifier;
     auto weak_ptr = weak_ptr_factory_.GetWeakPtr();
     if (data.help_bubble) {
-      data.help_bubble->Close();
+      data.help_bubble->Close(HelpBubble::CloseReason::kProgrammaticallyClosed);
       if (!weak_ptr) {
         return nullptr;
       }
@@ -263,8 +264,9 @@ void HelpBubbleHandlerBase::OnHelpBubbleClosing(
   if (it == element_data_.end()) {
     NOTREACHED() << "Identifier " << anchor_id << " was never registered.";
   }
-  if (!it->second.closing)
+  if (!it->second.closing) {
     GetClient()->HideHelpBubble(anchor_id.GetName());
+  }
   it->second.help_bubble = nullptr;
   it->second.params.reset();
   // If this anchor element was only considered visible because it still had a
@@ -300,6 +302,12 @@ void HelpBubbleHandlerBase::OnWebContentsVisibilityChanged(
       return;
     }
   }
+}
+
+void HelpBubbleHandlerBase::SetManager(
+    mojo::PendingRemote<tracked_element::mojom::TrackedElementManager>
+        observer) {
+  // We don't use the pipe to the manager for anything.
 }
 
 void HelpBubbleHandlerBase::TrackedElementVisibilityChanged(
@@ -397,6 +405,10 @@ void HelpBubbleHandlerBase::TrackedElementCustomEvent(
   data->element->CustomEvent(event_type);
 }
 
+void HelpBubbleHandlerBase::TrackedElementCanHighlightChanged(
+    const std::string& native_identifier,
+    bool can_highlight) {}
+
 void HelpBubbleHandlerBase::HelpBubbleButtonPressed(
     const std::string& identifier_name,
     uint8_t button_index) {
@@ -430,11 +442,13 @@ void HelpBubbleHandlerBase::HelpBubbleButtonPressed(
   if (!weak_ptr)
     return;
 
-  if (data->help_bubble)
-    data->help_bubble->Close();
+  if (data->help_bubble) {
+    data->help_bubble->Close(HelpBubble::CloseReason::kProgrammaticallyClosed);
+  }
 
-  if (!weak_ptr)
+  if (!weak_ptr) {
     return;
+  }
 
   data->closing = false;
 }
@@ -477,7 +491,7 @@ void HelpBubbleHandlerBase::HelpBubbleClosed(
 
   // This could also theoretically trigger callbacks.
   if (data->help_bubble) {
-    data->help_bubble->Close();
+    data->help_bubble->Close(HelpBubble::CloseReason::kProgrammaticallyClosed);
   }
 
   if (!weak_ptr)
@@ -517,14 +531,14 @@ void HelpBubbleHandlerBase::OnFloatingHelpBubbleCreated(
     return;
   }
   DCHECK(!it->second.external_bubble_subscription);
-  it->second.external_bubble_subscription = help_bubble->AddOnCloseCallback(
+  it->second.external_bubble_subscription = help_bubble->AddOnClosingCallback(
       base::BindOnce(&HelpBubbleHandlerBase::OnFloatingHelpBubbleClosed,
                      weak_ptr_factory_.GetWeakPtr(), anchor_id));
 }
 
 void HelpBubbleHandlerBase::OnFloatingHelpBubbleClosed(
     ui::ElementIdentifier anchor_id,
-    HelpBubble* help_bubble,
+    const HelpBubble* help_bubble,
     HelpBubble::CloseReason) {
   const auto it = element_data_.find(anchor_id);
   if (it == element_data_.end()) {

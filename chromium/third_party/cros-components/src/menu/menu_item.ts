@@ -5,11 +5,11 @@
  */
 
 import '@material/web/menu/menu-item.js';
-import '../switch/switch';
+import '../switch/switch.js';
 
 import {CloseMenuEvent, MenuItem as MenuItemType} from '@material/web/menu/menu-item.js';
 import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
-import {ifDefined} from 'lit/directives/if-defined';
+import {ifDefined} from 'lit/directives/if-defined.js';
 
 const CHECKED_ICON = html`
   <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">

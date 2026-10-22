@@ -147,6 +147,7 @@ class BoundsMatchVideoSizeOverlayWindow : public VideoOverlayWindow {
   void SetHidePictureInPictureButtonVisibility(bool is_visible) override {}
   void SetMicrophoneMuted(bool muted) override {}
   void SetCameraState(bool turned_on) override {}
+  void SetMediaMuted(bool muted) override {}
   void SetToggleMicrophoneButtonVisibility(bool is_visible) override {}
   void SetToggleCameraButtonVisibility(bool is_visible) override {}
   void SetHangUpButtonVisibility(bool is_visible) override {}
@@ -157,6 +158,7 @@ class BoundsMatchVideoSizeOverlayWindow : public VideoOverlayWindow {
   void SetFaviconImages(
       const std::vector<media_session::MediaImage>& images) override {}
   void SetSurfaceId(const viz::SurfaceId& surface_id) override {}
+  void SetPlaybackControlsVisibility(bool is_visible) override {}
 
  private:
   gfx::Size size_;

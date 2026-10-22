@@ -12,7 +12,8 @@ import type {CrActionMenuElement} from '//resources/cr_elements/cr_action_menu/c
 import type {CrLazyRenderLitElement} from '//resources/cr_elements/cr_lazy_render/cr_lazy_render_lit.js';
 import {WebUiListenerMixinLit} from '//resources/cr_elements/web_ui_listener_mixin_lit.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
-import {CrLitElement, type PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
+import {CrLitElement, nothing} from '//resources/lit/v3_0/lit.rollup.js';
+import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 
 import type {SettingsPrefs} from '../content/read_anything_types.js';
 import {DEFAULT_SETTINGS, SettingsOption, ToolbarEvent} from '../content/read_anything_types.js';
@@ -41,7 +42,9 @@ interface SettingsItem {
   title: string;
   itemType: SettingsItemType;
   // Whether the toggle is checked. Only used when itemType is TOGGLE
-  enabled?: boolean;
+  checked?: boolean;
+  // Whether the toggle is disabled. Only used when itemType is TOGGLE
+  disabled?: boolean;
   // Needed when the aria label should be different from the title
   ariaLabel?: string;
   showSeparator?: boolean;
@@ -150,16 +153,23 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
     return {
       isImmersiveMode: {type: Boolean},
       isReadAnythingPinned: {type: Boolean},
+      isSpeechActive: {type: Boolean},
       settingsPrefs: {type: Object},
+      currentOpenId_: {
+        state: true,
+        type: String,
+      },
     };
   }
 
   accessor isImmersiveMode: boolean = false;
   accessor isReadAnythingPinned: boolean = false;
+  accessor isSpeechActive: boolean = false;
   accessor settingsPrefs: SettingsPrefs = DEFAULT_SETTINGS;
 
   protected options_: SettingsItem[] = [];
-  private currentOpenId_: string|null = null;
+  protected accessor currentOpenId_: string|null = null;
+
   private interceptedEvents_: string[] =
       ['click', 'pointerdown', 'pointermove'];
   private openTimer_: number|null = null;
@@ -185,9 +195,17 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
 
     if (changedProperties.has('settingsPrefs') ||
         changedProperties.has('isImmersiveMode') ||
-        changedProperties.has('isReadAnythingPinned')) {
+        changedProperties.has('isReadAnythingPinned') ||
+        changedProperties.has('isSpeechActive')) {
       this.initializeMenuOptions_();
     }
+  }
+
+  protected getAriaExpanded_(item: SettingsItem): string|typeof nothing {
+    if (item.itemType !== SettingsItemType.MENU) {
+      return nothing;
+    }
+    return this.currentOpenId_ === item.id ? 'true' : 'false';
   }
 
   private initializeMenuOptions_() {
@@ -225,20 +243,24 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
       const original = MENU_ITEM_DATA[id];
       const title = loadTimeData.getString(original.title);
       let ariaLabel = title;
-      let enabled = false;
+      let checked = false;
+      let disabled = false;
 
       if (id === SettingsOption.IMAGES) {
-        enabled = this.settingsPrefs.imagesEnabled;
+        checked = chrome.readingMode.imagesEnabled;
+        disabled = this.isSpeechActive;
         ariaLabel = this.getImageItemLabels();
       }
 
+      // TODO: crbug.com/494316323- Consider disabling the links toggle when
+      // read aloud is speaking, similar to what is done with the images toggle.
       if (id === SettingsOption.LINKS) {
-        enabled = this.settingsPrefs.linksEnabled;
+        checked = chrome.readingMode.linksEnabled;
         ariaLabel = this.getLinkItemLabels();
       }
 
       if (id === SettingsOption.PINNED_TO_TOOLBAR) {
-        enabled = this.isReadAnythingPinned;
+        checked = this.isReadAnythingPinned;
         ariaLabel = this.getPinItemLabels();
       }
 
@@ -247,9 +269,26 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
         id,
         title,
         ariaLabel,
-        enabled,
+        checked,
+        disabled,
       };
     });
+
+    // There should be a separator between the menu items and the toggle items.
+    // The base combination is on the Links toggle, but that's not
+    // always the first toggle.
+    this.options_.forEach(option => {
+      if (option.itemType === SettingsItemType.TOGGLE) {
+        option.showSeparator = false;
+      }
+    });
+
+    // Add the separator to the first toggle.
+    const firstToggle =
+        this.options_.find(item => item.itemType === SettingsItemType.TOGGLE);
+    if (firstToggle) {
+      firstToggle.showSeparator = true;
+    }
   }
 
   private getLinkItemLabels() {
@@ -281,7 +320,7 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
     const currentTarget = e.currentTarget as HTMLElement;
     const index = Number.parseInt(currentTarget.dataset['index']!);
     const item = this.options_[index];
-    if (!item) {
+    if (!item || item.disabled) {
       return;
     }
 
@@ -307,7 +346,7 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
   }
 
   private onToggleMenuItemClick_(item: SettingsItem) {
-    if (item.itemType !== SettingsItemType.TOGGLE) {
+    if (item.itemType !== SettingsItemType.TOGGLE || item.disabled) {
       return;
     }
 
@@ -315,12 +354,12 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
       chrome.readingMode.onLinksEnabledToggled();
       this.fire(ToolbarEvent.LINKS);
       item.ariaLabel = this.getLinkItemLabels();
-      item.enabled = chrome.readingMode.linksEnabled;
+      item.checked = chrome.readingMode.linksEnabled;
     } else if (item.id === SettingsOption.IMAGES) {
       chrome.readingMode.onImagesEnabledToggled();
       this.fire(ToolbarEvent.IMAGES);
       item.ariaLabel = this.getImageItemLabels();
-      item.enabled = chrome.readingMode.imagesEnabled;
+      item.checked = chrome.readingMode.imagesEnabled;
     } else if (item.id === SettingsOption.PINNED_TO_TOOLBAR) {
       chrome.readingMode.togglePinState();
       chrome.readingMode.sendPinStateRequest();
@@ -329,12 +368,18 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
     this.requestUpdate();
   }
 
-  protected onMenuItemHover_(e: PointerEvent) {
+  protected onPointerenter_(e: PointerEvent) {
     this.clearTimers_();
 
     const currentTarget = e.currentTarget as HTMLElement;
     if (!currentTarget) {
       return;
+    }
+
+    const activeItems =
+        this.shadowRoot?.querySelectorAll<HTMLElement>('.active');
+    for (const activeItem of activeItems) {
+      activeItem.classList.remove('active');
     }
 
     const index = Number.parseInt(currentTarget.dataset['index']!);
@@ -365,14 +410,34 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
     }, delay);
   }
 
-  protected onMenuItemLeave_(e: PointerEvent) {
+  protected onPointerleave_(event: PointerEvent) {
     // Clear the open timer so that submenus aren't opened after the cursor
     // stops hovering.
     this.clearOpenTimer_();
 
-    const currentTarget = e.currentTarget as HTMLElement;
-    if (currentTarget) {
-      currentTarget.classList.remove('active');
+    // TODO (crbug.com/473578189): Make submenus children of the settings menu
+    // The submenus are siblings of this menu, living inside the same host
+    // (the toolbar). We use the host as a boundary to avoid traversing the
+    // entire document if the cursor leaves the toolbar completely.
+    const boundary = (this.getRootNode() as ShadowRoot)?.host;
+    let current = event.relatedTarget as Element | null;
+    let isOverSubmenu = false;
+
+    // Manually walk up the DOM to check if the cursor moved into a submenu.
+    // We cannot use element.closest() because it does not pierce Shadow DOM
+    // boundaries, and event.composedPath() only applies to the event target
+    // (the element we are leaving), not the relatedTarget (the destination).
+    while (current && current !== boundary) {
+      if (current.classList && current.classList.contains('settings-submenu')) {
+        isOverSubmenu = true;
+        break;
+      }
+      // Move up the tree, piercing through shadow roots if necessary.
+      current =
+          current.parentElement || (current.getRootNode() as ShadowRoot)?.host;
+    }
+
+    if (!isOverSubmenu) {
       this.startCloseTimer_();
     }
   }
@@ -418,6 +483,10 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
           eventType, this.pointerEventCallback_, {capture: true});
     });
     this.fire(ToolbarEvent.SETTINGS_OPENED);
+  }
+
+  protected onClose_() {
+    this.close();
   }
 
   close() {
@@ -471,6 +540,13 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
     // we should cancel the close timer, as the user intentionally moved into
     // the submenu.
     if (e.type === 'pointermove' && isInsideSubmenu) {
+      if (this.currentOpenId_) {
+        const activeItem = this.shadowRoot?.querySelector<HTMLElement>(
+            `#${this.currentOpenId_}`);
+        if (activeItem) {
+          activeItem.classList.add('active');
+        }
+      }
       this.clearCloseTimer_();
     }
 

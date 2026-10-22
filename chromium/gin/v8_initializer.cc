@@ -29,7 +29,6 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/path_service.h"
 #include "base/rand_util.h"
@@ -385,9 +384,6 @@ void SetFeatureFlags() {
       features::kV8ExperimentalRegexpEngine,
       "--enable-experimental-regexp-engine-on-excessive-backtracks",
       "--no-enable-experimental-regexp-engine-on-excessive-backtracks");
-  SetV8FlagsIfOverridden(features::kV8ExternalMemoryAccountedInGlobalLimit,
-                         "--external-memory-accounted-in-global-limit",
-                         "--no-external-memory-accounted-in-global-limit");
   SetV8FlagsIfOverridden(features::kV8TurboFastApiCalls,
                          "--turbo-fast-api-calls", "--no-turbo-fast-api-calls");
   SetV8FlagsIfOverridden(features::kV8MegaDomIC, "--mega-dom-ic",
@@ -403,6 +399,10 @@ void SetFeatureFlags() {
   if (base::FeatureList::IsEnabled(features::kV8PreconfigureOldGen)) {
     SetV8FlagsFormatted("--preconfigured-old-space-size=%i",
                         features::kV8PreconfigureOldGenSize.Get());
+  }
+  if (base::FeatureList::IsEnabled(features::kV8MemoryReducerDelay)) {
+    SetV8FlagsFormatted("--memory-reducer-delay-ms=%i",
+                        features::kV8MemoryReducerDelayInSeconds.Get() * 1000);
   }
   if (base::FeatureList::IsEnabled(features::kV8HighEndAndroid)) {
     SetV8FlagsFormatted("--high-end-android-physical-memory-threshold=%i",
@@ -568,26 +568,14 @@ void V8Initializer::Initialize(IsolateHolder::ScriptMode mode,
   // do it is that there are no Isolates available yet, which are required
   // for recording histograms in V8.
 
-  // Record the mode of the sandbox.
-  // These values are persisted to logs. Entries should not be renumbered and
-  // numeric values should never be reused. This should match enum
-  // V8SandboxMode in tools/metrics/histograms/enums.xml.
-  enum class V8SandboxMode {
-    kSecure = 0,
-    kInsecure = 1,
-    kMaxValue = kInsecure,
-  };
-  base::UmaHistogramEnumeration("V8.SandboxMode",
-                                v8::V8::IsSandboxConfiguredSecurely()
-                                    ? V8SandboxMode::kSecure
-                                    : V8SandboxMode::kInsecure);
+  base::UmaHistogramEnumeration("V8.SandboxMode", v8::V8::GetSandboxMode());
 
   // Record the size of the address space reservation backing the sandbox.
   // The size will always be one of a handful of values, so use a sparse
   // histogram to capture it.
-  size_t size = v8::V8::GetSandboxReservationSizeInBytes();
+  const size_t size = v8::V8::GetSandboxReservationSizeInBytes();
   DCHECK_GT(size, 0U);
-  size_t sizeInGB = size >> 30;
+  const size_t sizeInGB = size >> 30;
   DCHECK_EQ(sizeInGB << 30, size);
   base::UmaHistogramSparse("V8.SandboxReservationSizeGB", sizeInGB);
 

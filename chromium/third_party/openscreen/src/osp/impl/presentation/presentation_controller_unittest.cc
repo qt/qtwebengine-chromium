@@ -689,8 +689,7 @@ TEST_F(ControllerTest, CloseConnectionFromPeer) {
       .connection_id = connection->connection_id(),
       .reason =
           msgs::PresentationConnectionCloseEvent_reason::kCloseMethodCalled,
-      .connection_count = 1,
-      .has_error_message = false};
+      .connection_count = 1};
 
   SendCloseEvent(close_event);
   EXPECT_CALL(mock_connection_delegate, OnClosedByRemote());

@@ -7,6 +7,7 @@ import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import {
+  assertScreenshot,
   raf,
   renderElementIntoDOM,
 } from '../../testing/DOMHelpers.js';
@@ -112,9 +113,6 @@ describeWithMockConnection('FrameDetailsView', () => {
   it('renders report keys and values', async () => {
 
     const target = createTarget();
-    const debuggerModel = target.model(SDK.DebuggerModel.DebuggerModel);
-    assert.exists(debuggerModel);
-    sinon.stub(SDK.DebuggerModel.DebuggerModel, 'modelForDebuggerId').resolves(debuggerModel);
 
     const scriptParsedEvent1: Protocol.Debugger.ScriptParsedEvent = {
       scriptId: '123' as Protocol.Runtime.ScriptId,
@@ -149,11 +147,11 @@ describeWithMockConnection('FrameDetailsView', () => {
         ancestryChain: [
           {
             scriptId: '123' as Protocol.Runtime.ScriptId,
-            debuggerId: '42' as Protocol.Runtime.UniqueDebuggerId,
+            debuggerId: '' as Protocol.Runtime.UniqueDebuggerId,
           },
           {
             scriptId: '456' as Protocol.Runtime.ScriptId,
-            debuggerId: '42' as Protocol.Runtime.UniqueDebuggerId,
+            debuggerId: '' as Protocol.Runtime.UniqueDebuggerId,
           }
         ],
         rootScriptFilterlistRule: '/ad-script2.$script',
@@ -255,5 +253,53 @@ report-uri: https://www.example.com/csp`,
     const adScriptsText = Array.from(adScriptAncestryItems).map(adScript => adScript.textContent?.trim());
 
     assert.deepEqual(adScriptsText, ['ad-script1.js:1', 'ad-script2.js:1']);
+  });
+
+  it('renders icon buttons fully when narrow', async () => {
+    const target = createTarget();
+    const frame = makeFrame(target);
+    const container = document.createElement('div');
+    container.style.width = '250px';
+    renderElementIntoDOM(container, {includeCommonStyles: true});
+    const input: Application.FrameDetailsView.FrameDetailsViewInput = {
+      frame,
+      target: null,
+      creationStackTrace: null,
+      adScriptAncestry: null,
+      linkTargetDOMNode: null,
+      permissionsPolicies: null,
+      protocolMonitorExperimentEnabled: false,
+      trials: null,
+      securityIsolationInfo: null,
+      onRevealInNetwork: () => {},
+      onRevealInSources: () => {},
+    };
+    Application.FrameDetailsView.DEFAULT_VIEW(input, undefined, container);
+
+    await assertScreenshot('application/frame-details-narrow.png');
+  });
+
+  it('renders icon buttons close when wide', async () => {
+    const target = createTarget();
+    const frame = makeFrame(target);
+    const container = document.createElement('div');
+    container.style.width = '800px';
+    renderElementIntoDOM(container, {includeCommonStyles: true});
+    const input: Application.FrameDetailsView.FrameDetailsViewInput = {
+      frame,
+      target: null,
+      creationStackTrace: null,
+      adScriptAncestry: null,
+      linkTargetDOMNode: null,
+      permissionsPolicies: null,
+      protocolMonitorExperimentEnabled: false,
+      trials: null,
+      securityIsolationInfo: null,
+      onRevealInNetwork: () => {},
+      onRevealInSources: () => {},
+    };
+    Application.FrameDetailsView.DEFAULT_VIEW(input, undefined, container);
+
+    await assertScreenshot('application/frame-details-wide.png');
   });
 });

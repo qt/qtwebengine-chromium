@@ -13,6 +13,7 @@
 #include <set>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "base/component_export.h"
@@ -27,6 +28,7 @@
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "mojo/public/cpp/base/big_buffer.h"
+#include "mojo/public/cpp/bindings/direct_receiver.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -38,6 +40,7 @@
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_result.h"
 #include "net/cookies/cookie_setting_override.h"
+#include "net/dns/canary_domain_service.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/public/dns_config_overrides.h"
 #include "net/first_party_sets/first_party_set_metadata.h"
@@ -77,6 +80,7 @@
 #include "services/network/url_request_context_owner.h"
 #include "services/network/web_bundle/web_bundle_manager.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
+#include "url/gurl.h"
 
 #if BUILDFLAG(ENABLE_REPORTING)
 #include "net/reporting/reporting_cache_observer.h"
@@ -199,6 +203,13 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   static void SetCertVerifierForTesting(net::CertVerifier* cert_verifier);
 
   net::URLRequestContext* url_request_context() { return url_request_context_; }
+
+#if BUILDFLAG(ENABLE_WEBSOCKETS)
+  // Creates synthetic WEBSOCKET_ALIVE NetLog entries for pre-existing
+  // WebSocket connections. Delegates to WebSocketFactory.
+  void CreateNetLogEntriesForActiveWebSockets(
+      net::NetLog::ThreadSafeObserver* observer) const;
+#endif  // BUILDFLAG(ENABLE_WEBSOCKETS)
 
   NetworkService* network_service() const { return network_service_; }
 
@@ -345,6 +356,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       mojo::PendingReceiver<mojom::RestrictedUDPSocket> receiver,
       mojo::PendingRemote<mojom::UDPSocketListener> listener,
       bool allow_multicast,
+      bool allow_source_specific_multicast,
       mojom::NetworkContext::CreateRestrictedUDPSocketCallback callback)
       override;
   void CreateTCPServerSocket(
@@ -379,11 +391,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   void CreateWebSocket(
       const GURL& url,
       const std::vector<std::string>& requested_protocols,
-      const net::SiteForCookies& site_for_cookies,
       net::StorageAccessApiStatus storage_access_api_status,
       const net::IsolationInfo& isolation_info,
       std::vector<mojom::HttpHeaderPtr> additional_headers,
-      const network::OriginatingProcess& process_id,
+      const network::OriginatingProcessId& process_id,
       const url::Origin& origin,
       network::mojom::ClientSecurityStatePtr client_security_state,
       uint32_t options,
@@ -393,7 +404,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
           url_loader_network_observer,
       mojo::PendingRemote<mojom::WebSocketAuthenticationHandler> auth_handler,
       mojo::PendingRemote<mojom::TrustedHeaderClient> header_client,
-      const std::optional<base::UnguessableToken>& throttling_profile_id)
+      const std::optional<base::UnguessableToken>& throttling_profile_id,
+      const std::optional<base::UnguessableToken>& network_restrictions_id)
       override;
   void CreateWebTransport(
       const GURL& url,
@@ -519,6 +531,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       const net::AuthCredentials& credentials,
       AddAuthCacheEntryCallback callback) override;
   void SetCorsNonWildcardRequestHeadersSupport(bool value) override;
+  void SetDohFallbackUpgradeAllowed(bool allowed) override;
+
 #if BUILDFLAG(IS_CHROMEOS)
   void LookupProxyAuthCredentials(
       const net::ProxyServer& proxy_server,
@@ -599,9 +613,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
 
   // The following methods are used to track the number of requests per process
   // and ensure it doesn't go over a reasonable limit.
-  void LoaderCreated(const OriginatingProcess& process_id);
-  void LoaderDestroyed(const OriginatingProcess& process_id);
-  bool CanCreateLoader(const OriginatingProcess& process_id);
+  void LoaderCreated(const OriginatingProcessId& process_id);
+  void LoaderDestroyed(const OriginatingProcessId& process_id);
+  bool CanCreateLoader(const OriginatingProcessId& process_id);
 
   void set_max_loaders_per_process_for_testing(uint32_t count) {
     max_loaders_per_process_ = count;
@@ -656,10 +670,17 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
     return url_loader_factories_.size();
   }
 
+  net::CanaryDomainService* canary_domain_service_for_testing() {
+    return canary_domain_service_.get();
+  }
+
   // Returns whether all URLLoaderFactories owned by `this` are bound to
   // `bound_network`.
   bool AllURLLoaderFactoriesAreBoundToNetworkForTesting(
       net::handles::NetworkHandle bound_network) const;
+
+  GURL GetNetworkRestrictionResponseUrlForTesting(
+      const base::UnguessableToken& nonce) const;
 
   // Maintains Trust Tokens protocol state
   // (https://github.com/WICG/trust-token-api). Used by URLLoader to check
@@ -722,15 +743,23 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
 
   // Checks whether network access for the partition nonce `nonce` and url
   // `url` is allowed. See `network_revocation_nonces_` and
-  // `network_revocation_exemptions_`.
-  bool IsNetworkForNonceAndUrlAllowed(const base::UnguessableToken& nonce,
-                                      const GURL& url) const;
+  // `network_revocation_exemptions_`. If the check fails for either enforced or
+  // report-only Connection Allowlists that specify a reporting endpoint, this
+  // method will queue a violation report.
+  bool IsNetworkForNonceAndUrlAllowed(
+      const base::UnguessableToken& nonce,
+      const GURL& url,
+      const net::NetworkAnonymizationKey& network_anonymization_key,
+      bool is_redirect = false);
 
   // Checks whether host resolution is allowed for `host` given the network
-  // restrictions ID `nonce`.
+  // restrictions ID `nonce`. If the check fails for either enforced or
+  // report-only Connection Allowlists that specify a reporting endpoint, this
+  // method will queue a violation report.
   bool IsHostResolutionForNonceAndHostAllowed(
       const base::UnguessableToken& nonce,
-      const mojom::HostResolverHost& host) const;
+      const mojom::HostResolverHost& host,
+      const net::NetworkAnonymizationKey& network_anonymization_key);
 
  private:
   class NetworkContextHttpAuthPreferences : public net::HttpAuthPreferences {
@@ -843,6 +872,14 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       base::DictValue body,
       net::ReportingTargetType target_type);
 
+  void QueueConnectionAllowlistReport(
+      const GURL& context,
+      const GURL& resource,
+      const net::NetworkAnonymizationKey& key,
+      const std::optional<base::UnguessableToken>& reporting_source,
+      const std::string& group,
+      bool enforced);
+
   const raw_ptr<NetworkService> network_service_;
 
   mojo::Remote<mojom::NetworkContextClient> client_;
@@ -895,7 +932,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       app_status_listeners_;
 #endif
 
-  mojo::Receiver<mojom::NetworkContext> receiver_;
+  using Receiver = mojo::Receiver<mojom::NetworkContext>;
+  using DirectReceiver = mojo::DirectReceiver<mojom::NetworkContext>;
+  std::variant<Receiver, DirectReceiver> receiver_;
 
   FirstPartySetsAccessDelegate first_party_sets_access_delegate_;
 
@@ -927,7 +966,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
       web_transports_;
 
   // A count of outstanding requests per initiating process.
-  std::map<OriginatingProcess, uint32_t> loader_count_per_process_;
+  std::map<OriginatingProcessId, uint32_t> loader_count_per_process_;
 
   static constexpr uint32_t kMaxOutstandingRequestsPerProcess = 2700;
   uint32_t max_loaders_per_process_ = kMaxOutstandingRequestsPerProcess;
@@ -970,6 +1009,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   std::set<std::unique_ptr<HostResolver>, base::UniquePtrComparator>
       host_resolvers_;
   std::unique_ptr<net::HostResolver::ProbeRequest> doh_probes_request_;
+
+  // Created on-demand. Null if unused.
+  // Must be destroyed before `url_request_context_owner_`;
+  std::unique_ptr<net::CanaryDomainService> canary_domain_service_;
 
   // Used for certificate verification.
   uint64_t next_cert_verify_id_ = 0;
@@ -1059,12 +1102,37 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   scoped_refptr<MojoBackendFileOperationsFactory>
       http_cache_file_operations_factory_;
 
-  // New nonces are inserted by `RevokeNetworkForNonce`,
-  // and membership is checked with `IsNetworkForNonceAndUrlAllowed`.
+  // `NetworkRestriction` objects hold a set of enforced and report-only
+  // URLPatterns to which a given initiator is allowed to connect, along
+  // with reporting metadata for each.
+  //
+  // Initiators are identified via a nonce, inserted via
+  // `RevokeNetworkForNonce`. The relevant allowlists for a given nonce are
+  // checked in `IsNetworkForNonceAndUrlAllowed`.
+  //
   // For details on use cases, please see RevokeNetworkForNonces in
   // `interface NetworkContext` in network_context.mojom.
-  std::map<base::UnguessableToken,
-           std::set<std::unique_ptr<url_pattern::SimpleUrlPatternMatcher>>>
+  struct NetworkRestriction {
+    NetworkRestriction();
+    NetworkRestriction(NetworkRestriction&&);
+    NetworkRestriction& operator=(NetworkRestriction&&);
+    ~NetworkRestriction();
+    std::optional<
+        std::set<std::unique_ptr<url_pattern::SimpleUrlPatternMatcher>>>
+        enforced_allowlisted_patterns;
+    std::optional<std::string> enforced_reporting_endpoint;
+    ConnectionAllowlist::RedirectBehavior enforced_redirect_behavior =
+        ConnectionAllowlist::RedirectBehavior::kBlock;
+    std::optional<
+        std::set<std::unique_ptr<url_pattern::SimpleUrlPatternMatcher>>>
+        report_only_allowlisted_patterns;
+    std::optional<std::string> report_only_reporting_endpoint;
+    ConnectionAllowlist::RedirectBehavior report_only_redirect_behavior =
+        ConnectionAllowlist::RedirectBehavior::kBlock;
+    GURL response_url;
+    std::optional<base::UnguessableToken> reporting_source;
+  };
+  std::map<base::UnguessableToken, NetworkRestriction>
       network_revocation_nonces_;
 
   // A data structure that tracks urls that should be exempted from network

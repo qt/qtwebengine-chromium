@@ -12,11 +12,21 @@ export function getHtml(this: SkillCardElement) {
   // clang-format off
   return html`<!--_html_template_start_-->
 <div class="card">
+  ${this.skill.imageUrl ? html`
+    <div id="illustrationContainer">
+      <img is="cr-auto-img" id="illustrationImage"
+          auto-src="${this.skill.imageUrl}">
+      </img>
+    </div>` : html``
+  }
   <div id="cardHeader">
     <div id="infoContainer">
       <div id="icon">${this.skill.icon}</div>
       <div id="name">${this.skill.name}</div>
     </div>
+    ${this.isDiscoverCard_() ? html
+      `<div id="curatedLabel">By ${this.skill.curatedBy}</div>`
+      : html``}
     <!-- Only show the menu button for user-created skills. -->
     ${this.isDiscoverCard_() ? html`` : html`
       <cr-icon-button id="moreButton" iron-icon="cr:more-vert"
@@ -41,7 +51,12 @@ export function getHtml(this: SkillCardElement) {
       </cr-action-menu>
     `}
   </div>
-  <div id="cardBody">${this.getCardBodyText_()}</div>
+  <cr-tooltip for="cardHeader" position="bottom" offset="0"
+      fit-to-visible-bounds>
+    ${this.skill.name}
+  </cr-tooltip>
+  <div id="${this.cardType}Body" class="card-body">${this.getCardBodyText_()}
+  </div>
   <div id="cardFooter">
     <!-- Show add for discoverable skills and edit for user skills. -->
     ${this.isDiscoverCard_() ? html`
@@ -54,7 +69,7 @@ export function getHtml(this: SkillCardElement) {
     ` : html`
       <cr-button id="editButton" @click="${this.onEditButtonClick_}"
           aria-label="${this.ariaLabelForSkill_('edit')}">
-        <cr-icon icon="cr:create" slot="prefix-icon"></cr-icon>
+        <cr-icon id="editIcon" icon="skills:create" slot="prefix-icon"></cr-icon>
         $i18n{edit}
       </cr-button>
     `}

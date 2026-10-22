@@ -354,10 +354,6 @@ ContextResult GLES2DecoderTestBase::MaybeInitDecoderWithWorkarounds(
       .WillOnce(SetArgPointee<1>(normalized_init.has_stencil ? 8 : 0))
       .RetiresOnSaturation();
 
-  EXPECT_CALL(*gl_,
-              GetShaderPrecisionFormat(GL_FRAGMENT_SHADER, GL_HIGH_FLOAT, _, _))
-      .RetiresOnSaturation();
-
   static auto max_viewport_dims =
       std::to_array<GLint>({kMaxViewportWidth, kMaxViewportHeight});
   EXPECT_CALL(*gl_, GetIntegerv(GL_MAX_VIEWPORT_DIMS, _))
@@ -403,22 +399,20 @@ ContextResult GLES2DecoderTestBase::MaybeInitDecoderWithWorkarounds(
       .Times(1)
       .RetiresOnSaturation();
 
-  // TODO(boliu): Remove OS_ANDROID once crbug.com/259023 is fixed and the
-  // workaround has been reverted.
-#if !BUILDFLAG(IS_ANDROID)
-  if (normalized_init.has_alpha && !normalized_init.request_alpha) {
-    EXPECT_CALL(*gl_, ClearColor(0, 0, 0, 1)).Times(1).RetiresOnSaturation();
-  }
+  if (surface_->GetHandle()) {
+    if (normalized_init.has_alpha && !normalized_init.request_alpha) {
+      EXPECT_CALL(*gl_, ClearColor(0, 0, 0, 1)).Times(1).RetiresOnSaturation();
+    }
 
-  EXPECT_CALL(*gl_, Clear(
-      GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT))
-      .Times(1)
-      .RetiresOnSaturation();
+    EXPECT_CALL(*gl_, Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT |
+                            GL_STENCIL_BUFFER_BIT))
+        .Times(1)
+        .RetiresOnSaturation();
 
-  if (normalized_init.has_alpha && !normalized_init.request_alpha) {
-    EXPECT_CALL(*gl_, ClearColor(0, 0, 0, 0)).Times(1).RetiresOnSaturation();
+    if (normalized_init.has_alpha && !normalized_init.request_alpha) {
+      EXPECT_CALL(*gl_, ClearColor(0, 0, 0, 0)).Times(1).RetiresOnSaturation();
+    }
   }
-#endif
 
   if (init.context_type == CONTEXT_TYPE_WEBGL2 &&
       group_->feature_info()->gl_version_info().is_es3) {
@@ -2166,10 +2160,21 @@ void GLES2DecoderTestBase::DoBufferData(GLenum target, GLsizei size) {
 
 void GLES2DecoderTestBase::DoBufferSubData(
     GLenum target, GLint offset, GLsizei size, const void* data) {
-  EXPECT_CALL(*gl_,
-              BufferSubData(target, offset, size, shared_memory_address_.get()))
-      .Times(1)
-      .RetiresOnSaturation();
+  // The GL_ELEMENT_ARRAY_BUFFER's contents might be shadowed. If they
+  // are, then the address from which the data is uploaded to GL will
+  // be internal to the buffer. It's only allocated during the upload
+  // and is therefore impossible to know here. Skip verification of
+  // the upload address for element array buffers.
+  if (target == GL_ELEMENT_ARRAY_BUFFER) {
+    EXPECT_CALL(*gl_, BufferSubData(target, offset, size, _))
+        .Times(1)
+        .RetiresOnSaturation();
+  } else {
+    EXPECT_CALL(
+        *gl_, BufferSubData(target, offset, size, shared_memory_address_.get()))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
   memcpy(shared_memory_address_, data, size);
   cmds::BufferSubData cmd;
   cmd.Init(target, offset, size, shared_memory_id_, shared_memory_offset_);

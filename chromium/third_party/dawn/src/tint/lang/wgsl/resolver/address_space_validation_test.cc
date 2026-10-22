@@ -25,9 +25,8 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/tint/lang/wgsl/resolver/resolver.h"
-
 #include "gmock/gmock.h"
+#include "src/tint/lang/wgsl/resolver/resolver.h"
 #include "src/tint/lang/wgsl/resolver/resolver_helper_test.h"
 #include "src/tint/lang/wgsl/sem/struct.h"
 
@@ -75,18 +74,14 @@ TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_Private_RuntimeArray) 
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: runtime-sized arrays can only be used in the <storage> address space
-56:78 note: while instantiating 'var' v)");
+              R"(56:78 error: variables in 'private' address space must have a fixed footprint)");
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_Private_RuntimeArray) {
     // type t : ptr<private, array<i32>>;
     Alias("t", ty.ptr<private_>(Source{{56, 78}}, ty.array(Source{{12, 34}}, ty.i32())));
 
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(12:34 error: runtime-sized arrays can only be used in the <storage> address space
-56:78 note: while instantiating ptr<private, array<i32>, read_write>)");
+    EXPECT_TRUE(r()->Resolve());
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_Private_RuntimeArrayInStruct) {
@@ -97,9 +92,7 @@ TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_Private_RuntimeArrayIn
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(error: runtime-sized arrays can only be used in the <storage> address space
-12:34 note: while analyzing structure member S.m
-56:78 note: while instantiating 'var' v)");
+              R"(56:78 error: variables in 'private' address space must have a fixed footprint)");
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_Private_RuntimeArrayInStruct) {
@@ -108,11 +101,7 @@ TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_Private_RuntimeArrayInSt
     Structure("S", Vector{Member(Source{{12, 34}}, "m", ty.array(ty.i32()))});
     Alias("t", ty.ptr<private_>(ty.AsType("S")));
 
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(error: runtime-sized arrays can only be used in the <storage> address space
-12:34 note: while analyzing structure member S.m
-note: while instantiating ptr<private, S, read_write>)");
+    EXPECT_TRUE(r()->Resolve());
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_Workgroup_RuntimeArray) {
@@ -122,18 +111,14 @@ TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_Workgroup_RuntimeArray
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: runtime-sized arrays can only be used in the <storage> address space
-56:78 note: while instantiating 'var' v)");
+              R"(56:78 error: variables in 'workgroup' address space must have a fixed footprint)");
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_Workgroup_RuntimeArray) {
     // type t = ptr<workgroup, array<i32>>;
     Alias("t", ty.ptr<workgroup>(ty.array(Source{{12, 34}}, ty.i32())));
 
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(12:34 error: runtime-sized arrays can only be used in the <storage> address space
-note: while instantiating ptr<workgroup, array<i32>, read_write>)");
+    EXPECT_TRUE(r()->Resolve());
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_Workgroup_RuntimeArrayInStruct) {
@@ -144,9 +129,7 @@ TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_Workgroup_RuntimeArray
 
     EXPECT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(error: runtime-sized arrays can only be used in the <storage> address space
-12:34 note: while analyzing structure member S.m
-56:78 note: while instantiating 'var' v)");
+              R"(56:78 error: variables in 'workgroup' address space must have a fixed footprint)");
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_Workgroup_RuntimeArrayInStruct) {
@@ -155,11 +138,7 @@ TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_Workgroup_RuntimeArrayIn
     Structure("S", Vector{Member(Source{{12, 34}}, "m", ty.array(ty.i32()))});
     Alias(Source{{56, 78}}, "t", ty.ptr<workgroup>(ty.AsType("S")));
 
-    EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(error: runtime-sized arrays can only be used in the <storage> address space
-12:34 note: while analyzing structure member S.m
-note: while instantiating ptr<workgroup, S, read_write>)");
+    EXPECT_TRUE(r()->Resolve());
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_Storage_Bool) {
@@ -541,9 +520,7 @@ TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_UniformBuffer_Struct_R
 
     ASSERT_FALSE(r()->Resolve());
     EXPECT_EQ(r()->error(),
-              R"(12:34 error: runtime-sized arrays can only be used in the <storage> address space
-56:78 note: while analyzing structure member S.m
-90:12 note: while instantiating 'var' svar)");
+              R"(90:12 error: variables in 'uniform' address space must have a fixed footprint)");
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_UniformBuffer_Struct_Runtime) {
@@ -554,11 +531,7 @@ TEST_F(ResolverAddressSpaceValidationTest, PointerAlias_UniformBuffer_Struct_Run
 
     Alias("t", ty.ptr<uniform>(Source{{90, 12}}, ty.AsType("S")));
 
-    ASSERT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(12:34 error: runtime-sized arrays can only be used in the <storage> address space
-56:78 note: while analyzing structure member S.m
-90:12 note: while instantiating ptr<uniform, S, read>)");
+    ASSERT_TRUE(r()->Resolve());
 }
 
 TEST_F(ResolverAddressSpaceValidationTest, GlobalVariable_UniformBufferBool) {

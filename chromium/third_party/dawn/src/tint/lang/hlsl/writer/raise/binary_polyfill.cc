@@ -137,13 +137,14 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BinaryPolyfill(core::ir::Module& ir) {
-    TINT_CHECK_RESULT(
-        ValidateAndDumpIfNeeded(ir, "hlsl.BinaryPolyfill",
-                                core::ir::Capabilities{
-                                    core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
-                                    core::ir::Capability::kAllowDuplicateBindings,
-                                    core::ir::Capability::kAllowNonCoreTypes,
-                                }));
+    AssertValid(ir,
+                core::ir::Capabilities{
+                    core::ir::Capability::kAllow16BitIntegers,
+                    core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
+                    core::ir::Capability::kAllowDuplicateBindings,
+                    core::ir::Capability::kAllowNonCoreTypes,
+                },
+                "before hlsl.BinaryPolyfill");
 
     State{ir}.Process();
 

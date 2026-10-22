@@ -16,6 +16,7 @@
 #include "device/vr/openxr/openxr_util.h"
 #include "device/vr/public/cpp/features.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
+#include "third_party/blink/public/common/features_generated.h"
 #include "third_party/openxr/src/include/openxr/openxr.h"
 
 namespace device {
@@ -31,7 +32,10 @@ const std::vector<mojom::XRSessionFeature>& GetSupportedFeatures() {
                           mojom::XRSessionFeature::REF_SPACE_UNBOUNDED,
                           mojom::XRSessionFeature::ANCHORS,
                           mojom::XRSessionFeature::HAND_INPUT,
-                          mojom::XRSessionFeature::SECONDARY_VIEWS}};
+                          mojom::XRSessionFeature::SECONDARY_VIEWS,
+                          mojom::XRSessionFeature::HIT_TEST,
+                          mojom::XRSessionFeature::LIGHT_ESTIMATION,
+                          mojom::XRSessionFeature::DEPTH}};
 
   return *kSupportedFeatures;
 }
@@ -90,19 +94,15 @@ OpenXrDevice::OpenXrDevice(
         mojom::XRSessionFeature::WEBGPU);
   }
 
-  // Only support AR features if AR is enabled.
-  if (device::features::IsOpenXrArEnabled()) {
+  // Only support Plane Detection if the feature flag is enabled.
+  if (base::FeatureList::IsEnabled(features::kWebXRPlaneDetection)) {
     device_data.supported_features.emplace_back(
-        mojom::XRSessionFeature::HIT_TEST);
+        mojom::XRSessionFeature::PLANE_DETECTION);
+  }
+  // Only support Mesh Detection if the feature flag is enabled.
+  if (base::FeatureList::IsEnabled(blink::features::kWebXRMeshDetection)) {
     device_data.supported_features.emplace_back(
-        mojom::XRSessionFeature::LIGHT_ESTIMATION);
-    device_data.supported_features.emplace_back(mojom::XRSessionFeature::DEPTH);
-
-    // Only support Plane Detection if the feature flag is enabled.
-    if (base::FeatureList::IsEnabled(features::kWebXRPlaneDetection)) {
-      device_data.supported_features.emplace_back(
-          mojom::XRSessionFeature::PLANE_DETECTION);
-    }
+        mojom::XRSessionFeature::MESH_DETECTION);
   }
 
   SetDeviceData(std::move(device_data));
@@ -139,8 +139,12 @@ void OpenXrDevice::RequestSession(
   request_session_callback_ = std::move(callback);
 
   OpenXrCreateInfo create_info;
-  create_info.render_process_id = options->render_process_id;
-  create_info.render_frame_id = options->render_frame_id;
+  if (options->renderer_information) {
+    create_info.render_process_id =
+        options->renderer_information->render_process_id;
+    create_info.render_frame_id =
+        options->renderer_information->render_frame_id;
+  }
   create_info.needs_separate_activity =
       OpenXrApiWrapper::NeedsSeparateActivity();
   platform_helper_->CreateInstanceWithCreateInfo(

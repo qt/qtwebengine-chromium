@@ -6,6 +6,11 @@
 
 namespace autofill::features {
 
+// Enables the fix to allow reentry in PaymentsNetworkInterface::IssueRequest()
+// from PaymentsRequest::RespondToDelegate().
+BASE_FEATURE(kAllowReentryFromRespondToDelegate,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // When enabled, the BNPL flow acts as if the user has not yet seen the AI
 // terms. This allows the AI terms to be shown as bold font repeatedly for
 // testing purposes, regardless of the actual stored user preference.
@@ -26,7 +31,13 @@ BASE_FEATURE(kAutofillDisableBnplCountryCheckForTesting,
 // When enabled, Chrome will extract the checkout amount from the checkout
 // page using server-side AI.
 BASE_FEATURE(kAutofillEnableAiBasedAmountExtraction,
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS)
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
              base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+        // BUILDFLAG(IS_CHROMEOS)
 
 // When enabled, Chrome will extract the checkout amount from the checkout page
 // of the allowlisted merchant websites.
@@ -136,28 +147,14 @@ BASE_FEATURE(kAutofillEnableCardBenefitsSync,
 BASE_FEATURE(kAutofillEnableCardInfoRuntimeRetrieval,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-// When enabled, we will store CVC for both local and server credit cards. This
-// will also allow the users to autofill their CVCs on checkout pages.
-BASE_FEATURE(kAutofillEnableCvcStorageAndFilling,
-#if BUILDFLAG(IS_IOS)
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#endif
-
-// When enabled, will enhance CVV storage project. Provide better suggestion,
-// resolve conflict with COF project and add logging.
-BASE_FEATURE(kAutofillEnableCvcStorageAndFillingEnhancement,
-#if BUILDFLAG(IS_IOS)
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#endif
-
 // When enabled, this will enhance the CVV storage project. The enhancement will
 // enable CVV storage suggestions for standalone CVC fields.
 BASE_FEATURE(kAutofillEnableCvcStorageAndFillingStandaloneFormEnhancement,
+#if BUILDFLAG(IS_IOS)
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
              base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 // When enabled, in-product help UI will be shown the first time a card added
 // outside of Chrome appears in Autofill card suggestions."
@@ -190,6 +187,9 @@ BASE_FEATURE(kAutofillEnableFpanRiskBasedAuthentication,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+// When enabled, updates the American Express network art in Autofill.
+BASE_FEATURE(kAutofillEnableNewAmexNetworkArt,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // When enabled, the card benefits toggle in settings will show updated text.
 BASE_FEATURE(kAutofillEnableNewCardBenefitsToggleText,
@@ -205,6 +205,10 @@ BASE_FEATURE(kAutofillEnableNewFopDisplayAndroid,
 // downstream.
 BASE_FEATURE(kAutofillEnableOffersInClankKeyboardAccessory,
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+// When enabled, an "Autofill payments" omnibox chip will appear for relevant
+// payment checkout forms.
+BASE_FEATURE(kAutofillEnableOmniboxAutofill, base::FEATURE_DISABLED_BY_DEFAULT);
 
 // When enabled, Chrome will use the Pay Now Pay Later tabs UI for payments
 // autofill when buy now pay later options are available for the merchant
@@ -247,7 +251,13 @@ BASE_FEATURE(kAutofillEnableTouchToFillReshowForBnpl,
 // retrieval if a challenge is required, 3DS authentication is available for
 // the card, and FIDO is not.
 BASE_FEATURE(kAutofillEnableVcn3dsAuthentication,
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS)
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
              base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+        // BUILDFLAG(IS_CHROMEOS)
 
 // When enabled, the Virtual Card enrollment bottom sheet uses the Java
 // payments data manager and associated image fetcher to retrieve the cached
@@ -261,16 +271,27 @@ BASE_FEATURE(kAutofillEnableVirtualCardJavaPaymentsDataManager,
 // Payments, and Google Pay will instead reference Google Wallet.
 BASE_FEATURE(kAutofillEnableWalletBranding, base::FEATURE_DISABLED_BY_DEFAULT);
 
+// When enabled, further brings certain strings and images referencing Google
+// Pay and Google Wallet into consistency with branding requirements.
+BASE_FEATURE(kAutofillEnableWalletBrandingV2,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // When enabled, Payments Autofill Buy Now Pay Later (BNPL) will use each
 // corresponding issuer's blocklist instead of allowlist to check for website
 // eligibility.
 BASE_FEATURE(kAutofillPreferBuyNowPayLaterBlocklists,
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS)
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
              base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) ||
+        // BUILDFLAG(IS_CHROMEOS)
 
 // When enabled, this feature prioritizes showing the save card bubble over the
 // mandatory re-auth bubble when both are applicable.
 BASE_FEATURE(kAutofillPrioritizeSaveCardOverMandatoryReauth,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // When enabled, Chrome will try to fetch payment account image resources again
 // upon failure. The number of attempts is a controllable parameter. This is a
@@ -278,17 +299,6 @@ BASE_FEATURE(kAutofillPrioritizeSaveCardOverMandatoryReauth,
 // TODO(crbug.com/40276036): Clean up after M139 branch (June 23, 2025).
 BASE_FEATURE(kAutofillRetryImageFetchOnFailure,
              base::FEATURE_ENABLED_BY_DEFAULT);
-
-// If enabled, we will store autofill server card data in shared storage.
-BASE_FEATURE(kAutofillSharedStorageServerCardData,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-#if BUILDFLAG(IS_IOS)
-// When enabled, manual fill view will be shown directly from form focusing
-// events, if a virtual card has been retrieved previously.
-BASE_FEATURE(kAutofillShowManualFillForVirtualCards,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#endif
 
 // Kill switch, when enabled, will prevent the display of the save card bubble
 // within a tab modal pop-up window.
@@ -303,10 +313,6 @@ BASE_FEATURE(kAutofillSyncEwalletAccounts, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kAutofillTouchToFillShowManualFillForVcnFix,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_ANDROID)
-
-// When enabled, adds a timeout on the network request for Unmask requests.
-BASE_FEATURE(kAutofillUnmaskCardRequestTimeout,
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Controls offering credit card upload to Google Payments. Cannot ever be
 // ENABLED_BY_DEFAULT because the feature state depends on the user's country.

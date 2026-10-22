@@ -5,10 +5,15 @@
 #include "cast/streaming/public/sender_session.h"
 
 #include <cstdio>
+#include <functional>
+#include <memory>
 #include <utility>
 
 #include "cast/streaming/capture_configs.h"
+#include "cast/streaming/impl/message_constants.h"
+#include "cast/streaming/input.pb.h"
 #include "cast/streaming/public/capture_recommendations.h"
+#include "cast/streaming/public/protobuf_messenger.h"
 #include "cast/streaming/testing/mock_environment.h"
 #include "cast/streaming/testing/simple_message_port.h"
 #include "gmock/gmock.h"
@@ -111,6 +116,12 @@ constexpr char kCapabilitiesErrorResponse[] = R"({
     "code": 123,
     "description": "something bad happened"
   }
+})";
+
+constexpr char kInputMessage[] = R"({
+  "seqNum": 1,
+  "type": "INPUT",
+  "input": "CGQQnBiCGQgSAggMGgIIBg=="
 })";
 
 const AudioCaptureConfig kAudioCaptureConfigInvalidChannels{
@@ -728,6 +739,77 @@ TEST_F(SenderSessionTest, SendsOfferWithDscp) {
   const Json::Value& video_stream = streams[1];
   EXPECT_EQ(static_cast<int>(UdpSocket::DscpMode::kAF41),
             video_stream["receiverRtcpDscp"].asInt());
+}
+
+TEST_F(SenderSessionTest, InputEventsOptIn) {
+  // Opt-in using SetInputCallback.
+  session_->SetInputCallback([](InputMessage message) {});
+
+  session_->Negotiate(
+      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
+      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+
+  const auto& messages = message_port_->posted_messages();
+  ASSERT_EQ(1u, messages.size());
+  auto message_body = json::Parse(messages[0]);
+  ASSERT_TRUE(message_body.is_value());
+  const Json::Value& offer = message_body.value()["offer"];
+
+  // Verify input_events extension is present in the offer.
+  bool found_extension = false;
+  for (const auto& stream : offer["supportedStreams"]) {
+    for (const auto& ext : stream["rtpExtensions"]) {
+      if (ext.asString() == kInputEventsRtpExtension) {
+        found_extension = true;
+        break;
+      }
+    }
+  }
+  EXPECT_TRUE(found_extension);
+}
+
+TEST_F(SenderSessionTest, HandlesSetInputCallbackUpdate) {
+  session_->SetInputCallback([](InputMessage message) {});
+}
+
+TEST_F(SenderSessionTest, HandlesSetInputCallbackNull) {
+  session_->SetInputCallback([](InputMessage message) {});
+
+  session_->SetInputCallback(nullptr);
+}
+
+TEST_F(SenderSessionTest, HandlesInputMessage) {
+  NegotiateMirroringWithValidConfigs();
+  EXPECT_CALL(client_, OnNegotiated(session_.get(), _, _));
+  message_port_->ReceiveMessage(ConstructAnswerFromOffer(CastMode::kMirroring));
+
+  bool called = false;
+  session_->SetInputCallback(
+      [&called](InputMessage message) { called = true; });
+  message_port_->ReceiveMessage(kInputMessage);
+  EXPECT_TRUE(called);
+}
+
+TEST_F(SenderSessionTest, SendsInputMessage) {
+  NegotiateMirroringWithValidConfigs();
+  EXPECT_CALL(client_, OnNegotiated(session_.get(), _, _));
+  message_port_->ReceiveMessage(ConstructAnswerFromOffer(CastMode::kMirroring));
+
+  session_->SetInputCallback([](InputMessage message) {});
+
+  InputMessage message;
+  auto* event = message.add_events();
+  event->set_type(InputMessage::INPUT_TYPE_KEY_DOWN);
+
+  message_port_->clear();
+  session_->SendInputMessage(message);
+
+  const auto& messages = message_port_->posted_messages();
+  ASSERT_EQ(1u, messages.size());
+  auto message_body = json::Parse(messages[0]);
+  ASSERT_TRUE(message_body.is_value());
+  EXPECT_EQ("INPUT", message_body.value()["type"].asString());
+  EXPECT_FALSE(message_body.value()["input"].asString().empty());
 }
 
 }  // namespace openscreen::cast

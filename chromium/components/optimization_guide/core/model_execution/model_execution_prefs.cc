@@ -78,6 +78,9 @@ const char kOnDevicePerformanceClass[] =
 const char kOnDevicePerformanceClassVersion[] =
     "optimization_guide.on_device.performance_class_version";
 
+// Stores the device VRAM in MB.
+const char kOnDeviceVramMb[] = "optimization_guide.on_device.vram_mb";
+
 // Timestamps for the last time each features was used while on-device eligible.
 // Used to decide which models are worth fetching.
 const char kLastUsageByFeature[] =
@@ -100,6 +103,10 @@ const char kGenAILocalFoundationalModelEnterprisePolicySettings[] =
 const char kOnDeviceAiUserSettingsEnabled[] =
     "optimization_guide.on_device_foundational_model_user_settings";
 
+// A dictionary pref that tracks the state of assets managed by the manifest.
+const char kManifestAssetLedger[] =
+    "optimization_guide.model_execution.manifest_asset_ledger";
+
 }  // namespace localstate
 
 void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
@@ -109,6 +116,7 @@ void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
   registry->RegisterIntegerPref(localstate::kOnDevicePerformanceClass, 0);
   registry->RegisterStringPref(localstate::kOnDevicePerformanceClassVersion,
                                std::string());
+  registry->RegisterUint64Pref(localstate::kOnDeviceVramMb, 0);
   registry->RegisterTimePref(
       localstate::kLastTimeEligibleForOnDeviceModelDownload, base::Time::Min());
   registry->RegisterDictionaryPref(localstate::kOnDeviceModelValidationResult);
@@ -119,6 +127,7 @@ void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
       localstate::kGenAILocalFoundationalModelEnterprisePolicySettings, 0);
   registry->RegisterBooleanPref(localstate::kOnDeviceAiUserSettingsEnabled,
                                 true);
+  registry->RegisterDictionaryPref(localstate::kManifestAssetLedger);
 }
 
 void PruneOldUsagePrefs(PrefService* local_state) {
@@ -148,6 +157,35 @@ bool WasFeatureRecentlyUsed(const PrefService* local_state,
     return false;
   }
   return IsUseRecent(base::ValueToTime(*value));
+}
+
+void RecordUseCaseUsage(PrefService* local_state,
+                        const std::string& use_case_name) {
+  ::prefs::ScopedDictionaryPrefUpdate update(local_state,
+                                             localstate::kLastUsageByFeature);
+  update->Set(use_case_name, base::TimeToValue(base::Time::Now()));
+}
+
+bool WasUseCaseRecentlyUsed(const PrefService* local_state,
+                            const std::string& use_case_name) {
+  const auto& dict = local_state->GetDict(localstate::kLastUsageByFeature);
+
+  const auto* value = dict.Find(use_case_name);
+  if (value && IsUseRecent(base::ValueToTime(*value))) {
+    return true;
+  }
+
+  // Fallback to legacy integer keys mapped to this use case.
+  // TODO(crbug.com/489511499): Remove this fallback once all features have
+  // migrated to using RecordUseCaseUsage with string names.
+  if (std::optional<mojom::OnDeviceFeature> feature =
+          GetFeatureForUseCase(use_case_name)) {
+    value = dict.Find(PrefKey(*feature));
+    if (value && IsUseRecent(base::ValueToTime(*value))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace optimization_guide::model_execution::prefs

@@ -34,6 +34,9 @@
 #if BUILDFLAG(ENABLE_PLATFORM_HEVC)
 #include "media/formats/mp4/hevc.h"
 #endif
+#if BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
+#include "media/formats/mp4/dolby_vision.h"
+#endif  // BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
 #endif
 
 namespace media {
@@ -399,9 +402,16 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
       codec_context->sample_fmt, codec_context->codec_id);
 
   ChannelLayout channel_layout =
-      codec_context->ch_layout.nb_channels > 8
-          ? CHANNEL_LAYOUT_DISCRETE
-          : ChannelLayoutToChromeChannelLayout(codec_context->ch_layout);
+      ChannelLayoutToChromeChannelLayout(codec_context->ch_layout);
+
+  // If there is a mismatch of `channel_layout` and `nb_channels`, we trust the
+  // count. We skip this check for DISCRETE layouts since it does not have a
+  // specific channel count.
+  if (channel_layout != CHANNEL_LAYOUT_DISCRETE &&
+      ChannelLayoutToChannelCount(channel_layout) !=
+          codec_context->ch_layout.nb_channels) {
+    channel_layout = GuessChannelLayout(codec_context->ch_layout.nb_channels);
+  }
 
   switch (codec) {
     // For AC3/EAC3 we enable only demuxing, but not decoding, so FFmpeg does
@@ -450,11 +460,10 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
         .copy_from_nonoverlapping(AVCodecContextExtraDataToSpan(codec_context));
   }
 
-  config->Initialize(codec, sample_format, channel_layout, codec_context->sample_rate,
-                     extra_data, encryption_scheme, seek_preroll,
-                     codec_context->delay);
-  if (channel_layout == CHANNEL_LAYOUT_DISCRETE)
-    config->SetChannelsForDiscrete(codec_context->ch_layout.nb_channels);
+  config->Initialize(codec, sample_format,
+                     {channel_layout, codec_context->ch_layout.nb_channels},
+                     codec_context->sample_rate, extra_data, encryption_scheme,
+                     seek_preroll, codec_context->delay);
 
 #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
   // These are bitstream formats unknown to ffmpeg, so they don't have
@@ -797,9 +806,9 @@ bool AVStreamToVideoDecoderConfig(const AVStream* stream,
       case AV_PKT_DATA_MASTERING_DISPLAY_METADATA: {
         AVMasteringDisplayMetadata* mdcv =
             reinterpret_cast<AVMasteringDisplayMetadata*>(side_data.data);
-        gfx::HdrMetadataSmpteSt2086 smpte_st_2086;
+        skhdr::MasteringDisplayColorVolume sk_mdcv;
         if (mdcv->has_primaries) {
-          smpte_st_2086.primaries = {
+          sk_mdcv.fDisplayPrimaries = {
               static_cast<float>(av_q2d(mdcv->display_primaries[0][0])),
               static_cast<float>(av_q2d(mdcv->display_primaries[0][1])),
               static_cast<float>(av_q2d(mdcv->display_primaries[1][0])),
@@ -811,22 +820,25 @@ bool AVStreamToVideoDecoderConfig(const AVStream* stream,
           };
         }
         if (mdcv->has_luminance) {
-          smpte_st_2086.luminance_max = av_q2d(mdcv->max_luminance);
-          smpte_st_2086.luminance_min = av_q2d(mdcv->min_luminance);
+          sk_mdcv.fMaximumDisplayMasteringLuminance =
+              av_q2d(mdcv->max_luminance);
+          sk_mdcv.fMinimumDisplayMasteringLuminance =
+              av_q2d(mdcv->min_luminance);
         }
 
         // TODO(crbug.com/40268540): Consider rejecting metadata that
         // does not specify all values.
         if (mdcv->has_primaries || mdcv->has_luminance) {
-          hdr_metadata.smpte_st_2086 = smpte_st_2086;
+          hdr_metadata.SetMDCV(sk_mdcv);
         }
         break;
       }
       case AV_PKT_DATA_CONTENT_LIGHT_LEVEL: {
         AVContentLightMetadata* clli =
             reinterpret_cast<AVContentLightMetadata*>(side_data.data);
-        hdr_metadata.cta_861_3 =
-            gfx::HdrMetadataCta861_3(clli->MaxCLL, clli->MaxFALL);
+        hdr_metadata.SetCLLI(skhdr::ContentLightLevelInformation::MakeUint16(
+            /*maxCLL=*/clli->MaxCLL,
+            /*maxFALL=*/clli->MaxFALL));
         break;
       }
 #if BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
@@ -858,12 +870,20 @@ bool AVStreamToVideoDecoderConfig(const AVStream* stream,
             type.profile = VideoCodecProfile::VIDEO_CODEC_PROFILE_UNKNOWN;
             break;
         }
+
+        auto dv_color_space = mp4::ParseDolbyVisionColorSpace(
+            type.profile, dovi->dv_bl_signal_compatibility_id);
+        if (dv_color_space.IsSpecified()) {
+          type.color_space = dv_color_space;
+        }
+
         // Treat dolby vision contents as dolby vision codec only if the
         // device support clear DV decoding, otherwise use the original
         // HEVC or AVC codec and profile.
         if (media::IsDecoderSupportedVideoType(type)) {
           codec = type.codec;
           profile = type.profile;
+          color_space = type.color_space;
         }
         break;
       }
@@ -977,6 +997,10 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(
     case AV_CH_FRONT_LEFT | AV_CH_FRONT_RIGHT | AV_CH_LOW_FREQUENCY |
         AV_CH_BACK_CENTER:
       return CHANNEL_LAYOUT_3_1_BACK;
+    case AV_CH_LAYOUT_5POINT1POINT4_BACK:
+      return CHANNEL_LAYOUT_5_1_4;
+    case AV_CH_LAYOUT_7POINT1POINT4_BACK:
+      return CHANNEL_LAYOUT_7_1_4;
     default:
       // FFmpeg channel_layout is 0 for .wav and .mp3.  Attempt to guess layout
       // based on the channel count.

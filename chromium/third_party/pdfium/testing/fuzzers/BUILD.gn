@@ -501,6 +501,7 @@ pdfium_fuzzer("pdf_cmap_fuzzer") {
     "../../:freetype_common",
     "../../core/fpdfapi/font",
     "../../core/fxcrt",
+    "../../core/fxge",
   ]
 }
 

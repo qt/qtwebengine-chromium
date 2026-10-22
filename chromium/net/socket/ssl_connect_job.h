@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "net/base/completion_once_callback.h"
@@ -20,6 +21,7 @@
 #include "net/base/net_export.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/dns/public/host_resolver_results.h"
+#include "net/dns/public/resolution_details.h"
 #include "net/dns/public/resolve_error_info.h"
 #include "net/socket/connect_job.h"
 #include "net/socket/connect_job_params.h"
@@ -34,6 +36,7 @@ class HostPortPair;
 class HttpProxySocketParams;
 class SocketTag;
 class SOCKSSocketParams;
+class TcpConnectJob;
 class TransportSocketParams;
 
 class NET_EXPORT_PRIVATE SSLSocketParams
@@ -133,6 +136,7 @@ class NET_EXPORT_PRIVATE SSLConnectJob : public ConnectJob,
   ResolveErrorInfo GetResolveErrorInfo() const override;
   bool IsSSLError() const override;
   scoped_refptr<SSLCertRequestInfo> GetCertRequestInfo() override;
+  std::optional<ResolutionDetails> GetResolutionDetails() const override;
 
   // Returns the timeout for the SSL handshake. This is the same for all
   // connections regardless of whether or not there is a proxy in use.
@@ -179,10 +183,14 @@ class NET_EXPORT_PRIVATE SSLConnectJob : public ConnectJob,
   void ChangePriorityInternal(RequestPriority priority) override;
 
   scoped_refptr<SSLSocketParams> params_;
+  std::optional<ResolutionDetails> resolution_details_;
 
   State next_state_;
   CompletionRepeatingCallback callback_;
   std::unique_ptr<ConnectJob> nested_connect_job_;
+  // Points to `nested_connect_job_` if it's of type TcpConnectJob. Used to call
+  // GetServiceEndpoint() on successful connect if non-null.
+  raw_ptr<TcpConnectJob> tcp_connect_job_;
   std::unique_ptr<StreamSocket> nested_socket_;
   std::unique_ptr<SSLClientSocket> ssl_socket_;
 
@@ -213,6 +221,10 @@ class NET_EXPORT_PRIVATE SSLConnectJob : public ConnectJob,
   // The endpoint result used by `nested_connect_job_`. Stored because
   // `nested_connect_job_` has a limited lifetime.
   std::optional<HostResolverEndpointResult> endpoint_result_;
+
+  // Same as `endpoint_result_`, except in the case that TcpConnectJob is in
+  // use.
+  std::optional<ServiceEndpoint> service_endpoint_result_;
 
   // If not `std::nullopt`, the ECH retry configs to use in the ECH recovery
   // flow. `endpoint_result_` will then contain the endpoint to reconnect to.

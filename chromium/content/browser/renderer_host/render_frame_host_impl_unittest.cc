@@ -17,6 +17,7 @@
 #include "content/common/features.h"
 #include "content/public/browser/cors_origin_pattern_setter.h"
 #include "content/public/browser/shared_cors_origin_access_list.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/back_forward_cache_util.h"
@@ -29,6 +30,10 @@
 #include "net/base/features.h"
 #include "net/base/isolation_info.h"
 #include "net/base/network_isolation_partition.h"
+#include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_access_result.h"
+#include "net/cookies/cookie_change_dispatcher.h"
+#include "net/cookies/cookie_constants.h"
 #include "net/cookies/site_for_cookies.h"
 #include "services/network/public/cpp/cors/origin_access_list.h"
 #include "services/network/public/mojom/cors.mojom.h"
@@ -518,7 +523,9 @@ class FakeLocalFrameWithBeforeUnload : public content::FakeLocalFrame {
   }
 
   // FakeLocalFrame:
-  void BeforeUnload(bool is_reload, BeforeUnloadCallback callback) override {
+  void BeforeUnload(bool is_reload,
+                    bool force_to_proceed,
+                    BeforeUnloadCallback callback) override {
     was_before_unload_sent_to_renderer_ = true;
   }
 
@@ -938,6 +945,7 @@ TEST_F(RenderFrameHostImplWebAuthnTest,
       "doofenshmirtz.evil", url::Origin::Create(url),
       /*is_payment_credential_get_assertion=*/false,
       /*remote_desktop_client_override_origin=*/std::nullopt,
+      /*app_id=*/std::nullopt,
       base::BindLambdaForTesting(
           [&status](blink::mojom::AuthenticatorStatus s, bool is_cross_origin) {
             status = s;
@@ -958,6 +966,7 @@ TEST_F(RenderFrameHostImplWebAuthnTest,
       "doofenshmirtz.evil", url::Origin::Create(url),
       /*is_payment_credential_creation=*/false,
       /*remote_desktop_client_override_origin=*/std::nullopt,
+      /*app_id=*/std::nullopt,
       base::BindLambdaForTesting(
           [&status](blink::mojom::AuthenticatorStatus s, bool is_cross_origin) {
             status = s;
@@ -978,11 +987,131 @@ TEST_F(RenderFrameHostImplWebAuthnTest,
       "owca.org", url::Origin::Create(url),
       /*is_payment_credential_get_assertion=*/false,
       /*remote_desktop_client_override_origin=*/std::nullopt,
+      /*app_id=*/std::nullopt,
       base::BindLambdaForTesting(
           [&status](blink::mojom::AuthenticatorStatus s, bool is_cross_origin) {
             status = s;
           }));
   EXPECT_EQ(status.value(), blink::mojom::AuthenticatorStatus::SUCCESS);
+}
+
+TEST_F(RenderFrameHostImplWebAuthnTest,
+       PerformGetAssertionWebAuthSecurityChecks_AppId_Success) {
+  GURL url("https://owca.org");
+  const auto origin = url::Origin::Create(url);
+  EXPECT_CALL(*browser_client_,
+              IsSecurityLevelAcceptableForWebAuthn(main_test_rfh(), origin))
+      .WillOnce(testing::Return(true));
+  std::optional<blink::mojom::AuthenticatorStatus> status;
+  main_test_rfh()->PerformGetAssertionWebAuthSecurityChecks(
+      "owca.org", url::Origin::Create(url),
+      /*is_payment_credential_get_assertion=*/false,
+      /*remote_desktop_client_override_origin=*/std::nullopt,
+      /*app_id=*/"https://owca.org/appid.json",
+      base::BindLambdaForTesting(
+          [&status](blink::mojom::AuthenticatorStatus s, bool is_cross_origin) {
+            status = s;
+          }));
+  EXPECT_EQ(status.value(), blink::mojom::AuthenticatorStatus::SUCCESS);
+}
+
+TEST_F(RenderFrameHostImplWebAuthnTest,
+       PerformGetAssertionWebAuthSecurityChecks_AppId_Invalid) {
+  GURL url("https://owca.org");
+  const auto origin = url::Origin::Create(url);
+  // AppId validation happens before IsSecurityLevelAcceptableForWebAuthn check.
+  std::optional<blink::mojom::AuthenticatorStatus> status;
+  main_test_rfh()->PerformGetAssertionWebAuthSecurityChecks(
+      "owca.org", url::Origin::Create(url),
+      /*is_payment_credential_get_assertion=*/false,
+      /*remote_desktop_client_override_origin=*/std::nullopt,
+      /*app_id=*/"https://evil.com/appid.json",
+      base::BindLambdaForTesting(
+          [&status](blink::mojom::AuthenticatorStatus s, bool is_cross_origin) {
+            status = s;
+          }));
+  EXPECT_EQ(status.value(), blink::mojom::AuthenticatorStatus::INVALID_DOMAIN);
+}
+
+TEST_F(
+    RenderFrameHostImplWebAuthnTest,
+    PerformGetAssertionWebAuthSecurityChecks_RemoteDesktopOrigin_AppIdMismatch) {
+  GURL url("https://owca.org");
+  const auto origin = url::Origin::Create(url);
+  // AppId validation happens before IsSecurityLevelAcceptableForWebAuthn check.
+  std::optional<blink::mojom::AuthenticatorStatus> status;
+  main_test_rfh()->PerformGetAssertionWebAuthSecurityChecks(
+      "owca.org", origin,
+      /*is_payment_credential_get_assertion=*/false,
+      /*remote_desktop_client_override_origin=*/
+      url::Origin::Create(GURL("https://evil.com")),
+      /*app_id=*/"https://owca.org/appid.json",
+      base::BindLambdaForTesting(
+          [&status](blink::mojom::AuthenticatorStatus s, bool is_cross_origin) {
+            status = s;
+          }));
+  EXPECT_EQ(status.value(), blink::mojom::AuthenticatorStatus::
+                                REMOTE_DESKTOP_CLIENT_OVERRIDE_NOT_AUTHORIZED);
+}
+
+TEST_F(RenderFrameHostImplWebAuthnTest,
+       PerformGetAssertionWebAuthSecurityChecks_InvalidRemoteDesktopOrigin) {
+  GURL url("https://owca.org");
+  const auto origin = url::Origin::Create(url);
+  EXPECT_CALL(*browser_client_,
+              IsSecurityLevelAcceptableForWebAuthn(main_test_rfh(), origin))
+      .WillOnce(testing::Return(true));
+  // Security checks happen before IsSecurityLevelAcceptableForWebAuthn check.
+  std::optional<blink::mojom::AuthenticatorStatus> status;
+  main_test_rfh()->PerformGetAssertionWebAuthSecurityChecks(
+      "owca.org", origin,
+      /*is_payment_credential_get_assertion=*/false,
+      /*remote_desktop_client_override_origin=*/
+      url::Origin::Create(GURL("https://evil.com")),
+      /*app_id=*/std::nullopt,
+      base::BindLambdaForTesting(
+          [&status](blink::mojom::AuthenticatorStatus s, bool is_cross_origin) {
+            status = s;
+          }));
+  EXPECT_EQ(status.value(), blink::mojom::AuthenticatorStatus::
+                                REMOTE_DESKTOP_CLIENT_OVERRIDE_NOT_AUTHORIZED);
+}
+
+TEST_F(RenderFrameHostImplWebAuthnTest,
+       PerformMakeCredentialWebAuthSecurityChecks_AppId_Success) {
+  GURL url("https://owca.org");
+  const auto origin = url::Origin::Create(url);
+  EXPECT_CALL(*browser_client_,
+              IsSecurityLevelAcceptableForWebAuthn(main_test_rfh(), origin))
+      .WillOnce(testing::Return(true));
+  std::optional<blink::mojom::AuthenticatorStatus> status;
+  main_test_rfh()->PerformMakeCredentialWebAuthSecurityChecks(
+      "owca.org", url::Origin::Create(url),
+      /*is_payment_credential_creation=*/false,
+      /*remote_desktop_client_override_origin=*/std::nullopt,
+      /*app_id=*/"https://owca.org/appid.json",
+      base::BindLambdaForTesting(
+          [&status](blink::mojom::AuthenticatorStatus s, bool is_cross_origin) {
+            status = s;
+          }));
+  EXPECT_EQ(status.value(), blink::mojom::AuthenticatorStatus::SUCCESS);
+}
+
+TEST_F(RenderFrameHostImplWebAuthnTest,
+       PerformMakeCredentialWebAuthSecurityChecks_AppId_Invalid) {
+  GURL url("https://owca.org");
+  const auto origin = url::Origin::Create(url);
+  std::optional<blink::mojom::AuthenticatorStatus> status;
+  main_test_rfh()->PerformMakeCredentialWebAuthSecurityChecks(
+      "owca.org", url::Origin::Create(url),
+      /*is_payment_credential_creation=*/false,
+      /*remote_desktop_client_override_origin=*/std::nullopt,
+      /*app_id=*/"https://evil.com/appid.json",
+      base::BindLambdaForTesting(
+          [&status](blink::mojom::AuthenticatorStatus s, bool is_cross_origin) {
+            status = s;
+          }));
+  EXPECT_EQ(status.value(), blink::mojom::AuthenticatorStatus::INVALID_DOMAIN);
 }
 
 TEST_F(RenderFrameHostImplWebAuthnTest,
@@ -997,6 +1126,7 @@ TEST_F(RenderFrameHostImplWebAuthnTest,
       "owca.org", url::Origin::Create(url),
       /*is_payment_credential_creation=*/false,
       /*remote_desktop_client_override_origin=*/std::nullopt,
+      /*app_id=*/std::nullopt,
       base::BindLambdaForTesting(
           [&status](blink::mojom::AuthenticatorStatus s, bool is_cross_origin) {
             status = s;
@@ -1005,175 +1135,6 @@ TEST_F(RenderFrameHostImplWebAuthnTest,
 }
 
 #endif  // BUILDFLAG(IS_ANDROID)
-
-class AvoidUnnecessaryBeforeUnloadCheckSyncTest
-    : public RenderFrameHostImplTest {
- public:
-  class ForcePostTaskContentBrowserClient : public ContentBrowserClient {
-    bool SupportsAvoidUnnecessaryBeforeUnloadCheckSync() override {
-      return false;
-    }
-  };
-
-  // In this function, the following code path will be executed on navigation.
-  //
-  // [AvoidUnnecessaryBeforeUnloadCheckSync disabled]
-  // - Start a browser initiated navigation.
-  // - Run TestRenderFrameHost::SendBeforeUnload()
-  // - Run on_sendbeforeunload_begin_ closure
-  // - Run RenderFrameHostImpl::SendBeforeUnload() => Post a task
-  // - Run on_sendbeforeunload_end_ closure
-  //
-  // (In the posted task)
-  // - Run RenderFrameHostImpl::ProcessBeforeUnloadCompleted()
-  // - Run on_process_before_unload_completed_for_testing_ closure
-  //
-  // [AvoidUnnecessaryBeforeUnloadCheckSync + `kWithSendBeforeUnload`]
-  // - Start a browser initiated navigation.
-  // - Run TestRenderFrameHost::SendBeforeUnload()
-  // - Run on_sendbeforeunload_begin_ closure
-  // - Run RenderFrameHostImpl::SendBeforeUnload()
-  // - Run RenderFrameHostImpl::ProcessBeforeUnloadCompleted()
-  // - Run on_process_before_unload_completed_for_testing_ closure
-  // - Run on_sendbeforeunload_end_ closure
-  //
-  // [AvoidUnnecessaryBeforeUnloadCheckSync + `kWithoutSendBeforeUnload`]
-  // - Start a browser initiated navigation.
-  // - (the rest will be skipped)
-  //
-  // - expect_beforeunload_processed_on_sendbeforeunload_stack argument checks
-  //   if ProcessBeforeUnloadCompleted() is called without posting a task by
-  //   checking it in on_sendbeforeunload_end_ closure. This argument is
-  //   optional because this argument doesn't make sense when SendBeforeUnload()
-  //   and ProcessBeforeUnloadCompleted are not called at all.
-  //
-  // - expect_to_run_sendbeforeunload argument checks if both
-  //   SendBeforeUnload() and ProcessBeforeUnloadCompleted() are called or not.
-  void TestBeforeUnloadBehaviorOnNavigation(
-      std::optional<bool>
-          expect_beforeunload_processed_on_sendbeforeunload_stack,
-      bool expect_to_run_sendbeforeunload,
-      const base::Location& location = FROM_HERE) {
-    TestRenderFrameHost* rfh = contents()->GetPrimaryMainFrame();
-    bool beforeunload_processed = false;
-    bool run_sendbeforeunload = false;
-    // The following callback is called when processing beforeunload is
-    // completed.
-    rfh->set_on_process_before_unload_completed_for_testing(
-        base::BindLambdaForTesting([&]() { beforeunload_processed = true; }));
-    // The following callback is called when SendBeforeUnload() is about to
-    // start.
-    rfh->set_on_sendbeforeunload_begin(base::BindLambdaForTesting([&]() {
-      EXPECT_FALSE(beforeunload_processed) << location.ToString();
-    }));
-    // The following callback is called when SendBeforeUnload() is about to end.
-    rfh->set_on_sendbeforeunload_end(base::BindLambdaForTesting([&]() {
-      EXPECT_EQ(beforeunload_processed,
-                *expect_beforeunload_processed_on_sendbeforeunload_stack)
-          << location.ToString();
-      run_sendbeforeunload = true;
-    }));
-
-    auto simulator = NavigationSimulatorImpl::CreateBrowserInitiated(
-        GURL("https://example.com/navigation.html"), contents());
-    simulator->Start();
-    simulator->Wait();
-
-    EXPECT_EQ(beforeunload_processed, expect_to_run_sendbeforeunload)
-        << location.ToString();
-    EXPECT_EQ(run_sendbeforeunload, expect_to_run_sendbeforeunload)
-        << location.ToString();
-  }
-};
-
-TEST_F(AvoidUnnecessaryBeforeUnloadCheckSyncTest, EnabledWithSendBeforeUnload) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeaturesAndParameters(
-      /*enabled_features=*/{{features::kAvoidUnnecessaryBeforeUnloadCheckSync,
-                             {{features::
-                                   kAvoidUnnecessaryBeforeUnloadCheckSyncMode
-                                       .name,
-                               "WithSendBeforeUnload"}}}},
-      /*disabled_features=*/{});
-
-  TestBeforeUnloadBehaviorOnNavigation(
-      /*expect_beforeunload_processed_on_sendbeforeunload_stack=*/true,
-      /*expect_to_run_sendbeforeunload=*/true);
-}
-
-TEST_F(AvoidUnnecessaryBeforeUnloadCheckSyncTest, Disabled) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndDisableFeature(
-      features::kAvoidUnnecessaryBeforeUnloadCheckSync);
-
-  TestBeforeUnloadBehaviorOnNavigation(
-      /*expect_beforeunload_processed_on_sendbeforeunload_stack=*/false,
-      /*expect_to_run_sendbeforeunload=*/true);
-}
-
-TEST_F(AvoidUnnecessaryBeforeUnloadCheckSyncTest,
-       EnabledWithSendBeforeUnloadButBrowserClientProhibits) {
-  ForcePostTaskContentBrowserClient force_post_task_content_browser_client;
-  ContentBrowserClient* old_browser_client =
-      SetBrowserClientForTesting(&force_post_task_content_browser_client);
-
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeaturesAndParameters(
-      /*enabled_features=*/{{features::kAvoidUnnecessaryBeforeUnloadCheckSync,
-                             {{features::
-                                   kAvoidUnnecessaryBeforeUnloadCheckSyncMode
-                                       .name,
-                               "WithSendBeforeUnload"}}}},
-      /*disabled_features=*/{});
-
-  // SupportsAvoidUnnecessaryBeforeUnloadCheckSync() takes precedence over
-  // enabling the kAvoidUnnecessaryBeforeUnloadCheckSync feature.
-  TestBeforeUnloadBehaviorOnNavigation(
-      /*expect_beforeunload_processed_on_sendbeforeunload_stack=*/false,
-      /*expect_to_run_sendbeforeunload=*/true);
-
-  SetBrowserClientForTesting(old_browser_client);
-}
-
-TEST_F(AvoidUnnecessaryBeforeUnloadCheckSyncTest,
-       EnabledWithoutSendBeforeUnload) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeaturesAndParameters(
-      /*enabled_features=*/{{features::kAvoidUnnecessaryBeforeUnloadCheckSync,
-                             {{features::
-                                   kAvoidUnnecessaryBeforeUnloadCheckSyncMode
-                                       .name,
-                               "WithoutSendBeforeUnload"}}}},
-      /*disabled_features=*/{});
-
-  TestBeforeUnloadBehaviorOnNavigation(
-      /*expect_beforeunload_processed_on_send_beforeunload_stack=*/std::nullopt,
-      /*expect_to_run_send_beforeunload=*/false);
-}
-
-TEST_F(AvoidUnnecessaryBeforeUnloadCheckSyncTest,
-       EnabledWithoutSendBeforeUnloadButBrowserClientProhibits) {
-  ForcePostTaskContentBrowserClient force_post_task_content_browser_client;
-  ContentBrowserClient* old_browser_client =
-      SetBrowserClientForTesting(&force_post_task_content_browser_client);
-
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeaturesAndParameters(
-      /*enabled_features=*/{{features::kAvoidUnnecessaryBeforeUnloadCheckSync,
-                             {{features::
-                                   kAvoidUnnecessaryBeforeUnloadCheckSyncMode
-                                       .name,
-                               "WithoutSendBeforeUnload"}}}},
-      /*disabled_features=*/{});
-
-  // SupportsAvoidUnnecessaryBeforeUnloadCheckSync() takes precedence over
-  // enabling the kAvoidUnnecessaryBeforeUnloadCheckSync feature.
-  TestBeforeUnloadBehaviorOnNavigation(
-      /*expect_beforeunload_processed_on_send_beforeunload_stack=*/false,
-      /*expect_to_run_send_beforeunload=*/true);
-
-  SetBrowserClientForTesting(old_browser_client);
-}
 
 class SkipBeforeUnloadDialogAndNavigateContentBrowserClient
     : public ContentBrowserClient {
@@ -1471,6 +1432,117 @@ TEST_F(RenderFrameHostImplTest, CapturedMediaStreamAddedRemoved) {
   EXPECT_CALL(observer, OnFrameIsCapturingMediaStreamChanged(main_rfh, false));
   main_rfh->OnMediaStreamRemoved(
       RenderFrameHostImpl::MediaStreamType::kCapturingMediaStream);
+}
+
+// Ensure that an invalid WindowOpenDisposition in CreateNewWindow causes a bad
+// message.
+TEST_F(RenderFrameHostImplTest, CreateNewWindowInvalidDisposition) {
+  mojom::CreateNewWindowParamsPtr params = mojom::CreateNewWindowParams::New();
+  params->disposition = WindowOpenDisposition::UNKNOWN;
+
+  // The bad message is reported to the process.
+  EXPECT_EQ(0, process()->bad_msg_count());
+
+  static_cast<RenderFrameHostImpl*>(main_rfh())
+      ->CreateNewWindow(std::move(params), base::DoNothing());
+
+  EXPECT_EQ(1, process()->bad_msg_count());
+}
+
+class RenderFrameHostImplCookieChangeListenerTest
+    : public RenderFrameHostImplTest,
+      public testing::WithParamInterface<bool> {
+ public:
+  RenderFrameHostImplCookieChangeListenerTest() {
+    if (GetParam()) {
+      feature_list_.InitAndEnableFeature(
+          features::kBackForwardCacheCCNSIgnoreUnchangedCookies);
+    } else {
+      feature_list_.InitAndDisableFeature(
+          features::kBackForwardCacheCCNSIgnoreUnchangedCookies);
+    }
+  }
+
+ protected:
+  bool IsBackForwardCacheCCNSIgnoreUnchangedCookiesEnabled() {
+    return GetParam();
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+INSTANTIATE_TEST_SUITE_P(All,
+                         RenderFrameHostImplCookieChangeListenerTest,
+                         testing::Bool());
+
+// Tests the behavior or the `RenderFrameHostImpl::CookieChangeListener`.
+TEST_P(RenderFrameHostImplCookieChangeListenerTest, CookieChangeListener) {
+  StoragePartition* partition = main_rfh()->GetStoragePartition();
+  GURL url("https://example.com");
+  std::unique_ptr<RenderFrameHostImpl::CookieChangeListener> listener =
+      std::make_unique<RenderFrameHostImpl::CookieChangeListener>(partition,
+                                                                  url);
+  std::unique_ptr<net::CanonicalCookie> cookie_ignored =
+      net::CanonicalCookie::CreateForTesting(url, "a=1", base::Time::Now(),
+                                             net::CookieSourceType::kHTTP);
+  ASSERT_TRUE(cookie_ignored);
+  std::unique_ptr<net::CanonicalCookie> cookie_overwrite =
+      net::CanonicalCookie::CreateForTesting(url, "a=2", base::Time::Now(),
+                                             net::CookieSourceType::kHTTP);
+  ASSERT_TRUE(cookie_overwrite);
+  std::unique_ptr<net::CanonicalCookie> cookie_overwrite_no_change =
+      net::CanonicalCookie::CreateForTesting(url, "a=2", base::Time::Now(),
+                                             net::CookieSourceType::kHTTP);
+  ASSERT_TRUE(cookie_overwrite_no_change);
+
+  // Initially the count is 0.
+  listener->AddNavigationCookieToIgnoreForTesting(*cookie_ignored);
+  EXPECT_EQ(0, listener->cookie_change_info().cookie_modification_count);
+
+  // The counter doesn't change if the cookie change is ignored.
+  {
+    listener->OnCookieChangeForTesting(
+        net::CookieChangeInfo(*cookie_ignored, net::CookieAccessResult(),
+                              net::CookieChangeCause::INSERTED));
+    EXPECT_EQ(0, listener->cookie_change_info().cookie_modification_count);
+  }
+
+  // The counter increments if the ignored cookie gets changed for another time.
+  {
+    listener->OnCookieChangeForTesting(
+        net::CookieChangeInfo(*cookie_ignored, net::CookieAccessResult(),
+                              net::CookieChangeCause::INSERTED));
+    EXPECT_EQ(1, listener->cookie_change_info().cookie_modification_count);
+  }
+
+  // The counter increments if there is a new cookie value set.
+  {
+    listener->OnCookieChangeForTesting(
+        net::CookieChangeInfo(*cookie_overwrite, net::CookieAccessResult(),
+                              net::CookieChangeCause::INSERTED));
+    EXPECT_EQ(2, listener->cookie_change_info().cookie_modification_count);
+  }
+
+  // The counter increments if there is a cookie modification without value
+  // change and the `kBackForwardCacheCCNSIgnoreUnchangedCookies` is enabled.
+  {
+    net::CookieChangeInfo change_info(
+        *cookie_overwrite_no_change, net::CookieAccessResult(),
+        net::CookieChangeCause::INSERTED_NO_CHANGE_OVERWRITE);
+    listener->OnCookieChangeForTesting(change_info);
+    EXPECT_EQ(IsBackForwardCacheCCNSIgnoreUnchangedCookiesEnabled() ? 2 : 3,
+              listener->cookie_change_info().cookie_modification_count);
+  }
+
+  {
+    net::CookieChangeInfo change_info(
+        *cookie_overwrite_no_change, net::CookieAccessResult(),
+        net::CookieChangeCause::INSERTED_NO_VALUE_CHANGE_OVERWRITE);
+    listener->OnCookieChangeForTesting(change_info);
+    EXPECT_EQ(IsBackForwardCacheCCNSIgnoreUnchangedCookiesEnabled() ? 2 : 4,
+              listener->cookie_change_info().cookie_modification_count);
+  }
 }
 
 }  // namespace content

@@ -291,9 +291,6 @@ void UserManagerImpl::UserLoggedIn(const AccountId& account_id,
 
     local_state_->CommitPendingWrite();
     NotifyOnLogin();
-  } else {
-    SendMultiUserSignInMetrics();
-    NotifyUserAddedToSession(user);
   }
 }
 
@@ -862,15 +859,21 @@ std::optional<std::string> UserManagerImpl::GetOwnerEmail() {
 }
 
 void UserManagerImpl::RecordOwner(const AccountId& owner) {
+  RecordOwner(*local_state_, owner.GetUserEmail());
+}
+
+// static
+void UserManagerImpl::RecordOwner(PrefService& local_state,
+                                  std::string_view user_email) {
   base::DictValue owner_dict;
   owner_dict.Set(prefs::kOwnerAccountType,
                  static_cast<int>(OwnerAccountType::kGoogleEmail));
-  owner_dict.Set(prefs::kOwnerAccountIdentity, owner.GetUserEmail());
-  local_state_->SetDict(prefs::kOwnerAccount, std::move(owner_dict));
+  owner_dict.Set(prefs::kOwnerAccountIdentity, user_email);
+  local_state.SetDict(prefs::kOwnerAccount, std::move(owner_dict));
   // The information about the owner might be needed for recovery if Chrome
   // crashes before establishing ownership, so it needs to be written on disk as
   // soon as possible.
-  local_state_->CommitPendingWrite();
+  local_state.CommitPendingWrite();
 }
 
 void UserManagerImpl::UpdateUserAccountData(
@@ -1638,13 +1641,6 @@ User* UserManagerImpl::RemoveRegularOrSupervisedUserFromList(
   return user;
 }
 
-void UserManagerImpl::NotifyUserAddedToSession(const User* added_user) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  for (auto& observer : session_state_observer_list_) {
-    observer.UserAddedToSession(added_user);
-  }
-}
-
 PrefService* UserManagerImpl::GetLocalState() const {
   return local_state_.get();
 }
@@ -1730,20 +1726,6 @@ void UserManagerImpl::SendGaiaUserLoginMetrics(const AccountId& account_id) {
     UMA_HISTOGRAM_CUSTOM_COUNTS("UserManager.LogoutToLoginDelay",
                                 time_to_login.InSeconds(), 1,
                                 kLogoutToLoginDelayMaxSec, 50);
-  }
-}
-
-void UserManagerImpl::SendMultiUserSignInMetrics() {
-  size_t users = logged_in_users_.size();
-  if (!users) {
-    return;
-  }
-
-  // Write the user number as UMA stat when a multi user session is possible.
-  if (users + GetUsersAllowedForMultiUserSignIn().size() > 1) {
-    // Keep MultiProfile name here for compatibility of historical reason.
-    // It is for multi-user sign-in.
-    UMA_HISTOGRAM_COUNTS_100("MultiProfile.UsersPerSessionIncremental", users);
   }
 }
 

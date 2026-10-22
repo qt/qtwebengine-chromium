@@ -34,6 +34,10 @@ class CORE_EXPORT HTMLEmbedElement final : public HTMLPlugInElement {
  public:
   HTMLEmbedElement(Document&, const CreateElementFlags = CreateElementFlags());
 
+  ElementType GetElementType() const final {
+    return ElementType::kHTMLEmbedElement;
+  }
+
   // Returns attributes that should be checked against Trusted Types
   const AttrNameToTrustedType& GetCheckedAttributeTypes() const override;
 
@@ -43,7 +47,7 @@ class CORE_EXPORT HTMLEmbedElement final : public HTMLPlugInElement {
     return FrameOwnerElementType::kEmbed;
   }
 
-  const V8UnionTrustedScriptURLOrUSVString* src();
+  String src();
   void setSrc(const V8UnionTrustedScriptURLOrUSVString*, ExceptionState&);
 
  private:

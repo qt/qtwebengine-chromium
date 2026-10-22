@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/logging.h"
 #include "base/nix/xdg_util.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/run_loop.h"
@@ -181,8 +182,7 @@ void WaylandToplevelWindow::Hide() {
 bool WaylandToplevelWindow::IsVisible() const {
   // X and Windows return true if the window is minimized. For consistency, do
   // the same.
-  return !!xdg_toplevel_ ||
-         GetPlatformWindowState() == PlatformWindowState::kMinimized;
+  return !!xdg_toplevel_;
 }
 
 void WaylandToplevelWindow::SetTitle(const std::u16string& title) {
@@ -465,7 +465,15 @@ void WaylandToplevelWindow::HandleToplevelConfigure(
     int32_t width_dip,
     int32_t height_dip,
     const WindowStates& window_states) {
+  // HandleToplevelConfigureWithOrigin() calls into the delegate
+  // (OnActivationChanged et al.), which the views layer documents may
+  // synchronously close the widget and destroy this platform window. See
+  // DesktopWindowTreeHostPlatform::OnActivationChanged().
+  auto alive = weak_ptr_factory_.GetWeakPtr();
   HandleToplevelConfigureWithOrigin(0, 0, width_dip, height_dip, window_states);
+  if (!alive) {
+    return;
+  }
   UpdateSessionStateIfNeeded();
 }
 
@@ -560,7 +568,11 @@ void WaylandToplevelWindow::HandleToplevelConfigureWithOrigin(
     SetRestoredBoundsInDIP(GetBoundsInDIP());
   }
 
+  auto alive = weak_ptr_factory_.GetWeakPtr();
   UpdateActivationState();
+  if (!alive) {
+    return;
+  }
   if (prev_suspended != is_suspended_) {
     frame_manager()->OnWindowSuspensionChanged();
   }
@@ -805,7 +817,7 @@ void WaylandToplevelWindow::TriggerStateChanges(
     // UnSetMaximized may result in wrong restored window position that clients
     // are not allowed to know about.
     if (window_state == PlatformWindowState::kMinimized) {
-      LOG(FATAL) << "Should not be called with kMinimized state";
+      xdg_toplevel_->SetMinimized();
     } else if (window_state == PlatformWindowState::kFullScreen) {
       xdg_toplevel_->SetFullscreen(
           GetWaylandOutputForDisplayId(fullscreen_display_id_));

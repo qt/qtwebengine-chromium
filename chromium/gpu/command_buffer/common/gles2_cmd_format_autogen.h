@@ -15392,25 +15392,30 @@ struct FramebufferMemorylessPixelLocalStorageANGLE {
 
   void SetHeader() { header.SetCmd<ValueType>(); }
 
-  void Init(GLint _plane, GLenum _internalformat) {
+  void Init(GLint _plane, GLenum _internalformat, GLbitfield _usage) {
     SetHeader();
     plane = _plane;
     internalformat = _internalformat;
+    usage = _usage;
   }
 
-  void* Set(void* cmd, GLint _plane, GLenum _internalformat) {
-    static_cast<ValueType*>(cmd)->Init(_plane, _internalformat);
+  void* Set(void* cmd,
+            GLint _plane,
+            GLenum _internalformat,
+            GLbitfield _usage) {
+    static_cast<ValueType*>(cmd)->Init(_plane, _internalformat, _usage);
     return NextCmdAddress<ValueType>(cmd);
   }
 
   gpu::CommandHeader header;
   int32_t plane;
   uint32_t internalformat;
+  uint32_t usage;
 };
 
 static_assert(
-    sizeof(FramebufferMemorylessPixelLocalStorageANGLE) == 12,
-    "size of FramebufferMemorylessPixelLocalStorageANGLE should be 12");
+    sizeof(FramebufferMemorylessPixelLocalStorageANGLE) == 16,
+    "size of FramebufferMemorylessPixelLocalStorageANGLE should be 16");
 static_assert(
     offsetof(FramebufferMemorylessPixelLocalStorageANGLE, header) == 0,
     "offset of FramebufferMemorylessPixelLocalStorageANGLE header should be 0");
@@ -15421,6 +15426,9 @@ static_assert(offsetof(FramebufferMemorylessPixelLocalStorageANGLE,
                        internalformat) == 8,
               "offset of FramebufferMemorylessPixelLocalStorageANGLE "
               "internalformat should be 8");
+static_assert(
+    offsetof(FramebufferMemorylessPixelLocalStorageANGLE, usage) == 12,
+    "offset of FramebufferMemorylessPixelLocalStorageANGLE usage should be 12");
 
 struct FramebufferTexturePixelLocalStorageANGLE {
   typedef FramebufferTexturePixelLocalStorageANGLE ValueType;
@@ -15434,20 +15442,27 @@ struct FramebufferTexturePixelLocalStorageANGLE {
 
   void SetHeader() { header.SetCmd<ValueType>(); }
 
-  void Init(GLint _plane, GLuint _backingtexture, GLint _level, GLint _layer) {
+  void Init(GLint _plane,
+            GLuint _backingtexture,
+            GLint _level,
+            GLint _layer,
+            GLbitfield _usage) {
     SetHeader();
     plane = _plane;
     backingtexture = _backingtexture;
     level = _level;
     layer = _layer;
+    usage = _usage;
   }
 
   void* Set(void* cmd,
             GLint _plane,
             GLuint _backingtexture,
             GLint _level,
-            GLint _layer) {
-    static_cast<ValueType*>(cmd)->Init(_plane, _backingtexture, _level, _layer);
+            GLint _layer,
+            GLbitfield _usage) {
+    static_cast<ValueType*>(cmd)->Init(_plane, _backingtexture, _level, _layer,
+                                       _usage);
     return NextCmdAddress<ValueType>(cmd);
   }
 
@@ -15456,10 +15471,11 @@ struct FramebufferTexturePixelLocalStorageANGLE {
   uint32_t backingtexture;
   int32_t level;
   int32_t layer;
+  uint32_t usage;
 };
 
-static_assert(sizeof(FramebufferTexturePixelLocalStorageANGLE) == 20,
-              "size of FramebufferTexturePixelLocalStorageANGLE should be 20");
+static_assert(sizeof(FramebufferTexturePixelLocalStorageANGLE) == 24,
+              "size of FramebufferTexturePixelLocalStorageANGLE should be 24");
 static_assert(
     offsetof(FramebufferTexturePixelLocalStorageANGLE, header) == 0,
     "offset of FramebufferTexturePixelLocalStorageANGLE header should be 0");
@@ -15476,6 +15492,9 @@ static_assert(
 static_assert(
     offsetof(FramebufferTexturePixelLocalStorageANGLE, layer) == 16,
     "offset of FramebufferTexturePixelLocalStorageANGLE layer should be 16");
+static_assert(
+    offsetof(FramebufferTexturePixelLocalStorageANGLE, usage) == 20,
+    "offset of FramebufferTexturePixelLocalStorageANGLE usage should be 20");
 
 struct FramebufferPixelLocalClearValuefvANGLEImmediate {
   typedef FramebufferPixelLocalClearValuefvANGLEImmediate ValueType;
@@ -15709,6 +15728,33 @@ static_assert(
 static_assert(offsetof(EndPixelLocalStorageANGLEImmediate, count) == 4,
               "offset of EndPixelLocalStorageANGLEImmediate count should be 4");
 
+struct EndPixelLocalStorageImplicitANGLE {
+  typedef EndPixelLocalStorageImplicitANGLE ValueType;
+  static const CommandId kCmdId = kEndPixelLocalStorageImplicitANGLE;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init() { SetHeader(); }
+
+  void* Set(void* cmd) {
+    static_cast<ValueType*>(cmd)->Init();
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+};
+
+static_assert(sizeof(EndPixelLocalStorageImplicitANGLE) == 4,
+              "size of EndPixelLocalStorageImplicitANGLE should be 4");
+static_assert(offsetof(EndPixelLocalStorageImplicitANGLE, header) == 0,
+              "offset of EndPixelLocalStorageImplicitANGLE header should be 0");
+
 struct PixelLocalStorageBarrierANGLE {
   typedef PixelLocalStorageBarrierANGLE ValueType;
   static const CommandId kCmdId = kPixelLocalStorageBarrierANGLE;
@@ -15924,6 +15970,73 @@ static_assert(offsetof(GetFramebufferPixelLocalStorageParameterivANGLE,
 static_assert(offsetof(GetFramebufferPixelLocalStorageParameterivANGLE,
                        params_shm_offset) == 16,
               "offset of GetFramebufferPixelLocalStorageParameterivANGLE "
+              "params_shm_offset should be 16");
+
+struct GetFramebufferPixelLocalStorageParameteruivANGLE {
+  typedef GetFramebufferPixelLocalStorageParameteruivANGLE ValueType;
+  static const CommandId kCmdId =
+      kGetFramebufferPixelLocalStorageParameteruivANGLE;
+  static const cmd::ArgFlags kArgFlags = cmd::kFixed;
+  static const uint8_t cmd_flags = CMD_FLAG_SET_TRACE_LEVEL(3);
+
+  typedef SizedResult<GLuint> Result;
+
+  static uint32_t ComputeSize() {
+    return static_cast<uint32_t>(sizeof(ValueType));  // NOLINT
+  }
+
+  void SetHeader() { header.SetCmd<ValueType>(); }
+
+  void Init(GLint _plane,
+            GLenum _pname,
+            uint32_t _params_shm_id,
+            uint32_t _params_shm_offset) {
+    SetHeader();
+    plane = _plane;
+    pname = _pname;
+    params_shm_id = _params_shm_id;
+    params_shm_offset = _params_shm_offset;
+  }
+
+  void* Set(void* cmd,
+            GLint _plane,
+            GLenum _pname,
+            uint32_t _params_shm_id,
+            uint32_t _params_shm_offset) {
+    static_cast<ValueType*>(cmd)->Init(_plane, _pname, _params_shm_id,
+                                       _params_shm_offset);
+    return NextCmdAddress<ValueType>(cmd);
+  }
+
+  gpu::CommandHeader header;
+  int32_t plane;
+  uint32_t pname;
+  uint32_t params_shm_id;
+  uint32_t params_shm_offset;
+};
+
+static_assert(
+    sizeof(GetFramebufferPixelLocalStorageParameteruivANGLE) == 20,
+    "size of GetFramebufferPixelLocalStorageParameteruivANGLE should be 20");
+static_assert(offsetof(GetFramebufferPixelLocalStorageParameteruivANGLE,
+                       header) == 0,
+              "offset of GetFramebufferPixelLocalStorageParameteruivANGLE "
+              "header should be 0");
+static_assert(offsetof(GetFramebufferPixelLocalStorageParameteruivANGLE,
+                       plane) == 4,
+              "offset of GetFramebufferPixelLocalStorageParameteruivANGLE "
+              "plane should be 4");
+static_assert(offsetof(GetFramebufferPixelLocalStorageParameteruivANGLE,
+                       pname) == 8,
+              "offset of GetFramebufferPixelLocalStorageParameteruivANGLE "
+              "pname should be 8");
+static_assert(offsetof(GetFramebufferPixelLocalStorageParameteruivANGLE,
+                       params_shm_id) == 12,
+              "offset of GetFramebufferPixelLocalStorageParameteruivANGLE "
+              "params_shm_id should be 12");
+static_assert(offsetof(GetFramebufferPixelLocalStorageParameteruivANGLE,
+                       params_shm_offset) == 16,
+              "offset of GetFramebufferPixelLocalStorageParameteruivANGLE "
               "params_shm_offset should be 16");
 
 struct ClipControlEXT {

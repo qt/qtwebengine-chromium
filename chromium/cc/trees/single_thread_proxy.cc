@@ -752,11 +752,6 @@ void SingleThreadProxy::FrameSinksToThrottleUpdated(
 
 void SingleThreadProxy::RequestBeginMainFrameNotExpected(bool new_state) {
   DCHECK(task_runner_provider_->IsMainThread());
-  if (scheduler_on_impl_thread_) {
-    DebugScopedSetImplThread impl(task_runner_provider_);
-    scheduler_on_impl_thread_->SetMainThreadWantsBeginMainFrameNotExpected(
-        new_state);
-  }
 }
 
 viz::BeginFrameArgs SingleThreadProxy::BeginImplFrameForTest(
@@ -947,11 +942,6 @@ void SingleThreadProxy::SetSourceURL(ukm::SourceId source_id, const GURL& url) {
   // need to record UKM in that case.
 }
 
-void SingleThreadProxy::SetUkmDroppedFramesDestination(
-    base::WritableSharedMemoryMapping ukm_smoothness_data) {
-  DCHECK(task_runner_provider_->IsMainThread());
-}
-
 void SingleThreadProxy::ClearHistory() {
   DCHECK(task_runner_provider_->IsImplThread());
   if (scheduler_on_impl_thread_)
@@ -1055,23 +1045,6 @@ void SingleThreadProxy::FrameIntervalUpdated(base::TimeDelta interval) {
 
 void SingleThreadProxy::OnBeginImplFrameDeadline() {
   host_impl_->OnBeginImplFrameDeadline();
-}
-
-void SingleThreadProxy::SendBeginMainFrameNotExpectedSoon() {
-  // DebugScopedSetImplThread here is just a formality; all SchedulerClient
-  // methods should have it.
-  DebugScopedSetImplThread impl(task_runner_provider_);
-  DebugScopedSetMainThread main(task_runner_provider_);
-  layer_tree_host_->BeginMainFrameNotExpectedSoon();
-}
-
-void SingleThreadProxy::ScheduledActionBeginMainFrameNotExpectedUntil(
-    base::TimeTicks time) {
-  // DebugScopedSetImplThread here is just a formality; all SchedulerClient
-  // methods should have it.
-  DebugScopedSetImplThread impl(task_runner_provider_);
-  DebugScopedSetMainThread main(task_runner_provider_);
-  layer_tree_host_->BeginMainFrameNotExpectedUntil(time);
 }
 
 void SingleThreadProxy::BeginMainFrame(

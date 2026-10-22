@@ -15,5 +15,5 @@ TEST_F(JBig2EmbedderTest, Bug631912) {
   ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
   ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-  CompareBitmapToPngWithExpectationSuffix(bitmap.get(), "bug_631912");
+  CompareBitmapWithExpectationSuffix(bitmap.get(), "bug_631912");
 }

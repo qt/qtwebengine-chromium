@@ -184,7 +184,10 @@ class MetricsWebContentsObserver
       std::vector<mojom::EventTimingPtr> event_timings,
       const std::optional<blink::SubresourceLoadMetrics>&
           subresource_load_metrics,
-      mojom::SoftNavigationMetricsPtr);
+      std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
+      std::vector<mojom::LargestContentfulPaintTimingPtr>
+          soft_largest_contentful_paint,
+      std::vector<mojom::CustomUserTimingMarkPtr> user_timings);
 
   void OnCustomUserTimingUpdated(content::RenderFrameHost* rfh,
                                  mojom::CustomUserTimingMarkPtr custom_timing);
@@ -265,12 +268,12 @@ class MetricsWebContentsObserver
       std::vector<mojom::EventTimingPtr> event_timings,
       const std::optional<blink::SubresourceLoadMetrics>&
           subresource_load_metrics,
-      mojom::SoftNavigationMetricsPtr soft_navigation_metrics) override;
+      std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
+      std::vector<mojom::LargestContentfulPaintTimingPtr>
+          soft_largest_contentful_paint,
+      std::vector<mojom::CustomUserTimingMarkPtr> user_timings) override;
   void AddCustomUserTiming(
       mojom::CustomUserTimingMarkPtr custom_timing) override;
-
-  void SetUpSharedMemoryForDroppedFrames(
-      base::ReadOnlySharedMemoryRegion dropped_frames_memory) override;
 
   // Common part for UpdateThroughput and OnTimingUpdated.
   bool DoesTimingUpdateHaveError(PageLoadTracker* tracker);
@@ -397,12 +400,6 @@ class MetricsWebContentsObserver
   // frame of the active page is in `primary_page_`.)
   base::flat_map<content::RenderFrameHost*, std::unique_ptr<PageLoadTracker>>
       inactive_pages_;
-
-  // This is currently set only for the main frame of each page associated with
-  // the WebContents. It maps to the shared memory for the smoothness and the
-  // dropped frame count UKMs.
-  base::flat_map<content::RenderFrameHost*, base::ReadOnlySharedMemoryRegion>
-      ukm_dropped_frames_data_;
 
   std::vector<mojom::CustomUserTimingMarkPtr> page_load_custom_timings_;
 

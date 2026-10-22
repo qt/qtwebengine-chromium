@@ -4,7 +4,11 @@
 
 #include "components/update_client/crx_downloader.h"
 
+#include <cstdint>
+#include <iterator>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "base/check_op.h"
 #include "base/files/file_util.h"
@@ -14,16 +18,20 @@
 #include "base/location.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #if BUILDFLAG(IS_WIN)
 #include "components/update_client/background_downloader_win.h"
 #endif
+#include "base/containers/span.h"
+#include "base/containers/to_vector.h"
 #include "components/update_client/network.h"
 #include "components/update_client/task_traits.h"
 #include "components/update_client/update_client_errors.h"
 #include "components/update_client/update_client_metrics.h"
 #include "components/update_client/url_fetcher_downloader.h"
 #include "components/update_client/utils.h"
+#include "url/gurl.h"
 
 namespace update_client {
 
@@ -31,7 +39,10 @@ CrxDownloader::CrxDownloader(scoped_refptr<CrxDownloader> successor)
     : main_task_runner_(base::SequencedTaskRunner::GetCurrentDefault()),
       successor_(std::move(successor)) {}
 
-CrxDownloader::~CrxDownloader() = default;
+CrxDownloader::~CrxDownloader() {
+  TRACE_EVENT("update_client", "CrxDownloader::~CrxDownloader",
+              perfetto::TerminatingFlow::FromPointer(this));
+}
 
 void CrxDownloader::set_progress_callback(
     const ProgressCallback& progress_callback) {
@@ -44,13 +55,14 @@ GURL CrxDownloader::url() const {
 
 const std::vector<CrxDownloader::DownloadMetrics>
 CrxDownloader::download_metrics() const {
-  if (!successor_) {
-    return download_metrics_;
+  std::vector<DownloadMetrics> retval = download_metrics_;
+  if (successor_) {
+    std::vector<DownloadMetrics> successor_metrics =
+        successor_->download_metrics();
+    retval.insert(retval.end(),
+                  std::make_move_iterator(successor_metrics.begin()),
+                  std::make_move_iterator(successor_metrics.end()));
   }
-
-  std::vector<DownloadMetrics> retval(successor_->download_metrics());
-  retval.insert(retval.begin(), download_metrics_.begin(),
-                download_metrics_.end());
   return retval;
 }
 
@@ -67,6 +79,8 @@ base::OnceClosure CrxDownloader::StartDownload(
     const std::vector<GURL>& urls,
     const std::string& expected_hash,
     DownloadCallback download_callback) {
+  TRACE_EVENT("update_client", "CrxDownloader::StartDownload",
+              perfetto::Flow::FromPointer(this));
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   auto error = CrxDownloaderError::NONE;
@@ -96,6 +110,8 @@ void CrxDownloader::OnDownloadComplete(
     bool is_handled,
     const Result& result,
     const DownloadMetrics& download_metrics) {
+  TRACE_EVENT("update_client", "CrxDownloader::OnDownloadComplete",
+              perfetto::Flow::FromPointer(this));
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // Release any references held by the progress callback, in case the
@@ -103,7 +119,6 @@ void CrxDownloader::OnDownloadComplete(
   // often the case in tests.)
   progress_callback_.Reset();
 
-  metrics::RecordCRXDownloadComplete(result.error);
   if (result.error) {
     main_task_runner()->PostTask(
         FROM_HERE, base::BindOnce(&CrxDownloader::HandleDownloadError, this,
@@ -167,6 +182,8 @@ void CrxDownloader::HandleDownloadError(
     bool is_handled,
     const Result& result,
     const DownloadMetrics& download_metrics) {
+  TRACE_EVENT("update_client", "CrxDownloader::HandleDownloadError",
+              perfetto::Flow::FromPointer(this));
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK_NE(0, result.error);
   CHECK(result.response.empty());

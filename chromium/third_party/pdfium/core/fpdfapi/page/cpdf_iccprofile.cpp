@@ -51,9 +51,9 @@ bool CPDF_IccProfile::IsNormal() const {
   return transform_->IsNormal();
 }
 
-void CPDF_IccProfile::Translate(pdfium::span<const float> pSrcValues,
-                                pdfium::span<float> pDestValues) {
-  transform_->Translate(pSrcValues, pDestValues);
+void CPDF_IccProfile::Translate(pdfium::span<const float> src_values,
+                                pdfium::span<float, 3> dest_values) {
+  transform_->Translate(src_values, dest_values);
 }
 
 void CPDF_IccProfile::TranslateScanline(pdfium::span<uint8_t> pDest,

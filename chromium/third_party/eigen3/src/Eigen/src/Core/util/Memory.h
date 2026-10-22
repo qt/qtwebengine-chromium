@@ -267,7 +267,7 @@ EIGEN_DEVICE_FUNC inline void* aligned_realloc(void* ptr, std::size_t new_size, 
 
   void* result;
 #if (EIGEN_DEFAULT_ALIGN_BYTES == 0) || EIGEN_MALLOC_ALREADY_ALIGNED
-  EIGEN_UNUSED_VARIABLE(old_size)
+  EIGEN_UNUSED_VARIABLE(old_size);
 
   check_that_malloc_is_allowed();
   EIGEN_USING_STD(realloc)
@@ -420,7 +420,7 @@ template <typename T>
 EIGEN_DEVICE_FUNC inline T* aligned_new(std::size_t size) {
   check_size_for_overflow<T>(size);
   T* result = static_cast<T*>(aligned_malloc(sizeof(T) * size));
-  EIGEN_TRY { return default_construct_elements_of_array(result, size); }
+  EIGEN_TRY { default_construct_elements_of_array(result, size); }
   EIGEN_CATCH(...) {
     aligned_free(result);
     EIGEN_THROW;
@@ -432,7 +432,7 @@ template <typename T, bool Align>
 EIGEN_DEVICE_FUNC inline T* conditional_aligned_new(std::size_t size) {
   check_size_for_overflow<T>(size);
   T* result = static_cast<T*>(conditional_aligned_malloc<Align>(sizeof(T) * size));
-  EIGEN_TRY { return default_construct_elements_of_array(result, size); }
+  EIGEN_TRY { default_construct_elements_of_array(result, size); }
   EIGEN_CATCH(...) {
     conditional_aligned_free<Align>(result);
     EIGEN_THROW;
@@ -893,12 +893,12 @@ EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE void* eigen_aligned_alloca_helper(void* pt
 #endif
 
 #define EIGEN_MAKE_ALIGNED_OPERATOR_NEW EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF(true)
-#define EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF_VECTORIZABLE_FIXED_SIZE(Scalar, Size)                                 \
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF(                                                                            \
-      bool(((Size) != Eigen::Dynamic) &&                                                                         \
-           (((EIGEN_MAX_ALIGN_BYTES >= 16) && ((sizeof(Scalar) * (Size)) % (EIGEN_MAX_ALIGN_BYTES) == 0)) ||     \
-            ((EIGEN_MAX_ALIGN_BYTES >= 32) && ((sizeof(Scalar) * (Size)) % (EIGEN_MAX_ALIGN_BYTES / 2) == 0)) || \
-            ((EIGEN_MAX_ALIGN_BYTES >= 64) && ((sizeof(Scalar) * (Size)) % (EIGEN_MAX_ALIGN_BYTES / 4) == 0)))))
+#define EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF_VECTORIZABLE_FIXED_SIZE(Scalar, Size)                                       \
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW_IF(                                                                                  \
+      bool(((Size) != Eigen::Dynamic) &&                                                                               \
+           (((EIGEN_MAX_ALIGN_BYTES >= 16) && ((sizeof(Scalar) * size_t(Size)) % (EIGEN_MAX_ALIGN_BYTES) == 0)) ||     \
+            ((EIGEN_MAX_ALIGN_BYTES >= 32) && ((sizeof(Scalar) * size_t(Size)) % (EIGEN_MAX_ALIGN_BYTES / 2) == 0)) || \
+            ((EIGEN_MAX_ALIGN_BYTES >= 64) && ((sizeof(Scalar) * size_t(Size)) % (EIGEN_MAX_ALIGN_BYTES / 4) == 0)))))
 
 #endif
 
@@ -1305,6 +1305,37 @@ inline void queryCacheSizes(int& l1, int& l2, int& l3) {
     //   ||cpuid_is_vendor(abcd,"SiS SiS SiS ")
     //   ||cpuid_is_vendor(abcd,"UMC UMC UMC ")
     //   ||cpuid_is_vendor(abcd,"NexGenDriven")
+#elif EIGEN_OS_MAC
+  // On macOS (including Apple Silicon), use sysctlbyname to query cache sizes.
+  // The sysctl values are 64-bit, so read into int64_t and convert.
+  // For L1, prefer P-core (perflevel0) size since compute-heavy work like GEMM
+  // is typically scheduled on performance cores. L1 is per-core so always safe.
+  // For L2, use the generic hw.l2cachesize which is more conservative (reports
+  // the smaller E-core cluster L2 on heterogeneous chips). The P-core L2 is
+  // shared among all P-cores and would overestimate per-core capacity.
+  {
+    int64_t val = 0;
+    std::size_t val_size = sizeof(val);
+    l1 = -1;
+    val_size = sizeof(val);
+    if (sysctlbyname("hw.perflevel0.l1dcachesize", &val, &val_size, NULL, 0) == 0 && val > 0)
+      l1 = static_cast<int>(val);
+    else {
+      val_size = sizeof(val);
+      if (sysctlbyname("hw.l1dcachesize", &val, &val_size, NULL, 0) == 0) l1 = static_cast<int>(val);
+    }
+    l2 = -1;
+    val_size = sizeof(val);
+    if (sysctlbyname("hw.l2cachesize", &val, &val_size, NULL, 0) == 0) l2 = static_cast<int>(val);
+    l3 = -1;
+    val_size = sizeof(val);
+    if (sysctlbyname("hw.l3cachesize", &val, &val_size, NULL, 0) == 0 && val > 0) l3 = static_cast<int>(val);
+  }
+#elif EIGEN_OS_UNIX && defined(_SC_LEVEL1_DCACHE_SIZE)
+  // On Linux and other POSIX systems, use sysconf to query cache sizes.
+  l1 = sysconf(_SC_LEVEL1_DCACHE_SIZE);
+  l2 = sysconf(_SC_LEVEL2_CACHE_SIZE);
+  l3 = sysconf(_SC_LEVEL3_CACHE_SIZE);
 #else
   l1 = l2 = l3 = -1;
 #endif
@@ -1355,15 +1386,13 @@ EIGEN_DEVICE_FUNC void destroy_at(T* p) {
 #endif
 
 // FIXME(rmlarsen): Work around missing linker symbol with msan on ARM.
-#if !defined(EIGEN_DONT_ASSUME_ALIGNED) && __has_feature(memory_sanitizer) && \
-    (EIGEN_ARCH_ARM || EIGEN_ARCH_ARM64)
+#if !defined(EIGEN_DONT_ASSUME_ALIGNED) && __has_feature(memory_sanitizer) && (EIGEN_ARCH_ARM || EIGEN_ARCH_ARM64)
 #define EIGEN_DONT_ASSUME_ALIGNED
 #endif
 
-
 #if !defined(EIGEN_DONT_ASSUME_ALIGNED) && defined(__cpp_lib_assume_aligned) && (__cpp_lib_assume_aligned >= 201811L)
 template <std::size_t N, typename T>
-EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC constexpr T* assume_aligned(T* ptr) {
+EIGEN_DEVICE_FUNC constexpr T* assume_aligned(T* ptr) {
   return std::assume_aligned<N, T>(ptr);
 }
 #elif !defined(EIGEN_DONT_ASSUME_ALIGNED) && EIGEN_HAS_BUILTIN(__builtin_assume_aligned)
@@ -1373,7 +1402,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC T* assume_aligned(T* ptr) {
 }
 #else
 template <std::size_t N, typename T>
-EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC constexpr T* assume_aligned(T* ptr) {
+EIGEN_DEVICE_FUNC constexpr T* assume_aligned(T* ptr) {
   return ptr;
 }
 #endif

@@ -46,7 +46,8 @@ TEST_F(HlslWriterTest, ConstructF32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 float a() {
   float v = 2.0f;
@@ -74,7 +75,8 @@ TEST_F(HlslWriterTest, ConstructF16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 float16_t a() {
   float16_t v = float16_t(2.0h);
@@ -102,7 +104,8 @@ TEST_F(HlslWriterTest, ConstructBool) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 bool a() {
   bool v = false;
@@ -130,7 +133,8 @@ TEST_F(HlslWriterTest, ConstructI32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 int a() {
   int v = int(2);
@@ -158,7 +162,8 @@ TEST_F(HlslWriterTest, ConstructU32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 uint a() {
   uint v = 2u;
@@ -186,7 +191,8 @@ TEST_F(HlslWriterTest, ConstructMatrix) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 float2x2 a() {
   float v = 2.0f;
@@ -215,7 +221,8 @@ TEST_F(HlslWriterTest, ConstructVecSingleScalarF32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 float3 a() {
   float v = 2.0f;
@@ -243,7 +250,8 @@ TEST_F(HlslWriterTest, ConstructVecSingleScalarF16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 vector<float16_t, 3> a() {
   float16_t v = float16_t(2.0h);
@@ -271,7 +279,8 @@ TEST_F(HlslWriterTest, ConstructVecSingleScalarBool) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 bool3 a() {
   bool v = true;
@@ -296,7 +305,8 @@ TEST_F(HlslWriterTest, ConstructArray) {
         b.Return(f);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -328,7 +338,8 @@ TEST_F(HlslWriterTest, ConstructStruct) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct S {
   int a;
   float b;

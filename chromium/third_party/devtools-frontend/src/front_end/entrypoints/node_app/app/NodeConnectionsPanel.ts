@@ -187,13 +187,11 @@ export class NodeConnectionsView extends UI.Widget.VBox implements UI.ListWidget
       if (!match) {
         return {
           valid: false,
-          errorMessage: undefined,
         };
       }
       const port = parseInt(match[2], 10);
       return {
         valid: port <= 65535,
-        errorMessage: undefined,
       };
     }
   }

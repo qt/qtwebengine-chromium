@@ -40,7 +40,6 @@ class companion {
   typedef Scalar_ Scalar;
   typedef typename NumTraits<Scalar>::Real RealScalar;
   typedef Matrix<Scalar, Deg, 1> RightColumn;
-  // typedef DiagonalMatrix< Scalar, Deg_1, Deg_1 > BottomLeftDiagonal;
   typedef Matrix<Scalar, Deg_1, 1> BottomLeftDiagonal;
 
   typedef Matrix<Scalar, Deg, Deg> DenseCompanionMatrixType;

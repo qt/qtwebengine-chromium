@@ -18,7 +18,7 @@
 # ~~~
 cmake_minimum_required(VERSION 3.22.1)
 
-project(VULKAN_LOADER VERSION 1.4.343 LANGUAGES C)
+project(VULKAN_LOADER VERSION 1.4.348 LANGUAGES C)
 
 option(CODE_COVERAGE "Enable Code Coverage" OFF)
 if (CODE_COVERAGE)
@@ -53,6 +53,9 @@ if(WIN32)
 endif()
 
 find_package(VulkanHeaders ${PROJECT_VERSION} CONFIG QUIET)
+if (${VulkanHeaders_VERSION} VERSION_GREATER ${PROJECT_VERSION})
+    message(WARNING "The Vulkan Headers version ${VulkanHeaders_VERSION} is newer than the expected version ${PROJECT_VERSION} used by the Vulkan-Loader. May cause issues.")
+endif()
 
 include(GNUInstallDirs)
 
@@ -125,14 +128,12 @@ elseif(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD|DragonFly|GNU|CYGWIN")
     endif()
     if(BUILD_WSI_XLIB_SUPPORT)
         pkg_check_modules(X11 REQUIRED QUIET IMPORTED_TARGET x11)
-        pkg_get_variable(XLIB_INCLUDE_DIRS x11 includedir)
         target_compile_definitions(platform_wsi INTERFACE VK_USE_PLATFORM_XLIB_KHR)
-        target_include_directories(platform_wsi INTERFACE ${XLIB_INCLUDE_DIRS})
+        target_include_directories(platform_wsi INTERFACE ${X11_INCLUDE_DIRS})
         if(BUILD_WSI_XLIB_XRANDR_SUPPORT)
             pkg_check_modules(XRANDR REQUIRED QUIET IMPORTED_TARGET xrandr)
-            pkg_get_variable(XLIB_XRANDR_INCLUDE_DIRS xrandr includedir)
             target_compile_definitions(platform_wsi INTERFACE VK_USE_PLATFORM_XLIB_XRANDR_EXT)
-            target_include_directories(platform_wsi INTERFACE ${XLIB_XRANDR_INCLUDE_DIRS})
+            target_include_directories(platform_wsi INTERFACE ${XRANDR_INCLUDE_DIRS})
         endif()
     endif()
     if(BUILD_WSI_WAYLAND_SUPPORT)

@@ -4124,16 +4124,15 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
         True,
         self._driver.capabilities['fedcm:accounts'])
 
-  def testCanClickInIframesInShadow(self):
-    """Test that you can interact with a iframe within a shadow element.
-       See https://bugs.chromium.org/p/chromedriver/issues/detail?id=3445
-    """
+  def _test_click_in_shadow_iframe(self, closed):
     self._driver.SetTimeouts({'implicit': 2000})
-    self._driver.Load(self.GetHttpUrlForFile(
-        '/chromedriver/shadow_iframe.html'))
-    frame = self._driver.ExecuteScript(
-      '''return document.querySelector("#shadow")
-          .shadowRoot.querySelector("iframe")''')
+    url = self.GetHttpUrlForFile('/chromedriver/shadow_iframe.html')
+    if closed:
+      url += '?closed=true'
+    self._driver.Load(url)
+    shadow_host = self._driver.FindElement('css selector', '#shadow')
+    shadow_root = shadow_host.GetElementShadowRoot()
+    frame = shadow_root.FindElement('css selector', 'iframe')
     self._driver.SwitchToFrame(frame)
     message = self._driver.FindElement('css selector', '#message')
     self.assertTrue('clicked' not in message.GetText())
@@ -4141,6 +4140,19 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
     button.Click()
     message = self._driver.FindElement('css selector', '#message.result')
     self.assertTrue('clicked' in message.GetText())
+
+  def testCanClickInIframesInShadowClosed(self):
+    """
+    Test that you can interact with a iframe within a closed shadow root.
+    https://issues.chromium.org/issues/469831357
+    """
+    self._test_click_in_shadow_iframe(closed=True)
+
+  def testCanClickInIframesInShadowOpen(self):
+    """Test that you can interact with a iframe within a open shadow root.
+       See https://bugs.chromium.org/p/chromedriver/issues/detail?id=3445
+    """
+    self._test_click_in_shadow_iframe(closed=False)
 
   def testCanClickInIframesInShadowScrolled(self):
     """Test that you can interact with a scrolled iframe
@@ -6083,6 +6095,62 @@ class ChromeDriverSiteIsolation(ChromeDriverBaseTestWithWebServer):
     frame_url = self._driver.ExecuteScript('return window.location.href')
     self.assertTrue(frame_url.endswith('#two'))
 
+  def testClickOnOverlayOverCrossOriginIframe(self):
+    """Regression test for crbug.com/42321834 and duplicate 42322220."""
+    # When an element is visually on top of an out-of-process, cross-origin
+    # iframe, ChromeDriver must not "silently miss" it (i.e., report success
+    # but not actually dispatch a click to the overlay).
+    self._driver.Load(self.GetHttpUrlForFile(
+        '/chromedriver/click_over_cross_origin_iframe.html'))
+
+    if not self.WaitForCondition(
+        lambda: 'complete' ==
+                self._driver.ExecuteScript('return document.readyState')):
+      self.fail('Timed out waiting for the test page to finish loading.')
+
+    if not self.WaitForCondition(
+        lambda: 1 == self._driver.ExecuteScript(
+            'return window.getState().iframeReadyCount')):
+      self.fail('Timed out waiting for iframe readiness. State: %s' %
+                self._driver.ExecuteScript('return window.getState()'))
+
+    self.assertTrue(self._driver.ExecuteScript('''
+      const xframe = document.getElementById('xframe');
+      return new URL(xframe.src).hostname !== location.hostname;
+    '''))
+
+    overlay = self._driver.FindElement('css selector', '#overlay')
+    self.assertTrue(overlay.IsDisplayed())
+    self.assertFalse(overlay.GetProperty('disabled'))
+
+    self.assertTrue(self._driver.ExecuteScript(
+        'return window.getHitTestDebug().overlayCenterWithinIframeRect'),
+        msg='overlay center must overlap iframe for this test to be valid')
+    self.assertTrue(self._driver.ExecuteScript(
+        'return window.assertOverlayIsHitTestTarget()'),
+        msg='overlay must be the hit-test target at its center point')
+
+    state = self._driver.ExecuteScript('return window.getState()')
+    self.assertEqual(0, state['overlayClickCount'])
+    self.assertEqual(0, state['iframeClickCount'])
+    self.assertEqual('NOT_CLICKED', state['overlayMarkerText'])
+
+    for expected_overlay_click_count in (1, 2):
+      overlay.Click()
+
+      if not self.WaitForCondition(
+          lambda: expected_overlay_click_count ==
+                  self._driver.ExecuteScript(
+                      'return window.getState().overlayClickCount')):
+        self.fail('Timed out waiting for overlay click. State: %s' %
+                  self._driver.ExecuteScript('return window.getState()'))
+
+      state = self._driver.ExecuteScript('return window.getState()')
+      self.assertEqual(expected_overlay_click_count, state['overlayClickCount'],
+                       state)
+      self.assertEqual('OVERLAY_CLICKED', state['overlayMarkerText'], state)
+      self.assertEqual(0, state['iframeClickCount'], state)
+
   def testScriptNavigateLocalToLocal(self):
     """Test that user can switch into a local frame
     and perform a same domain navigation.
@@ -6435,6 +6503,52 @@ class ChromeDriverSiteIsolation(ChromeDriverBaseTestWithWebServer):
         self._driver.ExecuteScript(
                 'return arguments[0] === window.frames[0]',
                 frame)
+
+  def testAlertDoesntCrashBrowser(self):
+    # Regression test for crbug.com/502206631.
+    # It ensures that ExecuteAlertCommand doesn't cause a use-after-free
+    # crash when a prerender activation swap detaches the web view.
+    self._http_server.SetDataForPath('/inner.html',
+      b'<html><body><h1>Prerendered Page</h1></body></html>')
+    self._http_server.SetDataForPath('/prerender_uaf.html',
+      bytes('''<!DOCTYPE html>
+<html>
+<head>
+  <script>
+    const script = document.createElement('script');
+    script.type = 'speculationrules';
+    script.innerText = JSON.stringify({
+      "prerender": [{"source": "list", "urls": ["/inner.html"]}]
+    });
+    document.head.append(script);
+  </script>
+</head>
+<body>
+  <a id="link" href="/inner.html">navigate</a>
+  <script>
+    window._triggerPrerenderSwap = function() {
+      setTimeout(() => {
+        document.getElementById('link').click();
+        const start = Date.now();
+        while (Date.now() - start < 3000);
+      }, 100);
+    };
+  </script>
+</body>
+</html>''', 'utf-8'))
+
+    driver = self.CreateDriver()
+    try:
+      driver.Load(self.GetHttpUrlForFile('/prerender_uaf.html'))
+      time.sleep(1)
+      driver.ExecuteScript('window._triggerPrerenderSwap();')
+      time.sleep(0.15)
+      try:
+        driver.GetAlertMessage()
+      except Exception:
+        pass
+    finally:
+      pass
 
 
 class ChromeDriverPageLoadTimeoutTest(ChromeDriverBaseTestWithWebServer):

@@ -36,8 +36,8 @@ ScrollbarLayerImplBase::~ScrollbarLayerImplBase() {
   layer_tree_impl()->UnregisterScrollbar(this);
 }
 
-void ScrollbarLayerImplBase::PushPropertiesTo(LayerImpl* layer) {
-  LayerImpl::PushPropertiesTo(layer);
+void ScrollbarLayerImplBase::CopyPropertiesTo(LayerImpl* layer) const {
+  LayerImpl::CopyPropertiesTo(layer);
   DCHECK(layer->IsScrollbarLayer());
   ScrollbarLayerImplBase* scrollbar_layer = ToScrollbarLayer(layer);
   scrollbar_layer->SetHasFindInPageTickmarks(has_find_in_page_tickmarks_);
@@ -382,7 +382,7 @@ ScrollbarPart ScrollbarLayerImplBase::IdentifyScrollbarPart(
   if (ForwardTrackRect().Contains(pointer_location))
     return ScrollbarPart::kForwardTrack;
 
-  // TODO(arakeri): Once crbug.com/952314 is fixed, add a DCHECK to verify that
+  // TODO(gastonr): Once crbug.com/952314 is fixed, add a DCHECK to verify that
   // the point that is passed in is within the TrackRect. Also, please note that
   // hit testing other scrollbar parts is not yet implemented.
   return ScrollbarPart::kNoPart;

@@ -118,6 +118,8 @@
  * unsupported/test/NonLinearOptimization.cpp.
  */
 
+#include "../../Eigen/src/Core/util/DisableStupidWarnings.h"
+
 // IWYU pragma: begin_exports
 #ifndef EIGEN_PARSED_BY_DOXYGEN
 
@@ -137,5 +139,7 @@
 #include "src/NonLinearOptimization/HybridNonLinearSolver.h"
 #include "src/NonLinearOptimization/LevenbergMarquardt.h"
 // IWYU pragma: end_exports
+
+#include "../../Eigen/src/Core/util/ReenableStupidWarnings.h"
 
 #endif  // EIGEN_NONLINEAROPTIMIZATION_MODULE_H

@@ -77,6 +77,10 @@ fn early_fragment_tests_str(early_fragment_tests: bool) -> String {
     (if early_fragment_tests { "[Early fragment tests]" } else { "" }).to_string()
 }
 
+fn num_views_str(num_views: u32) -> String {
+    (if num_views > 0 { "[Views: {num_views}]" } else { "" }).to_string()
+}
+
 fn blend_equation_advanced_str(equations: &AdvancedBlendEquations) -> String {
     if equations.all() {
         return "[Advanced Blend Equations: All]".to_string();
@@ -347,8 +351,10 @@ fn decoration_str(decoration: Decoration) -> String {
         Decoration::MatrixPacking(packing) => matrix_packing_str(packing),
         Decoration::Depth(depth) => depth_str(depth),
         Decoration::ImageInternalFormat(format) => image_internal_format_str(format),
-        Decoration::NumViews(n) => format!("num_views={n}"),
-        Decoration::RasterOrdered => "raster_ordered(D3D)".to_string(),
+        Decoration::RasterOrdered => "raster_ordered".to_string(),
+        Decoration::EmulatedViewIDOut => "emulated_ViewID(VS)".to_string(),
+        Decoration::EmulatedViewIDIn => "emulated_ViewID(FS)".to_string(),
+        Decoration::EmulatedMultiDrawBuiltIn => "emulated_multidraw_built_in".to_string(),
     }
 }
 
@@ -426,7 +432,6 @@ fn built_in_str(built_in: BuiltIn) -> String {
         BuiltIn::SampleMask => "SampleMask",
         BuiltIn::NumSamples => "NumSamples",
         BuiltIn::NumWorkGroups => "NumWorkGroups",
-        BuiltIn::WorkGroupSize => "WorkGroupSize",
         BuiltIn::WorkGroupID => "WorkGroupID",
         BuiltIn::LocalInvocationID => "LocalInvocationID",
         BuiltIn::GlobalInvocationID => "GlobalInvocationID",
@@ -436,14 +441,13 @@ fn built_in_str(built_in: BuiltIn) -> String {
         BuiltIn::PrimitiveIDIn => "PrimitiveIDIn",
         BuiltIn::InvocationID => "InvocationID",
         BuiltIn::PrimitiveID => "PrimitiveID",
-        BuiltIn::LayerOut => "Layer(GS)",
+        BuiltIn::LayerOut => "Layer(GS/VS)",
         BuiltIn::LayerIn => "Layer(FS)",
         BuiltIn::PatchVerticesIn => "PatchVerticesIn",
         BuiltIn::TessLevelOuter => "TessLevelOuter",
         BuiltIn::TessLevelInner => "TessLevelInner",
         BuiltIn::TessCoord => "TessCoord",
         BuiltIn::BoundingBoxOES => "BoundingBoxOES",
-        BuiltIn::PixelLocalEXT => "PixelLocalEXT",
     })
     .to_string()
 }
@@ -883,6 +887,9 @@ fn append_on_new_line(result: &mut String, new: String, indent: usize) {
 
 fn dump_shader_properties(ir_meta: &IRMeta, result: &mut String) {
     match ir_meta.get_shader_type() {
+        ShaderType::Vertex => {
+            append_on_new_line(result, num_views_str(ir_meta.get_num_views()), 0);
+        }
         ShaderType::Fragment => {
             append_on_new_line(
                 result,
@@ -1001,9 +1008,20 @@ fn dump_variables(ir_meta: &IRMeta, result: &mut String) {
             .built_in
             .map(|built_in| format!(" <{}>", built_in_str(built_in)))
             .unwrap_or("".to_string());
+        let loop_variable = if v.scope == VariableScope::ForLoopVariable {
+            " {loop_variable}".to_string()
+        } else {
+            "".to_string()
+        };
 
-        let mut formatted =
-            format!("v{id} ({}): {}{}{}", type_id_str(v.type_id), name, initializer, built_in);
+        let mut formatted = format!(
+            "v{id} ({}): {}{}{}{}",
+            type_id_str(v.type_id),
+            name,
+            initializer,
+            built_in,
+            loop_variable
+        );
         append_decorations(&mut formatted, v.precision, &v.decorations);
 
         append_on_new_line(result, formatted, 1);

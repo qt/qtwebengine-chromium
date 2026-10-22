@@ -10,7 +10,7 @@
 #include "base/types/pass_key.h"
 #include "third_party/blink/public/mojom/ai/ai_language_model.mojom-blink.h"
 #include "third_party/blink/public/mojom/ai/ai_manager.mojom-blink.h"
-#include "third_party/blink/public/mojom/ai/model_streaming_responder.mojom-blink-forward.h"
+#include "third_party/blink/public/mojom/ai/model_streaming_responder.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_availability.h"
@@ -26,13 +26,15 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/streams/readable_stream.h"
 #include "third_party/blink/renderer/modules/ai/language_model_params.h"
+#include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
 
 namespace blink {
 
 // The class that represents a `LanguageModel` object.
-class LanguageModel final : public EventTarget, public ExecutionContextClient {
+class MODULES_EXPORT LanguageModel final : public EventTarget,
+                                           public ExecutionContextClient {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
@@ -54,6 +56,7 @@ class LanguageModel final : public EventTarget, public ExecutionContextClient {
   ExecutionContext* GetExecutionContext() const override;
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(quotaoverflow, kQuotaoverflow)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(contextoverflow, kContextoverflow)
 
   // language_model.idl implementation.
   static ScriptPromise<LanguageModel> create(
@@ -81,11 +84,18 @@ class LanguageModel final : public EventTarget, public ExecutionContextClient {
                                      const V8LanguageModelPrompt* input,
                                      const LanguageModelAppendOptions* options,
                                      ExceptionState& exception_state);
+  ScriptPromise<IDLDouble> measureContextUsage(
+      ScriptState* script_state,
+      const V8LanguageModelPrompt* input,
+      const LanguageModelPromptOptions* options,
+      ExceptionState& exception_state);
   ScriptPromise<IDLDouble> measureInputUsage(
       ScriptState* script_state,
       const V8LanguageModelPrompt* input,
       const LanguageModelPromptOptions* options,
       ExceptionState& exception_state);
+  double contextUsage() const { return info_->input_usage; }
+  double contextWindow() const { return info_->input_quota; }
   double inputQuota() const { return info_->input_quota; }
   double inputUsage() const { return info_->input_usage; }
   uint32_t topK() const { return info_->sampling_params->top_k; }
@@ -110,9 +120,10 @@ class LanguageModel final : public EventTarget, public ExecutionContextClient {
       ScriptPromiseResolver<V8LanguageModelPromptResult>* resolver,
       const String& response,
       mojom::blink::ModelExecutionContextInfoPtr context_info);
+  void HandleToolCalls(Vector<mojom::blink::ToolCallPtr> tool_calls);
   void OnResponseComplete(
       mojom::blink::ModelExecutionContextInfoPtr context_info);
-  void OnQuotaOverflow();
+  void OnContextOverflow();
 
   using ResolverOrStream =
       std::variant<ScriptPromiseResolverBase*, ReadableStream*>;
@@ -133,7 +144,14 @@ class LanguageModel final : public EventTarget, public ExecutionContextClient {
       AbortSignal* signal,
       Vector<mojom::blink::AILanguageModelPromptPtr> prompts);
 
-  // Validates and processed prompt input and returns the processed constraints.
+  // Validates common prompt input and returns true on success.
+  // Returns false and throws exceptions on failure.
+  bool ValidateInput(ScriptState* script_state,
+                     const V8LanguageModelPrompt* input,
+                     AbortSignal* signal,
+                     ExceptionState& exception_state);
+
+  // Validates and processes prompt input and returns the processed constraints.
   // Returns std::nullopt on failure.
   std::optional<on_device_model::mojom::blink::ResponseConstraintPtr>
   ValidateAndProcessPromptInput(ScriptState* script_state,
@@ -145,6 +163,10 @@ class LanguageModel final : public EventTarget, public ExecutionContextClient {
   HeapMojoRemote<mojom::blink::AILanguageModel> language_model_remote_;
   // Info about the language model's supported types and instance state.
   blink::mojom::blink::AILanguageModelInstanceInfoPtr info_;
+  // Tool calls from the current response, populated by HandleToolCalls.
+  Vector<mojom::blink::ToolCallPtr> pending_tool_calls_;
+  // Whether the session has any context, including pending requests.
+  bool has_context_ = false;
 };
 
 }  // namespace blink

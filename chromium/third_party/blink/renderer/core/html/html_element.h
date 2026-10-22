@@ -38,6 +38,7 @@
 namespace blink {
 
 struct AttributeTriggers;
+class AttachInternalsOptions;
 class Color;
 class DocumentFragment;
 class ElementInternals;
@@ -108,11 +109,6 @@ enum class PopoverHideResult {
   kForcedOpenByInspector,
 };
 
-enum class PopoverTriggerSupport {
-  kNone,
-  kSupported,
-};
-
 class CORE_EXPORT HTMLElement : public Element {
   DEFINE_WRAPPERTYPEINFO();
 
@@ -124,12 +120,16 @@ class CORE_EXPORT HTMLElement : public Element {
     return HasLocalName(name.LocalName());
   }
 
+  ElementType GetElementType() const override {
+    return ElementType::kHTMLElement;
+  }
+
   const char* GetHumanReadableName() const override;
 
   String title() const final;
 
   void setInnerText(const String&);
-  V8UnionStringLegacyNullToEmptyStringOrTrustedScript* innerTextForBinding();
+  String innerTextForBinding();
   virtual void setInnerTextForBinding(
       const V8UnionStringLegacyNullToEmptyStringOrTrustedScript*
           string_or_trusted_script,
@@ -202,9 +202,12 @@ class CORE_EXPORT HTMLElement : public Element {
   // origin trial is over.
   virtual bool IsHTMLFencedFrameElement() const { return false; }
   virtual bool IsHTMLFrameSetElement() const { return false; }
+  // TODO(crbug.com/483423896): Remove this method when the install element
+  // trial is over.
+  virtual bool IsHTMLInstallElement() const { return false; }
   // TODO(crbug.com/443013457): Remove these 2 methods when the
   // permission/usermedia trials are over.
-  virtual bool IsHTMLPermissionElement() const { return false; }
+  virtual bool IsHTMLCapabilityElementBase() const { return false; }
   virtual bool IsHTMLUserMediaElement() const { return false; }
   virtual bool IsHTMLUnknownElement() const { return false; }
   virtual bool IsPluginElement() const { return false; }
@@ -252,11 +255,10 @@ class CORE_EXPORT HTMLElement : public Element {
   int offsetHeightForBinding();
 
   ElementInternals* attachInternals(ExceptionState& exception_state);
+  ElementInternals* attachInternals(const AttachInternalsOptions* options,
+                                    ExceptionState& exception_state);
   virtual FormAssociated* ToFormAssociatedOrNull() { return nullptr; }
   bool IsFormAssociatedCustomElement() const;
-
-  // Returns true if the elementInternals.type is set to "button".
-  bool IsCustomButton() const;
 
   void UpdateDescendantDirectionality(TextDirection direction);
   void UpdateDirectionalityAfterInputTypeChange(const AtomicString& old_value,
@@ -264,7 +266,7 @@ class CORE_EXPORT HTMLElement : public Element {
   void AdjustDirectionAutoAfterRecalcAssignedNodes();
   virtual bool CalculateAndAdjustAutoDirectionality();
 
-  V8UnionBooleanOrStringOrUnrestrictedDouble* hidden() const;
+  V8UnionBooleanOrStringOrUnrestrictedDouble::Ret hidden(ScriptState*) const;
   void setHidden(const V8UnionBooleanOrStringOrUnrestrictedDouble*);
 
   // https://html.spec.whatwg.org/C/#potentially-render-blocking
@@ -347,8 +349,6 @@ class CORE_EXPORT HTMLElement : public Element {
       HidePopoverTransitionBehavior,
       HeapVector<Member<HTMLElement>>* popovers_held_open_by_inspector =
           nullptr);
-
-  virtual PopoverTriggerSupport SupportsPopoverTriggering() const;
 
   void SetImplicitAnchor(Element* element);
   Element* implicitAnchor() const;

@@ -17,7 +17,6 @@
 #include "src/trace_processor/importers/proto/system_probes_parser.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -27,7 +26,6 @@
 #include <vector>
 
 #include "perfetto/base/logging.h"
-#include "perfetto/ext/base/status_or.h"
 #include "perfetto/ext/base/string_utils.h"
 #include "perfetto/ext/base/string_view.h"
 #include "perfetto/ext/traced/sys_stats_counters.h"
@@ -40,6 +38,7 @@
 #include "src/trace_processor/importers/common/clock_tracker.h"
 #include "src/trace_processor/importers/common/cpu_tracker.h"
 #include "src/trace_processor/importers/common/event_tracker.h"
+#include "src/trace_processor/importers/common/gpu_tracker.h"
 #include "src/trace_processor/importers/common/import_logs_tracker.h"
 #include "src/trace_processor/importers/common/machine_tracker.h"
 #include "src/trace_processor/importers/common/metadata_tracker.h"
@@ -56,6 +55,7 @@
 #include "src/trace_processor/tables/metadata_tables_py.h"
 #include "src/trace_processor/types/trace_processor_context.h"
 #include "src/trace_processor/types/variadic.h"
+#include "src/trace_processor/util/clock_synchronizer.h"
 
 #include "protos/perfetto/common/builtin_clock.pbzero.h"
 #include "protos/perfetto/common/system_info.pbzero.h"
@@ -63,6 +63,7 @@
 #include "protos/perfetto/trace/ps/process_tree.pbzero.h"
 #include "protos/perfetto/trace/sys_stats/sys_stats.pbzero.h"
 #include "protos/perfetto/trace/system_info/cpu_info.pbzero.h"
+#include "protos/perfetto/trace/system_info/gpu_info.pbzero.h"
 
 namespace perfetto::trace_processor {
 
@@ -585,8 +586,10 @@ void SystemProbesParser::ParseSysStats(int64_t ts, ConstBytes blob) {
   }
 
   for (auto it = sys_stats.gpufreq_mhz(); it; ++it, ++c) {
+    auto ugpu = context_->gpu_tracker->GetOrCreateGpu(0);
     TrackId track = context_->track_tracker->InternTrack(
-        tracks::kGpuFrequencyBlueprint, tracks::Dimensions(0));
+        tracks::kGpuFrequencyBlueprint,
+        tracks::Dimensions(ugpu.value, uint32_t{0}));
     context_->event_tracker->PushCounter(ts, static_cast<double>(*it), track);
   }
 }
@@ -717,7 +720,7 @@ void SystemProbesParser::ParseProcessTree(int64_t ts, ConstBytes blob) {
     // note: early kernel threads can have an age of zero (at tick resolution)
     if (proc.has_process_start_from_boot()) {
       std::optional<int64_t> start_ts = context_->clock_tracker->ToTraceTime(
-          protos::pbzero::BUILTIN_CLOCK_BOOTTIME,
+          ClockId::Machine(protos::pbzero::BUILTIN_CLOCK_BOOTTIME),
           static_cast<int64_t>(proc.process_start_from_boot()));
       if (start_ts) {
         context_->process_tracker->SetStartTsIfUnset(upid, *start_ts);
@@ -1151,6 +1154,38 @@ void SystemProbesParser::ParseCpuInfo(ConstBytes blob) {
           .AddArg(arm_cpu_variant, Variadic::UnsignedInteger(id->variant))
           .AddArg(arm_cpu_part, Variadic::UnsignedInteger(id->part))
           .AddArg(arm_cpu_revision, Variadic::UnsignedInteger(id->revision));
+    }
+  }
+}
+
+void SystemProbesParser::ParseGpuInfo(ConstBytes blob) {
+  protos::pbzero::GpuInfo::Decoder gpu_info(blob);
+  uint32_t gpu_index = 0;
+  for (auto it = gpu_info.gpus(); it; ++it, ++gpu_index) {
+    protos::pbzero::GpuInfo::Gpu::Decoder gpu(*it);
+
+    std::string uuid_hex;
+    if (gpu.has_uuid()) {
+      auto uuid_bytes = gpu.uuid();
+      uuid_hex = base::ToHex(reinterpret_cast<const char*>(uuid_bytes.data),
+                             uuid_bytes.size);
+    }
+
+    auto ugpu = context_->gpu_tracker->SetGpuInfo(
+        gpu_index, gpu.name().ToStdStringView(), gpu.vendor().ToStdStringView(),
+        gpu.model().ToStdStringView(), gpu.architecture().ToStdStringView(),
+        std::string_view(uuid_hex), gpu.pci_bdf().ToStdStringView());
+
+    // Store vendor-specific extra_info as args.
+    ArgsTracker args_tracker(context_);
+    auto inserter = args_tracker.AddArgsTo(ugpu);
+    for (auto kv_it = gpu.extra_info(); kv_it; ++kv_it) {
+      protos::pbzero::GpuInfo::Gpu::KeyValue::Decoder kv(*kv_it);
+      if (kv.has_key() && kv.has_value()) {
+        auto key_id = context_->storage->InternString(kv.key());
+        auto val_id = context_->storage->InternString(kv.value());
+        inserter.AddArg(key_id, Variadic::String(val_id));
+      }
     }
   }
 }

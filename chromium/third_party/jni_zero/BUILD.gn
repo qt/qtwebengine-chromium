@@ -19,13 +19,21 @@ generate_jni("generate_jni") {
   ]
 }
 
+# Common classes to save projects from having to generate them.
+# Do not remove from this list without checking that no clients
+# use what you are removing.
 generate_jar_jni("system_jni") {
   classes = [
     "android/os/Process.class",
     "java/lang/Boolean.class",
     "java/lang/Integer.class",
+    "java/lang/Float.class",
+    "java/lang/Double.class",
     "java/lang/Long.class",
+    "java/lang/Object.class",
     "java/lang/Runnable.class",
+    "java/lang/Runtime.class",
+    "java/lang/Throwable.class",
     "java/util/Arrays.class",
     "java/util/Collection.class",
     "java/util/List.class",
@@ -84,9 +92,9 @@ component("jni_zero") {
 
   deps = [
     ":generate_jni($default_toolchain)",
-    ":system_jni($default_toolchain)",
     ":system_jni_unchecked_exceptions($default_toolchain)",
   ]
+  public_deps = [ ":system_jni($default_toolchain)" ]
 }
 
 if (enable_java_templates && is_android) {
@@ -104,8 +112,12 @@ if (enable_java_templates && is_android) {
       "java/src/org/jni_zero/CalledByNativeUnchecked.java",
       "java/src/org/jni_zero/JNINamespace.java",
       "java/src/org/jni_zero/JniInit.java",
+      "java/src/org/jni_zero/JniPtr.java",
+      "java/src/org/jni_zero/JniPtrImpl.java",
+      "java/src/org/jni_zero/JniPtrInner.java",
       "java/src/org/jni_zero/JniTestInstancesSnapshot.java",
       "java/src/org/jni_zero/JniType.java",
+      "java/src/org/jni_zero/JniTypeToken.java",
       "java/src/org/jni_zero/JniUtil.java",
       "java/src/org/jni_zero/NativeClassQualifiedName.java",
       "java/src/org/jni_zero/NativeMethods.java",

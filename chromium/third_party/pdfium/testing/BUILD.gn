@@ -80,6 +80,18 @@ source_set("test_support") {
   }
 }
 
+if (build_with_chromium && pdf_use_skia) {
+  source_set("discardable_memory_allocator") {
+    testonly = true
+    sources = [
+      "chromium_support/discardable_memory_allocator.cc",
+      "chromium_support/discardable_memory_allocator.h",
+    ]
+    deps = [ "//base/test:test_support" ]
+    configs += [ "../:pdfium_strict_config" ]
+  }
+}
+
 source_set("pixel_diff_utils") {
   testonly = true
   sources = [
@@ -97,6 +109,7 @@ source_set("path_service") {
   ]
   deps = [ "../core/fxcrt" ]
   configs += [
+    ":pdfium_in_chromium_config",
     "../:pdfium_strict_config",
     "../:pdfium_noshorten_config",
   ]
@@ -146,7 +159,7 @@ source_set("test_environments") {
 source_set("unit_test_support") {
   testonly = true
   sources = []
-  deps = []
+  deps = [ "//testing/gtest" ]
   configs += [
     "../:pdfium_strict_config",
     "../:pdfium_noshorten_config",
@@ -155,15 +168,19 @@ source_set("unit_test_support") {
     ":test_environments",
     ":test_support",
   ]
+  if (is_posix) {
+    sources += [
+      "temporary_file_test.cpp",
+      "temporary_file_test.h",
+    ]
+    deps += [ "../core/fxcrt" ]
+  }
   if (pdf_enable_v8) {
     sources += [
       "fxv8_unittest.cpp",
       "fxv8_unittest.h",
     ]
-    deps += [
-      "../fxjs",
-      "//testing/gtest",
-    ]
+    deps += [ "../fxjs" ]
     configs += [ "//v8:external_startup_data" ]
     if (pdf_enable_xfa) {
       sources += [
@@ -241,9 +258,14 @@ source_set("embedder_test_support") {
   }
 }
 
+config("pdfium_in_chromium_config") {
+  defines = []
+  if (build_with_chromium) {
+    defines += [ "BUILD_WITH_CHROMIUM" ]
+  }
+}
+
 config("pdfium_test_config") {
-  cflags = []
-  ldflags = []
   defines = []
   include_dirs = [ ".." ]
   if (pdf_use_skia) {
@@ -257,9 +279,6 @@ config("pdfium_test_config") {
   }
   if (enable_callgrind) {
     defines += [ "ENABLE_CALLGRIND" ]
-  }
-  if (build_with_chromium) {
-    defines += [ "BUILD_WITH_CHROMIUM" ]
   }
 }
 
@@ -288,6 +307,7 @@ executable("pdfium_test") {
     "//build/win:default_exe_manifest",
   ]
   configs += [
+    ":pdfium_in_chromium_config",
     ":pdfium_test_config",
     "../:pdfium_common_config",
   ]
@@ -310,11 +330,7 @@ executable("pdfium_test") {
   if (pdf_use_skia) {
     deps += [ "//skia" ]
     if (build_with_chromium) {
-      sources += [
-        "chromium_support/discardable_memory_allocator.cc",
-        "chromium_support/discardable_memory_allocator.h",
-      ]
-      deps += [ "//base/test:test_support" ]
+      deps += [ ":discardable_memory_allocator" ]
     }
   }
 

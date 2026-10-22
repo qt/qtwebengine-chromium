@@ -33,6 +33,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/base/network_delegate.h"
+#include "net/base/network_handle.h"
 #include "net/base/proxy_chain.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
@@ -238,6 +239,7 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
              const URLRequestContext* context,
              NetworkTrafficAnnotationTag traffic_annotation,
              bool is_for_websockets,
+             handles::NetworkHandle target_network,
              std::optional<net::NetLogSource> net_log_source);
 
   URLRequest(const URLRequest&) = delete;
@@ -910,7 +912,19 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   }
   bool send_client_certs() const { return send_client_certs_; }
 
+  // When true, all redirects are considered safe to follow regardless of the
+  // target URL scheme. The caller is responsible for filtering unsafe
+  // redirects.
+  void set_treat_all_redirects_as_safe(bool treat_as_safe) {
+    treat_all_redirects_as_safe_ = treat_as_safe;
+  }
+  bool treat_all_redirects_as_safe() const {
+    return treat_all_redirects_as_safe_;
+  }
+
   bool is_for_websockets() const { return is_for_websockets_; }
+
+  handles::NetworkHandle target_network() const { return target_network_; }
 
   void SetIdempotency(Idempotency idempotency) { idempotency_ = idempotency; }
   Idempotency GetIdempotency() const { return idempotency_; }
@@ -947,15 +961,14 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   base::WeakPtr<URLRequest> GetWeakPtr();
 
-  // Whether device-bound session registration and challenge are allowed
-  // for this request (e.g. by Origin Trial)
-  bool allows_device_bound_session_registration() const {
-    return allows_device_bound_session_registration_;
+  // Whether this request is allowed to belong to a device bound session. This
+  // includes registering a new session, accepting challenges, or deferring the
+  // request until a session is refreshed.
+  bool allows_device_bound_sessions() const {
+    return allows_device_bound_sessions_;
   }
-  void set_allows_device_bound_session_registration(
-      bool allows_device_bound_session_registration) {
-    allows_device_bound_session_registration_ =
-        allows_device_bound_session_registration;
+  void set_allows_device_bound_sessions(bool allows_device_bound_sessions) {
+    allows_device_bound_sessions_ = allows_device_bound_sessions;
   }
 
   // Whether this request was in the scope of any device-bound session for this
@@ -1155,6 +1168,8 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   const bool is_for_websockets_;
 
+  const handles::NetworkHandle target_network_ = handles::kInvalidNetworkHandle;
+
   // Current error status of the job, as a net::Error code. When the job is
   // busy, it is ERR_IO_PENDING. When the job is idle (either completed, or
   // awaiting a call from the URLRequestDelegate before continuing the request),
@@ -1263,6 +1278,8 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   bool send_client_certs_ = true;
 
+  bool treat_all_redirects_as_safe_ = false;
+
   // Idempotency of the request.
   Idempotency idempotency_ = DEFAULT_IDEMPOTENCY;
 
@@ -1274,8 +1291,8 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   base::RepeatingCallback<void(const device_bound_sessions::SessionAccess&)>
       device_bound_session_access_callback_;
 
-  // Whether the request is allowed to register new device-bound sessions
-  bool allows_device_bound_session_registration_ = false;
+  // Whether the request is allowed to belong to a device bound session.
+  bool allows_device_bound_sessions_ = true;
   // How existing device-bound sessions for the request's site interacted with
   // this request.
   base::flat_map<device_bound_sessions::SessionKey,

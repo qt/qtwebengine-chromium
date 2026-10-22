@@ -9,7 +9,7 @@ import '@material/web/switch/switch.js';
 import {MdSwitch} from '@material/web/switch/switch.js';
 import {css, CSSResultGroup, html, LitElement, nothing, PropertyValues} from 'lit';
 
-import {shouldProcessClick} from '../helpers/helpers';
+import {shouldProcessClick} from '../helpers/helpers.js';
 
 /** A chromeOS switch component. */
 export class Switch extends LitElement {

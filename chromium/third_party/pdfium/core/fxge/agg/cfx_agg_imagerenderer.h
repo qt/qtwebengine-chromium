@@ -13,6 +13,7 @@
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/agg/cfx_agg_bitmapcomposer.h"
+#include "core/fxge/renderdevicedriver_iface.h"
 
 class CFX_DIBBase;
 class CFX_DIBitmap;
@@ -20,7 +21,7 @@ class CFX_ImageTransformer;
 class CFX_ImageStretcher;
 class PauseIndicatorIface;
 
-class CFX_AggImageRenderer {
+class CFX_AggImageRenderer : public RenderDeviceDriverIface::Continuation {
  public:
   CFX_AggImageRenderer(const RetainPtr<CFX_DIBitmap>& pDevice,
                        const CFX_AggClipRgn* pClipRgn,
@@ -30,7 +31,7 @@ class CFX_AggImageRenderer {
                        const CFX_Matrix& matrix,
                        const FXDIB_ResampleOptions& options,
                        bool bRgbByteOrder);
-  ~CFX_AggImageRenderer();
+  ~CFX_AggImageRenderer() override;
 
   bool Continue(PauseIndicatorIface* pPause);
 

@@ -33,7 +33,6 @@
 #include "src/tint/lang/core/constant/splat.h"
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/ir/access.h"
-#include "src/tint/lang/core/ir/bitcast.h"
 #include "src/tint/lang/core/ir/break_if.h"
 #include "src/tint/lang/core/ir/construct.h"
 #include "src/tint/lang/core/ir/continue.h"
@@ -123,8 +122,7 @@ class Printer : public tint::TextGenerator {
 
     /// @returns the generated GLSL shader
     tint::Result<Output> Generate() {
-        TINT_CHECK_RESULT(
-            core::ir::ValidateAndDumpIfNeeded(ir_, "glsl.Printer", kPrinterCapabilities));
+        AssertValid(ir_, kPrinterCapabilities, "before glsl.Printer");
 
         {
             TINT_SCOPED_ASSIGNMENT(current_buffer_, &header_buffer_);
@@ -404,7 +402,7 @@ class Printer : public tint::TextGenerator {
 
                 [&](const core::ir::BreakIf* i) { EmitBreakIf(i); },                        //
                 [&](const core::ir::Call* i) { EmitCallStmt(i); },                          //
-                [&](const core::ir::Continue*) { EmitContinue(); },                         //
+                [&](const core::ir::Continue* c) { EmitContinue(c); },                      //
                 [&](const core::ir::ExitIf*) { /* do nothing handled by transform */ },     //
                 [&](const core::ir::ExitLoop*) { EmitExitLoop(); },                         //
                 [&](const core::ir::ExitSwitch*) { EmitExitSwitch(); },                     //
@@ -422,7 +420,6 @@ class Printer : public tint::TextGenerator {
                 [&](const core::ir::ExitIf*) { /* do nothing handled by transform */ },  //
                                                                                          //
                 [&](const core::ir::Access*) { /* inlined */ },                          //
-                [&](const core::ir::Bitcast*) { /* inlined */ },                         //
                 [&](const core::ir::Construct*) { /* inlined */ },                       //
                 [&](const core::ir::CoreBinary*) { /* inlined */ },                      //
                 [&](const core::ir::CoreUnary*) { /* inlined */ },                       //
@@ -488,11 +485,13 @@ class Printer : public tint::TextGenerator {
 
     void EmitDiscard() { Line() << "discard;"; }
 
-    void EmitContinue() {
+    void EmitContinue(const core::ir::Continue* c) {
         if (emit_continuing_) {
             emit_continuing_();
         }
-        Line() << "continue;";
+        if (c->Block() != c->Loop()->Body()) {
+            Line() << "continue;";
+        }
     }
 
     void EmitExitLoop() { Line() << "break;"; }
@@ -983,15 +982,15 @@ class Printer : public tint::TextGenerator {
     void EmitReturn(const core::ir::Return* r) {
         // If this return has no arguments and the current block is for the function which is
         // being returned, skip the return.
-        if (current_block_ == current_function_->Block() && r->Args().IsEmpty()) {
+        if (current_block_ == current_function_->Block() && r->Args().empty()) {
             return;
         }
 
         auto out = Line();
         out << "return";
-        if (!r->Args().IsEmpty()) {
+        if (!r->Args().empty()) {
             out << " ";
-            EmitValue(out, r->Args().Front());
+            EmitValue(out, r->Args().front());
         }
         out << ";";
     }
@@ -1026,13 +1025,13 @@ class Printer : public tint::TextGenerator {
                 break;
             case core::AddressSpace::kWorkgroup: {
                 auto* ty = ptr->StoreType();
-                uint32_t align = ty->Align();
-                uint32_t size = ty->Size();
+                uint64_t align = ty->Align();
+                uint64_t size = ty->Size();
 
                 // This essentially matches std430 layout rules from GLSL, which are in
                 // turn specified as an upper bound for Vulkan layout sizing.
                 result_.workgroup_info.storage_size +=
-                    tint::RoundUp(16u, tint::RoundUp(align, size));
+                    tint::RoundUp(static_cast<uint64_t>(16u), tint::RoundUp(align, size));
 
                 EmitWorkgroupVar(var);
                 break;
@@ -1119,17 +1118,10 @@ class Printer : public tint::TextGenerator {
     void EmitImmediateVar(core::ir::Var* var) {
         // We need to use the same name for the immediate data structure and variable between
         // different pipeline stages.
-        constexpr const char* kImmediateStructName = "tint_immediate_struct";
         constexpr const char* kImmediateVarName = "tint_immediates";
 
         auto out = Line();
         EmitLayoutLocation(out, {0}, std::nullopt);
-
-        auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
-        auto* str = ptr->StoreType()->As<core::type::Struct>();
-        TINT_IR_ASSERT(ir_, str);
-        names_.Add(str, kImmediateStructName);
-        EmitStructType(str);
 
         names_.Add(var->Result(), kImmediateVarName);
         EmitTypeAndName(out, var->Result()->Type(), kImmediateVarName);
@@ -1514,7 +1506,7 @@ class Printer : public tint::TextGenerator {
 
     /// Emit a constructor
     void EmitConstruct(StringStream& out, const core::ir::Construct* c) {
-        if (c->Args().IsEmpty()) {
+        if (c->Args().empty()) {
             EmitZeroValue(out, c->Result()->Type());
             return;
         }

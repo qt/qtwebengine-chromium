@@ -64,6 +64,7 @@
 #include "dawn/native/vulkan/SharedFenceVk.h"
 #include "dawn/native/vulkan/SharedTextureMemoryVk.h"
 #include "dawn/native/vulkan/SwapChainVk.h"
+#include "dawn/native/vulkan/TexelBufferViewVk.h"
 #include "dawn/native/vulkan/TextureVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
 #include "dawn/native/vulkan/VulkanError.h"
@@ -129,7 +130,7 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
 
         DAWN_TRY(functions->LoadDeviceProcs(GetVkInstance(), mVkDevice, mDeviceInfo));
 
-        mDeleter = std::make_unique<MutexProtected<FencedDeleter>>(this);
+        mDeleter = AcquireRef(new FencedDeleter(this));
     }
 
     if (IsToggleEnabled(Toggle::VulkanSkipDraw)) {
@@ -187,6 +188,7 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
 
     Ref<Queue> queue;
     DAWN_TRY_ASSIGN(queue, Queue::Create(this, &descriptor->defaultQueue, mMainQueueFamily));
+    queue->RegisterSerialProcessor(QueuePriority::BestEffort, mDeleter);
 
     if (HasFeature(Feature::ChromiumExperimentalSamplingResourceTable)) {
         DAWN_TRY_ASSIGN(mResourceTableLayout, ResourceTable::MakeDescriptorSetLayout(this));
@@ -256,6 +258,11 @@ ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     TextureBase* texture,
     const UnpackedPtr<TextureViewDescriptor>& descriptor) {
     return TextureView::Create(texture, mNextTextureViewId++, descriptor);
+}
+ResultOrError<Ref<TexelBufferViewBase>> Device::CreateTexelBufferViewImpl(
+    BufferBase* buffer,
+    const UnpackedPtr<TexelBufferViewDescriptor>& descriptor) {
+    return TexelBufferView::Create(buffer, descriptor);
 }
 Ref<PipelineCacheBase> Device::GetOrCreatePipelineCacheImpl(const CacheKey& key) {
     if (IsToggleEnabled(Toggle::VulkanMonolithicPipelineCache)) {
@@ -394,8 +401,8 @@ const VkDescriptorSetLayout& Device::GetResourceTableLayout() const {
     return mResourceTableLayout;
 }
 
-MutexProtected<FencedDeleter>& Device::GetFencedDeleter() const {
-    return *mDeleter;
+Ref<FencedDeleter>& Device::GetFencedDeleter() {
+    return mDeleter;
 }
 
 FramebufferCache* Device::GetFramebufferCache() const {
@@ -417,6 +424,10 @@ external_semaphore::Service* Device::GetExternalSemaphoreService() const {
 void Device::EnqueueDeferredDeallocation(DescriptorSetAllocator* allocator) {
     mDescriptorAllocatorsPendingDeallocation->Enqueue(allocator,
                                                       GetQueue()->GetPendingCommandSerial());
+}
+
+void Device::CacheStaticSampler(const Ref<Sampler>& s) {
+    mStaticSamplerCache.insert(s);
 }
 
 ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysicalDevice) {
@@ -589,6 +600,12 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
         featuresChain.Add(&usedKnobs.shaderSubgroupExtendedTypes);
     }
 
+    if (HasFeature(Feature::AtomicVec2uMinMax) &&
+        mDeviceInfo.shaderAtomicInt64Features.shaderBufferInt64Atomics == VK_TRUE) {
+        usedKnobs.shaderAtomicInt64Features = mDeviceInfo.shaderAtomicInt64Features;
+        featuresChain.Add(&usedKnobs.shaderAtomicInt64Features);
+    }
+
     if (HasFeature(Feature::DualSourceBlending)) {
         usedKnobs.features.dualSrcBlend = VK_TRUE;
     }
@@ -601,7 +618,8 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
         usedKnobs.features.shaderStorageImageExtendedFormats = VK_TRUE;
     }
 
-    if (HasFeature(Feature::YCbCrVulkanSamplers) &&
+    if ((HasFeature(Feature::YCbCrVulkanSamplers) ||
+         HasFeature(Feature::OpaqueYCbCrAndroidForExternalTexture)) &&
         mDeviceInfo.HasExt(DeviceExt::ExternalMemoryAndroidHardwareBuffer)) {
         usedKnobs.samplerYCbCrConversionFeatures.samplerYcbcrConversion = VK_TRUE;
         featuresChain.Add(&usedKnobs.samplerYCbCrConversionFeatures,
@@ -636,16 +654,34 @@ ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice vkPhysica
         featuresChain.Add(&usedKnobs.descriptorIndexingFeatures);
     }
 
-    if (IsToggleEnabled(Toggle::VulkanUseDynamicRendering)) {
+    // Determine what Vulkan render pass method will be used for the device.
+    // Dynamic Rendering can be used if the extension is available AND the DawnLoadResolveTexture
+    // feature is not being used.
+    // TODO(crbug.com/463893794): Remove this restriction when DawnLoadResolveTexture is supported
+    // by the Dynamic Rendering path.
+    if (IsToggleEnabled(Toggle::VulkanUseDynamicRendering) &&
+        !HasFeature(Feature::DawnLoadResolveTexture)) {
         DAWN_ASSERT(usedKnobs.HasExt(DeviceExt::DynamicRendering));
         usedKnobs.dynamicRenderingFeatures = mDeviceInfo.dynamicRenderingFeatures;
         featuresChain.Add(&usedKnobs.dynamicRenderingFeatures);
+        mRenderPassType = VulkanRenderPassType::DynamicRendering;
+    } else if (IsToggleEnabled(Toggle::VulkanUseCreateRenderPass2)) {
+        // If dynamic rendering is not used, but CreateRenderPass2 is supported prefer it.
+        mRenderPassType = VulkanRenderPassType::CreateRenderPass2;
+    } else {
+        // Otherwise use Vulkan's original CreateRenderPass method.
+        mRenderPassType = VulkanRenderPassType::CreateRenderPass;
     }
 
     if (HasFeature(Feature::MSAARenderToSingleSampled)) {
         usedKnobs.multisampledRenderToSingleSampledFeatures =
             mDeviceInfo.multisampledRenderToSingleSampledFeatures;
         featuresChain.Add(&usedKnobs.multisampledRenderToSingleSampledFeatures);
+    }
+
+    if (IsToggleEnabled(Toggle::VulkanUseDynamicRendering)) {
+        usedKnobs.extendedDynamicStateFeatures = mDeviceInfo.extendedDynamicStateFeatures;
+        featuresChain.Add(&usedKnobs.extendedDynamicStateFeatures);
     }
 
     // Find a universal queue family
@@ -991,6 +1027,8 @@ void Device::DestroyImpl(DestroyReason reason) {
 
     ToBackend(GetPhysicalDevice())->GetVulkanInstance()->StopListeningForDeviceMessages(this);
 
+    mStaticSamplerCache.clear();
+
     if (mResourceTableLayout != VK_NULL_HANDLE) {
         fn.DestroyDescriptorSetLayout(mVkDevice, mResourceTableLayout, nullptr);
         mResourceTableLayout = VK_NULL_HANDLE;
@@ -1094,6 +1132,11 @@ uint64_t Device::GetOptimalBufferToTextureCopyOffsetAlignment() const {
 
 float Device::GetTimestampPeriodInNS() const {
     return mDeviceInfo.properties.limits.timestampPeriod;
+}
+
+bool Device::NeedsStaticSamplerForExternalTexture() const {
+    return HasFeature(Feature::OpaqueYCbCrAndroidForExternalTexture) ||
+           IsToggleEnabled(Toggle::VulkanForceStaticSamplersForExternalTextures);
 }
 
 AllocatorMemoryInfo Device::GetAllocatorMemoryInfo() const {

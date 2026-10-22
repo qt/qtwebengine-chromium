@@ -37,63 +37,6 @@
 //  "forgot to enable an extension" is VERY important
 
 template <>
-ValidValue stateless::Context::IsValidEnumValue(VkImageLayout value) const {
-    switch (value) {
-        case VK_IMAGE_LAYOUT_UNDEFINED:
-        case VK_IMAGE_LAYOUT_GENERAL:
-        case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
-        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-        case VK_IMAGE_LAYOUT_PREINITIALIZED:
-            return ValidValue::Valid;
-        case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
-        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
-            return IsExtEnabled(extensions.vk_khr_maintenance2) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-        case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
-        case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
-        case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
-            return IsExtEnabled(extensions.vk_khr_separate_depth_stencil_layouts) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
-        case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
-            return IsExtEnabled(extensions.vk_khr_synchronization2) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ:
-            return IsExtEnabled(extensions.vk_khr_dynamic_rendering_local_read) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-            return IsExtEnabled(extensions.vk_khr_swapchain) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR:
-        case VK_IMAGE_LAYOUT_VIDEO_DECODE_SRC_KHR:
-        case VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR:
-            return IsExtEnabled(extensions.vk_khr_video_decode_queue) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR:
-            return IsExtEnabled(extensions.vk_khr_shared_presentable_image) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT:
-            return IsExtEnabled(extensions.vk_ext_fragment_density_map) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR:
-            return IsExtEnabled(extensions.vk_khr_fragment_shading_rate) || IsExtEnabled(extensions.vk_nv_shading_rate_image)
-                       ? ValidValue::Valid
-                       : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DST_KHR:
-        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR:
-        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR:
-            return IsExtEnabled(extensions.vk_khr_video_encode_queue) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT:
-            return IsExtEnabled(extensions.vk_ext_attachment_feedback_loop_layout) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM:
-            return IsExtEnabled(extensions.vk_arm_tensors) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR:
-            return IsExtEnabled(extensions.vk_khr_video_encode_quantization_map) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT:
-            return IsExtEnabled(extensions.vk_ext_zero_initialize_device_memory) ? ValidValue::Valid : ValidValue::NoExtension;
-        default:
-            return ValidValue::NotFound;
-    };
-}
-
-template <>
 ValidValue stateless::Context::IsValidEnumValue(VkObjectType value) const {
     switch (value) {
         case VK_OBJECT_TYPE_UNKNOWN:
@@ -181,6 +124,8 @@ ValidValue stateless::Context::IsValidEnumValue(VkObjectType value) const {
         case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT:
         case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT:
             return IsExtEnabled(extensions.vk_ext_device_generated_commands) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_OBJECT_TYPE_SHADER_INSTRUMENTATION_ARM:
+            return IsExtEnabled(extensions.vk_arm_shader_instrumentation) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -577,6 +522,63 @@ ValidValue stateless::Context::IsValidEnumValue(VkSharingMode value) const {
 }
 
 template <>
+ValidValue stateless::Context::IsValidEnumValue(VkImageLayout value) const {
+    switch (value) {
+        case VK_IMAGE_LAYOUT_UNDEFINED:
+        case VK_IMAGE_LAYOUT_GENERAL:
+        case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+        case VK_IMAGE_LAYOUT_PREINITIALIZED:
+            return ValidValue::Valid;
+        case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
+            return IsExtEnabled(extensions.vk_khr_maintenance2) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+        case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
+        case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
+        case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
+            return IsExtEnabled(extensions.vk_khr_separate_depth_stencil_layouts) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
+        case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
+            return IsExtEnabled(extensions.vk_khr_synchronization2) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ:
+            return IsExtEnabled(extensions.vk_khr_dynamic_rendering_local_read) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+            return IsExtEnabled(extensions.vk_khr_swapchain) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR:
+        case VK_IMAGE_LAYOUT_VIDEO_DECODE_SRC_KHR:
+        case VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR:
+            return IsExtEnabled(extensions.vk_khr_video_decode_queue) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR:
+            return IsExtEnabled(extensions.vk_khr_shared_presentable_image) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT:
+            return IsExtEnabled(extensions.vk_ext_fragment_density_map) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR:
+            return IsExtEnabled(extensions.vk_khr_fragment_shading_rate) || IsExtEnabled(extensions.vk_nv_shading_rate_image)
+                       ? ValidValue::Valid
+                       : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DST_KHR:
+        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR:
+        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR:
+            return IsExtEnabled(extensions.vk_khr_video_encode_queue) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT:
+            return IsExtEnabled(extensions.vk_ext_attachment_feedback_loop_layout) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM:
+            return IsExtEnabled(extensions.vk_arm_tensors) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR:
+            return IsExtEnabled(extensions.vk_khr_video_encode_quantization_map) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT:
+            return IsExtEnabled(extensions.vk_ext_zero_initialize_device_memory) ? ValidValue::Valid : ValidValue::NoExtension;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
 ValidValue stateless::Context::IsValidEnumValue(VkComponentSwizzle value) const {
     switch (value) {
         case VK_COMPONENT_SWIZZLE_IDENTITY:
@@ -699,17 +701,6 @@ ValidValue stateless::Context::IsValidEnumValue(VkSamplerAddressMode value) cons
 }
 
 template <>
-ValidValue stateless::Context::IsValidEnumValue(VkSamplerMipmapMode value) const {
-    switch (value) {
-        case VK_SAMPLER_MIPMAP_MODE_NEAREST:
-        case VK_SAMPLER_MIPMAP_MODE_LINEAR:
-            return ValidValue::Valid;
-        default:
-            return ValidValue::NotFound;
-    };
-}
-
-template <>
 ValidValue stateless::Context::IsValidEnumValue(VkCompareOp value) const {
     switch (value) {
         case VK_COMPARE_OP_NEVER:
@@ -720,6 +711,17 @@ ValidValue stateless::Context::IsValidEnumValue(VkCompareOp value) const {
         case VK_COMPARE_OP_NOT_EQUAL:
         case VK_COMPARE_OP_GREATER_OR_EQUAL:
         case VK_COMPARE_OP_ALWAYS:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkSamplerMipmapMode value) const {
+    switch (value) {
+        case VK_SAMPLER_MIPMAP_MODE_NEAREST:
+        case VK_SAMPLER_MIPMAP_MODE_LINEAR:
             return ValidValue::Valid;
         default:
             return ValidValue::NotFound;
@@ -986,6 +988,48 @@ ValidValue stateless::Context::IsValidEnumValue(VkFrontFace value) const {
 }
 
 template <>
+ValidValue stateless::Context::IsValidEnumValue(VkLogicOp value) const {
+    switch (value) {
+        case VK_LOGIC_OP_CLEAR:
+        case VK_LOGIC_OP_AND:
+        case VK_LOGIC_OP_AND_REVERSE:
+        case VK_LOGIC_OP_COPY:
+        case VK_LOGIC_OP_AND_INVERTED:
+        case VK_LOGIC_OP_NO_OP:
+        case VK_LOGIC_OP_XOR:
+        case VK_LOGIC_OP_OR:
+        case VK_LOGIC_OP_NOR:
+        case VK_LOGIC_OP_EQUIVALENT:
+        case VK_LOGIC_OP_INVERT:
+        case VK_LOGIC_OP_OR_REVERSE:
+        case VK_LOGIC_OP_COPY_INVERTED:
+        case VK_LOGIC_OP_OR_INVERTED:
+        case VK_LOGIC_OP_NAND:
+        case VK_LOGIC_OP_SET:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkStencilOp value) const {
+    switch (value) {
+        case VK_STENCIL_OP_KEEP:
+        case VK_STENCIL_OP_ZERO:
+        case VK_STENCIL_OP_REPLACE:
+        case VK_STENCIL_OP_INCREMENT_AND_CLAMP:
+        case VK_STENCIL_OP_DECREMENT_AND_CLAMP:
+        case VK_STENCIL_OP_INVERT:
+        case VK_STENCIL_OP_INCREMENT_AND_WRAP:
+        case VK_STENCIL_OP_DECREMENT_AND_WRAP:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
 ValidValue stateless::Context::IsValidEnumValue(VkVertexInputRate value) const {
     switch (value) {
         case VK_VERTEX_INPUT_RATE_VERTEX:
@@ -1025,48 +1069,6 @@ ValidValue stateless::Context::IsValidEnumValue(VkPolygonMode value) const {
             return ValidValue::Valid;
         case VK_POLYGON_MODE_FILL_RECTANGLE_NV:
             return IsExtEnabled(extensions.vk_nv_fill_rectangle) ? ValidValue::Valid : ValidValue::NoExtension;
-        default:
-            return ValidValue::NotFound;
-    };
-}
-
-template <>
-ValidValue stateless::Context::IsValidEnumValue(VkStencilOp value) const {
-    switch (value) {
-        case VK_STENCIL_OP_KEEP:
-        case VK_STENCIL_OP_ZERO:
-        case VK_STENCIL_OP_REPLACE:
-        case VK_STENCIL_OP_INCREMENT_AND_CLAMP:
-        case VK_STENCIL_OP_DECREMENT_AND_CLAMP:
-        case VK_STENCIL_OP_INVERT:
-        case VK_STENCIL_OP_INCREMENT_AND_WRAP:
-        case VK_STENCIL_OP_DECREMENT_AND_WRAP:
-            return ValidValue::Valid;
-        default:
-            return ValidValue::NotFound;
-    };
-}
-
-template <>
-ValidValue stateless::Context::IsValidEnumValue(VkLogicOp value) const {
-    switch (value) {
-        case VK_LOGIC_OP_CLEAR:
-        case VK_LOGIC_OP_AND:
-        case VK_LOGIC_OP_AND_REVERSE:
-        case VK_LOGIC_OP_COPY:
-        case VK_LOGIC_OP_AND_INVERTED:
-        case VK_LOGIC_OP_NO_OP:
-        case VK_LOGIC_OP_XOR:
-        case VK_LOGIC_OP_OR:
-        case VK_LOGIC_OP_NOR:
-        case VK_LOGIC_OP_EQUIVALENT:
-        case VK_LOGIC_OP_INVERT:
-        case VK_LOGIC_OP_OR_REVERSE:
-        case VK_LOGIC_OP_COPY_INVERTED:
-        case VK_LOGIC_OP_OR_INVERTED:
-        case VK_LOGIC_OP_NAND:
-        case VK_LOGIC_OP_SET:
-            return ValidValue::Valid;
         default:
             return ValidValue::NotFound;
     };
@@ -1333,6 +1335,18 @@ ValidValue stateless::Context::IsValidEnumValue(VkVideoEncodeTuningModeKHR value
 }
 
 template <>
+ValidValue stateless::Context::IsValidEnumValue(VkAccelerationStructureTypeKHR value) const {
+    switch (value) {
+        case VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR:
+        case VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR:
+        case VK_ACCELERATION_STRUCTURE_TYPE_GENERIC_KHR:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
 ValidValue stateless::Context::IsValidEnumValue(VkComponentTypeKHR value) const {
     switch (value) {
         case VK_COMPONENT_TYPE_FLOAT16_KHR:
@@ -1395,6 +1409,16 @@ ValidValue stateless::Context::IsValidEnumValue(VkTimeDomainKHR value) const {
         case VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT:
         case VK_TIME_DOMAIN_SWAPCHAIN_LOCAL_EXT:
             return IsExtEnabled(extensions.vk_ext_present_timing) ? ValidValue::Valid : ValidValue::NoExtension;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDeviceFaultVendorBinaryHeaderVersionKHR value) const {
+    switch (value) {
+        case VK_DEVICE_FAULT_VENDOR_BINARY_HEADER_VERSION_ONE_KHR:
+            return ValidValue::Valid;
         default:
             return ValidValue::NotFound;
     };
@@ -1672,18 +1696,6 @@ ValidValue stateless::Context::IsValidEnumValue(VkGeometryTypeKHR value) const {
 }
 
 template <>
-ValidValue stateless::Context::IsValidEnumValue(VkAccelerationStructureTypeKHR value) const {
-    switch (value) {
-        case VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR:
-        case VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR:
-        case VK_ACCELERATION_STRUCTURE_TYPE_GENERIC_KHR:
-            return ValidValue::Valid;
-        default:
-            return ValidValue::NotFound;
-    };
-}
-
-template <>
 ValidValue stateless::Context::IsValidEnumValue(VkCopyAccelerationStructureModeKHR value) const {
     switch (value) {
         case VK_COPY_ACCELERATION_STRUCTURE_MODE_CLONE_KHR:
@@ -1904,32 +1916,6 @@ ValidValue stateless::Context::IsValidEnumValue(VkAccelerationStructureMotionIns
         case VK_ACCELERATION_STRUCTURE_MOTION_INSTANCE_TYPE_STATIC_NV:
         case VK_ACCELERATION_STRUCTURE_MOTION_INSTANCE_TYPE_MATRIX_MOTION_NV:
         case VK_ACCELERATION_STRUCTURE_MOTION_INSTANCE_TYPE_SRT_MOTION_NV:
-            return ValidValue::Valid;
-        default:
-            return ValidValue::NotFound;
-    };
-}
-
-template <>
-ValidValue stateless::Context::IsValidEnumValue(VkDeviceFaultAddressTypeEXT value) const {
-    switch (value) {
-        case VK_DEVICE_FAULT_ADDRESS_TYPE_NONE_EXT:
-        case VK_DEVICE_FAULT_ADDRESS_TYPE_READ_INVALID_EXT:
-        case VK_DEVICE_FAULT_ADDRESS_TYPE_WRITE_INVALID_EXT:
-        case VK_DEVICE_FAULT_ADDRESS_TYPE_EXECUTE_INVALID_EXT:
-        case VK_DEVICE_FAULT_ADDRESS_TYPE_INSTRUCTION_POINTER_UNKNOWN_EXT:
-        case VK_DEVICE_FAULT_ADDRESS_TYPE_INSTRUCTION_POINTER_INVALID_EXT:
-        case VK_DEVICE_FAULT_ADDRESS_TYPE_INSTRUCTION_POINTER_FAULT_EXT:
-            return ValidValue::Valid;
-        default:
-            return ValidValue::NotFound;
-    };
-}
-
-template <>
-ValidValue stateless::Context::IsValidEnumValue(VkDeviceFaultVendorBinaryHeaderVersionEXT value) const {
-    switch (value) {
-        case VK_DEVICE_FAULT_VENDOR_BINARY_HEADER_VERSION_ONE_EXT:
             return ValidValue::Valid;
         default:
             return ValidValue::NotFound;
@@ -2410,55 +2396,6 @@ ValidValue stateless::Context::IsValidEnumValue(VkShaderGroupShaderKHR value) co
 }
 
 template <>
-vvl::Extensions stateless::Context::GetEnumExtensions(VkImageLayout value) const {
-    switch (value) {
-        case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
-        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
-            return {vvl::Extension::_VK_KHR_maintenance2};
-        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-        case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
-        case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
-        case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
-            return {vvl::Extension::_VK_KHR_separate_depth_stencil_layouts};
-        case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
-        case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
-            return {vvl::Extension::_VK_KHR_synchronization2};
-        case VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ:
-            return {vvl::Extension::_VK_KHR_dynamic_rendering_local_read};
-        case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
-            return {vvl::Extension::_VK_KHR_swapchain};
-        case VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR:
-        case VK_IMAGE_LAYOUT_VIDEO_DECODE_SRC_KHR:
-        case VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR:
-            return {vvl::Extension::_VK_KHR_video_decode_queue};
-        case VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR:
-            return {vvl::Extension::_VK_KHR_shared_presentable_image};
-        case VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT:
-            return {vvl::Extension::_VK_EXT_fragment_density_map};
-        case VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR:
-            return {vvl::Extension::_VK_KHR_fragment_shading_rate, vvl::Extension::_VK_NV_shading_rate_image};
-        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DST_KHR:
-        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR:
-        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR:
-            return {vvl::Extension::_VK_KHR_video_encode_queue};
-        case VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT:
-            return {vvl::Extension::_VK_EXT_attachment_feedback_loop_layout};
-        case VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM:
-            return {vvl::Extension::_VK_ARM_tensors};
-        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR:
-            return {vvl::Extension::_VK_KHR_video_encode_quantization_map};
-        case VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT:
-            return {vvl::Extension::_VK_EXT_zero_initialize_device_memory};
-        default:
-            return {};
-    };
-}
-template <>
-const char* stateless::Context::DescribeEnum(VkImageLayout value) const {
-    return string_VkImageLayout(value);
-}
-
-template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkObjectType value) const {
     switch (value) {
         case VK_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE:
@@ -2519,6 +2456,8 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkObjectType value) const 
         case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT:
         case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT:
             return {vvl::Extension::_VK_EXT_device_generated_commands};
+        case VK_OBJECT_TYPE_SHADER_INSTRUMENTATION_ARM:
+            return {vvl::Extension::_VK_ARM_shader_instrumentation};
         default:
             return {};
     };
@@ -2733,6 +2672,55 @@ const char* stateless::Context::DescribeEnum(VkSharingMode value) const {
 }
 
 template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkImageLayout value) const {
+    switch (value) {
+        case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
+            return {vvl::Extension::_VK_KHR_maintenance2};
+        case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+        case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
+        case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
+        case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
+            return {vvl::Extension::_VK_KHR_separate_depth_stencil_layouts};
+        case VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL:
+        case VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL:
+            return {vvl::Extension::_VK_KHR_synchronization2};
+        case VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ:
+            return {vvl::Extension::_VK_KHR_dynamic_rendering_local_read};
+        case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+            return {vvl::Extension::_VK_KHR_swapchain};
+        case VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR:
+        case VK_IMAGE_LAYOUT_VIDEO_DECODE_SRC_KHR:
+        case VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR:
+            return {vvl::Extension::_VK_KHR_video_decode_queue};
+        case VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR:
+            return {vvl::Extension::_VK_KHR_shared_presentable_image};
+        case VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT:
+            return {vvl::Extension::_VK_EXT_fragment_density_map};
+        case VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR:
+            return {vvl::Extension::_VK_KHR_fragment_shading_rate, vvl::Extension::_VK_NV_shading_rate_image};
+        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DST_KHR:
+        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR:
+        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR:
+            return {vvl::Extension::_VK_KHR_video_encode_queue};
+        case VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT:
+            return {vvl::Extension::_VK_EXT_attachment_feedback_loop_layout};
+        case VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM:
+            return {vvl::Extension::_VK_ARM_tensors};
+        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR:
+            return {vvl::Extension::_VK_KHR_video_encode_quantization_map};
+        case VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT:
+            return {vvl::Extension::_VK_EXT_zero_initialize_device_memory};
+        default:
+            return {};
+    };
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkImageLayout value) const {
+    return string_VkImageLayout(value);
+}
+
+template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkComponentSwizzle value) const {
     return {};
 }
@@ -2833,20 +2821,20 @@ const char* stateless::Context::DescribeEnum(VkSamplerAddressMode value) const {
 }
 
 template <>
-vvl::Extensions stateless::Context::GetEnumExtensions(VkSamplerMipmapMode value) const {
-    return {};
-}
-template <>
-const char* stateless::Context::DescribeEnum(VkSamplerMipmapMode value) const {
-    return nullptr;
-}
-
-template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkCompareOp value) const {
     return {};
 }
 template <>
 const char* stateless::Context::DescribeEnum(VkCompareOp value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkSamplerMipmapMode value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkSamplerMipmapMode value) const {
     return nullptr;
 }
 
@@ -3066,6 +3054,24 @@ const char* stateless::Context::DescribeEnum(VkFrontFace value) const {
 }
 
 template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkLogicOp value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkLogicOp value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkStencilOp value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkStencilOp value) const {
+    return nullptr;
+}
+
+template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkVertexInputRate value) const {
     return {};
 }
@@ -3095,24 +3101,6 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkPolygonMode value) const
 template <>
 const char* stateless::Context::DescribeEnum(VkPolygonMode value) const {
     return string_VkPolygonMode(value);
-}
-
-template <>
-vvl::Extensions stateless::Context::GetEnumExtensions(VkStencilOp value) const {
-    return {};
-}
-template <>
-const char* stateless::Context::DescribeEnum(VkStencilOp value) const {
-    return nullptr;
-}
-
-template <>
-vvl::Extensions stateless::Context::GetEnumExtensions(VkLogicOp value) const {
-    return {};
-}
-template <>
-const char* stateless::Context::DescribeEnum(VkLogicOp value) const {
-    return nullptr;
 }
 
 template <>
@@ -3332,6 +3320,15 @@ const char* stateless::Context::DescribeEnum(VkVideoEncodeTuningModeKHR value) c
 }
 
 template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkAccelerationStructureTypeKHR value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkAccelerationStructureTypeKHR value) const {
+    return nullptr;
+}
+
+template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkComponentTypeKHR value) const {
     switch (value) {
         case VK_COMPONENT_TYPE_BFLOAT16_KHR:
@@ -3379,6 +3376,15 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkTimeDomainKHR value) con
 template <>
 const char* stateless::Context::DescribeEnum(VkTimeDomainKHR value) const {
     return string_VkTimeDomainKHR(value);
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkDeviceFaultVendorBinaryHeaderVersionKHR value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkDeviceFaultVendorBinaryHeaderVersionKHR value) const {
+    return nullptr;
 }
 
 template <>
@@ -3562,15 +3568,6 @@ const char* stateless::Context::DescribeEnum(VkGeometryTypeKHR value) const {
 }
 
 template <>
-vvl::Extensions stateless::Context::GetEnumExtensions(VkAccelerationStructureTypeKHR value) const {
-    return {};
-}
-template <>
-const char* stateless::Context::DescribeEnum(VkAccelerationStructureTypeKHR value) const {
-    return nullptr;
-}
-
-template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkCopyAccelerationStructureModeKHR value) const {
     return {};
 }
@@ -3732,24 +3729,6 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkAccelerationStructureMot
 }
 template <>
 const char* stateless::Context::DescribeEnum(VkAccelerationStructureMotionInstanceTypeNV value) const {
-    return nullptr;
-}
-
-template <>
-vvl::Extensions stateless::Context::GetEnumExtensions(VkDeviceFaultAddressTypeEXT value) const {
-    return {};
-}
-template <>
-const char* stateless::Context::DescribeEnum(VkDeviceFaultAddressTypeEXT value) const {
-    return nullptr;
-}
-
-template <>
-vvl::Extensions stateless::Context::GetEnumExtensions(VkDeviceFaultVendorBinaryHeaderVersionEXT value) const {
-    return {};
-}
-template <>
-const char* stateless::Context::DescribeEnum(VkDeviceFaultVendorBinaryHeaderVersionEXT value) const {
     return nullptr;
 }
 

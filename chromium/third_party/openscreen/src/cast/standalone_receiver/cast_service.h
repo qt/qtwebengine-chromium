@@ -65,6 +65,9 @@ class CastService final : public discovery::ReportingClient {
 
     // Whether we should enable DSCP packet prioritization for UDP sockets.
     bool enable_dscp = true;
+
+    // Whether input event API should be enabled for this session.
+    bool enable_input_events = false;
   };
 
   explicit CastService(Configuration config);

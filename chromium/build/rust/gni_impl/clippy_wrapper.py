@@ -10,7 +10,8 @@ import pathlib
 import sys
 import tempfile
 
-from rustc_wrapper import (ConvertPathsToAbsolute, LoadRustEnvAndFlags)
+from rustc_wrapper import (ConvertPathsToAbsolute, LoadRustEnvAndFlags,
+                           HandleReturnCode)
 
 
 def main():
@@ -22,22 +23,6 @@ def main():
 
   (rustenv, rustflags) = LoadRustEnvAndFlags(args.rustc_env_and_flags)
   ConvertPathsToAbsolute(rustenv)
-
-  rustflags += [
-      # Ask `clippy` to treat lint failures either as errors, or ignore
-      # them altogether (i.e. avoid reporting failures as warnings which
-      # are noisy but ignorable).  We cover lint categories from
-      # https://doc.rust-lang.org/stable/clippy/lints.html that are either
-      # `deny` or `warn` by default.
-      #
-      # If certain targets want to opt into additional lints, then they can
-      # do so by using `#![deny(clippy::pedantic)]` or a similar attribute.
-      "-Dclippy::correctness",
-      "-Dclippy::suspicious",
-      "-Dclippy::complexity",
-      "-Dclippy::perf",
-      "-Dclippy::style",
-  ]
 
   # `clippy-driver` should not write any files into the build directory
   # (e.g. into `out/`).
@@ -56,9 +41,14 @@ def main():
   rustflags += ["--emit=metadata"]
 
   r = subprocess.run([args.clippy_driver, *rustflags], env=rustenv, check=False)
-  if r.returncode == 0:
-    args.build_stamp_file.touch()
-  return r.returncode
+  if r.returncode != 0:
+    print("NOTE: See `//docs/rust/clippy.md` for more Clippy info.",
+          file=sys.stderr)
+    HandleReturnCode(r, args.rustc_env_and_flags)
+    assert False  # `HandleReturnCode` should call `sys.exit` for non-0 code.
+
+  args.build_stamp_file.touch()
+  return 0
 
 
 if __name__ == '__main__':

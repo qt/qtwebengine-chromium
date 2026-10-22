@@ -25,60 +25,52 @@
 
 namespace syncval {
 
-bool SimpleBinding(const vvl::Bindable &bindable) { return !bindable.sparse && bindable.Binding(); }
-VkDeviceSize ResourceBaseAddress(const vvl::Buffer &buffer) { return buffer.GetFakeBaseAddress(); }
+bool SimpleBinding(const vvl::Bindable& bindable) { return !bindable.sparse && bindable.Binding(); }
+VkDeviceSize ResourceBaseAddress(const vvl::Buffer& buffer) { return buffer.GetFakeBaseAddress(); }
 
 void AccessContext::InitFrom(uint32_t subpass, VkQueueFlags queue_flags,
-                             const std::vector<SubpassDependencyGraphNode> &dependencies, const AccessContext *contexts,
-                             const AccessContext *external_context) {
-    const auto &subpass_dep = dependencies[subpass];
-    const bool has_barrier_from_external = subpass_dep.barrier_from_external.size() > 0U;
-    prev_.reserve(subpass_dep.prev.size() + (has_barrier_from_external ? 1U : 0U));
-    prev_by_subpass_.resize(subpass, nullptr);  // Can't be more prevs than the subpass we're on
-    for (const auto &prev_dep : subpass_dep.prev) {
-        const auto prev_pass = prev_dep.first->pass;
-        const auto &prev_barriers = prev_dep.second;
-        assert(prev_dep.second.size());
-        prev_.emplace_back(&contexts[prev_pass], queue_flags, prev_barriers);
-        prev_by_subpass_[prev_pass] = &prev_.back();
-    }
-
-    async_.reserve(subpass_dep.async.size());
-    for (const auto async_subpass : subpass_dep.async) {
+                             const std::vector<SubpassDependencyInfo>& subpass_dependency_infos, const AccessContext* contexts,
+                             const AccessContext& external_context) {
+    const SubpassDependencyInfo& info = subpass_dependency_infos[subpass];
+    async_.reserve(info.async.size());
+    for (const uint32_t async_subpass : info.async) {
         // Start tags are not known at creation time (as it's done at BeginRenderpass)
         async_.emplace_back(contexts[async_subpass], kInvalidTag, kQueueIdInvalid);
     }
 
-    if (has_barrier_from_external) {
-        // Store the barrier from external with the reat, but save pointer for "by subpass" lookups.
-        prev_.emplace_back(external_context, queue_flags, subpass_dep.barrier_from_external);
-        src_external_ = &prev_.back();
+    // Initialize barriers for the preceding subpasses and the external src barrier.
+    // To resolve contexts, we usually need regular subpass contexts and the external
+    // src context, so the corresponding barriers are stored together.
+    subpass_barriers_.resize(subpass + 1);
+    for (const auto& [src_subpass, subpass_dependencies] : info.dependencies) {
+        subpass_barriers_[src_subpass] = SubpassBarrier(contexts[src_subpass], queue_flags, subpass_dependencies);
     }
-    if (subpass_dep.barrier_to_external.size()) {
-        dst_external_ = SubpassBarrierTrackback(this, queue_flags, subpass_dep.barrier_to_external);
-    }
+    subpass_barriers_[subpass] = SubpassBarrier(external_context, queue_flags, info.barrier_from_external);
+
+    // External dst barrier
+    dst_external_ = SubpassBarrier(*this, queue_flags, info.barrier_to_external);
 }
 
-ApplySingleBufferBarrierFunctor::ApplySingleBufferBarrierFunctor(const AccessContext &access_context,
-                                                                 const BarrierScope &barrier_scope, const SyncBarrier &barrier)
+ApplySingleBufferBarrierFunctor::ApplySingleBufferBarrierFunctor(const AccessContext& access_context,
+                                                                 const BarrierScope& barrier_scope, const SyncBarrier& barrier)
     : access_context(access_context), barrier_scope(barrier_scope), barrier(barrier) {}
 
-AccessMap::iterator ApplySingleBufferBarrierFunctor::Infill(AccessMap *accesses, const Iterator &pos_hint,
-                                                            const AccessRange &range) const {
+AccessMap::iterator ApplySingleBufferBarrierFunctor::Infill(AccessMap* accesses, const Iterator& pos_hint,
+                                                            const AccessRange& range) const {
     // The buffer barrier does not need to fill the gaps because barrier
     // application to a range without accesses is a no-op.
     // Return the pos iterator unchanged to indicate that no entry was created.
     return pos_hint;
 }
 
-void ApplySingleBufferBarrierFunctor::operator()(const Iterator &pos) const {
-    AccessState &access_state = pos->second;
+void ApplySingleBufferBarrierFunctor::operator()(const Iterator& pos) const {
+    AccessState& access_state = pos->second;
     access_context.ApplyGlobalBarriers(access_state);
     access_state.ApplyBarrier(barrier_scope, barrier);
 }
 
-ApplySingleImageBarrierFunctor::ApplySingleImageBarrierFunctor(const AccessContext &access_context,
-                                                               const BarrierScope &barrier_scope, const SyncBarrier &barrier,
+ApplySingleImageBarrierFunctor::ApplySingleImageBarrierFunctor(const AccessContext& access_context,
+                                                               const BarrierScope& barrier_scope, const SyncBarrier& barrier,
                                                                bool layout_transition, uint32_t layout_transition_handle_index,
                                                                ResourceUsageTag exec_tag)
     : access_context(access_context),
@@ -95,8 +87,8 @@ ApplySingleImageBarrierFunctor::ApplySingleImageBarrierFunctor(const AccessConte
     }
 }
 
-AccessMap::iterator ApplySingleImageBarrierFunctor::Infill(AccessMap *accesses, const Iterator &pos_hint,
-                                                           const AccessRange &range) const {
+AccessMap::iterator ApplySingleImageBarrierFunctor::Infill(AccessMap* accesses, const Iterator& pos_hint,
+                                                           const AccessRange& range) const {
     if (!layout_transition) {
         // Do not create a new range if this is not a layout transition
         return pos_hint;
@@ -106,26 +98,23 @@ AccessMap::iterator ApplySingleImageBarrierFunctor::Infill(AccessMap *accesses, 
     return inserted;
 }
 
-void ApplySingleImageBarrierFunctor::operator()(const Iterator &pos) const {
-    AccessState &access_state = pos->second;
+void ApplySingleImageBarrierFunctor::operator()(const Iterator& pos) const {
+    AccessState& access_state = pos->second;
     access_context.ApplyGlobalBarriers(access_state);
     access_state.ApplyBarrier(barrier_scope, barrier, layout_transition, layout_transition_handle_index, exec_tag);
 }
 
-void CollectBarriersFunctor::operator()(const Iterator &pos) const {
-    AccessState &access_state = pos->second;
+void CollectBarriersFunctor::operator()(const Iterator& pos) const {
+    AccessState& access_state = pos->second;
     access_context.ApplyGlobalBarriers(access_state);
     access_state.CollectPendingBarriers(barrier_scope, barrier, layout_transition, layout_transition_handle_index,
                                         pending_barriers);
 }
 
-void AccessContext::InitFrom(const AccessContext &other) {
+void AccessContext::InitFrom(const AccessContext& other) {
     access_state_map_.Assign(other.access_state_map_);
-    prev_ = other.prev_;
-    prev_by_subpass_ = other.prev_by_subpass_;
+
     async_ = other.async_;
-    src_external_ = other.src_external_;
-    dst_external_ = other.dst_external_;
     start_tag_ = other.start_tag_;
 
     global_barriers_queue_ = other.global_barriers_queue_;
@@ -140,19 +129,22 @@ void AccessContext::InitFrom(const AccessContext &other) {
     finalized_ = false;
 
     sorted_first_accesses_.Clear();
+
+    // TODO: the following assignments look incorrect: the copies will reference the old context.
+    // Find a scenario when this does not work, write a test and make a fix.
+    subpass_barriers_ = other.subpass_barriers_;
+    dst_external_ = other.dst_external_;
 }
 
 void AccessContext::Reset() {
     access_state_map_.Clear();
-    prev_.clear();
-    prev_by_subpass_.clear();
     async_.clear();
-    src_external_ = nullptr;
-    dst_external_ = {};
     start_tag_ = {};
     ResetGlobalBarriers();
     finalized_ = false;
     sorted_first_accesses_.Clear();
+    subpass_barriers_.clear();
+    dst_external_ = {};
 }
 
 void AccessContext::Finalize() {
@@ -161,7 +153,7 @@ void AccessContext::Finalize() {
     finalized_ = true;
 }
 
-void AccessContext::RegisterGlobalBarrier(const SyncBarrier &barrier, QueueId queue_id) {
+void AccessContext::RegisterGlobalBarrier(const SyncBarrier& barrier, QueueId queue_id) {
     assert(global_barriers_.empty() || global_barriers_queue_ == queue_id);
 
     // Search for existing def
@@ -175,7 +167,7 @@ void AccessContext::RegisterGlobalBarrier(const SyncBarrier &barrier, QueueId qu
     if (def_index == global_barrier_def_count_) {
         // Flush global barriers if all def slots are in use
         if (global_barrier_def_count_ == kMaxGlobaBarrierDefCount) {
-            for (auto &[_, access] : access_state_map_) {
+            for (auto& [_, access] : access_state_map_) {
                 ApplyGlobalBarriers(access);
                 access.next_global_barrier_index = 0;  // to match state after reset
             }
@@ -183,13 +175,13 @@ void AccessContext::RegisterGlobalBarrier(const SyncBarrier &barrier, QueueId qu
             def_index = 0;
         }
 
-        GlobalBarrierDef &new_def = global_barrier_defs_[global_barrier_def_count_++];
+        GlobalBarrierDef& new_def = global_barrier_defs_[global_barrier_def_count_++];
         new_def.barrier = barrier;
         new_def.chain_mask = 0;
 
         // Update chain masks
         for (uint32_t i = 0; i < global_barrier_def_count_ - 1; i++) {
-            GlobalBarrierDef &def = global_barrier_defs_[i];
+            GlobalBarrierDef& def = global_barrier_defs_[i];
             if ((new_def.barrier.src_exec_scope.exec_scope & def.barrier.dst_exec_scope.exec_scope) != 0) {
                 new_def.chain_mask |= 1u << i;
             }
@@ -203,7 +195,7 @@ void AccessContext::RegisterGlobalBarrier(const SyncBarrier &barrier, QueueId qu
     global_barriers_queue_ = queue_id;
 }
 
-void AccessContext::ApplyGlobalBarriers(AccessState &access_state) const {
+void AccessContext::ApplyGlobalBarriers(AccessState& access_state) const {
     const uint32_t global_barrier_count = GetGlobalBarrierCount();
     assert(access_state.next_global_barrier_index <= global_barrier_count);
     if (access_state.next_global_barrier_index == global_barrier_count) {
@@ -218,7 +210,7 @@ void AccessContext::ApplyGlobalBarriers(AccessState &access_state) const {
         const uint32_t def_mask = 1u << def_index;
         assert(def_index < global_barrier_def_count_);
 
-        const GlobalBarrierDef &def = global_barrier_defs_[def_index];
+        const GlobalBarrierDef& def = global_barrier_defs_[def_index];
 
         // Skip barriers that were already applied
         if ((def_mask & applied_barrier_mask) != 0) {
@@ -258,37 +250,36 @@ void AccessContext::ResetGlobalBarriers() {
 
 void AccessContext::TrimAndClearFirstAccess() {
     assert(!finalized_);
-    for (auto &[range, access] : access_state_map_) {
+    for (auto& [range, access] : access_state_map_) {
         access.Normalize();
     }
     Consolidate(access_state_map_);
 }
 
-void AccessContext::AddReferencedTags(ResourceUsageTagSet &used) const {
+void AccessContext::AddReferencedTags(ResourceUsageTagSet& used) const {
     assert(!finalized_);
-    for (const auto &[range, access] : access_state_map_) {
+    for (const auto& [range, access] : access_state_map_) {
         access.GatherReferencedTags(used);
     }
 }
 
-void AccessContext::ResolveFromContext(const AccessContext &from) {
-    assert(!finalized_);
-    auto noop_action = [](AccessState *access) {};
-    from.ResolveAccessRangeRecursePrev(kFullRange, noop_action, *this, false);
-}
-
-void AccessContext::ResolvePreviousAccesses() {
-    assert(!finalized_);
-    if (!prev_.empty()) {
-        for (const auto &prev_dep : prev_) {
-            const ApplyTrackbackStackAction barrier_action(prev_dep.barriers, nullptr);
-            prev_dep.source_subpass->ResolveAccessRangeRecursePrev(kFullRange, barrier_action, *this, true);
-        }
+const SubpassBarrier& AccessContext::GetSubpassBarrier(uint32_t src_subpass) const {
+    if (src_subpass == VK_SUBPASS_EXTERNAL) {
+        return subpass_barriers_.back();
+    } else {
+        assert(subpass_barriers_[src_subpass].src_subpass_context != nullptr);
+        return subpass_barriers_[src_subpass];
     }
 }
 
-void AccessContext::ResolveFromSubpassContext(const ApplySubpassTransitionBarriersAction &subpass_transition_action,
-                                              const AccessContext &from_context,
+void AccessContext::ResolveFromContext(const AccessContext& from) {
+    assert(!finalized_);
+    auto noop_action = [](AccessState* access) {};
+    from.ResolveAccessRangeRecursePrev(kFullRange, noop_action, *this, false);
+}
+
+void AccessContext::ResolveFromSubpassContext(const ApplySubpassTransitionBarrierAction& subpass_transition_action,
+                                              const AccessContext& from_context,
                                               subresource_adapter::ImageRangeGenerator attachment_range_gen) {
     assert(!finalized_);
     for (; attachment_range_gen->non_empty(); ++attachment_range_gen) {
@@ -296,18 +287,33 @@ void AccessContext::ResolveFromSubpassContext(const ApplySubpassTransitionBarrie
     }
 }
 
-void AccessContext::ResolveAccessRange(const AccessRange &range, const AccessStateFunction &barrier_action,
-                                       AccessContext &resolve_context) const {
+void AccessContext::ResolveAllSubpassDependencies() {
+    assert(!finalized_);
+    ResolveSubpassDependencies(kFullRange, *this, true);
+}
+
+void AccessContext::ResolveSubpassDependencies(const AccessRange& range, AccessContext& resolve_context, bool infill,
+                                               const AccessStateFunction* previous_barrier_action) const {
+    for (const SubpassBarrier& subpass_barrier : subpass_barriers_) {
+        if (subpass_barrier.src_subpass_context) {
+            const ApplySubpassBarrierAction barrier_action(subpass_barrier, previous_barrier_action);
+            subpass_barrier.src_subpass_context->ResolveAccessRangeRecursePrev(range, barrier_action, resolve_context, infill);
+        }
+    }
+}
+
+void AccessContext::ResolveAccessRange(const AccessRange& range, const AccessStateFunction& barrier_action,
+                                       AccessContext& resolve_context) const {
     if (!range.non_empty()) {
         return;
     }
-    AccessMap &resolve_map = resolve_context.access_state_map_;
+    AccessMap& resolve_map = resolve_context.access_state_map_;
 
     ParallelIterator current(resolve_map, access_state_map_, range.begin);
     while (current.range.non_empty() && range.includes(current.range.begin)) {
         const auto current_range = current.range & range;
         if (current.pos_B.inside_lower_bound_range) {
-            const auto &src_pos = current.pos_B.lower_bound;
+            const auto& src_pos = current.pos_B.lower_bound;
 
             // Create a copy of the source access state (source is this context, destination is the resolve context).
             // Then do the following steps:
@@ -321,7 +327,7 @@ void AccessContext::ResolveAccessRange(const AccessRange &range, const AccessSta
 
             if (current.pos_A.inside_lower_bound_range) {
                 const auto trimmed = Split(current.pos_A.lower_bound, resolve_map, current_range);
-                AccessState &dst_state = trimmed->second;
+                AccessState& dst_state = trimmed->second;
                 resolve_context.ApplyGlobalBarriers(dst_state);
                 dst_state.Resolve(src_access);
                 current.OnCurrentRangeModified(trimmed);
@@ -336,18 +342,18 @@ void AccessContext::ResolveAccessRange(const AccessRange &range, const AccessSta
     }
 }
 
-void AccessContext::ResolveAccessRangeRecursePrev(const AccessRange &range, const AccessStateFunction &barrier_action,
-                                                  AccessContext &resolve_context, bool infill) const {
+void AccessContext::ResolveAccessRangeRecursePrev(const AccessRange& range, const AccessStateFunction& barrier_action,
+                                                  AccessContext& resolve_context, bool infill) const {
     if (!range.non_empty()) {
         return;
     }
-    AccessMap &resolve_map = resolve_context.access_state_map_;
+    AccessMap& resolve_map = resolve_context.access_state_map_;
 
     ParallelIterator current(resolve_map, access_state_map_, range.begin);
     while (current.range.non_empty() && range.includes(current.range.begin)) {
         const auto current_range = current.range & range;
         if (current.pos_B.inside_lower_bound_range) {
-            const auto &src_pos = current.pos_B.lower_bound;
+            const auto& src_pos = current.pos_B.lower_bound;
 
             // Create a copy of the source access state (source is this context, destination is the resolve context).
             // Then do the following steps:
@@ -361,7 +367,7 @@ void AccessContext::ResolveAccessRangeRecursePrev(const AccessRange &range, cons
 
             if (current.pos_A.inside_lower_bound_range) {
                 const auto trimmed = Split(current.pos_A.lower_bound, resolve_map, current_range);
-                AccessState &dst_state = trimmed->second;
+                AccessState& dst_state = trimmed->second;
                 resolve_context.ApplyGlobalBarriers(dst_state);
                 dst_state.Resolve(src_access);
                 current.OnCurrentRangeModified(trimmed);
@@ -407,59 +413,49 @@ void AccessContext::ResolveAccessRangeRecursePrev(const AccessRange &range, cons
     }
 }
 
-void AccessContext::ResolveGapsRecursePrev(const AccessRange &range, AccessContext &descent_context, bool infill,
-                                           const AccessStateFunction &previous_barrier_action) const {
+void AccessContext::ResolveGapsRecursePrev(const AccessRange& range, AccessContext& descent_context, bool infill,
+                                           const AccessStateFunction& previous_barrier_action) const {
     assert(range.non_empty());
-    AccessMap &descent_map = descent_context.access_state_map_;
-    if (prev_.empty()) {
-        if (infill) {
-            AccessState access_state = AccessState::DefaultAccessState();
-
-            // The following is not needed for correctness but is rather an optimization. We are going to fill
-            // the gaps and the application of the global barriers to an empty state is noop (nothing is in the
-            // barrier's source scope). Update the index to skip application of the registered global barriers.
-            access_state.next_global_barrier_index = descent_context.GetGlobalBarrierCount();
-
-            previous_barrier_action(&access_state);
-            descent_map.InfillGaps(range, access_state);
-        }
-    } else {
-        for (const auto &prev_dep : prev_) {
-            const ApplyTrackbackStackAction barrier_action(prev_dep.barriers, &previous_barrier_action);
-            prev_dep.source_subpass->ResolveAccessRangeRecursePrev(range, barrier_action, descent_context, infill);
-        }
+    if (!subpass_barriers_.empty()) {
+        ResolveSubpassDependencies(range, descent_context, infill, &previous_barrier_action);
+        return;
     }
-}
-
-AccessMap::iterator AccessContext::ResolveGapRecursePrev(const AccessRange &gap_range, AccessMap::iterator pos_hint) {
-    assert(gap_range.non_empty());
-    if (prev_.empty()) {
+    if (infill) {
         AccessState access_state = AccessState::DefaultAccessState();
-
         // The following is not needed for correctness but is rather an optimization. We are going to fill
         // the gaps and the application of the global barriers to an empty state is noop (nothing is in the
         // barrier's source scope). Update the index to skip application of the registered global barriers.
-        access_state.next_global_barrier_index = GetGlobalBarrierCount();
+        access_state.next_global_barrier_index = descent_context.GetGlobalBarrierCount();
 
-        return access_state_map_.InfillGap(pos_hint, gap_range, access_state);
-    } else {
-        for (const auto &prev_dep : prev_) {
-            const ApplyTrackbackStackAction barrier_action(prev_dep.barriers, nullptr);
-            prev_dep.source_subpass->ResolveAccessRangeRecursePrev(gap_range, barrier_action, *this, true);
-        }
+        previous_barrier_action(&access_state);
+        descent_context.access_state_map_.InfillGaps(range, access_state);
+    }
+}
+
+AccessMap::iterator AccessContext::ResolveGapRecursePrev(const AccessRange& gap_range, AccessMap::iterator pos_hint) {
+    assert(gap_range.non_empty());
+    if (!subpass_barriers_.empty()) {
+        ResolveSubpassDependencies(gap_range, *this, true);
         return access_state_map_.LowerBound(gap_range.begin);
     }
+    AccessState access_state = AccessState::DefaultAccessState();
+    // The next line is not needed for correctness but is rather an optimization. We are going to fill
+    // the gaps and the application of the global barriers to an empty state is noop (nothing is in the
+    // barrier's source scope). Update the index to skip application of the registered global barriers.
+    access_state.next_global_barrier_index = GetGlobalBarrierCount();
+
+    return access_state_map_.InfillGap(pos_hint, gap_range, access_state);
 }
 
 // Update memory access state over the given range.
 // This inserts new accesses for empty regions and updates existing accesses.
 // The passed pos must either be a lower bound (can be the end iterator) or be strictly less than the range.
 // Map entries that intersect range.begin or range.end are split at the intersection point.
-AccessMap::iterator AccessContext::DoUpdateAccessState(AccessMap::iterator pos, const AccessRange &range,
-                                                       SyncAccessIndex access_index, SyncOrdering ordering_rule,
+AccessMap::iterator AccessContext::DoUpdateAccessState(AccessMap::iterator pos, const AccessRange& range,
+                                                       SyncAccessIndex access_index, const AttachmentAccess& attachment_access,
                                                        ResourceUsageTagEx tag_ex, SyncFlags flags) {
     assert(range.non_empty());
-    const SyncAccessInfo &access_info = GetAccessInfo(access_index);
+    const SyncAccessInfo& access_info = GetAccessInfo(access_index);
 
     const auto end = access_state_map_.end();
     assert(pos == access_state_map_.LowerBound(range.begin) || pos->first.strictly_less(range));
@@ -492,9 +488,9 @@ AccessMap::iterator AccessContext::DoUpdateAccessState(AccessMap::iterator pos, 
             AccessMap::iterator infilled_it = ResolveGapRecursePrev(gap_range, pos);
 
             // Update
-            AccessState &new_access_state = infilled_it->second;
+            AccessState& new_access_state = infilled_it->second;
             ApplyGlobalBarriers(new_access_state);
-            new_access_state.Update(access_info, ordering_rule, tag_ex, flags);
+            new_access_state.Update(access_info, attachment_access, tag_ex, flags);
 
             // Advance current location.
             // Do not advance pos, as it's the next map entry to visit
@@ -509,9 +505,9 @@ AccessMap::iterator AccessContext::DoUpdateAccessState(AccessMap::iterator pos, 
             }
 
             // Update
-            AccessState &access_state = pos->second;
+            AccessState& access_state = pos->second;
             ApplyGlobalBarriers(access_state);
-            access_state.Update(access_info, ordering_rule, tag_ex, flags);
+            access_state.Update(access_info, attachment_access, tag_ex, flags);
 
             // Advance both current location and map entry
             current_begin = pos->first.end;
@@ -525,14 +521,14 @@ AccessMap::iterator AccessContext::DoUpdateAccessState(AccessMap::iterator pos, 
         AccessMap::iterator infilled_it = ResolveGapRecursePrev(gap_range, pos);
 
         // Update
-        AccessState &new_access_state = infilled_it->second;
+        AccessState& new_access_state = infilled_it->second;
         ApplyGlobalBarriers(new_access_state);
-        new_access_state.Update(access_info, ordering_rule, tag_ex, flags);
+        new_access_state.Update(access_info, attachment_access, tag_ex, flags);
     }
     return pos;
 }
 
-void AccessContext::UpdateAccessState(const vvl::Buffer &buffer, SyncAccessIndex current_usage, const AccessRange &range,
+void AccessContext::UpdateAccessState(const vvl::Buffer& buffer, SyncAccessIndex current_usage, const AccessRange& range,
                                       ResourceUsageTagEx tag_ex, SyncFlags flags) {
     assert(range.valid());
     assert(!finalized_);
@@ -551,46 +547,75 @@ void AccessContext::UpdateAccessState(const vvl::Buffer &buffer, SyncAccessIndex
     const AccessRange buffer_range = range + base_address;
 
     auto pos = access_state_map_.LowerBound(buffer_range.begin);
-    DoUpdateAccessState(pos, buffer_range, current_usage, SyncOrdering::kOrderingNone, tag_ex, flags);
+    DoUpdateAccessState(pos, buffer_range, current_usage, AttachmentAccess::NonAttachment(), tag_ex, flags);
 }
 
-void AccessContext::UpdateAccessState(ImageRangeGen &range_gen, SyncAccessIndex current_usage, SyncOrdering ordering_rule,
-                                      ResourceUsageTagEx tag_ex, SyncFlags flags) {
+void AccessContext::UpdateAccessState(ImageRangeGen& range_gen, SyncAccessIndex current_usage, ResourceUsageTagEx tag_ex,
+                                      SyncFlags flags) {
     assert(!finalized_);
-
     if (current_usage == SYNC_ACCESS_INDEX_NONE) {
         return;
     }
-
     auto pos = access_state_map_.LowerBound(range_gen->begin);
     for (; range_gen->non_empty(); ++range_gen) {
-        pos = DoUpdateAccessState(pos, *range_gen, current_usage, ordering_rule, tag_ex, flags);
+        pos = DoUpdateAccessState(pos, *range_gen, current_usage, AttachmentAccess::NonAttachment(), tag_ex, flags);
+    }
+}
+
+void AccessContext::UpdateAttachmentAccessState(ImageRangeGen& range_gen, SyncAccessIndex current_usage,
+                                                const AttachmentAccess& attachment_access, ResourceUsageTagEx tag_ex) {
+    assert(!finalized_);
+    if (current_usage == SYNC_ACCESS_INDEX_NONE) {
+        return;
+    }
+    auto pos = access_state_map_.LowerBound(range_gen->begin);
+    for (; range_gen->non_empty(); ++range_gen) {
+        pos = DoUpdateAccessState(pos, *range_gen, current_usage, attachment_access, tag_ex, 0);
+    }
+}
+
+void AccessContext::UpdateAttachmentAccessState(const AttachmentViewGen& view_gen, AttachmentViewGen::Gen gen_type,
+                                                SyncAccessIndex current_usage, const AttachmentAccess& attachment_access,
+                                                ResourceUsageTagEx tag_ex, uint32_t view_mask) {
+    if (view_mask == 0) {
+        ImageRangeGen range_gen = view_gen.GetRangeGen(gen_type);
+        UpdateAttachmentAccessState(range_gen, current_usage, attachment_access, tag_ex);
+    } else {
+        uint32_t view_index = 0;
+        while (view_mask) {
+            if (view_mask & 1) {
+                ImageRangeGen range_gen = view_gen.GetRangeGen(gen_type, view_index);
+                UpdateAttachmentAccessState(range_gen, current_usage, attachment_access, tag_ex);
+            }
+            view_mask >>= 1;
+            view_index++;
+        }
     }
 }
 
 void AccessContext::ResolveChildContexts(vvl::span<AccessContext> subpass_contexts) {
     assert(!finalized_);
 
-    for (AccessContext &context : subpass_contexts) {
-        ApplyTrackbackStackAction barrier_action(context.GetDstExternalTrackBack().barriers);
+    for (AccessContext& context : subpass_contexts) {
+        ApplySubpassBarrierAction barrier_action(context.GetDstExternalSubpassBarrier());
         context.ResolveAccessRange(kFullRange, barrier_action, *this);
     }
 }
 
 // Caller must ensure that lifespan of this is less than the lifespan of from
-void AccessContext::ImportAsyncContexts(const AccessContext &from) {
+void AccessContext::ImportAsyncContexts(const AccessContext& from) {
     async_.insert(async_.end(), from.async_.begin(), from.async_.end());
 }
 
-void AccessContext::AddAsyncContext(const AccessContext *context, ResourceUsageTag tag, QueueId queue_id) {
+void AccessContext::AddAsyncContext(const AccessContext* context, ResourceUsageTag tag, QueueId queue_id) {
     if (context) {
         async_.emplace_back(*context, tag, queue_id);
     }
 }
 
-void SortedFirstAccesses::Init(const AccessMap &finalized_access_map) {
-    for (const auto &entry : finalized_access_map) {
-        const AccessState &access = entry.second;
+void SortedFirstAccesses::Init(const AccessMap& finalized_access_map) {
+    for (const auto& entry : finalized_access_map) {
+        const AccessState& access = entry.second;
         const ResourceUsageRange range = access.GetFirstAccessRange();
         if (range.empty()) {
             continue;
@@ -603,9 +628,9 @@ void SortedFirstAccesses::Init(const AccessMap &finalized_access_map) {
         }
     }
     std::sort(sorted_single_tags.begin(), sorted_single_tags.end(),
-              [](const SingleTag &a, const SingleTag &b) { return a.tag < b.tag; });
+              [](const SingleTag& a, const SingleTag& b) { return a.tag < b.tag; });
     std::sort(sorted_multi_tags.begin(), sorted_multi_tags.end(),
-              [](const auto &a, const auto &b) { return a.range.begin < b.range.begin; });
+              [](const auto& a, const auto& b) { return a.range.begin < b.range.begin; });
 }
 
 void SortedFirstAccesses::Clear() {
@@ -615,15 +640,15 @@ void SortedFirstAccesses::Clear() {
 
 std::vector<SortedFirstAccesses::SingleTag>::const_iterator SortedFirstAccesses::SingleTagRange::begin() {
     return std::lower_bound(sorted_single_tags.begin(), sorted_single_tags.end(), tag_range.begin,
-                            [](const SingleTag &single_tag, ResourceUsageTag tag) { return single_tag.tag < tag; });
+                            [](const SingleTag& single_tag, ResourceUsageTag tag) { return single_tag.tag < tag; });
 }
 
 std::vector<SortedFirstAccesses::SingleTag>::const_iterator SortedFirstAccesses::SingleTagRange::end() {
     return std::lower_bound(sorted_single_tags.begin(), sorted_single_tags.end(), tag_range.end,
-                            [](const SingleTag &single_tag, ResourceUsageTag tag) { return single_tag.tag < tag; });
+                            [](const SingleTag& single_tag, ResourceUsageTag tag) { return single_tag.tag < tag; });
 }
 
-SortedFirstAccesses::SingleTagRange SortedFirstAccesses::IterateSingleTagFirstAccesses(const ResourceUsageRange &tag_range) const {
+SortedFirstAccesses::SingleTagRange SortedFirstAccesses::IterateSingleTagFirstAccesses(const ResourceUsageRange& tag_range) const {
     return SingleTagRange{this->sorted_single_tags, tag_range};
 }
 
@@ -633,10 +658,10 @@ std::vector<SortedFirstAccesses::MultiTag>::const_iterator SortedFirstAccesses::
 
 std::vector<SortedFirstAccesses::MultiTag>::const_iterator SortedFirstAccesses::MultiTagRange::end() {
     return std::lower_bound(sorted_multi_tags.begin(), sorted_multi_tags.end(), tag_range.end,
-                            [](const MultiTag &multi_tag, ResourceUsageTag tag) { return multi_tag.range.begin < tag; });
+                            [](const MultiTag& multi_tag, ResourceUsageTag tag) { return multi_tag.range.begin < tag; });
 }
 
-SortedFirstAccesses::MultiTagRange SortedFirstAccesses::IterateMultiTagFirstAccesses(const ResourceUsageRange &tag_range) const {
+SortedFirstAccesses::MultiTagRange SortedFirstAccesses::IterateMultiTagFirstAccesses(const ResourceUsageRange& tag_range) const {
     return MultiTagRange{this->sorted_multi_tags, tag_range};
 }
 
@@ -644,7 +669,7 @@ SortedFirstAccesses::MultiTagRange SortedFirstAccesses::IterateMultiTagFirstAcce
 // unsynchronized tag for the Queue being tested against (max synchrononous + 1, perhaps)
 ResourceUsageTag AccessContext::AsyncReference::StartTag() const { return (tag_ == kInvalidTag) ? context_->StartTag() : tag_; }
 
-AttachmentViewGen::AttachmentViewGen(const vvl::ImageView *image_view, const VkOffset3D &offset, const VkExtent3D &extent)
+AttachmentViewGen::AttachmentViewGen(const vvl::ImageView* image_view, const VkOffset3D& offset, const VkExtent3D& extent)
     : view_(image_view) {
     gen_store_[Gen::kViewSubresource].emplace(MakeImageRangeGen(*image_view));
 
@@ -670,17 +695,31 @@ AttachmentViewGen::AttachmentViewGen(const vvl::ImageView *image_view, const VkO
     }
 }
 
-const std::optional<ImageRangeGen> &AttachmentViewGen::GetRangeGen(AttachmentViewGen::Gen type) const {
-    static_assert(Gen::kGenSize == 4, "Function written with this assumption");
-    // If the view is a depth only view, then the depth only portion of the render area is simply the render area.
-    // If the view is a depth stencil view, then the depth only portion of the render area will be a subset,
-    // and thus needs the generator function that will produce the address ranges of that subset
-    const bool depth_only = (type == kDepthOnlyRenderArea) && vkuFormatIsDepthOnly(view_->create_info.format);
-    const bool stencil_only = (type == kStencilOnlyRenderArea) && vkuFormatIsStencilOnly(view_->create_info.format);
-    if (depth_only || stencil_only) {
+ImageRangeGen AttachmentViewGen::GetRangeGen(AttachmentViewGen::Gen type, uint32_t view_index) const {
+    // Restrict image view's subresource range to a specific multiview layer
+    if (view_index != vvl::kNoIndex32) {
+        VkImageSubresourceRange subresource = view_->normalized_subresource_range;
+        if (view_index >= subresource.layerCount) {
+            return {};  // invalid view index
+        }
+        subresource.baseArrayLayer += view_index;
+        subresource.layerCount = 1;
+        auto range_gen = SubState(*view_->image_state).MakeImageRangeGen(subresource, view_->is_depth_sliced);
+        return range_gen;
+    }
+
+    // If a single aspect of depth-stencil attachment is requested, but the attachment actually
+    // consist of a single aspect, then the render area's range gen is what was requested
+    // (in this case we also don't cache separate depth/stencil-only range gens).
+    const bool asked_depth_aspect_for_depth_only =
+        (type == kDepthOnlyRenderArea) && vkuFormatIsDepthOnly(view_->create_info.format);
+    const bool asked_stencil_aspect_for_stencil_only =
+        (type == kStencilOnlyRenderArea) && vkuFormatIsStencilOnly(view_->create_info.format);
+    if (asked_depth_aspect_for_depth_only || asked_stencil_aspect_for_stencil_only) {
         type = Gen::kRenderArea;
     }
-    return gen_store_[type];
+    assert(gen_store_[type].has_value());
+    return *gen_store_[type];
 }
 
 AttachmentViewGen::Gen AttachmentViewGen::GetDepthStencilRenderAreaGenType(bool depth_op, bool stencil_op) const {
@@ -699,6 +738,15 @@ AttachmentViewGen::Gen AttachmentViewGen::GetDepthStencilRenderAreaGenType(bool 
     }
     assert(depth_op || stencil_op);
     return kRenderArea;
+}
+
+SubpassBarrier::SubpassBarrier(const AccessContext& src_subpass_context, VkQueueFlags queue_flags,
+                               const std::vector<const VkSubpassDependency2*>& subpass_dependencies)
+    : src_subpass_context(&src_subpass_context) {
+    barriers.reserve(subpass_dependencies.size());
+    for (const VkSubpassDependency2* dependency : subpass_dependencies) {
+        barriers.emplace_back(queue_flags, *dependency);
+    }
 }
 
 }  // namespace syncval

@@ -890,11 +890,14 @@ typedef struct aom_codec_enc_cfg {
    */
   int tile_heights[MAX_TILE_HEIGHTS];
 
-  /*!\brief Whether encoder should use fixed QP offsets.
+  /*!\brief Controls how the encoder applies fixed QP offsets
    *
+   * If a value of 0 is provided, encoder will adaptively choose QP offsets for
+   * frames at different levels of the pyramid.
    * If a value of 1 is provided, encoder will use fixed QP offsets for frames
    * at different levels of the pyramid.
-   * If a value of 0 is provided, encoder will NOT use fixed QP offsets.
+   * If a value of 2 is provided, encoder will use the same QP for all frames
+   * at different levels of the pyramid (i.e. no QP offsets are applied).
    * Note: This option is only relevant for --end-usage=q.
    */
   unsigned int use_fixed_qp_offsets;

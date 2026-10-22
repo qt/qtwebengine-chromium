@@ -10,6 +10,8 @@
 #include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/fx_codepage.h"
 
+// Represents variations to apply on top of an existing font/face to
+// convert it to render as if it were an alternative font.
 class CFX_SubstFont {
  public:
   CFX_SubstFont();
@@ -19,6 +21,7 @@ class CFX_SubstFont {
   int GetOriginalWeight() const;
 #endif
   void UseChromeSerif();
+  bool IsActualFontLoaded(const ByteString& base_font_name) const;
 
   void SetIsBuiltInGenericFont() { flag_mm_ = true; }
   bool IsBuiltInGenericFont() const { return flag_mm_; }

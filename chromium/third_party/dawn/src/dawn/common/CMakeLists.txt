@@ -45,11 +45,13 @@ DawnGenerator(
 set(private_headers
     "${DAWN_VERSION_AUTOGEN_HEADERS}"
     "${DAWN_GPU_INFO_AUTOGEN_HEADERS}"
+    "Algebra.h"
     "AlignedAlloc.h"
     "Alloc.h"
     "Assert.h"
     "Atomic.h"
     "BitSetRangeIterator.h"
+    "ColorSpace.h"
     "Compiler.h"
     "Constants.h"
     "ContentLessObjectCache.h"
@@ -131,7 +133,7 @@ set(sources
 set(conditional_private_depends)
 
 if (WIN32)
-    list(APPEND headers
+    list(APPEND private_headers
         "windows_with_undefs.h"
         "WindowsUtils.h"
     )
@@ -139,7 +141,7 @@ if (WIN32)
         "WindowsUtils.cpp"
     )
 elseif(APPLE)
-    list(APPEND headers
+    list(APPEND private_headers
         "IOSurfaceUtils.h"
     )
     list(APPEND sources
@@ -149,6 +151,17 @@ elseif(APPLE)
     list(APPEND conditional_private_depends
         "-framework Foundation"
         "-framework IOSurface"
+    )
+endif()
+
+if (NOT EMSCRIPTEN)
+    list(APPEND private_headers
+        "ExternalTextureParams.h"
+        "WGPUDeviceCallbackInfos.h"
+    )
+    list(APPEND sources
+        "ExternalTextureParams.cpp"
+        "WGPUDeviceCallbackInfos.cpp"
     )
 endif()
 

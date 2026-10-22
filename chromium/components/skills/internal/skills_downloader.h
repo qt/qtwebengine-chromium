@@ -12,25 +12,26 @@
 #include "base/functional/callback_forward.h"
 #include "base/memory/scoped_refptr.h"
 #include "components/skills/proto/skill.pb.h"
+#include "components/skills/public/skills_types.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 
 namespace skills {
 
+inline constexpr char kSkillsDownloaderGstaticUrl[] =
+    "https://www.gstatic.com/chrome/skills/first_party_skills_binary";
+
 // SkillsDownloader downloads a list of 1P agent prompts that are accessible to
 // users via chrome://skills/discover-skills.
 class SkillsDownloader {
  public:
-  // Map of id to skill.
-  using SkillsMap = absl::flat_hash_map<std::string, skills::proto::Skill>;
-
   explicit SkillsDownloader(
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
   ~SkillsDownloader();
 
   using OnFetchCompleteCallback =
-      base::OnceCallback<void(std::unique_ptr<SkillsMap>)>;
+      base::OnceCallback<void(std::unique_ptr<FirstPartySkillData>)>;
 
   // Initiates async download process that calls callback on fetch complete.
   // Called on chrome://skills/discover-skills page load or attempt to save a

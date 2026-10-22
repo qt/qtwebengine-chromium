@@ -95,7 +95,6 @@ class CPDF_Annot {
                      AppearanceMode mode);
 
   void ClearCachedAP();
-  void DrawBorder(CFX_RenderDevice* pDevice, const CFX_Matrix* pUser2Device);
   CPDF_Form* GetAPForm(CPDF_Page* pPage, AppearanceMode mode);
   void SetOpenState(bool bOpenState) { open_state_ = bOpenState; }
   void SetPopupAnnotOpenState(bool bOpenState);

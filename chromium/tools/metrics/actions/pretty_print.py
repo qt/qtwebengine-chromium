@@ -7,9 +7,11 @@ import argparse
 import os
 import sys
 
-import extract_actions
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
-import presubmit_util
+import setup_modules  # pylint: disable=unused-import
+
+import chromium_src.tools.metrics.common.presubmit_util as presubmit_util
+import chromium_src.tools.metrics.common.utf8_encoding as utf8_encoding
+import chromium_src.tools.metrics.actions.extract_actions as extract_actions
 
 
 def main():
@@ -34,6 +36,8 @@ def main():
   parser.add_argument('--cleanup',
                       action="store_true",
                       help="Remove the backup file after a successful run.")
+
+  utf8_encoding.setup_stdout_and_stderr_utf8_encoding()
 
   presubmit_util.DoPresubmitMain(sys.argv, 'actions.xml', 'actions.old.xml',
                                  extract_actions.UpdateXml)

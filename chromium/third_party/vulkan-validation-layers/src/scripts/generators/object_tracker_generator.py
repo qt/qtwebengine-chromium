@@ -253,6 +253,7 @@ class ObjectTrackerOutputGenerator(BaseGenerator):
             'vkMergePipelineCaches',
             'vkCreateGraphicsPipelines',
             'vkCreateComputePipelines',
+            'vkCreateDataGraphPipelinesARM',
             'vkUpdateDescriptorSetWithTemplate',
             'vkUpdateDescriptorSetWithTemplateKHR',
             'vkAcquireNextImageKHR',
@@ -398,33 +399,39 @@ WriteLockGuard Device::WriteLock() { return WriteLockGuard(validation_object_mut
 // ObjectTracker undestroyed objects validation function
 bool Instance::ReportUndestroyedObjects(const Location& loc) const {
     bool skip = false;
-    const std::string error_code = "VUID-vkDestroyInstance-instance-00629";
+    std::vector<VulkanTypedHandle> leaked_list;
 ''')
         for handle in [x for x in self.vk.handles.values() if not x.dispatchable and not self.isParentDevice(x)]:
             comment_prefix = ''
             if APISpecific.IsImplicitlyDestroyed(self.targetApiName, handle.name):
                 comment_prefix = '// No destroy API or implicitly freed/destroyed -- do not report: '
-            out.append(f'    {comment_prefix}skip |= ReportLeakedObjects(kVulkanObjectType{handle.name[2:]}, error_code, loc);\n')
+            out.append(f'    {comment_prefix}FindLeakedObjects(kVulkanObjectType{handle.name[2:]}, leaked_list);\n')
+        out.append('    if (!leaked_list.empty()) {')
+        out.append('        skip |= ReportLeakedObjects(leaked_list, loc);')
+        out.append('    }')
         out.append('    return skip;\n')
         out.append('}\n')
 
         out.append('''
 bool Device::ReportUndestroyedObjects(const Location& loc) const {
     bool skip = false;
-    const std::string error_code = "VUID-vkDestroyDevice-device-05137";
+    std::vector<VulkanTypedHandle> leaked_list;
 ''')
 
         comment_prefix = ''
         if APISpecific.IsImplicitlyDestroyed(self.targetApiName, 'VkCommandBuffer'):
             comment_prefix = '// No destroy API or implicitly freed/destroyed -- do not report: '
-        out.append(f'    {comment_prefix}skip |= ReportLeakedObjects(kVulkanObjectTypeCommandBuffer, error_code, loc);\n')
+        out.append(f'    {comment_prefix}FindLeakedObjects(kVulkanObjectTypeCommandBuffer, leaked_list);\n')
 
         for handle in [x for x in self.vk.handles.values() if not x.dispatchable and self.isParentDevice(x)]:
             comment_prefix = ''
             if APISpecific.IsImplicitlyDestroyed(self.targetApiName, handle.name):
                 comment_prefix = '// No destroy API or implicitly freed/destroyed -- do not report: '
-            out.append(f'    {comment_prefix}skip |= ReportLeakedObjects(kVulkanObjectType{handle.name[2:]}, error_code, loc);\n')
-        out.append('    return skip;\n')
+            out.append(f'    {comment_prefix}FindLeakedObjects(kVulkanObjectType{handle.name[2:]}, leaked_list);\n')
+        out.append('    if (!leaked_list.empty()) {')
+        out.append('        skip |= ReportLeakedObjects(leaked_list, loc);')
+        out.append('    }')
+        out.append('    return skip;')
         out.append('}\n')
 
         out.append('\nvoid Instance::DestroyLeakedObjects() {\n')
@@ -569,12 +576,6 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
         params = self.vk.commands[commandName].params
         only_dispatchable_parameter = len([x for x in params if x.type in self.vk.handles and (not x.pointer or x.const)]) == 1
         if only_dispatchable_parameter:
-            return False
-
-        # Special case: vkReleaseFullScreenExclusiveModeEXT.
-        # The specification does not define a parent VUID for the swapchain parameter.
-        # It mentions in a free form that device should be associated with a swapchain.
-        if commandName == 'vkReleaseFullScreenExclusiveModeEXT' or commandName == 'vkCreateDataGraphPipelinesARM':
             return False
 
         # Not a vulkan handle. Parent VUIDs are only for vulkan handles
@@ -983,7 +984,7 @@ bool Device::ReportUndestroyedObjects(const Location& loc) const {
 
                 # Do not generate validation code for the function's dispatchable parameter (the first one).
                 # Validation of such parameters is always successful based on the model of how the chassis
-                # dispactches the calls to vvl::base::Device. If invalid handle is used it will cause
+                # dispactches the calls to vvl::BaseDevice. If invalid handle is used it will cause
                 # crash/corruption on the chassis level (in GetDispatchKey or later). And if correct handle
                 # is passed, then due to the mapping done by GetDispatchKey() the handle will belong to the
                 # retrieved validation object, which guarantees positive result of the parenting test.

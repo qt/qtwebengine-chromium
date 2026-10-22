@@ -19,6 +19,9 @@ set(Eigen_HEADERS
   SparseExtra
   SpecialFunctions
   Splines
+  Tensor
+  TensorSymmetry
+  ThreadPool
   )
 
 install(FILES

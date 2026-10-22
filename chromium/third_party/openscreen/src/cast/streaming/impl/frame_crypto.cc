@@ -65,27 +65,24 @@ EncryptedFrame FrameCrypto::Encrypt(const EncodedFrame& encoded_frame) const {
   encoded_frame.CopyMetadataTo(&result);
   result.owned_data_.resize(encoded_frame.data.size());
   result.data = result.owned_data_;
-  EncryptCommon(encoded_frame.frame_id, encoded_frame.data, result.owned_data_);
+  Crypt(encoded_frame.frame_id, {&encoded_frame.data, 1}, result.owned_data_);
   return result;
 }
 
-void FrameCrypto::Decrypt(const EncryptedFrame& encrypted_frame,
+void FrameCrypto::Decrypt(FrameId frame_id,
+                          ChunkList chunks,
                           ByteBuffer out) const {
-  // AES-CTC is symmetric. Thus, decryption back to the plaintext is the same as
-  // encrypting the ciphertext; and both are the same size.
-  OSP_CHECK_EQ(encrypted_frame.data.size(), out.size());
-  EncryptCommon(encrypted_frame.frame_id, encrypted_frame.data, out);
+  Crypt(frame_id, chunks, out);
 }
 
-void FrameCrypto::EncryptCommon(FrameId frame_id,
-                                ByteView in,
-                                ByteBuffer out) const {
+void FrameCrypto::Crypt(FrameId frame_id,
+                        ChunkList chunks,
+                        ByteBuffer out) const {
   OSP_CHECK(!frame_id.is_null());
-  OSP_CHECK_EQ(in.size(), out.size());
 
   // Compute the AES nonce for Cast Streaming payload encryption, which is based
   // on the `frame_id`.
-  std::array<uint8_t, 16> aes_nonce{/* zero initialized */};
+  std::array<uint8_t, 16> aes_nonce{};
   static_assert(AES_BLOCK_SIZE == sizeof(aes_nonce),
                 "AES_BLOCK_SIZE is not 16 bytes.");
   WriteBigEndian<uint32_t>(frame_id.lower_32_bits(), aes_nonce.data() + 8);
@@ -93,10 +90,17 @@ void FrameCrypto::EncryptCommon(FrameId frame_id,
     aes_nonce[i] ^= cast_iv_mask_[i];
   }
 
-  std::array<uint8_t, 16> ecount_buf{/* zero initialized */};
+  std::array<uint8_t, 16> ecount_buf{};
   unsigned int block_offset = 0;
-  AES_ctr128_encrypt(in.data(), out.data(), in.size(), &aes_key_,
-                     aes_nonce.data(), ecount_buf.data(), &block_offset);
+  size_t out_offset = 0;
+  for (ByteView chunk : chunks) {
+    OSP_CHECK_LE(out_offset + chunk.size(), out.size());
+    AES_ctr128_encrypt(chunk.data(), out.data() + out_offset, chunk.size(),
+                       &aes_key_, aes_nonce.data(), ecount_buf.data(),
+                       &block_offset);
+    out_offset += chunk.size();
+  }
+  OSP_CHECK_EQ(out_offset, out.size());
 }
 
 }  // namespace openscreen::cast

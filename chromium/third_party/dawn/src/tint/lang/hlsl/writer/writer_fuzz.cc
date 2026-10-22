@@ -63,6 +63,7 @@ struct FuzzedOptions {
     std::optional<uint32_t> num_workgroups_start_offset;
     std::vector<BindingPoint> ignored_by_robustness_transform;
     SubstituteOverridesConfig substitute_overrides_config;
+    bool collapse_subgroup_min_max;
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(FuzzedOptions,
@@ -83,7 +84,8 @@ struct FuzzedOptions {
                  first_instance_offset,
                  num_workgroups_start_offset,
                  ignored_by_robustness_transform,
-                 substitute_overrides_config);
+                 substitute_overrides_config,
+                 collapse_subgroup_min_max);
 };
 
 Result<SuccessType> IRFuzzer(core::ir::Module& module,
@@ -123,6 +125,7 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
     options.workarounds.polyfill_reflect_vec2_f32 = fuzzed_options.polyfill_reflect_vec2_f32;
     options.workarounds.polyfill_subgroup_broadcast_f16 =
         fuzzed_options.polyfill_subgroup_broadcast_f16;
+    options.workarounds.collapse_subgroup_min_max = fuzzed_options.collapse_subgroup_min_max;
     options.extensions.polyfill_dot_4x8_packed = fuzzed_options.polyfill_dot_4x8_packed;
     options.extensions.polyfill_pack_unpack_4x8 = fuzzed_options.polyfill_pack_unpack_4x8;
     options.compiler = fuzzed_options.compiler;
@@ -150,8 +153,6 @@ Result<SuccessType> IRFuzzer(core::ir::Module& module,
         }
     }
     options.array_length_from_uniform.buffer_sizes_offset = 0x800;
-
-    TINT_CHECK_RESULT(CanGenerate(module, options));
 
     TINT_CHECK_RESULT_UNWRAP(output, Generate(module, options));
     if (context.options.dump) {

@@ -267,6 +267,7 @@ bool GetAvailableValidationLayers(const std::vector<VkLayerProperties> &layerPro
 {
 
     ASSERT(enabledLayerNames);
+    const size_t enabledLayerNamesCountWithoutValidationLayer = enabledLayerNames->size();
     for (const auto &layerProp : layerProps)
     {
         std::string layerPropLayerName = std::string(layerProp.layerName);
@@ -293,7 +294,7 @@ bool GetAvailableValidationLayers(const std::vector<VkLayerProperties> &layerPro
         }
     }
 
-    if (enabledLayerNames->size() == 0)
+    if (enabledLayerNames->size() == enabledLayerNamesCountWithoutValidationLayer)
     {
         // Generate an error if the layers were explicitly requested, warning otherwise.
         if (mustHaveLayers)
@@ -1050,9 +1051,9 @@ ResourceSerialFactory::ResourceSerialFactory() : mCurrentUniqueSerial(1) {}
 
 ResourceSerialFactory::~ResourceSerialFactory() {}
 
-uint32_t ResourceSerialFactory::issueSerial()
+uint64_t ResourceSerialFactory::issueSerial()
 {
-    uint32_t newSerial = ++mCurrentUniqueSerial;
+    uint64_t newSerial = ++mCurrentUniqueSerial;
     // make sure serial does not wrap
     ASSERT(newSerial > 0);
     return newSerial;

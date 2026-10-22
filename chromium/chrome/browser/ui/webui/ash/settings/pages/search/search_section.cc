@@ -23,7 +23,6 @@
 #include "chrome/browser/ui/webui/ash/settings/search/search_concept.h"
 #include "chrome/browser/ui/webui/ash/settings/search/search_tag_registry.h"
 #include "chrome/browser/ui/webui/settings/search_engines_handler.h"
-#include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/components/magic_boost/public/cpp/magic_boost_state.h"
 #include "chromeos/components/mahi/public/cpp/mahi_manager.h"
@@ -31,6 +30,7 @@
 #include "chromeos/constants/chromeos_features.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_service.h"
+#include "components/search_engines/search_engines_switches.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "third_party/icu/source/common/unicode/locid.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -234,9 +234,6 @@ void AddQuickAnswersStrings(content::WebUIDataSource* html_source) {
   html_source->AddLocalizedStrings(kLocalizedStrings);
 
   html_source->AddBoolean(
-      "quickAnswersTranslationDisabled",
-      chromeos::features::IsQuickAnswersV2TranslationDisabled());
-  html_source->AddBoolean(
       "quickAnswersSubToggleEnabled",
       chromeos::features::IsQuickAnswersV2SettingsSubToggleEnabled());
 }
@@ -291,13 +288,19 @@ void SearchSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
   html_source->AddLocalizedStrings(kLocalizedStrings);
 
   html_source->AddString("helpMeReadWriteLearnMoreUrl",
-                         chrome::kHelpMeReadWriteLearnMoreURL);
+                         ash::external_urls::kHelpMeReadWriteLearnMoreURL);
 
-  html_source->AddString("lobsterLearnMoreUrl", chrome::kLobsterLearnMoreURL);
+  html_source->AddString("lobsterLearnMoreUrl",
+                         ash::external_urls::kLobsterLearnMoreURL);
 
-  html_source->AddString("scannerLearnMoreUrl", chrome::kScannerLearnMoreUrl);
+  html_source->AddString("scannerLearnMoreUrl",
+                         ash::external_urls::kScannerLearnMoreUrl);
 
   html_source->AddBoolean("isQuickAnswersSupported", IsQuickAnswersSupported());
+
+  html_source->AddBoolean(
+      "searchSettingsUpdate",
+      base::FeatureList::IsEnabled(switches::kSearchSettingsUpdate));
 
   bool is_magic_boost_feature_enabled =
       chromeos::MagicBoostState::Get()->IsUserEligibleForGenAIFeatures() ||

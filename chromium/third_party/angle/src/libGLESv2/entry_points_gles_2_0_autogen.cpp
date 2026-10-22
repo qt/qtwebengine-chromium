@@ -2656,6 +2656,7 @@ void GL_APIENTRY GL_GetBufferParameteriv(GLenum target, GLenum pname, GLint *par
     if (ANGLE_LIKELY(context != nullptr))
     {
         BufferBinding targetPacked = PackParam<BufferBinding>(target);
+        BufferParam pnamePacked    = PackParam<BufferParam>(pname);
         SCOPED_SHARE_CONTEXT_LOCK(context);
         bool isCallValid = context->skipValidation();
         if (!isCallValid)
@@ -2667,7 +2668,7 @@ void GL_APIENTRY GL_GetBufferParameteriv(GLenum target, GLenum pname, GLint *par
 #endif
                 isCallValid =
                     ValidateGetBufferParameteriv(context, angle::EntryPoint::GLGetBufferParameteriv,
-                                                 targetPacked, pname, params);
+                                                 targetPacked, pnamePacked, params);
 #if defined(ANGLE_ENABLE_ASSERTS)
                 ASSERT(context->getPushedErrorCount() - errorCount == (isCallValid ? 0 : 1));
 #endif
@@ -2675,9 +2676,10 @@ void GL_APIENTRY GL_GetBufferParameteriv(GLenum target, GLenum pname, GLint *par
         }
         if (ANGLE_LIKELY(isCallValid))
         {
-            context->getBufferParameteriv(targetPacked, pname, params);
+            context->getBufferParameteriv(targetPacked, pnamePacked, params);
         }
-        ANGLE_CAPTURE_GL(GetBufferParameteriv, isCallValid, context, targetPacked, pname, params);
+        ANGLE_CAPTURE_GL(GetBufferParameteriv, isCallValid, context, targetPacked, pnamePacked,
+                         params);
     }
     else
     {
@@ -3162,6 +3164,7 @@ void GL_APIENTRY GL_GetShaderiv(GLuint shader, GLenum pname, GLint *params)
     if (ANGLE_LIKELY(context != nullptr))
     {
         ShaderProgramID shaderPacked = PackParam<ShaderProgramID>(shader);
+        ShaderParameter pnamePacked  = PackParam<ShaderParameter>(pname);
         SCOPED_SHARE_CONTEXT_LOCK(context);
         bool isCallValid = context->skipValidation();
         if (!isCallValid)
@@ -3172,7 +3175,7 @@ void GL_APIENTRY GL_GetShaderiv(GLuint shader, GLenum pname, GLint *params)
                 const uint32_t errorCount = context->getPushedErrorCount();
 #endif
                 isCallValid = ValidateGetShaderiv(context, angle::EntryPoint::GLGetShaderiv,
-                                                  shaderPacked, pname, params);
+                                                  shaderPacked, pnamePacked, params);
 #if defined(ANGLE_ENABLE_ASSERTS)
                 ASSERT(context->getPushedErrorCount() - errorCount == (isCallValid ? 0 : 1));
 #endif
@@ -3184,9 +3187,9 @@ void GL_APIENTRY GL_GetShaderiv(GLuint shader, GLenum pname, GLint *params)
         }
         if (ANGLE_LIKELY(isCallValid))
         {
-            context->getShaderiv(shaderPacked, pname, params);
+            context->getShaderiv(shaderPacked, pnamePacked, params);
         }
-        ANGLE_CAPTURE_GL(GetShaderiv, isCallValid, context, shaderPacked, pname, params);
+        ANGLE_CAPTURE_GL(GetShaderiv, isCallValid, context, shaderPacked, pnamePacked, params);
     }
     else
     {

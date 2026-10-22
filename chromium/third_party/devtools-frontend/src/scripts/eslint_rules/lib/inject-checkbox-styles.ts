@@ -15,7 +15,6 @@ type Node = TSESTree.Node;
 type MessageIds =|'missingCheckboxStylesImport'|'missingCheckboxStylesAdoption';
 
 const FRONT_END_DIRECTORY = path.join(
-    // @ts-expect-error
     import.meta.dirname,
     '..',
     '..',

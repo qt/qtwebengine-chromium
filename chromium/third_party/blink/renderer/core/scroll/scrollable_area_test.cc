@@ -7,19 +7,25 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/html/html_body_element.h"
+#include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/scroll/scroll_animator_base.h"
 #include "third_party/blink/renderer/core/scroll/scroll_types.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_test_suite.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_theme.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_theme_overlay_mock.h"
+#include "third_party/blink/renderer/core/testing/dummy_page_holder.h"
 #include "third_party/blink/renderer/core/testing/scoped_mock_overlay_scrollbars.h"
 #include "third_party/blink/renderer/platform/geometry/length_functions.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/heap/thread_state.h"
 #include "third_party/blink/renderer/platform/testing/paint_test_configurations.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/task_environment.h"
-#include "third_party/blink/renderer/platform/testing/testing_platform_support_with_mock_scheduler.h"
+#include "third_party/blink/renderer/platform/testing/testing_platform_support.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 
@@ -57,15 +63,14 @@ class ScrollbarThemeWithMockInvalidation : public ScrollbarThemeOverlayMock {
 
 class ScrollableAreaTest : public testing::Test,
                            public PaintTestConfigurations {
- private:
+ protected:
   test::TaskEnvironment task_environment_;
 };
 
 INSTANTIATE_PAINT_TEST_SUITE_P(ScrollableAreaTest);
 
 TEST_P(ScrollableAreaTest, ScrollAnimatorCurrentPositionShouldBeSync) {
-  ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
-      platform;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
 
   MockScrollableArea* scrollable_area =
       MockScrollableArea::Create(ScrollOffset(0, 100));
@@ -76,8 +81,7 @@ TEST_P(ScrollableAreaTest, ScrollAnimatorCurrentPositionShouldBeSync) {
 }
 
 TEST_P(ScrollableAreaTest, ScrollbarBackgroundAndThumbRepaint) {
-  ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
-      platform;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
 
   ScrollbarThemeWithMockInvalidation theme;
   MockScrollableArea* scrollable_area =
@@ -118,8 +122,7 @@ TEST_P(ScrollableAreaTest, ScrollbarBackgroundAndThumbRepaint) {
 }
 
 TEST_P(ScrollableAreaTest, InvalidatesNonCompositedScrollbarsWhenThumbMoves) {
-  ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
-      platform;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
 
   ScrollbarThemeWithMockInvalidation theme;
   MockScrollableArea* scrollable_area =
@@ -165,8 +168,7 @@ TEST_P(ScrollableAreaTest, InvalidatesNonCompositedScrollbarsWhenThumbMoves) {
 }
 
 TEST_P(ScrollableAreaTest, ScrollableAreaDidScroll) {
-  ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
-      platform;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
 
   MockScrollableArea* scrollable_area =
       MockScrollableArea::Create(ScrollOffset(100, 100));
@@ -178,8 +180,7 @@ TEST_P(ScrollableAreaTest, ScrollableAreaDidScroll) {
 }
 
 TEST_P(ScrollableAreaTest, ProgrammaticScrollRespectAnimatorEnabled) {
-  ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
-      platform;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
   MockAnimatingScrollableArea* scrollable_area =
       MockAnimatingScrollableArea::Create(ScrollOffset(0, 100));
   // Disable animations. Make sure an explicitly smooth programmatic scroll is
@@ -212,8 +213,7 @@ TEST_P(ScrollableAreaTest, ProgrammaticScrollRespectAnimatorEnabled) {
 // they don't appear on hover so users without a wheel can't scroll if they fade
 // out.
 TEST_P(ScrollableAreaTest, PopupOverlayScrollbarShouldNotFadeOut) {
-  ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
-      platform;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
 
   ScopedMockOverlayScrollbars mock_overlay_scrollbars;
 
@@ -242,8 +242,7 @@ TEST_P(ScrollableAreaTest, PopupOverlayScrollbarShouldNotFadeOut) {
 }
 
 TEST_P(ScrollableAreaTest, ScrollAnimatorCallbackFiresOnAnimationCancel) {
-  ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
-      platform;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
 
   MockScrollableArea* scrollable_area =
       MockScrollableArea::Create(ScrollOffset(0, 100));
@@ -258,8 +257,7 @@ TEST_P(ScrollableAreaTest, ScrollAnimatorCallbackFiresOnAnimationCancel) {
 }
 
 TEST_P(ScrollableAreaTest, ScrollAnimatorCallbackFiresOnInstantScroll) {
-  ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
-      platform;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
 
   MockScrollableArea* scrollable_area =
       MockScrollableArea::Create(ScrollOffset(0, 100));
@@ -272,8 +270,7 @@ TEST_P(ScrollableAreaTest, ScrollAnimatorCallbackFiresOnInstantScroll) {
 }
 
 TEST_P(ScrollableAreaTest, ScrollAnimatorCallbackFiresOnAnimationFinish) {
-  ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
-      platform;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
 
   MockScrollableArea* scrollable_area =
       MockScrollableArea::Create(ScrollOffset(0, 100));
@@ -291,8 +288,7 @@ TEST_P(ScrollableAreaTest, ScrollAnimatorCallbackFiresOnAnimationFinish) {
 }
 
 TEST_P(ScrollableAreaTest, ScrollBackToInitialPosition) {
-  ScopedTestingPlatformSupport<TestingPlatformSupportWithMockScheduler>
-      platform;
+  ScopedTestingPlatformSupport<TestingPlatformSupport> platform;
 
   MockScrollableArea* scrollable_area =
       MockScrollableArea::Create(ScrollOffset(0, 100));
@@ -333,6 +329,61 @@ TEST_P(ScrollableAreaTest, FilterIncomingScrollDuringSmoothUserScroll) {
     const bool should_filter = !exempted_types.contains(incoming_type);
     EXPECT_EQ(area->ShouldFilterIncomingScroll(incoming_type), should_filter);
   }
+}
+
+class ScrollableAreaOverscrollTest : public testing::Test,
+                                     ScopedOverscrollGesturesForTest {
+ public:
+  ScrollableAreaOverscrollTest() : ScopedOverscrollGesturesForTest(true) {}
+
+  void SetUp() override {
+    dummy_page_holder_ =
+        std::make_unique<DummyPageHolder>(gfx::Size(0, 0), nullptr);
+  }
+
+  Document& GetDocument() { return dummy_page_holder_->GetDocument(); }
+
+  void SetInnerHTML(const char* html) {
+    GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(html);
+  }
+
+  void UpdateAllLifecyclePhasesForTest() {
+    GetDocument().View()->UpdateAllLifecyclePhasesForTest();
+  }
+
+ private:
+  test::TaskEnvironment task_environment_;
+  std::unique_ptr<DummyPageHolder> dummy_page_holder_;
+};
+
+TEST_F(ScrollableAreaOverscrollTest, ScrollableAreaTraversalVisitsContainer) {
+  SetInnerHTML(R"HTML(
+    <div id="container" overscrollcontainer style="height: 100px; width: 100px;">
+      <div id="menu"></div>
+      <div id="content"></div>
+    </div>
+    <button command="toggle-overscroll" commandfor="menu">
+  )HTML");
+  UpdateAllLifecyclePhasesForTest();
+
+  auto* content = GetDocument().getElementById(AtomicString("content"));
+  auto* menu = GetDocument().getElementById(AtomicString("menu"));
+  auto* container = GetDocument().getElementById(AtomicString("container"));
+  auto* overscroll_area_parent =
+      menu->GetPseudoElement(kPseudoIdOverscrollAreaParent);
+
+  ASSERT_TRUE(content);
+  ASSERT_TRUE(menu);
+  ASSERT_TRUE(container);
+
+  // TODO(crbug.com/485240464): Ensure all of the scrollable areas are iterated
+  // correctly.
+  EXPECT_EQ(&*ScrollableAreaTraversal(content).begin(),
+            container->GetLayoutBox()->GetScrollableArea());
+  EXPECT_EQ(&*ScrollableAreaTraversal(container).begin(),
+            container->GetLayoutBox()->GetScrollableArea());
+  EXPECT_EQ(&*ScrollableAreaTraversal(menu).begin(),
+            overscroll_area_parent->GetLayoutBox()->GetScrollableArea());
 }
 
 }  // namespace blink

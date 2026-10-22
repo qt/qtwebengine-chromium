@@ -2056,7 +2056,6 @@ dxcompiler_sourceset("clang_lib_frontend") {
     "$dawn_dxc_dir/tools/clang/lib/Frontend/LangStandards.cpp",
     "$dawn_dxc_dir/tools/clang/lib/Frontend/LayoutOverrideSource.cpp",
     "$dawn_dxc_dir/tools/clang/lib/Frontend/LogDiagnosticPrinter.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Frontend/ModuleDependencyCollector.cpp",
     "$dawn_dxc_dir/tools/clang/lib/Frontend/MultiplexConsumer.cpp",
     "$dawn_dxc_dir/tools/clang/lib/Frontend/PCHContainerOperations.cpp",
     "$dawn_dxc_dir/tools/clang/lib/Frontend/PrintPreprocessedOutput.cpp",
@@ -2187,22 +2186,6 @@ dxcompiler_sourceset("clang_lib_sema") {
     "$dawn_dxc_dir/tools/clang/lib/Sema/SemaTemplateVariadic.cpp",
     "$dawn_dxc_dir/tools/clang/lib/Sema/SemaType.cpp",
     "$dawn_dxc_dir/tools/clang/lib/Sema/TypeLocBuilder.cpp",
-  ]
-}
-dxcompiler_sourceset("clang_lib_serialization") {
-  target_type = "static_library"  # Ensure unused globals are stripped
-  sources = [
-    "$dawn_dxc_dir/tools/clang/lib/Serialization/ASTCommon.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Serialization/ASTReader.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Serialization/ASTReaderDecl.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Serialization/ASTReaderStmt.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Serialization/ASTWriter.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Serialization/ASTWriterDecl.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Serialization/ASTWriterStmt.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Serialization/GeneratePCH.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Serialization/GlobalModuleIndex.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Serialization/Module.cpp",
-    "$dawn_dxc_dir/tools/clang/lib/Serialization/ModuleManager.cpp",
   ]
 }
 dxcompiler_sourceset("clang_lib_tooling") {
@@ -2363,7 +2346,6 @@ shared_library("dxcompiler") {
     ":clang_lib_parse",
     ":clang_lib_rewrite",
     ":clang_lib_sema",
-    ":clang_lib_serialization",
     ":clang_lib_tooling",
     ":clang_tools_libclang",
     ":dxcompiler_sources",

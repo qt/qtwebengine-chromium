@@ -9,7 +9,7 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 
-TEST(FXRandomTest, GenerateMT3600times) {
+TEST(FXRandomTest, Fill3600times) {
   // Prove this doesn't spin wait for a second each time.
   // Since our global seeds are sequential, they wont't collide once
   // seeded until 2^32 calls, and if the PNRG is any good, we won't
@@ -18,7 +18,7 @@ TEST(FXRandomTest, GenerateMT3600times) {
   std::set<std::array<uint32_t, 16>> seen;
   std::array<uint32_t, 16> current;
   for (int i = 0; i < 3600; ++i) {
-    FX_Random_GenerateMT(current);
+    FX_Random::Fill(current);
     EXPECT_TRUE(seen.insert(current).second);
   }
 }

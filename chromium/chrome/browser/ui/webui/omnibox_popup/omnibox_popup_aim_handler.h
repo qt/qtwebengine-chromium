@@ -16,7 +16,6 @@
 #include "mojo/public/cpp/bindings/remote.h"
 
 class OmniboxAimPopupWebUIContent;
-class GURL;
 
 namespace content {
 class WebContents;
@@ -46,7 +45,6 @@ class OmniboxPopupAimHandler : public omnibox_popup_aim::mojom::PageHandler {
   // omnibox_popup_aim::mojom::PageHandler:
   // Forwards a close event from the page to the browser.
   void RequestClose() override;
-  void NavigateCurrentTab(const GURL& url) override;
   void ShowContextMenu(const gfx::Point& point) override;
 
   // Forwards an `OnPopupShown()` call to the page.
@@ -63,6 +61,9 @@ class OmniboxPopupAimHandler : public omnibox_popup_aim::mojom::PageHandler {
   // Forwards an `AddContext()` call to the page. This call is intended to be
   // used to notify the page that searchbox context has been added.
   void AddContext(std::unique_ptr<SearchboxContextData::Context> context);
+
+  // Forwards a `FocusInput()` call to the page.
+  void FocusInput();
 
  protected:
   virtual OmniboxAimPopupWebUIContent* GetAimPopupContent();

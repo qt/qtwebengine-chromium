@@ -389,7 +389,7 @@ struct kissfft_impl {
   inline int PlanKey(int nfft, bool isinverse) const { return (nfft << 1) | int(isinverse); }
 
   inline PlanData &get_plan(int nfft, bool inverse) {
-    // TODO look for PlanKey(nfft, ! inverse) and conjugate the twiddles
+    // TODO: look for PlanKey(nfft, ! inverse) and conjugate the twiddles
     PlanData &pd = m_plans[PlanKey(nfft, inverse)];
     if (pd.m_twiddles.size() == 0) {
       pd.make_twiddles(nfft, inverse);

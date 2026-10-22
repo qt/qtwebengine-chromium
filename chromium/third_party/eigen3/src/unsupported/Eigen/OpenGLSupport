@@ -18,10 +18,12 @@
 #include <GL/gl.h>
 #endif
 
+#include "../../Eigen/src/Core/util/DisableStupidWarnings.h"
+
 namespace Eigen {
 
 /**
- * \defgroup OpenGLSUpport_Module OpenGL Support module
+ * \defgroup OpenGLSupport_Module OpenGL Support module
  *
  * This module provides wrapper functions for a couple of OpenGL functions
  * which simplify the way to pass Eigen's object to openGL.
@@ -29,7 +31,7 @@ namespace Eigen {
  *
  * \code
  * // You need to add path_to_eigen/unsupported to your include path.
- * #include <Eigen/OpenGLSupport>
+ * #include <unsupported/Eigen/OpenGLSupport>
  * // ...
  * Vector3f x, y;
  * Matrix3f rot;
@@ -346,5 +348,7 @@ EIGEN_GL_FUNC1_SPECIALIZATION_VEC(glUniform, GLint, const, double, 4, 4dv_ei)
 //@}
 
 }  // namespace Eigen
+
+#include "../../Eigen/src/Core/util/ReenableStupidWarnings.h"
 
 #endif  // EIGEN_OPENGL_MODULE_H

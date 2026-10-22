@@ -1,21 +1,28 @@
 // Copyright 2024 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
+import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
+import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import * as Trace from '../../models/trace/trace.js';
-import * as NetworkTimeCalculator from '../network_time_calculator/network_time_calculator.js';
+import type * as LHModel from '../../models/lighthouse/lighthouse.js';
+import type * as Trace from '../../models/trace/trace.js';
+import * as Greendev from '../greendev/greendev.js';
+import type * as NetworkTimeCalculator from '../network_time_calculator/network_time_calculator.js';
 
+import {AccessibilityAgent, AccessibilityContext} from './agents/AccessibilityAgent.js';
 import {
   type AiAgent,
   type ContextDetail,
   type ConversationContext,
+  ErrorType,
   type MultimodalInput,
   type ResponseData,
-  ResponseType
+  ResponseType,
+  type UserQuery
 } from './agents/AiAgent.js';
+import {BreakpointDebuggerAgent} from './agents/BreakpointDebuggerAgent.js';
 import {ContextSelectionAgent} from './agents/ContextSelectionAgent.js';
 import {FileAgent, FileContext} from './agents/FileAgent.js';
 import {NetworkAgent, RequestContext} from './agents/NetworkAgent.js';
@@ -23,12 +30,9 @@ import {PerformanceAgent, PerformanceTraceContext} from './agents/PerformanceAge
 import {NodeContext, StylingAgent} from './agents/StylingAgent.js';
 import {AiHistoryStorage, ConversationType, type SerializedConversation} from './AiHistoryStorage.js';
 import type {ChangeManager} from './ChangeManager.js';
-import {NetworkRequestFormatter} from './data_formatters/NetworkRequestFormatter.js';
-import {PerformanceInsightFormatter} from './data_formatters/PerformanceInsightFormatter.js';
-import {micros} from './data_formatters/UnitFormatters.js';
-import {AgentFocus} from './performance/AIContext.js';
 
 export const NOT_FOUND_IMAGE_DATA = '';
+export const CONTEXT_TITLE = 'Analyzing data';
 const MAX_TITLE_LENGTH = 80;
 
 export function generateContextDetailsMarkdown(details: ContextDetail[]): string {
@@ -39,6 +43,20 @@ export function generateContextDetailsMarkdown(details: ContextDetail[]): string
   }
   return detailsMarkdown.join('\n\n');
 }
+export interface AiConversationOptions {
+  type: ConversationType;
+  data?: ResponseData[];
+  id?: string;
+  isReadOnly?: boolean;
+  aidaClient?: Host.AidaClient.AidaClient;
+  changeManager?: ChangeManager;
+  isExternal?: boolean;
+  performanceRecordAndReload?: () => Promise<Trace.TraceModel.ParsedTrace>;
+  onInspectElement?: () => Promise<SDK.DOMModel.DOMNode|null>;
+  networkTimeCalculator?: NetworkTimeCalculator.NetworkTransferTimeCalculator;
+  lighthouseRecording?: (overrides?: LHModel.RunTypes.RunOverrides) => Promise<LHModel.ReporterTypes.ReportJSON|null>;
+}
+
 export class AiConversation {
   static fromSerializedConversation(serializedConversation: SerializedConversation): AiConversation {
     const history = serializedConversation.history.map(entry => {
@@ -47,16 +65,13 @@ export class AiConversation {
       }
       return entry;
     });
-    return new AiConversation(
-        serializedConversation.type,
-        history,
-        serializedConversation.id,
-        true,
-        undefined,
-        undefined,
-        serializedConversation.isExternal,
-        undefined,
-    );
+    return new AiConversation({
+      type: serializedConversation.type,
+      data: history,
+      id: serializedConversation.id,
+      isReadOnly: true,
+      isExternal: serializedConversation.isExternal,
+    });
   }
 
   readonly id: string;
@@ -76,23 +91,30 @@ export class AiConversation {
   #contexts: Array<ConversationContext<unknown>> = [];
 
   #performanceRecordAndReload?: () => Promise<Trace.TraceModel.ParsedTrace>;
+  #lighthouseRecording?: (overrides?: LHModel.RunTypes.RunOverrides) => Promise<LHModel.ReporterTypes.ReportJSON|null>;
   #onInspectElement?: () => Promise<SDK.DOMModel.DOMNode|null>;
+  #networkTimeCalculator?: NetworkTimeCalculator.NetworkTransferTimeCalculator;
 
-  constructor(
-      type: ConversationType,
-      data: ResponseData[] = [],
-      id: string = crypto.randomUUID(),
+  constructor(options: AiConversationOptions) {
+    const {
+      type,
+      data = [],
+      id = crypto.randomUUID(),
       isReadOnly = true,
-      aidaClient: Host.AidaClient.AidaClient = new Host.AidaClient.AidaClient(),
-      changeManager?: ChangeManager,
+      aidaClient = new Host.AidaClient.AidaClient(),
+      changeManager,
       isExternal = false,
-      performanceRecordAndReload?: () => Promise<Trace.TraceModel.ParsedTrace>,
-      onInspectElement?: () => Promise<SDK.DOMModel.DOMNode|null>,
-  ) {
+      performanceRecordAndReload,
+      onInspectElement,
+      networkTimeCalculator,
+      lighthouseRecording,
+    } = options;
     this.#changeManager = changeManager;
     this.#aidaClient = aidaClient;
     this.#performanceRecordAndReload = performanceRecordAndReload;
     this.#onInspectElement = onInspectElement;
+    this.#networkTimeCalculator = networkTimeCalculator;
+    this.#lighthouseRecording = lighthouseRecording;
 
     this.id = id;
     this.#isReadOnly = isReadOnly;
@@ -151,12 +173,19 @@ export class AiConversation {
         this.#updateAgent(ConversationType.NETWORK);
       } else if (updateContext instanceof PerformanceTraceContext) {
         this.#updateAgent(ConversationType.PERFORMANCE);
+      } else if (updateContext instanceof AccessibilityContext) {
+        this.#updateAgent(ConversationType.ACCESSIBILITY);
       }
     }
   }
 
   get selectedContext(): ConversationContext<unknown>|undefined {
     return this.#contexts.at(0);
+  }
+
+  getPendingMultimodalInput(): MultimodalInput|undefined {
+    const greenDevEmulationEnabled = Greendev.Prototypes.instance().isEnabled('emulationCapabilities');
+    return greenDevEmulationEnabled ? this.#agent.popPendingMultimodalInput() : undefined;
   }
 
   #reconstructHistory(historyWithoutImages: ResponseData[]): ResponseData[] {
@@ -196,7 +225,7 @@ export class AiConversation {
           break;
         }
         case ResponseType.CONTEXT: {
-          contentParts.push(`### ${item.title}`);
+          contentParts.push(`### ${CONTEXT_TITLE}`);
           if (item.details && item.details.length > 0) {
             contentParts.push(generateContextDetailsMarkdown(item.details));
           }
@@ -256,18 +285,23 @@ export class AiConversation {
       id: this.id,
       history: this.history
                    .map(item => {
-                     if (item.type === ResponseType.CONTEXT_CHANGE) {
-                       return null;
+                     switch (item.type) {
+                       case ResponseType.CONTEXT_CHANGE: {
+                         return null;
+                       }
+                       case ResponseType.USER_QUERY: {
+                         return {...item, imageInput: undefined};
+                       }
+                       case ResponseType.SIDE_EFFECT: {
+                         return {...item, confirm: undefined};
+                       }
+                       case ResponseType.CONTEXT:
+                       case ResponseType.ACTION: {
+                         return {...item, widgets: undefined};
+                       }
+                       default:
+                         return item;
                      }
-
-                     if (item.type === ResponseType.USER_QUERY) {
-                       return {...item, imageInput: undefined};
-                     }
-                     // Remove the `confirm()`-function because `structuredClone()` throws on functions
-                     if (item.type === ResponseType.SIDE_EFFECT) {
-                       return {...item, confirm: undefined};
-                     }
-                     return item;
                    })
                    .filter(history => !!history),
       type: this.#type,
@@ -281,6 +315,19 @@ export class AiConversation {
     }
 
     this.#type = type;
+
+    // We need to filter out the function calls
+    // as the LLM tries to call the existing ones.
+    const history =
+        this.#agent?.history
+            .map(content => {
+              return {
+                ...content,
+                parts: content.parts.filter(part => !('functionCall' in part) && !('functionResponse' in part)),
+              };
+            })
+            .filter(content => content.parts.length > 0);
+
     const options = {
       aidaClient: this.#aidaClient,
       serverSideLoggingEnabled: isAiAssistanceServerSideLoggingEnabled(),
@@ -288,6 +335,10 @@ export class AiConversation {
       changeManager: this.#changeManager,
       performanceRecordAndReload: this.#performanceRecordAndReload,
       onInspectElement: this.#onInspectElement,
+      networkTimeCalculator: this.#networkTimeCalculator,
+      lighthouseRecording: this.#lighthouseRecording,
+      allowedOrigin: this.allowedOrigin,
+      history,
     };
     switch (type) {
       case ConversationType.STYLING: {
@@ -306,86 +357,23 @@ export class AiConversation {
         this.#agent = new PerformanceAgent(options);
         break;
       }
+      case ConversationType.BREAKPOINT: {
+        const breakpointAgentEnabled = Greendev.Prototypes.instance().isEnabled('breakpointDebuggerAgent');
+        if (breakpointAgentEnabled) {
+          this.#agent = new BreakpointDebuggerAgent(options);
+        }
+        break;
+      }
+      case ConversationType.ACCESSIBILITY: {
+        this.#agent = new AccessibilityAgent(options);
+        break;
+      }
       case ConversationType.NONE: {
         this.#agent = new ContextSelectionAgent(options);
         break;
       }
-    }
-  }
-
-  #factsCache = new Map<ExtraContext, Host.AidaClient.RequestFact>();
-
-  async #createFactsForExtraContext(contexts: ExtraContext[]): Promise<void> {
-    for (const context of contexts) {
-      const cached = this.#factsCache.get(context);
-      if (cached) {
-        this.#agent.addFact(cached);
-        continue;
-      }
-
-      if (context instanceof SDK.DOMModel.DOMNode) {
-        const desc = await StylingAgent.describeElement(context);
-
-        const fact = {
-          text: `Relevant HTML element:\n${desc}`,
-          metadata: {
-            source: 'devtools-floaty',
-            score: 1,
-          }
-        };
-        this.#factsCache.set(context, fact);
-        this.#agent.addFact(fact);
-      } else if (context instanceof SDK.NetworkRequest.NetworkRequest) {
-        const calculator = new NetworkTimeCalculator.NetworkTransferTimeCalculator();
-        calculator.updateBoundaries(context);
-        const formatter = new NetworkRequestFormatter(context, calculator);
-        const desc = await formatter.formatNetworkRequest();
-
-        const fact = {
-          text: `Relevant network request:\n${desc}`,
-          metadata: {
-            source: 'devtools-floaty',
-            score: 1,
-          }
-        };
-        this.#factsCache.set(context, fact);
-        this.#agent.addFact(fact);
-      } else if ('insight' in context) {
-        const focus = AgentFocus.fromInsight(context.trace, context.insight);
-        const formatter = new PerformanceInsightFormatter(
-            focus,
-            context.insight,
-        );
-
-        const text = `Relevant Performance Insight:\n${formatter.formatInsight()}`;
-        const fact = {
-          text,
-          metadata: {
-            source: 'devtools-floaty',
-            score: 1,
-          }
-        };
-        this.#factsCache.set(context, fact);
-        this.#agent.addFact(fact);
-      } else {
-        // Must be a trace event
-        const time = Trace.Types.Timing.Micro(
-            context.event.ts - context.traceStartTime,
-        );
-
-        const desc = `Trace event: ${context.event.name}
-Time: ${micros(time)}`;
-
-        const fact = {
-          text: `Relevant trace event:\n${desc}`,
-          metadata: {
-            source: 'devtools-floaty',
-            score: 1,
-          }
-        };
-        this.#factsCache.set(context, fact);
-        this.#agent.addFact(fact);
-      }
+      default:
+        Platform.assertNever(type, 'Unknown conversation type');
     }
   }
 
@@ -393,19 +381,47 @@ Time: ${micros(time)}`;
       run(
           initialQuery: string,
           options: {
-
             signal?: AbortSignal,
-            extraContext?: ExtraContext[],
             multimodalInput?: MultimodalInput,
           } = {},
           ): AsyncGenerator<ResponseData, void, void> {
-    if (options.extraContext) {
-      await this.#createFactsForExtraContext(options.extraContext);
-    }
-    this.#setOriginIfEmpty(this.selectedContext?.getOrigin());
-
     if (this.isBlockedByOrigin) {
-      throw new Error('Cross-origin context data should not be included');
+      // This error should not be reached. If it happens, some
+      // invariants do not hold anymore.
+      throw new Error('cross-origin context data should not be included');
+    }
+
+    const userQuery: UserQuery = {
+      type: ResponseType.USER_QUERY,
+      query: initialQuery,
+      imageInput: options.multimodalInput?.input,
+      imageId: options.multimodalInput?.id,
+    };
+    void this.addHistoryItem(userQuery);
+    yield userQuery;
+
+    yield* this.#runAgent(initialQuery, options);
+  }
+
+  #getQueryAfterSelection(initialQuery: string, selection: string): string {
+    return `${selection}\nOriginal user query: ${initialQuery}`;
+  }
+
+  async *
+      #runAgent(
+          initialQuery: string,
+          options: {
+            signal?: AbortSignal,
+            multimodalInput?: MultimodalInput,
+          } = {},
+          ): AsyncGenerator<ResponseData, void, void> {
+    this.#setOriginIfEmpty(this.selectedContext?.getOrigin());
+    if (this.isBlockedByOrigin) {
+      yield {
+        type: ResponseType.ERROR,
+        error: ErrorType.CROSS_ORIGIN,
+      };
+      return;
     }
 
     function shouldAddToHistory(data: ResponseData): boolean {
@@ -430,10 +446,20 @@ Time: ${micros(time)}`;
         },
         options.multimodalInput,
         )) {
+      // Add to history if relevant
       if (shouldAddToHistory(data)) {
         void this.addHistoryItem(data);
       }
+      // Always yield the data
       yield data;
+
+      // If we change the context
+      // requery with the specialized agent.
+      if (data.type === ResponseType.CONTEXT_CHANGE) {
+        this.setContext(data.context);
+        yield* this.#runAgent(this.#getQueryAfterSelection(initialQuery, data.description), options);
+        return;
+      }
     }
   }
 
@@ -453,18 +479,22 @@ Time: ${micros(time)}`;
   get type(): ConversationType {
     return this.#type;
   }
+
+  allowedOrigin = (): string|undefined => {
+    if (this.#origin) {
+      return this.#origin;
+    }
+    const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+    const inspectedURL = target?.inspectedURL();
+    this.#origin = inspectedURL ? new Common.ParsedURL.ParsedURL(inspectedURL).securityOrigin() : undefined;
+
+    return this.#origin;
+  };
 }
 
 function isAiAssistanceServerSideLoggingEnabled(): boolean {
   return !Root.Runtime.hostConfig.aidaAvailability?.disallowLogging;
 }
-
-// TODO: this is the same as the type in UI.Floaty but we cannot use UI
-// here. This is fine for prototyping but if we take this further we can
-// rearchitect.
-type ExtraContext = SDK.DOMModel.DOMNode|SDK.NetworkRequest.NetworkRequest|
-                    {event: Trace.Types.Events.Event, traceStartTime: Trace.Types.Timing.Micro}|
-                    {insight: Trace.Insights.Types.InsightModel, trace: Trace.TraceModel.ParsedTrace};
 
 function isAiAssistanceContextSelectionAgentEnabled(): boolean {
   return Boolean(Root.Runtime.hostConfig.devToolsAiAssistanceContextSelectionAgent?.enabled);

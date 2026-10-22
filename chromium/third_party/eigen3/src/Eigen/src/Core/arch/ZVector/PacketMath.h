@@ -549,6 +549,18 @@ template <>
 EIGEN_STRONG_INLINE Packet2d pfloor<Packet2d>(const Packet2d& a) {
   return vec_floor(a);
 }
+template <>
+EIGEN_STRONG_INLINE Packet2d print<Packet2d>(const Packet2d& a) {
+  return __builtin_s390_vfidb(a, 4, 5);
+}
+template <>
+EIGEN_STRONG_INLINE Packet2d ptrunc<Packet2d>(const Packet2d& a) {
+  return __builtin_s390_vfidb(a, 4, 4);
+}
+template <>
+EIGEN_STRONG_INLINE Packet2d pcmp_lt_or_nan<Packet2d>(const Packet2d& a, const Packet2d& b) {
+  return pnot(pcmp_le(b, a));
+}
 
 template <>
 EIGEN_STRONG_INLINE Packet4i ploadu<Packet4i>(const int* from) {
@@ -939,6 +951,20 @@ EIGEN_STRONG_INLINE Packet4f pfloor<Packet4f>(const Packet4f& a) {
   res.v4f[1] = vec_floor(a.v4f[1]);
   return res;
 }
+template <>
+EIGEN_STRONG_INLINE Packet4f print<Packet4f>(const Packet4f& a) {
+  Packet4f res;
+  res.v4f[0] = print(a.v4f[0]);
+  res.v4f[1] = print(a.v4f[1]);
+  return res;
+}
+template <>
+EIGEN_STRONG_INLINE Packet4f ptrunc<Packet4f>(const Packet4f& a) {
+  Packet4f res;
+  res.v4f[0] = ptrunc(a.v4f[0]);
+  res.v4f[1] = ptrunc(a.v4f[1]);
+  return res;
+}
 
 template <>
 EIGEN_STRONG_INLINE Packet4f ploaddup<Packet4f>(const float* from) {
@@ -1063,6 +1089,13 @@ Packet4f EIGEN_STRONG_INLINE pcmp_eq<Packet4f>(const Packet4f& a, const Packet4f
   res.v4f[1] = pcmp_eq(a.v4f[1], b.v4f[1]);
   return res;
 }
+template <>
+Packet4f EIGEN_STRONG_INLINE pcmp_lt_or_nan<Packet4f>(const Packet4f& a, const Packet4f& b) {
+  Packet4f res;
+  res.v4f[0] = pcmp_lt_or_nan(a.v4f[0], b.v4f[0]);
+  res.v4f[1] = pcmp_lt_or_nan(a.v4f[1], b.v4f[1]);
+  return res;
+}
 
 #else
 template <>
@@ -1175,6 +1208,18 @@ EIGEN_STRONG_INLINE Packet4f pceil<Packet4f>(const Packet4f& a) {
 template <>
 EIGEN_STRONG_INLINE Packet4f pfloor<Packet4f>(const Packet4f& a) {
   return vec_floor(a);
+}
+template <>
+EIGEN_STRONG_INLINE Packet4f print<Packet4f>(const Packet4f& a) {
+  return __builtin_s390_vfisb(a, 4, 5);
+}
+template <>
+EIGEN_STRONG_INLINE Packet4f ptrunc<Packet4f>(const Packet4f& a) {
+  return __builtin_s390_vfisb(a, 4, 4);
+}
+template <>
+EIGEN_STRONG_INLINE Packet4f pcmp_lt_or_nan<Packet4f>(const Packet4f& a, const Packet4f& b) {
+  return pnot(pcmp_le(b, a));
 }
 template <>
 EIGEN_STRONG_INLINE Packet4f pabs<Packet4f>(const Packet4f& a) {

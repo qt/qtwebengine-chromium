@@ -8,9 +8,19 @@
 #include "base/strings/sys_string_conversions.h"
 #include "components/input/native_web_keyboard_event.h"
 #include "components/input/web_input_event_builders_ios.h"
+#include "components/strings/grit/components_strings.h"
+#include "content/browser/renderer_host/ios_extended_text_input_traits.h"
 #include "ui/accessibility/platform/browser_accessibility_manager.h"
+#include "ui/base/ime/text_input_flags.h"
+#include "ui/base/l10n/l10n_util_mac.h"
 
 static void* kObservingContext = &kObservingContext;
+
+namespace {
+NSString* const kPreviousAccessoryImageName = @"chevron.up";
+NSString* const kNextAccessoryImageName = @"chevron.down";
+NSString* const kDoneAccessoryImageName = @"checkmark";
+}  // namespace
 
 #pragma mark - BETextPosition
 @interface BETextPosition : UITextPosition {
@@ -109,40 +119,6 @@ static void* kObservingContext = &kObservingContext;
 }
 @end
 
-@interface BlinkExtendedTextInputTraits : NSObject <BEExtendedTextInputTraits>
-@property(nonatomic) UITextAutocapitalizationType autocapitalizationType;
-@property(nonatomic) UITextAutocorrectionType autocorrectionType;
-@property(nonatomic) UITextSpellCheckingType spellCheckingType;
-@property(nonatomic) UITextSmartQuotesType smartQuotesType;
-@property(nonatomic) UITextSmartDashesType smartDashesType;
-@property(nonatomic) UITextInlinePredictionType inlinePredictionType;
-@property(nonatomic) UIKeyboardType keyboardType;
-@property(nonatomic) UIKeyboardAppearance keyboardAppearance;
-@property(nonatomic) UIReturnKeyType returnKeyType;
-@property(nonatomic, getter=isSecureTextEntry) BOOL secureTextEntry;
-@property(nonatomic, getter=isSingleLineDocument) BOOL singleLineDocument;
-@property(nonatomic, getter=isTypingAdaptationEnabled)
-    BOOL typingAdaptationEnabled;
-@property(nonatomic, copy) UITextContentType textContentType;
-@property(nonatomic, copy) UITextInputPasswordRules* passwordRules;
-@property(nonatomic) UITextSmartInsertDeleteType smartInsertDeleteType;
-@property(nonatomic) BOOL enablesReturnKeyAutomatically;
-@property(nonatomic, strong) UIColor* insertionPointColor;
-@property(nonatomic, strong) UIColor* selectionHandleColor;
-@property(nonatomic, strong) UIColor* selectionHighlightColor;
-@end
-@implementation BlinkExtendedTextInputTraits
-- (instancetype)init {
-  if (!(self = [super init])) {
-    return nil;
-  }
-  self.typingAdaptationEnabled = YES;
-  self.selectionHandleColor = [UIColor blueColor];
-  return self;
-}
-
-@end
-
 @implementation RenderWidgetUIView
 @synthesize tokenizer;
 
@@ -151,11 +127,13 @@ static void* kObservingContext = &kObservingContext;
   self = [self init];
   if (self) {
     _view = view;
+    _extendedTextInputTraits = [[IOSExtendedTextInputTraits alloc] init];
     text_interaction_ = [[BETextInteraction alloc] init];
     [self addInteraction:text_interaction_];
     self.multipleTouchEnabled = YES;
     self.autoresizingMask =
         UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self initializeInputAccessoryToolbar];
   }
   return self;
 }
@@ -168,6 +146,53 @@ static void* kObservingContext = &kObservingContext;
   // TODO(dtapuska): This isn't correct, we need to figure out when the window
   // gains/loses focus.
   _view->SetActive(true);
+}
+
+- (UIView*)inputAccessoryView {
+  return _inputAccessoryContainerView;
+}
+
+- (void)initializeInputAccessoryToolbar {
+  UIToolbar* toolbar = [[UIToolbar alloc] init];
+  [toolbar sizeToFit];
+
+  CGSize toolbarSize = toolbar.frame.size;
+
+  _inputAccessoryContainerView = [[UIView alloc]
+      initWithFrame:CGRectMake(0, 0, toolbarSize.width,
+                               toolbarSize.height +
+                                   kInputAccessoryToolbarBottomMargin)];
+  toolbar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+  [_inputAccessoryContainerView addSubview:toolbar];
+
+  _previousAccessoryButton = [[UIBarButtonItem alloc]
+      initWithImage:[UIImage systemImageNamed:kPreviousAccessoryImageName]
+              style:UIBarButtonItemStylePlain
+             target:self
+             action:@selector(handlePreviousAccessoryAction)];
+  _previousAccessoryButton.accessibilityLabel =
+      l10n_util::GetNSString(IDS_ACCNAME_PREVIOUS);
+  _nextAccessoryButton = [[UIBarButtonItem alloc]
+      initWithImage:[UIImage systemImageNamed:kNextAccessoryImageName]
+              style:UIBarButtonItemStylePlain
+             target:self
+             action:@selector(handleNextAccessoryAction)];
+  _nextAccessoryButton.accessibilityLabel =
+      l10n_util::GetNSString(IDS_ACCNAME_NEXT);
+  UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc]
+      initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace
+                           target:nil
+                           action:nil];
+  UIBarButtonItem* doneButton = [[UIBarButtonItem alloc]
+      initWithImage:[UIImage systemImageNamed:kDoneAccessoryImageName]
+              style:UIBarButtonItemStylePlain
+             target:self
+             action:@selector(hideKeyboard)];
+  doneButton.accessibilityLabel = l10n_util::GetNSString(IDS_DONE);
+
+  toolbar.items = @[
+    _previousAccessoryButton, _nextAccessoryButton, flexSpace, doneButton
+  ];
 }
 
 - (ui::CALayerFrameSink*)frameSink {
@@ -401,7 +426,7 @@ static void* kObservingContext = &kObservingContext;
 }
 
 - (id<BEExtendedTextInputTraits>)extendedTextInputTraits {
-  return [[BlinkExtendedTextInputTraits alloc] init];
+  return _extendedTextInputTraits;
 }
 
 - (void)handleEditCommands:(const std::vector<std::string>&)commands {
@@ -1240,6 +1265,12 @@ static void* kObservingContext = &kObservingContext;
 
 - (void)onUpdateTextInputState:(const ui::mojom::TextInputState&)state
                     withBounds:(CGRect)bounds {
+  [_extendedTextInputTraits updateFromTextInputState:state];
+  _previousAccessoryButton.enabled =
+      (state.flags & ui::TEXT_INPUT_FLAG_HAVE_PREVIOUS_FOCUSABLE_ELEMENT) != 0;
+  _nextAccessoryButton.enabled =
+      (state.flags & ui::TEXT_INPUT_FLAG_HAVE_NEXT_FOCUSABLE_ELEMENT) != 0;
+
   // Check for the visibility request and policy if VK APIs are enabled.
   if (state.vk_policy == ui::mojom::VirtualKeyboardPolicy::MANUAL) {
     // policy is manual.
@@ -1262,6 +1293,16 @@ static void* kObservingContext = &kObservingContext;
               withBounds:bounds];
     }
   }
+}
+
+- (void)handlePreviousAccessoryAction {
+  CHECK(_view);
+  _view->AdvanceFocusForIME(blink::mojom::FocusType::kBackward);
+}
+
+- (void)handleNextAccessoryAction {
+  CHECK(_view);
+  _view->AdvanceFocusForIME(blink::mojom::FocusType::kForward);
 }
 
 - (void)showKeyboard:(bool)has_text withBounds:(CGRect)bounds {

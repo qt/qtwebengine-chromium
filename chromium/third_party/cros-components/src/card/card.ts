@@ -9,7 +9,7 @@ import '@material/web/focus/md-focus-ring.js';
 
 import {css, CSSResultGroup, html, LitElement, nothing} from 'lit';
 
-import {shadowPiercingActiveElements} from '../helpers/helpers';
+import {shadowPiercingActiveElements} from '../helpers/helpers.js';
 
 const DEFAULT_TICK_MARGIN = css`14px`;
 

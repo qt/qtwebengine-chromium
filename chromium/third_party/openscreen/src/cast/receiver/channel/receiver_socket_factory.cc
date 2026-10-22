@@ -4,6 +4,7 @@
 
 #include "cast/receiver/public/receiver_socket_factory.h"
 
+#include "platform/api/tls_connection.h"
 #include "util/osp_logging.h"
 
 namespace openscreen::cast {
@@ -20,10 +21,7 @@ void ReceiverSocketFactory::OnAccepted(
     TlsConnectionFactory* factory,
     std::vector<uint8_t> der_x509_peer_cert,
     std::unique_ptr<TlsConnection> connection) {
-  IPEndpoint endpoint = connection->GetRemoteEndpoint();
-  auto socket =
-      std::make_unique<CastSocket>(std::move(connection), &socket_client_);
-  client_.OnConnected(this, endpoint, std::move(socket));
+  CreateSocket(std::move(connection));
 }
 
 void ReceiverSocketFactory::OnConnected(
@@ -43,6 +41,14 @@ void ReceiverSocketFactory::OnConnectionFailed(
 void ReceiverSocketFactory::OnError(TlsConnectionFactory* factory,
                                     const Error& error) {
   client_.OnError(this, error);
+}
+
+void ReceiverSocketFactory::CreateSocket(
+    std::unique_ptr<Connection> connection) {
+  IPEndpoint endpoint = connection->GetRemoteEndpoint();
+  auto socket =
+      std::make_unique<CastSocket>(std::move(connection), &socket_client_);
+  client_.OnConnected(this, endpoint, std::move(socket));
 }
 
 }  // namespace openscreen::cast

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "base/files/file_util.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/checked_math.h"
@@ -284,11 +285,6 @@ bool SharedStorageDatabase::Destroy() {
     return true;
 
   return sql::Database::Delete(db_path_);
-}
-
-void SharedStorageDatabase::TrimMemory() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  db_.TrimMemory();
 }
 
 SharedStorageDatabase::GetResult SharedStorageDatabase::Get(

@@ -9,6 +9,8 @@
 #include <algorithm>
 
 #include "core/fxcrt/byteorder.h"
+#include "core/fxcrt/bytestring.h"
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/widestring.h"
@@ -33,6 +35,15 @@ ByteString GetStringFromTable(pdfium::span<const uint8_t> string_span,
   return ByteString(ByteStringView(string_span.subspan(offset, length)));
 }
 
+bool IsStrUpper(const ByteString& str) {
+  for (char ch : str) {
+    if (!FXSYS_IsUpperASCII(ch)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 FX_RECT GetGlyphsBBox(const std::vector<TextGlyphPos>& glyphs,
@@ -49,7 +60,8 @@ FX_RECT GetGlyphsBBox(const std::vector<TextGlyphPos>& glyphs,
       continue;
     }
 
-    int char_width = glyph.glyph_->GetBitmap()->GetWidth();
+    RetainPtr<const CFX_DIBitmap> glyph_bitmap = glyph.glyph_->GetBitmap();
+    int char_width = glyph_bitmap->GetWidth();
     if (anti_alias_is_lcd) {
       char_width /= 3;
     }
@@ -61,7 +73,7 @@ FX_RECT GetGlyphsBBox(const std::vector<TextGlyphPos>& glyphs,
     }
 
     FX_SAFE_INT32 char_bottom = point.value().y;
-    char_bottom += glyph.glyph_->GetBitmap()->GetHeight();
+    char_bottom += glyph_bitmap->GetHeight();
     if (!char_bottom.IsValid()) {
       continue;
     }
@@ -169,4 +181,12 @@ int NormalizeFontMetric(int64_t value, uint16_t upem) {
 
   const double scaled_value = (value * 1000.0 + upem / 2) / upem;
   return pdfium::saturated_cast<int>(scaled_value);
+}
+
+void MaybeRemoveSubsettedFontPrefix(ByteString& font_name) {
+  if (font_name.GetLength() > kSubsettedFontPrefixLength &&
+      font_name[kSubsettedFontPrefixLength] == '+' &&
+      IsStrUpper(font_name.First(kSubsettedFontPrefixLength))) {
+    font_name = font_name.Substr(kSubsettedFontPrefixLength + 1);
+  }
 }

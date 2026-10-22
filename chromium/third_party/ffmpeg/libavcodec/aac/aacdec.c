@@ -569,8 +569,10 @@ static av_cold void flush(AVCodecContext *avctx)
         }
     }
 
+#if 0  // CHROMIUM: save binary size by disabling xHE-AAC experimental feature.
 #if CONFIG_AAC_DECODER
     ff_aac_usac_reset_state(ac, &ac->oc[1]);
+#endif
 #endif
 }
 
@@ -2453,10 +2455,15 @@ static int aac_decode_frame_int(AVCodecContext *avctx, AVFrame *frame,
                                           "AAC USAC fixed-point decoding");
             return AVERROR_PATCHWELCOME;
         }
+#if 0  // CHROMIUM: save binary size by disabling xHE-AAC experimental feature.
 #if CONFIG_AAC_DECODER
         err = ff_aac_usac_decode_frame(avctx, ac, gb, got_frame_ptr);
         if (err < 0)
             goto fail;
+#endif
+#else
+        avpriv_report_missing_feature(ac->avctx, "AAC USAC decoding");
+        return AVERROR_PATCHWELCOME;
 #endif
     } else {
         err = decode_frame_ga(avctx, ac, gb, got_frame_ptr);

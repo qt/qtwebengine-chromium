@@ -6,17 +6,17 @@
 
 import '@material/web/iconbutton/filled-tonal-icon-button.js';
 import '@material/web/iconbutton/icon-button.js';
-import '../menu/menu';
+import '../menu/menu.js';
 
 import {Corner, FocusState} from '@material/web/menu/menu.js';
 import {SelectOption} from '@material/web/select/select-option.js';
 import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
-import {ifDefined} from 'lit/directives/if-defined';
-import {createRef, ref} from 'lit/directives/ref';
+import {ifDefined} from 'lit/directives/if-defined.js';
+import {createRef, ref} from 'lit/directives/ref.js';
 
-import {type Menu, type MenuType} from '../menu/menu';
+import {type Menu, type MenuType} from '../menu/menu.js';
 
-import {IconDropdownOption, type OptionTriggeredEvent} from './icon-dropdown-option';
+import {IconDropdownOption, type OptionTriggeredEvent} from './icon-dropdown-option.js';
 
 // TODO: b/355342209 - Investigate moving SVGs into build command or asset
 // compatible with Chromium build process.

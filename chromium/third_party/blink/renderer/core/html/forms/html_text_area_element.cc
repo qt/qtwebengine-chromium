@@ -26,6 +26,8 @@
 
 #include "third_party/blink/renderer/core/html/forms/html_text_area_element.h"
 
+#include <utility>
+
 #include "third_party/blink/public/strings/grit/blink_strings.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_focus_options.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
@@ -54,12 +56,17 @@
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/layout/adjust_for_absolute_zoom.h"
 #include "third_party/blink/renderer/core/layout/forms/layout_text_control_multi_line.h"
+#include "third_party/blink/renderer/core/layout/inline/fragment_item.h"
+#include "third_party/blink/renderer/core/layout/inline/inline_cursor.h"
+#include "third_party/blink/renderer/core/layout/layout_block_flow.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
+#include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
@@ -67,18 +74,21 @@
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+#include "third_party/blink/renderer/platform/wtf/text/line_ending.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 
 using mojom::blink::FormControlType;
 
-static const unsigned kDefaultRows = 2;
-static const unsigned kDefaultCols = 20;
+namespace {
 
-static bool is_default_font_prewarmed_ = false;
+constexpr unsigned kDefaultRows = 2;
+constexpr unsigned kDefaultCols = 20;
 
-static inline unsigned ComputeLengthForAPIValue(const String& text) {
+bool g_is_default_font_prewarmed = false;
+
+inline unsigned ComputeLengthForAPIValue(const String& text) {
   unsigned length = text.length();
   unsigned crlf_count = 0;
   for (unsigned i = 0; i < length; ++i) {
@@ -88,10 +98,31 @@ static inline unsigned ComputeLengthForAPIValue(const String& text) {
   return text.length() - crlf_count;
 }
 
-static inline void ReplaceCRWithNewLine(String& text) {
-  text.Replace("\r\n", "\n");
-  text.Replace('\r', '\n');
+// Callback passed into ShapeResultView::ForEachGlyph().
+void GetTextInfoForGlyphCallback(void* context,
+                                 unsigned character_index,
+                                 Glyph glyph,
+                                 gfx::Vector2dF glyph_offset,
+                                 float total_advance,
+                                 bool is_horizontal,
+                                 CanvasRotationInVertical canvas_rotation,
+                                 const SimpleFontData* font_data) {
+  auto& results =
+      *static_cast<std::vector<WebFormControlElement::TypefaceRunInfo>*>(
+          context);
+
+  sk_sp<SkTypeface> typeface = font_data->PlatformData().TypefaceSp();
+  if (results.empty() || results.back().typeface != typeface) {
+    results.emplace_back(std::move(typeface),
+                         std::vector<WebFormControlElement::GlyphInfo>{},
+                         is_horizontal);
+  }
+
+  CHECK_EQ(results.back().is_horizontal, is_horizontal);
+  results.back().glyphs.emplace_back(glyph, glyph_offset, total_advance);
 }
+
+}  // namespace
 
 HTMLTextAreaElement::HTMLTextAreaElement(Document& document)
     : TextControlElement(html_names::kTextareaTag, document),
@@ -102,14 +133,14 @@ HTMLTextAreaElement::HTMLTextAreaElement(Document& document)
       is_placeholder_visible_(false) {
   EnsureUserAgentShadowRoot();
 
-  if (!is_default_font_prewarmed_) {
+  if (!g_is_default_font_prewarmed) {
     if (Settings* settings = document.GetSettings()) {
       // Prewarm 'monospace', the default font family for `<textarea>`. The
       // default language should be fine for this purpose because most users set
       // the same family for all languages.
       FontCache::PrewarmFamily(settings->GetGenericFontFamilySettings().Fixed(
           LayoutLocale::GetDefault().GetScript()));
-      is_default_font_prewarmed_ = true;
+      g_is_default_font_prewarmed = true;
     }
   }
 }
@@ -256,14 +287,15 @@ void HTMLTextAreaElement::ParseAttribute(
     // deprecated.  The soft/hard /off values are a recommendation for HTML 4
     // extension by IE and NS 4.
     WrapMethod wrap;
-    if (EqualIgnoringASCIICase(value, "physical") ||
-        EqualIgnoringASCIICase(value, "hard") ||
-        EqualIgnoringASCIICase(value, "on"))
+    if (EqualIgnoringAsciiCase(value, "physical") ||
+        EqualIgnoringAsciiCase(value, "hard") ||
+        EqualIgnoringAsciiCase(value, "on")) {
       wrap = kHardWrap;
-    else if (EqualIgnoringASCIICase(value, "off"))
+    } else if (EqualIgnoringAsciiCase(value, "off")) {
       wrap = kNoWrap;
-    else
+    } else {
       wrap = kSoftWrap;
+    }
     if (wrap != wrap_) {
       wrap_ = wrap;
       if (LayoutObject* layout_object = GetLayoutObject()) {
@@ -391,8 +423,8 @@ void HTMLTextAreaElement::SubtreeHasChanged() {
     CalculateAndAdjustAutoDirectionality();
   }
 
-  if (RuntimeEnabledFeatures::FormControlRangeEnabled()) {
-    CommitFormControlRangeEdit();
+  if (RuntimeEnabledFeatures::OpaqueRangeEnabled(GetExecutionContext())) {
+    CommitOpaqueRangeEdit();
   }
 
   if (!IsFocused())
@@ -464,7 +496,7 @@ String HTMLTextAreaElement::SanitizeUserInputValue(const String& proposed_value,
   }
   if (i > 0 && U16_IS_LEAD(proposed_value[i - 1]))
     --i;
-  return proposed_value.Left(i);
+  return proposed_value.substr(0, i);
 }
 
 void HTMLTextAreaElement::UpdateValue() {
@@ -514,8 +546,7 @@ void HTMLTextAreaElement::SetValueCommon(const String& new_value,
                                          WebAutofillState autofill_state) {
   // Code elsewhere normalizes line endings added by the user via the keyboard
   // or pasting.  We normalize line endings coming from JavaScript here.
-  String normalized_value = new_value;
-  ReplaceCRWithNewLine(normalized_value);
+  String normalized_value = NormalizeLineEndingsToLF(new_value);
 
   // Clear the suggested value. Use the base class version to not trigger a view
   // update.
@@ -541,14 +572,14 @@ void HTMLTextAreaElement::SetValueCommon(const String& new_value,
   SetInnerEditorValue(value_);
 
   // Programmatic value changes trigger a full-replace update so
-  // FormControlRange offsets are recomputed against the new text. Callers that
+  // OpaqueRange offsets are recomputed against the new text. Callers that
   // perform a targeted update (e.g., setRangeText) set the skip flag to
   // suppress this pass and prevent redundant notifications or offset
   // adjustments.
-  if (RuntimeEnabledFeatures::FormControlRangeEnabled() &&
+  if (RuntimeEnabledFeatures::OpaqueRangeEnabled(GetExecutionContext()) &&
       !ShouldSkipNextSetValueAutoDiff()) {
-    CommitProgrammaticFormControlRangeEdit(old_value, /*old_sel_start=*/0u,
-                                           /*old_sel_end=*/old_value.length());
+    CommitProgrammaticOpaqueRangeEdit(old_value, /*old_sel_start=*/0u,
+                                      /*old_sel_end=*/old_value.length());
   }
   if (event_behavior == TextFieldEventBehavior::kDispatchNoEvent)
     SetLastChangeWasNotUserEdit();
@@ -623,7 +654,7 @@ void HTMLTextAreaElement::setDefaultValue(const String& default_value) {
 
 void HTMLTextAreaElement::SetSuggestedValue(const String& value) {
   String sanitized_value = value;
-  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled(GetExecutionContext()) &&
       IsInCanvasSubtree()) {
     // Hide suggested values when under canvas, to prevent leaking this
     // information to javascript.
@@ -638,7 +669,7 @@ void HTMLTextAreaElement::SetSuggestedValue(const String& value) {
 }
 
 void HTMLTextAreaElement::DidChangeIsCanvasOrInCanvasSubtree() {
-  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled(GetExecutionContext()) &&
       IsInCanvasSubtree()) {
     // Hide suggested values when under canvas, to prevent leaking this
     // information to javascript.
@@ -794,9 +825,8 @@ HTMLElement* HTMLTextAreaElement::UpdatePlaceholderText() {
   } else {
     placeholder->RemoveInlineStyleProperty(CSSPropertyID::kUserSelect);
   }
-  String normalized_value = placeholder_text;
   // https://html.spec.whatwg.org/multipage/form-elements.html#attr-textarea-placeholder
-  ReplaceCRWithNewLine(normalized_value);
+  String normalized_value = NormalizeLineEndingsToLF(placeholder_text);
   placeholder->setTextContent(normalized_value);
   return placeholder;
 }
@@ -844,6 +874,60 @@ void HTMLTextAreaElement::SetFocused(bool is_focused,
     SetUserHasEditedTheFieldAndBlurred();
   }
   TextControlElement::SetFocused(is_focused, focus_type);
+}
+
+WebFormControlElement::TextInfo HTMLTextAreaElement::GetTextInfo() const {
+  GetDocument().UpdateStyleAndLayoutForNode(this,
+                                            DocumentUpdateReason::kJavaScript);
+  const TextControlInnerEditorElement* inner_element = InnerEditorElement();
+  if (!inner_element) {
+    return {};
+  }
+  const auto* inner_layout =
+      To<LayoutBlockFlow>(inner_element->GetLayoutObject());
+  if (!inner_layout) {
+    return {};
+  }
+
+  WebFormControlElement::TextInfo results;
+  results.effective_zoom = inner_layout->StyleRef().EffectiveZoom();
+  for (LayoutObject* child = inner_layout->FirstChild(); child;
+       child = child->NextSibling()) {
+    const auto* paragraph_block = DynamicTo<LayoutBlockFlow>(child);
+    if (!paragraph_block) {
+      continue;
+    }
+    const PhysicalOffset paragraph_offset = paragraph_block->PhysicalLocation();
+    for (InlineCursor cursor(*paragraph_block); cursor; cursor.MoveToNext()) {
+      const FragmentItem* text_item = cursor.CurrentItem();
+      if (!text_item || !text_item->IsText()) {
+        continue;
+      }
+      const ShapeResultView* shape = text_item->TextShapeResult();
+      if (!shape) {
+        continue;  // Skip \n characters
+      }
+      // Split `text_item` into multiple TypefaceRunInfo objects if it has
+      // more than one font.
+      std::vector<WebFormControlElement::TypefaceRunInfo> typeface_runs;
+      shape->ForEachGlyph(
+          /*initial_advance*/ 0.0f, GetTextInfoForGlyphCallback,
+          &typeface_runs);
+      results.text_runs.emplace_back(
+          std::move(typeface_runs),
+          gfx::RectF(text_item->RectInContainerFragment() + paragraph_offset));
+    }
+  }
+
+  return results;
+}
+
+bool HTMLTextAreaElement::SupportsBaseAppearanceInternal(
+    Element::BaseAppearanceValue value) const {
+  if (!RuntimeEnabledFeatures::AppearanceBaseEnabled()) {
+    return false;
+  }
+  return value == Element::BaseAppearanceValue::kBase;
 }
 
 }  // namespace blink

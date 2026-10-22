@@ -35,8 +35,6 @@ class ContextWgpu : public ContextImpl
     // Note: this struct was originally for Vulkan, but may be able to be pared down for WGSL.
     struct DriverUniforms
     {
-        std::array<uint32_t, 2> acbBufferOffsets;
-
         // .x is near, .y is far
         std::array<float, 2> depthRange;
 
@@ -46,9 +44,6 @@ class ContextWgpu : public ContextImpl
         // Packed vec4 of snorm8
         uint32_t flipXY;
 
-        // Only the lower 16 bits used
-        uint32_t dither;
-
         // Various bits of state:
         // - Surface rotation
         // - Advanced blend equation
@@ -57,6 +52,11 @@ class ContextWgpu : public ContextImpl
         // - Depth transformation
         // - layered FBO
         uint32_t misc;
+
+        // Only the lower 16 bits used
+        uint32_t dither;
+
+        std::array<uint32_t, 2> acbBufferOffsets;
     };
     static_assert(sizeof(DriverUniforms) % (sizeof(uint32_t) * 4) == 0,
                   "DriverUniforms should be 16 bytes aligned");
@@ -261,7 +261,7 @@ class ContextWgpu : public ContextImpl
     // Query and Fence creation
     QueryImpl *createQuery(gl::QueryType type) override;
     FenceNVImpl *createFenceNV() override;
-    SyncImpl *createSync() override;
+    SyncImpl *createSync(const gl::Context *context) override;
 
     // Transform Feedback creation
     TransformFeedbackImpl *createTransformFeedback(
@@ -329,6 +329,8 @@ class ContextWgpu : public ContextImpl
     void invalidateIndexBuffer();
     void invalidateCurrentTextures();
     void invalidateDriverUniforms();
+
+    void updatePipelineColorMasks();
 
     void ensureCommandEncoderCreated();
     angle::Result getCurrentCommandEncoder(webgpu::RenderPassClosureReason closureReason,

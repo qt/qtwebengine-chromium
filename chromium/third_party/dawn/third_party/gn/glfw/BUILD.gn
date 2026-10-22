@@ -50,6 +50,7 @@ static_library("glfw") {
     # nonstandard extension, function/data pointer conversion in expression
     cflags_c = [ "/wd4152" ]
   } else {
+    cflags = [ "-Wno-deprecated-declarations" ]
     cflags_c = [
       "-Wno-sign-compare",
       "-Wno-missing-field-initializers",

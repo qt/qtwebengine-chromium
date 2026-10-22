@@ -11,6 +11,7 @@ import './filter_dialog/date_dialog.js';
 import './filter_dialog/type_dialog.js';
 import '//resources/cr_elements/cr_chip/cr_chip.js';
 import '//resources/cr_elements/cr_icon_button/cr_icon_button.js';
+import '//resources/cr_elements/cr_ripple/cr_ripple.js';
 import '//resources/cr_elements/icons.html.js';
 import '//resources/cr_elements/cr_button/cr_button.js';
 import '//resources/cr_elements/cr_checkbox/cr_checkbox.js';
@@ -154,7 +155,7 @@ export class FilterBarElement extends CrLitElement {
 
 
   protected async onRemoveFilterClick(e: Event) {
-    const category = getFilterCategoryForTarget(e.target as HTMLElement);
+    const category = getFilterCategoryForTarget(e.currentTarget as HTMLElement);
     this.updateFilterOrder(category, false);
     switch (category) {
       case FilterCategory.APP:
@@ -176,24 +177,12 @@ export class FilterBarElement extends CrLitElement {
       default:
         assertNotReachedCase(category);
     }
-    await this.onFiltersChanged();
+    await this.onFiltersChanged(category);
   }
 
   protected onChipClick(e: MouseEvent) {
-    // Prevent opening the menu if the close button was clicked
-    const target = e.target as HTMLElement;
-    if (target.tagName !== 'CR-ICON-BUTTON') {
-      this.editFilter(getFilterCategoryForTarget(target));
-    }
+    this.editFilter(getFilterCategoryForTarget(e.target as HTMLElement));
   }
-
-  protected onChipKeydown(e: KeyboardEvent) {
-    const target = e.target as HTMLElement;
-    if ((e.key === 'Enter' || e.key === ' ') && target.tagName !== 'BUTTON') {
-      this.editFilter(getFilterCategoryForTarget(target));
-    }
-  }
-
 
   protected getFilterLabel(category: FilterCategory): string {
     switch (category) {
@@ -255,14 +244,14 @@ export class FilterBarElement extends CrLitElement {
     this.updateFilterOrder(FilterCategory.APP, e.detail.size > 0);
     this.filterSettings.apps = new Set(e.detail);
     this.closeFilterMenu();
-    await this.onFiltersChanged();
+    await this.onFiltersChanged(FilterCategory.APP);
   }
 
   protected async onEventTypeFilterChange(e: CustomEvent<Set<EventType>>) {
     this.updateFilterOrder(FilterCategory.EVENT, e.detail.size > 0);
     this.filterSettings.eventTypes = new Set(e.detail);
     this.closeFilterMenu();
-    await this.onFiltersChanged();
+    await this.onFiltersChanged(FilterCategory.EVENT);
   }
 
   protected async onUpdateOutcomeFilterChange(
@@ -270,14 +259,14 @@ export class FilterBarElement extends CrLitElement {
     this.updateFilterOrder(FilterCategory.OUTCOME, e.detail.size > 0);
     this.filterSettings.updateOutcomes = new Set(e.detail);
     this.closeFilterMenu();
-    await this.onFiltersChanged();
+    await this.onFiltersChanged(FilterCategory.OUTCOME);
   }
 
   protected async onScopeFilterChange(e: CustomEvent<Set<Scope>>) {
     this.updateFilterOrder(FilterCategory.SCOPE, e.detail.size > 0);
     this.filterSettings.scopes = new Set(e.detail);
     this.closeFilterMenu();
-    await this.onFiltersChanged();
+    await this.onFiltersChanged(FilterCategory.SCOPE);
   }
 
   protected async onDateFilterChange(
@@ -287,7 +276,7 @@ export class FilterBarElement extends CrLitElement {
     this.filterSettings.startDate = e.detail.start;
     this.filterSettings.endDate = e.detail.end;
     this.closeFilterMenu();
-    await this.onFiltersChanged();
+    await this.onFiltersChanged(FilterCategory.DATE);
   }
 
   protected getDateFilterString(): string {
@@ -310,9 +299,9 @@ export class FilterBarElement extends CrLitElement {
     return '';
   }
 
-  private async onFiltersChanged() {
+  private async onFiltersChanged(category: FilterCategory|'all') {
     await this.updateComplete;
-    this.fire('filters-changed');
+    this.fire('filters-changed', category);
     this.requestUpdate();
   }
 
@@ -324,7 +313,7 @@ export class FilterBarElement extends CrLitElement {
     this.filterSettings.startDate = null;
     this.filterSettings.endDate = null;
     this.filterOrder = [];
-    await this.onFiltersChanged();
+    await this.onFiltersChanged('all');
   }
 
   protected isEditing(): boolean {

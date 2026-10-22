@@ -2,14 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_GPU_WINDOWS_D3D12_VIDEO_ENCODE_AV1_DELEGATE_UNITTEST_H_
-#define MEDIA_GPU_WINDOWS_D3D12_VIDEO_ENCODE_AV1_DELEGATE_UNITTEST_H_
-
 #include "media/gpu/windows/d3d12_video_encode_av1_delegate.h"
 
 #include "base/rand_util.h"
-#include "base/test/scoped_feature_list.h"
-#include "media/base/media_switches.h"
 #include "media/base/video_encoder.h"
 #include "media/base/win/d3d12_mocks.h"
 #include "media/base/win/d3d12_video_mocks.h"
@@ -49,7 +44,6 @@ class D3D12VideoEncodeAV1DelegateTest
   ~D3D12VideoEncodeAV1DelegateTest() override = default;
 
   void SetUp() override {
-    feature_list_.InitAndEnableFeature(kStandardizeVP9AndAV1Quantizer);
     device_ = MakeComPtr<NiceMock<D3D12DeviceMock>>();
     video_device3_ = MakeComPtr<NiceMock<D3D12VideoDevice3Mock>>();
     ON_CALL(*video_device3_.Get(), QueryInterface(IID_ID3D12Device, _))
@@ -149,7 +143,6 @@ class D3D12VideoEncodeAV1DelegateTest
   AV1BitstreamBuilder::FrameHeader frame_header_{};
 
  private:
-  base::test::ScopedFeatureList feature_list_;
 };
 
 TEST_F(D3D12VideoEncodeAV1DelegateTest, GetSupportedProfiles) {
@@ -467,5 +460,3 @@ TEST_F(D3D12VideoEncodeAV1DelegateTest, UpdateFrameHeaderPostEncode) {
 }
 
 }  // namespace media
-
-#endif  // MEDIA_GPU_WINDOWS_D3D12_VIDEO_ENCODE_AV1_DELEGATE_UNITTEST_H_

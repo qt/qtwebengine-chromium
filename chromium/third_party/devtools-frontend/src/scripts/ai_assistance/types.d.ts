@@ -63,7 +63,8 @@ export interface ExampleMetadata {
   explanation: string;
 }
 
-export type TestTarget = 'elements'|'performance-main-thread'|'performance-insights'|'elements-multimodal'|'patching';
+export type TestTarget =
+    'elements'|'performance-main-thread'|'performance'|'performance-insights'|'elements-multimodal'|'patching';
 
 // Clang cannot handle the Record<> syntax over multiple lines, it seems.
 /* clang-format off */

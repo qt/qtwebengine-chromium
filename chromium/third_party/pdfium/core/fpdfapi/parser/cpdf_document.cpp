@@ -262,11 +262,14 @@ RetainPtr<CPDF_Dictionary> CPDF_Document::TraversePDFPages(int iPage,
     return nullptr;
   }
 
-  RetainPtr<CPDF_Dictionary> pPages = tree_traversal_[level].first;
+  RetainPtr<CPDF_Dictionary> pPages = tree_traversal_[level].pages_dict;
   RetainPtr<CPDF_Array> pKidList = pPages->GetMutableArrayFor("Kids");
   if (!pKidList) {
     tree_traversal_.pop_back();
     if (*nPagesToGo != 1) {
+      return nullptr;
+    }
+    if (GetNodeType(pPages) == NodeType::kBranch) {
       return nullptr;
     }
     page_list_[iPage] = pPages->GetObjNum();
@@ -278,7 +281,8 @@ RetainPtr<CPDF_Dictionary> CPDF_Document::TraversePDFPages(int iPage,
     return nullptr;
   }
   RetainPtr<CPDF_Dictionary> page;
-  for (size_t i = tree_traversal_[level].second; i < pKidList->size(); i++) {
+  for (size_t i = tree_traversal_[level].child_index; i < pKidList->size();
+       i++) {
     if (*nPagesToGo == 0) {
       break;
     }
@@ -286,17 +290,17 @@ RetainPtr<CPDF_Dictionary> CPDF_Document::TraversePDFPages(int iPage,
     RetainPtr<CPDF_Dictionary> pKid = pKidList->GetMutableDictAt(i);
     if (!pKid) {
       (*nPagesToGo)--;
-      tree_traversal_[level].second++;
+      tree_traversal_[level].child_index++;
       continue;
     }
     if (pKid == pPages) {
-      tree_traversal_[level].second++;
+      tree_traversal_[level].child_index++;
       continue;
     }
     if (!pKid->KeyExist("Kids")) {
       page_list_[iPage - (*nPagesToGo) + 1] = pKid->GetObjNum();
       (*nPagesToGo)--;
-      tree_traversal_[level].second++;
+      tree_traversal_[level].child_index++;
       if (*nPagesToGo == 0) {
         page = std::move(pKid);
         break;
@@ -304,14 +308,14 @@ RetainPtr<CPDF_Dictionary> CPDF_Document::TraversePDFPages(int iPage,
     } else {
       // If the vector has size level+1, the child is not in yet
       if (tree_traversal_.size() == level + 1) {
-        tree_traversal_.emplace_back(std::move(pKid), 0);
+        tree_traversal_.emplace_back(std::move(pKid));
       }
       // Now tree_traversal_[level+1] should exist and be equal to pKid.
       RetainPtr<CPDF_Dictionary> pPageKid =
           TraversePDFPages(iPage, nPagesToGo, level + 1);
       // Check if child was completely processed, i.e. it popped itself out
       if (tree_traversal_.size() == level + 1) {
-        tree_traversal_[level].second++;
+        tree_traversal_[level].child_index++;
       }
       // If child did not finish, no pages to go, or max level reached, end
       if (tree_traversal_.size() != level + 1 || *nPagesToGo == 0 ||
@@ -321,7 +325,7 @@ RetainPtr<CPDF_Dictionary> CPDF_Document::TraversePDFPages(int iPage,
       }
     }
   }
-  if (tree_traversal_[level].second == pKidList->size()) {
+  if (tree_traversal_[level].child_index == pKidList->size()) {
     tree_traversal_.pop_back();
   }
   return page;
@@ -380,7 +384,7 @@ RetainPtr<const CPDF_Dictionary> CPDF_Document::GetPageDictionary(int iPage) {
 
   if (tree_traversal_.empty()) {
     ResetTraversal();
-    tree_traversal_.emplace_back(std::move(pPages), 0);
+    tree_traversal_.emplace_back(std::move(pPages));
   }
   int nPagesToGo = iPage - next_page_to_traverse_ + 1;
   RetainPtr<CPDF_Dictionary> pPage = TraversePDFPages(iPage, &nPagesToGo, 0);
@@ -766,6 +770,17 @@ CPDF_Document::StockFontClearer::StockFontClearer(
 CPDF_Document::StockFontClearer::~StockFontClearer() {
   page_data_->ClearStockFont();
 }
+
+CPDF_Document::PageTreeData::PageTreeData(RetainPtr<CPDF_Dictionary> dict)
+    : pages_dict(std::move(dict)) {}
+
+CPDF_Document::PageTreeData::PageTreeData(PageTreeData&& that) noexcept =
+    default;
+
+CPDF_Document::PageTreeData& CPDF_Document::PageTreeData::operator=(
+    PageTreeData&& that) noexcept = default;
+
+CPDF_Document::PageTreeData::~PageTreeData() = default;
 
 CPDF_Document::PageDataIface::PageDataIface() = default;
 

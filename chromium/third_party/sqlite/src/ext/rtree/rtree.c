@@ -62,7 +62,7 @@
 #else
   #include "sqlite3.h"
 #endif
-int sqlite3GetToken(const unsigned char*,int*); /* In the SQLite core */
+sqlite3_int64 sqlite3GetToken(const unsigned char*,int*); /* In SQLite core */
 
 #include <stddef.h>
 
@@ -97,7 +97,7 @@ typedef unsigned int u32;
 # define NEVER(X)       (X)
 #endif
 #ifndef offsetof
-#define offsetof(STRUCTURE,FIELD) ((size_t)((char*)&((STRUCTURE*)0)->FIELD))
+# define offsetof(ST,M) ((size_t)((char*)&((ST*)0)->M - (char*)0))
 #endif
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)
 # define FLEXARRAY
@@ -1135,6 +1135,12 @@ static void resetCursor(RtreeCursor *pCsr){
   pCsr->base.pVtab = (sqlite3_vtab*)pRtree;
   pCsr->pReadAux = pStmt;
 
+  /* The following will only fail if the previous sqlite3_step() call failed,
+  ** in which case the error has already been caught. This statement never
+  ** encounters an error within an sqlite3_column_xxx() function, as it
+  ** calls sqlite3_column_value(), which does not use malloc(). So it is safe
+  ** to ignore the error code here.  */
+  sqlite3_reset(pStmt);
 }
 
 /* 
@@ -3769,7 +3775,7 @@ static void rtreenode(sqlite3_context *ctx, int nArg, sqlite3_value **apArg){
   if( node.zData==0 ) return;
   nData = sqlite3_value_bytes(apArg[1]);
   if( nData<4 ) return;
-  if( nData<NCELL(&node)*tree.nBytesPerCell ) return;
+  if( nData<4+NCELL(&node)*tree.nBytesPerCell ) return;
 
   pOut = sqlite3_str_new(0);
   for(ii=0; ii<NCELL(&node); ii++){

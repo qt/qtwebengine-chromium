@@ -12,12 +12,14 @@
 #include <iterator>
 #include <utility>
 
+#include "core/fxcrt/cfx_read_only_container_stream.h"
 #include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/containers/adapters.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_folder.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/mapped_data_bytes.h"
 #include "core/fxge/android/cfpf_skiafont.h"
 #include "core/fxge/android/cfpf_skiapathfont.h"
 #include "core/fxge/cfx_fontmgr.h"
@@ -216,8 +218,7 @@ uint32_t SkiaGetFaceCharset(uint32_t code_range) {
 
 }  // namespace
 
-CFPF_SkiaFontMgr::CFPF_SkiaFontMgr(CFX_FontMgr* font_mgr)
-    : font_mgr_(font_mgr) {}
+CFPF_SkiaFontMgr::CFPF_SkiaFontMgr() = default;
 
 CFPF_SkiaFontMgr::~CFPF_SkiaFontMgr() = default;
 
@@ -329,9 +330,16 @@ CFPF_SkiaFont* CFPF_SkiaFontMgr::CreateFont(ByteStringView family_name,
   return ret;
 }
 
-RetainPtr<CFX_Face> CFPF_SkiaFontMgr::GetFontFace(ByteStringView path,
+RetainPtr<CFX_Face> CFPF_SkiaFontMgr::GetFontFace(const ByteString& path,
                                                   int32_t face_index) {
-  return CFX_Face::OpenFromFilePath(font_mgr_, path, face_index);
+  auto mapped_bytes = fxcrt::MappedDataBytes::Create(path);
+  if (!mapped_bytes) {
+    return nullptr;
+  }
+  return CFX_Face::New(nullptr,
+                       pdfium::MakeRetain<CFX_ReadOnlyMappedDataBytesStream>(
+                           std::move(mapped_bytes)),
+                       face_index);
 }
 
 void CFPF_SkiaFontMgr::ScanPath(const ByteString& path) {
@@ -367,7 +375,7 @@ void CFPF_SkiaFontMgr::ScanPath(const ByteString& path) {
 
 void CFPF_SkiaFontMgr::ScanFile(const ByteString& file) {
   constexpr int kFaceIndex = 0;
-  RetainPtr<CFX_Face> face = GetFontFace(file.AsStringView(), kFaceIndex);
+  RetainPtr<CFX_Face> face = GetFontFace(file, kFaceIndex);
   if (!face) {
     return;
   }

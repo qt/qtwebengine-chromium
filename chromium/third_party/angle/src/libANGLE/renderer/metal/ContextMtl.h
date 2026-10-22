@@ -243,7 +243,7 @@ class ContextMtl : public ContextImpl, public mtl::Context
     // Query and Fence creation
     QueryImpl *createQuery(gl::QueryType type) override;
     FenceNVImpl *createFenceNV() override;
-    SyncImpl *createSync() override;
+    SyncImpl *createSync(const gl::Context *context) override;
 
     // Transform Feedback creation
     TransformFeedbackImpl *createTransformFeedback(
@@ -566,12 +566,12 @@ class ContextMtl : public ContextImpl, public mtl::Context
     // src/compiler/translator/DriverUniformMetal.cpp
     struct DriverUniforms
     {
-        uint32_t acbBufferOffsets[2];
         float depthRange[2];
         uint32_t renderArea;
         uint32_t flipXY;
-        uint32_t unused;
         uint32_t misc;
+        uint32_t unused;
+        uint32_t acbBufferOffsets[2];
 
         int32_t xfbBufferOffsets[4];
         int32_t xfbVerticesPerInstance;

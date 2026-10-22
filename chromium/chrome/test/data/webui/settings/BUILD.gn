@@ -5,15 +5,20 @@
 import("../build_webui_tests.gni")
 
 build_webui_tests("build") {
+  cc_test_files = [
+    "settings_browsertest.cc",
+    "settings_focus_test.cc",
+  ]
+
   files = [
     "about_page_test.ts",
     "ai_history_search_subpage_test.ts",
     "ai_info_card_test.ts",
     "ai_logging_info_bullet_test.ts",
+    "ai_mode_search_page_test.ts",
     "ai_page_index_test.ts",
     "ai_page_test.ts",
     "ai_policy_indicator_test.ts",
-    "ai_tab_organization_subpage_test.ts",
     "all_sites_test.ts",
     "anti_abuse_page_test.ts",
     "appearance_fonts_page_test.ts",
@@ -36,7 +41,6 @@ build_webui_tests("build") {
     "chooser_exception_list_entry_test.ts",
     "chooser_exception_list_test.ts",
     "clear_browsing_data_dialog_v2_test.ts",
-    "clear_browsing_data_test.ts",
     "clear_browsing_data_time_picker_test.ts",
     "collapse_radio_button_test.ts",
     "collapsible_autofill_settings_card_test.ts",
@@ -48,14 +52,20 @@ build_webui_tests("build") {
     "downloads_page_test.ts",
     "dropdown_menu_test.ts",
     "extension_controlled_indicator_test.ts",
+    "feature_shortcuts_page_test.ts",
     "file_system_site_details_test.ts",
     "file_system_site_entry_item_test.ts",
     "file_system_site_entry_test.ts",
     "file_system_site_list_test.ts",
     "fingerprint_progress_arc_test.ts",
     "geolocation_page_test.ts",
+    "glic_login_permissions_page_test.ts",
+    "glic_page_test.ts",
+    "glic_subpage_focus_test.ts",
+    "glic_subpage_test.ts",
     "help_page_test.ts",
     "identity_docs_page_test.ts",
+    "keyboard_shortcut_page_test.ts",
     "memory_page_test.ts",
     "notifications_page_test.ts",
     "offer_writing_help_page_test.ts",
@@ -105,7 +115,9 @@ build_webui_tests("build") {
     "safety_hub_page_test.ts",
     "safety_hub_unused_site_permissions_module_test.ts",
     "scrollable_mixin_test.ts",
+    "search_engine_edit_dialog_test.ts",
     "search_engine_entry_test.ts",
+    "search_engine_icon_test.ts",
     "search_engines_page_test.ts",
     "search_page_index_test.ts",
     "search_page_test.ts",
@@ -146,6 +158,7 @@ build_webui_tests("build") {
     "site_list_entry_test.ts",
     "site_list_test.ts",
     "site_settings_page_test.ts",
+    "site_shortcuts_page_test.ts",
     "sound_page_test.ts",
     "speed_page_test.ts",
     "startup_urls_page_test.ts",
@@ -161,6 +174,7 @@ build_webui_tests("build") {
     "test_country_detail_manager_proxy.ts",
     "test_entity_data_manager_proxy.ts",
     "test_extension_control_browser_proxy.ts",
+    "test_glic_browser_proxy.ts",
     "test_hats_browser_proxy.ts",
     "test_lifetime_browser_proxy.ts",
     "test_metrics_browser_proxy.ts",
@@ -176,6 +190,7 @@ build_webui_tests("build") {
     "test_search_engines_browser_proxy.ts",
     "test_search_manager.ts",
     "test_security_keys_browser_proxy.ts",
+    "test_security_page_browser_proxy.ts",
     "test_site_settings_browser_proxy.ts",
     "test_sync_browser_proxy.ts",
     "test_util.ts",
@@ -187,15 +202,6 @@ build_webui_tests("build") {
     "your_saved_info_page_test.ts",
     "zoom_levels_test.ts",
   ]
-
-  if (enable_glic) {
-    files += [
-      "glic_page_test.ts",
-      "glic_subpage_focus_test.ts",
-      "glic_subpage_test.ts",
-      "test_glic_browser_proxy.ts",
-    ]
-  }
 
   if (is_chromeos) {
     files += [
@@ -258,6 +264,15 @@ build_webui_tests("build") {
     # that tests work both in optimize_webui=true/false modes.
     "chrome://settings/privacy_sandbox/*|" + rebase_path(
             "$root_gen_dir/chrome/browser/resources/settings/tsc/privacy_sandbox/*",
+            target_gen_dir),
+    "chrome://settings/search_page/site_shortcuts_page.js|" + rebase_path(
+            "$root_gen_dir/chrome/browser/resources/settings/tsc/search_page/site_shortcuts_page.d.ts",
+            target_gen_dir),
+    "chrome://settings/search_page/feature_shortcuts_page.js|" + rebase_path(
+            "$root_gen_dir/chrome/browser/resources/settings/tsc/search_page/feature_shortcuts_page.d.ts",
+            target_gen_dir),
+    "chrome://settings/search_page/keyboard_shortcut_page.js|" + rebase_path(
+            "$root_gen_dir/chrome/browser/resources/settings/tsc/search_page/keyboard_shortcut_page.d.ts",
             target_gen_dir),
     "chrome://settings/settings.js|" +
         rebase_path(

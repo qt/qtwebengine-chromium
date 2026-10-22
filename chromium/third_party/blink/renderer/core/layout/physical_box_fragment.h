@@ -355,6 +355,9 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
       const PhysicalOffset& location,
       const BlockBreakToken* incoming_break_token,
       OverlayScrollbarClipBehavior = kIgnoreOverlayScrollbarSize) const;
+  // Returns the total offset of all overscroll area parents. This is used to
+  // shift content which is not within an overscroll area.
+  gfx::Vector2d PixelSnappedOverscrollContentOffset() const;
   gfx::Vector2d PixelSnappedScrolledContentOffset() const;
   PhysicalSize ScrollSize() const;
 
@@ -619,8 +622,10 @@ class CORE_EXPORT PhysicalBoxFragment final : public PhysicalFragment {
 
 #if DCHECK_IS_ON()
   void InvalidateInkOverflow();
+#if EXPENSIVE_DCHECKS_ARE_ON()
   void AssertFragmentTreeSelf() const;
   void AssertFragmentTreeChildren(bool allow_destroyed_or_moved = false) const;
+#endif  // EXPENSIVE_DCHECKS_ARE_ON()
 #endif
 
  private:

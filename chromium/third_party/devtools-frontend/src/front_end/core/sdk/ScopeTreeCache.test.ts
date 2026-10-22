@@ -61,5 +61,14 @@ describe('ScopeTreeCache', () => {
       assert.strictEqual(actualScopeTree1?.scopeTree, scopeTree);
       assert.strictEqual(actualScopeTree2?.scopeTree, scopeTree);
     });
+
+    it('does not request the scope tree for wasm scripts', async () => {
+      const script = sinon.createStubInstance(SDK.Script.Script, {isWasm: true});
+
+      const scopeTree = await scopeTreeForScript(script);
+
+      assert.isNull(scopeTree);
+      sinon.assert.notCalled(javaScriptScopeTreeStub);
+    });
   });
 });

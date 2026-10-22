@@ -45,7 +45,7 @@ using namespace tint::core::number_suffixes;  // NOLINT
 /// PIMPL state for the transform.
 struct State {
     /// The configuration.
-    const ResourceTableConfig& config;
+    const std::optional<ResourceTableConfig>& config;
 
     /// The IR module.
     core::ir::Module& ir;
@@ -60,64 +60,64 @@ struct State {
     core::type::Manager& ty{ir.Types()};
 
     /// Process the module.
-    void Process() {
-        Hashmap<const core::type::Type*, core::ir::Var*, 4> var_for_type;
-        core::ir::Var* sb = nullptr;
-        b.Append(ir.root_block, [&] {
-            var_for_type = helper->GenerateVars(b, config.resource_table_binding,
-                                                config.default_binding_type_order);
-            sb = InjectStorageBuffer(config.storage_buffer_binding);
-        });
-
-        std::unordered_map<ResourceType, uint32_t> resource_type_to_idx;
-        size_t def_size = config.default_binding_type_order.size();
-        for (size_t i = 0; i < def_size; ++i) {
-            auto res_ty = static_cast<ResourceType>(config.default_binding_type_order[i]);
-            resource_type_to_idx.insert({res_ty, uint32_t(i)});
-        }
-
-        std::vector<core::ir::Instruction*> to_delete;
+    Result<SuccessType> Process() {
+        // Find calls to hasResource() and getResource().
+        Vector<core::ir::BuiltinCall*, 8> has_resource_calls;
+        Vector<core::ir::BuiltinCall*, 8> get_resource_calls;
         for (auto* inst : ir.Instructions()) {
             auto* call = inst->As<core::ir::CoreBuiltinCall>();
             if (call == nullptr) {
                 continue;
             }
-            if (call->Func() != core::BuiltinFn::kGetResource &&
-                call->Func() != core::BuiltinFn::kHasResource) {
-                continue;
+            if (call->Func() == core::BuiltinFn::kHasResource) {
+                has_resource_calls.Push(call);
             }
+            if (call->Func() == core::BuiltinFn::kGetResource) {
+                get_resource_calls.Push(call);
+            }
+        }
+        if (has_resource_calls.IsEmpty() && get_resource_calls.IsEmpty()) {
+            return Success;
+        }
+        if (!config.has_value()) {
+            return Failure{"hasResource and getResource require a resource table"};
+        }
 
+        Hashmap<const core::type::Type*, core::ir::Var*, 4> var_for_type;
+        core::ir::Var* sb = nullptr;
+        b.Append(ir.root_block, [&] {
+            var_for_type = helper->GenerateVars(b, config->resource_table_binding,
+                                                config->default_binding_type_order);
+            sb = InjectStorageBuffer(config->storage_buffer_binding);
+        });
+
+        std::unordered_map<ResourceType, uint32_t> resource_type_to_idx;
+        size_t def_size = config->default_binding_type_order.size();
+        for (size_t i = 0; i < def_size; ++i) {
+            auto res_ty = static_cast<ResourceType>(config->default_binding_type_order[i]);
+            resource_type_to_idx.insert({res_ty, static_cast<uint32_t>(i)});
+        }
+
+        // Replace the calls to hasResource() and getResource() that we found earlier.
+        for (auto* call : has_resource_calls) {
             b.InsertBefore(call, [&] {
-                switch (call->Func()) {
-                    case core::BuiltinFn::kHasResource: {
-                        auto* binding_ty = call->ExplicitTemplateParams()[0];
-                        auto* idx = call->Args()[0];
-                        if (idx->Type()->IsSignedIntegerScalar()) {
-                            idx = b.Convert(ty.u32(), idx)->Result();
-                        }
-                        GenHasResource(call->DetachResult(), binding_ty, idx, sb);
-                        break;
-                    }
-                    case core::BuiltinFn::kGetResource: {
-                        auto* binding_ty = call->ExplicitTemplateParams()[0];
-                        auto* idx = call->Args()[0];
-                        if (idx->Type()->IsSignedIntegerScalar()) {
-                            idx = b.Convert(ty.u32(), idx)->Result();
-                        }
-                        GenGetResource(call->DetachResult(), binding_ty, idx, sb, var_for_type,
-                                       resource_type_to_idx);
-                        break;
-                    }
-                    default:
-                        TINT_IR_UNREACHABLE(ir);
-                }
-                to_delete.push_back(call);
+                auto* binding_ty = call->ExplicitTemplateParams()[0];
+                auto* idx = b.InsertConvertIfNeeded(ty.u32(), call->Args()[0]);
+                GenHasResource(call->DetachResult(), binding_ty, idx, sb);
             });
+            call->Destroy();
+        }
+        for (auto* call : get_resource_calls) {
+            b.InsertBefore(call, [&] {
+                auto* binding_ty = call->ExplicitTemplateParams()[0];
+                auto* idx = b.InsertConvertIfNeeded(ty.u32(), call->Args()[0]);
+                GenGetResource(call->DetachResult(), binding_ty, idx, sb, var_for_type,
+                               resource_type_to_idx);
+            });
+            call->Destroy();
         }
 
-        for (auto* inst : to_delete) {
-            inst->Destroy();
-        }
+        return Success;
     }
 
     // Note, assumes it's called inside a builder append block.
@@ -133,9 +133,28 @@ struct State {
 
         b.Append(has_check->True(), [&] {
             auto* type_val = b.Access(ty.ptr<storage, u32, read>(), storage_buffer, 1_u, idx);
-
             auto* v = b.Load(type_val);
-            auto* eq = b.Equal(v, u32(static_cast<uint32_t>(core::type::TypeToResourceType(type))));
+
+            ResourceType resource_ty = core::type::TypeToResourceType(type);
+
+            core::ir::Value* eq = nullptr;
+            std::vector<ResourceType> conv = core::type::ConvertsFrom(type);
+            if (!conv.empty()) {
+                auto* conv_ty = ty.vec(ty.u32(), static_cast<uint32_t>(conv.size()) + 1);
+                auto* lhs = b.Construct(conv_ty, v);
+
+                Vector<Value*, 4> vals;
+                vals.Push(b.Value(u32(resource_ty)));
+                for (auto& r : conv) {
+                    vals.Push(b.Value(u32(r)));
+                }
+
+                auto* rhs = b.Construct(conv_ty, vals);
+                auto* cmp = b.Equal(lhs, rhs);
+                eq = b.Call(ty.bool_(), core::BuiltinFn::kAny, cmp)->Result();
+            } else {
+                eq = b.Equal(v, u32(resource_ty))->Result();
+            }
             b.ExitIf(has_check, eq);
         });
 
@@ -181,14 +200,14 @@ struct State {
     }
 
     core::ir::Var* InjectStorageBuffer(const BindingPoint& bp) {
-        auto* str = ty.Struct(ir.symbols.New("tint_resource_table_buffer"),
+        auto* str = ty.Struct(ir.symbols.New("tint_resource_table_metadata_struct"),
                               Vector<core::type::Manager::StructMemberDesc, 2>{
                                   {ir.symbols.New("array_length"), ty.u32()},
                                   {ir.symbols.New("bindings"), ty.array<u32>()},
                               });
 
         auto* sb_ty = ty.ptr(storage, str, read);
-        auto* sb = b.Var(sb_ty);
+        auto* sb = b.Var("tint_resource_table_metadata", sb_ty);
         sb->SetBindingPoint(bp.group, bp.binding);
 
         return sb;
@@ -200,13 +219,17 @@ struct State {
 ResourceTableHelper::~ResourceTableHelper() = default;
 
 Result<SuccessType> ResourceTable(core::ir::Module& ir,
-                                  const ResourceTableConfig& config,
+                                  const std::optional<ResourceTableConfig>& config,
                                   ResourceTableHelper* helper) {
-    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "core.ResourceTable"));
+    AssertValid(ir,
+                core::ir::Capabilities{
+                    core::ir::Capability::kAllowDuplicateBindings,
+                    core::ir::Capability::kAllow8BitIntegers,
+                    core::ir::Capability::kAllow16BitIntegers,
+                },
+                "before core.ResourceTable");
 
-    State{config, ir, helper}.Process();
-
-    return Success;
+    return State{config, ir, helper}.Process();
 }
 
 }  // namespace tint::core::ir::transform

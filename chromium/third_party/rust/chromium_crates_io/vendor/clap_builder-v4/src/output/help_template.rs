@@ -14,11 +14,12 @@ use crate::builder::Str;
 use crate::builder::StyledStr;
 use crate::builder::Styles;
 use crate::builder::{Arg, Command};
-use crate::output::display_width;
-use crate::output::wrap;
-use crate::output::Usage;
 use crate::output::TAB;
 use crate::output::TAB_WIDTH;
+use crate::output::Usage;
+use crate::output::display_width;
+use crate::output::wrap;
+use crate::util::Escape;
 use crate::util::FlatSet;
 
 /// `clap` auto-generated help writer
@@ -795,12 +796,9 @@ impl HelpTemplate<'_, '_> {
                 .default_vals
                 .iter()
                 .map(|dv| dv.to_string_lossy())
-                .map(|dv| {
-                    if dv.contains(char::is_whitespace) {
-                        Cow::from(format!("{dv:?}"))
-                    } else {
-                        dv
-                    }
+                .map(|dv| match Escape(dv.as_ref()).to_cow() {
+                    Cow::Borrowed(_) => dv,
+                    Cow::Owned(escaped) => Cow::Owned(escaped),
                 })
                 .collect::<Vec<_>>()
                 .join(" ");

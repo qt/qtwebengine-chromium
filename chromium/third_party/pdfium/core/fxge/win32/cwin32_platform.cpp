@@ -477,6 +477,8 @@ void CWin32Platform::Init() {
   }
 }
 
+void CWin32Platform::Terminate() {}
+
 std::unique_ptr<SystemFontInfoIface>
 CWin32Platform::CreateDefaultSystemFontInfo() {
   auto** user_paths = CFX_GEModule::Get()->GetUserFontPaths();

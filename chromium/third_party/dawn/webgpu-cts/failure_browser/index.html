@@ -183,6 +183,10 @@ document.getElementById('show_retry_control').addEventListener("change", (e) => 
 document.getElementById('show_slow_control').addEventListener("change", (e) => handleSetShow('slow', e.target.checked));
 document.getElementById('show_with_bug_control').addEventListener("change", (e) => handleSetShow('with_bug', e.target.checked));
 document.getElementById('show_without_bug_control').addEventListener("change", (e) => handleSetShow('without_bug', e.target.checked));
+document.getElementById('show_cat_none').addEventListener("change", (e) => handleSetShow('cat_none', e.target.checked));
+document.getElementById('show_cat_accuracy').addEventListener("change", (e) => handleSetShow('cat_accuracy', e.target.checked));
+document.getElementById('show_cat_critical').addEventListener("change", (e) => handleSetShow('cat_critical', e.target.checked));
+document.getElementById('show_cat_spurious').addEventListener("change", (e) => handleSetShow('cat_spurious', e.target.checked));
 
 
 SetNodeNameDisplayer((value,row) => {
@@ -289,6 +293,10 @@ SetDetailIncrementer(detail_increment);
   <div>
     <label><input type="checkbox" id="show_with_bug_control" checked/>Has bug</label>
     <label><input type="checkbox" id="show_without_bug_control" checked/>Does not have bug</label>
+    <label><input type="checkbox" id="show_cat_none" checked/>(no CAT)</label>
+    <label><input type="checkbox" id="show_cat_accuracy" checked/>CAT:Accuracy</label>
+    <label><input type="checkbox" id="show_cat_critical" checked/>CAT:Critical</label>
+    <label><input type="checkbox" id="show_cat_spurious" checked/>CAT:Spurious</label>
   </div>
 
   <div>Test path:</div>

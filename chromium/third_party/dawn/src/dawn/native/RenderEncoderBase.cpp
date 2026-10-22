@@ -28,6 +28,7 @@
 #include "dawn/native/RenderEncoderBase.h"
 
 #include <math.h>
+
 #include <cstring>
 #include <utility>
 
@@ -568,6 +569,20 @@ void RenderEncoderBase::APISetPipeline(RenderPipelineBase* pipeline) {
             return {};
         },
         "encoding %s.SetPipeline(%s).", this, pipeline);
+}
+
+void RenderEncoderBase::APISetResourceTable(ResourceTableBase* table) {
+    mEncodingContext->TryEncode(
+        this,
+        [&](CommandAllocator* allocator) -> MaybeError {
+            DAWN_TRY(ProgrammableEncoder::SetResourceTable(table, allocator));
+            mCommandBufferState.SetResourceTable(table);
+            if (table) {
+                mUsageTracker.AddResourceTableUsage(table);
+            }
+            return {};
+        },
+        "encoding %s.SetResourceTable(%s).", this, table);
 }
 
 void RenderEncoderBase::APISetIndexBuffer(BufferBase* buffer,

@@ -63,7 +63,7 @@ bool SearchNode(pdfium::span<const uint8_t> glyph_span,
   return false;
 }
 
-FT_MM_Var* GetVariationDescriptor(FXFT_FaceRec* face) {
+FT_MM_Var* GetVariationDescriptor(FT_FaceRec* face) {
   FT_MM_Var* variation_desc = nullptr;
   FT_Get_MM_Var(face, &variation_desc);
   return variation_desc;
@@ -87,7 +87,7 @@ void FXFTMMVarDeleter::operator()(FT_MM_Var* variation_desc) {
                  variation_desc);
 }
 
-ScopedFXFTMMVar::ScopedFXFTMMVar(FXFT_FaceRec* face)
+ScopedFXFTMMVar::ScopedFXFTMMVar(FT_FaceRec* face)
     : variation_desc_(GetVariationDescriptor(face)),
       axis_(GetVariationAxis(variation_desc_.get())) {}
 

@@ -123,13 +123,12 @@ all_platforms="-DCONFIG_SIZE_LIMIT=1"
 all_platforms+=" -DDECODE_HEIGHT_LIMIT=16384 -DDECODE_WIDTH_LIMIT=16384"
 all_platforms+=" -DCONFIG_AV1_ENCODER=1"
 all_platforms+=" -DCONFIG_AV1_DECODER=0"
-# Avoid mixed / by exception only license.
-all_platforms+=" -DCONFIG_SVT_AV1=0"
 # Use low bit depth.
 all_platforms+=" -DCONFIG_AV1_HIGHBITDEPTH=0"
 # Use real-time only build.
 all_platforms+=" -DCONFIG_REALTIME_ONLY=1"
-all_platforms+=" -DCONFIG_AV1_TEMPORAL_DENOISING=1"
+all_platforms+=" -DCONFIG_AV1_TEMPORAL_DENOISING=0"
+all_platforms+=" -DCONFIG_DENOISE=0"
 # Disable Quantization Matrix.
 all_platforms+=" -DCONFIG_QUANT_MATRIX=0"
 # avx2 optimizations account for ~0.3mb of the decoder.

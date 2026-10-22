@@ -5,16 +5,19 @@
 //! Provides a generic syntax for Mojom types and values
 //!
 //! This module provides the ability to represent Mojom types and values as
-//! rust enums.
+//! abstract Rust values.
+
+chromium::import! {
+    "//mojo/public/rust/system";
+}
 
 use ordered_float::OrderedFloat;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-// FOR_RELEASE: The current AST is dead simple: standard recursive data
-// structures. We'll probably need an intermediate one as well to represent data
-// on the wire, since it doesn't quite match the MojomValue structure (e.g.
-// packed bitfields). For a more optimized version, we could look into
+pub use system::mojo_types::UntypedHandle;
+
+// TODO (crbug.com/496912351): For a more optimized version, we could look into
 // flat ASTs (using a single vector instead of a nested recursive structure).
 
 /// Representation of a type that can appear in a .mojom file.
@@ -22,8 +25,6 @@ use std::sync::Arc;
 /// These include the primitive types from
 /// public/tools/bindings/README.md#Primitive-Types, as well as non-primitive
 /// types like structs and enums.
-// FOR_RELEASE: Not all types are currently supported, and we won't support all of them
-// for the initial release, but we'll need at least these plus enums and nullables.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MojomType {
     Bool,
@@ -38,8 +39,9 @@ pub enum MojomType {
     Float32,
     Float64,
     String,
-    Enum { is_valid: Predicate<u32> },
-    Union { variants: BTreeMap<u32, MojomType> },
+    Handle,
+    Enum { is_valid: Predicate<i32> },
+    Union { variants: BTreeMap<i32, MojomType> },
     // `field_names` is only for debugging; it should have the same
     // length as `fields`
     Struct { field_names: Vec<String>, fields: Vec<MojomType> },
@@ -55,11 +57,12 @@ pub enum MojomType {
 ///
 /// Note: the Hash trait is used to verify that maps don't have duplicate keys;
 /// the Ord trait is used so we can store these in BTreeMaps.
-// FOR_RELEASE: For the first iteration of the parser where we don't worry
-// about trying to be zero-copy, we just have this type own all its data.
-// We should migrate to a view type when we figure out how.
-#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Hash, Default)]
 pub enum MojomValue {
+    /// This value is only produced during parsing/deparsing to serve as a
+    /// default value in vectors where we take elements individually.
+    #[default]
+    Invalid,
     Bool(bool),
     Int8(i8),
     UInt8(u8),
@@ -72,8 +75,9 @@ pub enum MojomValue {
     Float32(OrderedFloat<f32>),
     Float64(OrderedFloat<f64>),
     String(String),
-    Enum(u32),
-    Union(u32, Box<MojomValue>),
+    Enum(i32),
+    Handle(UntypedHandle),
+    Union(i32, Box<MojomValue>),
     Struct(Vec<String>, Vec<MojomValue>),
     // Invariant: all MojomValues in the array are the same type.
     Array(Vec<MojomValue>),
@@ -135,13 +139,13 @@ pub enum MojomWireType {
     Pointer { nested_data_type: PackedStructuredType, is_nullable: bool },
     /// A 128-bit value (not a pointer!) which contains a tag and a 64-bit value
     /// (which may be a pointer).
-    Union { variants: BTreeMap<u32, MojomWireType>, is_nullable: bool },
+    Union { variants: BTreeMap<i32, MojomWireType>, is_nullable: bool },
 }
 
 /// This type represents an element in the body of a struct, array, or union.
 ///
 /// You should read `WireTy` as `MojomWireType` and `BitfieldTy` as
-/// `BitfieldOrdinal`. However, we need to parameterize the type because
+/// `BitfieldOrdinals`. However, we need to parameterize the type because
 /// sometimes we'll want to have references and sometimes we'll want to have
 /// owned values. In the AST, all values are owned, but during parsing/deparsing
 /// we'll sometimes need to create these on-the-fly from existing references.
@@ -171,7 +175,7 @@ pub type StructuredBodyElementMixed<'a> =
 pub type StructuredBodyElementRef<'a, T> = StructuredBodyElement<&'a MojomWireType, T>;
 
 #[derive(Debug, Clone, PartialEq)]
-/// A type which is simply encoded as itself
+/// A type which contains no nested data
 pub enum PackedLeafType {
     // Note that single booleans should never appear in a struct; they get
     // packed into a bitfield instead.
@@ -186,7 +190,8 @@ pub enum PackedLeafType {
     UInt64,
     Float32,
     Float64,
-    Enum { is_valid: Predicate<u32> },
+    Enum { is_valid: Predicate<i32> },
+    Handle,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -205,7 +210,7 @@ pub enum PackedStructuredType {
         array_type: PackedArrayType,
     },
     Union {
-        variants: BTreeMap<u32, MojomWireType>,
+        variants: BTreeMap<i32, MojomWireType>,
     },
     Map {
         key_type: Arc<MojomWireType>,
@@ -216,7 +221,6 @@ pub enum PackedStructuredType {
 #[derive(Debug, Clone, PartialEq)]
 /// An array on the wire may originate from one of three Mojom types:
 /// An unsized array, A size N array, or a string.
-/// FOR_RELEASE: Arrays of nullables may also be their own category?
 pub enum PackedArrayType {
     UnsizedArray,
     SizedArray(usize),
@@ -238,6 +242,7 @@ impl MojomWireType {
                 PackedLeafType::Int32 | PackedLeafType::UInt32 | PackedLeafType::Float32 => 4,
                 PackedLeafType::Int64 | PackedLeafType::UInt64 | PackedLeafType::Float64 => 8,
                 PackedLeafType::Enum { .. } => 4,
+                PackedLeafType::Handle => 4,
             },
             MojomWireType::Pointer { .. } => 8,
             MojomWireType::Union { .. } => 16,
@@ -264,6 +269,8 @@ impl MojomWireType {
 
     pub fn is_nullable_primitive(&self) -> bool {
         match self {
+            // Handles aren't primitives; they have their own nullability semantics
+            MojomWireType::Leaf { leaf_type: PackedLeafType::Handle, .. } => false,
             MojomWireType::Leaf { is_nullable, .. } => *is_nullable,
             _ => false,
         }
@@ -329,6 +336,41 @@ impl StructuredBodyElementOwned {
             Self::Bitfield(ordinals) => StructuredBodyElement::Bitfield(ordinals),
         }
     }
+}
+
+/// Given the key and value type of a map, create an equivalent struct body.
+///
+/// Mojom maps are represented on the wire as a pair of equal-length arrays, one
+/// with the keys and one with the values. This function creates the
+/// corresponding wire type for use in parsing and deparsing.
+pub fn convert_map_ty_to_struct_fields(
+    key_type: &Arc<MojomWireType>,
+    value_type: &Arc<MojomWireType>,
+) -> [StructuredBodyElementOwned; 2] {
+    [
+        StructuredBodyElement::SingleValue(
+            0,
+            MojomWireType::Pointer {
+                nested_data_type: PackedStructuredType::Array {
+                    // This clone is cheap because it's in an Arc
+                    element_type: key_type.clone(),
+                    array_type: PackedArrayType::UnsizedArray,
+                },
+                is_nullable: false,
+            },
+        ),
+        StructuredBodyElement::SingleValue(
+            1,
+            MojomWireType::Pointer {
+                nested_data_type: PackedStructuredType::Array {
+                    // This clone is cheap because it's in an Arc
+                    element_type: value_type.clone(),
+                    array_type: PackedArrayType::UnsizedArray,
+                },
+                is_nullable: false,
+            },
+        ),
+    ]
 }
 
 /**************************************************************** */

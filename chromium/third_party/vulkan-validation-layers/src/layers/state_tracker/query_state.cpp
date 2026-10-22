@@ -25,9 +25,9 @@
 
 namespace vvl {
 
-QueryPool::QueryPool(VkQueryPool handle, const VkQueryPoolCreateInfo *pCreateInfo, uint32_t index_count,
+QueryPool::QueryPool(VkQueryPool handle, const VkQueryPoolCreateInfo* pCreateInfo, uint32_t index_count,
                      uint32_t perf_queue_family_index, uint32_t n_perf_pass, bool has_cb, bool has_rb,
-                     std::shared_ptr<const vvl::VideoProfileDesc> &&supp_video_profile,
+                     std::shared_ptr<const vvl::VideoProfileDesc>&& supp_video_profile,
                      VkVideoEncodeFeedbackFlagsKHR enabled_video_encode_feedback_flags)
     : StateObject(handle, kVulkanObjectTypeQueryPool),
       safe_create_info(pCreateInfo),
@@ -56,7 +56,7 @@ void QueryPool::SetQueryState(uint32_t query, uint32_t perf_pass, QueryState sta
     assert(query < query_states_.size());
     assert((n_performance_passes == 0 && perf_pass == 0) || (perf_pass < n_performance_passes));
     if (state == QUERYSTATE_RESET) {
-        for (auto &state : query_states_[query]) {
+        for (auto& state : query_states_[query]) {
             state = QUERYSTATE_RESET;
         }
     } else {
@@ -99,15 +99,80 @@ QueryResultType QueryPool::GetQueryResultType(QueryState state, VkQueryResultFla
     return QUERYRESULT_UNKNOWN;
 }
 
+uint32_t QueryPool::GetQuerySize(VkQueryResultFlags flags) const {
+    uint32_t query_avail_data = (flags & (VK_QUERY_RESULT_WITH_AVAILABILITY_BIT | VK_QUERY_RESULT_WITH_STATUS_BIT_KHR)) ? 1 : 0;
+    uint32_t query_size_in_bytes = (flags & VK_QUERY_RESULT_64_BIT) ? sizeof(uint64_t) : sizeof(uint32_t);
+    uint32_t query_items = 0;
+    uint32_t query_size = 0;
+
+    switch (create_info.queryType) {
+        case VK_QUERY_TYPE_OCCLUSION:
+            // Occlusion queries write one integer value - the number of samples passed.
+            query_items = 1;
+            query_size = query_size_in_bytes * (query_items + query_avail_data);
+            break;
+
+        case VK_QUERY_TYPE_PIPELINE_STATISTICS:
+            // Pipeline statistics queries write one integer value for each bit that is enabled in the pipelineStatistics
+            // when the pool is created
+            {
+                query_items = CountSetBits(create_info.pipelineStatistics);
+                query_size = query_size_in_bytes * (query_items + query_avail_data);
+            }
+            break;
+
+        case VK_QUERY_TYPE_TIMESTAMP:
+            // Timestamp queries write one integer
+            query_items = 1;
+            query_size = query_size_in_bytes * (query_items + query_avail_data);
+            break;
+
+        case VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR:
+            // Result status only writes only status
+            query_items = 0;
+            query_size = query_size_in_bytes * (query_items + query_avail_data);
+            break;
+
+        case VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT:
+            // Transform feedback queries write two integers
+            query_items = 2;
+            query_size = query_size_in_bytes * (query_items + query_avail_data);
+            break;
+
+        case VK_QUERY_TYPE_VIDEO_ENCODE_FEEDBACK_KHR:
+            // Video encode feedback queries write one integer value for each bit that is enabled in
+            // VkQueryPoolVideoEncodeFeedbackCreateInfoKHR::encodeFeedbackFlags when the pool is created
+            query_items = CountSetBits(video_encode_feedback_flags);
+            query_size = query_size_in_bytes * (query_items + query_avail_data);
+            break;
+
+        case VK_QUERY_TYPE_PERFORMANCE_QUERY_KHR:
+            // Performance queries store results in a tightly packed array of VkPerformanceCounterResultsKHR
+            query_items = perf_counter_index_count;
+            query_size = sizeof(VkPerformanceCounterResultKHR) * query_items;
+            break;
+
+        // These cases intentionally fall through to the default
+        case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR:  // VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_NV
+        case VK_QUERY_TYPE_ACCELERATION_STRUCTURE_SERIALIZATION_SIZE_KHR:
+        case VK_QUERY_TYPE_PERFORMANCE_QUERY_INTEL:
+        default:
+            query_size = 0;
+            break;
+    }
+
+    return query_size;
+}
+
 }  // namespace vvl
 
-QueryCount::QueryCount(vvl::CommandBuffer &cb_state) {
+QueryCount::QueryCount(vvl::CommandBuffer& cb_state) {
     count = 1;
     subpass = cb_state.GetActiveSubpass();
     inside_render_pass = cb_state.active_render_pass != nullptr;
     // If render pass instance has multiview enabled, query uses N consecutive query indices
     if (inside_render_pass) {
-        const uint32_t bits = GetBitSetCount(cb_state.GetViewMask());
+        const uint32_t bits = CountSetBits(cb_state.GetViewMask());
         count = std::max(count, bits);
     }
 }

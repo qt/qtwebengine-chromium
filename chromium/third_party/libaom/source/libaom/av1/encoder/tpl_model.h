@@ -35,6 +35,7 @@ struct TPL_INFO;
 
 #include "av1/common/mv.h"
 #include "av1/common/scale.h"
+#include "av1/encoder/av1_ext_ratectrl.h"
 #include "av1/encoder/block.h"
 #include "av1/encoder/lookahead.h"
 #include "av1/encoder/ratectrl.h"
@@ -414,6 +415,10 @@ typedef struct RD_COMMAND {
 
 void av1_read_rd_command(const char *filepath, RD_COMMAND *rd_command);
 #endif  // CONFIG_RD_COMMAND
+
+static inline bool av1_use_tpl_for_extrc(AOM_EXT_RATECTRL const *ext_rc) {
+  return ext_rc->ready && ext_rc->funcs.send_tpl_gop_stats != NULL;
+}
 
 /*!\brief Allocate buffers used by tpl model
  *

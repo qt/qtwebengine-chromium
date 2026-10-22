@@ -26,6 +26,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/native/metal/UtilsMetal.h"
+
 #include <Metal/Metal.h>
 
 #include "dawn/common/Assert.h"
@@ -83,6 +84,7 @@ struct SavedMetalAttachment {
     id<MTLTexture> texture = nil;
     NSUInteger level;
     NSUInteger slice;
+    NSUInteger depthPlane;
 
     NSPRef<id<MTLTexture>> temporary;
 
@@ -96,7 +98,7 @@ struct SavedMetalAttachment {
                     toTexture:texture
              destinationSlice:slice
              destinationLevel:level
-            destinationOrigin:MTLOriginMake(0, 0, 0)];
+            destinationOrigin:MTLOriginMake(0, 0, depthPlane)];
     }
 
     void CopyFromAttachmentToTemporary(CommandRecordingContext* commandContext) {
@@ -104,7 +106,7 @@ struct SavedMetalAttachment {
               copyFromTexture:texture
                   sourceSlice:slice
                   sourceLevel:level
-                 sourceOrigin:MTLOriginMake(0, 0, 0)
+                 sourceOrigin:MTLOriginMake(0, 0, depthPlane)
                    sourceSize:MTLSizeMake([temporary.Get() width], [temporary.Get() height], 1)
                     toTexture:temporary.Get()
              destinationSlice:0
@@ -117,12 +119,14 @@ struct SavedMetalAttachment {
 ResultOrError<SavedMetalAttachment> SaveAttachmentCreateTemporary(Device* device,
                                                                   id<MTLTexture> attachmentTexture,
                                                                   NSUInteger attachmentLevel,
-                                                                  NSUInteger attachmentSlice) {
+                                                                  NSUInteger attachmentSlice,
+                                                                  NSUInteger attachmentDepthPlane) {
     // Save the attachment.
     SavedMetalAttachment result;
     result.texture = attachmentTexture;
     result.level = attachmentLevel;
     result.slice = attachmentSlice;
+    result.depthPlane = attachmentDepthPlane;
 
     // Create the temporary texture.
     NSRef<MTLTextureDescriptor> mtlDescRef = AcquireNSRef([MTLTextureDescriptor new]);
@@ -154,13 +158,15 @@ ResultOrError<SavedMetalAttachment> PatchAttachmentWithTemporary(
     Device* device,
     MTLRenderPassAttachmentDescriptor* attachment) {
     SavedMetalAttachment result;
-    DAWN_TRY_ASSIGN(result, SaveAttachmentCreateTemporary(device, attachment.texture,
-                                                          attachment.level, attachment.slice));
+    DAWN_TRY_ASSIGN(result,
+                    SaveAttachmentCreateTemporary(device, attachment.texture, attachment.level,
+                                                  attachment.slice, attachment.depthPlane));
 
     // Replace the attachment with the temporary
     attachment.texture = result.temporary.Get();
     attachment.level = 0;
     attachment.slice = 0;
+    attachment.depthPlane = 0;
 
     return result;
 }
@@ -424,122 +430,122 @@ MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat fo
 #endif
 
         case wgpu::TextureFormat::ETC2RGB8Unorm:
-                return MTLPixelFormatETC2_RGB8;
+            return MTLPixelFormatETC2_RGB8;
 
         case wgpu::TextureFormat::ETC2RGB8UnormSrgb:
 
-                return MTLPixelFormatETC2_RGB8_sRGB;
+            return MTLPixelFormatETC2_RGB8_sRGB;
 
         case wgpu::TextureFormat::ETC2RGB8A1Unorm:
-                return MTLPixelFormatETC2_RGB8A1;
+            return MTLPixelFormatETC2_RGB8A1;
 
         case wgpu::TextureFormat::ETC2RGB8A1UnormSrgb:
 
-                return MTLPixelFormatETC2_RGB8A1_sRGB;
+            return MTLPixelFormatETC2_RGB8A1_sRGB;
 
         case wgpu::TextureFormat::ETC2RGBA8Unorm:
-                return MTLPixelFormatEAC_RGBA8;
+            return MTLPixelFormatEAC_RGBA8;
 
         case wgpu::TextureFormat::ETC2RGBA8UnormSrgb:
 
-                return MTLPixelFormatEAC_RGBA8_sRGB;
+            return MTLPixelFormatEAC_RGBA8_sRGB;
 
         case wgpu::TextureFormat::EACR11Unorm:
 
-                return MTLPixelFormatEAC_R11Unorm;
+            return MTLPixelFormatEAC_R11Unorm;
 
         case wgpu::TextureFormat::EACR11Snorm:
-                return MTLPixelFormatEAC_R11Snorm;
+            return MTLPixelFormatEAC_R11Snorm;
 
         case wgpu::TextureFormat::EACRG11Unorm:
 
-                return MTLPixelFormatEAC_RG11Unorm;
+            return MTLPixelFormatEAC_RG11Unorm;
 
         case wgpu::TextureFormat::EACRG11Snorm:
 
-                return MTLPixelFormatEAC_RG11Snorm;
+            return MTLPixelFormatEAC_RG11Snorm;
 
         case wgpu::TextureFormat::ASTC4x4Unorm:
-                return MTLPixelFormatASTC_4x4_LDR;
+            return MTLPixelFormatASTC_4x4_LDR;
 
         case wgpu::TextureFormat::ASTC4x4UnormSrgb:
-                return MTLPixelFormatASTC_4x4_sRGB;
+            return MTLPixelFormatASTC_4x4_sRGB;
 
         case wgpu::TextureFormat::ASTC5x4Unorm:
 
-                return MTLPixelFormatASTC_5x4_LDR;
+            return MTLPixelFormatASTC_5x4_LDR;
 
         case wgpu::TextureFormat::ASTC5x4UnormSrgb:
-                return MTLPixelFormatASTC_5x4_sRGB;
+            return MTLPixelFormatASTC_5x4_sRGB;
 
         case wgpu::TextureFormat::ASTC5x5Unorm:
-                return MTLPixelFormatASTC_5x5_LDR;
+            return MTLPixelFormatASTC_5x5_LDR;
 
         case wgpu::TextureFormat::ASTC5x5UnormSrgb:
-                return MTLPixelFormatASTC_5x5_sRGB;
+            return MTLPixelFormatASTC_5x5_sRGB;
 
         case wgpu::TextureFormat::ASTC6x5Unorm:
-                return MTLPixelFormatASTC_6x5_LDR;
+            return MTLPixelFormatASTC_6x5_LDR;
 
         case wgpu::TextureFormat::ASTC6x5UnormSrgb:
-                return MTLPixelFormatASTC_6x5_sRGB;
+            return MTLPixelFormatASTC_6x5_sRGB;
 
         case wgpu::TextureFormat::ASTC6x6Unorm:
-                return MTLPixelFormatASTC_6x6_LDR;
+            return MTLPixelFormatASTC_6x6_LDR;
 
         case wgpu::TextureFormat::ASTC6x6UnormSrgb:
-                return MTLPixelFormatASTC_6x6_sRGB;
+            return MTLPixelFormatASTC_6x6_sRGB;
 
         case wgpu::TextureFormat::ASTC8x5Unorm:
-                return MTLPixelFormatASTC_8x5_LDR;
+            return MTLPixelFormatASTC_8x5_LDR;
 
         case wgpu::TextureFormat::ASTC8x5UnormSrgb:
-                return MTLPixelFormatASTC_8x5_sRGB;
+            return MTLPixelFormatASTC_8x5_sRGB;
 
         case wgpu::TextureFormat::ASTC8x6Unorm:
-                return MTLPixelFormatASTC_8x6_LDR;
+            return MTLPixelFormatASTC_8x6_LDR;
 
         case wgpu::TextureFormat::ASTC8x6UnormSrgb:
-                return MTLPixelFormatASTC_8x6_sRGB;
+            return MTLPixelFormatASTC_8x6_sRGB;
 
         case wgpu::TextureFormat::ASTC8x8Unorm:
-                return MTLPixelFormatASTC_8x8_LDR;
+            return MTLPixelFormatASTC_8x8_LDR;
 
         case wgpu::TextureFormat::ASTC8x8UnormSrgb:
-                return MTLPixelFormatASTC_8x8_sRGB;
+            return MTLPixelFormatASTC_8x8_sRGB;
 
         case wgpu::TextureFormat::ASTC10x5Unorm:
-                return MTLPixelFormatASTC_10x5_LDR;
+            return MTLPixelFormatASTC_10x5_LDR;
 
         case wgpu::TextureFormat::ASTC10x5UnormSrgb:
-                return MTLPixelFormatASTC_10x5_sRGB;
+            return MTLPixelFormatASTC_10x5_sRGB;
 
         case wgpu::TextureFormat::ASTC10x6Unorm:
-                return MTLPixelFormatASTC_10x6_LDR;
+            return MTLPixelFormatASTC_10x6_LDR;
 
         case wgpu::TextureFormat::ASTC10x6UnormSrgb:
-                return MTLPixelFormatASTC_10x6_sRGB;
+            return MTLPixelFormatASTC_10x6_sRGB;
 
         case wgpu::TextureFormat::ASTC10x8Unorm:
-                return MTLPixelFormatASTC_10x8_LDR;
+            return MTLPixelFormatASTC_10x8_LDR;
         case wgpu::TextureFormat::ASTC10x8UnormSrgb:
-                return MTLPixelFormatASTC_10x8_sRGB;
+            return MTLPixelFormatASTC_10x8_sRGB;
 
         case wgpu::TextureFormat::ASTC10x10Unorm:
-                return MTLPixelFormatASTC_10x10_LDR;
+            return MTLPixelFormatASTC_10x10_LDR;
 
         case wgpu::TextureFormat::ASTC10x10UnormSrgb:
-                return MTLPixelFormatASTC_10x10_sRGB;
+            return MTLPixelFormatASTC_10x10_sRGB;
         case wgpu::TextureFormat::ASTC12x10Unorm:
-                return MTLPixelFormatASTC_12x10_LDR;
+            return MTLPixelFormatASTC_12x10_LDR;
 
         case wgpu::TextureFormat::ASTC12x10UnormSrgb:
-                return MTLPixelFormatASTC_12x10_sRGB;
+            return MTLPixelFormatASTC_12x10_sRGB;
         case wgpu::TextureFormat::ASTC12x12Unorm:
-                return MTLPixelFormatASTC_12x12_LDR;
+            return MTLPixelFormatASTC_12x12_LDR;
 
         case wgpu::TextureFormat::ASTC12x12UnormSrgb:
-                return MTLPixelFormatASTC_12x12_sRGB;
+            return MTLPixelFormatASTC_12x12_sRGB;
 
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
         case wgpu::TextureFormat::R8BG8Biplanar422Unorm:
@@ -548,7 +554,7 @@ MTLPixelFormat MetalPixelFormat(const DeviceBase* device, wgpu::TextureFormat fo
         case wgpu::TextureFormat::R10X6BG10X6Biplanar422Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar444Unorm:
         case wgpu::TextureFormat::R8BG8A8Triplanar420Unorm:
-        case wgpu::TextureFormat::External:
+        case wgpu::TextureFormat::OpaqueYCbCrAndroid:
         case wgpu::TextureFormat::Undefined:
             DAWN_UNREACHABLE();
     }

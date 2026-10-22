@@ -8,13 +8,12 @@ import './doodle_share_dialog.js';
 
 import {assert} from 'chrome://resources/js/assert.js';
 import {skColorToRgba} from 'chrome://resources/js/color_utils.js';
-import {EventTracker} from 'chrome://resources/js/event_tracker.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import type {SkColor} from 'chrome://resources/mojo/skia/public/mojom/skcolor.mojom-webui.js';
 import type {Url} from 'chrome://resources/mojo/url/mojom/url.mojom-webui.js';
 
-import type {IframeElement} from './iframe.js';
 import {getCss} from './logo.css.js';
 import {getHtml} from './logo.html.js';
 import type {Doodle, DoodleShareChannel, ImageDoodle, PageHandlerRemote, Theme} from './new_tab_page.mojom-webui.js';
@@ -63,14 +62,13 @@ export class LogoElement extends CrLitElement {
         type: Boolean,
       },
 
+      showTightDoodleBoxing_: {
+        reflect: true,
+        type: Boolean,
+      },
+
       imageUrl_: {type: String},
       showAnimation_: {type: Boolean},
-      animationUrl_: {type: String},
-      iframeUrl_: {type: String},
-      duration_: {type: String},
-      height_: {type: String},
-      width_: {type: String},
-      expanded_: {type: Boolean},
       showShareDialog_: {type: Boolean},
       imageDoodleTabIndex_: {type: Number},
     };
@@ -84,18 +82,13 @@ export class LogoElement extends CrLitElement {
   protected accessor showLogo_: boolean = false;
   protected accessor showDoodle_: boolean = false;
   private accessor doodleBoxed_: boolean = false;
+  protected accessor showTightDoodleBoxing_: boolean =
+      loadTimeData.getBoolean('animatedDoodlesEnabled');
   protected accessor imageUrl_: string = '';
   protected accessor showAnimation_: boolean = false;
-  protected accessor animationUrl_: string = '';
-  protected accessor iframeUrl_: string = '';
-  private accessor duration_: string = '';
-  private accessor height_: string = '';
-  private accessor width_: string = '';
-  protected accessor expanded_: boolean = false;
   protected accessor showShareDialog_: boolean = false;
   protected accessor imageDoodleTabIndex_: number = -1;
 
-  private eventTracker_: EventTracker = new EventTracker();
   private pageHandler_: PageHandlerRemote;
   private imageClickParams_: string|null = null;
   private interactionLogUrl_: Url|null = null;
@@ -109,35 +102,15 @@ export class LogoElement extends CrLitElement {
     this.pageHandler_.getDoodle().then(({doodle}) => {
       this.doodle_ = doodle;
       this.loaded_ = true;
-      if (this.doodle_ && this.doodle_.interactive) {
-        this.width_ = `${this.doodle_.interactive.width}px`;
-        this.height_ = `${this.doodle_.interactive.height}px`;
-      }
     });
   }
 
   override connectedCallback() {
     super.connectedCallback();
-    this.eventTracker_.add(window, 'message', ({data}: MessageEvent) => {
-      if (data['cmd'] === 'resizeDoodle') {
-        assert(data.duration);
-        this.duration_ = data.duration;
-        assert(data.height);
-        this.height_ = data.height;
-        assert(data.width);
-        this.width_ = data.width;
-        this.expanded_ = true;
-      } else if (data['cmd'] === 'sendMode') {
-        this.sendMode_();
-      }
-    });
-    // Make sure the doodle gets the mode in case it has already requested it.
-    this.sendMode_();
   }
 
   override disconnectedCallback() {
     super.disconnectedCallback();
-    this.eventTracker_.removeAll();
   }
 
   override willUpdate(changedProperties: PropertyValues<this>) {
@@ -145,9 +118,8 @@ export class LogoElement extends CrLitElement {
 
     this.imageDoodle_ = this.computeImageDoodle_();
     this.imageUrl_ = this.computeImageUrl_();
-    this.animationUrl_ = this.computeAnimationUrl_();
+    this.showAnimation_ = this.computeShowAnimation_();
     this.showDoodle_ = this.computeShowDoodle_();
-    this.iframeUrl_ = this.computeIframeUrl_();
     this.showLogo_ = this.computeShowLogo_();
     this.doodleBoxed_ = this.computeDoodleBoxed_();
     this.imageDoodleTabIndex_ = this.computeImageDoodleTabIndex_();
@@ -160,18 +132,8 @@ export class LogoElement extends CrLitElement {
   override updated(changedProperties: PropertyValues<this>) {
     super.updated(changedProperties);
 
-    if (changedProperties.has('theme')) {
-      this.sendMode_();
-    }
-
     const changedPrivateProperties =
         changedProperties as Map<PropertyKey, unknown>;
-
-    if (changedPrivateProperties.has('duration_') ||
-        changedPrivateProperties.has('height_') ||
-        changedPrivateProperties.has('width_')) {
-      this.onDurationHeightWidthChange_();
-    }
 
     if (changedPrivateProperties.has('imageDoodle_')) {
       this.onImageDoodleChange_();
@@ -186,9 +148,9 @@ export class LogoElement extends CrLitElement {
     } else {
       this.style.removeProperty('--ntp-logo-box-color');
     }
-    // Stop the animation (if it is running) and reset logging params since
-    // mode change constitutes a new doodle session.
-    this.showAnimation_ = false;
+    // Users can enable/disable animated Doodles through accessibility settings,
+    // therefore we need to keep the showAnimation_ property in sync.
+    this.showAnimation_ = this.computeShowAnimation_();
     this.imageClickParams_ = null;
     this.interactionLogUrl_ = null;
     this.shareId_ = null;
@@ -202,14 +164,11 @@ export class LogoElement extends CrLitElement {
   }
 
   private computeShowLogo_(): boolean {
-    return !!this.loaded_ && !this.showDoodle_;
+    return this.loaded_ && !this.showDoodle_;
   }
 
   private computeShowDoodle_(): boolean {
-    return !!this.imageDoodle_ ||
-        /* We hide interactive doodles when offline. Otherwise, the iframe
-           would show an ugly error page. */
-        !!this.doodle_ && !!this.doodle_.interactive && window.navigator.onLine;
+    return !!this.imageDoodle_;
   }
 
   /**
@@ -240,31 +199,12 @@ export class LogoElement extends CrLitElement {
     if ($$<HTMLElement>(this, '#imageDoodle')!.tabIndex < 0) {
       return;
     }
-    if (this.isCtaImageShown_()) {
-      this.showAnimation_ = true;
-      this.pageHandler_.onDoodleImageClicked(
-          DoodleImageType.kCta, this.interactionLogUrl_);
 
-      // TODO(tiborg): This is technically not correct since we don't know if
-      // the animation has loaded yet. However, since the animation is loaded
-      // inside an iframe retrieving the proper load signal is not trivial. In
-      // practice this should be good enough but we could improve that in the
-      // future.
-      this.logImageRendered_(
-          DoodleImageType.kAnimation,
-          this.imageDoodle_!.animationImpressionLogUrl!);
-
-      if (!this.doodle_!.image!.onClickUrl) {
-        $$<HTMLElement>(this, '#imageDoodle')!.blur();
-      }
-
-      return;
-    }
     assert(this.doodle_!.image!.onClickUrl);
     this.pageHandler_.onDoodleImageClicked(
         this.showAnimation_ ? DoodleImageType.kAnimation :
                               DoodleImageType.kStatic,
-        null);
+        this.interactionLogUrl_);
     const onClickUrl = new URL(this.doodle_!.image!.onClickUrl);
     if (this.imageClickParams_) {
       for (const param of new URLSearchParams(this.imageClickParams_)) {
@@ -276,8 +216,8 @@ export class LogoElement extends CrLitElement {
 
   protected onImageLoad_() {
     this.logImageRendered_(
-        this.isCtaImageShown_() ? DoodleImageType.kCta :
-                                  DoodleImageType.kStatic,
+        this.showAnimation_ ? DoodleImageType.kAnimation :
+                              DoodleImageType.kStatic,
         this.imageDoodle_!.imageImpressionLogUrl);
   }
 
@@ -305,46 +245,12 @@ export class LogoElement extends CrLitElement {
     this.pageHandler_.onDoodleShared(e.detail, doodleId, this.shareId_);
   }
 
-  private isCtaImageShown_(): boolean {
-    return !this.showAnimation_ && !!this.imageDoodle_ &&
-        !!this.imageDoodle_.animationUrl;
-  }
-
-  /**
-   * Sends a postMessage to the interactive doodle whether the current theme is
-   * dark or light. Won't do anything if we don't have an interactive doodle or
-   * we haven't been told yet whether the current theme is dark or light.
-   */
-  private sendMode_() {
-    if (!this.theme) {
-      return;
-    }
-    const iframe = $$<IframeElement>(this, '#iframe');
-    if (!iframe) {
-      return;
-    }
-    iframe.postMessage({cmd: 'changeMode', dark: this.theme.isDark});
-  }
-
   private computeImageUrl_(): string {
     return this.imageDoodle_ ? this.imageDoodle_.imageUrl : '';
   }
 
-  private computeAnimationUrl_(): string {
-    return this.imageDoodle_ && this.imageDoodle_.animationUrl ?
-        `chrome-untrusted://new-tab-page/image?${
-            this.imageDoodle_.animationUrl}` :
-        '';
-  }
-
-  private computeIframeUrl_(): string {
-    if (this.doodle_ && this.doodle_.interactive) {
-      const url = new URL(this.doodle_.interactive.url);
-      url.searchParams.append('theme_messages', '0');
-      return url.href;
-    } else {
-      return '';
-    }
+  private computeShowAnimation_(): boolean {
+    return !!this.imageDoodle_?.animationUrl;
   }
 
   protected onShareButtonClick_(e: Event) {
@@ -356,20 +262,8 @@ export class LogoElement extends CrLitElement {
     this.showShareDialog_ = false;
   }
 
-  private onDurationHeightWidthChange_() {
-    this.duration_ ? this.style.setProperty('--duration', this.duration_) :
-                     this.style.removeProperty('--duration');
-    this.height_ ? this.style.setProperty('--height', this.height_) :
-                   this.style.removeProperty('--height');
-    this.width_ ? this.style.setProperty('--width', this.width_) :
-                  this.style.removeProperty('--width');
-  }
-
   private computeImageDoodleTabIndex_(): number {
-    return (this.doodle_ && this.doodle_.image &&
-            (this.isCtaImageShown_() || this.doodle_.image.onClickUrl)) ?
-        0 :
-        -1;
+    return (this.doodle_?.image?.onClickUrl) ? 0 : -1;
   }
 }
 

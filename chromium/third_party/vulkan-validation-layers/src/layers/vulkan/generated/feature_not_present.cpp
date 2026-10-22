@@ -24,9 +24,8 @@
 #include "error_message/error_location.h"
 
 namespace vvl {
-namespace dispatch {
 
-void Instance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDeviceCreateInfo &create_info) {
+void DispatchInstance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDeviceCreateInfo &create_info) {
     std::ostringstream ss;
     ss << "returned VK_ERROR_FEATURE_NOT_PRESENT because the following features were not supported on this physical device:\n";
 
@@ -985,6 +984,17 @@ void Instance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDevice
                 }
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_ADDRESS_COMMANDS_FEATURES_KHR: {
+                VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR supported = vku::InitStructHelper();
+                features_2.pNext = &supported;
+                DispatchGetPhysicalDeviceFeatures2(gpu, &features_2);
+                const VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR *enabling =
+                    reinterpret_cast<const VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR *>(current);
+                if (enabling->deviceAddressCommands && !supported.deviceAddressCommands) {
+                    ss << "VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR::deviceAddressCommands is not supported\n";
+                }
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_COMPUTE_FEATURES_NV: {
                 VkPhysicalDeviceDeviceGeneratedCommandsComputeFeaturesNV supported = vku::InitStructHelper();
                 features_2.pNext = &supported;
@@ -1337,6 +1347,26 @@ void Instance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDevice
                 }
                 if (enabling->deviceFaultVendorBinary && !supported.deviceFaultVendorBinary) {
                     ss << "VkPhysicalDeviceFaultFeaturesEXT::deviceFaultVendorBinary is not supported\n";
+                }
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_KHR: {
+                VkPhysicalDeviceFaultFeaturesKHR supported = vku::InitStructHelper();
+                features_2.pNext = &supported;
+                DispatchGetPhysicalDeviceFeatures2(gpu, &features_2);
+                const VkPhysicalDeviceFaultFeaturesKHR *enabling =
+                    reinterpret_cast<const VkPhysicalDeviceFaultFeaturesKHR *>(current);
+                if (enabling->deviceFault && !supported.deviceFault) {
+                    ss << "VkPhysicalDeviceFaultFeaturesKHR::deviceFault is not supported\n";
+                }
+                if (enabling->deviceFaultVendorBinary && !supported.deviceFaultVendorBinary) {
+                    ss << "VkPhysicalDeviceFaultFeaturesKHR::deviceFaultVendorBinary is not supported\n";
+                }
+                if (enabling->deviceFaultReportMasked && !supported.deviceFaultReportMasked) {
+                    ss << "VkPhysicalDeviceFaultFeaturesKHR::deviceFaultReportMasked is not supported\n";
+                }
+                if (enabling->deviceFaultDeviceLostOnMasked && !supported.deviceFaultDeviceLostOnMasked) {
+                    ss << "VkPhysicalDeviceFaultFeaturesKHR::deviceFaultDeviceLostOnMasked is not supported\n";
                 }
                 break;
             }
@@ -2302,7 +2332,6 @@ void Instance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDevice
                 }
                 break;
             }
-#ifdef VK_ENABLE_BETA_EXTENSIONS
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_METERING_FEATURES_NV: {
                 VkPhysicalDevicePresentMeteringFeaturesNV supported = vku::InitStructHelper();
                 features_2.pNext = &supported;
@@ -2314,7 +2343,6 @@ void Instance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDevice
                 }
                 break;
             }
-#endif  // VK_ENABLE_BETA_EXTENSIONS
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_KHR: {
                 VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR supported = vku::InitStructHelper();
                 features_2.pNext = &supported;
@@ -2723,6 +2751,17 @@ void Instance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDevice
                 }
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ABORT_FEATURES_KHR: {
+                VkPhysicalDeviceShaderAbortFeaturesKHR supported = vku::InitStructHelper();
+                features_2.pNext = &supported;
+                DispatchGetPhysicalDeviceFeatures2(gpu, &features_2);
+                const VkPhysicalDeviceShaderAbortFeaturesKHR *enabling =
+                    reinterpret_cast<const VkPhysicalDeviceShaderAbortFeaturesKHR *>(current);
+                if (enabling->shaderAbort && !supported.shaderAbort) {
+                    ss << "VkPhysicalDeviceShaderAbortFeaturesKHR::shaderAbort is not supported\n";
+                }
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT16_VECTOR_FEATURES_NV: {
                 VkPhysicalDeviceShaderAtomicFloat16VectorFeaturesNV supported = vku::InitStructHelper();
                 features_2.pNext = &supported;
@@ -2864,6 +2903,17 @@ void Instance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDevice
                 }
                 if (enabling->shaderDeviceClock && !supported.shaderDeviceClock) {
                     ss << "VkPhysicalDeviceShaderClockFeaturesKHR::shaderDeviceClock is not supported\n";
+                }
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CONSTANT_DATA_FEATURES_KHR: {
+                VkPhysicalDeviceShaderConstantDataFeaturesKHR supported = vku::InitStructHelper();
+                features_2.pNext = &supported;
+                DispatchGetPhysicalDeviceFeatures2(gpu, &features_2);
+                const VkPhysicalDeviceShaderConstantDataFeaturesKHR *enabling =
+                    reinterpret_cast<const VkPhysicalDeviceShaderConstantDataFeaturesKHR *>(current);
+                if (enabling->shaderConstantData && !supported.shaderConstantData) {
+                    ss << "VkPhysicalDeviceShaderConstantDataFeaturesKHR::shaderConstantData is not supported\n";
                 }
                 break;
             }
@@ -3021,6 +3071,17 @@ void Instance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDevice
                 }
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INSTRUMENTATION_FEATURES_ARM: {
+                VkPhysicalDeviceShaderInstrumentationFeaturesARM supported = vku::InitStructHelper();
+                features_2.pNext = &supported;
+                DispatchGetPhysicalDeviceFeatures2(gpu, &features_2);
+                const VkPhysicalDeviceShaderInstrumentationFeaturesARM *enabling =
+                    reinterpret_cast<const VkPhysicalDeviceShaderInstrumentationFeaturesARM *>(current);
+                if (enabling->shaderInstrumentation && !supported.shaderInstrumentation) {
+                    ss << "VkPhysicalDeviceShaderInstrumentationFeaturesARM::shaderInstrumentation is not supported\n";
+                }
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES: {
                 VkPhysicalDeviceShaderIntegerDotProductFeatures supported = vku::InitStructHelper();
                 features_2.pNext = &supported;
@@ -3062,6 +3123,32 @@ void Instance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDevice
                     reinterpret_cast<const VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR *>(current);
                 if (enabling->shaderMaximalReconvergence && !supported.shaderMaximalReconvergence) {
                     ss << "VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR::shaderMaximalReconvergence is not supported\n";
+                }
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MIXED_FLOAT_DOT_PRODUCT_FEATURES_VALVE: {
+                VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE supported = vku::InitStructHelper();
+                features_2.pNext = &supported;
+                DispatchGetPhysicalDeviceFeatures2(gpu, &features_2);
+                const VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE *enabling =
+                    reinterpret_cast<const VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE *>(current);
+                if (enabling->shaderMixedFloatDotProductFloat16AccFloat32 &&
+                    !supported.shaderMixedFloatDotProductFloat16AccFloat32) {
+                    ss << "VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE::shaderMixedFloatDotProductFloat16AccFloat32 is "
+                          "not supported\n";
+                }
+                if (enabling->shaderMixedFloatDotProductFloat16AccFloat16 &&
+                    !supported.shaderMixedFloatDotProductFloat16AccFloat16) {
+                    ss << "VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE::shaderMixedFloatDotProductFloat16AccFloat16 is "
+                          "not supported\n";
+                }
+                if (enabling->shaderMixedFloatDotProductBFloat16Acc && !supported.shaderMixedFloatDotProductBFloat16Acc) {
+                    ss << "VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE::shaderMixedFloatDotProductBFloat16Acc is not "
+                          "supported\n";
+                }
+                if (enabling->shaderMixedFloatDotProductFloat8AccFloat32 && !supported.shaderMixedFloatDotProductFloat8AccFloat32) {
+                    ss << "VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE::shaderMixedFloatDotProductFloat8AccFloat32 is "
+                          "not supported\n";
                 }
                 break;
             }
@@ -4052,5 +4139,4 @@ void Instance::ReportErrorFeatureNotPresent(VkPhysicalDevice gpu, const VkDevice
     Location loc(vvl::Func::vkCreateDevice);
     LogWarning("WARNING-vkCreateDevice-FeatureNotPresent", instance, loc, "%s", ss.str().c_str());
 }  // ReportErrorFeatureNotPresent
-}  // namespace dispatch
 }  // namespace vvl

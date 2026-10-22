@@ -18,8 +18,10 @@
 #include "content/browser/renderer_host/back_forward_cache_metrics.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/frame_tree_node_id.h"
 #include "content/public/browser/service_worker_client_info.h"
+#include "content/public/common/child_process_id.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/mojom/cross_origin_embedder_policy.mojom-forward.h"
 #include "services/network/public/mojom/document_isolation_policy.mojom-forward.h"
@@ -72,7 +74,7 @@ class CONTENT_EXPORT ServiceWorkerClient final
 
   // Constructor for worker clients.
   ServiceWorkerClient(base::WeakPtr<ServiceWorkerContextCore> context,
-                      int process_id,
+                      ChildProcessId process_id,
                       ServiceWorkerClientInfo client_info);
 
   ServiceWorkerClient(const ServiceWorkerClient& other) = delete;
@@ -287,7 +289,7 @@ class CONTENT_EXPORT ServiceWorkerClient final
 
   // For service worker clients. For window clients, this is not populated until
   // after navigation commit.
-  int GetProcessId() const;
+  ChildProcessId GetProcessId() const;
 
   // For service worker window clients.
   // Returns the ongoing navigation request before the navigation commit starts.
@@ -311,6 +313,17 @@ class CONTENT_EXPORT ServiceWorkerClient final
   scoped_refptr<network::SharedURLLoaderFactory> CreateNetworkURLLoaderFactory(
       CreateNetworkURLLoaderFactoryType type,
       StoragePartitionImpl* storage_partition,
+      const network::ResourceRequest& resource_request);
+
+  // Returns a URLLoaderRequestHandler if an embedder interceptor (e.g. Search
+  // Prefetch) can handle the request and returns its handler.
+  //
+  // NOTE: Some interceptors (specifically Search Prefetch) destructively
+  // remove the cached response from memory when queried. If you need to access
+  // the response afterwards, you must take the handler here rather than just
+  // checking if one exists.
+  std::optional<ContentBrowserClient::URLLoaderRequestHandler>
+  TakeInterceptingPreloadHandler(
       const network::ResourceRequest& resource_request);
 
   // For service worker clients.
@@ -402,6 +415,22 @@ class CONTENT_EXPORT ServiceWorkerClient final
 
   bool is_initiated_by_prefetch() const { return is_initiated_by_prefetch_; }
 
+  size_t factory_interceptor_count() const {
+    return factory_interceptor_count_;
+  }
+
+  bool bypass_redirect_checks() const { return bypass_redirect_checks_; }
+
+  blink::mojom::ServiceWorkerFetchHandlerBypassOption
+  fetch_handler_bypass_option() const {
+    return fetch_handler_bypass_option_;
+  }
+
+  void set_fetch_handler_bypass_option(
+      blink::mojom::ServiceWorkerFetchHandlerBypassOption option) {
+    fetch_handler_bypass_option_ = option;
+  }
+
   base::WeakPtr<ServiceWorkerClient> AsWeakPtr() {
     return weak_ptr_factory_.GetWeakPtr();
   }
@@ -418,9 +447,7 @@ class CONTENT_EXPORT ServiceWorkerClient final
   // Syncs matching registrations with live registrations.
   void SyncMatchingRegistrations();
 
-#if DCHECK_IS_ON()
   bool IsMatchingRegistration(ServiceWorkerRegistration* registration) const;
-#endif  // DCHECK_IS_ON()
 
   // Discards all references to matching registrations.
   void RemoveAllMatchingRegistrations();
@@ -592,7 +619,7 @@ class CONTENT_EXPORT ServiceWorkerClient final
   // set during initialization. Use `GetProcessId()` instead of directly
   // accessing `process_id_for_worker_client_` to avoid using a wrong process
   // id.
-  const int process_id_for_worker_client_;
+  const ChildProcessId process_id_for_worker_client_;
 
   // For window clients only ---------------------------------------------------
 
@@ -628,6 +655,31 @@ class CONTENT_EXPORT ServiceWorkerClient final
   // Only set/used for clients for prefetch.
   scoped_refptr<network::SharedURLLoaderFactory>
       network_url_loader_factory_for_prefetch_;
+
+  size_t factory_interceptor_count_ = 0;
+
+  // For NavigationPreload usage, we ignore the value of
+  // |bypass_redirect_checks_| since a redirect is just relayed to the service
+  // worker where preloadResponse is resolved as redirect.
+  //
+  // TODO(crbug.com/490346103): We record this value for debugging. If this
+  // information is critical to decide whether the synthetic response is used or
+  // not, we'll keep it. If not, we'll remove it.
+  bool bypass_redirect_checks_ = false;
+
+  // The fetch handler bypass option. The renderer skips to dispatch a fetch
+  // event to a service worker for subresources if kAutoPreload,
+  // kRaceNetworkRequest, or kSyntheticResponse is set. Otherwise, fetch events
+  // are normally dispatched for subresources.
+  //
+  // This is stored per-client rather than globally on ServiceWorkerVersion
+  // because concurrent navigations in the same Service Worker scope (e.g. an
+  // outermost main frame and an iframe) can have different bypass options.
+  // Keeping it per-client prevents race conditions where one navigation
+  // overwrites another's bypass option.
+  blink::mojom::ServiceWorkerFetchHandlerBypassOption
+      fetch_handler_bypass_option_ =
+          blink::mojom::ServiceWorkerFetchHandlerBypassOption::kDefault;
 
   // For all instances --------------------------------------------------------
 

@@ -416,9 +416,9 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
         resize: true
       })}>
         <colgroup>
-          <col class=labels></col>
-          <col class=bars> </col>
-          <col class=duration></col>
+          <col class=labels>
+          <col class=bars>
+          <col class=duration>
         </colgroup>
         <thead class=network-timing-start>
           <tr>
@@ -576,7 +576,7 @@ export class RequestTimingView extends UI.Widget.VBox {
       calculator: this.#calculator,
       requestStartTime: this.#request.startTime,
       requestIssueTime: this.#request.issueTime(),
-      requestUnfinished: false,
+      requestUnfinished: !this.#request.finished,
       fetchDetails: this.#fetchDetailsTree(),
       routerDetails: this.#routerDetailsTree(),
       wasThrottled: conditions?.urlPattern ? conditions : undefined,
@@ -595,7 +595,10 @@ export class RequestTimingView extends UI.Widget.VBox {
     if (origRequest) {
       const requestObject = SDK.RemoteObject.RemoteObject.fromLocalObject(origRequest);
       const requestTreeElement = new ObjectUI.ObjectPropertiesSection.RootElement(
-          new ObjectUI.ObjectPropertiesSection.ObjectTree(requestObject));
+          new ObjectUI.ObjectPropertiesSection.ObjectTree(requestObject, {
+            readOnly: true,
+            propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+          }));
       requestTreeElement.title = i18nString(UIStrings.originalRequest);
       detailsView.appendChild(requestTreeElement);
     }
@@ -604,7 +607,10 @@ export class RequestTimingView extends UI.Widget.VBox {
     if (response) {
       const responseObject = SDK.RemoteObject.RemoteObject.fromLocalObject(response);
       const responseTreeElement = new ObjectUI.ObjectPropertiesSection.RootElement(
-          new ObjectUI.ObjectPropertiesSection.ObjectTree(responseObject));
+          new ObjectUI.ObjectPropertiesSection.ObjectTree(responseObject, {
+            readOnly: true,
+            propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+          }));
       responseTreeElement.title = i18nString(UIStrings.responseReceived);
       detailsView.appendChild(responseTreeElement);
     }

@@ -8,20 +8,16 @@ import ctypes
 import os
 import re
 import subprocess
-import sys
 import typing
+
+
+import setup_modules  # pylint: disable=unused-import
 
 # Import the shared codegen library for its hashing function, which is the
 # same hashing function as used for flag names.
-sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir, 'common'))
-import codegen_shared
-
-sys.path.append(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir,
-                 os.pardir, 'python', 'google'))
-import path_utils
-
-import pretty_print
+import chromium_src.tools.metrics.common.codegen_shared as codegen_shared
+import chromium_src.tools.metrics.histograms.pretty_print as pretty_print
+import chromium_src.tools.python.google.path_utils as path_utils
 
 
 def get_entries_from_unit_test(outdir: str) -> typing.List[str]:
@@ -92,11 +88,13 @@ def main():
       "also providing `outdir`, as nothing needs to be built.")
   args = parser.parse_args()
 
-  entries = get_entries_from_feature_string(args.feature) \
-    if args.feature else get_entries_from_unit_test(args.outdir)
+  if args.feature:
+    entries = get_entries_from_feature_string(args.feature)
+  else:
+    entries = get_entries_from_unit_test(args.outdir)
 
   if not entries:
-    print("No missing enum entries found.")
+    print('No missing enum entries found.')
     return
 
   xml_dir = path_utils.ScriptDir()

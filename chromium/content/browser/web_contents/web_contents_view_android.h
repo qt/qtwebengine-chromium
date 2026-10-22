@@ -14,6 +14,7 @@
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/browser/web_contents/web_contents_view_drag_security_info.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/clipboard_types.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_view_delegate.h"
 #include "content/public/common/drop_data.h"
@@ -40,10 +41,10 @@ class SynchronousCompositorClient;
 class WebContentsImpl;
 
 // Android-specific implementation of the WebContentsView.
-class WebContentsViewAndroid : public WebContentsView,
-                               public RenderViewHostDelegateView,
-                               public ui::EventHandlerAndroid,
-                               public WebContentsObserver {
+class CONTENT_EXPORT WebContentsViewAndroid : public WebContentsView,
+                                              public RenderViewHostDelegateView,
+                                              public ui::EventHandlerAndroid,
+                                              public WebContentsObserver {
  public:
   WebContentsViewAndroid(WebContentsImpl* web_contents,
                          std::unique_ptr<WebContentsViewDelegate> delegate);
@@ -114,14 +115,14 @@ class WebContentsViewAndroid : public WebContentsView,
       bool right_aligned,
       bool allow_multiple_selection) override;
   ui::OverscrollRefreshHandler* GetOverscrollRefreshHandler() const override;
-  void StartDragging(const DropData& drop_data,
-                     const url::Origin& source_origin,
-                     blink::DragOperationsMask allowed_ops,
-                     const gfx::ImageSkia& image,
-                     const gfx::Vector2d& cursor_offset,
-                     const gfx::Rect& drag_obj_rect,
-                     const blink::mojom::DragEventSourceInfo& event_info,
-                     RenderWidgetHostImpl* source_rwh) override;
+  void StartDragging(
+      RenderFrameHost& source_rfh,
+      const DropData& drop_data,
+      blink::DragOperationsMask allowed_ops,
+      const gfx::ImageSkia& image,
+      const gfx::Vector2d& cursor_offset,
+      const gfx::Rect& drag_obj_rect,
+      const blink::mojom::DragEventSourceInfo& event_info) override;
   void UpdateDragOperation(ui::mojom::DragOperation operation,
                            bool document_is_handling_drag) override;
   void GotFocus(RenderWidgetHostImpl* render_widget_host) override;
@@ -155,6 +156,9 @@ class WebContentsViewAndroid : public WebContentsView,
 
   virtual bool ShouldShowBlurTransitionAnimation(
       NavigationHandle* navigation_handle);
+
+  virtual bool IsDragAllowedByDataControlPolicy(const ClipboardEndpoint& source,
+                                                const DropData& drop_data);
 
   void SetFocus(bool focused);
   void set_device_orientation(int orientation) {
@@ -199,7 +203,7 @@ class WebContentsViewAndroid : public WebContentsView,
                            base::WeakPtr<RenderWidgetHostViewBase> target,
                            std::optional<gfx::PointF> transformed_pt);
   void OnDragEnded();
-  void OnSystemDragEnded(RenderWidgetHost* source_rwh);
+  virtual void OnSystemDragEnded(RenderWidgetHost* source_rwh);
 
   SelectPopup* GetSelectPopup();
 

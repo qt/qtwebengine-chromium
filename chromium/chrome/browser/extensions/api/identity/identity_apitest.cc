@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
@@ -52,7 +51,6 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/identity_test_environment_profile_adaptor.h"
 #include "chrome/browser/sync/sync_service_factory.h"
-#include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/identity.h"
 #include "chrome/common/pref_names.h"
@@ -296,13 +294,15 @@ class TestOAuth2MintTokenFlow : public OAuth2MintTokenFlow {
         break;
       }
       case MINT_TOKEN_FAILURE: {
-        GoogleServiceAuthError error(GoogleServiceAuthError::CONNECTION_FAILED);
+        GoogleServiceAuthError error =
+            GoogleServiceAuthError::FromConnectionError(net::ERR_FAILED);
         delegate_->OnMintTokenFailure(error);
         break;
       }
       case MINT_TOKEN_BAD_CREDENTIALS: {
-        GoogleServiceAuthError error(
-            GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
+        GoogleServiceAuthError error =
+            GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+                GoogleServiceAuthError::InvalidGaiaCredentialsReason::UNKNOWN);
         delegate_->OnMintTokenFailure(error);
         break;
       }
@@ -440,8 +440,8 @@ class FakeGetAuthTokenFunction : public IdentityGetAuthTokenFunction {
       GoogleServiceAuthError error = GoogleServiceAuthError::AuthErrorNone();
       if (!login_access_token_result_) {
         access_token = std::nullopt;
-        error = GoogleServiceAuthError(
-            GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
+        error = GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
+            GoogleServiceAuthError::InvalidGaiaCredentialsReason::UNKNOWN);
       }
       OnGetAccessTokenComplete(access_token,
                                base::Time::Now() + base::Hours(1LL), error);
@@ -479,7 +479,7 @@ class FakeGetAuthTokenFunction : public IdentityGetAuthTokenFunction {
         identity_manager->GetAccountsMutator()->AddOrUpdateAccount(
             account_info.gaia, account_info.email, "token",
             account_info.is_under_advanced_protection,
-            signin_metrics::AccessPoint::kUnknown,
+            signin_metrics::AccessPoint::kStartPage,
             signin_metrics::SourceForRefreshTokenOperation::kUnknown);
         fixed_auth_error = true;
       }
@@ -829,8 +829,7 @@ IN_PROC_BROWSER_TEST_F(IdentityGetProfileUserInfoFunctionTest,
   // The account is only returned if extensions are syncing. Whether or not
   // extensions sync upon sign-in depends on
   // `kReplaceSyncPromosWithSignInPromos`.
-  if (base::FeatureList::IsEnabled(
-          syncer::kReplaceSyncPromosWithSignInPromos)) {
+  if (syncer::IsReplaceSyncPromosWithSignInPromosEnabled()) {
     EXPECT_EQ("test@example.com", info->email);
     EXPECT_EQ("gaia_id_for_test_example.com", info->id);
   } else {
@@ -956,8 +955,7 @@ IN_PROC_BROWSER_TEST_P(
     // accountStatus is SYNC or unspecified. In this case, the account is only
     // returned if extensions are syncing. Whether or not extensions sync upon
     // sign-in depends on `syncer::kReplaceSyncPromosWithSignInPromos`.
-    if (base::FeatureList::IsEnabled(
-            syncer::kReplaceSyncPromosWithSignInPromos)) {
+    if (syncer::IsReplaceSyncPromosWithSignInPromosEnabled()) {
       EXPECT_EQ("test@example.com", info->email);
       EXPECT_EQ("gaia_id_for_test_example.com", info->id);
     } else {
@@ -1981,11 +1979,11 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
 #endif
 
 #if !BUILDFLAG(IS_MAC)
-// Test was originally written for http://crbug.com/753014 and subsequently
+// Test was originally written for http://crbug.com/41338040 and subsequently
 // modified to use the remote consent flow.
 //
 // On macOS, closing all browsers does not shut down the browser process.
-// TODO(http://crbug.com/756462): Figure out how to shut down the browser
+// TODO(http://crbug.com/41339839): Figure out how to shut down the browser
 // process on macOS and enable this test on macOS as well.
 IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest,
                        InteractiveSigninFailedDuringBrowserProcessShutDown) {
@@ -2522,15 +2520,13 @@ IN_PROC_BROWSER_TEST_F(GetAuthTokenFunctionTest, ManuallyIssueTokenFailure) {
   RunFunctionAsync(func.get(), "[{}]");
   run_loop.Run();
 
+  GoogleServiceAuthError error =
+      GoogleServiceAuthError::FromServiceUnavailable("");
   identity_test_env()->WaitForAccessTokenRequestIfNecessaryAndRespondWithError(
-      primary_account_id,
-      GoogleServiceAuthError(GoogleServiceAuthError::SERVICE_UNAVAILABLE));
+      primary_account_id, error);
 
-  EXPECT_EQ(
-      std::string(errors::kAuthFailure) +
-          GoogleServiceAuthError(GoogleServiceAuthError::SERVICE_UNAVAILABLE)
-              .ToString(),
-      WaitForError(func.get()));
+  EXPECT_EQ(std::string(errors::kAuthFailure) + error.ToString(),
+            WaitForError(func.get()));
   histogram_tester()->ExpectUniqueSample(
       kGetAuthTokenResultHistogramName,
       IdentityGetAuthTokenError::State::kGetAccessTokenAuthFailure, 1);

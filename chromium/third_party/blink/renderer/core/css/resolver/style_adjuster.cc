@@ -75,6 +75,7 @@
 #include "third_party/blink/renderer/core/html/html_ulist_element.h"
 #include "third_party/blink/renderer/core/html/html_wbr_element.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+#include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/input_type_names.h"
@@ -379,7 +380,7 @@ static bool IsAtMediaUAShadowBoundary(const Element* element) {
 // to manually stop text-decorations to apply to text inside media controls.
 static bool StopPropagateTextDecorations(const ComputedStyleBuilder& builder,
                                          const Element* element) {
-  return builder.IsDisplayReplacedType() ||
+  return builder.IsAtomicInlineDisplayType() ||
          IsAtMediaUAShadowBoundary(element) || builder.IsFloating() ||
          builder.HasOutOfFlowPosition() || IsOutermostSVGElement(element) ||
          builder.Display() == EDisplay::kRubyText;
@@ -524,122 +525,124 @@ void StyleAdjuster::AdjustStyleForHTMLElement(ComputedStyleBuilder& builder,
     }
   }
 
-  // <div> and <span> are the most common elements on the web, we skip all the
-  // work for them.
-  if (IsA<HTMLDivElement>(element) || IsA<HTMLSpanElement>(element)) {
-    return;
-  }
-
-  if (auto* image = DynamicTo<HTMLImageElement>(element)) {
-    if (image->IsCollapsed() || builder.Display() == EDisplay::kContents) {
-      builder.SetDisplay(EDisplay::kNone);
+  switch (element.GetElementType()) {
+    case ElementType::kHTMLImageElement: {
+      auto& image = To<HTMLImageElement>(element);
+      if (image.IsCollapsed() || builder.Display() == EDisplay::kContents) {
+        builder.SetDisplay(EDisplay::kNone);
+      }
+      break;
     }
-    return;
-  }
 
-  if (IsA<HTMLTableElement>(element)) {
-    // Tables never support the -webkit-* values for text-align and will reset
-    // back to the default.
-    if (builder.GetTextAlign() == ETextAlign::kWebkitLeft ||
-        builder.GetTextAlign() == ETextAlign::kWebkitCenter ||
-        builder.GetTextAlign() == ETextAlign::kWebkitRight) {
-      builder.SetTextAlign(ETextAlign::kStart);
+    case ElementType::kHTMLTableElement:
+      // Tables never support the -webkit-* values for text-align and will reset
+      // back to the default.
+      if (builder.GetTextAlign() == ETextAlign::kWebkitLeft ||
+          builder.GetTextAlign() == ETextAlign::kWebkitCenter ||
+          builder.GetTextAlign() == ETextAlign::kWebkitRight) {
+        builder.SetTextAlign(ETextAlign::kStart);
+      }
+      break;
+
+    case ElementType::kHTMLFrameElement:
+    case ElementType::kHTMLFrameSetElement:
+      // Frames and framesets never honor position:relative or
+      // position:absolute. This is necessary to fix a crash where a site tries
+      // to position these objects. They also never honor display nor floating.
+      builder.SetPosition(EPosition::kStatic);
+      builder.SetDisplay(EDisplay::kBlock);
+      builder.SetFloating(EFloat::kNone);
+      break;
+
+    case ElementType::kHTMLFencedFrameElement:
+      // Force the CSS style `zoom` property to 1 so that the embedder cannot
+      // communicate into the fenced frame by adjusting it, but still include
+      // the page zoom factor in the effective zoom, which is safe because it
+      // comes from user intervention. crbug.com/1285327
+      builder.SetEffectiveZoom(
+          element.GetDocument().GetStyleResolver().InitialZoom());
+      break;
+
+    case ElementType::kHTMLLegendElement:
+      if (builder.Display() != EDisplay::kContents) {
+        // Allow any blockified display value for legends. Note that according
+        // to the spec, this shouldn't affect computed style (like we do here).
+        // Instead, the display override should be determined during box
+        // creation, and even then only be applied to the rendered legend inside
+        // a fieldset. However, Blink determines the rendered legend during
+        // layout instead of during layout object creation, and also generally
+        // makes assumptions that the computed display value is the one to use.
+        builder.SetDisplay(EquivalentBlockDisplay(builder.Display()));
+      }
+      break;
+
+    case ElementType::kHTMLMarqueeElement:
+      // For now, <marquee> requires an overflow clip to work properly.
+      builder.SetOverflowX(EOverflow::kHidden);
+      builder.SetOverflowY(EOverflow::kHidden);
+      break;
+
+    case ElementType::kHTMLTextAreaElement:
+      // Textarea considers overflow visible as auto.
+      builder.SetOverflowX(builder.OverflowX() == EOverflow::kVisible
+                               ? EOverflow::kAuto
+                               : builder.OverflowX());
+      builder.SetOverflowY(builder.OverflowY() == EOverflow::kVisible
+                               ? EOverflow::kAuto
+                               : builder.OverflowY());
+
+      // See https://drafts.csswg.org/css-display/#unbox-html
+      if (builder.Display() == EDisplay::kContents) {
+        builder.SetDisplay(EDisplay::kNone);
+      }
+
+      break;
+
+    case ElementType::kHTMLEmbedElement:
+    case ElementType::kHTMLObjectElement: {
+      auto& html_plugin_element = To<HTMLPlugInElement>(element);
+      builder.SetRequiresAcceleratedCompositingForExternalReasons(
+          html_plugin_element.ShouldAccelerate());
+      if (builder.Display() == EDisplay::kContents) {
+        builder.SetDisplay(EDisplay::kNone);
+      }
+      break;
     }
-    return;
-  }
 
-  if (IsA<HTMLFrameElement>(element) || IsA<HTMLFrameSetElement>(element)) {
-    // Frames and framesets never honor position:relative or position:absolute.
-    // This is necessary to fix a crash where a site tries to position these
-    // objects. They also never honor display nor floating.
-    builder.SetPosition(EPosition::kStatic);
-    builder.SetDisplay(EDisplay::kBlock);
-    builder.SetFloating(EFloat::kNone);
-    return;
-  }
+    case ElementType::kHTMLBodyElement:
+      if (element.GetDocument().FirstBodyElement() != element) {
+        builder.SetIsSecondaryBodyElement();
+      }
+      break;
 
-  if (IsA<HTMLFrameElementBase>(element)) {
-    if (builder.Display() == EDisplay::kContents) {
-      builder.SetDisplay(EDisplay::kNone);
-      return;
-    }
-    return;
-  }
+    case ElementType::kHTMLBRElement:
+    case ElementType::kHTMLWBRElement:
+    case ElementType::kHTMLMeterElement:
+    case ElementType::kHTMLProgressElement:
+    case ElementType::kHTMLCanvasElement:
+    case ElementType::kHTMLAudioElement:
+    case ElementType::kHTMLVideoElement:
+    case ElementType::kHTMLInputElement:
+    case ElementType::kHTMLSelectElement:
+    case ElementType::kHTMLIFrameElement:
+      // See https://drafts.csswg.org/css-display/#unbox-html
+      if (builder.Display() == EDisplay::kContents) {
+        builder.SetDisplay(EDisplay::kNone);
+      }
+      break;
 
-  if (IsA<HTMLFencedFrameElement>(element)) {
-    // Force the CSS style `zoom` property to 1 so that the embedder cannot
-    // communicate into the fenced frame by adjusting it, but still include
-    // the page zoom factor in the effective zoom, which is safe because it
-    // comes from user intervention. crbug.com/1285327
-    builder.SetEffectiveZoom(
-        element.GetDocument().GetStyleResolver().InitialZoom());
-  }
-
-  if (IsA<HTMLLegendElement>(element) &&
-      builder.Display() != EDisplay::kContents) {
-    // Allow any blockified display value for legends. Note that according to
-    // the spec, this shouldn't affect computed style (like we do here).
-    // Instead, the display override should be determined during box creation,
-    // and even then only be applied to the rendered legend inside a
-    // fieldset. However, Blink determines the rendered legend during layout
-    // instead of during layout object creation, and also generally makes
-    // assumptions that the computed display value is the one to use.
-    builder.SetDisplay(EquivalentBlockDisplay(builder.Display()));
-    return;
-  }
-
-  if (IsA<HTMLMarqueeElement>(element)) {
-    // For now, <marquee> requires an overflow clip to work properly.
-    builder.SetOverflowX(EOverflow::kHidden);
-    builder.SetOverflowY(EOverflow::kHidden);
-    return;
-  }
-
-  if (IsA<HTMLTextAreaElement>(element)) {
-    // Textarea considers overflow visible as auto.
-    builder.SetOverflowX(builder.OverflowX() == EOverflow::kVisible
-                             ? EOverflow::kAuto
-                             : builder.OverflowX());
-    builder.SetOverflowY(builder.OverflowY() == EOverflow::kVisible
-                             ? EOverflow::kAuto
-                             : builder.OverflowY());
-    if (builder.Display() == EDisplay::kContents) {
-      builder.SetDisplay(EDisplay::kNone);
-    }
-    return;
-  }
-
-  if (auto* html_plugin_element = DynamicTo<HTMLPlugInElement>(element)) {
-    builder.SetRequiresAcceleratedCompositingForExternalReasons(
-        html_plugin_element->ShouldAccelerate());
-    if (builder.Display() == EDisplay::kContents) {
-      builder.SetDisplay(EDisplay::kNone);
-    }
-    return;
-  }
-
-  if (builder.Display() == EDisplay::kContents) {
-    // See https://drafts.csswg.org/css-display/#unbox-html
-    // Some of these elements are handled with other adjustments above.
-    if (IsA<HTMLBRElement>(element) || IsA<HTMLWBRElement>(element) ||
-        IsA<HTMLMeterElement>(element) || IsA<HTMLProgressElement>(element) ||
-        IsA<HTMLCanvasElement>(element) || IsA<HTMLMediaElement>(element) ||
-        IsA<HTMLInputElement>(element) || IsA<HTMLTextAreaElement>(element) ||
-        IsA<HTMLSelectElement>(element)) {
-      builder.SetDisplay(EDisplay::kNone);
-    }
-  }
-
-  if (IsA<HTMLBodyElement>(element) &&
-      element.GetDocument().FirstBodyElement() != element) {
-    builder.SetIsSecondaryBodyElement();
+    default:
+      break;
   }
 }
 
 void StyleAdjuster::AdjustOverflow(ComputedStyleBuilder& builder,
-                                   Element* element) {
+                                   Element* element,
+                                   Document& document) {
   DCHECK(builder.OverflowX() != EOverflow::kVisible ||
          builder.OverflowY() != EOverflow::kVisible);
+
+  bool single_axis_scroller = false;
 
   bool overflow_is_clip_or_visible =
       IsOverflowClipOrVisible(builder.OverflowY()) &&
@@ -664,31 +667,38 @@ void StyleAdjuster::AdjustOverflow(ComputedStyleBuilder& builder,
     } else if (builder.OverflowY() == EOverflow::kVisible) {
       builder.SetOverflowX(EOverflow::kVisible);
     }
-  } else if (!RuntimeEnabledFeatures::SingleAxisScrollContainersEnabled() &&
-             !IsOverflowClipOrVisible(builder.OverflowY())) {
+  } else if (!IsOverflowClipOrVisible(builder.OverflowY())) {
     // Values of 'clip' and 'visible' can only be used with 'clip' and
     // 'visible.' If they aren't, 'clip' and 'visible' is reset.
     if (builder.OverflowX() == EOverflow::kVisible) {
       builder.SetOverflowX(EOverflow::kAuto);
     } else if (builder.OverflowX() == EOverflow::kClip) {
-      builder.SetOverflowX(EOverflow::kHidden);
+      single_axis_scroller = true;
+      if (!RuntimeEnabledFeatures::SingleAxisScrollContainersEnabled()) {
+        builder.SetOverflowX(EOverflow::kHidden);
+      }
     }
-  } else if (!RuntimeEnabledFeatures::SingleAxisScrollContainersEnabled() &&
-             !IsOverflowClipOrVisible(builder.OverflowX())) {
+  } else if (!IsOverflowClipOrVisible(builder.OverflowX())) {
     // Values of 'clip' and 'visible' can only be used with 'clip' and
     // 'visible.' If they aren't, 'clip' and 'visible' is reset.
     if (builder.OverflowY() == EOverflow::kVisible) {
       builder.SetOverflowY(EOverflow::kAuto);
     } else if (builder.OverflowY() == EOverflow::kClip) {
-      builder.SetOverflowY(EOverflow::kHidden);
+      single_axis_scroller = true;
+      if (!RuntimeEnabledFeatures::SingleAxisScrollContainersEnabled()) {
+        builder.SetOverflowY(EOverflow::kHidden);
+      }
     }
+  }
+
+  if (single_axis_scroller) {
+    UseCounter::Count(document, WebFeature::kSingleAxisScroller);
   }
 
   if (element && !element->IsPseudoElement() &&
       (builder.OverflowX() == EOverflow::kClip ||
        builder.OverflowY() == EOverflow::kClip)) {
-    UseCounter::Count(element->GetDocument(),
-                      WebFeature::kOverflowClipAlongEitherAxis);
+    UseCounter::Count(document, WebFeature::kOverflowClipAlongEitherAxis);
   }
 
   // overlay is a legacy alias of auto.
@@ -706,7 +716,9 @@ void StyleAdjuster::AdjustOverflow(ComputedStyleBuilder& builder,
 // to have a stacking context and become a containing block for all descendants.
 static bool ForceStackingAndContainingBlockForCanvasLayoutSubtree(
     const Element* element) {
-  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() && element &&
+  if (element &&
+      RuntimeEnabledFeatures::CanvasDrawElementEnabled(
+          element->GetExecutionContext()) &&
       element->IsCanvasOrInCanvasSubtree()) {
     if (const auto* canvas =
             DynamicTo<HTMLCanvasElement>(element->parentElement())) {
@@ -718,7 +730,8 @@ static bool ForceStackingAndContainingBlockForCanvasLayoutSubtree(
 }
 
 static bool IsCanvasWithDrawElements(const Element* element) {
-  if (!RuntimeEnabledFeatures::CanvasDrawElementEnabled() || !element) {
+  if (!element || !RuntimeEnabledFeatures::CanvasDrawElementEnabled(
+                      element->GetExecutionContext())) {
     return false;
   }
 
@@ -774,10 +787,9 @@ void StyleAdjuster::AdjustStyleForDisplay(
             true);
       }
     }
-    if (!builder.IsFloating()) {
-      builder.SetIsInInlinifyingDisplay();
-      builder.SetDisplay(EquivalentInlineDisplay(builder.Display()));
-    }
+    DCHECK(!builder.IsFloating());
+    builder.SetIsInInlinifyingDisplay();
+    builder.SetDisplay(EquivalentInlineDisplay(builder.Display()));
   }
 
   if (builder.StyleType() == kPseudoIdScrollMarkerGroup) {
@@ -880,25 +892,56 @@ void StyleAdjuster::AdjustEffectiveTouchAction(
     return;
   }
 
-  bool is_replaced_canvas = IsA<HTMLCanvasElement>(element) &&
-                            element->GetExecutionContext() &&
-                            element->GetExecutionContext()->CanExecuteScripts(
-                                kNotAboutToExecuteScript);
-  bool is_non_replaced_inline_elements =
-      builder.IsDisplayInlineType() &&
-      !(builder.IsDisplayReplacedType() || is_svg_root ||
-        IsA<HTMLImageElement>(element) || is_replaced_canvas);
-  bool is_table_row_or_column = builder.IsDisplayTableRowOrColumnType();
-  bool is_layout_object_needed =
-      element->LayoutObjectIsNeeded(builder.GetDisplayStyle());
-
-  TouchAction element_touch_action = TouchAction::kAuto;
   // Touch actions are only supported by elements that support both the CSS
   // width and height properties.
   // See https://www.w3.org/TR/pointerevents/#the-touch-action-css-property.
-  if (!is_non_replaced_inline_elements && !is_table_row_or_column &&
-      is_layout_object_needed) {
-    element_touch_action = builder.GetTouchAction();
+  TouchAction element_touch_action = builder.GetTouchAction();
+  bool ignore_touch_action_property;
+  if (element_touch_action == TouchAction::kAuto) {
+    // Fast path; the desired touch-action is already auto,
+    // so don't go through all the checks below.
+    ignore_touch_action_property = true;
+  } else if (builder.IsDisplayTableRowOrColumnType()) {
+    ignore_touch_action_property = true;
+  } else if (IsA<HTMLImageElement>(element) || is_svg_root) {
+    // Images and SVG roots support touch-action,
+    // so leave the value alone.
+    ignore_touch_action_property = false;
+  } else if (IsA<HTMLCanvasElement>(element) &&
+             element->GetExecutionContext() &&
+             element->GetExecutionContext()->CanExecuteScripts(
+                 kNotAboutToExecuteScript)) {
+    // Replaced <canvas>, too.
+    ignore_touch_action_property = false;
+  } else {
+    ignore_touch_action_property = builder.IsNonAtomicInlineDisplayType();
+  }
+
+  if (ignore_touch_action_property ||
+      !element->LayoutObjectIsNeeded(builder.GetDisplayStyle())) {
+    element_touch_action = TouchAction::kAuto;
+
+    if (inherited_action == TouchAction::kAuto &&
+        element != element->GetDocument().documentElement() &&
+        !IsA<HTMLFrameOwnerElement>(element) &&
+        !::features::IsSwipeToMoveCursorEnabled() &&
+        !RuntimeEnabledFeatures::StylusHandwritingEnabled()) {
+      // Fast path; both inherited and current value allow everything
+      // (so no bits can be added), and none of the features that would
+      // remove bits from inherited_action are active. Also, we don't
+      // need to propagate any bits across frames. (We need to set it
+      // explicitly even though kAuto is the default, in case StyleAdjuster
+      // is called twice with different parameters.)
+      //
+      // If needed, we could loosen up this fast path (e.g., by moving
+      // it to below the else and testing for element_touch_action == kAuto,
+      // moving it further to below the is_child_document check, etc.),
+      // but it seems that Clang is happier optimizing it this way
+      // and it is hit in the vast majority of cases anyway.
+      builder.SetEffectiveTouchAction(TouchAction::kAuto);
+      return;
+    }
+  } else {
     // kInternalPanXScrolls is only for internal usage, GetTouchAction()
     // doesn't contain this bit. We set this bit when kPanX is set so it can be
     // cleared for eligible editable areas later on.
@@ -1084,8 +1127,14 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
       element && element->GetDocument().documentElement() == element;
   bool is_in_top_layer = false;
   if (RuntimeEnabledFeatures::OverlayPropertyEnabled()) {
-    is_in_top_layer =
-        !is_document_element && builder.Overlay() == EOverlay::kAuto;
+    if (RuntimeEnabledFeatures::OverlayGlobalRuleRemovalEnabled()) {
+      is_in_top_layer = !is_document_element &&
+                        builder.Overlay() == EOverlay::kAuto && element &&
+                        element->IsInTopLayer();
+    } else {
+      is_in_top_layer =
+          !is_document_element && builder.Overlay() == EOverlay::kAuto;
+    }
   } else {
     is_in_top_layer =
         !is_document_element && (element && element->IsRenderedInTopLayer());
@@ -1129,9 +1178,6 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
                              : EDisplay::kInline);
     }
 
-    // We don't adjust the first letter style earlier because we may change the
-    // display setting in AdjustStyleForHTMLElement() above.
-    AdjustStyleForFirstLetter(builder, parent_style);
     AdjustStyleForMarker(builder, parent_style, &state.GetElement());
 
     if (builder.StyleType() != kPseudoIdScrollMarker) {
@@ -1170,9 +1216,9 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
 
     if (is_transition_scope && !is_document_element) {
       builder.SetContain(builder.Contain() | kContainsLayout);
-      builder.SetViewTransitionScope(EViewTransitionScope::kAuto);
-    } else if (builder.InternalOverscrollArea() ==
-               EInternalOverscrollArea::kAuto) {
+      builder.SetViewTransitionScope(EViewTransitionScope::kAll);
+    } else if (builder.InternalOverscrollArea() !=
+               EInternalOverscrollArea::kNone) {
       // TODO(crbug.com/467112943): Layout containment is currently forced to
       // ensure that the container of the overscroll areas actually contains
       // the overscroll areas. However, requiring layout containment is
@@ -1181,24 +1227,33 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
       // layout children of the container element.
       builder.SetContain(builder.Contain() | kContainsLayout);
     }
-  } else {
-    AdjustStyleForFirstLetter(builder, parent_style);
   }
+
+  // We don't adjust the first letter style earlier because we may change the
+  // display setting above (including in AdjustStyleForHTMLElement()),
+  // and this needs to override those changes.
+  AdjustStyleForFirstLetter(builder, parent_style);
 
   builder.SetForcesStackingContext(false);
 
-  // Make sure our z-index value is only applied if the object is positioned.
-  if (!builder.HasAutoZIndex()) {
-    if (builder.GetPosition() == EPosition::kStatic &&
-        !LayoutParentStyleForcesZIndexToCreateStackingContext(
-            layout_parent_style)) {
-      builder.SetEffectiveZIndexZero(true);
-    } else {
+  // z-index is only applicable if positioned, or if a flex/grid/etc item.
+  if (builder.GetPosition() != EPosition::kStatic ||
+      LayoutParentStyleForcesZIndexToCreateStackingContext(
+          layout_parent_style) ||
+      ForceStackingAndContainingBlockForCanvasLayoutSubtree(element)) {
+    builder.SetAllowsZIndex(true);
+    if (!builder.HasAutoZIndex()) {
       builder.SetForcesStackingContext(true);
     }
   }
 
-  if (is_document_element ||
+  bool is_replaced_normal_flow_video =
+      RuntimeEnabledFeatures::StackingContextIsNotStackedEnabled() &&
+      IsA<HTMLVideoElement>(element) &&
+      builder.GetPosition() == EPosition::kStatic &&
+      element->FastHasAttribute(html_names::kControlsAttr);
+
+  if (is_document_element || is_replaced_normal_flow_video ||
       (element && IsA<SVGForeignObjectElement>(*element)) || is_in_top_layer ||
       builder.StyleType() == kPseudoIdBackdrop ||
       builder.StyleType() == kPseudoIdViewTransition ||
@@ -1208,7 +1263,8 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
 
   if (builder.OverflowX() != EOverflow::kVisible ||
       builder.OverflowY() != EOverflow::kVisible) {
-    AdjustOverflow(builder, element ? element : state.GetPseudoElement());
+    AdjustOverflow(builder, element ? element : state.GetPseudoElement(),
+                   state.GetDocument());
   }
 
   // Highlight pseudos propagate decorations with inheritance only.
@@ -1281,8 +1337,8 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
   AdjustEffectiveTouchAction(builder, parent_style, element,
                              IsOutermostSVGElement(element));
 
-  bool is_media_control =
-      element && element->ShadowPseudoId().StartsWith("-webkit-media-controls");
+  bool is_media_control = element && element->ShadowPseudoId().starts_with(
+                                         "-webkit-media-controls");
   if (is_media_control && !builder.HasEffectiveAppearance()) {
     // For compatibility reasons if the element is a media control and the
     // -webkit-appearance is none then we should clear the background image.

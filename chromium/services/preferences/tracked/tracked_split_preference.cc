@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "base/check.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/values.h"
 #include "services/preferences/public/cpp/tracked/pref_names.h"
@@ -79,8 +78,8 @@ bool TrackedSplitPreference::EnforceAndReport(
   // rolled out and the hmac based validation is removed.
   // transaction->CheckValue() (from CL1) is dual-hash aware and uses the
   // encryptor with which `transaction` was initialized by PrefHashFilter.
-  ValueState value_state =
-      transaction->CheckSplitValue(pref_path_, dict_value, &invalid_keys);
+  ValueState value_state = transaction->CheckSplitValue(
+      pref_path_, dict_value, &invalid_keys, GetReportingId());
 
   helper_.ReportValidationResult(value_state, transaction->GetStoreUMASuffix());
 
@@ -89,7 +88,8 @@ bool TrackedSplitPreference::EnforceAndReport(
   if (external_validation_transaction) {
     external_validation_value_state =
         external_validation_transaction->CheckSplitValue(
-            pref_path_, dict_value, &external_validation_invalid_keys);
+            pref_path_, dict_value, &external_validation_invalid_keys,
+            GetReportingId());
     helper_.ReportValidationResult(
         external_validation_value_state,
         external_validation_transaction->GetStoreUMASuffix());

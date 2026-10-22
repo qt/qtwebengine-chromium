@@ -43,6 +43,7 @@ inline constexpr char kErrorDescription[] = "description";
 
 // Other message fields.
 inline constexpr char kRpcMessageBody[] = "rpc";
+inline constexpr char kInputMessageBody[] = "input";
 inline constexpr char kCapabilitiesMessageBody[] = "capabilities";
 inline constexpr char kStatusMessageBody[] = "status";
 

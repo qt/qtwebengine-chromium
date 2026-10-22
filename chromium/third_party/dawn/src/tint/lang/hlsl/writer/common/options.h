@@ -36,6 +36,7 @@
 
 #include "src/tint/api/common/binding_point.h"
 #include "src/tint/api/common/bindings.h"
+#include "src/tint/api/common/resource_table_config.h"
 #include "src/tint/api/common/substitute_overrides_config.h"
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/utils/math/hash.h"
@@ -64,7 +65,7 @@ struct ArrayLengthFromUniformOptions {
                  ubo_binding,
                  buffer_sizes_offset,
                  bindpoint_to_size_index);
-    TINT_REFLECT_EQUALS(ArrayLengthFromUniformOptions);
+    bool operator==(const ArrayLengthFromUniformOptions&) const = default;
 };
 
 /// Options used to specify a mapping of binding points to indices into a UBO
@@ -85,7 +86,7 @@ struct ArrayOffsetFromUniformOptions {
                  ubo_binding,
                  buffer_offsets_offset,
                  bindpoint_to_offset_index);
-    TINT_REFLECT_EQUALS(ArrayOffsetFromUniformOptions);
+    bool operator==(const ArrayOffsetFromUniformOptions&) const = default;
 };
 
 /// Data for a single pixel local attachment
@@ -106,7 +107,7 @@ struct PixelLocalAttachment {
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(PixelLocalAttachment, index, format);
-    TINT_REFLECT_EQUALS(PixelLocalAttachment);
+    bool operator==(const PixelLocalAttachment&) const = default;
 };
 
 /// Data used to specify pixel local mappings
@@ -119,7 +120,7 @@ struct PixelLocalOptions {
 
     /// Reflect the fields of this class so that it can be used by tint::ForeachField()
     TINT_REFLECT(PixelLocalOptions, attachments, group_index);
-    TINT_REFLECT_EQUALS(PixelLocalOptions);
+    bool operator==(const PixelLocalOptions&) const = default;
 };
 
 /// Configuration options used for generating HLSL.
@@ -146,11 +147,15 @@ struct Options {
         /// Set to `true` to generate polyfill for `subgroupBroadcast(f16)`
         bool polyfill_subgroup_broadcast_f16 = false;
 
+        /// Set to `true` to collapse redundant subgroup min and max operations
+        bool collapse_subgroup_min_max = false;
+
         TINT_REFLECT(Workarounds,
                      scalarize_max_min_clamp,
                      polyfill_reflect_vec2_f32,
-                     polyfill_subgroup_broadcast_f16);
-        TINT_REFLECT_EQUALS(Workarounds);
+                     polyfill_subgroup_broadcast_f16,
+                     collapse_subgroup_min_max);
+        bool operator==(const Workarounds&) const = default;
     };
 
     /// The set of options for things which are only available in certain shader models
@@ -168,7 +173,7 @@ struct Options {
         bool polyfill_pack_unpack_4x8 = false;
 
         TINT_REFLECT(Extensions, polyfill_dot_4x8_packed, polyfill_pack_unpack_4x8);
-        TINT_REFLECT_EQUALS(Extensions);
+        bool operator==(const Extensions&) const = default;
     };
 
     /// Constructor
@@ -255,6 +260,9 @@ struct Options {
     /// Pixel local configuration
     PixelLocalOptions pixel_local;
 
+    /// Resource table information
+    std::optional<ResourceTableConfig> resource_table;
+
     // Configuration for substitute overrides
     SubstituteOverridesConfig substitute_overrides_config = {};
 
@@ -282,8 +290,9 @@ struct Options {
                  bindings,
                  ignored_by_robustness_transform,
                  pixel_local,
+                 resource_table,
                  substitute_overrides_config);
-    TINT_REFLECT_EQUALS(Options);
+    bool operator==(const Options&) const = default;
 };
 
 }  // namespace tint::hlsl::writer

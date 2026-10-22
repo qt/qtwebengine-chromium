@@ -201,7 +201,7 @@ void CFWL_Barcode::CreateBarcodeEngine() {
     return;
   }
 
-  barcode_engine_ = CFX_Barcode::Create(type_);
+  barcode_engine_ = std::make_unique<CFX_Barcode>(type_);
 }
 
 }  // namespace pdfium

@@ -82,7 +82,6 @@ EIGEN_ALWAYS_INLINE void storeComplexAccumulator(Index i, const DataMapper& data
   }
 }
 
-// Defaults to float32, since Eigen still supports C++03 we can't use default template arguments
 template <typename LhsPacket, typename RhsPacket, bool NegativeAccumulate>
 EIGEN_ALWAYS_INLINE void pgerMMA(__vector_quad* acc, const RhsPacket& a, const LhsPacket& b) {
   if (NegativeAccumulate) {

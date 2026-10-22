@@ -4,37 +4,41 @@
 
 #include "tools/cddl/logging.h"
 
-// static
-void Logger::Abort(const char* condition) {
+#include <cstdlib>
+#include <iostream>
+#include <mutex>
+#include <string>
+
+namespace Logger {
+
+namespace {
+
+std::once_flag g_header_written_flag;
+
+void WriteHeader() {
+  std::cerr << "CDDL GENERATION TOOL" << std::endl;
+  std::cerr << "---------------------------------------------" << std::endl;
+}
+
+void EnsureHeaderWritten() {
+  std::call_once(g_header_written_flag, WriteHeader);
+}
+
+}  // namespace
+
+void Log(std::string_view message) {
+  EnsureHeaderWritten();
+  std::cerr << message << std::endl;
+}
+
+void Error(std::string_view message) {
+  EnsureHeaderWritten();
+  std::cerr << "Error: " << message << std::endl;
+}
+
+[[noreturn]] void Abort(const char* condition) {
   std::cerr << "CHECK(" << condition << ") failed!" << std::endl;
   std::abort();
 }
 
-void Logger::InitializeInstance() {
-  is_initialized_ = true;
-
-  WriteLog("CDDL GENERATION TOOL");
-  WriteLog("---------------------------------------------\n");
-}
-
-void Logger::VerifyInitialized() {
-  if (!is_initialized_) {
-    InitializeInstance();
-  }
-}
-
-const char* Logger::MakePrintable(const std::string& data) {
-  return data.c_str();
-}
-
-Logger::Logger() {
-  is_initialized_ = false;
-}
-
-// Static:
-Logger* Logger::Get() {
-  return Logger::singleton_;
-}
-
-// Static:
-Logger* Logger::singleton_ = new Logger();
+}  // namespace Logger

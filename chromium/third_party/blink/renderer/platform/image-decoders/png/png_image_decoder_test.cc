@@ -194,18 +194,6 @@ void TestMissingDataBreaksDecoding(const char* png_file,
   EXPECT_TRUE(decoder->Failed());
 }
 
-// Verify that a decoder with a parse error converts to a static image.
-static void ExpectStatic(ImageDecoder* decoder) {
-  EXPECT_EQ(1u, decoder->FrameCount());
-  EXPECT_FALSE(decoder->Failed());
-
-  ImageFrame* frame = decoder->DecodeFrameBufferAtIndex(0);
-  ASSERT_NE(nullptr, frame);
-  EXPECT_EQ(ImageFrame::kFrameComplete, frame->GetStatus());
-  EXPECT_FALSE(decoder->Failed());
-  EXPECT_EQ(kAnimationNone, decoder->RepetitionCount());
-}
-
 // Decode up to the indicated fcTL offset and then provide an fcTL with the
 // wrong chunk size (20 instead of 26).
 void TestInvalidFctlSize(const char* png_file,
@@ -549,17 +537,19 @@ TEST(AnimatedPNGTests, fdatBeforeIdat) {
   ASSERT_EQ(data.size(), modified_data_buffer->size());
 
   {
-    // This broken APNG will be treated as a static png.
+    // After https://github.com/image-rs/image-png/pull/653
+    // this input (fdAT before IDAT) will result in a hard error.
     auto decoder = CreatePNGDecoder();
     decoder->SetData(modified_data_buffer.get(), true);
-    ExpectStatic(decoder.get());
+    EXPECT_EQ(0u, decoder->FrameCount());
+    EXPECT_TRUE(decoder->Failed());
   }
 
   Vector<char> modified_data = modified_data_buffer->CopyAs<Vector<char>>();
 
   {
     // Remove the acTL from the modified image. It now has fdAT before
-    // IDAT, but no acTL, so fdAT should be ignored.
+    // IDAT, but no acTL.
     const size_t kOffsetActl = 33u;
     const size_t kAcTLSize = 20u;
     scoped_refptr<SharedBuffer> modified_data_buffer2 =
@@ -568,10 +558,11 @@ TEST(AnimatedPNGTests, fdatBeforeIdat) {
         base::span(modified_data).subspan(kOffsetActl + kAcTLSize));
     auto decoder = CreatePNGDecoder();
     decoder->SetData(modified_data_buffer2.get(), true);
-    ExpectStatic(decoder.get());
+    EXPECT_EQ(0u, decoder->FrameCount());
+    EXPECT_TRUE(decoder->Failed());
 
     Vector<char> modified_data2 = modified_data_buffer2->CopyAs<Vector<char>>();
-    // Likewise, if an acTL follows the fdAT, it is ignored.
+    // Now check fdAT before IDAT when acTL is present after fdAT.
     const size_t kInsertionOffset = kIdatOffset + kFctlPlusFdatSize - kAcTLSize;
     scoped_refptr<SharedBuffer> modified_data3 = SharedBuffer::Create(
         base::span(modified_data2).first(kInsertionOffset));
@@ -580,7 +571,8 @@ TEST(AnimatedPNGTests, fdatBeforeIdat) {
         base::span(modified_data2).subspan(kInsertionOffset));
     decoder = CreatePNGDecoder();
     decoder->SetData(modified_data3.get(), true);
-    ExpectStatic(decoder.get());
+    EXPECT_EQ(0u, decoder->FrameCount());
+    EXPECT_TRUE(decoder->Failed());
   }
 }
 
@@ -877,6 +869,53 @@ TEST(AnimatedPNGTests, IncrementalDecodeOfDifferentFrame) {
   frame1 = decoder->DecodeFrameBufferAtIndex(1);
   ASSERT_TRUE(frame1);
   EXPECT_EQ(frame1->GetStatus(), ImageFrame::kFrameComplete);
+}
+
+// This is a regression test for https://crbug.com/496282147.
+//
+// This test uses `blink::ImageDecoder` and `blink::ImageFrame` APIs in a way
+// that doesn't necessarily reflect how they would actually be used in the
+// product (e.g. calling `ClearPixelData` and/or calling `Append` instead of
+// `SetData`).  This nevertheless seems like a valid test, because:
+//
+// * Supporting all usage patterns allowed by the public APIs (and the type
+//   system) seems more robust then 1) adding extra requirements on the caller
+//   of these APIs (such as never clearing a partially decoded frame), and/or 2)
+//   discovering the callers that may violate such requirements.
+// * A separate `ImageFrameGeneratorTest.ClearingPartiallyDecodedFrame` test
+//   shows how a similr usage pattern is indeed reachable via web-exposed APIs.
+TEST(AnimatedPNGTests, ClearingPartiallyDecodedFrame) {
+  Vector<char> full_data = ReadFile(
+      "/images/resources/"
+      "png-animated-idat-part-of-animation.png");
+  ASSERT_FALSE(full_data.empty());
+  auto decoder = CreatePNGDecoder();
+
+  // Provide only enough data for the first frame to be partial.
+  const size_t kPartialDataSize = 160;
+  scoped_refptr<SharedBuffer> data =
+      SharedBuffer::Create(base::span(full_data).first(kPartialDataSize));
+  decoder->SetData(data.get(), false);
+
+  // Partially decode frame 0.
+  ImageFrame* frame0 = decoder->DecodeFrameBufferAtIndex(0);
+  ASSERT_TRUE(frame0);
+  EXPECT_EQ(frame0->GetStatus(), ImageFrame::kFramePartial);
+
+  // Manually clear frame 0 pixel data.
+  frame0->ClearPixelData();
+
+  // Provide more data by appending to the same `SharedBuffer`.
+  // This avoids clobbering the decoder state with a new `SetData` call.
+  data->Append(base::span(full_data).subspan(kPartialDataSize));
+
+  // Try to decode frame 0 again.  This verifies that
+  // `SkCodec::startIncrementalDecode` has been called to reinitialize decoding
+  // state - avoiding writing to the memory buffer that has been freed by
+  // `ClearPixelData` above.
+  frame0 = decoder->DecodeFrameBufferAtIndex(0);
+  ASSERT_TRUE(frame0);
+  EXPECT_EQ(frame0->GetStatus(), ImageFrame::kFrameComplete);
 }
 
 // Verify that a malformatted PNG, where the IEND appears before any frame data
@@ -1694,21 +1733,23 @@ TEST(PNGTests, HDRMetadata) {
   ASSERT_FALSE(decoder->Failed());
   const gfx::HDRMetadata& hdr_metadata = decoder->GetHDRMetadata();
 
-  ASSERT_TRUE(hdr_metadata.cta_861_3);
-  EXPECT_EQ(hdr_metadata.cta_861_3->max_content_light_level, 4000u);
-  EXPECT_EQ(hdr_metadata.cta_861_3->max_frame_average_light_level, 2627u);
+  ASSERT_TRUE(hdr_metadata.HasCLLI());
+  EXPECT_EQ(hdr_metadata.GetCLLI().fMaxCLL, 4000u);
+  EXPECT_EQ(hdr_metadata.GetCLLI().fMaxFALL, 2627u);
 
-  ASSERT_TRUE(hdr_metadata.smpte_st_2086);
-  EXPECT_FLOAT_EQ(hdr_metadata.smpte_st_2086->primaries.fRX, .680f);
-  EXPECT_FLOAT_EQ(hdr_metadata.smpte_st_2086->primaries.fRY, .320f);
-  EXPECT_FLOAT_EQ(hdr_metadata.smpte_st_2086->primaries.fGX, .265f);
-  EXPECT_FLOAT_EQ(hdr_metadata.smpte_st_2086->primaries.fGY, .690f);
-  EXPECT_FLOAT_EQ(hdr_metadata.smpte_st_2086->primaries.fBX, .150f);
-  EXPECT_FLOAT_EQ(hdr_metadata.smpte_st_2086->primaries.fBY, .060f);
-  EXPECT_FLOAT_EQ(hdr_metadata.smpte_st_2086->primaries.fWX, .3127f);
-  EXPECT_FLOAT_EQ(hdr_metadata.smpte_st_2086->primaries.fWY, .3290f);
-  EXPECT_FLOAT_EQ(hdr_metadata.smpte_st_2086->luminance_max, 5000.f);
-  EXPECT_FLOAT_EQ(hdr_metadata.smpte_st_2086->luminance_min, .01f);
+  ASSERT_TRUE(hdr_metadata.HasMDCV());
+  EXPECT_FLOAT_EQ(hdr_metadata.GetMDCV().fDisplayPrimaries.fRX, .680f);
+  EXPECT_FLOAT_EQ(hdr_metadata.GetMDCV().fDisplayPrimaries.fRY, .320f);
+  EXPECT_FLOAT_EQ(hdr_metadata.GetMDCV().fDisplayPrimaries.fGX, .265f);
+  EXPECT_FLOAT_EQ(hdr_metadata.GetMDCV().fDisplayPrimaries.fGY, .690f);
+  EXPECT_FLOAT_EQ(hdr_metadata.GetMDCV().fDisplayPrimaries.fBX, .150f);
+  EXPECT_FLOAT_EQ(hdr_metadata.GetMDCV().fDisplayPrimaries.fBY, .060f);
+  EXPECT_FLOAT_EQ(hdr_metadata.GetMDCV().fDisplayPrimaries.fWX, .3127f);
+  EXPECT_FLOAT_EQ(hdr_metadata.GetMDCV().fDisplayPrimaries.fWY, .3290f);
+  EXPECT_FLOAT_EQ(hdr_metadata.GetMDCV().fMaximumDisplayMasteringLuminance,
+                  5000.f);
+  EXPECT_FLOAT_EQ(hdr_metadata.GetMDCV().fMinimumDisplayMasteringLuminance,
+                  .01f);
 }
 
 TEST(AnimatedPNGTests, TrnsMeansAlpha) {

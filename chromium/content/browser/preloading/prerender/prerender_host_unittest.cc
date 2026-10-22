@@ -10,6 +10,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/bind.h"
 #include "base/test/gmock_expected_support.h"
+#include "base/types/strong_alias.h"
 #include "build/build_config.h"
 #include "components/ukm/test_ukm_recorder.h"
 #include "content/browser/preloading/preload_pipeline_info_impl.h"
@@ -715,6 +716,21 @@ TEST(AreHttpRequestHeadersCompatible, IgnoreRTT) {
       PrerenderFinalStatus::kActivationNavigationParameterMismatch);
   const std::string prerender_headers = "rtt: 1 \r\n downlink: 3";
   const std::string potential_activation_headers = "rtt: 2 \r\n downlink: 4";
+  EXPECT_TRUE(PrerenderHost::AreHttpRequestHeadersCompatible(
+      potential_activation_headers,
+#if BUILDFLAG(IS_ANDROID)
+      /*potential_activation_additional_headers=*/"",
+#endif  // BUILDFLAG(IS_ANDROID)
+      prerender_headers, PreloadingTriggerType::kSpeculationRule,
+      /*embedder_histogram_suffix=*/"", /*allow_x_header_mismatch=*/false,
+      reason));
+}
+
+TEST(AreHttpRequestHeadersCompatible, IgnoreECT) {
+  PrerenderCancellationReason reason = PrerenderCancellationReason(
+      PrerenderFinalStatus::kActivationNavigationParameterMismatch);
+  const std::string prerender_headers = "ect: 4g";
+  const std::string potential_activation_headers = "ect: 3g";
   EXPECT_TRUE(PrerenderHost::AreHttpRequestHeadersCompatible(
       potential_activation_headers,
 #if BUILDFLAG(IS_ANDROID)

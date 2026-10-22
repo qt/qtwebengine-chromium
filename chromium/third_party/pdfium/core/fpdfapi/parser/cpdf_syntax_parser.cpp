@@ -22,7 +22,7 @@
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcrt/autorestorer.h"
-#include "core/fxcrt/cfx_read_only_vector_stream.h"
+#include "core/fxcrt/cfx_read_only_container_stream.h"
 #include "core/fxcrt/check.h"
 #include "core/fxcrt/check_op.h"
 #include "core/fxcrt/data_vector.h"
@@ -861,7 +861,8 @@ RetainPtr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
     bool did_read = substream->ReadBlockAtOffset(data.span(), 0);
     CHECK(did_read);
     auto data_as_stream =
-        pdfium::MakeRetain<CFX_ReadOnlyVectorStream>(std::move(data));
+        pdfium::MakeRetain<CFX_ReadOnlyFixedSizeDataVectorStream>(
+            std::move(data));
 
     stream = pdfium::MakeRetain<CPDF_Stream>(std::move(data_as_stream),
                                              std::move(dict));

@@ -1,8 +1,8 @@
 /***************************************************************************
  *
- * Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (c) 2015-2024 Google Inc.
  * Copyright (c) 2023-2024 RasterGrid Kft.
  *
@@ -68,6 +68,7 @@ class Pipeline;
 struct GlobalSettings;
 struct GpuAVSettings;
 struct SyncValSettings;
+struct GpuDumpSettings;
 
 // Because of GPL, we currently create our Pipeline state objects before the PreCallValidate
 // Each chassis layer will need to track its own state
@@ -81,17 +82,18 @@ enum class ValidValue {
 };
 
 // Validation Object base classes
-namespace vvl::base {
+namespace vvl {
 
-class Instance : public Logger {
+class BaseInstance : public Logger {
   public:
     const APIVersion api_version;
-    vvl::dispatch::Instance* dispatch_instance_{};
+    DispatchInstance* dispatch_instance_{};
 
     DeviceExtensions extensions;
     const GlobalSettings& global_settings;
     GpuAVSettings& gpuav_settings;
     const SyncValSettings& syncval_settings;
+    const GpuDumpSettings& gpu_dump_settings;
 
     const ValidationDisabled& disabled;
     const ValidationEnabled& enabled;
@@ -99,7 +101,7 @@ class Instance : public Logger {
     VkInstance instance = VK_NULL_HANDLE;
     const LayerObjectTypeId container_type;
 
-    Instance(vvl::dispatch::Instance* instance, LayerObjectTypeId type_id)
+    BaseInstance(DispatchInstance* instance, LayerObjectTypeId type_id)
         : Logger(instance->debug_report),
           api_version(instance->api_version),
           dispatch_instance_(instance),
@@ -107,11 +109,12 @@ class Instance : public Logger {
           global_settings(instance->settings.global_settings),
           gpuav_settings(instance->settings.gpuav_settings),
           syncval_settings(instance->settings.syncval_settings),
+          gpu_dump_settings(instance->settings.gpu_dump_settings),
           disabled(instance->settings.disabled),
           enabled(instance->settings.enabled),
           instance(instance->instance),
           container_type(type_id) {}
-    virtual ~Instance() {}
+    virtual ~BaseInstance() {}
 
     // Modify a parameter to CreateDevice
     virtual void PreCallRecordCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo,
@@ -120,7 +123,8 @@ class Instance : public Logger {
         PreCallRecordCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice, record_obj);
     }
     void CopyDispatchState() { instance = dispatch_instance_->instance; }
-    // Because this object was created before dispatch_instance_ can query for supported extensions, we must copy them afterwards here
+    // Because this object was created before dispatch_instance_ can query for supported extensions, we must copy them afterwards
+    // here
     void CopyExtensions() { extensions = dispatch_instance_->extensions; }
     VkInstance VkHandle() const { return instance; }
 
@@ -133,11 +137,11 @@ class Instance : public Logger {
 #include "generated/validation_object_instance_methods.h"
 };
 
-class Device : public Logger {
+class BaseDevice : public Logger {
   public:
     const APIVersion api_version;
-    vvl::dispatch::Instance* dispatch_instance_{};
-    vvl::dispatch::Device* dispatch_device_{};
+    DispatchInstance* dispatch_instance_{};
+    DispatchDevice* dispatch_device_{};
 
     DeviceExtensions extensions;
     const DeviceFeatures& enabled_features;
@@ -151,6 +155,7 @@ class Device : public Logger {
     const GlobalSettings& global_settings;
     GpuAVSettings& gpuav_settings;
     const SyncValSettings& syncval_settings;
+    const GpuDumpSettings& gpu_dump_settings;
 
     const ValidationDisabled& disabled;
     const ValidationEnabled& enabled;
@@ -168,7 +173,7 @@ class Device : public Logger {
     // the lock that protects Record itself in order to avoid mutual waiting.
     static thread_local WriteLockGuard* record_guard;
 
-    Device(vvl::dispatch::Device* dispatch_dev, Instance* instance, LayerObjectTypeId type_id)
+    BaseDevice(DispatchDevice* dispatch_dev, BaseInstance* instance, LayerObjectTypeId type_id)
         : Logger(dispatch_dev->debug_report),
           api_version(dispatch_dev->api_version),
           dispatch_instance_(dispatch_dev->dispatch_instance),
@@ -185,13 +190,14 @@ class Device : public Logger {
           global_settings(dispatch_dev->settings.global_settings),
           gpuav_settings(dispatch_dev->settings.gpuav_settings),
           syncval_settings(dispatch_dev->settings.syncval_settings),
+          gpu_dump_settings(dispatch_dev->settings.gpu_dump_settings),
           disabled(dispatch_dev->settings.disabled),
           enabled(dispatch_dev->settings.enabled),
           instance(instance->instance),
           physical_device(dispatch_dev->physical_device),
           device(dispatch_dev->device),
           container_type(type_id) {}
-    virtual ~Device() {}
+    virtual ~BaseDevice() {}
 
     VkDevice VkHandle() const { return device; }
 
@@ -206,9 +212,9 @@ class Device : public Logger {
     // its lock during the blocking operation.
     struct BlockingOperationGuard {
         WriteLockGuard lock;
-        Device* dev = nullptr;
+        BaseDevice* dev = nullptr;
 
-        BlockingOperationGuard(Device* dev_) : dev(dev_) {
+        BlockingOperationGuard(BaseDevice* dev_) : dev(dev_) {
             // This assert detects recursive calls. It is here mostly for documentation purposes
             // because WriteLock() also triggers errors during recursion.
             // Recursion is not allowed since record_guard is a thread-local variable and it can
@@ -360,31 +366,31 @@ class Device : public Logger {
 
     // Allow additional state parameter for CreateDataGraphPipelinesARM
     virtual bool PreCallValidateCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
-                                                             VkPipelineCache pipelineCache, uint32_t createInfoCount,
-                                                             const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
-                                                             const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                             const ErrorObject& error_obj, PipelineStates& pipeline_states,
-                                                             chassis::CreateDataGraphPipelinesARM& chassis_state) const {
+                                                            VkPipelineCache pipelineCache, uint32_t createInfoCount,
+                                                            const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
+                                                            const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+                                                            const ErrorObject& error_obj, PipelineStates& pipeline_states,
+                                                            chassis::CreateDataGraphPipelinesARM& chassis_state) const {
         return PreCallValidateCreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos,
-                                                           pAllocator, pPipelines, error_obj);
+                                                          pAllocator, pPipelines, error_obj);
     }
     virtual void PreCallRecordCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                                          VkPipelineCache pipelineCache, uint32_t createInfoCount,
+                                                          const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
+                                                          const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+                                                          const RecordObject& record_obj, PipelineStates& pipeline_states,
+                                                          chassis::CreateDataGraphPipelinesARM& chassis_state) {
+        PreCallRecordCreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos,
+                                                 pAllocator, pPipelines, record_obj);
+    }
+    virtual void PostCallRecordCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
                                                            VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                            const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
                                                            const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
                                                            const RecordObject& record_obj, PipelineStates& pipeline_states,
                                                            chassis::CreateDataGraphPipelinesARM& chassis_state) {
-        PreCallRecordCreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos,
-                                                  pAllocator, pPipelines, record_obj);
-    }
-    virtual void PostCallRecordCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
-                                                            VkPipelineCache pipelineCache, uint32_t createInfoCount,
-                                                            const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
-                                                            const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                            const RecordObject& record_obj, PipelineStates& pipeline_states,
-                                                            chassis::CreateDataGraphPipelinesARM& chassis_state) {
         PostCallRecordCreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos,
-                                                   pAllocator, pPipelines, record_obj);
+                                                  pAllocator, pPipelines, record_obj);
     }
 
     // Allow modification of a down-chain parameter for CreatePipelineLayout
@@ -452,4 +458,4 @@ class Device : public Logger {
 #include "generated/validation_object_device_methods.h"
 };
 
-}  // namespace vvl::base
+}  // namespace vvl

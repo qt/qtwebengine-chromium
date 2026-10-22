@@ -1,6 +1,6 @@
 # CMakeLists.txt
 #
-# Copyright (C) 2013-2025 by
+# Copyright (C) 2013-2026 by
 # David Turner, Robert Wilhelm, and Werner Lemberg.
 #
 # Written originally by John Cary <cary@txcorp.com>
@@ -12,9 +12,9 @@
 # fully.
 #
 #
-# The following will (1) create a build directory, and (2) change into it and
-# call cmake to configure the build with default parameters as a static
-# library.  See
+# The following will (1) create a build directory, and (2) change into
+# it and call cmake to configure the build with default parameters as
+# a static library.  See
 #
 #   https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html
 #
@@ -56,8 +56,8 @@
 #
 #   cmake --build build --config Release --target package
 #
-# Please refer to the cmake manual for further options, in particular, how
-# to modify compilation and linking parameters.
+# Please refer to the cmake manual for further options, in particular,
+# how to modify compilation and linking parameters.
 #
 # Some notes.
 #
@@ -72,14 +72,14 @@
 # - You can use `cmake' directly on a freshly cloned FreeType git
 #   repository.
 #
-# - `CMakeLists.txt' is provided as-is since it is normally not used by the
-#   developer team.
+# - `CMakeLists.txt' is provided as-is since it is normally not used
+#   by the developer team.
 #
 # - Set the `FT_REQUIRE_ZLIB', `FT_REQUIRE_BZIP2', `FT_REQUIRE_PNG',
-#   `FT_REQUIRE_HARFBUZZ', and `FT_REQUIRE_BROTLI' CMake variables to `ON'
-#   or `TRUE' to force using a dependency.  Leave a variable undefined
-#   (which is the default) to use the dependency only if it is available.
-#   Example:
+#   `FT_REQUIRE_HARFBUZZ', and `FT_REQUIRE_BROTLI' CMake variables to
+#   `ON' or `TRUE' to force using a dependency.  Leave a variable
+#   undefined (which is the default) to use the dependency only if it
+#   is available.  Example:
 #
 #     cmake -B build -D FT_REQUIRE_ZLIB=TRUE \
 #                    -D FT_REQUIRE_BZIP2=TRUE \
@@ -87,40 +87,45 @@
 #                    -D FT_REQUIRE_HARFBUZZ=TRUE \
 #                    -D FT_REQUIRE_BROTLI=TRUE [...]
 #
-# - Set the `FT_DYNAMIC_HARFBUZZ' CMake variable to `ON' or `TRUE' to load
-#   the HarfBuzz library dynamically at runtime, if possible.  Example:
+# - Set the `FT_DYNAMIC_HARFBUZZ' CMake variable to `ON' or `TRUE' to
+#   load the HarfBuzz library dynamically at runtime, if possible.
+#   Example:
 #
 #     cmake -B build -D FT_DYNAMIC_HARFBUZZ=TRUE [...]
 #
-# - Set `FT_DISABLE_XXX=TRUE' to disable a dependency completely (where
-#   `XXX' is a CMake package name like `BZip2').  Example for disabling all
-#   dependencies:
+# - Set `FT_DISABLE_XXX=TRUE' to disable a dependency completely
+#   (where `XXX' is a CMake package name like `BZip2').  Example for
+#   disabling all dependencies:
 #
 #     cmake -B build -D FT_DISABLE_ZLIB=TRUE \
 #                    -D FT_DISABLE_BZIP2=TRUE \
 #                    -D FT_DISABLE_PNG=TRUE \
 #                    -D FT_DISABLE_HARFBUZZ=TRUE \
-#                    -D FT_DISABLE_BROTLI=TRUE [...]
+#                    -D FT_DISABLE_BROTLI=TRUE \
+#                    -D FT_DISABLE_HVF=TRUE [...]
 #
-# - NOTE: If a package is set as DISABLED, it cannot be set as REQUIRED
-#   without unsetting the DISABLED value first.  For example, if
-#   `FT_DISABLE_HARFBUZZ=TRUE' has been set (Cache is present), you need to
-#   call `FT_DISABLE_HARFBUZZ=FALSE' before calling
+# - NOTE: If a package is set as DISABLED, it cannot be set as
+#   REQUIRED without unsetting the DISABLED value first.  For example,
+#   if `FT_DISABLE_HARFBUZZ=TRUE' has been set (Cache is present), you
+#   need to call `FT_DISABLE_HARFBUZZ=FALSE' before calling
 #   `FT_REQUIRE_HARFBUZZ=TRUE'.
 #
-# - Installation of FreeType can be controlled with the CMake variables
-#   `SKIP_INSTALL_HEADERS', `SKIP_INSTALL_LIBRARIES', and `SKIP_INSTALL_ALL'
-#   (this is compatible with the same CMake variables in zlib's CMake
-#   support).
+# - Installation of FreeType can be controlled with the CMake
+#   variables `SKIP_INSTALL_HEADERS', `SKIP_INSTALL_LIBRARIES', and
+#   `SKIP_INSTALL_ALL' (this is compatible with the same CMake
+#   variables in zlib's CMake support).
 
-# CMake 3.12 provides for IMPORTED targets for common libraries like zlib, libpng and bzip2
+
+# CMake 3.12 provides for IMPORTED targets for common libraries like
+# zlib, libpng, and bzip2.
 cmake_minimum_required(VERSION 3.12...3.31.0)
 
 include(CheckIncludeFile)
 include(CMakeDependentOption)
 
 # CMAKE_TOOLCHAIN_FILE must be set before `project' is called, which
-# configures the base build environment and references the toolchain file
+# configures the base build environment and references the toolchain
+# file.
 if (APPLE)
   if (DEFINED IOS_PLATFORM)
     if (NOT "${IOS_PLATFORM}" STREQUAL "OS"
@@ -131,7 +136,8 @@ if (APPLE)
     endif ()
     if (NOT "${CMAKE_GENERATOR}" STREQUAL "Xcode")
       message(AUTHOR_WARNING
-        "You should use Xcode generator with IOS_PLATFORM enabled to get Universal builds.")
+        "You should use Xcode generator with IOS_PLATFORM enabled"
+	" to get Universal builds.")
     endif ()
     if (BUILD_SHARED_LIBS)
       message(FATAL_ERROR
@@ -142,7 +148,7 @@ if (APPLE)
         "BUILD_FRAMEWORK can not be on with IOS_PLATFORM enabled")
     endif ()
 
-    # iOS only uses static libraries
+    # iOS only uses static libraries.
     set(BUILD_SHARED_LIBS OFF)
 
     set(CMAKE_TOOLCHAIN_FILE
@@ -159,7 +165,7 @@ project(freetype C)
 
 set(VERSION_MAJOR "2")
 set(VERSION_MINOR "14")
-set(VERSION_PATCH "1")
+set(VERSION_PATCH "3")
 
 # Generate LIBRARY_VERSION and LIBRARY_SOVERSION.
 set(LIBTOOL_REGEX "version_info='([0-9]+):([0-9]+):([0-9]+)'")
@@ -180,8 +186,9 @@ string(REGEX REPLACE
 math(EXPR LIBRARY_SOVERSION "${LIBTOOL_CURRENT} - ${LIBTOOL_AGE}")
 set(LIBRARY_VERSION "${LIBRARY_SOVERSION}.${LIBTOOL_AGE}.${LIBTOOL_REVISION}")
 
-# External dependency library detection is automatic.  See the notes at the
-# top of this file, for how to force or disable dependencies completely.
+# External dependency library detection is automatic.  See the notes
+# at the top of this file, for how to force or disable dependencies
+# completely.
 option(FT_DISABLE_ZLIB
   "Disable use of system zlib and use internal zlib library instead." OFF)
 cmake_dependent_option(FT_REQUIRE_ZLIB
@@ -215,10 +222,13 @@ cmake_dependent_option(FT_REQUIRE_BROTLI
   "Require support of compressed WOFF2 fonts." OFF
   "NOT FT_DISABLE_BROTLI" OFF)
 
+option(FT_DISABLE_HVF
+  "Disable support of HVF vector fonts." OFF)
+
 option(FT_ENABLE_ERROR_STRINGS
   "Enable support for meaningful error descriptions." OFF)
 
-# Disallow in-source builds
+# Disallow in-source builds.
 if ("${CMAKE_BINARY_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
   message(FATAL_ERROR
     "In-source builds are not permitted!  Make a separate folder for"
@@ -231,7 +241,7 @@ if ("${CMAKE_BINARY_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
 endif ()
 
 
-# Add local cmake modules
+# Add local cmake modules.
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/builds/cmake)
 
 
@@ -245,7 +255,7 @@ if (BUILD_FRAMEWORK)
 endif ()
 
 
-# Find dependencies
+# Find dependencies.
 include(FindPkgConfig)
 include(CMakePushCheckState)
 include(CheckSymbolExists)
@@ -254,7 +264,7 @@ if (NOT FT_DISABLE_HARFBUZZ)
   set(HARFBUZZ_MIN_VERSION "2.0.0")
 
   if (FT_DYNAMIC_HARFBUZZ)
-    if (WIN32)  # Windows uses its own LoadLibrary()
+    if (WIN32)  # Windows uses its own LoadLibrary().
       set(FT_DYNAMIC_HARFBUZZ_ENABLED TRUE)
     else()
       cmake_push_check_state(RESET)
@@ -289,7 +299,7 @@ if (NOT FT_DISABLE_PNG)
   else ()
     find_package(PNG)
   endif ()
-  # FreePNG calls FindZLIB so unset ZLIB_FOUND to respect FT_DISABLE_ZLIB
+  # FreePNG calls FindZLIB so unset ZLIB_FOUND to respect FT_DISABLE_ZLIB.
   unset(ZLIB_FOUND)
 endif ()
 
@@ -302,8 +312,8 @@ if (NOT FT_DISABLE_ZLIB)
 endif ()
 
 if (NOT FT_DISABLE_BZIP2)
-  # Genuine BZip2 does not provide bzip2.pc, but some platforms have it.
-  # For better dependency in freetype2.pc, bzip2.pc is searched
+  # Genuine BZip2 does not provide bzip2.pc, but some platforms have
+  # it.  For better dependency in freetype2.pc, bzip2.pc is searched
   # regardless of the availability of libbz2. If bzip2.pc is found,
   # Requires.private is used instead of Libs.private.
   if (FT_REQUIRE_BZIP2)
@@ -322,7 +332,38 @@ if (NOT FT_DISABLE_BROTLI)
   endif ()
 endif ()
 
-# Create the configuration file
+if (NOT FT_DISABLE_HVF)
+  if (APPLE)
+    # Check for HVF header.
+    check_include_file("hvf/Scaler.h" HAVE_HVF_HEADER)
+
+    if (HAVE_HVF_HEADER)
+      # Find the HVF library.
+      find_library(HVF_LIBRARY NAMES hvf)
+      if (HVF_LIBRARY)
+        set(HVF_FOUND TRUE)
+
+        # Apple platforms: Enable runtime availability checking.
+        if (CMAKE_C_COMPILER_ID MATCHES "Clang")
+          set(HVF_RUNTIME_AVAILABLE TRUE)
+          message(STATUS "Found HVF: Apple platform with clang and HVF SDK")
+        else()
+          message(STATUS "Found HVF: Apple platform (clang recommended for"
+	                 " __builtin_available syntax)")
+        endif()
+      else()
+        set(HVF_FOUND FALSE)
+      endif()
+    else()
+      set(HVF_FOUND FALSE)
+    endif()
+  else()
+    # HVF is not supported.
+    set(HVF_FOUND FALSE)
+  endif()
+endif()
+
+# Create the configuration file.
 if (UNIX AND NOT WIN32)
   check_include_file("unistd.h" HAVE_UNISTD_H)
   check_include_file("fcntl.h" HAVE_FCNTL_H)
@@ -355,7 +396,7 @@ if (NOT (ORIGINAL_FTCONFIG_H STREQUAL FTCONFIG_H))
 endif ()
 
 
-# Create the options file
+# Create the options file.
 file(READ "${PROJECT_SOURCE_DIR}/include/freetype/config/ftoption.h"
   FTOPTION_H)
 if (ZLIB_FOUND)
@@ -386,6 +427,11 @@ endif ()
 if (BROTLIDEC_FOUND)
   string(REGEX REPLACE
     "/\\* +(#define +FT_CONFIG_OPTION_USE_BROTLI) +\\*/" "\\1"
+    FTOPTION_H "${FTOPTION_H}")
+endif ()
+if (HVF_FOUND)
+  string(REGEX REPLACE
+    "/\\* +(#define +FT_CONFIG_OPTION_HVF) +\\*/" "\\1"
     FTOPTION_H "${FTOPTION_H}")
 endif ()
 
@@ -437,6 +483,7 @@ set(BASE_SRCS
   src/cff/cff.c
   src/cid/type1cid.c
   src/gzip/ftgzip.c
+  src/hvf/hvf.c
   src/lzw/ftlzw.c
   src/pcf/pcf.c
   src/pfr/pfr.c
@@ -505,6 +552,11 @@ else ()
     C_VISIBILITY_PRESET hidden)
 endif ()
 
+if (HVF_RUNTIME_AVAILABLE)
+  target_compile_definitions(
+    freetype PRIVATE HVF_RUNTIME_AVAILABLE=1)
+endif ()
+
 if (BUILD_SHARED_LIBS)
   set_target_properties(freetype PROPERTIES
     VERSION ${LIBRARY_VERSION}
@@ -533,15 +585,16 @@ if (BUILD_FRAMEWORK)
   )
   set_target_properties(freetype PROPERTIES
     FRAMEWORK TRUE
-    MACOSX_FRAMEWORK_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/builds/mac/freetype-Info.plist
+    MACOSX_FRAMEWORK_INFO_PLIST
+      ${CMAKE_CURRENT_SOURCE_DIR}/builds/mac/freetype-Info.plist
     PUBLIC_HEADER "${PUBLIC_HEADERS}"
     XCODE_ATTRIBUTE_INSTALL_PATH "@rpath"
   )
 endif ()
 
 # 'freetype-interface' is an interface library, to be accessed with
-# `EXPORT_NAME Freetype::Freetype`.  This is the target name provided by
-# CMake's `FindFreetype.cmake`, so we provide it for compatibility.
+# `EXPORT_NAME Freetype::Freetype`.  This is the target name provided
+# by CMake's `FindFreetype.cmake`, so we provide it for compatibility.
 add_library(freetype-interface INTERFACE)
 set_target_properties(freetype-interface PROPERTIES
   EXPORT_NAME Freetype::Freetype
@@ -582,9 +635,12 @@ if (BROTLIDEC_FOUND)
   target_include_directories(freetype PRIVATE ${BROTLIDEC_INCLUDE_DIRS})
   list(APPEND PKGCONFIG_REQUIRES_PRIVATE "libbrotlidec")
 endif ()
+if (HVF_FOUND)
+  target_link_libraries(freetype PRIVATE ${HVF_LIBRARY})
+endif ()
 
 
-# Installation
+# Installation.
 include(GNUInstallDirs)
 
 if (NOT SKIP_INSTALL_HEADERS AND NOT SKIP_INSTALL_ALL)
@@ -607,7 +663,8 @@ if (NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
   # Generate the pkg-config file
   file(READ "${PROJECT_SOURCE_DIR}/builds/unix/freetype2.in" FREETYPE2_PC_IN)
 
-  string(REPLACE ";" ", " PKGCONFIG_REQUIRES_PRIVATE "${PKGCONFIG_REQUIRES_PRIVATE}")
+  string(REPLACE ";" ", "
+           PKGCONFIG_REQUIRES_PRIVATE "${PKGCONFIG_REQUIRES_PRIVATE}")
 
   string(REPLACE "%prefix%" ${CMAKE_INSTALL_PREFIX}
           FREETYPE2_PC_IN ${FREETYPE2_PC_IN})
@@ -681,7 +738,7 @@ if (NOT SKIP_INSTALL_LIBRARIES AND NOT SKIP_INSTALL_ALL)
 endif ()
 
 
-# Packaging
+# Packaging.
 set(CPACK_PACKAGE_NAME ${CMAKE_PROJECT_NAME})
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "The FreeType font rendering library.")
 set(CPACK_PACKAGE_DESCRIPTION_FILE "${CMAKE_CURRENT_SOURCE_DIR}/README")
@@ -690,7 +747,8 @@ set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.TXT")
 set(CPACK_PACKAGE_VERSION_MAJOR ${VERSION_MAJOR})
 set(CPACK_PACKAGE_VERSION_MINOR ${VERSION_MINOR})
 set(CPACK_PACKAGE_VERSION_PATCH ${VERSION_PATCH})
-set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
+set(CPACK_PACKAGE_VERSION
+      "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
 
 if (WIN32)
   set(CPACK_GENERATOR ZIP)
@@ -709,3 +767,5 @@ set(CPACK_COMPONENT_LIBRARIES_GROUP "Development")
 set(CPACK_COMPONENT_HEADERS_GROUP "Development")
 
 include(CPack)
+
+# EOF

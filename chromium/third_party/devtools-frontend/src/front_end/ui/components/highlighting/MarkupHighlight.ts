@@ -71,8 +71,6 @@ export function highlightRangesWithStyleClass(
       type: 'changed',
       oldText: lastText,
       newText: lastTextNode.textContent,
-      nextSibling: undefined,
-      parent: undefined,
     });
 
     if (startIndex === endIndex && lastTextNode.parentElement) {
@@ -82,8 +80,6 @@ export function highlightRangesWithStyleClass(
         type: 'added',
         nextSibling: lastTextNode,
         parent: lastTextNode.parentElement,
-        oldText: undefined,
-        newText: undefined,
       });
       highlightNodes.push(highlightNode);
 
@@ -95,8 +91,6 @@ export function highlightRangesWithStyleClass(
         type: 'added',
         nextSibling: highlightNode,
         parent: lastTextNode.parentElement,
-        oldText: undefined,
-        newText: undefined,
       });
     } else {
       const firstTextNode = textNodes[startIndex];
@@ -110,8 +104,7 @@ export function highlightRangesWithStyleClass(
           type: 'added',
           nextSibling: anchorElement || undefined,
           parent: firstTextNode.parentElement,
-          oldText: undefined,
-          newText: undefined,
+
         });
         highlightNodes.push(highlightNode);
       }
@@ -122,8 +115,6 @@ export function highlightRangesWithStyleClass(
         type: 'changed',
         oldText: firstText,
         newText: firstTextNode.textContent,
-        nextSibling: undefined,
-        parent: undefined,
       });
 
       for (let j = startIndex + 1; j < endIndex; j++) {
@@ -135,8 +126,6 @@ export function highlightRangesWithStyleClass(
           type: 'changed',
           oldText: text || undefined,
           newText: textNode.textContent,
-          nextSibling: undefined,
-          parent: undefined,
         });
       }
     }

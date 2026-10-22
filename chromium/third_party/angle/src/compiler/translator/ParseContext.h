@@ -115,9 +115,9 @@ class TParseContext : angle::NonCopyable
 
     int getNumViews() const { return mNumViews; }
 
-    const std::map<int, ShPixelLocalStorageFormat> &pixelLocalStorageFormats() const
+    const std::map<int, ShPixelLocalStorageLayout> &pixelLocalStorageLayouts() const
     {
-        return mPLSFormats;
+        return mPLSLayouts;
     }
 
     void enterFunctionDeclaration() { mDeclaringFunction = true; }
@@ -753,7 +753,7 @@ class TParseContext : angle::NonCopyable
     bool parseTessControlShaderOutputLayoutQualifier(const TTypeQualifier &typeQualifier);
     bool parseTessEvaluationShaderInputLayoutQualifier(const TTypeQualifier &typeQualifier);
 
-    void checkVariableSize(const TSourceLoc &line,
+    bool checkVariableSize(const TSourceLoc &line,
                            const ImmutableString &identifier,
                            const TType *type);
     void checkVaryingLocations(const TSourceLoc &line, const TVariable *variable);
@@ -832,7 +832,7 @@ class TParseContext : angle::NonCopyable
     };
 
     // Generates an error if any pixel local storage uniforms have been declared (more specifically,
-    // if mPLSFormats is not empty).
+    // if mPLSLayouts is not empty).
     //
     // If no pixel local storage uniforms have been declared, and if the PLS extension is enabled,
     // saves the potential error to mPLSPotentialErrors in case we encounter a PLS uniform later.
@@ -961,8 +961,8 @@ class TParseContext : angle::NonCopyable
     // Track the state of each atomic counter binding.
     std::map<int, AtomicCounterBindingState> mAtomicCounterBindingStates;
 
-    // Track the format of each pixel local storage binding.
-    std::map<int, ShPixelLocalStorageFormat> mPLSFormats;
+    // Track the layout qualifier of each pixel local storage binding.
+    std::map<int, ShPixelLocalStorageLayout> mPLSLayouts;
 
     // Potential errors to generate immediately upon encountering a pixel local storage uniform.
     std::vector<std::tuple<const TSourceLoc, PLSIllegalOperations>> mPLSPotentialErrors;

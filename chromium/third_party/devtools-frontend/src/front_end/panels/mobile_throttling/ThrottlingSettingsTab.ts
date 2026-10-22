@@ -735,7 +735,9 @@ export class ThrottlingSettingsTab extends UI.Widget.VBox implements
         const errorMessage = i18nString(UIStrings.profileNameCharactersLengthMust, {PH1: maxLength});
         return {valid, errorMessage};
       }
-      return {valid, errorMessage: undefined};
+      return {
+        valid,
+      };
     }
 
     function throughputValidator(
@@ -753,7 +755,9 @@ export class ThrottlingSettingsTab extends UI.Widget.VBox implements
             {PH1: String(throughput), PH2: minThroughput, PH3: maxThroughput});
         return {valid, errorMessage};
       }
-      return {valid, errorMessage: undefined};
+      return {
+        valid,
+      };
     }
 
     function latencyValidator(_item: SDK.NetworkManager.Conditions, _index: number, input: UI.ListWidget.EditorControl):
@@ -767,7 +771,9 @@ export class ThrottlingSettingsTab extends UI.Widget.VBox implements
         const errorMessage = i18nString(UIStrings.latencyMustBeAnIntegerBetweenSms, {PH1: minLatency, PH2: maxLatency});
         return {valid, errorMessage};
       }
-      return {valid, errorMessage: undefined};
+      return {
+        valid,
+      };
     }
 
     function packetLossValidator(
@@ -783,7 +789,9 @@ export class ThrottlingSettingsTab extends UI.Widget.VBox implements
             i18nString(UIStrings.packetLossMustBeAnIntegerBetweenSpct, {PH1: minPacketLoss, PH2: maxPacketLoss});
         return {valid, errorMessage};
       }
-      return {valid, errorMessage: undefined};
+      return {
+        valid,
+      };
     }
 
     function packetQueueLengthValidator(
@@ -797,13 +805,17 @@ export class ThrottlingSettingsTab extends UI.Widget.VBox implements
         const errorMessage = i18nString(UIStrings.packetQueueLengthMustBeAnIntegerGreaterOrEqualToZero);
         return {valid, errorMessage};
       }
-      return {valid, errorMessage: undefined};
+      return {
+        valid,
+      };
     }
 
     function packetReorderingValidator(
         _item: SDK.NetworkManager.Conditions, _index: number,
         _input: UI.ListWidget.EditorControl): UI.ListWidget.ValidatorResult {
-      return {valid: true, errorMessage: undefined};
+      return {
+        valid: true,
+      };
     }
   }
 }

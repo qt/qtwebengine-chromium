@@ -253,6 +253,7 @@ struct traits<GMRES<MatrixType_, Preconditioner_> > {
  */
 template <typename MatrixType_, typename Preconditioner_>
 class GMRES : public IterativeSolverBase<GMRES<MatrixType_, Preconditioner_> > {
+ protected:
   typedef IterativeSolverBase<GMRES> Base;
   using Base::m_error;
   using Base::m_info;
@@ -291,7 +292,7 @@ class GMRES : public IterativeSolverBase<GMRES<MatrixType_, Preconditioner_> > {
 
   /** Get the number of iterations after that a restart is performed.
    */
-  Index get_restart() { return m_restart; }
+  Index get_restart() const { return m_restart; }
 
   /** Set the number of iterations after that a restart is performed.
    *  \param restart   number of iterations for a restarti, default is 30.

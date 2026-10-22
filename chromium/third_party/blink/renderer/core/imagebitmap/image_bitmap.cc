@@ -61,12 +61,6 @@ namespace blink {
 
 namespace {
 
-// Kill switch for behavior change in how StaticBitmapImages are created from
-// HTMLVideoElements.
-// TODO(crbug.com/40170349): Remove after M145.
-BASE_FEATURE(kAcceleratedImagesForResizedVideo,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 gfx::Size ParseDstSize(const ImageBitmapOptions* options,
                        const gfx::Rect& src_rect) {
   int resize_width = 0;
@@ -349,15 +343,10 @@ ImageBitmap::ImageBitmap(ImageElementBase* image,
 ImageBitmap::ImageBitmap(HTMLVideoElement* video,
                          std::optional<gfx::Rect> crop_rect,
                          const ImageBitmapOptions* options) {
-  const bool allow_accelerated_images =
-      base::FeatureList::IsEnabled(kAcceleratedImagesForResizedVideo)
-          ? true
-          : (!options->hasResizeWidth() && !options->hasResizeHeight());
-
   const bool reinterpret_as_srgb =
       (options->colorSpaceConversion() == V8ColorSpaceConversion::Enum::kNone);
-  auto input = video->CreateStaticBitmapImage(
-      allow_accelerated_images, /*size=*/std::nullopt, reinterpret_as_srgb);
+  auto input = video->CreateStaticBitmapImage(/*size=*/std::nullopt,
+                                              reinterpret_as_srgb);
   if (!input) {
     return;
   }
@@ -383,9 +372,8 @@ ImageBitmap::ImageBitmap(HTMLCanvasElement* canvas,
       canvas->GetSourceImageForCanvas(&status, gfx::SizeF());
   if (status != kNormalSourceImageStatus)
     return;
-  DCHECK(IsA<StaticBitmapImage>(image_input.get()));
   scoped_refptr<StaticBitmapImage> input =
-      static_cast<StaticBitmapImage*>(image_input.get());
+      To<StaticBitmapImage>(image_input.get());
 
   const ParsedOptions parsed_options = ParseOptions(options, crop_rect, input);
   if (DstBufferSizeHasOverflow(parsed_options))
@@ -405,9 +393,8 @@ ImageBitmap::ImageBitmap(OffscreenCanvas* offscreen_canvas,
   SourceImageStatus status;
   scoped_refptr<Image> raw_input = offscreen_canvas->GetSourceImageForCanvas(
       &status, gfx::SizeF(offscreen_canvas->Size()));
-  DCHECK(IsA<StaticBitmapImage>(raw_input.get()));
   scoped_refptr<StaticBitmapImage> input =
-      static_cast<StaticBitmapImage*>(raw_input.get());
+      To<StaticBitmapImage>(raw_input.get());
   raw_input = nullptr;
 
   if (status != kNormalSourceImageStatus)

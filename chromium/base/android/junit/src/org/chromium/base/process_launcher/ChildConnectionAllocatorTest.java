@@ -26,18 +26,19 @@ import android.os.Bundle;
 import android.os.Handler;
 
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 import org.mockito.invocation.InvocationOnMock;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 import org.mockito.stubbing.Answer;
 import org.robolectric.annotation.Config;
-import org.robolectric.annotation.LooperMode;
-import org.robolectric.shadows.ShadowLooper;
 
 import org.chromium.base.ChildBindingState;
 import org.chromium.base.test.BaseRobolectricTestRunner;
+import org.chromium.base.test.RobolectricUtil;
 import org.chromium.base.test.util.Feature;
 
 import java.util.HashSet;
@@ -46,8 +47,8 @@ import java.util.Set;
 /** Unit tests for the ChildConnectionAllocator class. */
 @Config(manifest = Config.NONE)
 @RunWith(BaseRobolectricTestRunner.class)
-@LooperMode(LooperMode.Mode.LEGACY)
 public class ChildConnectionAllocatorTest {
+    @Rule public MockitoRule mMockitoRule = MockitoJUnit.rule();
     private static final String TEST_PACKAGE_NAME = "org.chromium.allocator_test";
 
     private static final int MAX_CONNECTION_NUMBER = 2;
@@ -165,7 +166,6 @@ public class ChildConnectionAllocatorTest {
 
     @Before
     public void setUp() {
-        MockitoAnnotations.initMocks(this);
 
         mAllocator =
                 ChildConnectionAllocator.createFixedForTesting(
@@ -338,12 +338,12 @@ public class ChildConnectionAllocatorTest {
         assertNull(newConnection[0]);
 
         mTestConnectionFactory.simulateServiceProcessDying();
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+        RobolectricUtil.runAllBackgroundAndUiIncludingDelayed();
         assertNotNull(newConnection[0]);
         assertNull(newConnection[1]);
 
         mTestConnectionFactory.simulateServiceProcessDying();
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+        RobolectricUtil.runAllBackgroundAndUiIncludingDelayed();
         assertNotNull(newConnection[1]);
     }
 
@@ -429,13 +429,13 @@ public class ChildConnectionAllocatorTest {
         assertNotNull(connection2Factory.getAndResetLastFallbackServiceName());
 
         connection2Factory.simulateServiceProcessDying();
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+        RobolectricUtil.runAllBackgroundAndUiIncludingDelayed();
         assertEquals(1, allocator.allocatedConnectionsCountForTesting());
         assertEquals(true, allocator.isFreeConnectionAvailable());
         assertEquals(true, allocator.anyConnectionAllocated());
 
         connection1Factory.simulateServiceProcessDying();
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+        RobolectricUtil.runAllBackgroundAndUiIncludingDelayed();
         assertEquals(2, allocator.getMaxNumberOfAllocations());
         assertEquals(0, allocator.allocatedConnectionsCountForTesting());
         assertEquals(true, allocator.isFreeConnectionAvailable());
@@ -451,8 +451,6 @@ public class ChildConnectionAllocatorTest {
             boolean onChildStarted,
             boolean onChildStartFailed,
             boolean onChildProcessDied) {
-        // We have to pause the Roboletric looper or it'll execute the posted tasks synchronoulsy.
-        ShadowLooper.pauseMainLooper();
         mTestConnectionFactory.invokeCallbackOnConnectionStart(
                 onChildStarted, onChildStartFailed, onChildProcessDied);
         ChildProcessConnection connection =
@@ -467,8 +465,7 @@ public class ChildConnectionAllocatorTest {
         verify(mServiceCallback, never()).onChildStarted();
         verify(mServiceCallback, never()).onChildStartFailed(any());
         verify(mServiceCallback, never()).onChildProcessDied(any());
-        ShadowLooper.unPauseMainLooper();
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+        RobolectricUtil.runAllBackgroundAndUiIncludingDelayed();
         verify(mServiceCallback, times(onChildStarted ? 1 : 0)).onChildStarted();
         verify(mServiceCallback, times(onChildStartFailed ? 1 : 0)).onChildStartFailed(any());
         verify(mServiceCallback, times(onChildProcessDied ? 1 : 0)).onChildProcessDied(any());
@@ -597,7 +594,7 @@ public class ChildConnectionAllocatorTest {
                 fail();
                 break;
         }
-        ShadowLooper.runUiThreadTasksIncludingDelayedTasks();
+        RobolectricUtil.runAllBackgroundAndUiIncludingDelayed();
         assertFalse(allocator.anyConnectionAllocated());
         verify(mServiceCallback, never()).onChildStarted();
         verify(mServiceCallback, times(onChildStartFailedExpectedCount))

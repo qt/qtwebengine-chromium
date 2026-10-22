@@ -507,9 +507,8 @@ bool CPDF_CIDFont::Load() {
   if (pWidthArray) {
     LoadMetricsArray(std::move(pWidthArray), &width_list_, 1);
   }
-
   if (!IsEmbedded()) {
-    LoadSubstFont();
+    LoadSubstFace();
   }
 
   RetainPtr<const CPDF_Object> cmap =
@@ -580,7 +579,7 @@ FX_RECT CPDF_CIDFont::GetCharBBox(uint32_t charcode) {
   return rect;
 }
 
-int CPDF_CIDFont::GetCharWidthF(uint32_t charcode) {
+int CPDF_CIDFont::GetCharWidth(uint32_t charcode) {
   if (charcode < 0x80 && ansi_widths_fixed_) {
     return (charcode >= 32 && charcode < 127) ? 500 : 0;
   }
@@ -865,12 +864,13 @@ bool CPDF_CIDFont::IsUnicodeCompatible() const {
   return cmap_->GetCoding() != CIDCoding::kUNKNOWN;
 }
 
-void CPDF_CIDFont::LoadSubstFont() {
+void CPDF_CIDFont::LoadSubstFace() {
   FX_SAFE_INT32 safe_stem_v(stem_v_);
   safe_stem_v *= 5;
-  font_.LoadSubst(base_font_name_, font_type_ == CIDFontType::kTrueType, flags_,
-                  safe_stem_v.ValueOrDefault(pdfium::kFontWeightNormal),
-                  italic_angle_, kCharsetCodePages[charset_], IsVertWriting());
+  font_.LoadSubstFace(
+      base_font_name_, font_type_ == CIDFontType::kTrueType, flags_,
+      safe_stem_v.ValueOrDefault(pdfium::kFontWeightNormal), italic_angle_,
+      kCharsetCodePages[charset_], IsVertWriting());
 }
 
 // static
@@ -890,9 +890,8 @@ void CPDF_CIDFont::LoadGB2312() {
   if (font_desc) {
     LoadFontDescriptor(font_desc.Get());
   }
-
   if (!IsEmbedded()) {
-    LoadSubstFont();
+    LoadSubstFace();
   }
   CheckFontMetrics();
   ansi_widths_fixed_ = true;

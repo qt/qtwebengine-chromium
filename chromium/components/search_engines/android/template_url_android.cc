@@ -11,6 +11,7 @@
 #include "base/android/jni_string.h"
 #include "build/branding_buildflags.h"
 #include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_data.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/resource/resource_scale_factor.h"
 #include "url/android/gurl_android.h"
@@ -52,6 +53,14 @@ static ScopedJavaLocalRef<jobject> JNI_TemplateUrl_GetFaviconURL(
   return url::GURLAndroid::FromNativeGURL(env, template_url->favicon_url());
 }
 
+static bool JNI_TemplateUrl_IsPrepopulatedOrProgramProvided(
+    JNIEnv* env,
+    int64_t template_url_ptr) {
+  TemplateURL* template_url = ToTemplateURL(template_url_ptr);
+  return template_url->prepopulate_id() > 0 ||
+         template_url->CreatedByRegulatoryProgram();
+}
+
 static bool JNI_TemplateUrl_IsPrepopulatedOrDefaultProviderByPolicy(
     JNIEnv* env,
     int64_t template_url_ptr) {
@@ -79,6 +88,13 @@ static int32_t JNI_TemplateUrl_GetStarterPackId(JNIEnv* env,
   return static_cast<int>(template_url->starter_pack_id());
 }
 
+static bool JNI_TemplateUrl_RequiresRemovalConfirmation(
+    JNIEnv* env,
+    int64_t template_url_ptr) {
+  TemplateURL* template_url = ToTemplateURL(template_url_ptr);
+  return template_url->RequiresRemovalConfirmation();
+}
+
 ScopedJavaLocalRef<jobject> CreateTemplateUrlAndroid(
     JNIEnv* env,
     const TemplateURL* template_url) {
@@ -98,6 +114,17 @@ static ScopedJavaLocalRef<jstring> JNI_TemplateUrl_GetNewTabURL(
   TemplateURL* template_url = ToTemplateURL(template_url_ptr);
   return base::android::ConvertUTF8ToJavaString(env,
                                                 template_url->new_tab_url());
+}
+
+static std::string JNI_TemplateUrl_GetProvidingExtensionId(
+    JNIEnv* env,
+    int64_t template_url_ptr) {
+  TemplateURL* template_url = ToTemplateURL(template_url_ptr);
+  if (template_url->type() != TemplateURL::NORMAL_CONTROLLED_BY_EXTENSION &&
+      template_url->type() != TemplateURL::OMNIBOX_API_EXTENSION) {
+    return {};
+  }
+  return template_url->GetExtensionId();
 }
 
 static jni_zero::ScopedJavaLocalRef<jbyteArray>

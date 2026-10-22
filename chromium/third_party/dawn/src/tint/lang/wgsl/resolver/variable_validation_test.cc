@@ -363,10 +363,7 @@ TEST_F(ResolverVariableValidationTest, NonConstructibleType_RuntimeArray) {
     WrapInFunction(v);
 
     EXPECT_FALSE(r()->Resolve());
-    EXPECT_EQ(r()->error(),
-              R"(error: runtime-sized arrays can only be used in the <storage> address space
-12:34 note: while analyzing structure member S.m
-56:78 note: while instantiating 'var' v)");
+    EXPECT_EQ(r()->error(), R"(error: function-scope 'var' must have a constructible type)");
 }
 
 TEST_F(ResolverVariableValidationTest, NonConstructibleType_Struct_WithAtomic) {

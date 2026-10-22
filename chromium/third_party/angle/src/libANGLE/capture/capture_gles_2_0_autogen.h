@@ -269,7 +269,7 @@ angle::CallCapture CaptureGetBooleanv(const State &glState,
 angle::CallCapture CaptureGetBufferParameteriv(const State &glState,
                                                bool isCallValid,
                                                BufferBinding targetPacked,
-                                               GLenum pname,
+                                               BufferParam pnamePacked,
                                                GLint *params);
 angle::CallCapture CaptureGetError(const State &glState, bool isCallValid, GLenum returnValue);
 angle::CallCapture CaptureGetFloatv(const State &glState,
@@ -323,7 +323,7 @@ angle::CallCapture CaptureGetShaderSource(const State &glState,
 angle::CallCapture CaptureGetShaderiv(const State &glState,
                                       bool isCallValid,
                                       ShaderProgramID shaderPacked,
-                                      GLenum pname,
+                                      ShaderParameter pnamePacked,
                                       GLint *params);
 angle::CallCapture CaptureGetString(const State &glState,
                                     bool isCallValid,
@@ -851,7 +851,7 @@ void CaptureGetBooleanv_data(const State &glState,
                              angle::ParamCapture *paramCapture);
 void CaptureGetBufferParameteriv_params(const State &glState,
                                         BufferBinding targetPacked,
-                                        GLenum pname,
+                                        BufferParam pnamePacked,
                                         GLint *params,
                                         angle::ParamCapture *paramCapture);
 void CaptureGetFloatv_data(const State &glState,
@@ -928,7 +928,7 @@ void CaptureGetShaderSource_source(const State &glState,
                                    angle::ParamCapture *paramCapture);
 void CaptureGetShaderiv_params(const State &glState,
                                ShaderProgramID shaderPacked,
-                               GLenum pname,
+                               ShaderParameter pnamePacked,
                                GLint *params,
                                angle::ParamCapture *paramCapture);
 void CaptureGetTexParameterfv_params(const State &glState,

@@ -29,6 +29,7 @@
 
 #include <string>
 #include <vector>
+
 #include "dawn/common/StringViewUtils.h"
 #include "dawn/native/webgpu/BindGroupLayoutWGPU.h"
 #include "dawn/native/webgpu/CaptureContext.h"
@@ -50,7 +51,7 @@ RenderPipeline::RenderPipeline(Device* device,
                                const UnpackedPtr<RenderPipelineDescriptor>& descriptor)
     : RenderPipelineBase(device, descriptor),
       RecordableObject(schema::ObjectType::RenderPipeline),
-      ObjectWGPU(device->wgpu.renderPipelineRelease) {}
+      ObjectWGPU(device->wgpu->renderPipelineRelease) {}
 
 MaybeError RenderPipeline::InitializeImpl() {
     auto device = ToBackend(GetDevice());
@@ -70,8 +71,9 @@ MaybeError RenderPipeline::InitializeImpl() {
     PerColorAttachment<WGPUColorTargetStateExpandResolveTextureDawn>
         colorTargetStateExpandResolveTextureDawnExtensions = {};
 
+    std::string label = GetLabel();
     desc.nextInChain = nullptr;
-    desc.label = ToOutputStringView(GetLabel());
+    desc.label = ToOutputStringView(label);
     auto layout = GetLayout();
     DAWN_ASSERT(layout != nullptr);
     desc.layout = ToBackend(layout)->GetInnerHandle();
@@ -181,7 +183,7 @@ MaybeError RenderPipeline::InitializeImpl() {
         desc.fragment = nullptr;
     }
 
-    mInnerHandle = device->wgpu.deviceCreateRenderPipeline(device->GetInnerHandle(), &desc);
+    mInnerHandle = device->wgpu->deviceCreateRenderPipeline(device->GetInnerHandle(), &desc);
     DAWN_ASSERT(mInnerHandle);
     return {};
 }

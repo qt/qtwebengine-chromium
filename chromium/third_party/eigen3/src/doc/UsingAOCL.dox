@@ -196,14 +196,10 @@ cmake .. -DCMAKE_BUILD_TYPE=Release \
 \endcode
 
 
-To build Eigen with AOCL integration and benchmarking capabilities, use the following CMake configuration:
+To build Eigen with AOCL integration, use the following CMake configuration:
 
 \code
-cmake .. -DEIGEN_BUILD_AOCL_BENCH=ON \
-         -DEIGEN_AOCL_BENCH_FLAGS="-O3 -mavx512f -fveclib=AMDLIBM" \
-         -DEIGEN_AOCL_BENCH_USE_MT=OFF \
-         -DEIGEN_AOCL_BENCH_ARCH=znver5 \
-         -DCMAKE_BUILD_TYPE=Debug \
+cmake .. -DCMAKE_BUILD_TYPE=Release \
          -DCMAKE_C_COMPILER=clang \
          -DCMAKE_CXX_COMPILER=clang++ \
          -DCMAKE_INSTALL_PREFIX=$PWD/install \
@@ -215,10 +211,6 @@ cmake .. -DEIGEN_BUILD_AOCL_BENCH=ON \
 
 <table class="manual">
 <tr><th>Parameter</th><th>Expected Values</th><th>Description</th></tr>
-<tr><td>\c EIGEN_BUILD_AOCL_BENCH</td><td>\c ON, \c OFF</td><td>Enable/disable AOCL benchmark compilation</td></tr>
-<tr class="alt"><td>\c EIGEN_AOCL_BENCH_FLAGS</td><td>Compiler flags string</td><td>Additional compiler optimizations: \c "-O3 -mavx512f -fveclib=AMDLIBM"</td></tr>
-<tr><td>\c EIGEN_AOCL_BENCH_USE_MT</td><td>\c ON, \c OFF</td><td>Use multi-threaded AOCL libraries (\c ON recommended for performance)</td></tr>
-<tr class="alt"><td>\c EIGEN_AOCL_BENCH_ARCH</td><td>\c znver3, \c znver4, \c znver5, \c native, \c generic</td><td>Target AMD architecture (match your CPU generation)</td></tr>
 <tr><td>\c CMAKE_BUILD_TYPE</td><td>\c Release, \c Debug, \c RelWithDebInfo</td><td>Build configuration (\c Release recommended for benchmarks)</td></tr>
 <tr class="alt"><td>\c CMAKE_C_COMPILER</td><td>\c clang, \c gcc</td><td>C compiler (clang recommended for AOCL)</td></tr>
 <tr><td>\c CMAKE_CXX_COMPILER</td><td>\c clang++, \c g++</td><td>C++ compiler (clang++ recommended for AOCL)</td></tr>

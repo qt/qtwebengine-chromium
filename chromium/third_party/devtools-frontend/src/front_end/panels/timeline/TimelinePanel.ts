@@ -54,14 +54,13 @@ import * as TraceBounds from '../../services/trace_bounds/trace_bounds.js';
 import * as Tracing from '../../services/tracing/tracing.js';
 import * as Adorners from '../../ui/components/adorners/adorners.js';
 import * as Dialogs from '../../ui/components/dialogs/dialogs.js';
-import * as LegacyWrapper from '../../ui/components/legacy_wrapper/legacy_wrapper.js';
-import * as Snackbars from '../../ui/components/snackbars/snackbars.js';
 import {Link} from '../../ui/kit/kit.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as SettingsUI from '../../ui/legacy/components/settings_ui/settings_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import * as PanelsCommon from '../common/common.js';
 import * as MobileThrottling from '../mobile_throttling/mobile_throttling.js';
 
 import {ActiveFilters} from './ActiveFilters.js';
@@ -93,7 +92,7 @@ import {TimelineUIUtils} from './TimelineUIUtils.js';
 import {createHiddenTracksOverlay} from './TrackConfigBanner.js';
 import {UIDevtoolsController} from './UIDevtoolsController.js';
 import {UIDevtoolsUtils} from './UIDevtoolsUtils.js';
-import * as Utils from './utils/utils.js';
+import type * as Utils from './utils/utils.js';
 
 const UIStrings = {
   /**
@@ -311,10 +310,6 @@ const UIStrings = {
    * @description Title of the shortcuts dialog shown to the user that lists keyboard shortcuts.
    */
   shortcutsDialogTitle: 'Keyboard shortcuts for flamechart',
-  /**
-   * @description Notification shown to the user whenever DevTools receives an external request.
-   */
-  externalRequestReceived: '`DevTools` received an external request',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/TimelinePanel.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -335,7 +330,6 @@ type ViewMode = {
 }|{
   mode: 'VIEWING_TRACE',
   traceIndex: number,
-  forceOpenSidebar: boolean,
 }|{
   mode: 'STATUS_PANE_OVERLAY',
 };
@@ -408,7 +402,6 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
   private traceLoadStart!: Trace.Types.Timing.Milli|null;
 
   #traceEngineModel: Trace.TraceModel.Model;
-  #externalAIConversationData: AiAssistanceModel.ConversationHandler.ExternalPerformanceAIConversationData|null = null;
   #sourceMapsResolver: SourceMapsResolver.SourceMapsResolver|null = null;
   #entityMapper: Trace.EntityMapper.EntityMapper|null = null;
   #onSourceMapsNodeNamesResolvedBound = this.#onSourceMapsNodeNamesResolved.bind(this);
@@ -431,6 +424,19 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
    */
   #userHadShortcutsDialogOpenedOnce = Common.Settings.Settings.instance().createSetting<boolean>(
       'timeline.user-had-shortcuts-dialog-opened-once', false);
+  /**
+   * Rather than auto-pop the sidebar every time the user records a trace,
+   * which could get annoying, we instead persist the state of the sidebar
+   * visibility to a setting so it's restored across sessions.
+   * However, sometimes we have to automatically hide the sidebar, like when a
+   * trace recording is happening, or the user is on the landing page. In those
+   * times, we toggle this flag to true. Then, when we enter the VIEWING_TRACE
+   * mode, we check this flag and pop the sidebar open if it's set to true.
+   * Longer term a better fix here would be to divide the 3 UI screens
+   * (status pane, landing page, trace view) into distinct components /
+   * widgets, to avoid this complexity.
+   */
+  #restoreSidebarVisibilityOnTraceLoad = false;
   /**
    * Navigation radio buttons located in the shortcuts dialog.
    */
@@ -733,10 +739,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
 
   #instantiateNewModel(): Trace.TraceModel.Model {
     const config = Trace.Types.Configuration.defaults();
-    config.showAllEvents =
-        Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.TIMELINE_SHOW_ALL_EVENTS);
-    config.includeRuntimeCallStats =
-        Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.TIMELINE_V8_RUNTIME_CALL_STATS);
+    config.showAllEvents = Common.Settings.Settings.instance().moduleSetting('timeline-show-all-events').get();
     config.debugMode = Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.TIMELINE_DEBUG_MODE);
 
     const traceEngineModel = Trace.TraceModel.Model.createWithAllHandlers(config);
@@ -790,7 +793,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
   }
 
   #onFieldDataChanged(): void {
-    const recs = Utils.Helpers.getThrottlingRecommendations();
+    const recs = PanelsCommon.ThrottlingUtils.getThrottlingRecommendations();
     this.cpuThrottlingSelect?.updateRecommendedOption(recs.cpuOption);
     if (this.networkThrottlingSelect) {
       this.networkThrottlingSelect.recommendedConditions = recs.networkConditions;
@@ -928,9 +931,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
         this.#hideLandingPage();
         this.#setModelForActiveTrace();
         this.#removeStatusPane();
-        if (newMode.forceOpenSidebar) {
-          this.#showSidebar();
-        }
+        this.#showSidebarIfRequired();
         this.flameChart.dimThirdPartiesIfRequired();
         this.dispatchEventToListeners(Events.IS_VIEWING_TRACE, true);
 
@@ -966,41 +967,6 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
    */
   get model(): Trace.TraceModel.Model {
     return this.#traceEngineModel;
-  }
-
-  getOrCreateExternalAIConversationData(): AiAssistanceModel.ConversationHandler.ExternalPerformanceAIConversationData {
-    if (!this.#externalAIConversationData) {
-      const conversationHandler = AiAssistanceModel.ConversationHandler.ConversationHandler.instance();
-      const focus = AiAssistanceModel.AIContext.getPerformanceAgentFocusFromModel(this.model);
-      if (!focus) {
-        throw new Error('could not create performance agent focus');
-      }
-
-      const conversation = new AiAssistanceModel.AiConversation.AiConversation(
-          AiAssistanceModel.AiHistoryStorage.ConversationType.PERFORMANCE,
-          [],
-          undefined,
-          /* isReadOnly */ true,
-          conversationHandler.aidaClient,
-          undefined,
-          /* isExternal */ true,
-      );
-
-      const selected = new AiAssistanceModel.PerformanceAgent.PerformanceTraceContext(focus);
-      selected.external = true;
-
-      this.#externalAIConversationData = {
-        conversationHandler,
-        conversation,
-        selected,
-      };
-    }
-
-    return this.#externalAIConversationData;
-  }
-
-  invalidateExternalAIConversationData(): void {
-    this.#externalAIConversationData = null;
   }
 
   /**
@@ -1663,10 +1629,26 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
         this.#changeView({
           mode: 'VIEWING_TRACE',
           traceIndex: recordingData.parsedTraceIndex,
-          forceOpenSidebar: false,
         });
       }
     }
+  }
+
+  revealParsedTrace(revealable: ParsedTraceRevealable): void {
+    const index = this.model.indexForTrace(revealable.parsedTrace);
+    if (index === -1) {
+      return;
+    }
+
+    if (this.#activeTraceIndex() === index) {
+      // Already viewing this trace.
+      return;
+    }
+
+    this.#changeView({
+      mode: 'VIEWING_TRACE',
+      traceIndex: index,
+    });
   }
 
   navigateHistory(direction: number): boolean {
@@ -1677,7 +1659,6 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
       this.#changeView({
         mode: 'VIEWING_TRACE',
         traceIndex: recordingData.parsedTraceIndex,
-        forceOpenSidebar: false,
       });
     }
     return true;
@@ -1987,8 +1968,6 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
           description: error,
           buttonText: i18nString(UIStrings.close),
           hideStopButton: false,
-          showProgress: undefined,
-          showTimer: undefined,
         },
         // When recording failed, we should load null to go back to the landing page.
         async () => {
@@ -2092,8 +2071,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
 
   #applyActiveFilters(traceIsGeneric: boolean, exclusiveFilter: Trace.Extras.TraceFilter.TraceFilter|null = null):
       void {
-    if (traceIsGeneric ||
-        Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.TIMELINE_SHOW_ALL_EVENTS)) {
+    if (traceIsGeneric || Common.Settings.Settings.instance().moduleSetting('timeline-show-all-events').get()) {
       return;
     }
 
@@ -2303,18 +2281,32 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
   }
 
   /**
-   * After the user imports / records a trace, we auto-show the sidebar.
+   * After the user imports / records a trace, we auto-show the sidebar if:
+   * 1. The user has never seen it before, so we show it once to aid discovery
+   * 2. The user had it open, and we hid it (for example, during recording), so now we need to bring it back.
    */
-  #showSidebar(): void {
-    const disabledByLocalStorageForTests =
-        window.localStorage.getItem('disable-auto-show-rpp-sidebar-for-test') === 'true';
-    if (disabledByLocalStorageForTests) {
+  #showSidebarIfRequired(): void {
+    const disabledByLocalStorage = window.localStorage.getItem('disable-auto-show-rpp-sidebar-for-test') === 'true';
+
+    if (Root.Runtime.Runtime.queryParam('disable-auto-performance-sidebar-reveal') !== null || disabledByLocalStorage) {
+      // Used in interaction tests & screenshot tests.
       return;
     }
 
-    if (!this.#splitWidget.sidebarIsShowing()) {
+    const needToRestore = this.#restoreSidebarVisibilityOnTraceLoad;
+    const userHasSeenSidebar = this.#sideBar.sidebarHasBeenOpened();
+
+    if ((!userHasSeenSidebar || needToRestore) && !this.#splitWidget.sidebarIsShowing()) {
       this.#splitWidget.showBoth();
     }
+    this.#restoreSidebarVisibilityOnTraceLoad = false;
+  }
+
+  /**
+   * Exposed for testing.
+   */
+  splitWidget(): UI.SplitWidget.SplitWidget {
+    return this.#splitWidget;
   }
 
   // Build a map mapping annotated entries to the colours that are used to display them in the FlameChart.
@@ -2414,6 +2406,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
    */
   #hideSidebar(): void {
     if (this.#splitWidget.sidebarIsShowing()) {
+      this.#restoreSidebarVisibilityOnTraceLoad = true;
       this.#splitWidget.hideSidebar();
     }
   }
@@ -2428,8 +2421,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
       return;
     }
 
-    const liveMetrics = new TimelineComponents.LiveMetricsView.LiveMetricsView();
-    this.landingPage = LegacyWrapper.LegacyWrapper.legacyWrapper(UI.Widget.Widget, liveMetrics);
+    this.landingPage = new TimelineComponents.LiveMetricsView.LiveMetricsView();
     this.landingPage.element.classList.add('timeline-landing-page', 'fill');
     this.landingPage.contentElement.classList.add('fill');
     this.landingPage.show(this.statusPaneContainer);
@@ -2452,10 +2444,7 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
     this.statusDialog = new StatusDialog(
         {
           showProgress: true,
-          showTimer: undefined,
           hideStopButton: true,
-          buttonText: undefined,
-          description: undefined,
         },
         () => this.cancelLoading());
     this.statusDialog.showPane(this.statusPaneContainer);
@@ -2520,7 +2509,6 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
         this.#changeView({
           mode: 'VIEWING_TRACE',
           traceIndex: this.#traceEngineModel.lastTraceIndex(),
-          forceOpenSidebar: false,
         });
       } else {
         this.#changeView({mode: 'LANDING_PAGE'});
@@ -2537,8 +2525,6 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
       this.#changeView({
         mode: 'VIEWING_TRACE',
         traceIndex,
-        // This is a new trace, so we want to open the insights sidebar automatically.
-        forceOpenSidebar: true,
       });
 
       const parsedTrace = this.#traceEngineModel.parsedTrace(traceIndex);
@@ -2844,8 +2830,6 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
           showTimer: true,
           showProgress: true,
           hideStopButton: false,
-          description: undefined,
-          buttonText: undefined,
         },
         () => this.stopRecording());
     this.statusDialog.showPane(this.statusPaneContainer);
@@ -3041,6 +3025,17 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
     this.#setActiveInsight({model: insightModel, insightSetKey}, {highlightInsight: true});
   }
 
+  revealCoreVitals(revealable: Utils.Helpers.RevealableCoreVitals): void {
+    if (this.#splitWidget.showMode() !== UI.SplitWidget.ShowMode.BOTH) {
+      this.#splitWidget.showBoth();
+    }
+    this.#sideBar.openInsightsTab();
+    if (revealable.insightSetKey) {
+      this.#sideBar.setActiveInsightSet(revealable.insightSetKey);
+      this.#setActiveInsight(null);
+    }
+  }
+
   static async executeRecordAndReload(): Promise<Trace.TraceModel.ParsedTrace> {
     await UI.ViewManager.ViewManager.instance().showView('timeline');
     const panelInstance = TimelinePanel.instance();
@@ -3066,120 +3061,6 @@ export class TimelinePanel extends Common.ObjectWrapper.eventMixin<EventTypes, t
     return trace;
   }
 
-  static async *
-      handleExternalRecordRequest(): AsyncGenerator<
-          AiAssistanceModel.AiAgent.ExternalRequestResponse, AiAssistanceModel.AiAgent.ExternalRequestResponse> {
-    yield {
-      type: AiAssistanceModel.AiAgent.ExternalRequestResponseType.NOTIFICATION,
-      message: 'Recording performance trace',
-    };
-    TimelinePanel.instance().invalidateExternalAIConversationData();
-    void VisualLogging.logFunctionCall('timeline.record-reload', 'external');
-    Snackbars.Snackbar.Snackbar.show({message: i18nString(UIStrings.externalRequestReceived)});
-
-    const panelInstance = TimelinePanel.instance();
-    // Given how the current UX works, it's nice to show the user the Perf
-    // Panel so they see what's happening
-    await UI.ViewManager.ViewManager.instance().showView('timeline');
-
-    function onRecordingCompleted(eventData: EventTypes[Events.RECORDING_COMPLETED]):
-        AiAssistanceModel.AiAgent.ExternalRequestResponse {
-      if ('errorText' in eventData) {
-        return {
-          type: AiAssistanceModel.AiAgent.ExternalRequestResponseType.ERROR,
-          message: `Error running the trace: ${eventData.errorText}`,
-        };
-      }
-
-      const parsedTrace = panelInstance.model.parsedTrace(eventData.traceIndex);
-      if (!parsedTrace || !parsedTrace.insights || parsedTrace.insights.size === 0) {
-        return {
-          type: AiAssistanceModel.AiAgent.ExternalRequestResponseType.ERROR,
-          message: 'The trace was loaded successfully but no Insights were detected.',
-        };
-      }
-
-      const insightSetId = Array.from(parsedTrace.insights.keys()).find(k => k !== 'NO_NAVIGATION');
-      if (!insightSetId) {
-        return {
-          type: AiAssistanceModel.AiAgent.ExternalRequestResponseType.ERROR,
-          message: 'The trace was loaded successfully but no navigation was detected.',
-        };
-      }
-
-      const insightsForNav = parsedTrace.insights.get(insightSetId);
-      if (!insightsForNav) {
-        return {
-          type: AiAssistanceModel.AiAgent.ExternalRequestResponseType.ERROR,
-          message: 'The trace was loaded successfully but no Insights were detected.',
-        };
-      }
-
-      let responseTextForNonPassedInsights = '';
-      // We still return info on the passed insights, but we put it at the
-      // bottom of the response under a heading.
-      let responseTextForPassedInsights = '';
-
-      // TODO(b/442392194): use PerformanceTraceFormatter summary instead.
-      for (const insight of Object.values(insightsForNav.model)) {
-        const focus = AiAssistanceModel.AIContext.AgentFocus.fromParsedTrace(parsedTrace);
-        const formatter = new AiAssistanceModel.PerformanceInsightFormatter.PerformanceInsightFormatter(focus, insight);
-        if (!formatter.insightIsSupported()) {
-          // Not all Insights are integrated with "Ask AI" yet, let's avoid
-          // filling up the response with those ones because there will be no
-          // useful information.
-          continue;
-        }
-
-        const formatted = formatter.formatInsight({headingLevel: 3});
-
-        if (insight.state === 'pass') {
-          responseTextForPassedInsights += `${formatted}\n\n`;
-          continue;
-        } else {
-          responseTextForNonPassedInsights += `${formatted}\n\n`;
-        }
-      }
-
-      const finalText = `# Trace recording results
-
-## Non-passing insights:
-
-These insights highlight potential problems and opportunities to improve performance.
-${responseTextForNonPassedInsights}
-
-## Passing insights:
-
-These insights are passing, which means they are not considered to highlight considerable performance problems.
-${responseTextForPassedInsights}`;
-
-      return {
-        type: AiAssistanceModel.AiAgent.ExternalRequestResponseType.ANSWER,
-        message: finalText,
-        devToolsLogs: [],
-      };
-    }
-
-    return await new Promise(resolve => {
-      function listener(e: Common.EventTarget.EventTargetEvent<EventTypes[Events.RECORDING_COMPLETED]>): void {
-        resolve(onRecordingCompleted(e.data));
-        panelInstance.removeEventListener(Events.RECORDING_COMPLETED, listener);
-      }
-      panelInstance.addEventListener(Events.RECORDING_COMPLETED, listener);
-
-      panelInstance.recordReload();
-    });
-  }
-
-  static async handleExternalAnalyzeRequest(prompt: string): Promise<AsyncGenerator<
-      AiAssistanceModel.AiAgent.ExternalRequestResponse, AiAssistanceModel.AiAgent.ExternalRequestResponse>> {
-    const data = TimelinePanel.instance().getOrCreateExternalAIConversationData();
-    return await data.conversationHandler.handleExternalRequest({
-      conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType.PERFORMANCE,
-      prompt,
-      data,
-    });
-  }
 }
 
 export const enum State {
@@ -3211,6 +3092,18 @@ export class TraceRevealer implements Common.Revealer.Revealer<SDK.TraceObject.T
   }
 }
 
+export class ParsedTraceRevealer implements Common.Revealer.Revealer<ParsedTraceRevealable> {
+  async reveal(traceRevealer: ParsedTraceRevealable): Promise<void> {
+    await UI.ViewManager.ViewManager.instance().showView('timeline');
+    TimelinePanel.instance().revealParsedTrace(traceRevealer);
+  }
+}
+
+export class ParsedTraceRevealable {
+  constructor(public parsedTrace: Trace.TraceModel.ParsedTrace) {
+  }
+}
+
 export class EventRevealer implements Common.Revealer.Revealer<SDK.TraceObject.RevealableEvent> {
   async reveal(rEvent: SDK.TraceObject.RevealableEvent): Promise<void> {
     await UI.ViewManager.ViewManager.instance().showView('timeline');
@@ -3222,6 +3115,35 @@ export class InsightRevealer implements Common.Revealer.Revealer<Utils.Helpers.R
   async reveal(revealable: Utils.Helpers.RevealableInsight): Promise<void> {
     await UI.ViewManager.ViewManager.instance().showView('timeline');
     TimelinePanel.instance().revealInsight(revealable.insight);
+  }
+}
+
+export class CoreVitalsRevealer implements Common.Revealer.Revealer<Utils.Helpers.RevealableCoreVitals> {
+  async reveal(revealable: Utils.Helpers.RevealableCoreVitals): Promise<void> {
+    await UI.ViewManager.ViewManager.instance().showView('timeline');
+    TimelinePanel.instance().revealCoreVitals(revealable);
+  }
+}
+
+export class TimeRangeRevealer implements Common.Revealer.Revealer<Utils.Helpers.RevealableTimeRange> {
+  async reveal(revealable: Utils.Helpers.RevealableTimeRange): Promise<void> {
+    await UI.ViewManager.ViewManager.instance().showView('timeline');
+    const panel = TimelinePanel.instance();
+    TraceBounds.TraceBounds.BoundsManager.instance().setTimelineVisibleWindow(
+        revealable.bounds, {ignoreMiniMapBounds: true, shouldAnimate: true});
+    panel.select(null);
+    panel.getFlameChart().selectDetailsViewTab(Tab.Details, null);
+  }
+}
+
+export class BottomUpProfileRevealer implements Common.Revealer.Revealer<Utils.Helpers.RevealableBottomUpProfile> {
+  async reveal(revealable: Utils.Helpers.RevealableBottomUpProfile): Promise<void> {
+    await UI.ViewManager.ViewManager.instance().showView('timeline');
+    const panel = TimelinePanel.instance();
+    TraceBounds.TraceBounds.BoundsManager.instance().setTimelineVisibleWindow(
+        revealable.bounds, {ignoreMiniMapBounds: true, shouldAnimate: true});
+    panel.select(null);
+    panel.getFlameChart().selectDetailsViewTab(Tab.BottomUp, null);
   }
 }
 

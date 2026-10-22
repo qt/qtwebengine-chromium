@@ -645,7 +645,7 @@ TEST_F(FPDFDocEmbedderTest, DeletePageAndRender) {
     ScopedPage page = LoadScopedPage(i);
     ASSERT_TRUE(page);
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(), page_paths[i]);
+    CompareBitmapWithExpectationSuffix(bitmap.get(), page_paths[i]);
   }
 
   // Delete the first page and render again. (original page indices 1-4)
@@ -655,7 +655,7 @@ TEST_F(FPDFDocEmbedderTest, DeletePageAndRender) {
     ScopedPage page = LoadScopedPage(i);
     ASSERT_TRUE(page);
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(), page_paths[i + 1]);
+    CompareBitmapWithExpectationSuffix(bitmap.get(), page_paths[i + 1]);
   }
 
   // Delete the last page and render again. (original page indices 1-3)
@@ -665,7 +665,7 @@ TEST_F(FPDFDocEmbedderTest, DeletePageAndRender) {
     ScopedPage page = LoadScopedPage(i);
     ASSERT_TRUE(page);
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(), page_paths[i + 1]);
+    CompareBitmapWithExpectationSuffix(bitmap.get(), page_paths[i + 1]);
   }
 
   // Delete the middle page and render again. (original page indices 1, 3)
@@ -676,8 +676,8 @@ TEST_F(FPDFDocEmbedderTest, DeletePageAndRender) {
     ASSERT_TRUE(page);
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
     int adjusted_index = i == 0 ? 1 : 3;
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(),
-                                            page_paths[adjusted_index]);
+    CompareBitmapWithExpectationSuffix(bitmap.get(),
+                                       page_paths[adjusted_index]);
   }
 }
 

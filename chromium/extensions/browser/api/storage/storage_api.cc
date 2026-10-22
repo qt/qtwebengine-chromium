@@ -12,7 +12,6 @@
 
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/memory_usage_estimator.h"
@@ -141,7 +140,7 @@ bool SettingsFunction::PreRunValidation(std::string* error) {
   if (extension()->is_login_screen_extension() &&
       storage_area_ != StorageAreaNamespace::kManaged) {
     // Login screen extensions are not allowed to use local/sync storage for
-    // security reasons (see crbug.com/978443).
+    // security reasons (see crbug.com/40633613).
     *error = base::StringPrintf(
         "\"%s\" is not available for login screen extensions",
         storage_area_string.c_str());

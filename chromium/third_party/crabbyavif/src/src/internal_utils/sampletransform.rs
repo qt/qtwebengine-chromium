@@ -757,7 +757,6 @@ mod tests {
             input_image.planes[3] = Some(Pixels::Buffer16(vec![1, 80, 99]));
             input_image.row_bytes = [6; 4];
         }
-        input_image.image_owns_planes = [false; 4];
         extra_inputs.push(input_image);
 
         sample_transform.apply(&extra_inputs, &mut output)?;

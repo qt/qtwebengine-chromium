@@ -27,6 +27,7 @@ bool FakeIdentityRequestDialogController::ShowAccountsDialog(
     content::RelyingPartyData rp_data,
     const std::vector<IdentityProviderDataPtr>& idp_list,
     const std::vector<IdentityRequestAccountPtr>& accounts,
+    const std::vector<IdentityRequestAccountPtr>& filtered_accounts,
     blink::mojom::RpMode rp_mode,
     AccountSelectionCallback on_selected,
     LoginToIdPCallback on_add_account,
@@ -78,6 +79,7 @@ bool FakeIdentityRequestDialogController::ShowFailureDialog(
     blink::mojom::RpContext rp_context,
     blink::mojom::RpMode rp_mode,
     const IdentityProviderMetadata& idp_metadata,
+    const std::vector<scoped_refptr<IdentityRequestAccount>>& filtered_accounts,
     DismissCallback dismiss_callback,
     LoginToIdPCallback login_callback) {
   title_ = "Confirm IDP Login";
@@ -159,7 +161,8 @@ void FakeIdentityRequestDialogController::ShowUrl(LinkType link_type,
 content::WebContents* FakeIdentityRequestDialogController::ShowModalDialog(
     const GURL& url,
     blink::mojom::RpMode rp_mode,
-    DismissCallback dismiss_callback) {
+    DismissCallback dismiss_callback,
+    ShownModalAsyncCallback on_shown_async) {
   if (!web_contents_) {
     return nullptr;
   }
@@ -189,7 +192,8 @@ void FakeIdentityRequestDialogController::CloseModalDialog() {
   }
 }
 
-void FakeIdentityRequestDialogController::OnFlowCompleted(bool success) {}
+void FakeIdentityRequestDialogController::OnFlowCompleted(
+    content::webid::FederatedLoginResult result) {}
 
 void FakeIdentityRequestDialogController::WebContentsDestroyed() {
   if (popup_dismiss_callback_) {
@@ -202,7 +206,7 @@ void FakeIdentityRequestDialogController::RequestIdPRegistrationPermision(
     const url::Origin& origin,
     base::OnceCallback<void(bool accepted)> callback) {
   if (!is_interception_enabled_) {
-    PostTask(FROM_HERE, base::BindOnce(std::move(callback), false));
+    PostTask(FROM_HERE, base::BindOnce(std::move(callback), true));
   }
 }
 

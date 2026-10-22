@@ -49,6 +49,7 @@ class HTMLAreaElement;
 class HTMLMediaElement;
 class HitTestLocation;
 class Image;
+class ImageResourceContent;
 class KURL;
 class LocalFrame;
 class MediaSourceHandle;
@@ -89,6 +90,11 @@ class CORE_EXPORT HitTestResult {
   }
   CompositorElementId GetScrollableContainer() const;
   Element* InnerElement() const { return inner_element_.Get(); }
+  // Returns the hit-testable pseudo-element (::scroll-marker, ::scroll-button,
+  // ::interest-hint, etc.) if one was hit, otherwise falls back to
+  // InnerElement(). Use this for hover/active state updates and event dispatch
+  // so that activation-behavior pseudos receive events correctly.
+  Element* InnerPossiblyPseudoElement() const;
 
   // If innerNode is an image map or image map area, return the associated image
   // node.
@@ -216,6 +222,7 @@ class CORE_EXPORT HitTestResult {
   std::tuple<bool, ListBasedHitTestBehavior>
   AddNodeToListBasedTestResultInternal(Node* node,
                                        const HitTestLocation& location);
+  static const ImageResourceContent* GetImageContent(const Node* node);
 
   HitTestRequest hit_test_request_;
   bool cacheable_;

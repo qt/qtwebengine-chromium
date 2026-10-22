@@ -355,13 +355,17 @@ const UIStrings = {
    */
   trailing: 'Trailing',
   /**
-   * @description Title of a setting under the Sources category that can be invoked through the Command Menu
+   * @description Title of a setting under the Sources category
+   */
+  variableValuesInlineWhile: 'Variable values inline',
+  /**
+   * @description Title of an option under the Sources category that can be invoked through the Command Menu
    */
   displayVariableValuesInlineWhile: 'Display variable values inline while debugging',
   /**
-   * @description Title of a setting under the Sources category that can be invoked through the Command Menu
+   * @description Title of an option under the Sources category that can be invoked through the Command Menu
    */
-  doNotDisplayVariableValuesInline: 'Do not display variable values inline while debugging',
+  doNotDisplayVariableValuesInline: 'Don\'t show variable values inline',
   /**
    * @description Title of a setting under the Sources category in Settings
    */
@@ -1496,6 +1500,12 @@ Common.Settings.registerSettingExtension({
 });
 
 Common.Settings.registerSettingExtension({
+  settingName: 'navigator-just-my-code',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: false,
+});
+
+Common.Settings.registerSettingExtension({
   category: Common.Settings.SettingCategory.SOURCES,
   storageType: Common.Settings.SettingStorageType.SYNCED,
   title: i18nLazyString(UIStrings.searchInAnonymousAndContent),
@@ -1703,7 +1713,7 @@ UI.ActionRegistration.registerActionExtension({
 Common.Settings.registerSettingExtension({
   category: Common.Settings.SettingCategory.SOURCES,
   storageType: Common.Settings.SettingStorageType.SYNCED,
-  title: i18nLazyString(UIStrings.displayVariableValuesInlineWhile),
+  title: i18nLazyString(UIStrings.variableValuesInlineWhile),
   settingName: 'inline-variable-values',
   settingType: Common.Settings.SettingType.BOOLEAN,
   defaultValue: true,
@@ -1848,7 +1858,6 @@ UI.ContextMenu.registerProvider({
     const Sources = await loadSourcesModule();
     return Sources.SourcesPanel.SourcesPanel.instance();
   },
-  experiment: undefined,
 });
 
 UI.ContextMenu.registerProvider({
@@ -1862,7 +1871,6 @@ UI.ContextMenu.registerProvider({
       ...maybeRetrieveContextTypes(Sources => [Sources.UISourceCodeFrame.UISourceCodeFrame]),
     ];
   },
-  experiment: undefined,
 });
 
 Common.Revealer.registerRevealer({
@@ -1947,7 +1955,6 @@ Common.Revealer.registerRevealer({
   contextTypes() {
     return maybeRetrieveContextTypes(Sources => [Sources.SearchSourcesView.SearchSources]);
   },
-  destination: undefined,
   async loadRevealer() {
     const Sources = await loadSourcesModule();
     return new Sources.SearchSourcesView.Revealer();
@@ -1958,9 +1965,6 @@ UI.Toolbar.registerToolbarItem({
   actionId: 'sources.add-folder-to-workspace',
   location: UI.Toolbar.ToolbarItemLocation.FILES_NAVIGATION_TOOLBAR,
   label: i18nLazyString(UIStrings.addFolderManually),
-  loadItem: undefined,
-  order: undefined,
-  separator: undefined,
 });
 
 UI.Context.registerListener({
@@ -1996,13 +2000,11 @@ UI.Context.registerListener({
 UI.ContextMenu.registerItem({
   location: UI.ContextMenu.ItemLocation.NAVIGATOR_MENU_DEFAULT,
   actionId: 'quick-open.show',
-  order: undefined,
 });
 
 UI.ContextMenu.registerItem({
   location: UI.ContextMenu.ItemLocation.MAIN_MENU_DEFAULT,
   actionId: 'sources.search',
-  order: undefined,
 });
 
 QuickOpen.FilteredListWidget.registerProvider({
@@ -2015,6 +2017,7 @@ QuickOpen.FilteredListWidget.registerProvider({
   helpTitle: i18nLazyString(UIStrings.goToSymbol),
   titlePrefix: i18nLazyString(UIStrings.goTo),
   titleSuggestion: i18nLazyString(UIStrings.symbol),
+  jslogContext: 'source-symbol',
 });
 
 QuickOpen.FilteredListWidget.registerProvider({
@@ -2027,6 +2030,7 @@ QuickOpen.FilteredListWidget.registerProvider({
   helpTitle: i18nLazyString(UIStrings.goToLine),
   titlePrefix: i18nLazyString(UIStrings.goTo),
   titleSuggestion: i18nLazyString(UIStrings.line),
+  jslogContext: 'source-line',
 });
 
 QuickOpen.FilteredListWidget.registerProvider({
@@ -2039,6 +2043,7 @@ QuickOpen.FilteredListWidget.registerProvider({
   helpTitle: i18nLazyString(UIStrings.openFile),
   titlePrefix: i18nLazyString(UIStrings.open),
   titleSuggestion: i18nLazyString(UIStrings.file),
+  jslogContext: 'source-file',
 });
 
 UI.ContextMenu.registerProvider({
@@ -2053,5 +2058,4 @@ UI.ContextMenu.registerProvider({
     const Sources = await loadSourcesModule();
     return new Sources.PersistenceActions.ContextMenuProvider();
   },
-  experiment: undefined,
 });

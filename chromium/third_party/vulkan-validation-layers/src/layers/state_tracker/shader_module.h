@@ -328,9 +328,9 @@ enum NumericType {
     NumericTypeUint = 4,
     NumericTypeBool = 5,
 };
-uint32_t GetFormatType(VkFormat format);
-const char *string_NumericType(uint32_t type);
-VkFormat GetTensorFormat(NumericType numeric_type, uint32_t bit_width);
+
+uint32_t GetFormatNumericType(VkFormat format);
+const char* string_NumericType(uint32_t type);
 
 // Common info needed for all OpVariable
 struct VariableBase {
@@ -402,6 +402,8 @@ struct StageInterfaceVariable : public VariableBase {
     const std::vector<InterfaceSlot> interface_slots;  // Only for User Defined variables
     const std::vector<spv::BuiltIn> built_in_block;
     uint32_t total_built_in_components = 0;
+
+    std::string Describe() const;
 
     StageInterfaceVariable(const Module &module_state, const Instruction &insn, VkShaderStageFlagBits stage,
                            const ParsedInfo &parsed);
@@ -571,6 +573,8 @@ struct EntryPoint {
     const std::vector<StageInterfaceVariable> stage_interface_variables;
     const std::vector<const Instruction *> datagraph_constants;
 
+    bool uses_tosa_1_0{false};
+
     // Easier to lookup without having to check for the is_builtin bool
     // "Built-in interface variables" - vkspec.html#interfaces-iointerfaces-builtin
     std::vector<const StageInterfaceVariable *> built_in_variables;
@@ -606,6 +610,10 @@ struct EntryPoint {
     EntryPoint(const Module &module_state, const Instruction &entrypoint_insn, const ParsedInfo &parsed);
 
     bool HasBuiltIn(spv::BuiltIn built_in) const;
+
+    // Used to provide a better, consistent error message
+    const bool only_entry_point;
+    std::string Describe() const;
 
   protected:
     static vvl::unordered_set<uint32_t> GetAccessibleIds(const Module &module_state, EntryPoint &entrypoint);
@@ -679,7 +687,7 @@ struct Module {
         // Find all decoration instructions to prevent relooping module later - many checks need this info
         std::vector<const Instruction*> decoration_inst;
         // Find all variable instructions to build faster LUT
-        std::vector<const Instruction *> variable_inst;
+        std::vector<const Instruction*> variable_inst;
         // Both variables and instruction explicitly accessing untyped variables
         std::vector<const Instruction *> explicit_memory_inst;
         // For shader tile image - OpDepthAttachmentReadEXT/OpStencilAttachmentReadEXT/OpColorAttachmentReadEXT
@@ -722,6 +730,7 @@ struct Module {
         struct ExtendedInstructionSets {
             uint32_t glsl_std450 = 0;        // GLSL.std.450
             uint32_t shader_debug_info = 0;  // NonSemantic.Shader.DebugInfo.100
+            uint32_t tosa_001000_1 = 0;      // TOSA.001000.1
         } extended;
 
         // EntryPoint has pointer references inside it that need to be preserved
@@ -795,6 +804,7 @@ struct Module {
     std::string DescribeType(uint32_t type) const;
     std::string DescribeVariable(uint32_t id) const;
     std::string DescribeInstruction(const Instruction &error_insn) const;
+    std::string DescribeTypeInstruction(const Instruction &type_instr) const;
 
     std::shared_ptr<const EntryPoint> FindEntrypoint(const char *name, VkShaderStageFlagBits stageBits) const;
     LocalSize FindLocalSize(const EntryPoint &entrypoint) const;
@@ -808,7 +818,9 @@ struct Module {
 
     uint32_t GetLocationsConsumedByType(const Instruction* insn) const;
     uint32_t GetComponentsConsumedByType(const Instruction* insn) const;
-    NumericType GetNumericType(uint32_t type) const;
+    NumericType GetNumericType(const Instruction &insn) const;
+    bool IsTensorFormatCompatible(VkFormat format, const spirv::Instruction& type_inst) const;
+    VkFormat GetTensorFormat(const spirv::Instruction& type_inst) const;
 
     bool HasRuntimeArray(uint32_t type_id) const;
 

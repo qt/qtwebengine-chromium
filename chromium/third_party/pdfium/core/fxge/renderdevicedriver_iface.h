@@ -17,7 +17,6 @@
 #include "core/fxcrt/span.h"
 #include "core/fxge/dib/fx_dib.h"
 
-class CFX_AggImageRenderer;
 class CFX_DIBBase;
 class CFX_DIBitmap;
 class CFX_Font;
@@ -48,19 +47,40 @@ class RenderDeviceDriverIface {
 #endif
   };
 
+  // Context for continuation when not rendering in a single shot.
+  class Continuation {
+   public:
+    virtual ~Continuation() {}
+  };
+
   struct StartResult {
-    StartResult(Result result,
-                std::unique_ptr<CFX_AggImageRenderer> agg_image_renderer);
+    StartResult(Result result, std::unique_ptr<Continuation> continuation);
     ~StartResult();
 
     const Result result;
-    std::unique_ptr<CFX_AggImageRenderer> agg_image_renderer;
+    std::unique_ptr<Continuation> continuation;
   };
 
   virtual ~RenderDeviceDriverIface();
 
   virtual DeviceType GetDeviceType() const = 0;
-  virtual int GetDeviceCaps(int caps_id) const = 0;
+  virtual bool RenderCapGetBits() const;
+  virtual bool RenderCapAlphaPath() const;
+  virtual bool RenderCapAlphaImage() const;
+  virtual bool RenderCapBlendMode() const;
+  virtual bool RenderCapSoftClip() const;
+  virtual bool RenderCapAlphaOutput() const;
+  virtual bool RenderCapByteMaskOutput() const;
+#if defined(PDF_USE_SKIA)
+  virtual bool RenderCapFillStrokePath() const;
+  virtual bool RenderCapShading() const;
+  virtual bool RenderCapPremultipliedAlpha() const;
+#endif
+  virtual int GetPixelWidth() const = 0;
+  virtual int GetPixelHeight() const = 0;
+  virtual int GetBitsPerPixel() const = 0;
+  virtual int GetHorzSize() const;
+  virtual int GetVertSize() const;
 
   virtual void SaveState() = 0;
   virtual void RestoreState(bool bKeepSaved) = 0;
@@ -109,7 +129,7 @@ class RenderDeviceDriverIface {
                                   const CFX_Matrix& matrix,
                                   const FXDIB_ResampleOptions& options,
                                   BlendMode blend_type) = 0;
-  virtual bool ContinueDIBits(CFX_AggImageRenderer* handle,
+  virtual bool ContinueDIBits(Continuation* continuation,
                               PauseIndicatorIface* pPause);
   virtual bool DrawDeviceText(pdfium::span<const TextCharPos> pCharPos,
                               CFX_Font* font,

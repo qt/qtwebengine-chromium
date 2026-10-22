@@ -4185,12 +4185,11 @@ TEST_P(PaintArtifactCompositorTest, LayerRasterInvalidationWithClip) {
   {
     cc::LayerTreeImpl::DiscardableImageMapUpdater updater(
         host_impl.sync_tree());
-    layer->PushPropertiesTo(
-        layer_impl.get(),
-        *const_cast<const cc::LayerTreeHost&>(GetLayerTreeHost())
-             .pending_commit_state(),
-        const_cast<const cc::LayerTreeHost&>(GetLayerTreeHost())
-            .thread_unsafe_commit_state());
+    GetLayerTreeHost().pending_commit_state()->layer_update_rects.insert(
+        std::make_pair(layer->id(), layer->update_rect()));
+    layer->ResetUpdateRect();
+    layer->PushPropertiesTo(layer_impl.get(),
+                            *GetLayerTreeHost().pending_commit_state());
   }
   Update(artifact2);
   ASSERT_EQ(1u, LayerCount());
@@ -4216,12 +4215,11 @@ TEST_P(PaintArtifactCompositorTest, LayerRasterInvalidationWithClip) {
   {
     cc::LayerTreeImpl::DiscardableImageMapUpdater updater(
         host_impl.sync_tree());
-    layer->PushPropertiesTo(
-        layer_impl.get(),
-        *const_cast<const cc::LayerTreeHost&>(GetLayerTreeHost())
-             .pending_commit_state(),
-        const_cast<const cc::LayerTreeHost&>(GetLayerTreeHost())
-            .thread_unsafe_commit_state());
+    GetLayerTreeHost().pending_commit_state()->layer_update_rects.insert(
+        std::make_pair(layer->id(), layer->update_rect()));
+    layer->ResetUpdateRect();
+    layer->PushPropertiesTo(layer_impl.get(),
+                            *GetLayerTreeHost().pending_commit_state());
   }
   Update(artifact3);
   ASSERT_EQ(1u, LayerCount());
@@ -5059,17 +5057,19 @@ TEST_P(PaintArtifactCompositorTest, DirectlySetScrollOffset) {
 
   auto& host = GetLayerTreeHost();
   host.CompositeForTest(base::TimeTicks::Now(), true, base::OnceClosure());
-  ASSERT_FALSE(const_cast<const cc::LayerTreeHost&>(host)
-                   .pending_commit_state()
-                   ->layers_that_should_push_properties.contains(scroll_layer));
+  ASSERT_FALSE(
+      const_cast<const cc::LayerTreeHost&>(host)
+          .pending_commit_state()
+          ->layer_ids_that_should_push_properties.contains(scroll_layer->id()));
   ASSERT_FALSE(host.CommitRequested());
   ASSERT_FALSE(transform_tree.needs_update());
 
   ASSERT_TRUE(GetPaintArtifactCompositor().DirectlySetScrollOffset(
       scroll_element_id, gfx::PointF(-10, -20)));
-  EXPECT_TRUE(const_cast<const cc::LayerTreeHost&>(host)
-                  .pending_commit_state()
-                  ->layers_that_should_push_properties.contains(scroll_layer));
+  EXPECT_TRUE(
+      const_cast<const cc::LayerTreeHost&>(host)
+          .pending_commit_state()
+          ->layer_ids_that_should_push_properties.contains(scroll_layer->id()));
   EXPECT_TRUE(host.CommitRequested());
   EXPECT_EQ(gfx::PointF(-10, -20),
             scroll_tree.current_scroll_offset(scroll_element_id));
@@ -5348,6 +5348,67 @@ TEST_P(PaintArtifactCompositorTest,
              .Build());
   ASSERT_EQ(2u, LayerCount());
   EXPECT_FALSE(LayerAt(1)->IsSolidColorLayerForTesting());
+}
+
+TEST_P(PaintArtifactCompositorTest,
+       VideoForeignLayerPrevent2DScaleTransformWithCompositedDescendants) {
+  // Setup effect with `needs_effect_for_2d_scale_transform`.
+  EffectPaintPropertyNode::State state;
+  state.local_transform_space = e0().LocalTransformSpace();
+  state.needs_effect_for_2d_scale_transform = true;
+  state.compositor_element_id = CompositorElementIdFromUniqueObjectId(
+      NewUniqueObjectId(), CompositorElementIdNamespace::kPrimary);
+  auto* effect = EffectPaintPropertyNode::Create(e0(), std::move(state));
+
+  auto* transform1 = CreateTransform(t0(), gfx::Transform(), gfx::Point3F(),
+                                     CompositingReason::kWillChangeTransform);
+  auto* transform2 = CreateTransform(t0(), gfx::Transform(), gfx::Point3F(),
+                                     CompositingReason::kWillChangeTransform);
+
+  auto create_paint_artifact = [&](bool with_video) {
+    TestPaintArtifact artifact;
+    artifact.Chunk(*transform1, c0(), *effect)
+        .RectDrawing(gfx::Rect(0, 0, 1, 1), Color::kWhite);
+    artifact.Chunk(*transform2, c0(), *effect)
+        .RectDrawing(gfx::Rect(0, 0, 1, 1), Color::kWhite);
+
+    if (with_video) {
+      auto layer = cc::Layer::Create();
+      layer->SetIsDrawable(true);
+      artifact
+          .ForeignLayerChunk(std::move(layer), gfx::Point(),
+                             DisplayItem::kForeignLayerVideo)
+          .Properties(*transform2, c0(), *effect);
+    }
+    return artifact;
+  };
+
+  Update(create_paint_artifact(/*with_video=*/false).Build());
+
+  // Expect to have two layers that were embedded in the render surface for
+  // `needs_effect_for_2d_scale_transform`.
+  ASSERT_EQ(2u, LayerCount());
+  for (auto& layer : RootLayer()->children()) {
+    EXPECT_EQ(
+        GetPropertyTrees()
+            .effect_tree()
+            .Node(layer->effect_tree_index())
+            ->render_surface_reason,
+        cc::RenderSurfaceReason::k2DScaleTransformWithCompositedDescendants);
+  }
+
+  Update(create_paint_artifact(/*with_video=*/true).Build());
+
+  // Expect to have two layers + video, and no RenderSurface because we want to
+  // keep video inside root.
+  ASSERT_EQ(3u, LayerCount());
+  for (auto& layer : RootLayer()->children()) {
+    EXPECT_EQ(GetPropertyTrees()
+                  .effect_tree()
+                  .Node(layer->effect_tree_index())
+                  ->render_surface_reason,
+              cc::RenderSurfaceReason::kNone);
+  }
 }
 
 }  // namespace

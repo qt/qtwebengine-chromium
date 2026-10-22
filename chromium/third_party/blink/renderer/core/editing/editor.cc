@@ -421,7 +421,13 @@ bool Editor::ReplaceSelectionAfterDraggingWithEvents(
   DataTransfer* data_transfer = DataTransfer::Create(
       DataTransfer::kDragAndDrop, DataTransferAccessPolicy::kReadable,
       drag_data->PlatformData());
-  data_transfer->SetSourceOperation(drag_data->DraggingSourceOperationMask());
+  const String& source_effect_allowed =
+      drag_data->PlatformData()->SourceEffectAllowed();
+  if (!source_effect_allowed.empty()) {
+    data_transfer->SetSourceEffectAllowed(AtomicString(source_effect_allowed));
+  } else {
+    data_transfer->SetSourceOperation(drag_data->DraggingSourceOperationMask());
+  }
   const bool should_insert =
       DispatchBeforeInputDataTransfer(
           drop_target, InputEvent::InputType::kInsertFromDrop, data_transfer) ==
@@ -679,7 +685,7 @@ void Editor::CopyImage(const HitTestResult& result) {
 
 void Editor::CopyImage(const HitTestResult& result,
                        const scoped_refptr<Image>& image) {
-  WriteImageToClipboard(*frame_->GetSystemClipboard(), image, KURL(),
+  WriteImageToClipboard(*frame_->GetSystemClipboard(), image, NullUrl(),
                         result.AltDisplayString());
 }
 

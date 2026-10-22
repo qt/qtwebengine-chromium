@@ -6,7 +6,6 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/test/gmock_callback_support.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/values_test_util.h"
 #include "chrome/browser/chromeos/printing/cups_wrapper.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
@@ -207,8 +206,6 @@ class WebPrintingBrowserTestBase
   content::RenderFrameHost* app_frame() { return app_frame_; }
 
  private:
-  base::test::ScopedFeatureList feature_list_{blink::features::kWebPrinting};
-
   raw_ptr<content::RenderFrameHost> app_frame_ = nullptr;
 };
 
@@ -357,7 +354,6 @@ IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest, FetchAttributes) {
   )";
 
   auto eval_result = EvalJs(app_frame(), kFetchAttributesScript);
-  ASSERT_THAT(eval_result, content::EvalJsResult::IsOk());
 
   EXPECT_THAT(eval_result.ExtractDict(),
               base::test::DictionaryHasValues(
@@ -382,7 +378,7 @@ IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest, Print) {
 
   const auto script = content::JsReplace(kPrintScriptWithJobStatePlaceholder,
                                          /*job_state=*/"completed");
-  ASSERT_THAT(EvalJs(app_frame(), script), content::EvalJsResult::IsOk());
+  ASSERT_TRUE(content::ExecJs(app_frame(), script));
 }
 
 IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest, PrintFailure) {
@@ -396,7 +392,7 @@ IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest, PrintFailure) {
 
   const auto script = content::JsReplace(kPrintScriptWithJobStatePlaceholder,
                                          /*job_state=*/"aborted");
-  ASSERT_THAT(EvalJs(app_frame(), script), content::EvalJsResult::IsOk());
+  ASSERT_TRUE(content::ExecJs(app_frame(), script));
 }
 
 // Validate that call to `printing.getPrinters()` fails when content
@@ -435,8 +431,7 @@ IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest,
       printer = printers[0];
     })();
   )";
-  ASSERT_THAT(EvalJs(app_frame(), kGetPrintersScript),
-              content::EvalJsResult::IsOk());
+  ASSERT_TRUE(content::ExecJs(app_frame(), kGetPrintersScript));
 
   HostContentSettingsMapFactory::GetForProfile(profile())
       ->SetDefaultContentSetting(ContentSettingsType::WEB_PRINTING,
@@ -527,8 +522,7 @@ startxref
     await printJobCanceled;
    })();
   )";
-  ASSERT_THAT(EvalJs(app_frame(), kCancelEarlyScript),
-              content::EvalJsResult::IsOk());
+  ASSERT_TRUE(content::ExecJs(app_frame(), kCancelEarlyScript));
 }
 
 IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest, CancelHalfway) {
@@ -580,8 +574,7 @@ startxref
     await printJobProcessingThenCanceled;
    })();
   )";
-  ASSERT_THAT(EvalJs(app_frame(), kCancelHalfwayScript),
-              content::EvalJsResult::IsOk());
+  ASSERT_TRUE(content::ExecJs(app_frame(), kCancelHalfwayScript));
 }
 
 }  // namespace printing

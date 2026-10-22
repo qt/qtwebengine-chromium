@@ -38,6 +38,7 @@
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/signin_util.h"
+#include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -399,8 +400,7 @@ void ProfilePickerHandler::TryLaunchLockedProfile(
   // need to match the policy filter.
 
   // Reauth attempt.
-  if ((base::FeatureList::IsEnabled(
-           syncer::kReplaceSyncPromosWithSignInPromos) &&
+  if ((syncer::IsReplaceSyncPromosWithSignInPromosEnabled() &&
        entry.GetSigninState() != SigninState::kNotSignedIn) ||
       entry.CanBeManaged()) {
     // Glic version cannot run the reauth steps, show a dialog instead that

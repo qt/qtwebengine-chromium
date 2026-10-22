@@ -499,7 +499,7 @@ Value FunStartsWith::Evaluate(EvaluationContext& context) const {
   if (s2.empty())
     return true;
 
-  return s1.StartsWith(s2);
+  return s1.starts_with(s2);
 }
 
 Value FunContains::Evaluate(EvaluationContext& context) const {
@@ -510,7 +510,7 @@ Value FunContains::Evaluate(EvaluationContext& context) const {
   if (s2.empty())
     return true;
 
-  return s1.Contains(s2) != 0;
+  return s1.contains(s2) != 0;
 }
 
 Value FunSubstringBefore::Evaluate(EvaluationContext& context) const {
@@ -521,12 +521,12 @@ Value FunSubstringBefore::Evaluate(EvaluationContext& context) const {
   if (s2.empty())
     return "";
 
-  wtf_size_t i = s1.Find(s2);
+  wtf_size_t i = s1.find(s2);
 
   if (i == kNotFound)
     return "";
 
-  return s1.Left(i);
+  return s1.substr(0, i);
 }
 
 Value FunSubstringAfter::Evaluate(EvaluationContext& context) const {
@@ -534,11 +534,11 @@ Value FunSubstringAfter::Evaluate(EvaluationContext& context) const {
   String s1 = Arg(0)->Evaluate(context).ToString();
   String s2 = Arg(1)->Evaluate(cloned_context).ToString();
 
-  wtf_size_t i = s1.Find(s2);
+  wtf_size_t i = s1.find(s2);
   if (i == kNotFound)
     return "";
 
-  return s1.Substring(i + s2.length());
+  return s1.substr(i + s2.length());
 }
 
 // Computes the 1-based start and end (exclusive) string indices for
@@ -647,7 +647,7 @@ Value FunLang::Evaluate(EvaluationContext& context) const {
     return false;
 
   String lang_value = language_attribute->Value();
-  return lang_value.StartsWithIgnoringASCIICase(lang) &&
+  return lang_value.StartsWithIgnoringAsciiCase(lang) &&
          (lang.length() == lang_value.length() ||
           lang_value[lang.length()] == '-');
 }

@@ -902,7 +902,7 @@ CJS_Result CJS_Field::get_button_position(CJS_Runtime* pRuntime) {
   }
 
   return CJS_Result::Success(
-      pRuntime->NewNumber(pFormControl->GetTextPosition()));
+      pRuntime->NewNumber(static_cast<int>(pFormControl->GetTextPosition())));
 }
 
 CJS_Result CJS_Field::set_button_position(CJS_Runtime* pRuntime,
@@ -1271,12 +1271,14 @@ CJS_Result CJS_Field::set_display(CJS_Runtime* pRuntime,
   if (!can_set_) {
     return CJS_Result::Failure(JSMessage::kReadOnlyError);
   }
-
+  int value = pRuntime->ToInt32(vp);  // Re-entrant.
+  if (!form_fill_env_) {
+    return CJS_Result::Failure(JSMessage::kBadObjectError);
+  }
   if (delay_) {
-    AddDelay_Int(FP_DISPLAY, pRuntime->ToInt32(vp));
+    AddDelay_Int(FP_DISPLAY, value);
   } else {
-    SetDisplay(form_fill_env_.Get(), field_name_, form_control_index_,
-               pRuntime->ToInt32(vp));
+    SetDisplay(form_fill_env_.Get(), field_name_, form_control_index_, value);
   }
   return CJS_Result::Success();
 }

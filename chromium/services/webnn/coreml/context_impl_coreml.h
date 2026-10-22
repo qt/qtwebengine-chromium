@@ -58,7 +58,8 @@ class API_AVAILABLE(macos(14.4)) ContextImplCoreml final
       WebNNGraphImpl::ComputeResourceInfo compute_resource_info,
       base::flat_map<OperandId, std::unique_ptr<WebNNConstantOperand>>
           constant_operands,
-      base::flat_map<OperandId, WebNNTensorImpl*> constant_tensor_operands,
+      base::flat_map<OperandId, scoped_refptr<WebNNTensorImpl>>
+          constant_tensor_operands,
       CreateGraphImplCallback callback) override;
 
   base::expected<scoped_refptr<WebNNTensorImpl>, mojom::ErrorPtr>
@@ -70,6 +71,8 @@ class API_AVAILABLE(macos(14.4)) ContextImplCoreml final
       mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
       mojom::TensorInfoPtr tensor_info,
       WebNNTensorImpl::RepresentationPtr representation) override;
+
+  std::string_view GetBackendName() const override;
 
   base::WeakPtrFactory<ContextImplCoreml> weak_factory_{this};
 };

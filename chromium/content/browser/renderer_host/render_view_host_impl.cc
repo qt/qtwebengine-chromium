@@ -22,7 +22,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
@@ -518,6 +517,11 @@ bool RenderViewHostImpl::CreateRenderView(
           main_rfh->policy_container_host()->CreatePolicyContainerForBlink();
     }
 
+    // Populate the sandbox origin token if available.
+    if (auto token = main_rfh->TakeSandboxOriginToken()) {
+      local_frame_params->sandbox_origin_token = *token;
+    }
+
     local_frame_params->widget_params =
         main_rfh->GetRenderWidgetHost()
             ->BindAndGenerateCreateFrameWidgetParams();
@@ -611,11 +615,9 @@ bool RenderViewHostImpl::CreateRenderView(
   params->blink_page_broadcast =
       page_broadcast_.BindNewEndpointAndPassReceiver();
 
-  if (base::FeatureList::IsEnabled(features::kSetHistoryInfoOnViewCreation)) {
-    params->history_index =
-        frame_tree()->controller().GetLastCommittedEntryIndex();
-    params->history_length = frame_tree()->controller().GetEntryCount();
-  }
+  params->history_index =
+      frame_tree()->controller().GetLastCommittedEntryIndex();
+  params->history_length = frame_tree()->controller().GetEntryCount();
 
   // The renderer process's `blink::WebView` is owned by this lifecycle of
   // the `page_broadcast_` channel.

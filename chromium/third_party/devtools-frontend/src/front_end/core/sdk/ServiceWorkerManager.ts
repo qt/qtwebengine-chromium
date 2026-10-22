@@ -11,7 +11,6 @@ import type * as Platform from '../platform/platform.js';
 import {Events as RuntimeModelEvents, type ExecutionContext, RuntimeModel} from './RuntimeModel.js';
 import {SDKModel} from './SDKModel.js';
 import {Capability, type Target, Type} from './Target.js';
-import {TargetManager} from './TargetManager.js';
 
 const UIStrings = {
   /**
@@ -77,8 +76,10 @@ export class ServiceWorkerManager extends SDKModel<EventTypes> {
     target.registerServiceWorkerDispatcher(new ServiceWorkerDispatcher(this));
     this.#agent = target.serviceWorkerAgent();
     void this.enable();
-    this.#forceUpdateSetting =
-        Common.Settings.Settings.instance().createSetting('service-worker-update-on-reload', false);
+    this.#forceUpdateSetting = this.target()
+                                   .targetManager()
+                                   .context.get(Common.Settings.Settings)
+                                   .createSetting('service-worker-update-on-reload', false);
     if (this.#forceUpdateSetting.get()) {
       this.forceUpdateSettingChanged();
     }
@@ -542,7 +543,7 @@ class ServiceWorkerContextNamer {
     this.#serviceWorkerManager = serviceWorkerManager;
     serviceWorkerManager.addEventListener(Events.REGISTRATION_UPDATED, this.registrationsUpdated, this);
     serviceWorkerManager.addEventListener(Events.REGISTRATION_DELETED, this.registrationsUpdated, this);
-    TargetManager.instance().addModelListener(
+    this.#target.targetManager().addModelListener(
         RuntimeModel, RuntimeModelEvents.ExecutionContextCreated, this.executionContextCreated, this);
   }
 
@@ -576,7 +577,7 @@ class ServiceWorkerContextNamer {
   }
 
   private updateAllContextLabels(): void {
-    for (const target of TargetManager.instance().targets()) {
+    for (const target of this.#target.targetManager().targets()) {
       const serviceWorkerTargetId = this.serviceWorkerTargetId(target);
       if (!serviceWorkerTargetId) {
         continue;

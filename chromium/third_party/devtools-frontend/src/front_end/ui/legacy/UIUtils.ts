@@ -41,6 +41,7 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Geometry from '../../models/geometry/geometry.js';
+import type * as StackTrace from '../../models/stack_trace/stack_trace.js';
 import * as Buttons from '../components/buttons/buttons.js';
 import {Icon, type IconData} from '../kit/kit.js';
 import * as Lit from '../lit/lit.js';
@@ -628,23 +629,39 @@ export function anotherProfilerActiveLabel(): string {
   return i18nString(UIStrings.anotherProfilerIsAlreadyActive);
 }
 
-export function asyncStackTraceLabel(
-    description: string|undefined, previousCallFrames: Array<{functionName: string}>): string {
-  if (description) {
-    if (description === 'Promise.resolve') {
-      return i18nString(UIStrings.promiseResolvedAsync);
-    }
-    if (description === 'Promise.reject') {
-      return i18nString(UIStrings.promiseRejectedAsync);
-    }
-    if (description === 'await' && previousCallFrames.length !== 0) {
-      const lastPreviousFrame = previousCallFrames[previousCallFrames.length - 1];
-      const lastPreviousFrameName = beautifyFunctionName(lastPreviousFrame.functionName);
-      description = `await in ${lastPreviousFrameName}`;
-    }
-    return description;
+export function asyncFragmentLabel(
+    stackTrace: StackTrace.StackTrace.StackTrace|StackTrace.StackTrace.DebuggableStackTrace,
+    asyncFragment: StackTrace.StackTrace.AsyncFragment): string {
+  const description = asyncFragment.description;
+  if (!description) {
+    return i18nString(UIStrings.asyncCall);
   }
-  return i18nString(UIStrings.asyncCall);
+
+  if (description === 'Promise.resolve') {
+    return i18nString(UIStrings.promiseResolvedAsync);
+  }
+  if (description === 'Promise.reject') {
+    return i18nString(UIStrings.promiseRejectedAsync);
+  }
+
+  if (description === 'await') {
+    const asyncFragments = stackTrace.asyncFragments;
+    const index = asyncFragments.indexOf(asyncFragment);
+    let previousFragment: StackTrace.StackTrace.Fragment|undefined;
+
+    if (index === 0) {
+      previousFragment = stackTrace.syncFragment;
+    } else if (index > 0) {
+      previousFragment = asyncFragments[index - 1];
+    }
+
+    const lastPreviousFrame = previousFragment?.frames.at(-1);
+    if (lastPreviousFrame) {
+      const lastPreviousFrameName = beautifyFunctionName(lastPreviousFrame.name || '');
+      return `await in ${lastPreviousFrameName}`;
+    }
+  }
+  return description;
 }
 
 export function addPlatformClass(element: HTMLElement): void {
@@ -697,18 +714,41 @@ export class ElementFocusRestorer {
 export function runCSSAnimationOnce(element: Element, className: string): void {
   function animationEndCallback(): void {
     element.classList.remove(className);
-    element.removeEventListener('webkitAnimationEnd', animationEndCallback, false);
+    element.removeEventListener('animationend', animationEndCallback, false);
     element.removeEventListener('animationcancel', animationEndCallback, false);
   }
 
-  if (element.classList.contains(className)) {
-    element.classList.remove(className);
-  }
-
-  element.addEventListener('webkitAnimationEnd', animationEndCallback, false);
+  // Remove class if it exists.
+  element.classList.toggle(className, /* force=*/ false);
+  element.addEventListener('animationend', animationEndCallback, false);
   element.addEventListener('animationcancel', animationEndCallback, false);
   element.classList.add(className);
 }
+
+class AnimateOnDirective extends Lit.Directive.Directive {
+  #previousValue = false;
+
+  render(_condition: boolean, _className: string): void {
+    return undefined;  // Directives don't have to render HTML
+  }
+
+  override update(part: Lit.Directive.ElementPart, [condition, className]: [boolean, string]): void {
+    const el = part.element as HTMLElement;
+
+    // Only trigger if the condition transitioned from false -> true
+    if (condition && !this.#previousValue) {
+      this.#animate(el, className);
+    }
+
+    this.#previousValue = condition;
+  }
+
+  #animate(el: HTMLElement, className: string): void {
+    runCSSAnimationOnce(el, className);
+  }
+}
+
+export const animateOn = Lit.Directive.directive(AnimateOnDirective);
 
 export function measurePreferredSize(element: Element, containerElement?: Element|null): Geometry.Size {
   const oldParent = element.parentElement;
@@ -1173,7 +1213,7 @@ export class CheckboxLabel extends HTMLElement {
 
   static create(
       title?: Platform.UIString.LocalizedString, checked?: boolean, subtitle?: Platform.UIString.LocalizedString,
-      jslogContext?: string, small?: boolean): CheckboxLabel {
+      jslogContext?: string, small?: boolean, tooltip?: Platform.UIString.LocalizedString): CheckboxLabel {
     const element = document.createElement('devtools-checkbox');
     element.#checkboxElement.checked = Boolean(checked);
     if (jslogContext) {
@@ -1182,10 +1222,16 @@ export class CheckboxLabel extends HTMLElement {
     }
     if (title !== undefined) {
       element.#textElement.textContent = title;
-      element.#checkboxElement.title = title;
       if (subtitle !== undefined) {
         element.#textElement.createChild('div', 'devtools-checkbox-subtitle').textContent = subtitle;
       }
+    }
+    // checkboxElement tooltip: tooltip first, then title (custom tooltip takes precedence for the input)
+    const inputTooltip = tooltip ?? title;
+    if (inputTooltip) {
+      element.#checkboxElement.title = inputTooltip;
+      // Set aria-description for screen reader announcement
+      element.#checkboxElement.setAttribute('aria-description', inputTooltip);
     }
     element.#checkboxElement.classList.toggle('small', small);
     return element;
@@ -1524,6 +1570,7 @@ export function createFileSelectorElement(callback: (arg0: File) => void, accept
 }
 
 export const MaxLengthForDisplayedURLs = 150;
+export const MaxLengthForDisplayedURLsInConsole = 40;
 
 export class MessageDialog {
   static async show(header: string, message: string, where?: Element|Document, jslogContext?: string): Promise<void> {
@@ -1644,19 +1691,21 @@ export function createSVGChild<K extends keyof SVGElementTagNameMap>(
   return child;
 }
 
-export const enclosingNodeOrSelfWithNodeNameInArray = (initialNode: Node, nameArray: string[]): Node|null => {
-  let node: (Node|null)|Node = initialNode;
-  for (; node && node !== initialNode.ownerDocument; node = node.parentNodeOrShadowHost()) {
-    for (let i = 0; i < nameArray.length; ++i) {
-      if (node.nodeName.toLowerCase() === nameArray[i].toLowerCase()) {
-        return node;
+export const enclosingNodeOrSelfWithNodeNameInArray =
+    <T extends keyof HTMLElementTagNameMap>(initialNode: Node, nameArray: T[]): HTMLElementTagNameMap[T]|null => {
+      let node: (Node|null)|Node = initialNode;
+      for (; node && node !== initialNode.ownerDocument; node = node.parentNodeOrShadowHost()) {
+        for (let i = 0; i < nameArray.length; ++i) {
+          if (node.nodeName.toLowerCase() === nameArray[i].toLowerCase()) {
+            return node as HTMLElementTagNameMap[T];
+          }
+        }
       }
-    }
-  }
-  return null;
-};
+      return null;
+    };
 
-export const enclosingNodeOrSelfWithNodeName = function(node: Node, nodeName: string): Node|null {
+export const enclosingNodeOrSelfWithNodeName = function<T extends keyof HTMLElementTagNameMap>(
+    node: Node, nodeName: T): HTMLElementTagNameMap[T]|null {
   return enclosingNodeOrSelfWithNodeNameInArray(node, [nodeName]);
 };
 
@@ -1761,10 +1810,7 @@ function focusChanged(event: Event): void {
 export function createShadowRootWithCoreStyles(element: Element, options: {
   cssFile?: CSSInJS[]|CSSInJS,
   delegatesFocus?: boolean,
-} = {
-  delegatesFocus: undefined,
-  cssFile: undefined,
-}): ShadowRoot {
+} = {}): ShadowRoot {
   const {cssFile, delegatesFocus} = options;
 
   const shadowRoot = element.attachShadow({mode: 'open', delegatesFocus});
@@ -1970,6 +2016,7 @@ export function bindToAction(actionName: string): ReturnType<typeof Directives.r
 type BindingEventListener = (arg: any) => any;
 export class InterceptBindingDirective extends Lit.Directive.Directive {
   static readonly #interceptedBindings = new WeakMap<Element, Map<string, BindingEventListener>>();
+  static readonly #attachedBindings = new WeakMap<Element, Map<string, BindingEventListener>>();
 
   override update(part: Lit.Directive.Part, [listener]: [BindingEventListener]): unknown {
     if (part.type !== Lit.Directive.PartType.EVENT) {
@@ -1986,17 +2033,26 @@ export class InterceptBindingDirective extends Lit.Directive.Directive {
   }
 
   /* eslint-disable-next-line @typescript-eslint/no-unsafe-function-type */
-  render(_listener: Function): undefined {
-    return undefined;
+  render(listener: Function): Function {
+    return listener;
   }
 
-  static attachEventListeners(templateElement: Element, renderedElement: Element): void {
-    const eventListeners = InterceptBindingDirective.#interceptedBindings.get(templateElement);
-    if (!eventListeners) {
-      return;
+  static setEventListeners(templateElement: Element, renderedElement: Element): void {
+    const attachedListeners = InterceptBindingDirective.#attachedBindings.get(renderedElement);
+    if (attachedListeners) {
+      for (const [name, listener] of attachedListeners) {
+        renderedElement.removeEventListener(name, listener);
+      }
     }
-    for (const [name, listener] of eventListeners) {
-      renderedElement.addEventListener(name, listener);
+
+    const newListeners = InterceptBindingDirective.#interceptedBindings.get(templateElement);
+    if (newListeners?.size) {
+      for (const [name, listener] of newListeners) {
+        renderedElement.addEventListener(name, listener);
+      }
+      InterceptBindingDirective.#attachedBindings.set(renderedElement, new Map(newListeners));
+    } else {
+      InterceptBindingDirective.#attachedBindings.delete(renderedElement);
     }
   }
 }
@@ -2029,13 +2085,20 @@ export class HTMLElementWithLightDOMTemplate extends HTMLElement {
       clone.appendChild(HTMLElementWithLightDOMTemplate.cloneNode(child));
     }
     if (node instanceof Element && clone instanceof Element) {
-      InterceptBindingDirective.attachEventListeners(node, clone);
+      InterceptBindingDirective.setEventListeners(node, clone);
     }
     return clone;
   }
 
   private static patchLitTemplate(template: Lit.LitTemplate): void {
-    const wrapper = Lit.Directive.directive(InterceptBindingDirective);
+    const interceptingWrapper = Lit.Directive.directive(InterceptBindingDirective);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const patchingWrapper = <Args extends any[], R>(fn: (...args: Args) => R): ((...args: Args) => R) => {
+      return function(this: unknown, ...args: Args): R {
+        const result = fn.apply(this, args);
+        return patchValue(result) as R;
+      };
+    };
     if (template === Lit.nothing) {
       return;
     }
@@ -2047,10 +2110,22 @@ export class HTMLElementWithLightDOMTemplate extends HTMLElement {
           value['_$litType$'] === 1);
     }
 
+    function isLitDirective(value: unknown): value is {values: unknown[]} {
+      return Boolean(typeof value === 'object' && value && '_$litDirective$' in value && 'values' in value);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function isCallable(value: unknown): value is(...args: any[]) => any {
+      // Native class constructors cannot be invoked without 'new', and we shouldn't attempt to wrap them.
+      // Differentiate them from regular functions by checking their 'prototype' descriptor:
+      // class constructors have a non-writable prototype, whereas regular functions have a writable prototype.
+      return typeof value === 'function' && Object.getOwnPropertyDescriptor(value, 'prototype')?.writable !== false;
+    }
+
     function patchValue(value: unknown): unknown {
-      if (typeof value === 'function') {
+      if (isCallable(value)) {
         try {
-          return wrapper(value);
+          return interceptingWrapper(value);
         } catch {
           return value;
         }
@@ -2059,7 +2134,18 @@ export class HTMLElementWithLightDOMTemplate extends HTMLElement {
         HTMLElementWithLightDOMTemplate.patchLitTemplate(value);
         return value;
       }
-      if (Array.isArray(value)) {
+      if (isLitDirective(value)) {
+        for (let i = 0; i < value.values.length; i++) {
+          const subvalue = value.values[i];
+          if (isCallable(subvalue)) {
+            value.values[i] = patchingWrapper(subvalue);
+          } else {
+            value.values[i] = patchValue(subvalue);
+          }
+        }
+        return value;
+      }
+      if (Array.isArray(value) || value instanceof Iterator) {
         return value.map(patchValue);
       }
 
@@ -2177,13 +2263,29 @@ export const bindCheckboxImpl = function(
   };
 };
 
+export type BindToSettingOpts = ((newSettingValue: string) => boolean)|{
+  validator?: (newSettingValue: string) => boolean,
+  jslog?: boolean,
+};
 export const bindToSetting =
     (settingOrName: string|Common.Settings.Setting<boolean|string>|Common.Settings.RegExpSetting,
-     stringValidator?: (newSettingValue: string) => boolean): ReturnType<typeof Directives.ref> => {
+     optionsOrValidator?: BindToSettingOpts): ReturnType<typeof Directives.ref> => {
       const setting = typeof settingOrName === 'string' ?
           Common.Settings.Settings.instance().moduleSetting(settingOrName) :
           settingOrName;
 
+      let stringValidator: ((newSettingValue: string) => boolean)|undefined;
+      let jslog = true;
+      if (typeof optionsOrValidator === 'function') {
+        stringValidator = optionsOrValidator;
+      } else if (optionsOrValidator) {
+        stringValidator = optionsOrValidator.validator;
+        if (optionsOrValidator.jslog !== undefined) {
+          jslog = optionsOrValidator.jslog;
+        }
+      }
+
+      const jslogBuilder = jslog ? VisualLogging.toggle(setting.name).track({change: true}) : null;
       // We can't use `setValue` as the change listener directly, otherwise we won't
       // be able to remove it again.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2197,6 +2299,9 @@ export const bindToSetting =
           if (e === undefined) {
             setting.removeChangeListener(settingChanged);
             return;
+          }
+          if (jslogBuilder) {
+            e.setAttribute('jslog', jslogBuilder.toString());
           }
 
           setting.addChangeListener(settingChanged);
@@ -2213,6 +2318,9 @@ export const bindToSetting =
             return;
           }
 
+          if (jslogBuilder) {
+            e.setAttribute('jslog', jslogBuilder.toString());
+          }
           setting.addChangeListener(settingChanged);
           setValue = bindInput(e as HTMLInputElement, setting.set.bind(setting), (value: string) => {
             try {
@@ -2233,6 +2341,9 @@ export const bindToSetting =
             return;
           }
 
+          if (jslogBuilder) {
+            e.setAttribute('jslog', jslogBuilder.toString());
+          }
           setting.addChangeListener(settingChanged);
           setValue = bindInput(
               e as HTMLInputElement, setting.set.bind(setting), stringValidator ?? (() => true), /* numeric */ false);

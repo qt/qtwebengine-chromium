@@ -59,10 +59,9 @@ class TestHibernationHandlerDelegate
 
   void CreateResourceProvider() {
     CHECK(!GetResourceProvider());
-    resource_provider_ = Canvas2DResourceProviderSharedImage::Create(
+    resource_provider_ = Canvas2DResourceProviderSharedImage::CreateWithClear(
         size_, GetN32FormatForCanvas(), kPremul_SkAlphaType,
         gfx::ColorSpace::CreateSRGB(),
-        CanvasResourceProvider::ShouldInitialize::kCallClear,
         SharedGpuContext::ContextProviderWrapper(), RasterMode::kGPU,
         gpu::SHARED_IMAGE_USAGE_DISPLAY_READ | gpu::SHARED_IMAGE_USAGE_SCANOUT);
   }
@@ -194,8 +193,9 @@ void Draw(TestHibernationHandlerDelegate& delegate) {
     delegate.CreateResourceProvider();
   }
   CanvasResourceProvider* provider = delegate.GetResourceProvider();
-  provider->Canvas().drawLine(0, 0, 2, 2, cc::PaintFlags());
-  provider->FlushCanvas(FlushReason::kOther);
+  provider->GetCanvasForCanvas2DForTesting().drawLine(0, 0, 2, 2,
+                                                      cc::PaintFlags());
+  provider->FlushCanvas2D(FlushReason::kOther);
 }
 
 class TestSingleThreadTaskRunner : public base::SingleThreadTaskRunner {

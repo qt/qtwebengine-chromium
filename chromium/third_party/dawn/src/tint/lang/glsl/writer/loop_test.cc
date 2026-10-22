@@ -43,7 +43,8 @@ TEST_F(GlslWriterTest, Loop) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {
@@ -70,7 +71,8 @@ TEST_F(GlslWriterTest, LoopContinueAndBreakIf) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {
@@ -87,7 +89,6 @@ void main() {
         tint_loop_idx.y = (tint_loop_idx.y - tint_carry);
         if (true) { break; }
       }
-      continue;
     }
   }
 }
@@ -108,7 +109,8 @@ TEST_F(GlslWriterTest, LoopBodyVarInContinue) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {
@@ -126,7 +128,6 @@ void main() {
         tint_loop_idx.y = (tint_loop_idx.y - tint_carry);
         if (v) { break; }
       }
-      continue;
     }
   }
 }
@@ -148,7 +149,8 @@ TEST_F(GlslWriterTest, LoopInitializer) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.glsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.glsl;
     EXPECT_EQ(output_.glsl, GlslHeader() + R"(
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {
@@ -166,7 +168,6 @@ void main() {
         tint_loop_idx.y = (tint_loop_idx.y - tint_carry);
         if (v) { break; }
       }
-      continue;
     }
   }
 }

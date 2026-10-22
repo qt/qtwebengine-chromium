@@ -35,6 +35,7 @@ ALIASES                = "only_for_vectors=This is only for vectors (either row-
                          "eigenAutoToc=<!-- TOC placeholder -->" \
                          eigenManualPage=\defgroup
 EXTENSION_MAPPING      = .h=C++ \
+                         .inc=C++ \
                          no_extension=C++
 DISTRIBUTE_GROUP_DOC   = YES
 NUM_PROC_THREADS       = 0

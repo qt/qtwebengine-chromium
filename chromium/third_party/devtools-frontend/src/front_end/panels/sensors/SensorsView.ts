@@ -8,11 +8,14 @@ import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Geometry from '../../models/geometry/geometry.js';
+import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as SettingsUI from '../../ui/legacy/components/settings_ui/settings_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {Directives, html, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as MobileThrottling from '../mobile_throttling/mobile_throttling.js';
 
+import type {LocationDescription} from './LocationsSettingsTab.js';
 import sensorsStyles from './sensors.css.js';
 
 const UIStrings = {
@@ -179,6 +182,7 @@ export class SensorsView extends UI.Widget.VBox {
   readonly #locationSetting: Common.Settings.Setting<string>;
   #location: SDK.EmulationModel.Location;
   #locationOverrideEnabled: boolean;
+  readonly #locationSectionElement: HTMLElement;
   private fieldsetElement!: HTMLFieldSetElement;
   private timezoneError!: HTMLElement;
   private locationSelectElement!: HTMLSelectElement;
@@ -187,14 +191,8 @@ export class SensorsView extends UI.Widget.VBox {
   private timezoneInput!: HTMLInputElement;
   private localeInput!: HTMLInputElement;
   private accuracyInput!: HTMLInputElement;
-  private latitudeSetter!: (arg0: string) => void;
-  private longitudeSetter!: (arg0: string) => void;
-  private timezoneSetter!: (arg0: string) => void;
-  private localeSetter!: (arg0: string) => void;
-  private accuracySetter!: (arg0: string) => void;
   private localeError!: HTMLElement;
   private accuracyError!: HTMLElement;
-  private customLocationsGroup!: HTMLOptGroupElement;
   private readonly deviceOrientationSetting: Common.Settings.Setting<string>;
   private deviceOrientation: SDK.EmulationModel.DeviceOrientation;
   private deviceOrientationOverrideEnabled: boolean;
@@ -204,11 +202,7 @@ export class SensorsView extends UI.Widget.VBox {
   private alphaElement!: HTMLInputElement;
   private betaElement!: HTMLInputElement;
   private gammaElement!: HTMLInputElement;
-  private alphaSetter!: (arg0: string) => void;
-  private betaSetter!: (arg0: string) => void;
-  private gammaSetter!: (arg0: string) => void;
   private orientationLayer!: HTMLDivElement;
-  private boxElement?: HTMLElement;
   private boxMatrix?: DOMMatrix;
   private mouseDownVector?: Geometry.Vector|null;
   private originalBoxMatrix?: DOMMatrix;
@@ -225,7 +219,11 @@ export class SensorsView extends UI.Widget.VBox {
     this.#location = SDK.EmulationModel.Location.parseSetting(this.#locationSetting.get());
     this.#locationOverrideEnabled = false;
 
-    this.createLocationSection(this.#location);
+    this.#locationSectionElement = this.contentElement.createChild('section', 'sensors-group');
+    const customLocationsSetting =
+        Common.Settings.Settings.instance().moduleSetting<LocationDescription[]>('emulation.locations');
+    this.renderLocationSection(this.#location, customLocationsSetting);
+    customLocationsSetting.addChangeListener(() => this.renderLocationSection(this.#location, customLocationsSetting));
 
     this.createPanelSeparator();
 
@@ -259,128 +257,171 @@ export class SensorsView extends UI.Widget.VBox {
     this.contentElement.createChild('div').classList.add('panel-section-separator');
   }
 
-  private createLocationSection(location: SDK.EmulationModel.Location): void {
-    const geogroup = this.contentElement.createChild('section', 'sensors-group');
-    geogroup.setAttribute('jslog', `${VisualLogging.section('location')}`);
-    const geogroupTitle = UI.UIUtils.createLabel(i18nString(UIStrings.location), 'sensors-group-title');
-    geogroup.appendChild(geogroupTitle);
-    const fields = geogroup.createChild('div', 'geo-fields');
+  private renderLocationSection(
+      location: SDK.EmulationModel.Location,
+      customLocationsSetting: Common.Settings.Setting<LocationDescription[]>): void {
+    const customLocations = customLocationsSetting.get();
     let selectedIndex = 0;
-
-    const noOverrideOption = {title: i18nString(UIStrings.noOverride), location: NonPresetOptions.NoOverride};
-    this.locationSelectElement = fields.createChild('select');
-    this.locationSelectElement.setAttribute('jslog', `${VisualLogging.dropDown().track({change: true})}`);
-    UI.ARIAUtils.bindLabelToControl(geogroupTitle, this.locationSelectElement);
-
-    // No override
-    this.locationSelectElement.appendChild(
-        UI.UIUtils.createOption(noOverrideOption.title, noOverrideOption.location, 'no-override'));
-    this.customLocationsGroup = this.locationSelectElement.createChild('optgroup');
-    this.customLocationsGroup.label = i18nString(UIStrings.overrides);
-    const customLocations = Common.Settings.Settings.instance().moduleSetting('emulation.locations');
-    const manageButton = UI.UIUtils.createTextButton(
-        i18nString(UIStrings.manage), () => Common.Revealer.reveal(customLocations),
-        {className: 'manage-locations', jslogContext: 'sensors.manage-locations'});
-    UI.ARIAUtils.setLabel(manageButton, i18nString(UIStrings.manageTheListOfLocations));
-    fields.appendChild(manageButton);
-    const fillCustomSettings = (): void => {
-      if (!this.customLocationsGroup) {
-        return;
-      }
-      this.customLocationsGroup.removeChildren();
-      for (const [i, customLocation] of customLocations.get().entries()) {
-        this.customLocationsGroup.appendChild(
-            UI.UIUtils.createOption(customLocation.title, JSON.stringify(customLocation), 'custom'));
-        if (location.latitude === customLocation.lat && location.longitude === customLocation.long) {
-          // If the location coming from settings matches the custom location, use its index to select the option
-          selectedIndex = i + 1;
+    if (this.#locationOverrideEnabled) {
+      if (location.unavailable) {
+        selectedIndex = customLocations.length + 2;
+      } else {
+        selectedIndex = customLocations.length + 1;
+        for (const [i, customLocation] of customLocations.entries()) {
+          if (location.latitude === customLocation.lat && location.longitude === customLocation.long &&
+              location.timezoneId === customLocation.timezoneId && location.locale === customLocation.locale) {
+            selectedIndex = i + 1;
+            break;
+          }
         }
       }
-    };
-    customLocations.addChangeListener(fillCustomSettings);
-    fillCustomSettings();
-
-    // Other location
-    const customLocationOption = {title: i18nString(UIStrings.other), location: NonPresetOptions.Custom};
-    this.locationSelectElement.appendChild(
-        UI.UIUtils.createOption(customLocationOption.title, customLocationOption.location, 'other'));
-
-    // Error location.
-    const group = this.locationSelectElement.createChild('optgroup');
-    group.label = i18nString(UIStrings.error);
-    group.appendChild(UI.UIUtils.createOption(
-        i18nString(UIStrings.locationUnavailable), NonPresetOptions.Unavailable, 'unavailable'));
-
-    this.locationSelectElement.selectedIndex = selectedIndex;
-    this.locationSelectElement.addEventListener('change', this.#locationSelectChanged.bind(this));
-    this.fieldsetElement = fields.createChild('fieldset');
-    this.fieldsetElement.disabled = !this.#locationOverrideEnabled;
-    this.fieldsetElement.id = 'location-override-section';
-
-    const latitudeGroup = this.fieldsetElement.createChild('div', 'latlong-group');
-    const longitudeGroup = this.fieldsetElement.createChild('div', 'latlong-group');
-    const timezoneGroup = this.fieldsetElement.createChild('div', 'latlong-group');
-    const localeGroup = this.fieldsetElement.createChild('div', 'latlong-group');
-    const accuracyGroup = this.fieldsetElement.createChild('div', 'latlong-group');
+    }
 
     const cmdOrCtrl = Host.Platform.isMac() ? '\u2318' : 'Ctrl';
     const modifierKeyMessage = i18nString(UIStrings.adjustWithMousewheelOrUpdownKeys, {PH1: cmdOrCtrl});
 
-    this.latitudeInput = UI.UIUtils.createInput('', 'number', 'latitude');
-    latitudeGroup.appendChild(this.latitudeInput);
-    this.latitudeInput.setAttribute('step', 'any');
-    this.latitudeInput.value = '0';
-    this.latitudeSetter = UI.UIUtils.bindInput(
-        this.latitudeInput, this.applyLocationUserInput.bind(this), SDK.EmulationModel.Location.latitudeValidator, true,
-        0.1);
-    this.latitudeSetter(String(location.latitude));
-    UI.Tooltip.Tooltip.install(this.latitudeInput, modifierKeyMessage);
-    latitudeGroup.appendChild(
-        UI.UIUtils.createLabel(i18nString(UIStrings.latitude), 'latlong-title', this.latitudeInput));
+    this.#locationSectionElement.setAttribute('jslog', `${VisualLogging.section('location')}`);
 
-    this.longitudeInput = UI.UIUtils.createInput('', 'number', 'longitude');
-    longitudeGroup.appendChild(this.longitudeInput);
-    this.longitudeInput.setAttribute('step', 'any');
-    this.longitudeInput.value = '0';
-    this.longitudeSetter = UI.UIUtils.bindInput(
-        this.longitudeInput, this.applyLocationUserInput.bind(this), SDK.EmulationModel.Location.longitudeValidator,
-        true, 0.1);
-    this.longitudeSetter(String(location.longitude));
-    UI.Tooltip.Tooltip.install(this.longitudeInput, modifierKeyMessage);
-    longitudeGroup.appendChild(
-        UI.UIUtils.createLabel(i18nString(UIStrings.longitude), 'latlong-title', this.longitudeInput));
-
-    this.timezoneInput = UI.UIUtils.createInput('', 'text', 'timezone');
-    timezoneGroup.appendChild(this.timezoneInput);
-    this.timezoneInput.value = 'Europe/Berlin';
-    this.timezoneSetter = UI.UIUtils.bindInput(
-        this.timezoneInput, this.applyLocationUserInput.bind(this), SDK.EmulationModel.Location.timezoneIdValidator,
-        false);
-    this.timezoneSetter(location.timezoneId);
-    timezoneGroup.appendChild(
-        UI.UIUtils.createLabel(i18nString(UIStrings.timezoneId), 'timezone-title', this.timezoneInput));
-    this.timezoneError = timezoneGroup.createChild('div', 'timezone-error');
-
-    this.localeInput = UI.UIUtils.createInput('', 'text', 'locale');
-    localeGroup.appendChild(this.localeInput);
-    this.localeInput.value = 'en-US';
-    this.localeSetter = UI.UIUtils.bindInput(
-        this.localeInput, this.applyLocationUserInput.bind(this), SDK.EmulationModel.Location.localeValidator, false);
-    this.localeSetter(location.locale);
-    localeGroup.appendChild(UI.UIUtils.createLabel(i18nString(UIStrings.locale), 'locale-title', this.localeInput));
-    this.localeError = localeGroup.createChild('div', 'locale-error');
-
-    this.accuracyInput = UI.UIUtils.createInput('', 'number', 'accuracy');
-    accuracyGroup.appendChild(this.accuracyInput);
-    this.accuracyInput.step = 'any';
-    this.accuracyInput.value = SDK.EmulationModel.Location.DEFAULT_ACCURACY.toString();
-    this.accuracySetter = UI.UIUtils.bindInput(
-        this.accuracyInput, this.applyLocationUserInput.bind(this),
-        (value: string) => SDK.EmulationModel.Location.accuracyValidator(value).valid, true, 1);
-    this.accuracySetter(String(location.accuracy || SDK.EmulationModel.Location.DEFAULT_ACCURACY));
-    accuracyGroup.appendChild(
-        UI.UIUtils.createLabel(i18nString(UIStrings.accuracy), 'accuracy-title', this.accuracyInput));
-    this.accuracyError = accuracyGroup.createChild('div', 'accuracy-error');
+    // clang-format off
+    // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
+    render(
+        html`
+      <label class="sensors-group-title" id="location-select-label" for="location-select">${i18nString(UIStrings.location)}</label>
+      <div class="geo-fields">
+        <select
+          id="location-select"
+          ${Directives.ref((el: Element | undefined) => {
+            if (el) {
+              this.locationSelectElement = el as HTMLSelectElement;
+            }
+          })}
+          .selectedIndex=${selectedIndex}
+          @change=${this.#locationSelectChanged.bind(this)}
+          jslog=${VisualLogging.dropDown().track({change: true})}
+        >
+          <option value=${NonPresetOptions.NoOverride} jslog=${VisualLogging.item('no-override')}>${i18nString(UIStrings.noOverride)}</option>
+          <optgroup label=${i18nString(UIStrings.overrides)}>
+            ${customLocations.map(customLocation => html`
+              <option value=${JSON.stringify(customLocation)} jslog=${VisualLogging.item('custom')}>${customLocation.title}</option>
+            `)}
+          </optgroup>
+          <option value=${NonPresetOptions.Custom} jslog=${VisualLogging.item('other')}>${i18nString(UIStrings.other)}</option>
+          <optgroup label=${i18nString(UIStrings.error)}>
+            <option value=${NonPresetOptions.Unavailable} jslog=${VisualLogging.item('unavailable')}>${i18nString(UIStrings.locationUnavailable)}</option>
+          </optgroup>
+        </select>
+        <devtools-button
+          .variant=${Buttons.Button.Variant.OUTLINED}
+          class="manage-locations"
+          @click=${() => Common.Revealer.reveal(customLocationsSetting)}
+          aria-label=${i18nString(UIStrings.manageTheListOfLocations)}
+          jslog=${VisualLogging.action('sensors.manage-locations').track({click: true})}
+        >
+          ${i18nString(UIStrings.manage)}
+        </devtools-button>
+        <fieldset
+          id="location-override-section"
+          ?disabled=${!this.#locationOverrideEnabled}
+          ${Directives.ref((el: Element | undefined) => {
+            if (el) {
+              this.fieldsetElement = el as HTMLFieldSetElement;
+            }
+          })}
+        >
+          <div class="latlong-group">
+            <!-- @ts-ignore -->
+            <input
+              id="latitude-input"
+              type="number"
+              min="-90"
+              max="90"
+              step="any"
+              required
+              .value=${String(location.latitude)}
+              name="latitude"
+              title=${modifierKeyMessage}
+              jslog=${VisualLogging.textField('latitude').track({change: true})}
+              ${Directives.ref((el: Element | undefined) => { if (el) { this.latitudeInput = el as HTMLInputElement; } })}
+              @change=${this.#onLocationChange.bind(this)}
+              @keydown=${this.#onLocationKeyDown.bind(this)}
+              @focus=${this.#onLocationFocus.bind(this)}
+            >
+            <label class="latlong-title" for="latitude-input">${i18nString(UIStrings.latitude)}</label>
+          </div>
+          <div class="latlong-group">
+            <!-- @ts-ignore -->
+            <input
+              id="longitude-input"
+              type="number"
+              min="-180"
+              max="180"
+              step="any"
+              required
+              .value=${String(location.longitude)}
+              name="longitude"
+              title=${modifierKeyMessage}
+              jslog=${VisualLogging.textField('longitude').track({change: true})}
+              ${Directives.ref((el: Element | undefined) => { if (el) { this.longitudeInput = el as HTMLInputElement; } })}
+              @change=${this.#onLocationChange.bind(this)}
+              @keydown=${this.#onLocationKeyDown.bind(this)}
+              @focus=${this.#onLocationFocus.bind(this)}
+            >
+            <label class="latlong-title" for="longitude-input">${i18nString(UIStrings.longitude)}</label>
+          </div>
+          <div class="latlong-group">
+            <input
+              id="timezone-input"
+              type="text"
+              pattern=".*[a-zA-Z].*"
+              .value=${location.timezoneId}
+              name="timezone"
+              jslog=${VisualLogging.textField('timezone').track({change: true})}
+              ${Directives.ref((el: Element | undefined) => { if (el) { this.timezoneInput = el as HTMLInputElement; } })}
+              @change=${this.#onLocationChange.bind(this)}
+              @keydown=${this.#onLocationKeyDown.bind(this)}
+              @focus=${this.#onLocationFocus.bind(this)}
+            >
+            <label class="timezone-title" for="timezone-input">${i18nString(UIStrings.timezoneId)}</label>
+            <div class="timezone-error" ${Directives.ref((el: Element | undefined) => { if (el) { this.timezoneError = el as HTMLElement; } })}></div>
+          </div>
+          <div class="latlong-group">
+            <input
+              id="locale-input"
+              type="text"
+              pattern=".*[a-zA-Z]{2}.*"
+              .value=${location.locale}
+              name="locale"
+              jslog=${VisualLogging.textField('locale').track({change: true})}
+              ${Directives.ref((el: Element | undefined) => { if (el) { this.localeInput = el as HTMLInputElement; } })}
+              @change=${this.#onLocationChange.bind(this)}
+              @keydown=${this.#onLocationKeyDown.bind(this)}
+              @focus=${this.#onLocationFocus.bind(this)}
+            >
+            <label class="locale-title" for="locale-input">${i18nString(UIStrings.locale)}</label>
+            <div class="locale-error" ${Directives.ref((el: Element | undefined) => { if (el) { this.localeError = el as HTMLElement; } })}></div>
+          </div>
+          <div class="latlong-group">
+            <!-- @ts-ignore -->
+            <input
+              id="accuracy-input"
+              type="number"
+              min="0"
+              step="any"
+              .value=${String(location.accuracy || SDK.EmulationModel.Location.DEFAULT_ACCURACY)}
+              name="accuracy"
+              jslog=${VisualLogging.textField('accuracy').track({change: true})}
+              ${Directives.ref((el: Element | undefined) => { if (el) { this.accuracyInput = el as HTMLInputElement; } })}
+              @change=${this.#onLocationChange.bind(this)}
+              @keydown=${this.#onLocationKeyDown.bind(this)}
+              @focus=${this.#onLocationFocus.bind(this)}
+            >
+            <label class="accuracy-title" for="accuracy-input">${i18nString(UIStrings.accuracy)}</label>
+            <div class="accuracy-error" ${Directives.ref((el: Element | undefined) => { if (el) { this.accuracyError = el as HTMLElement; } })}></div>
+          </div>
+        </fieldset>
+      </div>
+    `, this.#locationSectionElement);
+    // clang-format on
   }
 
   #locationSelectChanged(): void {
@@ -411,17 +452,60 @@ export class SensorsView extends UI.Widget.VBox {
       this.#location = new SDK.EmulationModel.Location(
           coordinates.lat, coordinates.long, coordinates.timezoneId, coordinates.locale,
           coordinates.accuracy || SDK.EmulationModel.Location.DEFAULT_ACCURACY, false);
-      this.latitudeSetter(coordinates.lat);
-      this.longitudeSetter(coordinates.long);
-      this.timezoneSetter(coordinates.timezoneId);
-      this.localeSetter(coordinates.locale);
-      this.accuracySetter(String(coordinates.accuracy || SDK.EmulationModel.Location.DEFAULT_ACCURACY));
+      this.latitudeInput.value = coordinates.lat;
+      this.longitudeInput.value = coordinates.long;
+      this.timezoneInput.value = coordinates.timezoneId;
+      this.localeInput.value = coordinates.locale;
+      this.accuracyInput.value = String(coordinates.accuracy || SDK.EmulationModel.Location.DEFAULT_ACCURACY);
     }
 
     this.applyLocation();
     if (value === NonPresetOptions.Custom) {
       this.latitudeInput.focus();
     }
+  }
+
+  #onLocationChange(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.checkValidity()) {
+      this.applyLocationUserInput();
+    }
+  }
+
+  #onLocationKeyDown(event: KeyboardEvent): void {
+    const input = event.currentTarget as HTMLInputElement;
+    if (event.key === 'Enter') {
+      if (input.checkValidity()) {
+        this.applyLocationUserInput();
+      }
+      event.preventDefault();
+      return;
+    }
+
+    const isNumeric = input === this.latitudeInput || input === this.longitudeInput || input === this.accuracyInput;
+    if (!isNumeric) {
+      return;
+    }
+
+    const multiplier = input === this.accuracyInput ? 1 : 0.1;
+    const value = UI.UIUtils.modifiedFloatNumber(parseFloat(input.value), event, multiplier);
+    if (value === null) {
+      return;
+    }
+    const prevValue = input.value;
+    input.value = String(value);
+    if (input.checkValidity()) {
+      this.applyLocationUserInput();
+    } else {
+      // If ArrowUp/ArrowDown adjusts the value out of bounds, we reset it.
+      input.value = prevValue;
+    }
+    event.preventDefault();
+  }
+
+  #onLocationFocus(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    input.select();
   }
 
   private applyLocationUserInput(): void {
@@ -467,20 +551,16 @@ export class SensorsView extends UI.Widget.VBox {
   }
 
   private clearFieldsetElementInputs(): void {
-    this.latitudeSetter('0');
-    this.longitudeSetter('0');
-    this.timezoneSetter('');
-    this.localeSetter('');
-    this.accuracySetter(SDK.EmulationModel.Location.DEFAULT_ACCURACY.toString());
+    this.latitudeInput.value = '0';
+    this.longitudeInput.value = '0';
+    this.timezoneInput.value = '';
+    this.localeInput.value = '';
+    this.accuracyInput.value = SDK.EmulationModel.Location.DEFAULT_ACCURACY.toString();
   }
 
   private createDeviceOrientationSection(): void {
     const orientationGroup = this.contentElement.createChild('section', 'sensors-group');
     orientationGroup.setAttribute('jslog', `${VisualLogging.section('device-orientation')}`);
-    const orientationTitle = UI.UIUtils.createLabel(i18nString(UIStrings.orientation), 'sensors-group-title');
-    orientationGroup.appendChild(orientationTitle);
-    const orientationContent = orientationGroup.createChild('div', 'orientation-content');
-    const fields = orientationContent.createChild('div', 'orientation-fields');
 
     const orientationOffOption = {
       title: i18nString(UIStrings.off),
@@ -506,46 +586,141 @@ export class SensorsView extends UI.Widget.VBox {
         {title: i18nString(UIStrings.displayDown), orientation: '[0, -180, 0]', jslogContext: 'displayUp-down'},
       ],
     }];
-    this.orientationSelectElement = this.contentElement.createChild('select');
-    this.orientationSelectElement.setAttribute('jslog', `${VisualLogging.dropDown().track({change: true})}`);
-    UI.ARIAUtils.bindLabelToControl(orientationTitle, this.orientationSelectElement);
-    this.orientationSelectElement.appendChild(UI.UIUtils.createOption(
-        orientationOffOption.title, orientationOffOption.orientation, orientationOffOption.jslogContext));
-    this.orientationSelectElement.appendChild(
-        UI.UIUtils.createOption(customOrientationOption.title, customOrientationOption.orientation, 'custom'));
 
-    for (let i = 0; i < orientationGroups.length; ++i) {
-      const groupElement = this.orientationSelectElement.createChild('optgroup');
-      groupElement.label = orientationGroups[i].title;
-      const group = orientationGroups[i].value;
-      for (let j = 0; j < group.length; ++j) {
-        groupElement.appendChild(UI.UIUtils.createOption(group[j].title, group[j].orientation, group[j].jslogContext));
-      }
-    }
-    this.orientationSelectElement.selectedIndex = 0;
-    fields.appendChild(this.orientationSelectElement);
-    this.orientationSelectElement.addEventListener('change', this.orientationSelectChanged.bind(this));
+    // clang-format off
+    // eslint-disable-next-line @devtools/no-lit-render-outside-of-view
+    render(
+      html`
+        <label class="sensors-group-title" for="orientation-select">${i18nString(UIStrings.orientation)}</label>
+        <div class="orientation-content">
+          <div class="orientation-fields">
+            <select
+              id="orientation-select"
+              ${Directives.ref((el: Element | undefined) => {
+                if (el) {
+                  this.orientationSelectElement = el as HTMLSelectElement;
+                }
+              })}
+              @change=${this.orientationSelectChanged.bind(this)}
+              jslog=${VisualLogging.dropDown().track({change: true})}
+            >
+              <option value=${orientationOffOption.orientation} jslog=${VisualLogging.item(orientationOffOption.jslogContext)}>${orientationOffOption.title}</option>
+              <option value=${customOrientationOption.orientation} jslog=${VisualLogging.item('custom')}>${customOrientationOption.title}</option>
+              ${orientationGroups.map(group => html`
+                <optgroup label=${group.title}>
+                  ${group.value.map(preset => html`
+                    <option value=${preset.orientation} jslog=${VisualLogging.item(preset.jslogContext)}>${preset.title}</option>
+                  `)}
+                </optgroup>
+              `)}
+            </select>
+            <fieldset
+              class="device-orientation-override-section"
+              ${Directives.ref((el: Element | undefined) => {
+                if (el) {
+                  this.deviceOrientationFieldset = el as HTMLFieldSetElement;
+                }
+              })}
+            >
+              <div class="orientation-inputs-cell">
+                <div class="orientation-axis-input-container">
+                  <!-- @ts-ignore -->
+                  <input
+                    id="alpha-input"
+                    type="number"
+                    min="0"
+                    max="359.9999"
+                    step="any"
+                    required
+                    ${Directives.ref((el: Element | undefined) => { if (el) { this.alphaElement = el as HTMLInputElement; } })}
+                    @change=${this.#onOrientationChange.bind(this)}
+                    @keydown=${this.#onOrientationKeyDown.bind(this)}
+                    @focus=${this.#onOrientationFocus.bind(this)}
+                  >
+                  <label for="alpha-input">${i18nString(UIStrings.alpha)}</label>
+                </div>
+                <div class="orientation-axis-input-container">
+                  <!-- @ts-ignore -->
+                  <input
+                    id="beta-input"
+                    type="number"
+                    min="-180"
+                    max="179.9999"
+                    step="any"
+                    required
+                    ${Directives.ref((el: Element | undefined) => { if (el) { this.betaElement = el as HTMLInputElement; } })}
+                    @change=${this.#onOrientationChange.bind(this)}
+                    @keydown=${this.#onOrientationKeyDown.bind(this)}
+                    @focus=${this.#onOrientationFocus.bind(this)}
+                  >
+                  <label for="beta-input">${i18nString(UIStrings.beta)}</label>
+                </div>
+                <div class="orientation-axis-input-container">
+                  <!-- @ts-ignore -->
+                  <input
+                    id="gamma-input"
+                    type="number"
+                    min="-90"
+                    max="89.9999"
+                    step="any"
+                    required
+                    ${Directives.ref((el: Element | undefined) => { if (el) { this.gammaElement = el as HTMLInputElement; } })}
+                    @change=${this.#onOrientationChange.bind(this)}
+                    @keydown=${this.#onOrientationKeyDown.bind(this)}
+                    @focus=${this.#onOrientationFocus.bind(this)}
+                  >
+                  <label for="gamma-input">${i18nString(UIStrings.gamma)}</label>
+                </div>
+                <devtools-button
+                  .variant=${Buttons.Button.Variant.OUTLINED}
+                  class="orientation-reset-button"
+                  type="reset"
+                  aria-label=${i18nString(UIStrings.resetDeviceOrientation)}
+                  @click=${this.resetDeviceOrientation.bind(this)}
+                  jslog=${VisualLogging.action('sensors.reset-device-orientiation').track({click: true})}
+                >
+                  ${i18nString(UIStrings.reset)}
+                </devtools-button>
+              </div>
+            </fieldset>
+          </div>
+          <div
+            class="orientation-stage"
+            jslog=${VisualLogging.preview().track({drag: true})}
+            ${Directives.ref((el: Element | undefined) => {
+              if (el && !this.stageElement) {
+                this.stageElement = el as HTMLElement;
+                UI.UIUtils.installDragHandle(this.stageElement, this.onBoxDragStart.bind(this), event => {
+                  this.onBoxDrag(event);
+                }, null, '-webkit-grabbing', '-webkit-grab');
+              }
+            })}
+          >
+            <div class="orientation-layer" ${Directives.ref((el: Element | undefined) => { if (el) { this.orientationLayer = el as HTMLDivElement; } })}>
+              <section
+                class="orientation-box orientation-element"
+              >
+                <section class="orientation-front orientation-element"></section>
+                <section class="orientation-top orientation-element"></section>
+                <section class="orientation-back orientation-element"></section>
+                <section class="orientation-left orientation-element"></section>
+                <section class="orientation-right orientation-element"></section>
+                <section class="orientation-bottom orientation-element"></section>
+              </section>
+            </div>
+          </div>
+        </div>
+      `,
+      orientationGroup
+    );
+    // clang-format on
 
-    this.deviceOrientationFieldset = this.createDeviceOrientationOverrideElement(this.deviceOrientation);
-    this.stageElement = orientationContent.createChild('div', 'orientation-stage');
-    this.stageElement.setAttribute('jslog', `${VisualLogging.preview().track({drag: true})}`);
-    this.orientationLayer = this.stageElement.createChild('div', 'orientation-layer');
-    this.boxElement = this.orientationLayer.createChild('section', 'orientation-box orientation-element');
-
-    this.boxElement.createChild('section', 'orientation-front orientation-element');
-    this.boxElement.createChild('section', 'orientation-top orientation-element');
-    this.boxElement.createChild('section', 'orientation-back orientation-element');
-    this.boxElement.createChild('section', 'orientation-left orientation-element');
-    this.boxElement.createChild('section', 'orientation-right orientation-element');
-    this.boxElement.createChild('section', 'orientation-bottom orientation-element');
-
-    UI.UIUtils.installDragHandle(this.stageElement, this.onBoxDragStart.bind(this), event => {
-      this.onBoxDrag(event);
-    }, null, '-webkit-grabbing', '-webkit-grab');
-
-    fields.appendChild(this.deviceOrientationFieldset);
     this.enableOrientationFields(true);
     this.setBoxOrientation(this.deviceOrientation, false);
+
+    this.alphaElement.value = String(this.deviceOrientation.alpha);
+    this.betaElement.value = String(this.deviceOrientation.beta);
+    this.gammaElement.value = String(this.deviceOrientation.gamma);
   }
 
   private createPressureSection(): void {
@@ -635,9 +810,9 @@ export class SensorsView extends UI.Widget.VBox {
       // Even though the angles in |deviceOrientation| will not be rounded
       // here, their precision will be rounded by CSS when we change
       // |this.orientationLayer.style| in setBoxOrientation().
-      this.alphaSetter(String(roundAngle(deviceOrientation.alpha)));
-      this.betaSetter(String(roundAngle(deviceOrientation.beta)));
-      this.gammaSetter(String(roundAngle(deviceOrientation.gamma)));
+      this.alphaElement.value = String(roundAngle(deviceOrientation.alpha));
+      this.betaElement.value = String(roundAngle(deviceOrientation.beta));
+      this.gammaElement.value = String(roundAngle(deviceOrientation.gamma));
     }
 
     const animate = modificationSource !== DeviceOrientationModificationSource.USER_DRAG;
@@ -651,49 +826,41 @@ export class SensorsView extends UI.Widget.VBox {
         {PH1: deviceOrientation.alpha, PH2: deviceOrientation.beta, PH3: deviceOrientation.gamma}));
   }
 
-  private createAxisInput(
-      parentElement: Element, input: HTMLInputElement, label: string,
-      validator: (arg0: string) => boolean): (arg0: string) => void {
-    const div = parentElement.createChild('div', 'orientation-axis-input-container');
-    div.appendChild(input);
-    div.appendChild(UI.UIUtils.createLabel(label, /* className */ '', input));
-    return UI.UIUtils.bindInput(input, this.applyDeviceOrientationUserInput.bind(this), validator, true);
+  #onOrientationChange(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    if (input.checkValidity()) {
+      this.applyDeviceOrientationUserInput();
+    }
   }
 
-  private createDeviceOrientationOverrideElement(deviceOrientation: SDK.EmulationModel.DeviceOrientation):
-      HTMLFieldSetElement {
-    const fieldsetElement = document.createElement('fieldset');
-    fieldsetElement.classList.add('device-orientation-override-section');
-    const cellElement = fieldsetElement.createChild('td', 'orientation-inputs-cell');
+  #onOrientationKeyDown(event: KeyboardEvent): void {
+    const input = event.currentTarget as HTMLInputElement;
+    if (event.key === 'Enter') {
+      if (input.checkValidity()) {
+        this.applyDeviceOrientationUserInput();
+      }
+      event.preventDefault();
+      return;
+    }
 
-    this.alphaElement = UI.UIUtils.createInput('', 'number', 'alpha');
-    this.alphaElement.setAttribute('step', 'any');
-    this.alphaSetter = this.createAxisInput(
-        cellElement, this.alphaElement, i18nString(UIStrings.alpha),
-        SDK.EmulationModel.DeviceOrientation.alphaAngleValidator);
-    this.alphaSetter(String(deviceOrientation.alpha));
+    const value = UI.UIUtils.modifiedFloatNumber(parseFloat(input.value), event, 1);
+    if (value === null) {
+      return;
+    }
+    const prevValue = input.value;
+    input.value = String(value);
+    if (input.checkValidity()) {
+      this.applyDeviceOrientationUserInput();
+    } else {
+      // If ArrowUp/ArrowDown adjusts the value out of bounds, we reset it.
+      input.value = prevValue;
+    }
+    event.preventDefault();
+  }
 
-    this.betaElement = UI.UIUtils.createInput('', 'number', 'beta');
-    this.betaElement.setAttribute('step', 'any');
-    this.betaSetter = this.createAxisInput(
-        cellElement, this.betaElement, i18nString(UIStrings.beta),
-        SDK.EmulationModel.DeviceOrientation.betaAngleValidator);
-    this.betaSetter(String(deviceOrientation.beta));
-
-    this.gammaElement = UI.UIUtils.createInput('', 'number', 'gamma');
-    this.gammaElement.setAttribute('step', 'any');
-    this.gammaSetter = this.createAxisInput(
-        cellElement, this.gammaElement, i18nString(UIStrings.gamma),
-        SDK.EmulationModel.DeviceOrientation.gammaAngleValidator);
-    this.gammaSetter(String(deviceOrientation.gamma));
-
-    const resetButton = UI.UIUtils.createTextButton(
-        i18nString(UIStrings.reset), this.resetDeviceOrientation.bind(this),
-        {className: 'orientation-reset-button', jslogContext: 'sensors.reset-device-orientiation'});
-    UI.ARIAUtils.setLabel(resetButton, i18nString(UIStrings.resetDeviceOrientation));
-    resetButton.setAttribute('type', 'reset');
-    cellElement.appendChild(resetButton);
-    return fieldsetElement;
+  #onOrientationFocus(event: Event): void {
+    const input = event.currentTarget as HTMLInputElement;
+    input.select();
   }
 
   private setBoxOrientation(deviceOrientation: SDK.EmulationModel.DeviceOrientation, animate: boolean): void {

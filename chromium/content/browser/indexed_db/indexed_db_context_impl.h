@@ -87,7 +87,6 @@ class CONTENT_EXPORT IndexedDBContextImpl
           client_state_checker_remote,
       mojo::PendingReceiver<blink::mojom::IDBFactory> receiver) override;
   void ForceClose(storage::BucketId bucket_id,
-                  storage::mojom::ForceCloseReason reason,
                   base::OnceClosure callback) override;
   void StartMetadataRecording(storage::BucketId bucket_id,
                               StartMetadataRecordingCallback callback) override;
@@ -143,7 +142,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
   void PerformStorageCleanup(PerformStorageCleanupCallback callback) override;
 
   // Exposed for testing.
-  bool BucketContextExists(storage::BucketId bucket_id) const;
+  bool BucketContextExists(const storage::BucketLocator& bucket_locator) const;
 
   // Exposed for testing.
   const scoped_refptr<base::SequencedTaskRunner>& idb_task_runner() const {
@@ -155,7 +154,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
       const storage::BucketId& id);
 
  private:
-  friend class IndexedDBTest;
+  friend class IndexedDBTestBase;
   friend class FactoryTest;
   FRIEND_TEST_ALL_PREFIXES(IndexedDBTest, BasicFactoryCreationAndTearDown);
   FRIEND_TEST_ALL_PREFIXES(IndexedDBTest, TooLongOrigin);
@@ -180,7 +179,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
       storage::QuotaErrorOr<storage::BucketInfo> bucket_info);
 
   void ForceClose(const storage::BucketLocator& bucket_locator,
-                  storage::mojom::ForceCloseReason reason,
+                  bool delete_bucket_data,
                   base::OnceClosure callback);
 
   // Always run immediately before destruction. `purge_origins` owns `this` and
@@ -230,7 +229,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
       GetAllBucketsDetailsCallback callback,
       std::vector<storage::QuotaErrorOr<storage::BucketInfo>> bucket_infos);
 
-  std::vector<storage::BucketId> GetOpenBucketIdsForTesting() const;
+  size_t GetOpenBucketCountForTesting() const;
 
   // Finishes filling in `info` with data relevant to idb-internals and passes
   // the result back via `result`. The bucket is described by
@@ -239,8 +238,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
       storage::mojom::IdbBucketMetadataPtr info,
       base::OnceCallback<void(storage::mojom::IdbBucketMetadataPtr)> result);
 
-  void EnsureBucketContext(const storage::BucketInfo& bucket,
-                           const base::FilePath& data_directory);
+  void EnsureBucketContext(const storage::BucketInfo& bucket);
 
   void CompactBackingStoreForTesting(
       const storage::BucketLocator& bucket_locator);
@@ -327,7 +325,9 @@ class CONTENT_EXPORT IndexedDBContextImpl
   mojo::PendingReceiver<storage::mojom::MockFailureInjector>
       pending_failure_injector_;
 
-  std::map<storage::BucketId, base::SequenceBound<BucketContext>>
+  std::map<storage::BucketLocator,
+           base::SequenceBound<BucketContext>,
+           storage::CompareBucketLocators>
       bucket_contexts_;
 
   // For the most part, every bucket gets its own SequencedTaskRunner. But each

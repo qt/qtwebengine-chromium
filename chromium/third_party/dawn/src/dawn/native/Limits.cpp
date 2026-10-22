@@ -121,12 +121,7 @@ static constexpr uint64_t GiB = 1'073'741'824;
 // Tiered limits for immediate data sizes.
 //                                 compat  tier0
 #define LIMITS_IMMEDIATE_SIZE(X) \
-  X(v1, Maximum, maxImmediateSize,      0,    kMaxImmediateDataBytes)
-
-// Limits for the resource table.
-//                                                                   compat     tier0
-#define LIMITS_RESOURCE_TABLE(X) \
-  X(resourceTableLimits, Maximum, maxResourceTableSize,                   0,    50'000)
+  X(v1, Maximum, maxImmediateSize,     64,    kMaxImmediateDataBytes)
 
 // TODO(crbug.com/dawn/685):
 // These limits don't have tiers yet. Define two tiers with the same values since the macros
@@ -157,7 +152,6 @@ static constexpr uint64_t GiB = 1'073'741'824;
     X(LIMITS_INTER_STAGE_SHADER_VARIABLES) \
     X(LIMITS_TEXTURE_DIMENSIONS)           \
     X(LIMITS_IMMEDIATE_SIZE)               \
-    X(LIMITS_RESOURCE_TABLE)               \
     X(LIMITS_OTHER)
 
 #define LIMITS(X)                          \
@@ -171,7 +165,6 @@ static constexpr uint64_t GiB = 1'073'741'824;
     LIMITS_INTER_STAGE_SHADER_VARIABLES(X) \
     LIMITS_TEXTURE_DIMENSIONS(X)           \
     LIMITS_IMMEDIATE_SIZE(X)               \
-    LIMITS_RESOURCE_TABLE(X)               \
     LIMITS_OTHER(X)
 
 namespace dawn::native {
@@ -292,20 +285,16 @@ MaybeError ValidateAndUnpackLimitsIn(const Limits* chainedLimits,
         out->compat = *compatibilityModeLimits;
         out->compat.nextInChain = nullptr;
     }
-    if (auto* resourceTableLimits = unpacked.Get<ResourceTableLimits>()) {
-        out->resourceTableLimits = *resourceTableLimits;
-        out->resourceTableLimits.nextInChain = nullptr;
-    }
 
     // TODO(crbug.com/378361783): Add validation and default values to support requiring limits for
     // DawnTexelCopyBufferRowAlignmentLimits. Test this, see old test removed here:
     // https://dawn-review.googlesource.com/c/dawn/+/240934/11/src/dawn/tests/unittests/native/LimitsTests.cpp#b269
-    if (unpacked.Get<DawnTexelCopyBufferRowAlignmentLimits>()) {
+    if (unpacked.Has<DawnTexelCopyBufferRowAlignmentLimits>()) {
         dawn::WarningLog()
             << "DawnTexelCopyBufferRowAlignmentLimits is not supported in required limits";
     }
 
-    if (unpacked.Get<DawnHostMappedPointerLimits>()) {
+    if (unpacked.Has<DawnHostMappedPointerLimits>()) {
         dawn::WarningLog() << "DawnHostMappedPointerLimits is not supported in required limits";
     }
 
@@ -326,10 +315,6 @@ void UnpackLimitsIn(const Limits* chainedLimits, CombinedLimits* out) {
     if (auto* compatibilityModeLimits = unpacked.Get<CompatibilityModeLimits>()) {
         out->compat = *compatibilityModeLimits;
         out->compat.nextInChain = nullptr;
-    }
-    if (auto* resourceTableLimits = unpacked.Get<ResourceTableLimits>()) {
-        out->resourceTableLimits = *resourceTableLimits;
-        out->resourceTableLimits.nextInChain = nullptr;
     }
 }
 
@@ -574,8 +559,7 @@ MaybeError FillLimits(Limits* outputLimits,
     FillExtensionLimits(unpacked.Get<DawnHostMappedPointerLimits>(),
                         &CombinedLimits::hostMappedPointerLimits,
                         wgpu::FeatureName::HostMappedPointer);
-    FillExtensionLimits(unpacked.Get<ResourceTableLimits>(), &CombinedLimits::resourceTableLimits,
-                        wgpu::FeatureName::ChromiumExperimentalSamplingResourceTable);
+
     return {};
 }
 

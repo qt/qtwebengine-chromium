@@ -8,7 +8,6 @@
 
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
@@ -43,35 +42,6 @@ const char kAuthHeaderBearer[] = "Bearer ";
 // Represents the HTTP response code when it has not explicitly been set.
 const int kUnsetHttpResponseCode = 0;
 
-class CookieWriteLogger : public network::mojom::CookieAccessObserver {
- public:
-  explicit CookieWriteLogger(
-      safe_browsing::SafeBrowsingAuthenticatedEndpoint endpoint)
-      : endpoint_(endpoint) {}
-
-  // network::mojom::CookieAccessObserver:
-  void OnCookiesAccessed(
-      std::vector<network::mojom::CookieAccessDetailsPtr> details) override {
-    for (const network::mojom::CookieAccessDetailsPtr& access : details) {
-      if (access->type != network::mojom::CookieAccessDetails::Type::kChange) {
-        continue;
-      }
-
-      base::UmaHistogramEnumeration(
-          "SafeBrowsing.AuthenticatedCookieResetEndpoint", endpoint_);
-    }
-  }
-
-  void Clone(mojo::PendingReceiver<network::mojom::CookieAccessObserver>
-                 listener) override {
-    mojo::MakeSelfOwnedReceiver(std::make_unique<CookieWriteLogger>(endpoint_),
-                                std::move(listener));
-  }
-
- private:
-  safe_browsing::SafeBrowsingAuthenticatedEndpoint endpoint_;
-};
-
 }  // namespace
 
 std::string ShortURLForReporting(const GURL& url) {
@@ -90,13 +60,15 @@ std::string ShortURLForReporting(const GURL& url) {
 ChromeUserPopulation::ProfileManagementStatus GetProfileManagementStatus(
     const policy::BrowserPolicyConnector* bpc) {
 #if BUILDFLAG(IS_WIN)
-  if (base::IsManagedDevice())
+  if (base::IsManagedDevice()) {
     return ChromeUserPopulation::ENTERPRISE_MANAGED;
-  else
+  } else {
     return ChromeUserPopulation::NOT_MANAGED;
+  }
 #elif BUILDFLAG(IS_CHROMEOS)
-  if (!bpc || !bpc->IsDeviceEnterpriseManaged())
+  if (!bpc || !bpc->IsDeviceEnterpriseManaged()) {
     return ChromeUserPopulation::NOT_MANAGED;
+  }
   return ChromeUserPopulation::ENTERPRISE_MANAGED;
 #else
   return ChromeUserPopulation::UNAVAILABLE;
@@ -114,20 +86,23 @@ void SetDelayInPref(PrefService* prefs,
 
 base::TimeDelta GetDelayFromPref(PrefService* prefs, const char* pref_name) {
   const base::TimeDelta zero_delay;
-  if (!prefs->HasPrefPath(pref_name))
+  if (!prefs->HasPrefPath(pref_name)) {
     return zero_delay;
+  }
 
   int64_t seconds_since_epoch = prefs->GetInt64(pref_name);
-  if (seconds_since_epoch <= 0)
+  if (seconds_since_epoch <= 0) {
     return zero_delay;
+  }
 
   base::Time next_event = base::Time::FromDeltaSinceWindowsEpoch(
       base::Seconds(seconds_since_epoch));
   base::Time now = base::Time::Now();
-  if (now > next_event)
+  if (now > next_event) {
     return zero_delay;
-  else
+  } else {
     return next_event - now;
+  }
 }
 
 bool CanGetReputationOfUrl(const GURL& url) {
@@ -150,14 +125,6 @@ bool CanGetReputationOfUrl(const GURL& url) {
   }
 
   return true;
-}
-
-void LogAuthenticatedCookieResets(network::ResourceRequest& resource_request,
-                                  SafeBrowsingAuthenticatedEndpoint endpoint) {
-  resource_request.trusted_params = network::ResourceRequest::TrustedParams();
-  mojo::MakeSelfOwnedReceiver(std::make_unique<CookieWriteLogger>(endpoint),
-                              resource_request.trusted_params->cookie_observer
-                                  .InitWithNewPipeAndPassReceiver());
 }
 
 void SetAccessToken(network::ResourceRequest* resource_request,
@@ -211,6 +178,10 @@ std::string_view GetExtraExtraMetricsSuffix(
       return "scam_experiment_verdict_1";
     case safe_browsing::ThreatSubtype::SCAM_EXPERIMENT_VERDICT_2:
       return "scam_experiment_verdict_2";
+    case safe_browsing::ThreatSubtype::SCAM_EXPERIMENT_VERDICT_3:
+      return "scam_experiment_verdict_3";
+    case safe_browsing::ThreatSubtype::SCAM_EXPERIMENT_VERDICT_4:
+      return "scam_experiment_verdict_4";
     case safe_browsing::ThreatSubtype::SCAM_EXPERIMENT_CATCH_ALL_ENFORCEMENT:
       return "scam_experiment_catch_all";
     case safe_browsing::ThreatSubtype::UNKNOWN:

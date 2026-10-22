@@ -13,11 +13,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 import org.robolectric.annotation.Config;
 
 import org.chromium.base.test.BaseRobolectricTestRunner;
@@ -30,6 +33,7 @@ import org.chromium.ui.base.EventForwarder;
 @RunWith(BaseRobolectricTestRunner.class)
 @Config(manifest = Config.NONE)
 public class WebContentsImplTest {
+    @Rule public MockitoRule mMockitoRule = MockitoJUnit.rule();
     @Mock private NavigationController mNavigationController;
     @Mock private WebContentsImpl.Natives mWebContentsJniMock;
 
@@ -38,9 +42,13 @@ public class WebContentsImplTest {
 
     @Before
     public void setUp() {
-        MockitoAnnotations.initMocks(this);
         WebContentsImplJni.setInstanceForTesting(mWebContentsJniMock);
         mWebContentsImpl = WebContentsImpl.create(mNativeWebContentsAndroid, mNavigationController);
+    }
+
+    @After
+    public void tearDown() {
+        mWebContentsImpl.destroy();
     }
 
     @Test

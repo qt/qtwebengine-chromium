@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_AUDIO_SIMPLE_FFT_CONVOLVER_H_
 
 #include <memory>
+
 #include "third_party/blink/renderer/platform/audio/audio_array.h"
 #include "third_party/blink/renderer/platform/audio/fft_frame.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
@@ -28,9 +29,7 @@ class SimpleFFTConvolver final {
   SimpleFFTConvolver(const SimpleFFTConvolver&) = delete;
   SimpleFFTConvolver& operator=(const SimpleFFTConvolver&) = delete;
 
-  void Process(const float* source_p,
-               float* dest_p,
-               uint32_t frames_to_process);
+  void Process(base::span<const float> source, base::span<float> dest);
 
   void Reset();
 

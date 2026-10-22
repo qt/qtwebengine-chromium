@@ -1004,7 +1004,8 @@
             "description": "Audits domain allows investigation of page violations and possible improvements.",
             "experimental": true,
             "dependencies": [
-                "Network"
+                "Network",
+                "Runtime"
             ],
             "types": [
                 {
@@ -1180,6 +1181,29 @@
                             "description": "The recommended solution to the issue.",
                             "optional": true,
                             "$ref": "CookieIssueInsight"
+                        }
+                    ]
+                },
+                {
+                    "id": "PerformanceIssueType",
+                    "type": "string",
+                    "enum": [
+                        "DocumentCookie"
+                    ]
+                },
+                {
+                    "id": "PerformanceIssueDetails",
+                    "description": "Details for a performance issue.",
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "performanceIssueType",
+                            "$ref": "PerformanceIssueType"
+                        },
+                        {
+                            "name": "sourceCodeLocation",
+                            "optional": true,
+                            "$ref": "SourceCodeLocation"
                         }
                     ]
                 },
@@ -1444,40 +1468,6 @@
                         {
                             "name": "type",
                             "$ref": "SharedArrayBufferIssueType"
-                        }
-                    ]
-                },
-                {
-                    "id": "LowTextContrastIssueDetails",
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "violatingNodeId",
-                            "$ref": "DOM.BackendNodeId"
-                        },
-                        {
-                            "name": "violatingNodeSelector",
-                            "type": "string"
-                        },
-                        {
-                            "name": "contrastRatio",
-                            "type": "number"
-                        },
-                        {
-                            "name": "thresholdAA",
-                            "type": "number"
-                        },
-                        {
-                            "name": "thresholdAAA",
-                            "type": "number"
-                        },
-                        {
-                            "name": "fontSize",
-                            "type": "string"
-                        },
-                        {
-                            "name": "fontWeight",
-                            "type": "string"
                         }
                     ]
                 },
@@ -1782,7 +1772,8 @@
                         "NavigationEntryMarkedSkippable",
                         "AutofillAndManualTextPolicyControlledFeaturesInfo",
                         "AutofillPolicyControlledFeatureInfo",
-                        "ManualTextPolicyControlledFeatureInfo"
+                        "ManualTextPolicyControlledFeatureInfo",
+                        "FormModelContextParameterMissingTitleAndDescription"
                     ]
                 },
                 {
@@ -1914,10 +1905,6 @@
                         "ConfigNoResponse",
                         "ConfigInvalidResponse",
                         "ConfigInvalidContentType",
-                        "ClientMetadataHttpNotFound",
-                        "ClientMetadataNoResponse",
-                        "ClientMetadataInvalidResponse",
-                        "ClientMetadataInvalidContentType",
                         "IdpNotPotentiallyTrustworthy",
                         "DisabledInSettings",
                         "DisabledInFlags",
@@ -1939,11 +1926,9 @@
                         "Canceled",
                         "RpPageNotVisible",
                         "SilentMediationFailure",
-                        "ThirdPartyCookiesBlocked",
                         "NotSignedInWithIdp",
                         "MissingTransientUserActivation",
                         "ReplacedByActiveMode",
-                        "InvalidFieldsSpecified",
                         "RelyingPartyOriginIsOpaque",
                         "TypeNotMatching",
                         "UiDismissedNoEmbargo",
@@ -2245,6 +2230,29 @@
                     ]
                 },
                 {
+                    "id": "SelectivePermissionsInterventionIssueDetails",
+                    "description": "The issue warns about blocked calls to privacy sensitive APIs via the\nSelective Permissions Intervention.",
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "apiName",
+                            "description": "Which API was intervened on.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "adAncestry",
+                            "description": "Why the ad script using the API is considered an ad.",
+                            "$ref": "Network.AdAncestry"
+                        },
+                        {
+                            "name": "stackTrace",
+                            "description": "The stack trace at the time of the intervention.",
+                            "optional": true,
+                            "$ref": "Runtime.StackTrace"
+                        }
+                    ]
+                },
+                {
                     "id": "InspectorIssueCode",
                     "description": "A unique identifier for the type of issue. Each type may use one of the\noptional fields in InspectorIssueDetails to convey more specific\ninformation about the kind of issue.",
                     "type": "string",
@@ -2255,7 +2263,6 @@
                         "HeavyAdIssue",
                         "ContentSecurityPolicyIssue",
                         "SharedArrayBufferIssue",
-                        "LowTextContrastIssue",
                         "CorsIssue",
                         "AttributionReportingIssue",
                         "QuirksModeIssue",
@@ -2276,7 +2283,9 @@
                         "UnencodedDigestIssue",
                         "ConnectionAllowlistIssue",
                         "UserReidentificationIssue",
-                        "PermissionElementIssue"
+                        "PermissionElementIssue",
+                        "PerformanceIssue",
+                        "SelectivePermissionsInterventionIssue"
                     ]
                 },
                 {
@@ -2313,11 +2322,6 @@
                             "name": "sharedArrayBufferIssueDetails",
                             "optional": true,
                             "$ref": "SharedArrayBufferIssueDetails"
-                        },
-                        {
-                            "name": "lowTextContrastIssueDetails",
-                            "optional": true,
-                            "$ref": "LowTextContrastIssueDetails"
                         },
                         {
                             "name": "corsIssueDetails",
@@ -2424,6 +2428,16 @@
                             "name": "permissionElementIssueDetails",
                             "optional": true,
                             "$ref": "PermissionElementIssueDetails"
+                        },
+                        {
+                            "name": "performanceIssueDetails",
+                            "optional": true,
+                            "$ref": "PerformanceIssueDetails"
+                        },
+                        {
+                            "name": "selectivePermissionsInterventionIssueDetails",
+                            "optional": true,
+                            "$ref": "SelectivePermissionsInterventionIssueDetails"
                         }
                     ]
                 },
@@ -2513,18 +2527,6 @@
                 {
                     "name": "enable",
                     "description": "Enables issues domain, sends the issues collected so far to the client by means of the\n`issueAdded` event."
-                },
-                {
-                    "name": "checkContrast",
-                    "description": "Runs the contrast check for the target page. Found issues are reported\nusing Audits.issueAdded event.",
-                    "parameters": [
-                        {
-                            "name": "reportAAA",
-                            "description": "Whether to report WCAG AAA level issues. Default is false.",
-                            "optional": true,
-                            "type": "boolean"
-                        }
-                    ]
                 },
                 {
                     "name": "checkFormsIssues",
@@ -4536,6 +4538,16 @@
                             "items": {
                                 "$ref": "CSSStartingStyle"
                             }
+                        },
+                        {
+                            "name": "navigations",
+                            "description": "@navigation CSS at-rule array.\nThe array enumerates @navigation at-rules starting with the innermost one, going outwards.",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "array",
+                            "items": {
+                                "$ref": "CSSNavigation"
+                            }
                         }
                     ]
                 },
@@ -4551,7 +4563,8 @@
                         "LayerRule",
                         "ScopeRule",
                         "StyleRule",
-                        "StartingStyleRule"
+                        "StartingStyleRule",
+                        "NavigationRule"
                     ]
                 },
                 {
@@ -4935,6 +4948,37 @@
                         {
                             "name": "active",
                             "description": "Whether the supports condition is satisfied.",
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "range",
+                            "description": "The associated rule header range in the enclosing stylesheet (if\navailable).",
+                            "optional": true,
+                            "$ref": "SourceRange"
+                        },
+                        {
+                            "name": "styleSheetId",
+                            "description": "Identifier of the stylesheet containing this object (if exists).",
+                            "optional": true,
+                            "$ref": "DOM.StyleSheetId"
+                        }
+                    ]
+                },
+                {
+                    "id": "CSSNavigation",
+                    "description": "CSS Navigation at-rule descriptor.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "text",
+                            "description": "Navigation rule text.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "active",
+                            "description": "Whether the navigation condition is satisfied.",
+                            "optional": true,
                             "type": "boolean"
                         },
                         {
@@ -5389,6 +5433,12 @@
                             "$ref": "CSSSupports"
                         },
                         {
+                            "name": "navigation",
+                            "description": "@navigation condition. Only one type of condition should be set.",
+                            "optional": true,
+                            "$ref": "CSSNavigation"
+                        },
+                        {
                             "name": "children",
                             "description": "Block body.",
                             "type": "array",
@@ -5458,6 +5508,13 @@
                             "items": {
                                 "$ref": "CSSFunctionNode"
                             }
+                        },
+                        {
+                            "name": "originTreeScopeNodeId",
+                            "description": "The BackendNodeId of the DOM node that constitutes the origin tree scope of this rule.",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "DOM.BackendNodeId"
                         }
                     ]
                 },
@@ -6243,6 +6300,32 @@
                     ]
                 },
                 {
+                    "name": "setNavigationText",
+                    "description": "Modifies the expression of a navigation at-rule.",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "styleSheetId",
+                            "$ref": "DOM.StyleSheetId"
+                        },
+                        {
+                            "name": "range",
+                            "$ref": "SourceRange"
+                        },
+                        {
+                            "name": "text",
+                            "type": "string"
+                        }
+                    ],
+                    "returns": [
+                        {
+                            "name": "navigation",
+                            "description": "The resulting CSS Navigation rule after modification.",
+                            "$ref": "CSSNavigation"
+                        }
+                    ]
+                },
+                {
                     "name": "setScopeText",
                     "description": "Modifies the expression of a scope at-rule.",
                     "experimental": true,
@@ -6842,10 +6925,56 @@
             ]
         },
         {
+            "domain": "CrashReportContext",
+            "description": "This domain exposes the current state of the CrashReportContext API.",
+            "experimental": true,
+            "dependencies": [
+                "Page"
+            ],
+            "types": [
+                {
+                    "id": "CrashReportContextEntry",
+                    "description": "Key-value pair in CrashReportContext.",
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "key",
+                            "type": "string"
+                        },
+                        {
+                            "name": "value",
+                            "type": "string"
+                        },
+                        {
+                            "name": "frameId",
+                            "description": "The ID of the frame where the key-value pair was set.",
+                            "$ref": "Page.FrameId"
+                        }
+                    ]
+                }
+            ],
+            "commands": [
+                {
+                    "name": "getEntries",
+                    "description": "Returns all entries in the CrashReportContext across all frames in the page.",
+                    "returns": [
+                        {
+                            "name": "entries",
+                            "type": "array",
+                            "items": {
+                                "$ref": "CrashReportContextEntry"
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "domain": "DOM",
             "description": "This domain exposes DOM read/write operations. Each DOM Node is represented with its mirror object\nthat has an `id`. This `id` can be used to get additional information on the Node, resolve it into\nthe JavaScript object wrapper, etc. It is important that client receives DOM events only for the\nnodes that are known to the client. Backend keeps track of the nodes that were sent to the client\nand never sends the same node twice. It is client's responsibility to collect information about\nthe nodes that were sent to the client. Note that `iframe` owner elements will return\ncorresponding document elements as their child nodes.",
             "dependencies": [
-                "Runtime"
+                "Runtime",
+                "Network"
             ],
             "types": [
                 {
@@ -6894,6 +7023,7 @@
                         "checkmark",
                         "before",
                         "after",
+                        "expand-icon",
                         "picker-icon",
                         "interest-hint",
                         "marker",
@@ -7199,6 +7329,12 @@
                             "items": {
                                 "$ref": "StyleSheetId"
                             }
+                        },
+                        {
+                            "name": "adProvenance",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "Network.AdProvenance"
                         }
                     ]
                 },
@@ -8750,6 +8886,24 @@
                             "name": "isScrollable",
                             "description": "If the node is scrollable.",
                             "type": "boolean"
+                        }
+                    ]
+                },
+                {
+                    "name": "adRelatedStateUpdated",
+                    "description": "Fired when a node's ad related state changes.",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "nodeId",
+                            "description": "The id of the node.",
+                            "$ref": "DOM.NodeId"
+                        },
+                        {
+                            "name": "adProvenance",
+                            "description": "The provenance of the ad related node, if it is ad related.",
+                            "optional": true,
+                            "$ref": "Network.AdProvenance"
                         }
                     ]
                 },
@@ -10754,6 +10908,7 @@
                     "type": "string",
                     "enum": [
                         "avif",
+                        "jxl",
                         "webp"
                     ]
                 }
@@ -10937,6 +11092,24 @@
                             "deprecated": true,
                             "optional": true,
                             "$ref": "DevicePosture"
+                        },
+                        {
+                            "name": "scrollbarType",
+                            "description": "Scrollbar type. Default: `default`.",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "string",
+                            "enum": [
+                                "overlay",
+                                "default"
+                            ]
+                        },
+                        {
+                            "name": "screenOrientationLockEmulation",
+                            "description": "If set to true, enables screen orientation lock emulation, which\nintercepts screen.orientation.lock() calls from the page and reports\norientation changes via screenOrientationLockChanged events. This is\nuseful for emulating mobile device orientation lock behavior in\nresponsive design mode.",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "boolean"
                         }
                     ]
                 },
@@ -11469,7 +11642,7 @@
                 },
                 {
                     "name": "getScreenInfos",
-                    "description": "Returns device's screen configuration.",
+                    "description": "Returns device's screen configuration. In headful mode, the physical screens configuration is returned,\nwhereas in headless mode, a virtual headless screen configuration is provided instead.",
                     "experimental": true,
                     "returns": [
                         {
@@ -11551,8 +11724,97 @@
                     ]
                 },
                 {
+                    "name": "updateScreen",
+                    "description": "Updates specified screen parameters. Only supported in headless mode.",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "screenId",
+                            "description": "Target screen identifier.",
+                            "$ref": "ScreenId"
+                        },
+                        {
+                            "name": "left",
+                            "description": "Offset of the left edge of the screen in pixels.",
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "top",
+                            "description": "Offset of the top edge of the screen in pixels.",
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "width",
+                            "description": "The width of the screen in pixels.",
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "height",
+                            "description": "The height of the screen in pixels.",
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "workAreaInsets",
+                            "description": "Specifies the screen's work area.",
+                            "optional": true,
+                            "$ref": "WorkAreaInsets"
+                        },
+                        {
+                            "name": "devicePixelRatio",
+                            "description": "Specifies the screen's device pixel ratio.",
+                            "optional": true,
+                            "type": "number"
+                        },
+                        {
+                            "name": "rotation",
+                            "description": "Specifies the screen's rotation angle. Available values are 0, 90, 180 and 270.",
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "colorDepth",
+                            "description": "Specifies the screen's color depth in bits.",
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "label",
+                            "description": "Specifies the descriptive label for the screen.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "isInternal",
+                            "description": "Indicates whether the screen is internal to the device or external, attached to the device. Default is false.",
+                            "optional": true,
+                            "type": "boolean"
+                        }
+                    ],
+                    "returns": [
+                        {
+                            "name": "screenInfo",
+                            "$ref": "ScreenInfo"
+                        }
+                    ]
+                },
+                {
                     "name": "removeScreen",
                     "description": "Remove screen from the device. Only supported in headless mode.",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "screenId",
+                            "$ref": "ScreenId"
+                        }
+                    ]
+                },
+                {
+                    "name": "setPrimaryScreen",
+                    "description": "Set primary screen. Only supported in headless mode.\nNote that this changes the coordinate system origin to the top-left\nof the new primary screen, updating the bounds and work areas\nof all existing screens accordingly.",
                     "experimental": true,
                     "parameters": [
                         {
@@ -11567,6 +11829,24 @@
                     "name": "virtualTimeBudgetExpired",
                     "description": "Notification sent after the virtual time budget for the current VirtualTimePolicy has run out.",
                     "experimental": true
+                },
+                {
+                    "name": "screenOrientationLockChanged",
+                    "description": "Fired when a page calls screen.orientation.lock() or screen.orientation.unlock()\nwhile device emulation is enabled. This allows the DevTools frontend to update the\nemulated device orientation accordingly.",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "locked",
+                            "description": "Whether the screen orientation is currently locked.",
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "orientation",
+                            "description": "The orientation lock type requested by the page. Only set when locked is true.",
+                            "optional": true,
+                            "$ref": "ScreenOrientation"
+                        }
+                    ]
                 }
             ]
         },
@@ -11618,6 +11898,38 @@
                         "sync",
                         "managed"
                     ]
+                },
+                {
+                    "id": "ExtensionInfo",
+                    "description": "Detailed information about an extension.",
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "id",
+                            "description": "Extension id.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "name",
+                            "description": "Extension name.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "version",
+                            "description": "Extension version.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "path",
+                            "description": "The path from which the extension was loaded.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "enabled",
+                            "description": "Extension enabled status.",
+                            "type": "boolean"
+                        }
+                    ]
                 }
             ],
             "commands": [
@@ -11658,6 +11970,19 @@
                             "name": "id",
                             "description": "Extension id.",
                             "type": "string"
+                        }
+                    ]
+                },
+                {
+                    "name": "getExtensions",
+                    "description": "Gets a list of all unpacked extensions.\nAvailable if the client is connected using the --remote-debugging-pipe flag\nand the --enable-unsafe-extension-debugging flag is set.",
+                    "returns": [
+                        {
+                            "name": "extensions",
+                            "type": "array",
+                            "items": {
+                                "$ref": "ExtensionInfo"
+                            }
                         }
                     ]
                 },
@@ -15327,7 +15652,7 @@
                 },
                 {
                     "id": "RenderBlockingBehavior",
-                    "description": "The render blocking behavior of a resource request.",
+                    "description": "The render-blocking behavior of a resource request.",
                     "experimental": true,
                     "type": "string",
                     "enum": [
@@ -16975,6 +17300,71 @@
                     ]
                 },
                 {
+                    "id": "AdScriptIdentifier",
+                    "description": "Identifies the script on the stack that caused a resource or element to be\nlabeled as an ad. For resources, this indicates the context that triggered\nthe fetch. For elements, this indicates the context that caused the element\nto be appended to the DOM.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "scriptId",
+                            "description": "The script's V8 identifier.",
+                            "$ref": "Runtime.ScriptId"
+                        },
+                        {
+                            "name": "debuggerId",
+                            "description": "V8's debugging ID for the v8::Context.",
+                            "$ref": "Runtime.UniqueDebuggerId"
+                        },
+                        {
+                            "name": "name",
+                            "description": "The script's url (or generated name based on id if inline script).",
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
+                    "id": "AdAncestry",
+                    "description": "Encapsulates the script ancestry and the root script filter list rule that\ncaused the resource or element to be labeled as an ad.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "ancestryChain",
+                            "description": "A chain of `AdScriptIdentifier`s representing the ancestry of an ad\nscript that led to the creation of a resource or element. The chain is\nordered from the script itself (lowest level) up to its root ancestor\nthat was flagged by a filter list.",
+                            "type": "array",
+                            "items": {
+                                "$ref": "AdScriptIdentifier"
+                            }
+                        },
+                        {
+                            "name": "rootScriptFilterlistRule",
+                            "description": "The filter list rule that caused the root (last) script in\n`ancestryChain` to be tagged as an ad.",
+                            "optional": true,
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
+                    "id": "AdProvenance",
+                    "description": "Represents the provenance of an ad resource or element. Only one of\n`filterlistRule` or `adScriptAncestry` can be set. If `filterlistRule`\nis provided, the resource URL directly matches a filter list rule. If\n`adScriptAncestry` is provided, an ad script initiated the resource fetch or\nappended the element to the DOM. If neither is provided, the entity is\nknown to be an ad, but provenance tracking information is unavailable.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "filterlistRule",
+                            "description": "The filterlist rule that matched, if any.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "adScriptAncestry",
+                            "description": "The script ancestry that created the ad, if any.",
+                            "optional": true,
+                            "$ref": "AdAncestry"
+                        }
+                    ]
+                },
+                {
                     "id": "CrossOriginOpenerPolicyValue",
                     "experimental": true,
                     "type": "string",
@@ -17454,6 +17844,37 @@
                     ]
                 },
                 {
+                    "id": "DeviceBoundSessionFailedRequest",
+                    "description": "Details about a failed device bound session network request.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "requestUrl",
+                            "description": "The failed request URL.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "netError",
+                            "description": "The net error of the response if it was not OK.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "responseError",
+                            "description": "The response code if the net error was OK and the response code was not\n200.",
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "responseErrorBody",
+                            "description": "The body of the response if the net error was OK, the response code was\nnot 200, and the response body was not empty.",
+                            "optional": true,
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
                     "id": "CreationEventDetails",
                     "description": "Session event details specific to creation.",
                     "experimental": true,
@@ -17469,6 +17890,12 @@
                             "description": "The session if there was a newly created session. This is populated for\nall successful creation events.",
                             "optional": true,
                             "$ref": "DeviceBoundSession"
+                        },
+                        {
+                            "name": "failedRequest",
+                            "description": "Details about a failed device bound session network request if there was\none.",
+                            "optional": true,
+                            "$ref": "DeviceBoundSessionFailedRequest"
                         }
                     ]
                 },
@@ -17508,6 +17935,12 @@
                             "name": "wasFullyProactiveRefresh",
                             "description": "See comments on `net::device_bound_sessions::RefreshEventResult::was_fully_proactive_refresh`.",
                             "type": "boolean"
+                        },
+                        {
+                            "name": "failedRequest",
+                            "description": "Details about a failed device bound session network request if there was\none.",
+                            "optional": true,
+                            "$ref": "DeviceBoundSessionFailedRequest"
                         }
                     ]
                 },
@@ -17897,7 +18330,7 @@
                     "parameters": [
                         {
                             "name": "maxTotalBufferSize",
-                            "description": "Buffer size in bytes to use when preserving network payloads (XHRs, etc).",
+                            "description": "Buffer size in bytes to use when preserving network payloads (XHRs, etc).\nThis is the maximum number of bytes that will be collected by this\nDevTools session.",
                             "experimental": true,
                             "optional": true,
                             "type": "integer"
@@ -18794,7 +19227,7 @@
                         },
                         {
                             "name": "renderBlockingBehavior",
-                            "description": "The render blocking behavior of the request.",
+                            "description": "The render-blocking behavior of the request.",
                             "experimental": true,
                             "optional": true,
                             "$ref": "RenderBlockingBehavior"
@@ -21116,46 +21549,6 @@
                     ]
                 },
                 {
-                    "id": "AdScriptId",
-                    "description": "Identifies the script which caused a script or frame to be labelled as an\nad.",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "scriptId",
-                            "description": "Script Id of the script which caused a script or frame to be labelled as\nan ad.",
-                            "$ref": "Runtime.ScriptId"
-                        },
-                        {
-                            "name": "debuggerId",
-                            "description": "Id of scriptId's debugger.",
-                            "$ref": "Runtime.UniqueDebuggerId"
-                        }
-                    ]
-                },
-                {
-                    "id": "AdScriptAncestry",
-                    "description": "Encapsulates the script ancestry and the root script filterlist rule that\ncaused the frame to be labelled as an ad. Only created when `ancestryChain`\nis not empty.",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "ancestryChain",
-                            "description": "A chain of `AdScriptId`s representing the ancestry of an ad script that\nled to the creation of a frame. The chain is ordered from the script\nitself (lower level) up to its root ancestor that was flagged by\nfilterlist.",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AdScriptId"
-                            }
-                        },
-                        {
-                            "name": "rootScriptFilterlistRule",
-                            "description": "The filterlist rule that caused the root (last) script in\n`ancestryChain` to be ad-tagged. Only populated if the rule is\navailable.",
-                            "optional": true,
-                            "type": "string"
-                        }
-                    ]
-                },
-                {
                     "id": "SecureContextType",
                     "description": "Indicates whether the frame is a secure context and why it is the case.",
                     "experimental": true,
@@ -22552,6 +22945,7 @@
                         "BackForwardCacheDisabledForPrerender",
                         "UserAgentOverrideDiffers",
                         "ForegroundCacheLimit",
+                        "ForwardCacheDisabled",
                         "BrowsingInstanceNotSwapped",
                         "BackForwardCacheDisabledForDelegate",
                         "UnloadHandlerExistsInMainFrame",
@@ -23091,7 +23485,7 @@
                             "name": "adScriptAncestry",
                             "description": "The ancestry chain of ad script identifiers leading to this frame's\ncreation, along with the root script's filterlist rule. The ancestry\nchain is ordered from the most immediate script (in the frame creation\nstack) to more distant ancestors (that created the immediately preceding\nscript). Only sent if frame is labelled as an ad and ids are available.",
                             "optional": true,
-                            "$ref": "AdScriptAncestry"
+                            "$ref": "Network.AdAncestry"
                         }
                     ]
                 },
@@ -24967,6 +25361,11 @@
                             "type": "string"
                         },
                         {
+                            "name": "formSubmission",
+                            "optional": true,
+                            "type": "boolean"
+                        },
+                        {
                             "name": "targetHint",
                             "optional": true,
                             "$ref": "SpeculationTargetHint"
@@ -25081,7 +25480,8 @@
                         "V8OptimizerDisabled",
                         "PrerenderFailedDuringPrefetch",
                         "BrowsingDataRemoved",
-                        "PrerenderHostReused"
+                        "PrerenderHostReused",
+                        "FormSubmitWhenPrerendering"
                     ]
                 },
                 {
@@ -27078,629 +27478,6 @@
                     ]
                 },
                 {
-                    "id": "AttributionReportingSourceType",
-                    "experimental": true,
-                    "type": "string",
-                    "enum": [
-                        "navigation",
-                        "event"
-                    ]
-                },
-                {
-                    "id": "UnsignedInt64AsBase10",
-                    "experimental": true,
-                    "type": "string"
-                },
-                {
-                    "id": "UnsignedInt128AsBase16",
-                    "experimental": true,
-                    "type": "string"
-                },
-                {
-                    "id": "SignedInt64AsBase10",
-                    "experimental": true,
-                    "type": "string"
-                },
-                {
-                    "id": "AttributionReportingFilterDataEntry",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "key",
-                            "type": "string"
-                        },
-                        {
-                            "name": "values",
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingFilterConfig",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "filterValues",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingFilterDataEntry"
-                            }
-                        },
-                        {
-                            "name": "lookbackWindow",
-                            "description": "duration in seconds",
-                            "optional": true,
-                            "type": "integer"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingFilterPair",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "filters",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingFilterConfig"
-                            }
-                        },
-                        {
-                            "name": "notFilters",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingFilterConfig"
-                            }
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingAggregationKeysEntry",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "key",
-                            "type": "string"
-                        },
-                        {
-                            "name": "value",
-                            "$ref": "UnsignedInt128AsBase16"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingEventReportWindows",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "start",
-                            "description": "duration in seconds",
-                            "type": "integer"
-                        },
-                        {
-                            "name": "ends",
-                            "description": "duration in seconds",
-                            "type": "array",
-                            "items": {
-                                "type": "integer"
-                            }
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingTriggerDataMatching",
-                    "experimental": true,
-                    "type": "string",
-                    "enum": [
-                        "exact",
-                        "modulus"
-                    ]
-                },
-                {
-                    "id": "AttributionReportingAggregatableDebugReportingData",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "keyPiece",
-                            "$ref": "UnsignedInt128AsBase16"
-                        },
-                        {
-                            "name": "value",
-                            "description": "number instead of integer because not all uint32 can be represented by\nint",
-                            "type": "number"
-                        },
-                        {
-                            "name": "types",
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingAggregatableDebugReportingConfig",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "budget",
-                            "description": "number instead of integer because not all uint32 can be represented by\nint, only present for source registrations",
-                            "optional": true,
-                            "type": "number"
-                        },
-                        {
-                            "name": "keyPiece",
-                            "$ref": "UnsignedInt128AsBase16"
-                        },
-                        {
-                            "name": "debugData",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingAggregatableDebugReportingData"
-                            }
-                        },
-                        {
-                            "name": "aggregationCoordinatorOrigin",
-                            "optional": true,
-                            "type": "string"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionScopesData",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "values",
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
-                        },
-                        {
-                            "name": "limit",
-                            "description": "number instead of integer because not all uint32 can be represented by\nint",
-                            "type": "number"
-                        },
-                        {
-                            "name": "maxEventStates",
-                            "type": "number"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingNamedBudgetDef",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "name",
-                            "type": "string"
-                        },
-                        {
-                            "name": "budget",
-                            "type": "integer"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingSourceRegistration",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "time",
-                            "$ref": "Network.TimeSinceEpoch"
-                        },
-                        {
-                            "name": "expiry",
-                            "description": "duration in seconds",
-                            "type": "integer"
-                        },
-                        {
-                            "name": "triggerData",
-                            "description": "number instead of integer because not all uint32 can be represented by\nint",
-                            "type": "array",
-                            "items": {
-                                "type": "number"
-                            }
-                        },
-                        {
-                            "name": "eventReportWindows",
-                            "$ref": "AttributionReportingEventReportWindows"
-                        },
-                        {
-                            "name": "aggregatableReportWindow",
-                            "description": "duration in seconds",
-                            "type": "integer"
-                        },
-                        {
-                            "name": "type",
-                            "$ref": "AttributionReportingSourceType"
-                        },
-                        {
-                            "name": "sourceOrigin",
-                            "type": "string"
-                        },
-                        {
-                            "name": "reportingOrigin",
-                            "type": "string"
-                        },
-                        {
-                            "name": "destinationSites",
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
-                        },
-                        {
-                            "name": "eventId",
-                            "$ref": "UnsignedInt64AsBase10"
-                        },
-                        {
-                            "name": "priority",
-                            "$ref": "SignedInt64AsBase10"
-                        },
-                        {
-                            "name": "filterData",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingFilterDataEntry"
-                            }
-                        },
-                        {
-                            "name": "aggregationKeys",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingAggregationKeysEntry"
-                            }
-                        },
-                        {
-                            "name": "debugKey",
-                            "optional": true,
-                            "$ref": "UnsignedInt64AsBase10"
-                        },
-                        {
-                            "name": "triggerDataMatching",
-                            "$ref": "AttributionReportingTriggerDataMatching"
-                        },
-                        {
-                            "name": "destinationLimitPriority",
-                            "$ref": "SignedInt64AsBase10"
-                        },
-                        {
-                            "name": "aggregatableDebugReportingConfig",
-                            "$ref": "AttributionReportingAggregatableDebugReportingConfig"
-                        },
-                        {
-                            "name": "scopesData",
-                            "optional": true,
-                            "$ref": "AttributionScopesData"
-                        },
-                        {
-                            "name": "maxEventLevelReports",
-                            "type": "integer"
-                        },
-                        {
-                            "name": "namedBudgets",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingNamedBudgetDef"
-                            }
-                        },
-                        {
-                            "name": "debugReporting",
-                            "type": "boolean"
-                        },
-                        {
-                            "name": "eventLevelEpsilon",
-                            "type": "number"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingSourceRegistrationResult",
-                    "experimental": true,
-                    "type": "string",
-                    "enum": [
-                        "success",
-                        "internalError",
-                        "insufficientSourceCapacity",
-                        "insufficientUniqueDestinationCapacity",
-                        "excessiveReportingOrigins",
-                        "prohibitedByBrowserPolicy",
-                        "successNoised",
-                        "destinationReportingLimitReached",
-                        "destinationGlobalLimitReached",
-                        "destinationBothLimitsReached",
-                        "reportingOriginsPerSiteLimitReached",
-                        "exceedsMaxChannelCapacity",
-                        "exceedsMaxScopesChannelCapacity",
-                        "exceedsMaxTriggerStateCardinality",
-                        "exceedsMaxEventStatesLimit",
-                        "destinationPerDayReportingLimitReached"
-                    ]
-                },
-                {
-                    "id": "AttributionReportingSourceRegistrationTimeConfig",
-                    "experimental": true,
-                    "type": "string",
-                    "enum": [
-                        "include",
-                        "exclude"
-                    ]
-                },
-                {
-                    "id": "AttributionReportingAggregatableValueDictEntry",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "key",
-                            "type": "string"
-                        },
-                        {
-                            "name": "value",
-                            "description": "number instead of integer because not all uint32 can be represented by\nint",
-                            "type": "number"
-                        },
-                        {
-                            "name": "filteringId",
-                            "$ref": "UnsignedInt64AsBase10"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingAggregatableValueEntry",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "values",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingAggregatableValueDictEntry"
-                            }
-                        },
-                        {
-                            "name": "filters",
-                            "$ref": "AttributionReportingFilterPair"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingEventTriggerData",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "data",
-                            "$ref": "UnsignedInt64AsBase10"
-                        },
-                        {
-                            "name": "priority",
-                            "$ref": "SignedInt64AsBase10"
-                        },
-                        {
-                            "name": "dedupKey",
-                            "optional": true,
-                            "$ref": "UnsignedInt64AsBase10"
-                        },
-                        {
-                            "name": "filters",
-                            "$ref": "AttributionReportingFilterPair"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingAggregatableTriggerData",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "keyPiece",
-                            "$ref": "UnsignedInt128AsBase16"
-                        },
-                        {
-                            "name": "sourceKeys",
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
-                        },
-                        {
-                            "name": "filters",
-                            "$ref": "AttributionReportingFilterPair"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingAggregatableDedupKey",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "dedupKey",
-                            "optional": true,
-                            "$ref": "UnsignedInt64AsBase10"
-                        },
-                        {
-                            "name": "filters",
-                            "$ref": "AttributionReportingFilterPair"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingNamedBudgetCandidate",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "name",
-                            "optional": true,
-                            "type": "string"
-                        },
-                        {
-                            "name": "filters",
-                            "$ref": "AttributionReportingFilterPair"
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingTriggerRegistration",
-                    "experimental": true,
-                    "type": "object",
-                    "properties": [
-                        {
-                            "name": "filters",
-                            "$ref": "AttributionReportingFilterPair"
-                        },
-                        {
-                            "name": "debugKey",
-                            "optional": true,
-                            "$ref": "UnsignedInt64AsBase10"
-                        },
-                        {
-                            "name": "aggregatableDedupKeys",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingAggregatableDedupKey"
-                            }
-                        },
-                        {
-                            "name": "eventTriggerData",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingEventTriggerData"
-                            }
-                        },
-                        {
-                            "name": "aggregatableTriggerData",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingAggregatableTriggerData"
-                            }
-                        },
-                        {
-                            "name": "aggregatableValues",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingAggregatableValueEntry"
-                            }
-                        },
-                        {
-                            "name": "aggregatableFilteringIdMaxBytes",
-                            "type": "integer"
-                        },
-                        {
-                            "name": "debugReporting",
-                            "type": "boolean"
-                        },
-                        {
-                            "name": "aggregationCoordinatorOrigin",
-                            "optional": true,
-                            "type": "string"
-                        },
-                        {
-                            "name": "sourceRegistrationTimeConfig",
-                            "$ref": "AttributionReportingSourceRegistrationTimeConfig"
-                        },
-                        {
-                            "name": "triggerContextId",
-                            "optional": true,
-                            "type": "string"
-                        },
-                        {
-                            "name": "aggregatableDebugReportingConfig",
-                            "$ref": "AttributionReportingAggregatableDebugReportingConfig"
-                        },
-                        {
-                            "name": "scopes",
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
-                        },
-                        {
-                            "name": "namedBudgets",
-                            "type": "array",
-                            "items": {
-                                "$ref": "AttributionReportingNamedBudgetCandidate"
-                            }
-                        }
-                    ]
-                },
-                {
-                    "id": "AttributionReportingEventLevelResult",
-                    "experimental": true,
-                    "type": "string",
-                    "enum": [
-                        "success",
-                        "successDroppedLowerPriority",
-                        "internalError",
-                        "noCapacityForAttributionDestination",
-                        "noMatchingSources",
-                        "deduplicated",
-                        "excessiveAttributions",
-                        "priorityTooLow",
-                        "neverAttributedSource",
-                        "excessiveReportingOrigins",
-                        "noMatchingSourceFilterData",
-                        "prohibitedByBrowserPolicy",
-                        "noMatchingConfigurations",
-                        "excessiveReports",
-                        "falselyAttributedSource",
-                        "reportWindowPassed",
-                        "notRegistered",
-                        "reportWindowNotStarted",
-                        "noMatchingTriggerData"
-                    ]
-                },
-                {
-                    "id": "AttributionReportingAggregatableResult",
-                    "experimental": true,
-                    "type": "string",
-                    "enum": [
-                        "success",
-                        "internalError",
-                        "noCapacityForAttributionDestination",
-                        "noMatchingSources",
-                        "excessiveAttributions",
-                        "excessiveReportingOrigins",
-                        "noHistograms",
-                        "insufficientBudget",
-                        "insufficientNamedBudget",
-                        "noMatchingSourceFilterData",
-                        "notRegistered",
-                        "prohibitedByBrowserPolicy",
-                        "deduplicated",
-                        "reportWindowPassed",
-                        "excessiveReports"
-                    ]
-                },
-                {
-                    "id": "AttributionReportingReportResult",
-                    "experimental": true,
-                    "type": "string",
-                    "enum": [
-                        "sent",
-                        "prohibited",
-                        "failedToAssemble",
-                        "expired"
-                    ]
-                },
-                {
                     "id": "RelatedWebsiteSet",
                     "description": "A single Related Website Set object.",
                     "experimental": true,
@@ -28224,41 +28001,6 @@
                     ]
                 },
                 {
-                    "name": "setAttributionReportingLocalTestingMode",
-                    "description": "https://wicg.github.io/attribution-reporting-api/",
-                    "experimental": true,
-                    "parameters": [
-                        {
-                            "name": "enabled",
-                            "description": "If enabled, noise is suppressed and reports are sent immediately.",
-                            "type": "boolean"
-                        }
-                    ]
-                },
-                {
-                    "name": "setAttributionReportingTracking",
-                    "description": "Enables/disables issuing of Attribution Reporting events.",
-                    "experimental": true,
-                    "parameters": [
-                        {
-                            "name": "enable",
-                            "type": "boolean"
-                        }
-                    ]
-                },
-                {
-                    "name": "sendPendingAttributionReports",
-                    "description": "Sends all pending Attribution Reports immediately, regardless of their\nscheduled report time.",
-                    "experimental": true,
-                    "returns": [
-                        {
-                            "name": "numSent",
-                            "description": "The number of reports that were sent.",
-                            "type": "integer"
-                        }
-                    ]
-                },
-                {
                     "name": "getRelatedWebsiteSets",
                     "description": "Returns the effective Related Website Sets in use by this profile for the browser\nsession. The effective Related Website Sets will not change during a browser session.",
                     "experimental": true,
@@ -28617,105 +28359,6 @@
                         {
                             "name": "bucketId",
                             "type": "string"
-                        }
-                    ]
-                },
-                {
-                    "name": "attributionReportingSourceRegistered",
-                    "experimental": true,
-                    "parameters": [
-                        {
-                            "name": "registration",
-                            "$ref": "AttributionReportingSourceRegistration"
-                        },
-                        {
-                            "name": "result",
-                            "$ref": "AttributionReportingSourceRegistrationResult"
-                        }
-                    ]
-                },
-                {
-                    "name": "attributionReportingTriggerRegistered",
-                    "experimental": true,
-                    "parameters": [
-                        {
-                            "name": "registration",
-                            "$ref": "AttributionReportingTriggerRegistration"
-                        },
-                        {
-                            "name": "eventLevel",
-                            "$ref": "AttributionReportingEventLevelResult"
-                        },
-                        {
-                            "name": "aggregatable",
-                            "$ref": "AttributionReportingAggregatableResult"
-                        }
-                    ]
-                },
-                {
-                    "name": "attributionReportingReportSent",
-                    "experimental": true,
-                    "parameters": [
-                        {
-                            "name": "url",
-                            "type": "string"
-                        },
-                        {
-                            "name": "body",
-                            "type": "object"
-                        },
-                        {
-                            "name": "result",
-                            "$ref": "AttributionReportingReportResult"
-                        },
-                        {
-                            "name": "netError",
-                            "description": "If result is `sent`, populated with net/HTTP status.",
-                            "optional": true,
-                            "type": "integer"
-                        },
-                        {
-                            "name": "netErrorName",
-                            "optional": true,
-                            "type": "string"
-                        },
-                        {
-                            "name": "httpStatusCode",
-                            "optional": true,
-                            "type": "integer"
-                        }
-                    ]
-                },
-                {
-                    "name": "attributionReportingVerboseDebugReportSent",
-                    "experimental": true,
-                    "parameters": [
-                        {
-                            "name": "url",
-                            "type": "string"
-                        },
-                        {
-                            "name": "body",
-                            "optional": true,
-                            "type": "array",
-                            "items": {
-                                "type": "object"
-                            }
-                        },
-                        {
-                            "name": "netError",
-                            "optional": true,
-                            "type": "integer"
-                        },
-                        {
-                            "name": "netErrorName",
-                            "optional": true,
-                            "type": "string"
-                        },
-                        {
-                            "name": "httpStatusCode",
-                            "optional": true,
-                            "type": "integer"
                         }
                     ]
                 }
@@ -30607,7 +30250,8 @@
                     "type": "string",
                     "enum": [
                         "ctap2_0",
-                        "ctap2_1"
+                        "ctap2_1",
+                        "ctap2_2"
                     ]
                 },
                 {
@@ -30672,6 +30316,18 @@
                         {
                             "name": "hasPrf",
                             "description": "If set to true, the authenticator will support the prf extension.\nhttps://w3c.github.io/webauthn/#prf-extension\nDefaults to false.",
+                            "optional": true,
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "hasHmacSecret",
+                            "description": "If set to true, the authenticator will support the hmac-secret extension.\nhttps://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-hmac-secret-extension\nDefaults to false.",
+                            "optional": true,
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "hasHmacSecretMc",
+                            "description": "If set to true, the authenticator will support the hmac-secret-mc extension.\nhttps://fidoalliance.org/specs/fido-v2.2-rd-20241003/fido-client-to-authenticator-protocol-v2.2-rd-20241003.html#sctn-hmac-secret-make-cred-extension\nDefaults to false.",
                             "optional": true,
                             "type": "boolean"
                         },
@@ -31023,6 +30679,192 @@
                         {
                             "name": "credential",
                             "$ref": "Credential"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "domain": "WebMCP",
+            "experimental": true,
+            "dependencies": [
+                "Runtime",
+                "Page",
+                "DOM"
+            ],
+            "types": [
+                {
+                    "id": "Annotation",
+                    "description": "Tool annotations",
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "readOnly",
+                            "description": "A hint indicating that the tool does not modify any state.",
+                            "optional": true,
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "autosubmit",
+                            "description": "If the declarative tool was declared with the autosubmit attribute.",
+                            "optional": true,
+                            "type": "boolean"
+                        }
+                    ]
+                },
+                {
+                    "id": "InvocationStatus",
+                    "description": "Represents the status of a tool invocation.",
+                    "type": "string",
+                    "enum": [
+                        "Success",
+                        "Canceled",
+                        "Error"
+                    ]
+                },
+                {
+                    "id": "Tool",
+                    "description": "Definition of a tool that can be invoked.",
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "name",
+                            "description": "Tool name.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "description",
+                            "description": "Tool description.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "inputSchema",
+                            "description": "Schema for the tool's input parameters.",
+                            "optional": true,
+                            "type": "object"
+                        },
+                        {
+                            "name": "annotations",
+                            "description": "Optional annotations for the tool.",
+                            "optional": true,
+                            "$ref": "Annotation"
+                        },
+                        {
+                            "name": "frameId",
+                            "description": "Frame identifier associated with the tool registration.",
+                            "$ref": "Page.FrameId"
+                        },
+                        {
+                            "name": "backendNodeId",
+                            "description": "Optional node ID for declarative tools.",
+                            "optional": true,
+                            "$ref": "DOM.BackendNodeId"
+                        },
+                        {
+                            "name": "stackTrace",
+                            "description": "The stack trace at the time of the registration.",
+                            "optional": true,
+                            "$ref": "Runtime.StackTrace"
+                        }
+                    ]
+                }
+            ],
+            "commands": [
+                {
+                    "name": "enable",
+                    "description": "Enables the WebMCP domain, allowing events to be sent. Enabling the domain will trigger a toolsAdded event for\nall currently registered tools."
+                },
+                {
+                    "name": "disable",
+                    "description": "Disables the WebMCP domain."
+                }
+            ],
+            "events": [
+                {
+                    "name": "toolsAdded",
+                    "description": "Event fired when new tools are added.",
+                    "parameters": [
+                        {
+                            "name": "tools",
+                            "description": "Array of tools that were added.",
+                            "type": "array",
+                            "items": {
+                                "$ref": "Tool"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "toolsRemoved",
+                    "description": "Event fired when tools are removed.",
+                    "parameters": [
+                        {
+                            "name": "tools",
+                            "description": "Array of tools that were removed.",
+                            "type": "array",
+                            "items": {
+                                "$ref": "Tool"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "toolInvoked",
+                    "description": "Event fired when a tool invocation starts.",
+                    "parameters": [
+                        {
+                            "name": "toolName",
+                            "description": "Name of the tool to invoke.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "frameId",
+                            "description": "Frame id",
+                            "$ref": "Page.FrameId"
+                        },
+                        {
+                            "name": "invocationId",
+                            "description": "Invocation identifier.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "input",
+                            "description": "The input parameters used for the invocation.",
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
+                    "name": "toolResponded",
+                    "description": "Event fired when a tool invocation completes or fails.",
+                    "parameters": [
+                        {
+                            "name": "invocationId",
+                            "description": "Invocation identifier.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "status",
+                            "description": "Status of the invocation.",
+                            "$ref": "InvocationStatus"
+                        },
+                        {
+                            "name": "output",
+                            "description": "Output or error delivered as delivered to the agent. Missing if `status` is anything other than Success.",
+                            "optional": true,
+                            "type": "any"
+                        },
+                        {
+                            "name": "errorText",
+                            "description": "Error text for protocol users.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "exception",
+                            "description": "The exception object, if the javascript tool threw an error>",
+                            "optional": true,
+                            "$ref": "Runtime.RemoteObject"
                         }
                     ]
                 }

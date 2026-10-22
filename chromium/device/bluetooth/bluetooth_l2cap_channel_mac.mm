@@ -7,7 +7,10 @@
 #include <memory>
 
 #include "base/check_op.h"
+#include "base/functional/bind.h"
+#include "base/location.h"
 #include "base/memory/raw_ptr.h"
+#include "base/task/single_thread_task_runner.h"
 #include "device/bluetooth/bluetooth_classic_device_mac.h"
 #include "device/bluetooth/bluetooth_socket_mac.h"
 
@@ -28,6 +31,7 @@
 
 - (instancetype)initWithChannel:(device::BluetoothL2capChannelMac*)channel
                    l2capChannel:(IOBluetoothL2CAPChannel*)l2capChannel;
+- (void)setL2capChannel:(IOBluetoothL2CAPChannel*)l2capChannel;
 
 @end
 
@@ -45,6 +49,7 @@
 
 - (void)l2capChannelOpenComplete:(IOBluetoothL2CAPChannel*)l2capChannel
                           status:(IOReturn)error {
+  CHECK(_l2capChannel);
   if (error == kIOReturnSuccess) {
     // Keep the delegate alive until l2capChannelClosed.
     _strongSelf = self;
@@ -73,6 +78,13 @@
 - (void)l2capChannelClosed:(IOBluetoothL2CAPChannel*)l2capChannel {
   [_l2capChannel setDelegate:nil];
 
+  // Maintain a strong local reference to ensure the delegate survives the
+  // callback. This is necessary for incoming connections or failed outgoing
+  // connections where `_strongSelf` is never armed, leaving `delegate_` in
+  // C++ as the only strong reference keeping this object alive.
+  [[maybe_unused]] NS_VALID_UNTIL_END_OF_SCOPE BluetoothL2capChannelDelegate*
+      keepAlive = self;
+
   // If `_channel` still exists, notify it that the channel was closed so it
   // can release its strong references to `l2capChannel` and the channel
   // delegate (this object). In the typical case we expect `_channel` has
@@ -90,6 +102,11 @@
 
 - (void)resetOwner {
   _channel = nullptr;
+}
+
+- (void)setL2capChannel:(IOBluetoothL2CAPChannel*)l2capChannel {
+  CHECK(!_l2capChannel);
+  _l2capChannel = l2capChannel;
 }
 
 @end
@@ -110,7 +127,16 @@ BluetoothL2capChannelMac::~BluetoothL2capChannelMac() {
   // delegate's reference to this object so the delegate will not notify us
   // for events that occur after our destruction.
   [delegate_ resetOwner];
+  [channel_ setDelegate:nil];
   [channel_ closeChannel];
+  // `delegate_`'s self-retain (`_strongSelf`) is only armed after a successful
+  // open. If we are destroyed during a pending or failed open, keep the
+  // delegate alive across one main-run-loop turn so any already-enqueued
+  // IOBluetooth callbacks hit a live receiver. See FB13705522.
+  BluetoothL2capChannelDelegate* __strong delegate = delegate_;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    (void)delegate;
+  });
 }
 
 // static
@@ -128,10 +154,12 @@ std::unique_ptr<BluetoothL2capChannelMac> BluetoothL2capChannelMac::OpenAsync(
   *status = [device openL2CAPChannelAsync:&l2cap_channel
                                   withPSM:psm
                                  delegate:channel->delegate_];
-  if (*status == kIOReturnSuccess)
+  if (*status == kIOReturnSuccess) {
     channel->channel_ = l2cap_channel;
-  else
+    [channel->delegate_ setL2capChannel:l2cap_channel];
+  } else {
     channel.reset();
+  }
 
   return channel;
 }
@@ -175,8 +203,12 @@ void BluetoothL2capChannelMac::OnChannelOpenComplete(
     DCHECK_EQ(status, kIOReturnSuccess);
   }
 
-  socket()->OnChannelOpenComplete(
-      BluetoothClassicDeviceMac::GetDeviceAddress([channel device]), status);
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&BluetoothSocketMac::OnChannelOpenComplete,
+                                base::WrapRefCounted(socket()),
+                                BluetoothClassicDeviceMac::GetDeviceAddress(
+                                    [channel device]),
+                                status));
 }
 
 void BluetoothL2capChannelMac::OnChannelClosed(

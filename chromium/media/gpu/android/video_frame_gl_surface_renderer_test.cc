@@ -103,9 +103,8 @@ class VideoFrameGLSurfaceRendererTest
         base::MakeRefCounted<gl::GLShareGroup>(), gl_surface_, gl_context_,
         /*use_virtualized_gl_contexts=*/false, base::DoNothing(),
         gpu::GrContextType::kGL);
-    ASSERT_TRUE(context_state_->InitializeGL(
-        gpu_preferences, base::MakeRefCounted<gpu::gles2::FeatureInfo>(
-                             gpu_workarounds, gpu_feature_info)));
+    ASSERT_TRUE(context_state_->InitializeGL(gpu_preferences, gpu_workarounds,
+                                             gpu_feature_info));
 
     backing_factory_ =
         std::make_unique<gpu::AHardwareBufferImageBackingFactory>(
@@ -311,7 +310,7 @@ TEST_F(VideoFrameGLSurfaceRendererTest, RenderSharedImageVideoFrame) {
 
   auto si_video_frame = VideoFrame::WrapSharedImage(
       PIXEL_FORMAT_XBGR, client_shared_image, sync_token, base::DoNothing(),
-      kSurfaceSize, gfx::Rect(kSurfaceSize), kSurfaceSize, base::TimeDelta());
+      gfx::Rect(kSurfaceSize), kSurfaceSize, base::TimeDelta());
   ASSERT_TRUE(si_video_frame);
 
   RenderAndVerifyFrame(si_video_frame, expected_frame);

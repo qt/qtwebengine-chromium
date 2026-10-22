@@ -44,6 +44,7 @@
 #include "ui/views/property_effects.h"
 #include "ui/views/style/platform_style.h"
 #include "ui/views/view_class_properties.h"
+#include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/client/capture_client.h"
@@ -749,7 +750,7 @@ bool Button::ShouldEnterPushedState(const ui::Event& event) {
 void Button::PaintButtonContents(gfx::Canvas* canvas) {}
 
 bool Button::ShouldEnterHoveredState() {
-  if (!GetVisible()) {
+  if (!GetVisible() || GetVisibleBounds().IsEmpty()) {
     return false;
   }
 

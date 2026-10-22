@@ -37,10 +37,14 @@
 #include "libavutil/pixfmt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/slicethread.h"
-#if HAVE_ALTIVEC
-#include "libavutil/ppc/util_altivec.h"
-#endif
 #include "libavutil/half2float.h"
+
+#if HAVE_ALTIVEC
+#define SWSINTERNAL_ADDITIONAL_ASM_SIZE (7*16 + 2*8 + /* alignment */ 16)
+#endif
+#ifndef SWSINTERNAL_ADDITIONAL_ASM_SIZE
+#define SWSINTERNAL_ADDITIONAL_ASM_SIZE 0
+#endif
 
 #define STR(s) AV_TOSTRING(s) // AV_STRINGIFY is too long
 
@@ -182,10 +186,10 @@ typedef void (*yuv2interleavedX_fn)(enum AVPixelFormat dstFormat,
  *                to write into dest[]
  * @param uvalpha chroma scaling coefficient for the second line of chroma
  *                pixels, either 2048 or 0. If 0, one chroma input is used
- *                for 2 output pixels (or if the SWS_FLAG_FULL_CHR_INT flag
+ *                for 2 output pixels (or if the SWS_FULL_CHR_H_INT flag
  *                is set, it generates 1 output pixel). If 2048, two chroma
  *                input pixels should be averaged for 2 output pixels (this
- *                only happens if SWS_FLAG_FULL_CHR_INT is not set)
+ *                only happens if SWS_FULL_CHR_H_INT is not set)
  * @param y       vertical line number for this output. This does not need
  *                to be used to calculate the offset in the destination,
  *                but can be used to generate comfort noise using dithering
@@ -544,17 +548,6 @@ struct SwsInternal {
 
     const uint8_t *chrDither8, *lumDither8;
 
-#if HAVE_ALTIVEC
-    vector signed short   CY;
-    vector signed short   CRV;
-    vector signed short   CBU;
-    vector signed short   CGU;
-    vector signed short   CGV;
-    vector signed short   OY;
-    vector unsigned short CSHIFT;
-    vector signed short  *vYCoeffsBank, *vCCoeffsBank;
-#endif
-
     int use_mmx_vfilter;
 
 /* pre defined color-spaces gamma */
@@ -606,7 +599,7 @@ struct SwsInternal {
      *   pixels to interpolate the output pixel. Since you can use at most
      *   two input pixels per output pixel in bilinear scaling, this is
      *   impossible and thus downscaling by any size will create artifacts.
-     * To enable this type of scaling, set SWS_FLAG_FAST_BILINEAR
+     * To enable this type of scaling, set SWS_FAST_BILINEAR
      * in SwsInternal->flags.
      */
     /** @{ */
@@ -701,6 +694,11 @@ struct SwsInternal {
     int          color_conversion_warned;
 
     Half2FloatTables *h2f_tables;
+
+    // Hardware specific private data
+    void *hw_priv; /* refstruct */
+
+    int is_legacy_init;
 };
 //FIXME check init (where 0)
 
@@ -739,6 +737,7 @@ av_cold int ff_sws_fill_xyztables(SwsInternal *c);
 SwsFunc ff_yuv2rgb_init_x86(SwsInternal *c);
 SwsFunc ff_yuv2rgb_init_ppc(SwsInternal *c);
 SwsFunc ff_yuv2rgb_init_loongarch(SwsInternal *c);
+SwsFunc ff_yuv2rgb_init_aarch64(SwsInternal *c);
 
 static av_always_inline int is16BPS(enum AVPixelFormat pix_fmt)
 {
@@ -1035,6 +1034,9 @@ void ff_sws_init_swscale_aarch64(SwsInternal *c);
 void ff_sws_init_swscale_arm(SwsInternal *c);
 void ff_sws_init_swscale_loongarch(SwsInternal *c);
 void ff_sws_init_swscale_riscv(SwsInternal *c);
+
+int ff_sws_init_altivec_bufs(SwsInternal *c);
+void ff_sws_free_altivec_bufs(SwsInternal *c);
 
 void ff_hyscale_fast_c(SwsInternal *c, int16_t *dst, int dstWidth,
                        const uint8_t *src, int srcW, int xInc);

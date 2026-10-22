@@ -15,7 +15,7 @@ describeWithMockConnection('NodeChildTargetManager', () => {
     const childTargetManager = browserTarget.model(App.NodeMain.NodeChildTargetManager);
     assert.exists(childTargetManager);
 
-    childTargetManager.attachedToTarget({
+    void childTargetManager.attachedToTarget({
       sessionId: 'session ID' as Protocol.Target.SessionID,
       targetInfo: {
         attached: true,
@@ -40,7 +40,7 @@ describeWithMockConnection('NodeChildTargetManager', () => {
     const childTargetManager = browserTarget.model(App.NodeMain.NodeChildTargetManager);
     assert.exists(childTargetManager);
 
-    childTargetManager.attachedToTarget({
+    void childTargetManager.attachedToTarget({
       sessionId: 'session ID' as Protocol.Target.SessionID,
       targetInfo: {
         attached: true,

@@ -13,8 +13,9 @@
  * limitations under the License.
  */
 
+#include <vulkan/vulkan_core.h>
+#include "drawdispatch/drawdispatch_vuids.h"
 #include "gpuav/core/gpuav.h"
-#include "gpuav/error_message/gpuav_vuids.h"
 #include "gpuav/resources/gpuav_shader_resources.h"
 #include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/shaders/gpuav_error_codes.h"
@@ -41,8 +42,8 @@ DescriptorHeap::DescriptorHeap(Validator& gpuav, uint32_t max_descriptors) : max
 
     VmaAllocationCreateInfo alloc_info{};
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    const bool success = buffer_.Create(&buffer_info, &alloc_info);
-    if (!success) {
+    const VkResult result = buffer_.Create(&buffer_info, &alloc_info);
+    if (result != VK_SUCCESS) {
         return;
     }
 
@@ -130,6 +131,7 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
         CommandBufferSubState::InstrumentationErrorLogger inst_error_logger = [&cb, descriptor_binding_index](
                                                                                   Validator& gpuav, const Location& loc,
                                                                                   const uint32_t* error_record,
+                                                                                  const InstrumentedShader*,
                                                                                   std::string& out_error_msg,
                                                                                   std::string& out_vuid_msg) {
             using namespace glsl;
@@ -141,7 +143,6 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
             error_found = true;
 
             std::ostringstream strm;
-            const GpuVuid& vuid = GetGpuVuid(loc.function);
 
             if (descriptor_binding_index == vvl::kNoIndex32) {
                 assert(false);  // This means we have hit a situtation where there are no descriptors bound
@@ -166,7 +167,7 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
                 case kErrorSubCode_DescriptorIndexing_Bounds: {
                     strm << "(set = " << set_num << ", binding = " << binding_num << ") Index of " << descriptor_index
                          << " used to index descriptor array of length " << array_length << ".";
-                    out_vuid_msg = vuid.descriptor_index_oob_10068;
+                    out_vuid_msg = vvl::CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_INDEX_OOB_10068);
                     error_found = true;
                 } break;
 
@@ -190,7 +191,7 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
                                 "descriptor.";
                     }
 
-                    out_vuid_msg = vuid.invalid_descriptor_08114;
+                    out_vuid_msg = vvl::CreateActionVuid(loc.function, vvl::ActionVUID::INVALID_DESCRIPTOR_08114);
                     error_found = true;
                 } break;
 
@@ -229,6 +230,7 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
         CommandBufferSubState::InstrumentationErrorLogger inst_error_logger = [&cb, descriptor_binding_index, uses_shader_object](
                                                                                   Validator& gpuav, const Location& loc,
                                                                                   const uint32_t* error_record,
+                                                                                  const InstrumentedShader*,
                                                                                   std::string& out_error_msg,
                                                                                   std::string& out_vuid_msg) {
             using namespace glsl;
@@ -238,7 +240,6 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
             }
             error_found = true;
             std::ostringstream strm;
-            const GpuVuid& vuid = GetGpuVuid(loc.function);
 
             if (descriptor_binding_index == vvl::kNoIndex32) {
                 assert(false);  // This means we have hit a situtation where there are no descriptors bound
@@ -286,12 +287,16 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
                                 "enabled.";
                     }
 
+                    vvl::ActionVUID action_vuid = vvl::ActionVUID::UNKNOWN;
                     if (binding_state->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
                         binding_state->type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
-                        out_vuid_msg = uses_shader_object ? vuid.uniform_access_oob_08612 : vuid.uniform_access_oob_06935;
+                        action_vuid = uses_shader_object ? vvl::ActionVUID::UNIFORM_ACCESS_OOB_08612
+                                                         : vvl::ActionVUID::UNIFORM_ACCESS_OOB_06935;
                     } else {
-                        out_vuid_msg = uses_shader_object ? vuid.storage_access_oob_08613 : vuid.storage_access_oob_06936;
+                        action_vuid = uses_shader_object ? vvl::ActionVUID::STORAGE_ACCESS_OOB_08613
+                                                         : vvl::ActionVUID::STORAGE_ACCESS_OOB_06936;
                     }
+                    out_vuid_msg = vvl::CreateActionVuid(loc.function, action_vuid);
                 } break;
 
                 case kErrorSubCode_DescriptorClass_TexelBufferBounds: {
@@ -361,27 +366,33 @@ void RegisterDescriptorChecksValidation(Validator& gpuav, CommandBufferSubState&
             desc_binding_cmd.descritpor_state_ssbo = dc_cb_state.last_bound_desc_sets_state_ssbo;
         });
 
-    cb.on_instrumentation_desc_set_update_functions.emplace_back(
-        [dummy_buffer_range = vko::BufferRange{}](CommandBufferSubState& cb, VkPipelineBindPoint, const Location&,
-                                                  VkDescriptorBufferInfo& out_buffer_info, uint32_t& out_dst_binding) mutable {
+    cb.on_instrumentation_common_desc_update_functions.emplace_back(
+        [dummy_buffer_range = vko::BufferRange{}](CommandBufferSubState& cb, const LastBound&, const Location&,
+                                                  CommonDescriptorUpdate& out_update) mutable {
             DescriptorChecksCbState* dc_cb_state = cb.shared_resources_cache.TryGet<DescriptorChecksCbState>();
             if (dc_cb_state) {
-                out_buffer_info.buffer = dc_cb_state->last_bound_desc_sets_state_ssbo.buffer;
-                out_buffer_info.offset = dc_cb_state->last_bound_desc_sets_state_ssbo.offset;
-                out_buffer_info.range = dc_cb_state->last_bound_desc_sets_state_ssbo.size;
+                const vko::BufferRange& buffer_range = dc_cb_state->last_bound_desc_sets_state_ssbo;
+                out_update.buffer = buffer_range.buffer;
+                out_update.offset = buffer_range.offset;
+                out_update.range = buffer_range.size;
+                out_update.address = buffer_range.offset_address;
             } else {
-                // Eventually, no descriptor set was bound in command buffer.
-                // Instrumenation descriptor set is already defined at this point and needs a binding,
-                // so just provide a dummy buffer
+                // TODO - This will always hit the case for Buffer/Heap mode, this is wrong and just an issue with the fact
+                // on_update_bound_descriptor_sets is never called
+
+                // [For Classic mode] If no descriptor set was bound in command buffer, we still need "something" to be in the slot
+                // or else it will be marked as invalid for not being updated
                 if (dummy_buffer_range.buffer == VK_NULL_HANDLE) {
+                    // Caputre the dummy_buffer_range so if found multiple time, only allocate it once
                     dummy_buffer_range = cb.gpu_resources_manager.GetDeviceLocalBufferRange(64);
                 }
-                out_buffer_info.buffer = dummy_buffer_range.buffer;
-                out_buffer_info.offset = dummy_buffer_range.offset;
-                out_buffer_info.range = dummy_buffer_range.size;
+                out_update.buffer = dummy_buffer_range.buffer;
+                out_update.offset = dummy_buffer_range.offset;
+                out_update.range = dummy_buffer_range.size;
+                out_update.address = dummy_buffer_range.offset_address;
             }
 
-            out_dst_binding = glsl::kBindingInstDescriptorIndexingOOB;
+            out_update.binding = glsl::kBindingInstDescriptorIndexingOOB;
         });
 
     // For every descriptor binding command, update a GPU buffer holding the type of each bound descriptor set

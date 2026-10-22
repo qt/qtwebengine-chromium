@@ -7,18 +7,18 @@ import '//resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import '//resources/cr_elements/icons.html.js';
 import '/strings.m.js';
 
-import {assertNotReached, assertNotReachedCase} from '//resources/js/assert.js';
 import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
-import {MenuSourceType} from '//resources/mojo/ui/base/mojom/menu_source_type.mojom-webui.js';
+import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
+import type {MenuSourceType} from '//resources/mojo/ui/base/mojom/menu_source_type.mojom-webui.js';
 import {ColorChangeUpdater} from 'chrome://resources/cr_components/color_change_listener/colors_css_updater.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 
-import {BrowserProxyImpl, ClickDispositionFlag, ContextMenuState, ContextMenuType, DevToolsState, NavigationState} from './browser_proxy.js';
-import type {BrowserProxy} from './browser_proxy.js';
+import {BrowserProxyImpl, ContextMenuType} from './browser_proxy.js';
+import type {BrowserProxy, ReloadControlState} from './browser_proxy.js';
 import {MetricsRecorder} from './metrics_recorder.js';
 import {getCss} from './reload_button.css.js';
 import {getHtml} from './reload_button.html.js';
-import {getContextMenuPosition} from './toolbar_button.js';
+import {BUTTON_LEFT, BUTTON_RIGHT, getClickDispositionFlags, getContextMenuPosition, PressHandler} from './toolbar_button.js';
 
 // go/keep-sorted start
 const RELOAD_BUTTON_ACC_NAME_RELOAD = 'reloadButtonAccNameReload';
@@ -28,57 +28,9 @@ const RELOAD_BUTTON_TOOLTIP_RELOAD_WITH_MENU =
 const RELOAD_BUTTON_TOOLTIP_STOP = 'reloadButtonTooltipStop';
 // go/keep-sorted end
 
-const BUTTON_LEFT = 0;
-const BUTTON_MIDDLE = 1;
-const BUTTON_RIGHT = 2;
-
-const LONG_PRESS_TIMER_THRESHOLD_MS = 500;
-
-export class ReloadButtonAppElement extends CrLitElement {
-  private browserProxy_: BrowserProxy;
-  private metricsRecorder_: MetricsRecorder;
-
-  constructor() {
-    super();
-    this.browserProxy_ = BrowserProxyImpl.getInstance();
-    this.metricsRecorder_ = new MetricsRecorder(this.browserProxy_);
-    const callbackRouter = this.browserProxy_.callbackRouter;
-    callbackRouter.onNavigationStatusChanged.addListener(
-        (state: NavigationState) => {
-          const isLoading = state === NavigationState.kLoading;
-          this.metricsRecorder_.onChangeVisibleMode(
-              MetricsRecorder.getVisibleMode(this.isLoading_),
-              MetricsRecorder.getVisibleMode(isLoading));
-          this.isLoading_ = isLoading;
-          this.updateTooltip_();
-        });
-    callbackRouter.onDevToolsStatusChanged.addListener(
-        (state: DevToolsState) => {
-          this.isMenuEnabled_ = state === DevToolsState.kConnected;
-          this.updateTooltip_();
-        });
-    callbackRouter.onContextMenuStateChanged.addListener(
-        (menuType: ContextMenuType, state: ContextMenuState) => {
-          if (menuType === ContextMenuType.kReload) {
-            switch (state) {
-              case ContextMenuState.kVisible:
-                this.isMenuOpen = true;
-                break;
-              case ContextMenuState.kHidden:
-                this.isMenuOpen = false;
-                break;
-              case ContextMenuState.kUnspecified:
-                assertNotReached();
-              default:
-                assertNotReachedCase(state);
-            }
-          }
-        });
-    ColorChangeUpdater.forDocument().start();
-  }
-
+export class ReloadButtonElement extends CrLitElement {
   static get is() {
-    return 'reload-button-app';
+    return 'reload-button';
   }
 
   static override get styles() {
@@ -91,28 +43,74 @@ export class ReloadButtonAppElement extends CrLitElement {
 
   static override get properties() {
     return {
-      isLoading_: {state: true, type: Boolean},
-      isMenuOpen: {type: Boolean, reflect: true},
-      tooltip_: {state: true, type: String},
+      state: {type: Object},
+      tooltip: {type: String, reflect: true},
     };
   }
 
-  protected accessor isLoading_: boolean = false;
-  protected accessor isMenuOpen: boolean = false;
-  protected accessor tooltip_: string =
+  protected accessor state: ReloadControlState = {
+    canShowMenu: false,
+    isNavigationLoading: false,
+    isContextMenuVisible: false,
+  };
+  protected accessor tooltip: string =
       loadTimeData.getString(RELOAD_BUTTON_TOOLTIP_RELOAD);
   protected accName_: string =
       loadTimeData.getString(RELOAD_BUTTON_ACC_NAME_RELOAD);
-  private isLongPressed_: boolean = false;
-  private longPressTimer_: number = 0;
-  protected isMenuEnabled_: boolean = false;
+  protected pressHandler_: PressHandler;
 
-  private updateTooltip_() {
-    this.tooltip_ = loadTimeData.getString(
-        this.isLoading_ ?
-            RELOAD_BUTTON_TOOLTIP_STOP :
-            (this.isMenuEnabled_ ? RELOAD_BUTTON_TOOLTIP_RELOAD_WITH_MENU :
-                                   RELOAD_BUTTON_TOOLTIP_RELOAD));
+  private browserProxy_: BrowserProxy;
+  private metricsRecorder_: MetricsRecorder;
+
+  constructor() {
+    super();
+    this.browserProxy_ = BrowserProxyImpl.getInstance();
+    this.metricsRecorder_ = new MetricsRecorder(this.browserProxy_);
+    this.pressHandler_ = new PressHandler(
+        this.onLongPress_.bind(this), this.onShortPress_.bind(this),
+        /*enableMacContextClick=*/ false);
+    ColorChangeUpdater.forDocument().start();
+  }
+
+  private onLongPress_(source: MenuSourceType) {
+    if (this.state.canShowMenu) {
+      this.browserProxy_.toolbarUIHandler.showContextMenu(
+          ContextMenuType.kReload, getContextMenuPosition(this), source);
+    }
+  }
+
+  private onShortPress_(e: MouseEvent) {
+    const isLeftClick = e.button === BUTTON_LEFT;
+    // Handle the visible state changes only for left-click.
+    if (isLeftClick && !e.metaKey) {
+      this.metricsRecorder_.onChangeVisibleMode(
+          MetricsRecorder.getVisibleMode(this.state.isNavigationLoading),
+          MetricsRecorder.getVisibleMode(!this.state.isNavigationLoading));
+    }
+
+    if (this.state.isNavigationLoading) {
+      this.browserProxy_.browserControlsHandler.stopLoad();
+    } else {
+      // If the shift or ctrl key is pressed, we should reload with cache
+      // bypassed.
+      this.browserProxy_.browserControlsHandler.reloadFromClick(
+          /*bypass_cache=*/ e.shiftKey || e.ctrlKey,
+          getClickDispositionFlags(
+              e, {ignoreCtrlKey: true, ignoreShiftKey: true}));
+    }
+
+    if (isLeftClick && !e.metaKey) {
+      // Update the renderer in advance to avoid the delay.
+      this.state.isNavigationLoading = !this.state.isNavigationLoading;
+    }
+  }
+
+  protected onClick_(e: MouseEvent) {
+    // Only keyboard `click` (Enter/Space) are handled here, which triggers a
+    // left-click equivalent. Keyboard 'click' has detail === 0.
+    if (e.detail === 0) {
+      this.onShortPress_(e);
+    }
   }
 
   /**
@@ -135,128 +133,54 @@ export class ReloadButtonAppElement extends CrLitElement {
     this.metricsRecorder_.stopObserving();
   }
 
-  /**
-   * See `onReloadButtonPointerUp_` for the click event handling logic.
-   * @param e the MouseEvent associated with the click.
-   * @returns
-   */
-  protected onReloadButtonPointerDown_(e: MouseEvent) {
-    if (e.button === BUTTON_RIGHT) {
-      // The TypeScript code should only handle long press for the
-      // left-click/middle-click.
-      return;
-    }
+  override willUpdate(changedProperties: PropertyValues<this>): void {
+    super.willUpdate(changedProperties);
 
-    // Reset the long press tracker.
-    this.isLongPressed_ = false;
-    clearTimeout(this.longPressTimer_);
+    const props = changedProperties as Map<string, any>;
 
-    if (this.isLoading_) {
-      // No long press handler for the "stop loading" case.
-      return;
-    }
-
-    this.longPressTimer_ = setTimeout(() => {
-      // When the long press is triggered and handled, mark `isLongPressed_`
-      // as true, so that it won't be treated as a normal click.
-      this.isLongPressed_ = true;
-      if (this.isMenuEnabled_) {
-        BrowserProxyImpl.getInstance().handler.showContextMenu(
-            ContextMenuType.kReload, this.contextMenuPosition(),
-            MenuSourceType.kLongPress);
+    if (props.has('state')) {
+      const previousState = props.get('state') as typeof this.state | undefined;
+      if (previousState) {
+        this.metricsRecorder_.onChangeVisibleMode(
+            MetricsRecorder.getVisibleMode(previousState.isNavigationLoading),
+            MetricsRecorder.getVisibleMode(this.state.isNavigationLoading));
       }
-    }, LONG_PRESS_TIMER_THRESHOLD_MS);
+      this.tooltip = loadTimeData.getString(
+          this.state.isNavigationLoading ?
+              RELOAD_BUTTON_TOOLTIP_STOP :
+              (this.state.canShowMenu ? RELOAD_BUTTON_TOOLTIP_RELOAD_WITH_MENU :
+                                        RELOAD_BUTTON_TOOLTIP_RELOAD));
+    }
   }
 
   /**
-   * Generate the list of `ClickDispositionFlag`s based on the `MouseEvent`.
-   */
-  private generateFlags(e: MouseEvent): ClickDispositionFlag[] {
-    const flags: ClickDispositionFlag[] = [];
-    if (e.button === BUTTON_MIDDLE) {
-      flags.push(ClickDispositionFlag.kMiddleMouseButton);
-    }
-    if (e.altKey) {
-      flags.push(ClickDispositionFlag.kAltKeyDown);
-    }
-    if (e.metaKey) {
-      flags.push(ClickDispositionFlag.kMetaKeyDown);
-    }
-    return flags;
-  }
-
-  /**
-   * Handles the mouse click event.
-   * - If it's from the right mouse click, it's not handled from the Javascript.
-   * - If it's a single click:
-   *    - if the page is already in loading process, it should stop the process.
-   *    - if the page is not loading:
-   *        - if it's from the left mouse click, it should trigger the page
-   *          reload, so the loading state should be updated accordingly.
-   *        - if it's from the middle mouse click, it should open the same page
-   *          from another background tab, and the loading state of the current
-   *          tab remains unchanged.
-   * - If it's a long press with a duration longer than
-   *   `LONG_PRESS_TIMER_THRESHOLD_MS`, no matter it's a left click or middle
-   *   click, it should triggers the context menu display if the devtools is
-   *   open (see `onReloadButtonPointerDown_`).
-   * @param e the MouseEvent associated with the click.
+   * See `onPointerup_` for the click event handling logic.
+   * @param e the PointerEvent associated with the click.
    * @returns
    */
-  protected onReloadButtonPointerUp_(e: MouseEvent) {
-    if (e.button === BUTTON_RIGHT) {
-      return;
-    }
-
-    this.metricsRecorder_.onButtonPressedStart(e);
-    if (this.isLongPressed_) {
-      // If the long press is already handled, skip the rest.
-      this.isLongPressed_ = false;
-      return;
-    }
-
-    // Handle the visible state changes only for left-click.
-    if (e.button === BUTTON_LEFT && !e.metaKey) {
-      this.metricsRecorder_.onChangeVisibleMode(
-          MetricsRecorder.getVisibleMode(this.isLoading_),
-          MetricsRecorder.getVisibleMode(!this.isLoading_));
-    }
-
-    clearTimeout(this.longPressTimer_);
-
-    if (this.isLoading_) {
-      BrowserProxyImpl.getInstance().handler.stopLoad();
-    } else {
-      // If the shift or ctrl key is pressed, we should reload with cache
-      // bypassed.
-      BrowserProxyImpl.getInstance().handler.reloadFromClick(
-          /*bypass_cache=*/ e.shiftKey || e.ctrlKey, this.generateFlags(e));
-    }
-
-    if (e.button === BUTTON_LEFT && !e.metaKey) {
-      // Update the renderer in advance to avoid the delay.
-      this.isLoading_ = !this.isLoading_;
-    }
+  protected onPointerdown_(e: PointerEvent) {
+    this.pressHandler_.onPointerdown(e, this.state.isNavigationLoading);
   }
 
-  protected onContextMenu_(e: PointerEvent) {
-    if (this.isMenuEnabled_) {
-      BrowserProxyImpl.getInstance().handler.showContextMenu(
-          ContextMenuType.kReload, this.contextMenuPosition(),
-          MenuSourceType.kMouse);
+  /**
+   * Handles pointer release. Records metrics and delegates to PressHandler
+   * to evaluate whether the interaction was a short or long press.
+   * If it's from the right mouse click, it's not handled from the Javascript.
+   * @param e the PointerEvent associated with the click.
+   * @returns
+   */
+  protected onPointerup_(e: PointerEvent) {
+    if (e.button !== BUTTON_RIGHT) {
+      this.metricsRecorder_.onButtonPressedStart(e);
     }
-    e.preventDefault();
-  }
-
-  protected contextMenuPosition() {
-    return getContextMenuPosition(this);
+    this.pressHandler_.onPointerup(e);
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
-    'reload-button-app': ReloadButtonAppElement;
+    'reload-button': ReloadButtonElement;
   }
 }
 
-customElements.define(ReloadButtonAppElement.is, ReloadButtonAppElement);
+customElements.define(ReloadButtonElement.is, ReloadButtonElement);

@@ -3,17 +3,20 @@
 // found in the LICENSE file.
 
 enum UmaName {
-  NEW_PAGE = 'Accessibility.ReadAnything.NewPage',
-  LANGUAGE = 'Accessibility.ReadAnything.ReadAloud.Language',
-  VOICE = 'Accessibility.ReadAnything.ReadAloud.Voice',
-  TEXT_SETTINGS_CHANGE = 'Accessibility.ReadAnything.SettingsChange',
   HIGHLIGHT_GRANULARITY =
       'Accessibility.ReadAnything.ReadAloud.HighlightGranularity',
-  VOICE_SPEED = 'Accessibility.ReadAnything.ReadAloud.VoiceSpeed',
+  LANGUAGE = 'Accessibility.ReadAnything.ReadAloud.Language',
+  LINE_FOCUS_TOGGLE = 'Accessibility.ReadAnything.LineFocusKeyboardToggle',
+  NEW_PAGE = 'Accessibility.ReadAnything.NewPage',
+  SPEECH_ERROR = 'Accessibility.ReadAnything.SpeechError',
+  SPEECH_PLAYBACK = 'Accessibility.ReadAnything.SpeechPlaybackSession',
   SPEECH_SETTINGS_CHANGE =
       'Accessibility.ReadAnything.ReadAloud.SettingsChange',
-  SPEECH_PLAYBACK = 'Accessibility.ReadAnything.SpeechPlaybackSession',
-  SPEECH_ERROR = 'Accessibility.ReadAnything.SpeechError',
+  TEXT_SETTINGS_CHANGE = 'Accessibility.ReadAnything.SettingsChange',
+  VOICE = 'Accessibility.ReadAnything.ReadAloud.Voice',
+  VOICE_LANGUAGE_CHANGE =
+      'Accessibility.ReadAnything.ReadAloud.VoiceLanguageChange',
+  VOICE_SPEED = 'Accessibility.ReadAnything.ReadAloud.VoiceSpeed',
 }
 
 // Enum for logging when we play speech on a page.
@@ -94,9 +97,10 @@ export enum ReadAloudSettingsChange {
   VOICE_SPEED_CHANGE = 0,
   VOICE_NAME_CHANGE = 1,
   HIGHLIGHT_CHANGE = 2,
+  LANGUAGE_TOGGLE = 3,
 
   // Must be last.
-  COUNT = 3,
+  COUNT = 4,
 }
 // LINT.ThenChange(/tools/metrics/histograms/metadata/accessibility/enums.xml:ReadAnythingReadAloudSettingsChange)
 
@@ -115,9 +119,11 @@ export enum ReadAnythingSpeechError {
   AUDIO_BUSY = 6,
   AUDIO_HARDWARE = 7,
   NETWORK = 8,
+  TIMEOUT_ENGINE_STALLED = 9,
+  TIMEOUT_STALLED_AFTER_ENGINE_RECOVERY = 10,
 
   // Must be last.
-  COUNT = 9,
+  COUNT = 11,
 }
 // LINT.ThenChange(/tools/metrics/histograms/metadata/accessibility/enums.xml:ReadAnythingSpeechError)
 
@@ -129,6 +135,7 @@ export interface MetricsBrowserProxy {
   recordHighlightGranularity(highlight: number): void;
   recordLanguage(lang: string): void;
   recordLineFocusSession(): void;
+  recordLineFocusToggled(enabled: boolean): void;
   recordNewPage(): void;
   recordNewPageWithSpeech(): void;
   recordSpeechError(error: ReadAnythingSpeechError): void;
@@ -139,7 +146,9 @@ export interface MetricsBrowserProxy {
   recordTime(umaName: string, time: number): void;
   recordVoiceSpeed(index: number): void;
   recordVoiceType(voiceType: ReadAnythingVoiceType): void;
+  recordVoiceLanguageChange(): void;
   recordExtensionState(): void;
+  recordCount(umaName: string, count: number): void;
 }
 
 export class MetricsBrowserProxyImpl implements MetricsBrowserProxy {
@@ -153,6 +162,10 @@ export class MetricsBrowserProxyImpl implements MetricsBrowserProxy {
 
   recordLineFocusSession() {
     chrome.readingMode.logLineFocusSession();
+  }
+
+  recordLineFocusToggled(enabled: boolean): void {
+    chrome.metricsPrivate.recordBoolean(UmaName.LINE_FOCUS_TOGGLE, enabled);
   }
 
   recordSpeechStopSource(source: number) {
@@ -191,6 +204,10 @@ export class MetricsBrowserProxyImpl implements MetricsBrowserProxy {
         UmaName.VOICE, voiceType, ReadAnythingVoiceType.COUNT);
   }
 
+  recordVoiceLanguageChange() {
+    this.incrementMetricCount(UmaName.VOICE_LANGUAGE_CHANGE);
+  }
+
   recordLanguage(lang: string) {
     chrome.metricsPrivate.recordSparseValueWithHashMetricName(
         UmaName.LANGUAGE, lang);
@@ -218,6 +235,10 @@ export class MetricsBrowserProxyImpl implements MetricsBrowserProxy {
 
   recordExtensionState(): void {
     chrome.readingMode.logExtensionState();
+  }
+
+  recordCount(umaName: string, count: number) {
+    chrome.metricsPrivate.recordCount(umaName, count);
   }
 
   static getInstance(): MetricsBrowserProxy {

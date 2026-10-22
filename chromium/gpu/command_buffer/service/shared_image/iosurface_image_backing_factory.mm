@@ -6,6 +6,7 @@
 
 #include <optional>
 
+#include "base/bits.h"
 #include "base/memory/scoped_refptr.h"
 #include "build/build_config.h"
 #include "components/viz/common/resources/shared_image_format.h"
@@ -46,14 +47,57 @@ bool UsageWillResultInGLWrite(gpu::SharedImageUsageSet usage,
                        SHARED_IMAGE_USAGE_DISPLAY_WRITE));
 }
 
-bool IsFormatSupported(viz::SharedImageFormat format) {
-  return (format == viz::SinglePlaneFormat::kRGBX_8888) ||
-         (format == viz::SinglePlaneFormat::kBGRA_8888) ||
-         (format == viz::SinglePlaneFormat::kBGRX_8888) ||
-         (format == viz::SinglePlaneFormat::kR_8) ||
-         (format == viz::SinglePlaneFormat::kRG_88) ||
-         (format == viz::SinglePlaneFormat::kR_16) ||
-         (format == viz::SinglePlaneFormat::kRG_1616);
+bool IsFormatSupported(viz::SharedImageFormat format,
+                       const gles2::FeatureInfo::FeatureFlags& flags) {
+  // These are assumed to be always supported on Apple.
+  if (format == viz::SinglePlaneFormat::kRGBA_8888 ||
+      format == viz::SinglePlaneFormat::kRGBA_4444 ||
+      format == viz::SinglePlaneFormat::kBGR_565 ||
+      format == viz::SinglePlaneFormat::kRGBA_F16 ||
+      // Support R_F16 for SHARED_IMAGE_USAGE_WEBNN_SHARED_TENSOR.
+      format == viz::SinglePlaneFormat::kR_F16 ||
+      format == viz::MultiPlaneFormat::kNV12 ||
+      format == viz::MultiPlaneFormat::kP210 ||
+      format == viz::MultiPlaneFormat::kP410 ||
+      format == viz::MultiPlaneFormat::kP010 ||
+      format == viz::MultiPlaneFormat::kNV12A ||
+      format == viz::MultiPlaneFormat::kNV16 ||
+      format == viz::MultiPlaneFormat::kNV24) {
+    return true;
+  }
+
+  if (format == viz::SinglePlaneFormat::kRGBX_8888) {
+    return !flags.disable_mac_swangle_rgbx;
+  }
+
+  if (format == viz::SinglePlaneFormat::kBGRA_8888) {
+    return flags.ext_texture_format_bgra8888;
+  }
+
+  if (format == viz::SinglePlaneFormat::kBGRX_8888) {
+    return flags.ext_texture_format_bgra8888 && !flags.disable_mac_swangle_rgbx;
+  }
+
+  // BGRA_1010102 is always supported on Apple but RGBA_1010102 is not.
+  if (format == viz::SinglePlaneFormat::kBGRA_1010102) {
+    return flags.chromium_image_ar30;
+  }
+
+  if (format == viz::SinglePlaneFormat::kRGBA_1010102) {
+    return flags.chromium_image_ab30;
+  }
+
+  if (format == viz::SinglePlaneFormat::kR_8 ||
+      format == viz::SinglePlaneFormat::kRG_88) {
+    return flags.ext_texture_rg;
+  }
+
+  if (format == viz::SinglePlaneFormat::kR_16 ||
+      format == viz::SinglePlaneFormat::kRG_1616) {
+    return flags.ext_texture_norm16;
+  }
+
+  return false;
 }
 
 void SetIOSurfaceColorSpace(IOSurfaceRef io_surface,
@@ -131,42 +175,15 @@ constexpr SharedImageUsageSet kSupportedUsage =
 IOSurfaceImageBackingFactory::IOSurfaceImageBackingFactory(
     GrContextType gr_context_type,
     int32_t max_texture_size,
-    const gles2::FeatureInfo* feature_info,
+    gles2::FeatureInfo* feature_info,
     gl::ProgressReporter* progress_reporter,
     uint32_t texture_target)
     : SharedImageBackingFactory(kSupportedUsage),
       gr_context_type_(gr_context_type),
       max_texture_size_(max_texture_size),
-      angle_texture_usage_(feature_info->feature_flags().angle_texture_usage),
+      feature_info_(feature_info),
       progress_reporter_(progress_reporter),
-      texture_target_(texture_target) {
-  for (auto format : feature_info->feature_flags().mappable_formats) {
-    // Add supported single-plane formats.
-    if (format.is_single_plane() && IsFormatSupported(format)) {
-      supported_formats_.insert(format);
-    }
-  }
-
-  // These are assumed to be always supported on Apple.
-  supported_formats_.insert(viz::SinglePlaneFormat::kBGR_565);
-  supported_formats_.insert(viz::SinglePlaneFormat::kRGBA_4444);
-  supported_formats_.insert(viz::SinglePlaneFormat::kRGBA_8888);
-  supported_formats_.insert(viz::SinglePlaneFormat::kRGBA_F16);
-  // BGRA_1010102 is always supported on Apple but RGBA_1010102 is not.
-  supported_formats_.insert(viz::SinglePlaneFormat::kBGRA_1010102);
-
-  // Support R_F16 for SHARED_IMAGE_USAGE_WEBNN_SHARED_TENSOR.
-  supported_formats_.insert(viz::SinglePlaneFormat::kR_F16);
-
-  // Add supported multi-plane formats.
-  supported_formats_.insert(viz::MultiPlaneFormat::kNV12);
-  supported_formats_.insert(viz::MultiPlaneFormat::kP210);
-  supported_formats_.insert(viz::MultiPlaneFormat::kP410);
-  supported_formats_.insert(viz::MultiPlaneFormat::kP010);
-  supported_formats_.insert(viz::MultiPlaneFormat::kNV12A);
-  supported_formats_.insert(viz::MultiPlaneFormat::kNV16);
-  supported_formats_.insert(viz::MultiPlaneFormat::kNV24);
-}
+      texture_target_(texture_target) {}
 
 IOSurfaceImageBackingFactory::~IOSurfaceImageBackingFactory() = default;
 
@@ -319,6 +336,15 @@ bool IOSurfaceImageBackingFactory::IsSupported(
     return false;
   }
 
+  if (!IsFormatSupported(format, feature_info_->feature_flags())) {
+    return false;
+  }
+
+  // Creation from pixel data is not supported for multiplanar formats.
+  if (format.is_multi_plane() && !pixel_data.empty()) {
+    return false;
+  }
+
   // On macOS, there is no separate interop factory. Any GpuMemoryBuffer-backed
   // image can be used with both OpenGL and Metal
 
@@ -354,19 +380,6 @@ IOSurfaceImageBackingFactory::CreateSharedImageInternal(
     std::string debug_label,
     bool is_thread_safe,
     base::span<const uint8_t> pixel_data) {
-  if (!supported_formats_.contains(format)) {
-    LOG(ERROR) << "CreateSharedImage: Unable to create SharedImage with format "
-               << format.ToString();
-    return nullptr;
-  }
-
-  if (format.is_multi_plane() && !pixel_data.empty()) {
-    LOG(ERROR) << "CreateSharedImage: Creation from pixel data is not "
-                  "supported for multiplanar format "
-               << format.ToString();
-    return nullptr;
-  }
-
   if (!IsValidSize(size, max_texture_size_) ||
       !IsPixelDataValid(format, size, pixel_data)) {
     return nullptr;
@@ -402,7 +415,8 @@ IOSurfaceImageBackingFactory::CreateSharedImageInternal(
 
   const bool is_cleared = !pixel_data.empty() || should_clear;
   const bool framebuffer_attachment_angle =
-      for_framebuffer_attachment && angle_texture_usage_;
+      for_framebuffer_attachment &&
+      feature_info_->feature_flags().angle_texture_usage;
 
   auto backing = std::make_unique<IOSurfaceImageBacking>(
       io_surface, mailbox, format, size, color_space, surface_origin,
@@ -434,12 +448,6 @@ IOSurfaceImageBackingFactory::CreateSharedImageGMBs(
     return nullptr;
   }
 
-  if (!supported_formats_.contains(format)) {
-    LOG(ERROR) << "CreateSharedImage: Unable to create SharedImage with format "
-               << format.ToString();
-    return nullptr;
-  }
-
   auto io_surface = std::move(handle).io_surface();
 
   // Ensure that the IOSurface has the same size and pixel format as those
@@ -447,6 +455,7 @@ IOSurfaceImageBackingFactory::CreateSharedImageGMBs(
   // this, which, if subsequently used to determine parameters for bounds
   // checking, could result in an out-of-bounds memory access.
   {
+    // Validate top-level IOSurface format.
     uint32_t io_surface_format = IOSurfaceGetPixelFormat(io_surface.get());
     const bool override_rgba_to_bgra =
 #if BUILDFLAG(IS_IOS)
@@ -460,18 +469,66 @@ IOSurfaceImageBackingFactory::CreateSharedImageGMBs(
                     "image format.";
       return nullptr;
     }
-    gfx::Size io_surface_size(IOSurfaceGetWidth(io_surface.get()),
-                              IOSurfaceGetHeight(io_surface.get()));
-    if (io_surface_size != size) {
+
+    // Validate top-level IOSurface dimensions.
+    if (IOSurfaceGetWidth(io_surface.get()) !=
+            static_cast<size_t>(size.width()) ||
+        IOSurfaceGetHeight(io_surface.get()) !=
+            static_cast<size_t>(size.height())) {
       LOG(ERROR) << "IOSurface size does not match specified size.";
       return nullptr;
+    }
+
+    // Ensure the IOSurface has at least as many planes as the requested format.
+    // For single-planar IOSurfaces, IOSurfaceGetPlaneCount returns 0.
+    size_t io_surface_plane_count =
+        std::max<size_t>(1, IOSurfaceGetPlaneCount(io_surface.get()));
+    if (io_surface_plane_count < static_cast<size_t>(format.NumberOfPlanes())) {
+      LOG(ERROR) << "IOSurface plane count is too small.";
+      return nullptr;
+    }
+
+    // Validate per-plane dimensions and stride. A malformed IOSurface could
+    // have planes with dimensions inconsistent with its top-level size and
+    // format, leading to out-of-bounds access during buffer operations.
+    for (int plane_index = 0; plane_index < format.NumberOfPlanes();
+         ++plane_index) {
+      gfx::Size plane_size = format.GetPlaneSize(plane_index, size);
+      if (IOSurfaceGetWidthOfPlane(io_surface.get(), plane_index) !=
+              static_cast<size_t>(plane_size.width()) ||
+          IOSurfaceGetHeightOfPlane(io_surface.get(), plane_index) !=
+              static_cast<size_t>(plane_size.height())) {
+        LOG(ERROR) << "IOSurface plane size does not match specified size.";
+        return nullptr;
+      }
+
+      // Ensure the IOSurface has enough bytes per row for the plane to prevent
+      // potential out-of-bounds access when copying or accessing the buffer.
+      size_t io_surface_bytes_per_row =
+          IOSurfaceGetBytesPerRowOfPlane(io_surface.get(), plane_index);
+      size_t min_bytes_per_row;
+      if (format.is_single_plane()) {
+        CHECK(!format.IsCompressed());
+        min_bytes_per_row = static_cast<size_t>(format.BytesPerPixel()) *
+                            static_cast<size_t>(plane_size.width());
+      } else {
+        min_bytes_per_row =
+            static_cast<size_t>(format.MultiplanarStorageBytesPerChannel()) *
+            static_cast<size_t>(format.NumChannelsInPlane(plane_index)) *
+            static_cast<size_t>(plane_size.width());
+      }
+      if (io_surface_bytes_per_row < min_bytes_per_row) {
+        LOG(ERROR) << "IOSurface bytes per row is too small.";
+        return nullptr;
+      }
     }
   }
 
   const bool for_framebuffer_attachment =
       UsageWillResultInGLWrite(usage, gr_context_type_);
   const bool framebuffer_attachment_angle =
-      for_framebuffer_attachment && angle_texture_usage_;
+      for_framebuffer_attachment &&
+      feature_info_->feature_flags().angle_texture_usage;
 
   return std::make_unique<IOSurfaceImageBacking>(
       std::move(io_surface), mailbox, format, size, color_space, surface_origin,

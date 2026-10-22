@@ -7,6 +7,8 @@
 #include <utility>
 
 #include "base/metrics/histogram_functions.h"
+#include "cc/paint/paint_canvas.h"
+#include "cc/paint/paint_flags.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_htmlcanvaselement_offscreencanvas.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_offscreen_rendering_context.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_rendering_context.h"
@@ -37,14 +39,15 @@ ImageBitmapRenderingContext::ImageBitmapRenderingContext(
 
 ImageBitmapRenderingContext::~ImageBitmapRenderingContext() = default;
 
-V8UnionHTMLCanvasElementOrOffscreenCanvas*
-ImageBitmapRenderingContext::getHTMLOrOffscreenCanvas() const {
+V8UnionHTMLCanvasElementOrOffscreenCanvas::Ret
+ImageBitmapRenderingContext::getHTMLOrOffscreenCanvas(
+    ScriptState* script_state) const {
   if (Host()->IsOffscreenCanvas()) {
-    return MakeGarbageCollected<V8UnionHTMLCanvasElementOrOffscreenCanvas>(
-        static_cast<OffscreenCanvas*>(Host()));
+    return V8UnionHTMLCanvasElementOrOffscreenCanvas::Ret(
+        script_state, static_cast<OffscreenCanvas*>(Host()));
   }
-  return MakeGarbageCollected<V8UnionHTMLCanvasElementOrOffscreenCanvas>(
-      static_cast<HTMLCanvasElement*>(Host()));
+  return V8UnionHTMLCanvasElementOrOffscreenCanvas::Ret(
+      script_state, static_cast<HTMLCanvasElement*>(Host()));
 }
 
 void ImageBitmapRenderingContext::Reset() {
@@ -157,6 +160,11 @@ bool ImageBitmapRenderingContext::PushFrame() {
     return false;
   }
 
+  scoped_refptr<StaticBitmapImage> image = image_layer_bridge_->GetImage();
+  if (!image) {
+    return false;
+  }
+
   if (resource_provider_for_offscreen_canvas_) {
     if (!resource_provider_for_offscreen_canvas_->IsValid()) {
       // The canvas context is not lost but the provider is invalid. This
@@ -177,22 +185,19 @@ bool ImageBitmapRenderingContext::PushFrame() {
       return false;
     }
 
-    gfx::Size surface_size(Host()->width(), Host()->height());
     const SkAlphaType alpha_type = GetAlphaType();
     const viz::SharedImageFormat format = GetSharedImageFormat();
     const gfx::ColorSpace color_space = GetColorSpace();
     if (SharedGpuContext::IsGpuCompositingEnabled()) {
       resource_provider_for_offscreen_canvas_ =
           CanvasNon2DResourceProviderSharedImage::Create(
-              Host()->Size(), format, alpha_type, color_space,
-              CanvasResourceProvider::ShouldInitialize::kCallClear,
-              SharedGpuContext::ContextProviderWrapper(), RasterMode::kGPU,
+              image->Size(), format, alpha_type, color_space,
+              SharedGpuContext::ContextProviderWrapper(),
               gpu::SHARED_IMAGE_USAGE_DISPLAY_READ, Host());
     } else if (static_cast<OffscreenCanvas*>(Host())->HasPlaceholderCanvas()) {
       resource_provider_for_offscreen_canvas_ =
           CanvasNon2DResourceProviderSharedImage::CreateForSoftwareCompositor(
-              Host()->Size(), format, alpha_type, color_space,
-              CanvasResourceProvider::ShouldInitialize::kCallClear,
+              image->Size(), format, alpha_type, color_space,
               SharedGpuContext::SharedImageInterfaceProvider(), Host());
     }
 
@@ -217,22 +222,15 @@ bool ImageBitmapRenderingContext::PushFrame() {
     return false;
   }
 
-  scoped_refptr<StaticBitmapImage> image = image_layer_bridge_->GetImage();
-  if (!image) {
-    return false;
-  }
   cc::PaintFlags paint_flags;
   paint_flags.setBlendMode(SkBlendMode::kSrc);
-  resource_provider_for_offscreen_canvas_->Canvas().drawImage(
-      image->PaintImageForCurrentFrame(), 0, 0, SkSamplingOptions(),
-      &paint_flags);
   scoped_refptr<CanvasResource> resource =
-      resource_provider_for_offscreen_canvas_->ProduceCanvasResource(
-          FlushReason::kOther);
-  Host()->PushFrame(
-      std::move(resource),
-      SkIRect::MakeWH(image_layer_bridge_->GetImage()->Size().width(),
-                      image_layer_bridge_->GetImage()->Size().height()));
+      resource_provider_for_offscreen_canvas_->DoExternalDrawAndProduceResource(
+          [&](cc::PaintCanvas& canvas) {
+            canvas.drawImage(image->PaintImageForCurrentFrame(), 0, 0,
+                             SkSamplingOptions(), &paint_flags);
+          });
+  Host()->PushFrame(std::move(resource));
   return true;
 }
 

@@ -23,6 +23,7 @@
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_font.h"
+#include "core/fxge/text_char_pos.h"
 
 class CFX_DIBitmap;
 class CPDF_CIDFont;
@@ -95,6 +96,12 @@ class CPDF_Font : public Retainable, public Observable {
   virtual uint32_t CharCodeFromUnicode(wchar_t Unicode) const;
   virtual bool HasFontWidths() const;
 
+  bool ShouldUseFont(uint32_t glyph_id, bool has_to_unicode) const;
+  std::vector<TextCharPos> GetCharPosList(
+      pdfium::span<const uint32_t> char_codes,
+      pdfium::span<const float> char_pos,
+      float font_size);
+
   ByteString GetBaseFontName() const { return base_font_name_; }
   std::optional<FX_Charset> GetSubstFontCharset() const;
   bool IsEmbedded() const { return IsType3Font() || font_file_ != nullptr; }
@@ -121,7 +128,7 @@ class CPDF_Font : public Retainable, public Observable {
   // of [100, 900].
   std::optional<int> GetFontWeight() const;
 
-  virtual int GetCharWidthF(uint32_t charcode) = 0;
+  virtual int GetCharWidth(uint32_t charcode) = 0;
   virtual FX_RECT GetCharBBox(uint32_t charcode) = 0;
 
   // Can return nullptr for stock Type1 fonts. Always returns non-null for other
@@ -155,6 +162,8 @@ class CPDF_Font : public Retainable, public Observable {
   void LoadUnicodeMap() const;  // logically const only.
   void LoadFontDescriptor(const CPDF_Dictionary* font_desc);
   void CheckFontMetrics();
+  bool ShouldApplyGlyphSpacingHeuristic(const CFX_Font* current_font,
+                                        bool is_vertical_writing) const;
 
   UnownedPtr<CPDF_Document> const document_;
   ByteString resource_name_;  // The resource name for this font.

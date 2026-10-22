@@ -83,6 +83,7 @@ testing/data/display_none_frame.html
 testing/data/div_with_image.html
 testing/data/domfocusout_domfocusin_events.html
 testing/data/double_press_selection.html
+testing/data/drag_suppresses_pointer_stream.html
 testing/data/dv-size.html
 testing/data/edit_context.html
 testing/data/editable_elements.html
@@ -207,6 +208,8 @@ testing/data/frameserializer/rewritelinks/image.png
 testing/data/frameserializer/rewritelinks/rewritelinks_simple.html
 testing/data/frameserializer/svg/green_rectangle.svg
 testing/data/frameserializer/svg/page_with_svg_image.html
+testing/data/frameserializer/svg/svg_onload.html
+testing/data/frameserializer/svg/svg_script.html
 testing/data/frameserializer/xml/xmldecl.xml
 testing/data/fullscreen_div.html
 testing/data/fullscreen_iframe.html
@@ -432,6 +435,7 @@ testing/data/root-scroller.html
 testing/data/rtl-iframe-inner.html
 testing/data/rtl-iframe.html
 testing/data/rtl-overview-mode.html
+testing/data/sandboxed-srcdoc-ctrl-click.html
 testing/data/scale_oscillate.html
 testing/data/script/nested-script.js
 testing/data/script/not-parser-blocked-async-nested-script.html

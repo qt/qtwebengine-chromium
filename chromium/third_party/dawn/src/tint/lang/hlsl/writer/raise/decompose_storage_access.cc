@@ -242,9 +242,8 @@ struct State {
             auto* original_value = b.Var(ty.ptr(function, type));
             original_value->SetInitializer(b.Zero(type));
 
-            b.MemberCall<hlsl::ir::MemberBuiltinCall>(
-                ty.void_(), fn, var, b.InsertConvertIfNeeded(type, OffsetToValue(offset)), args[1],
-                original_value);
+            b.MemberCall<hlsl::ir::MemberBuiltinCall>(ty.void_(), fn, var, OffsetToValue(offset),
+                                                      args[1], original_value);
             b.LoadWithResult(call->DetachResult(), original_value);
         });
         call->Destroy();
@@ -290,9 +289,8 @@ struct State {
             original_value->SetInitializer(b.Zero(type));
 
             auto* val = b.Subtract(b.Zero(type), args[1]);
-            b.MemberCall<hlsl::ir::MemberBuiltinCall>(
-                ty.void_(), BuiltinFn::kInterlockedAdd, var,
-                b.InsertConvertIfNeeded(type, OffsetToValue(offset)), val, original_value);
+            b.MemberCall<hlsl::ir::MemberBuiltinCall>(ty.void_(), BuiltinFn::kInterlockedAdd, var,
+                                                      OffsetToValue(offset), val, original_value);
             b.LoadWithResult(call->DetachResult(), original_value);
         });
         call->Destroy();
@@ -309,8 +307,8 @@ struct State {
 
             auto* cmp = args[1];
             b.MemberCall<hlsl::ir::MemberBuiltinCall>(
-                ty.void_(), BuiltinFn::kInterlockedCompareExchange, var,
-                b.InsertConvertIfNeeded(type, OffsetToValue(offset)), cmp, args[2], original_value);
+                ty.void_(), BuiltinFn::kInterlockedCompareExchange, var, OffsetToValue(offset), cmp,
+                args[2], original_value);
 
             auto* o = b.Load(original_value);
             b.ConstructWithResult(call->DetachResult(), o, b.Equal(o, cmp));
@@ -325,9 +323,9 @@ struct State {
             auto* original_value = b.Var(ty.ptr(function, type));
             original_value->SetInitializer(b.Zero(type));
 
-            b.MemberCall<hlsl::ir::MemberBuiltinCall>(
-                ty.void_(), BuiltinFn::kInterlockedOr, var,
-                b.InsertConvertIfNeeded(type, OffsetToValue(offset)), b.Zero(type), original_value);
+            b.MemberCall<hlsl::ir::MemberBuiltinCall>(ty.void_(), BuiltinFn::kInterlockedOr, var,
+                                                      OffsetToValue(offset), b.Zero(type),
+                                                      original_value);
             b.LoadWithResult(call->DetachResult(), original_value);
         });
         call->Destroy();
@@ -343,9 +341,9 @@ struct State {
             auto* original_value = b.Var(ty.ptr(function, type));
             original_value->SetInitializer(b.Zero(type));
 
-            b.MemberCall<hlsl::ir::MemberBuiltinCall>(
-                ty.void_(), BuiltinFn::kInterlockedExchange, var,
-                b.InsertConvertIfNeeded(type, OffsetToValue(offset)), args[1], original_value);
+            b.MemberCall<hlsl::ir::MemberBuiltinCall>(ty.void_(), BuiltinFn::kInterlockedExchange,
+                                                      var, OffsetToValue(offset), args[1],
+                                                      original_value);
         });
         call->Destroy();
     }
@@ -412,19 +410,24 @@ struct State {
                                  core::ir::Value* from,
                                  core::ir::Value* offset) {
         bool is_f16 = from->Type()->DeepestElement()->Is<core::type::F16>();
+        bool is_u16 = from->Type()->DeepestElement()->Is<core::type::U16>();
 
         const core::type::Type* cast_ty = ty.MatchWidth(ty.u32(), from->Type());
-        auto fn = is_f16 ? BuiltinFn::kStoreF16 : BuiltinFn::kStore;
+        auto fn =
+            is_f16 ? BuiltinFn::kStoreF16 : (is_u16 ? BuiltinFn::kStoreU16 : BuiltinFn::kStore);
         if (auto* vec = from->Type()->As<core::type::Vector>()) {
             switch (vec->Width()) {
                 case 2:
-                    fn = is_f16 ? BuiltinFn::kStore2F16 : BuiltinFn::kStore2;
+                    fn = is_f16 ? BuiltinFn::kStore2F16
+                                : (is_u16 ? BuiltinFn::kStore2U16 : BuiltinFn::kStore2);
                     break;
                 case 3:
-                    fn = is_f16 ? BuiltinFn::kStore3F16 : BuiltinFn::kStore3;
+                    fn = is_f16 ? BuiltinFn::kStore3F16
+                                : (is_u16 ? BuiltinFn::kStore3U16 : BuiltinFn::kStore3);
                     break;
                 case 4:
-                    fn = is_f16 ? BuiltinFn::kStore4F16 : BuiltinFn::kStore4;
+                    fn = is_f16 ? BuiltinFn::kStore4F16
+                                : (is_u16 ? BuiltinFn::kStore4U16 : BuiltinFn::kStore4);
                     break;
                 default:
                     TINT_IR_UNREACHABLE(ir);
@@ -432,8 +435,8 @@ struct State {
         }
 
         core::ir::Value* cast = nullptr;
-        // The `f16` type is not cast in a store as the store itself ends up templated.
-        if (is_f16) {
+        // The `f16` and `u16` types are not cast in a store as the store itself ends up templated.
+        if (is_f16 || is_u16) {
             cast = from;
         } else {
             cast = b.Bitcast(cast_ty, from)->Result();
@@ -478,26 +481,32 @@ struct State {
                                            const core::type::Type* result_ty,
                                            core::ir::Value* offset) {
         bool is_f16 = result_ty->DeepestElement()->Is<core::type::F16>();
+        bool is_u16 = result_ty->DeepestElement()->Is<core::type::U16>();
 
         const core::type::Type* load_ty = nullptr;
-        // An `f16` load returns an `f16` instead of a `u32`
+        // `f16` and `u16` loads return their native type instead of a `u32`
         if (is_f16) {
             load_ty = ty.MatchWidth(ty.f16(), result_ty);
+        } else if (is_u16) {
+            load_ty = ty.MatchWidth(ty.u16(), result_ty);
         } else {
             load_ty = ty.MatchWidth(ty.u32(), result_ty);
         }
 
-        auto fn = is_f16 ? BuiltinFn::kLoadF16 : BuiltinFn::kLoad;
+        auto fn = is_f16 ? BuiltinFn::kLoadF16 : (is_u16 ? BuiltinFn::kLoadU16 : BuiltinFn::kLoad);
         if (auto* v = result_ty->As<core::type::Vector>()) {
             switch (v->Width()) {
                 case 2:
-                    fn = is_f16 ? BuiltinFn::kLoad2F16 : BuiltinFn::kLoad2;
+                    fn = is_f16 ? BuiltinFn::kLoad2F16
+                                : (is_u16 ? BuiltinFn::kLoad2U16 : BuiltinFn::kLoad2);
                     break;
                 case 3:
-                    fn = is_f16 ? BuiltinFn::kLoad3F16 : BuiltinFn::kLoad3;
+                    fn = is_f16 ? BuiltinFn::kLoad3F16
+                                : (is_u16 ? BuiltinFn::kLoad3U16 : BuiltinFn::kLoad3);
                     break;
                 case 4:
-                    fn = is_f16 ? BuiltinFn::kLoad4F16 : BuiltinFn::kLoad4;
+                    fn = is_f16 ? BuiltinFn::kLoad4F16
+                                : (is_u16 ? BuiltinFn::kLoad4U16 : BuiltinFn::kLoad4);
                     break;
                 default:
                     TINT_IR_UNREACHABLE(ir);
@@ -507,8 +516,8 @@ struct State {
         auto* builtin = b.MemberCall<hlsl::ir::MemberBuiltinCall>(load_ty, fn, var, offset);
         core::ir::Call* res = nullptr;
 
-        // Do not bitcast the `f16` conversions as they need to be a templated Load instruction
-        if (is_f16) {
+        // Do not bitcast `f16` or `u16` conversions as they use templated Load instructions
+        if (is_f16 || is_u16) {
             res = builtin;
         } else {
             res = b.Bitcast(result_ty, builtin->Result());
@@ -899,12 +908,13 @@ struct State {
 }  // namespace
 
 Result<SuccessType> DecomposeStorageAccess(core::ir::Module& ir) {
-    TINT_CHECK_RESULT(
-        ValidateAndDumpIfNeeded(ir, "hlsl.DecomposeStorageAccess",
-                                core::ir::Capabilities{
-                                    core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
-                                    core::ir::Capability::kAllowDuplicateBindings,
-                                }));
+    core::ir::AssertValid(ir,
+                          core::ir::Capabilities{
+                              core::ir::Capability::kAllow16BitIntegers,
+                              core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
+                              core::ir::Capability::kAllowDuplicateBindings,
+                          },
+                          "before hlsl.DecomposeStorageAccess");
 
     State{ir}.Process();
 

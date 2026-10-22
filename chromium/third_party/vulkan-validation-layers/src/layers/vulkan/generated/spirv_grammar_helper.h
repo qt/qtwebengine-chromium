@@ -38,6 +38,8 @@ const char* string_SpvDecoration(uint32_t decoration);
 const char* string_SpvBuiltIn(spv::BuiltIn built_in);
 const char* string_SpvDim(uint32_t dim);
 std::string string_SpvCooperativeMatrixOperands(uint32_t mask);
+std::string string_SpvRayFlagsMask(uint32_t mask);
+const char* string_SpvFPEncoding(spv::FPEncoding value);
 
 static constexpr bool OpcodeHasType(uint32_t opcode) {
     switch (opcode) {
@@ -467,11 +469,16 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpGroupLogicalOrKHR:
         case spv::OpGroupLogicalXorKHR:
         case spv::OpRoundFToTF32INTEL:
+        case spv::OpFDot2MixAcc32VALVE:
+        case spv::OpFDot2MixAcc16VALVE:
+        case spv::OpFDot4MixAcc32VALVE:
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case spv::OpAllocateNodePayloadsAMDX:
         case spv::OpFinishWritingNodePayloadAMDX:
         case spv::OpNodePayloadArrayLengthAMDX:
         case spv::OpIsNodePayloadValidAMDX:
+        case spv::OpPoisonKHR:
+        case spv::OpFreezeKHR:
         case spv::OpSpecConstantTargetINTEL:
         case spv::OpSpecConstantArchitectureINTEL:
         case spv::OpSpecConstantCapabilitiesINTEL:
@@ -945,6 +952,9 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpGroupLogicalOrKHR:
         case spv::OpGroupLogicalXorKHR:
         case spv::OpRoundFToTF32INTEL:
+        case spv::OpFDot2MixAcc32VALVE:
+        case spv::OpFDot2MixAcc16VALVE:
+        case spv::OpFDot4MixAcc32VALVE:
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case spv::OpAllocateNodePayloadsAMDX:
         case spv::OpTypeNodePayloadArrayAMDX:
@@ -953,6 +963,8 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpIsNodePayloadValidAMDX:
         case spv::OpConstantStringAMDX:
         case spv::OpSpecConstantStringAMDX:
+        case spv::OpPoisonKHR:
+        case spv::OpFreezeKHR:
         case spv::OpSpecConstantTargetINTEL:
         case spv::OpSpecConstantArchitectureINTEL:
         case spv::OpSpecConstantCapabilitiesINTEL:

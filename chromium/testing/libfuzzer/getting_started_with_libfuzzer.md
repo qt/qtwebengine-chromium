@@ -107,6 +107,24 @@ create a new fuzzing test.
   }
   ```
 
+  If the tested function accepts a `base::span<const uint8_t>`, instead of
+  operating on a pointer-and-size pair, you can use a macro that provides you
+  with an argument of that type already:
+
+  ```cpp
+  #include "base/containers/span.h"
+  #include "testing/libfuzzer/libfuzzer_base_wrappers.h"
+
+  DEFINE_LLVM_FUZZER_TEST_ONE_INPUT_SPAN(base::span<const uint8_t> data) {
+    // Put your fuzzing code here and use |data| as input.
+    return 0;
+  }
+  ```
+
+  That `base::span` can also easily be converted to a `std::string_view` or
+  `base::span<const char>` using `base::as_string_view` or `base::as_chars`,
+  making most usage of unsafe buffers and `reinterpret_cast` unnecessary.
+
 3. In `BUILD.gn` file, define a `fuzzer_test` GN target:
 
   ```python
@@ -116,6 +134,10 @@ create a new fuzzing test.
     deps = [ ... ]
   }
   ```
+
+  If you are using the `DEFINE_LLVM_FUZZER_TEST_ONE_INPUT_SPAN` macro, be sure
+  to add `//testing/libfuzzer:libfuzzer_base_wrappers` to the `fuzzer_test`'s
+  `deps`.
 
 *** note
 **Note:** Most of the targets are small. They may perform one or a few API calls
@@ -168,12 +190,6 @@ canned configurations." The `-m` flag selects the builder group, while the
 is the directory to which GN configuration is written. If you wish, you can
 inspect the generated config by running `gn args out/libfuzzer`, once the
 `mb.py` script is done.
-
-You can also invoke [AFL] by using the `use_afl` GN argument, but we
-recommend libFuzzer for local development. Running libFuzzer locally doesn't
-require any special configuration and gives quick, meaningful output for speed,
-coverage, and other parameters.
-***
 
 It’s possible to run fuzz targets without sanitizers, but not recommended, as
 sanitizers help to detect errors which may not result in a crash otherwise.
@@ -295,9 +311,9 @@ You can make it more effective with several easy steps:
 
   ClusterFuzz uses different strategies for different fuzzing sessions,
   including different random values. Also, ClusterFuzz uses different fuzzing
-  engines (e.g. AFL that doesn't have `-max_len` option). If your target has an
-  input length limit that you would like to *strictly enforce*, add a sanity
-  check to the beginning of your `LLVMFuzzerTestOneInput` function:
+  engines. If your target has an input length limit that you would like to
+  *strictly enforce*, add a sanity check to the beginning of your
+  `LLVMFuzzerTestOneInput` function:
 
   ```cpp
   if (size < kMinInputLength || size > kMaxInputLength)
@@ -403,7 +419,6 @@ value and trigger another code path, without providing any real guidance to the
 fuzzing engine.
 ***
 
-[AFL]: AFL_integration.md
 [AddressSanitizer]: http://clang.llvm.org/docs/AddressSanitizer.html
 [ClusterFuzz status]: libFuzzer_integration.md#Status-Links
 [Efficient Fuzzing Guide]: efficient_fuzzing.md

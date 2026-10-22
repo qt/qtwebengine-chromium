@@ -45,7 +45,6 @@
 #include "dawn/native/vulkan/Forward.h"
 #include "dawn/native/vulkan/VulkanFunctions.h"
 #include "dawn/native/vulkan/VulkanInfo.h"
-
 #include "dawn/native/vulkan/external_memory/MemoryService.h"
 #include "dawn/native/vulkan/external_semaphore/SemaphoreService.h"
 
@@ -56,6 +55,16 @@ class FencedDeleter;
 class FramebufferCache;
 class RenderPassCache;
 class ResourceMemoryAllocator;
+
+// Describes what method should be used for submitting render passes
+enum class VulkanRenderPassType {
+    // Vulkan 1.0
+    CreateRenderPass,
+    // VK_KHR_create_renderpass2 or Vulkan 1.2
+    CreateRenderPass2,
+    // VK_KHR_dynamic_rendering or Vulkan 1.3
+    DynamicRendering,
+};
 
 class Device final : public DeviceBase {
   public:
@@ -77,13 +86,15 @@ class Device final : public DeviceBase {
     uint32_t GetGraphicsQueueFamily() const;
     const VkDescriptorSetLayout& GetResourceTableLayout() const;
 
-    MutexProtected<FencedDeleter>& GetFencedDeleter() const;
+    Ref<FencedDeleter>& GetFencedDeleter();
     FramebufferCache* GetFramebufferCache() const;
     RenderPassCache* GetRenderPassCache() const;
     MutexProtected<ResourceMemoryAllocator>& GetResourceMemoryAllocator() const;
     external_semaphore::Service* GetExternalSemaphoreService() const;
 
     void EnqueueDeferredDeallocation(DescriptorSetAllocator* allocator);
+
+    void CacheStaticSampler(const Ref<Sampler>& s);
 
     // Dawn Native API
 
@@ -138,8 +149,11 @@ class Device final : public DeviceBase {
     bool CanAddStorageUsageToBufferWithoutSideEffects(wgpu::BufferUsage storageUsage,
                                                       wgpu::BufferUsage originalUsage,
                                                       size_t bufferSize) const override;
+    bool NeedsStaticSamplerForExternalTexture() const override;
 
     QuerySetBase* GetEmptyPassQuerySet();
+
+    VulkanRenderPassType GetRenderPassType() { return mRenderPassType; }
 
   private:
     Device(AdapterBase* adapter,
@@ -172,6 +186,9 @@ class Device final : public DeviceBase {
     ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
         TextureBase* texture,
         const UnpackedPtr<TextureViewDescriptor>& descriptor) override;
+    ResultOrError<Ref<TexelBufferViewBase>> CreateTexelBufferViewImpl(
+        BufferBase* buffer,
+        const UnpackedPtr<TexelBufferViewDescriptor>& descriptor) override;
     Ref<ComputePipelineBase> CreateUninitializedComputePipelineImpl(
         const UnpackedPtr<ComputePipelineDescriptor>& descriptor) override;
     Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
@@ -208,10 +225,11 @@ class Device final : public DeviceBase {
     // Entries can be appended without holding the device mutex.
     MutexProtected<SerialQueue<ExecutionSerial, Ref<DescriptorSetAllocator>>>
         mDescriptorAllocatorsPendingDeallocation;
-    std::unique_ptr<MutexProtected<FencedDeleter>> mDeleter;
+    Ref<FencedDeleter> mDeleter;
     std::unique_ptr<MutexProtected<ResourceMemoryAllocator>> mResourceMemoryAllocator;
     std::unique_ptr<FramebufferCache> mFramebufferCache;
     std::unique_ptr<RenderPassCache> mRenderPassCache;
+    absl::flat_hash_set<Ref<Sampler>> mStaticSamplerCache;
 
     std::unique_ptr<external_memory::Service> mExternalMemoryService;
     std::unique_ptr<external_semaphore::Service> mExternalSemaphoreService;
@@ -225,6 +243,8 @@ class Device final : public DeviceBase {
 
     Ref<QuerySetBase> mEmptyPassQuerySet;
     std::atomic<uint64_t> mNextTextureViewId = 1;
+
+    VulkanRenderPassType mRenderPassType = VulkanRenderPassType::CreateRenderPass;
 
     MaybeError ImportExternalImage(const ExternalImageDescriptorVk* descriptor,
                                    ExternalMemoryHandle memoryHandle,

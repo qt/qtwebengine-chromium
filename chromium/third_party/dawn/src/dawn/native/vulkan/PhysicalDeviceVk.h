@@ -66,6 +66,7 @@ class PhysicalDevice : public PhysicalDeviceBase {
     bool IsAndroidSamsung() const;
     bool IsAndroidImgTec() const;
     bool IsPixel10() const;
+    bool IsWindowsAMD() const;
     bool IsIntelMesa() const;
     bool IsAmdMesa() const;
     bool IsAndroidHuawei() const;

@@ -97,15 +97,15 @@ export function getIssueCountsEnumeration(
 
 export class IssueCounter extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
-  #clickHandler: undefined|(() => void) = undefined;
-  #tooltipCallback: undefined|(() => void) = undefined;
+  #clickHandler?: () => void;
+  #tooltipCallback?: () => void;
   #leadingText = '';
-  #throttler: undefined|Common.Throttler.Throttler;
+  #throttler?: Common.Throttler.Throttler;
   #counts: [number, number, number] = [0, 0, 0];
   #displayMode: DisplayMode = DisplayMode.OMIT_EMPTY;
-  #issuesManager: IssuesManager.IssuesManager.IssuesManager|undefined = undefined;
-  #accessibleName: string|undefined = undefined;
-  #throttlerTimeout: number|undefined;
+  #issuesManager?: IssuesManager.IssuesManager.IssuesManager;
+  #accessibleName?: string;
+  #throttlerTimeout?: number;
   #compact = false;
 
   scheduleUpdate(): void {

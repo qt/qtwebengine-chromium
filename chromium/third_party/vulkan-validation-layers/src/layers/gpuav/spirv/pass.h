@@ -1,4 +1,4 @@
-/* Copyright (c) 2024-2025 LunarG, Inc.
+/* Copyright (c) 2024-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,9 @@ struct InjectConditionalData {
     BasicBlockIt merge_block_it;
 };
 
+// If the pass has no linking and it is all done inplace at instrumentation time
+[[maybe_unused]] static const OfflineModule kNullOffline{nullptr, 0};
+
 // Common helpers for all passes
 // The pass takes the Module object and modifies it as needed
 class Pass {
@@ -54,9 +57,6 @@ class Pass {
     virtual void PrintDebugInfo() const = 0;
     // Wrapper that each pass can use to start
     bool Run();
-
-    // Finds (and creates if needed) decoration and returns the OpVariable it points to
-    const Variable& GetBuiltInVariable(uint32_t built_in);
 
     // Returns the ID for OpCompositeConstruct it creates
     uint32_t GetStageInfo(Function& function, const BasicBlock& target_block_it, InstructionIt& out_inst_it);
@@ -77,7 +77,7 @@ class Pass {
     uint32_t ConvertTo32(uint32_t id, BasicBlock& block, InstructionIt* inst_it) const;
     uint32_t CastToUint32(uint32_t id, BasicBlock& block, InstructionIt* inst_it) const;
 
-    bool IsMaxInstrumentationsCount() const;
+    bool MaxInstrumentationsCountReached() const;
 
     InjectConditionalData InjectFunctionPre(Function& function, const BasicBlockIt original_block_it, InstructionIt inst_it);
     void InjectFunctionPost(BasicBlock& original_block, const InjectConditionalData& ic_data);

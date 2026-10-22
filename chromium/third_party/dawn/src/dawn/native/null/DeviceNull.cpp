@@ -39,7 +39,6 @@
 #include "dawn/native/Surface.h"
 #include "dawn/native/TintUtils.h"
 #include "partition_alloc/pointers/raw_ptr.h"
-
 #include "tint/tint.h"
 
 namespace dawn::native::null {
@@ -96,7 +95,6 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits) {
     GetDefaultLimitsForSupportedFeatureLevel(limits);
     limits->v1.maxImmediateSize = kMaxImmediateDataBytes;
-    limits->resourceTableLimits.maxResourceTableSize = kMaxResourceTableSize;
     return {};
 }
 
@@ -496,7 +494,7 @@ MaybeError Queue::WaitForIdleForDestructionImpl() {
 }
 
 // ComputePipeline
-MaybeError ComputePipeline::InitializeImpl() {
+ResultOrError<Extent3D> ComputePipeline::InitializeImpl() {
     const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);
 
     tint::null::writer::Options tintOptions;
@@ -505,9 +503,15 @@ MaybeError ComputePipeline::InitializeImpl() {
         .map = BuildSubstituteOverridesTransformConfig(computeStage),
     };
 
+    auto device = GetDevice();
+    tint::wgsl::reader::IROptions irOptions{
+        .dump_ir_when_validating = device->IsToggleEnabled(Toggle::DumpTintIR),
+        .enable_validation_asserts = device->IsToggleEnabled(Toggle::EnableTintIRValidationAsserts),
+    };
+
     // Convert the AST program to an IR module.
-    auto ir =
-        tint::wgsl::reader::ProgramToLoweredIR(computeStage.module->GetTintProgram()->program);
+    auto ir = tint::wgsl::reader::ProgramToLoweredIR(computeStage.module->GetTintProgram()->program,
+                                                     irOptions);
     DAWN_INVALID_IF(ir != tint::Success, "An error occurred while generating Tint IR\n%s",
                     ir.Failure().reason);
 
@@ -522,10 +526,11 @@ MaybeError ComputePipeline::InitializeImpl() {
         LimitsForCompilationRequest::Create(GetDevice()->GetAdapter()->GetLimits().v1);
     auto maxSubgroupSize = GetDevice()->GetAdapter()->GetPhysicalDevice()->GetSubgroupMaxSize();
 
-    Extent3D _;
-    DAWN_TRY_ASSIGN(_, ValidateComputeStageWorkgroupSize(
-                           tintResult->workgroup_info, computeStage.metadata->usesSubgroupMatrix,
-                           maxSubgroupSize, limits, adapterSupportedLimits));
+    Extent3D wgSize;
+    DAWN_TRY_ASSIGN(
+        wgSize, ValidateComputeStageWorkgroupSize(tintResult->workgroup_info,
+                                                  computeStage.metadata->usesSubgroupMatrix,
+                                                  maxSubgroupSize, limits, adapterSupportedLimits));
 
     DAWN_TRY(ValidateExplicitComputeSubgroupSize(
         tintResult->workgroup_info,
@@ -533,7 +538,7 @@ MaybeError ComputePipeline::InitializeImpl() {
         GetDevice()->GetAdapter()->GetPhysicalDevice()->GetMaxExplicitComputeSubgroupSize(),
         GetDevice()->GetAdapter()->GetPhysicalDevice()->GetMaxComputeWorkgroupSubgroups()));
 
-    return {};
+    return wgSize;
 }
 
 // RenderPipeline

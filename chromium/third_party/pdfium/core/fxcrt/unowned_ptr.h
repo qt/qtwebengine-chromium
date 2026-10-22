@@ -42,7 +42,7 @@
 #include "core/fxcrt/compiler_specific.h"
 
 #if defined(PDF_USE_PARTITION_ALLOC)
-#include "partition_alloc/partition_alloc_buildflags.h"
+#include "partition_alloc/buildflags.h"
 #include "partition_alloc/pointers/raw_ptr.h"
 
 #if !PA_BUILDFLAG(USE_PARTITION_ALLOC)

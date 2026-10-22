@@ -100,6 +100,7 @@ else:
 
 SHARD_MAPS_DIR = CHROMIUM_SRC_DIR / 'tools/perf/core/shard_maps'
 CROSSBENCH_TOOL = CHROMIUM_SRC_DIR / 'third_party/crossbench/cb.py'
+ALUM_RUNNER = CHROMIUM_SRC_DIR / 'tools/perf/web_tests_cuj.py'
 ADB_TOOL = THIRD_PARTY_DIR / 'android_sdk/public/platform-tools/adb'
 BUNDLETOOL = THIRD_PARTY_DIR / 'android_build_tools/bundletool/cipd/bundletool.jar'  # pylint: disable=line-too-long
 GSUTIL_DIR = THIRD_PARTY_DIR / 'catapult/third_party/gsutil'
@@ -771,17 +772,21 @@ class CrossbenchTest(object):
     self.isolated_out_dir = isolated_out_dir
     self.is_chrome = (not self.cb_options.official_browser
                       or self.cb_options.official_browser.startswith('chrome'))
-    self.env = self._create_env_arg()
     if self.options.luci_chromium:
       # In luci.chromium the Chrome and driver are in the user path.
       self.browser = '--browser=%s' % get_abs_user_path('chrome')
       driver_path = get_abs_user_path('chromedriver')
       self.driver_path_arg = [f'--driver-path={driver_path}']
       self.is_android = False
+    elif self._is_alum():
+      self.is_android = True
+      # TODO(crbug.com/435031130): Experimenting.
+      self._find_browser('android-trichrome-chrome-google-64-32-bundle')
     else:
       browser_arg = _get_browser_arg(options.passthrough_args)
       self.is_android = _is_android(browser_arg)
       self._find_browser(browser_arg)
+    self.env = self._create_env_arg()
     self.network = self._get_network_arg(options.passthrough_args)
 
   def _parse_arguments(self):
@@ -808,6 +813,21 @@ class CrossbenchTest(object):
         action='extend',
         nargs=1,
         help='Additional arguments to pass to the browser when it starts')
+    parser.add_argument('--web-tests-cuj',
+                        action='store_true',
+                        default=False,
+                        help=f'Use {ALUM_RUNNER} to run web tests')
+    parser.add_argument('--wpr', help='The WPR archive file name')
+    parser.add_argument('--skip-wpr-script-injection',
+                        action='store_true',
+                        default=False,
+                        help='Whether to skip WPR script injection')
+    parser.add_argument('--wpr-http-port',
+                        type=int,
+                        help='The HTTP port for WPR')
+    parser.add_argument('--wpr-https-port',
+                        type=int,
+                        help='The HTTPS port for WPR')
     self.cb_options, self.options.passthrough_args = parser.parse_known_args(
         self.options.passthrough_args)
 
@@ -816,8 +836,8 @@ class CrossbenchTest(object):
       return [_arg]
     if _arg := _get_arg(args, '--fileserver'):
       return self._create_fileserver_network(_arg)
-    if _get_arg(args, '--wpr'):
-      return self._create_wpr_network(args)
+    if self.cb_options.wpr:
+      return self._create_wpr_network()
     if self.options.benchmarks.startswith('motionmark') and not self.is_android:
       # TODO(crbug.com/413452730): Enable local file server in all platforms.
       return []
@@ -835,6 +855,17 @@ class CrossbenchTest(object):
         and sys.platform == 'darwin'):
       # Set screen refresh rate to 60Hz on Mac due to crbug.com/415318275.
       return ['--env={screen_refresh_rate:60}']
+    if self.is_android:
+      # Set Android CPU governor due to crbug.com/487175106.
+      # In most cases, use "performance" to be consistent with Telemetry.
+      # But for CBB (indicated by using official build of Chrome),
+      # use "sched_pixel", which is the default mode for Pixel Tablets
+      # (see crbug.com/495679726).
+      if self.cb_options.official_browser:
+        power_mode = 'sched_pixel'
+      else:
+        power_mode = 'performance'
+      return [f'--env={{"cpu_power_mode":"{power_mode}"}}']
     return []
 
   def _create_fileserver_network(self, arg):
@@ -854,27 +885,19 @@ class CrossbenchTest(object):
                              url='http://localhost:0')
     ]
 
-  def _create_wpr_network(self, args):
-    wpr_arg = _get_arg(args, '--wpr')
-    if wpr_arg and '=' in wpr_arg:
-      wpr_name = wpr_arg.split('=', 1)[1]
-    else:
-      raise ValueError('The archive file path is missing!')
-    archive = str(PAGE_SETS_DATA / wpr_name)
+  def _create_wpr_network(self):
+    archive = str(PAGE_SETS_DATA / self.cb_options.wpr)
     if (wpr_go := fetch_binary_path('wpr_go')) is None:
       raise ValueError(f'wpr_go not found: {wpr_go}')
-    if wpr_arg:
-      # Replacing --wpr with --network.
-      self.options.passthrough_args.remove(wpr_arg)
-    skip_injection_arg = '--skip-wpr-script-injection'
-    skip_injection = _get_arg(args, skip_injection_arg)
-    if skip_injection:
-      self.options.passthrough_args.remove(skip_injection_arg)
+
     return [
-        _create_network_json('wpr',
-                             path=archive,
-                             wpr_go_bin=wpr_go,
-                             skip_injection=bool(skip_injection))
+        _create_network_json(
+            'wpr',
+            path=archive,
+            wpr_go_bin=wpr_go,
+            skip_injection=self.cb_options.skip_wpr_script_injection,
+            http_port=self.cb_options.wpr_http_port,
+            https_port=self.cb_options.wpr_https_port)
     ]
 
   def _check_for_embedder_arg(self):
@@ -950,6 +973,8 @@ class CrossbenchTest(object):
     return default_args
 
   def _generate_command_list(self, benchmark, benchmark_args, working_dir):
+    if self._is_alum():
+      return ['vpython3', '-Xutf8'] + [ALUM_RUNNER]
     extra_browser_args = []
     if self.cb_options.extra_browser_args:
       extra_browser_args = ['--']
@@ -964,6 +989,13 @@ class CrossbenchTest(object):
           f'--variations-test-seed-path={resolved_path}',
           '--accept-empty-variations-seed-signature',
       ]
+    if (self.is_chrome and self.cb_options.official_browser
+        and sys.platform == 'darwin'):
+      # CBB running Chrome on MacOS, add a flag to disable updater process
+      # (see crbug.com/492924102).
+      if not extra_browser_args:
+        extra_browser_args = ['--']
+      extra_browser_args += ['--disable-updater-scheduler']
     return (['vpython3', '-Xutf8'] + [self.options.executable] + [benchmark] +
             ['--env-validation=throw'] + [self.OUTDIR % working_dir] +
             [self.browser] + self.driver_path_arg + self.network + self.env +
@@ -995,15 +1027,24 @@ class CrossbenchTest(object):
                                           stdoutfile=output_paths.logs)
       else:
         with open(output_paths.logs, 'w') as handle:
+          if self._is_alum():
+            # TODO(crbug.com/435031130): Remove after experimenting
+            test_env.run_command_output_to_handle([ADB_TOOL, 'devices'],
+                                                  handle,
+                                                  env=env)
           return_code = test_env.run_command_output_to_handle(command,
                                                               handle,
                                                               env=env)
 
       if return_code == 0 or self.options.ignore_benchmark_exit_code:
-        crossbench_result_converter.convert(
-            pathlib.Path(output_paths.benchmark_path) / 'output',
-            pathlib.Path(output_paths.perf_results), display_name,
-            self.STORY_LABEL, self.options.results_label)
+        if self._is_alum():
+          # TODO(crbug.com/435031130): Convert results after experimenting.
+          pass
+        else:
+          crossbench_result_converter.convert(
+              pathlib.Path(output_paths.benchmark_path) / 'output',
+              pathlib.Path(output_paths.perf_results), display_name,
+              self.STORY_LABEL, self.options.results_label)
       if return_code and os.path.exists(output_paths.logs):
         # To avoid printing too large log file, we print the last 100 lines.
         bottom_of_log = deque(maxlen=100)
@@ -1039,10 +1080,13 @@ class CrossbenchTest(object):
       return 1
 
     if return_code and self.options.ignore_benchmark_exit_code:
-      print(f'crossbench returned exit code {return_code}'
+      print(f'Returned exit code {return_code}'
             ' which indicates there were test failures in the run.')
       return 0
     return return_code
+
+  def _is_alum(self):
+    return self.cb_options.web_tests_cuj
 
   def execute(self):
     if not self.options.benchmarks:
@@ -1059,7 +1103,9 @@ def _create_network_json(config_type,
                          path,
                          url=None,
                          wpr_go_bin=None,
-                         skip_injection=False):
+                         skip_injection=False,
+                         http_port=None,
+                         https_port=None):
   network_dict = {'type': config_type}
   network_dict['path'] = path
   if url:
@@ -1068,6 +1114,10 @@ def _create_network_json(config_type,
     network_dict['wpr_go_bin'] = wpr_go_bin
   if skip_injection:
     network_dict['skip_deterministic_script_injection'] = True
+  if http_port:
+    network_dict['http_port'] = http_port
+  if https_port:
+    network_dict['https_port'] = https_port
   network_json = json.dumps(network_dict)
   return f'--network={network_json}'
 

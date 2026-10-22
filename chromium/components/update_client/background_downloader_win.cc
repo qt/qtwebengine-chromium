@@ -156,8 +156,8 @@ int GetHttpStatusFromBitsError(HRESULT error) {
   // BITS errors are defined in bitsmsg.h. Although not documented, it is
   // clear that all errors corresponding to http status code have the high
   // word equal to 0x8019 and the low word equal to the http status code.
-  const int kHttpStatusFirst = 100;  // Continue.
-  const int kHttpStatusLast = 505;   // Version not supported.
+  static constexpr int kHttpStatusFirst = 100;  // Continue.
+  static constexpr int kHttpStatusLast = 505;   // Version not supported.
   bool is_valid = HIWORD(error) == 0x8019 &&
                   LOWORD(error) >= kHttpStatusFirst &&
                   LOWORD(error) <= kHttpStatusLast;
@@ -252,7 +252,7 @@ HRESULT GetJobByteCount(const Microsoft::WRL::ComPtr<IBackgroundCopyJob>& job,
     return hr;
   }
 
-  const uint64_t kMaxNumBytes =
+  static constexpr uint64_t kMaxNumBytes =
       static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
   if (job_progress.BytesTransferred <= kMaxNumBytes) {
     *downloaded_bytes = job_progress.BytesTransferred;
@@ -806,7 +806,7 @@ HRESULT BackgroundDownloader::InitializeNewJob(
     return hr;
   }
 
-  const int kSecondsDay = 60 * 60 * 24;
+  static constexpr int kSecondsDay = 60 * 60 * 24;
   hr = job->SetNoProgressTimeout(kSecondsDay * kSetNoProgressTimeoutDays);
   if (FAILED(hr)) {
     return hr;
@@ -909,29 +909,14 @@ void BackgroundDownloader::CleanupStaleJobs() {
 
 void BackgroundDownloader::CleanupStaleDownloads() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(com_sequence_checker_);
-  EnumerateDownloadDirs(
-      base::StrCat({prod_id_, kDownloadDirectoryPrefixMatcher}),
-      [](const base::FilePath& dir) {
-        const base::Time now = base::Time::Now();
-        base::File::Info info;
-        if (base::GetFileInfo(dir, &info) &&
-            info.creation_time + base::Days(kPurgeStaleJobsAfterDays) < now) {
-          RetryFileOperation(&base::DeletePathRecursively, dir);
-        }
-      });
-}
 
-void BackgroundDownloader::EnumerateDownloadDirs(
-    const base::FilePath::StringType& matcher,
-    base::FunctionRef<void(const base::FilePath& dir)> callback) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(com_sequence_checker_);
   base::FilePath dir;
-  if (base::GetSecureTempDirectory(&dir)) {
-    base::FileEnumerator(dir,
-                         /*recursive=*/false, base::FileEnumerator::DIRECTORIES,
-                         matcher)
-        .ForEach(callback);
+  if (!base::GetSecureTempDirectory(&dir)) {
+    return;
   }
+  CleanupDirectoriesOlderThan(
+      dir, base::StrCat({prod_id_, kDownloadDirectoryPrefixMatcher}),
+      base::Days(kPurgeStaleJobsAfterDays));
 }
 
 }  // namespace update_client

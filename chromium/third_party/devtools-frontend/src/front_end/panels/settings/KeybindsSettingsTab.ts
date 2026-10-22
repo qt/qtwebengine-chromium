@@ -222,8 +222,9 @@ export class KeybindsSettingsTab extends UI.Widget.VBox implements UI.ListContro
     return 0;
   }
 
-  isItemSelectable(_item: KeybindsItem): boolean {
-    return true;
+  isItemSelectable(item: KeybindsItem): boolean {
+    // Category headers (UI.ActionRegistration.ActionCategory) should not be selectable
+    return item instanceof UI.ActionRegistration.Action;
   }
 
   selectedItemChanged(
@@ -314,7 +315,7 @@ export class KeybindsSettingsTab extends UI.Widget.VBox implements UI.ListContro
     }
     this.list.refreshAllItems();
     if (!this.list.selectedItem()) {
-      this.list.selectItem(this.items.at(0));
+      this.list.selectFirstItem();
     }
   }
 
@@ -344,7 +345,8 @@ export class ShortcutListItem {
     this.settingsTab = settingsTab;
     this.item = item;
     this.element = document.createElement('div');
-    this.element.setAttribute('jslog', `${VisualLogging.item().context(item.id()).track({keydown: 'Escape'})}`);
+    this.element.setAttribute(
+        'jslog', `${VisualLogging.item().context(item.id()).track({keydown: 'Escape', resize: true})}`);
     this.editedShortcuts = new Map();
     this.shortcutInputs = new Map();
     this.shortcuts = UI.ShortcutRegistry.ShortcutRegistry.instance().shortcutsForAction(item.id());

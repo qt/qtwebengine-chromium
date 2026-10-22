@@ -332,7 +332,7 @@ void MLContext::OnLost(uint32_t custom_reason, const std::string& description) {
     context_lost_info->setMessage(
         "WebNN context is lost due to connection error.");
   } else {
-    context_lost_info->setMessage(String::FromUTF8(description));
+    context_lost_info->setMessage(String::FromUtf8(description));
   }
 
   CHECK_EQ(lost_property_->GetState(), LostProperty::kPending);
@@ -447,7 +447,7 @@ const MLOpSupportLimits* MLContext::opSupportLimits(ScriptState* script_state) {
   dequantize_linear->setScale(SupportedTensorLimitsToTensorLimits(
       data_type_limits.dequantize_linear_scale));
   dequantize_linear->setZeroPoint(SupportedTensorLimitsToTensorLimits(
-      data_type_limits.dequantize_linear_zero_point));
+      data_type_limits.dequantize_linear_input));
   dequantize_linear->setOutput(SupportedTensorLimitsToTensorLimits(
       data_type_limits.dequantize_linear_scale));
   op_support_limits->setDequantizeLinear(dequantize_linear);

@@ -9,6 +9,7 @@
 
 #include "base/functional/callback.h"
 #include "base/synchronization/lock.h"
+#include "gpu/command_buffer/common/constants.h"
 #include "gpu/gpu_gles2_export.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkSurface.h"
@@ -41,13 +42,17 @@ class GPU_GLES2_EXPORT GraphiteSharedContext {
       void(void* ctx, std::unique_ptr<const SkSurface::AsyncReadResult>)>;
 
   using FlushCallback = base::RepeatingCallback<void()>;
+  using MarkContextLostCallback =
+      base::RepeatingCallback<void(error::ContextLostReason)>;
 
   GraphiteSharedContext(
       std::unique_ptr<skgpu::graphite::Context> graphite_context,
       GpuProcessShmCount* use_shader_cache_shm_count,
       bool is_thread_safe,
       size_t max_pending_recordings,
-      FlushCallback backend_flush_callback = FlushCallback());
+      FlushCallback backend_flush_callback = FlushCallback(),
+      MarkContextLostCallback mark_context_lost_callback =
+          MarkContextLostCallback());
 
   GraphiteSharedContext(const GraphiteSharedContext&) = delete;
   GraphiteSharedContext(GraphiteSharedContext&&) = delete;
@@ -67,15 +72,14 @@ class GPU_GLES2_EXPORT GraphiteSharedContext {
   std::unique_ptr<skgpu::graphite::PrecompileContext> makePrecompileContext();
 
   bool insertRecording(const skgpu::graphite::InsertRecordingInfo& info);
-  void submit(skgpu::graphite::SyncToCpu = skgpu::graphite::SyncToCpu::kNo);
+  void submit(skgpu::graphite::SubmitInfo = {});
 
   // The difference between this and submit() is that it will trigger the
   // provided backend_flush_callback in addition to calling submit(). This is
   // needed because on some backend such as D3D11 we could enable a delayed
   // flush toggle. In that case, submit() won't send the commands to the GPU
   // immediately and require an explicit flush.
-  void submitAndFlushBackend(
-      skgpu::graphite::SyncToCpu = skgpu::graphite::SyncToCpu::kNo);
+  void submitAndFlushBackend(skgpu::graphite::SubmitInfo = {});
 
   bool hasUnfinishedGpuWork() const;
 
@@ -180,8 +184,8 @@ class GPU_GLES2_EXPORT GraphiteSharedContext {
   class AutoLock;
 
   bool InsertRecordingImpl(const skgpu::graphite::InsertRecordingInfo&);
-  bool SubmitImpl(skgpu::graphite::SyncToCpu);
-  void SubmitAndFlushBackendImpl(skgpu::graphite::SyncToCpu);
+  bool SubmitImpl(const skgpu::graphite::SubmitInfo&);
+  void SubmitAndFlushBackendImpl(const skgpu::graphite::SubmitInfo&);
 
   // The lock for protecting skgpu::graphite::Context.
   // Valid only when |is_thread_safe| is set to true in Ctor.
@@ -201,6 +205,7 @@ class GPU_GLES2_EXPORT GraphiteSharedContext {
   size_t num_pending_recordings_ = 0;
 
   FlushCallback backend_flush_callback_;
+  MarkContextLostCallback mark_context_lost_callback_;
 };
 
 }  // namespace gpu

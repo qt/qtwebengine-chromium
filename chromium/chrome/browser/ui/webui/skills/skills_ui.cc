@@ -4,26 +4,36 @@
 
 #include "chrome/browser/ui/webui/skills/skills_ui.h"
 
+#include "base/check_deref.h"
+#include "base/i18n/number_formatting.h"
+#include "base/strings/string_util.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/glic/public/glic_enabling.h"
+#include "chrome/browser/global_features.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/sanitized_image/sanitized_image_source.h"
 #include "chrome/browser/ui/webui/skills/skills_dialog_handler.h"
 #include "chrome/browser/ui/webui/skills/skills_page_handler.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/skills_resources.h"
 #include "chrome/grit/skills_resources_map.h"
+#include "components/application_locale_storage/application_locale_storage.h"
 #include "components/skills/features.h"
 #include "components/skills/public/skill.h"
+#include "components/skills/public/skills_metrics.h"
 #include "components/strings/grit/components_strings.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/webui/webui_util.h"
 
-#if BUILDFLAG(ENABLE_GLIC)
-#include "chrome/browser/glic/public/glic_enabling.h"
-#endif
-
 namespace skills {
+
+constexpr int kMaxNameCharCount = 100;
+constexpr int kMaxPromptCharCount = 20000;
 
 SkillsUI::SkillsUI(content::WebUI* web_ui) : ui::MojoWebUIController(web_ui) {
   Profile* profile = Profile::FromWebUI(web_ui);
@@ -31,11 +41,25 @@ SkillsUI::SkillsUI(content::WebUI* web_ui) : ui::MojoWebUIController(web_ui) {
       profile, chrome::kChromeUISkillsHost);
   webui::SetupWebUIDataSource(source, kSkillsResources, IDR_SKILLS_SKILLS_HTML);
   source->AddResourcePath("dialog", IDR_SKILLS_SKILLS_DIALOG_HTML);
-  bool isGlicEnabled = false;
-#if BUILDFLAG(ENABLE_GLIC)
-  isGlicEnabled = glic::GlicEnabling::IsEnabledForProfile(profile);
-#endif
-  source->AddBoolean("isGlicEnabled", isGlicEnabled);
+  source->AddBoolean("isGlicEnabled",
+                     glic::GlicEnabling::IsReadyForProfile(profile));
+  source->AddInteger("MAX_NAME_CHAR_COUNT", kMaxNameCharCount);
+  source->AddInteger("MAX_PROMPT_CHAR_COUNT", kMaxPromptCharCount);
+  source->AddBoolean("isRefinementEnabled",
+                     // Disable refinement whenever browseSkillsPage is disabled
+                     // (non-en locales).
+                     !ShouldDisableBrowseSkillsPage());
+  source->AddBoolean(
+      "isAutocompleteEnabled",
+      base::FeatureList::IsEnabled(features::kSkillsAutocomplete));
+  source->AddBoolean(
+      "isPartnerPicksEnabled",
+      base::FeatureList::IsEnabled(features::kSkillsPartnerPicks));
+  source->AddBoolean("shouldDisableBrowseSkillsPage",
+                     ShouldDisableBrowseSkillsPage());
+
+  content::URLDataSource::Add(profile,
+                              std::make_unique<SanitizedImageSource>(profile));
   static constexpr webui::LocalizedString kStrings[] = {
       {"cancel", IDS_CANCEL},
       {"edit", IDS_EDIT2},
@@ -44,6 +68,7 @@ SkillsUI::SkillsUI(content::WebUI* web_ui) : ui::MojoWebUIController(web_ui) {
       {"delete", IDS_SKILL_PAGE_USER_SKILLS_DELETE},
       {"add", IDS_ADD},
       {"browseSkillsTitle", IDS_SKILL_PAGE_BROWSE_SKILLS_TITLE},
+      // TODO(b/503394871): Remove this string.
       {"topPicksTitle", IDS_SKILL_PAGE_BROWSE_SKILLS_TOP_PICKS_TITLE},
       {"firstPartyAddSkillErrorToast",
        IDS_SKILL_PAGE_FIRST_PARTY_ADD_SKILL_ERROR_TOAST},
@@ -77,15 +102,30 @@ SkillsUI::SkillsUI(content::WebUI* web_ui) : ui::MojoWebUIController(web_ui) {
       {"skillAddNewSkillLabel", IDS_ADD_NEW_SKILL_LABEL},
       {"noSearchResultsTitle", IDS_SKILLS_NO_SEARCH_RESULT_TITLE},
       {"noSearchResultsDescription", IDS_SKILLS_NO_SEARCH_RESULT_DESCRIPTION},
+      {"saveError", IDS_SKILLS_DIALOG_SAVE_ERROR},
+      {"emojiSearchPlaceholder", IDS_SKILLS_EMOJI_PICKER_SEARCH_PLACEHOLDER},
+      {"emojiPickerAriaLabel", IDS_SKILLS_EMOJI_PICKER_ARIA_LABEL},
   };
 
   source->AddLocalizedStrings(kStrings);
+  source->AddString(
+      "nameCharLimitError",
+      l10n_util::GetStringFUTF16(IDS_SKILLS_DIALOG_CHAR_LIMIT_ERROR,
+                                 base::FormatNumber(kMaxNameCharCount)));
+  source->AddString(
+      "charLimitError",
+      l10n_util::GetStringFUTF16(IDS_SKILLS_DIALOG_CHAR_LIMIT_ERROR,
+                                 base::FormatNumber(kMaxPromptCharCount)));
 }
 
 void SkillsUI::InitializeDialog(base::WeakPtr<SkillsDialogDelegate> delegate,
-                                Skill skill) {
+                                Skill skill,
+                                SkillsDialogEntryPoint entrypoint,
+                                mojom::SkillsDialogType dialog_type) {
   delegate_ = delegate;
   initial_skill_ = std::move(skill);
+  entrypoint_ = entrypoint;
+  dialog_type_ = dialog_type;
 }
 
 void SkillsUI::BindInterface(
@@ -107,7 +147,21 @@ void SkillsUI::CreateDialogHandler(
       std::move(receiver), web_ui()->GetWebContents(),
       OptimizationGuideKeyedServiceFactory::GetForProfile(
           Profile::FromWebUI(web_ui())),
-      initial_skill_, delegate_);
+      initial_skill_, entrypoint_, dialog_type_, delegate_);
+}
+
+bool SkillsUI::ShouldDisableBrowseSkillsPage() const {
+  if (!base::FeatureList::IsEnabled(
+          features::kSkills1PDisabledForNonEnLocales)) {
+    return false;
+  }
+
+  // Disable the browse skills page if the current locale is not English.
+  const ApplicationLocaleStorage& application_locale_storage =
+      CHECK_DEREF(CHECK_DEREF(CHECK_DEREF(g_browser_process).GetFeatures())
+                      .application_locale_storage());
+  return !base::StartsWith(application_locale_storage.Get(), "en",
+                           base::CompareCase::INSENSITIVE_ASCII);
 }
 
 WEB_UI_CONTROLLER_TYPE_IMPL(SkillsUI)

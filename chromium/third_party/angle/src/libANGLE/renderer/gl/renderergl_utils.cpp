@@ -330,19 +330,8 @@ ShShaderOutput GetShaderOutputType(const angle::FeaturesGL &features, const Func
         {
             return SH_GLSL_330_CORE_OUTPUT;
         }
-        if (functions->isAtLeastGL(gl::Version(3, 2)))
-        {
-            return SH_GLSL_150_CORE_OUTPUT;
-        }
-        if (functions->isAtLeastGL(gl::Version(3, 1)))
-        {
-            return SH_GLSL_140_OUTPUT;
-        }
-        if (functions->isAtLeastGL(gl::Version(3, 0)))
-        {
-            return SH_GLSL_130_OUTPUT;
-        }
-        return SH_GLSL_COMPATIBILITY_OUTPUT;
+        ASSERT(functions->isAtLeastGL(gl::Version(3, 2)));
+        return SH_GLSL_150_CORE_OUTPUT;
     }
     if (functions->standard == STANDARD_GL_ES)
     {
@@ -760,6 +749,12 @@ void GenerateCaps(const FunctionsGL *functions,
     // Start by assuming ES3.1 support and work down
     *maxSupportedESVersion = gl::Version(3, 1);
 
+    // Desktop GL below 3.2 is not supported
+    if (functions->standard == STANDARD_GL_DESKTOP && !functions->isAtLeastGL(gl::Version(3, 2)))
+    {
+        LimitVersion(maxSupportedESVersion, gl::Version(0, 0));
+    }
+
     // Texture format support checks
     const gl::FormatSet &allFormats = gl::GetAllSizedInternalFormats();
     for (GLenum internalFormat : allFormats)
@@ -1098,18 +1093,17 @@ void GenerateCaps(const FunctionsGL *functions,
         LimitVersion(maxSupportedESVersion, gl::Version(2, 0));
     }
 
-    if (functions->isAtLeastGL(gl::Version(3, 2)) &&
+    if (functions->standard == STANDARD_GL_DESKTOP &&
         (functions->profile & GL_CONTEXT_CORE_PROFILE_BIT) != 0)
     {
         caps->maxVaryingComponents = QuerySingleGLInt(functions, GL_MAX_VERTEX_OUTPUT_COMPONENTS);
     }
-    else if (functions->isAtLeastGL(gl::Version(3, 0)) ||
-             functions->hasGLExtension("GL_ARB_ES2_compatibility") ||
+    else if (functions->standard == STANDARD_GL_DESKTOP ||
              functions->isAtLeastGLES(gl::Version(2, 0)))
     {
         caps->maxVaryingComponents = QuerySingleGLInt(functions, GL_MAX_VARYING_COMPONENTS);
     }
-    else if (functions->isAtLeastGL(gl::Version(2, 0)))
+    else if (functions->standard == STANDARD_GL_DESKTOP)
     {
         caps->maxVaryingComponents = QuerySingleGLInt(functions, GL_MAX_VARYING_FLOATS);
         LimitVersion(maxSupportedESVersion, gl::Version(2, 0));
@@ -2221,6 +2215,11 @@ void GenerateCaps(const FunctionsGL *functions,
         // Restore previous state
         functions->blendColor(oldColor[0], oldColor[1], oldColor[2], oldColor[3]);
     }
+
+    if (features.limitMaxBufferSizeTo1gb.enabled)
+    {
+        limitations->bufferSizeLimit = 1 << 30;
+    }
 }
 
 bool GetSystemInfoVendorIDAndDeviceID(const FunctionsGL *functions,
@@ -2506,6 +2505,10 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // Replace copyTexImage2D with texImage2D + copyTexSubImage2D to bypass driver bug.
     ANGLE_FEATURE_CONDITION(features, emulateCopyTexImage2D, isApple);
 
+    // anglebug.com/486067696
+    ANGLE_FEATURE_CONDITION(features, forceLumaWorkaroundForSameTextureCopyTexImage2D,
+                            isHuaweiMaleoon && functions->isAtLeastGLES(gl::Version(3, 0)));
+
     // Don't attempt to use the discrete GPU on NVIDIA-based MacBook Pros, since the
     // driver is unstable in this situation.
     //
@@ -2722,6 +2725,15 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // exposed.
     ANGLE_FEATURE_CONDITION(features, bgraTexImageFormatsBroken, !isMesa && isQualcomm);
 
+    // Recreate FBO upon flush/finish/fencesync under certain conditions to work around Qualcomm
+    // driver bugs.
+    ANGLE_FEATURE_CONDITION(features, recreateFboUponFlush,
+                            !isMesa && isQualcomm && qualcommVersion < 878);
+
+    // http://crbug.com/507508103
+    ANGLE_FEATURE_CONDITION(features, dontInvalidateIncompleteFBOs,
+                            !isMesa && isQualcomm && qualcommVersion < 881);
+
     // glGenerateMipmap may silently fail on mesa, leaving mips that are expected to be recreated to
     // match the base level in their original shape, hidden from ANGLE and its validation.
     ANGLE_FEATURE_CONDITION(features, recreateMipmapLevelsBeforeGenerate, isMesa);
@@ -2759,6 +2771,9 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // IMG GL drivers crash while compiling shaders with more than the limit of uniform blocks.
     ANGLE_FEATURE_CONDITION(features, validateMaxPerStageUniformBlocksAtCompileTime,
                             IsPowerVR(vendor));
+
+    // Mac Intel drivers are unable to allocate buffers larger than ~1gb
+    ANGLE_FEATURE_CONDITION(features, limitMaxBufferSizeTo1gb, isApple && isIntel);
 }
 
 void InitializeFrontendFeatures(const FunctionsGL *functions, angle::FrontendFeatures *features)

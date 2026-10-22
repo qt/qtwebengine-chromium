@@ -57,7 +57,7 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
     private final List<BottomSheetObserver> mPendingSheetObservers;
 
     /** A means of accessing the ScrimManager. */
-    private final Supplier<ScrimManager> mScrimManagerSupplier;
+    private final Supplier<@Nullable ScrimManager> mScrimManagerSupplier;
 
     /**
      * A set of tokens for features suppressing the bottom sheet. If this holder has tokens, the
@@ -118,7 +118,7 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
     private @Nullable BottomSheetContent mContentWhenSuppressed;
 
     private int mAppHeaderHeight;
-    private int mBottomControlsHeight;
+    private int mBottomControlsOffset;
     private boolean mIsAnchoredToBottomControls;
 
     /**
@@ -126,8 +126,6 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
      *
      * @param scrimManagerSupplier A supplier of the scrimManagerSupplier that shows when the bottom
      *     sheet is opened.
-     * @param initializedCallback A callback for the sheet being created (as the sheet is not
-     *     initialized until first use.
      * @param window A means of accessing the screen size.
      * @param keyboardDelegate A means of hiding the keyboard.
      * @param root The view that should contain the sheet.
@@ -136,8 +134,7 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
      * @param desktopWindowStateManager The {@link DesktopWindowStateManager} for the app header.
      */
     public BottomSheetControllerImpl(
-            final Supplier<ScrimManager> scrimManagerSupplier,
-            Callback<View> initializedCallback,
+            final Supplier<@Nullable ScrimManager> scrimManagerSupplier,
             Window window,
             KeyboardVisibilityDelegate keyboardDelegate,
             Supplier<ViewGroup> root,
@@ -157,7 +154,7 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
 
         mSheetInitializer =
                 () -> {
-                    initializeSheet(initializedCallback, window, keyboardDelegate, root);
+                    initializeSheet(window, keyboardDelegate, root);
                 };
 
         mBackPressHandler =
@@ -205,13 +202,11 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
     /**
      * Do the actual initialization of the bottom sheet.
      *
-     * @param initializedCallback A callback for the creation of the sheet.
      * @param window A means of accessing the screen size.
      * @param keyboardDelegate A means of hiding the keyboard.
      * @param root The view that should contain the sheet.
      */
     private void initializeSheet(
-            Callback<View> initializedCallback,
             Window window,
             KeyboardVisibilityDelegate keyboardDelegate,
             Supplier<ViewGroup> root) {
@@ -221,10 +216,10 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
         }
         mBottomSheetContainer.setVisibility(View.VISIBLE);
 
-        LayoutInflater.from(root.get().getContext())
+        var rootView = root.get();
+        LayoutInflater.from(rootView.getContext())
                 .inflate(R.layout.bottom_sheet, mBottomSheetContainer);
-        mBottomSheet = root.get().findViewById(R.id.bottom_sheet);
-        initializedCallback.onResult(mBottomSheet);
+        mBottomSheet = rootView.findViewById(R.id.bottom_sheet);
 
         mBottomSheet.init(
                 window,
@@ -232,7 +227,7 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
                 mAlwaysFullWidth,
                 mEdgeToEdgeBottomInsetSupplier,
                 mAppHeaderHeight,
-                mBottomControlsHeight);
+                mBottomControlsOffset);
 
         // Initialize the queue with a comparator that checks content priority.
         mContentQueue =
@@ -261,7 +256,9 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
                     public void onSheetOpened(@StateChangeReason int reason) {
                         // The scrim may start visible, meaning we won't get an update. Manually
                         // trigger an update to account for this possibility.
-                        scrimVisibilityChanged(mScrimManagerSupplier.get().isShowingScrim());
+                        ScrimManager scrimManager = mScrimManagerSupplier.get();
+                        assumeNonNull(scrimManager);
+                        scrimVisibilityChanged(scrimManager.isShowingScrim());
                         if (mBottomSheet.getCurrentSheetContent() != null
                                 && mBottomSheet
                                         .getCurrentSheetContent()
@@ -270,7 +267,7 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
                             return;
                         }
 
-                        mScrimManagerSupplier.get().showScrim(scrimProperties);
+                        scrimManager.showScrim(scrimProperties);
                         mScrimShown = true;
                         updateBackPressStateChangedSupplier();
                     }
@@ -280,9 +277,9 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
                         // Hide the scrim if the current content doesn't have a custom scrim
                         // lifecycle.
                         if (mScrimShown) {
-                            mScrimManagerSupplier
-                                    .get()
-                                    .hideScrim(scrimProperties, /* animate= */ true);
+                            ScrimManager scrimManager = mScrimManagerSupplier.get();
+                            assumeNonNull(scrimManager);
+                            scrimManager.hideScrim(scrimProperties, /* animate= */ true);
                             mScrimShown = false;
                         }
 
@@ -333,7 +330,9 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
                     }
                 });
 
-        mScrimManagerSupplier.get().addObserver(this);
+        ScrimManager scrimManager = mScrimManagerSupplier.get();
+        assumeNonNull(scrimManager);
+        scrimManager.addObserver(this);
         // Add any of the pending observers that were added prior to the sheet being created.
         for (int i = 0; i < mPendingSheetObservers.size(); i++) {
             mBottomSheet.addObserver(mPendingSheetObservers.get(i));
@@ -348,9 +347,9 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
     }
 
     @Override
-    public void setBottomControlsHeight(int bottomControlsHeight) {
-        if (mBottomControlsHeight == bottomControlsHeight) return;
-        mBottomControlsHeight = bottomControlsHeight;
+    public void setBottomControlsOffset(int bottomControlsOffset) {
+        if (mBottomControlsOffset == bottomControlsOffset) return;
+        mBottomControlsOffset = bottomControlsOffset;
         var scrimManager = mScrimManagerSupplier.get();
         if (scrimManager != null) {
             // Set the appropriate offset for the current scrim state.
@@ -359,7 +358,7 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
     }
 
     @Override
-    public ScrimManager getScrimManager() {
+    public @Nullable ScrimManager getScrimManager() {
         return mScrimManagerSupplier.get();
     }
 
@@ -701,6 +700,12 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
     }
 
     @Override
+    public boolean hasBottomInset() {
+        Integer inset = mEdgeToEdgeBottomInsetSupplier.get();
+        return inset != null && inset != 0;
+    }
+
+    @Override
     public @Nullable Integer getSheetBackgroundColor() {
         if (mBottomSheet == null) {
             return null;
@@ -745,7 +750,7 @@ class BottomSheetControllerImpl implements ManagedBottomSheetController, ScrimCo
             // the bottom controls.
             mIsAnchoredToBottomControls = true;
             mBottomSheetContainer.setZ(0.0f);
-            mBottomSheet.setBottomMargin(mBottomControlsHeight);
+            mBottomSheet.setBottomMargin(mBottomControlsOffset);
         }
     }
 

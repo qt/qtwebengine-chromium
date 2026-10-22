@@ -316,6 +316,7 @@ source_set("sources") {
     "ObjectBase.h",
     "ObjectContentHasher.cpp",
     "ObjectContentHasher.h",
+    "ObjectLabel.h",
     "PassResourceUsage.h",
     "PassResourceUsageTracker.cpp",
     "PassResourceUsageTracker.h",
@@ -357,6 +358,8 @@ source_set("sources") {
     "ResourceMemoryAllocation.h",
     "ResourceTable.cpp",
     "ResourceTable.h",
+    "ResourceTableDefaultResources.cpp",
+    "ResourceTableDefaultResources.h",
     "RingBufferAllocator.cpp",
     "RingBufferAllocator.h",
     "Sampler.cpp",
@@ -751,6 +754,10 @@ source_set("sources") {
       "webgpu/Serialization.h",
       "webgpu/ShaderModuleWGPU.cpp",
       "webgpu/ShaderModuleWGPU.h",
+      "webgpu/SharedFenceWGPU.cpp",
+      "webgpu/SharedFenceWGPU.h",
+      "webgpu/SharedTextureMemoryWGPU.cpp",
+      "webgpu/SharedTextureMemoryWGPU.h",
       "webgpu/TextureWGPU.cpp",
       "webgpu/TextureWGPU.h",
       "webgpu/ToWGPU.cpp",
@@ -776,7 +783,7 @@ source_set("sources") {
     public_deps += [
       ":opengl_loader_gen",
       "${dawn_root}/src/tint/api/common",
-      "${dawn_root}/third_party/khronos:khronos_platform",
+      "${dawn_root}/third_party/EGL-Registry:khronos_platform",
     ]
     sources += get_target_outputs(":opengl_loader_gen")
     sources += [
@@ -844,7 +851,7 @@ source_set("sources") {
       "opengl/UtilsGL.h",
       "opengl/opengl_platform.h",
     ]
-    include_dirs += [ "//third_party/khronos" ]
+    include_dirs += [ "//third_party/EGL-Registry" ]
   }
 
   if (dawn_enable_vulkan) {
@@ -884,7 +891,6 @@ source_set("sources") {
       "vulkan/PipelineCacheVk.h",
       "vulkan/PipelineLayoutVk.cpp",
       "vulkan/PipelineLayoutVk.h",
-      "vulkan/PipelineVk.cpp",
       "vulkan/PipelineVk.h",
       "vulkan/QuerySetVk.cpp",
       "vulkan/QuerySetVk.h",
@@ -914,6 +920,8 @@ source_set("sources") {
       "vulkan/StreamImplVk.cpp",
       "vulkan/SwapChainVk.cpp",
       "vulkan/SwapChainVk.h",
+      "vulkan/TexelBufferViewVk.cpp",
+      "vulkan/TexelBufferViewVk.h",
       "vulkan/TextureVk.cpp",
       "vulkan/TextureVk.h",
       "vulkan/UniqueVkHandle.h",

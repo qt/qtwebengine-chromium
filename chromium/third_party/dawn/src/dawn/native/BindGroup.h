@@ -42,8 +42,8 @@
 #include "dawn/native/Forward.h"
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/UsageValidationMode.h"
-
 #include "dawn/native/dawn_platform.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native {
 
@@ -55,7 +55,7 @@ ResultOrError<UnpackedPtr<BindGroupDescriptor>> ValidateBindGroupDescriptor(
     UsageValidationMode mode);
 
 struct BufferBinding {
-    BufferBase* buffer;
+    raw_ptr<BufferBase> buffer;
     uint64_t offset;
     uint64_t size;
 };
@@ -74,11 +74,11 @@ class BindGroupBase : public ApiObjectBase {
     const BindGroupLayoutInternalBase* GetLayout() const;
 
     // Getters for bindings part.
-    BufferBase* GetBindingAsBuffer(BindingIndex bindingIndex);
+    BufferBase* GetBindingAsBuffer(BindingIndex bindingIndex) const;
     SamplerBase* GetBindingAsSampler(BindingIndex bindingIndex) const;
-    TextureViewBase* GetBindingAsTextureView(BindingIndex bindingIndex);
-    BufferBinding GetBindingAsBufferBinding(BindingIndex bindingIndex);
-    TexelBufferViewBase* GetBindingAsTexelBufferView(BindingIndex bindingIndex);
+    TextureViewBase* GetBindingAsTextureView(BindingIndex bindingIndex) const;
+    BufferBinding GetBindingAsBufferBinding(BindingIndex bindingIndex) const;
+    TexelBufferViewBase* GetBindingAsTexelBufferView(BindingIndex bindingIndex) const;
     const ityp::span<uint32_t, uint64_t>& GetUnverifiedBufferSizes() const;
 
     // Returns the ExternalTexture bound at `bindingIndex` or nullptr if a Texture was bound in

@@ -260,7 +260,7 @@ ResultOrError<ShaderModuleEntryPoint> ValidateVertexState(
         return DAWN_VALIDATION_ERROR(
             "Vertex attribute slot %u used in (%s, %s) is not present in the "
             "VertexState.",
-            uint8_t(firstMissing), descriptor->module, &entryPoint);
+            uint8_t(firstMissing), descriptor->module, entryPoint);
     }
 
     return entryPoint;
@@ -496,7 +496,7 @@ MaybeError ValidateColorTargetState(
     const MultisampleState& multisample) {
     UnpackedPtr<ColorTargetState> unpacked;
     DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(&descriptor));
-    if (unpacked.Get<ColorTargetStateExpandResolveTextureDawn>()) {
+    if (unpacked.Has<ColorTargetStateExpandResolveTextureDawn>()) {
         DAWN_INVALID_IF(!device->HasFeature(Feature::DawnLoadResolveTexture),
                         "The ColorTargetStateExpandResolveTextureDawn struct is used while the "
                         "%s feature is not enabled.",
@@ -645,14 +645,14 @@ ResultOrError<ShaderModuleEntryPoint> ValidateFragmentState(DeviceBase* device,
         DAWN_INVALID_IF(depthStencil == nullptr,
                         "Depth stencil state is not present when fragment stage (%s, %s) is "
                         "writing to frag_depth.",
-                        descriptor->module, &entryPoint);
+                        descriptor->module, entryPoint);
         const Format* depthStencilFormat;
         DAWN_TRY_ASSIGN(depthStencilFormat, device->GetInternalFormat(depthStencil->format));
         DAWN_INVALID_IF(!depthStencilFormat->HasDepth(),
                         "Depth stencil state format (%s) has no depth aspect when fragment stage "
                         "(%s, %s) is "
                         "writing to frag_depth.",
-                        depthStencil->format, descriptor->module, &entryPoint);
+                        depthStencil->format, descriptor->module, entryPoint);
     }
 
     uint32_t maxColorAttachments = device->GetLimits().v1.maxColorAttachments;
@@ -743,12 +743,12 @@ ResultOrError<ShaderModuleEntryPoint> ValidateFragmentState(DeviceBase* device,
         DAWN_INVALID_IF(
             fragmentMetadata.usesSampleMaskOutput,
             "sample_mask is not supported in compatibility mode in the fragment stage (%s, %s)",
-            descriptor->module, &entryPoint);
+            descriptor->module, entryPoint);
 
         DAWN_INVALID_IF(
             fragmentMetadata.usesSampleIndex,
             "sample_index is not supported in compatibility mode in the fragment stage (%s, %s)",
-            descriptor->module, &entryPoint);
+            descriptor->module, entryPoint);
 
         // Check that all the color target states match.
         ColorAttachmentIndex firstColorTargetIndex{};
@@ -1065,8 +1065,13 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
     if (HasStage(SingleShaderStage::Fragment)) {
         mUsesFragDepth = GetStage(SingleShaderStage::Fragment).metadata->usesFragDepth;
         mUsesFragPosition = GetStage(SingleShaderStage::Fragment).metadata->usesFragPosition;
-        mIsFragMultiSampled = GetStage(SingleShaderStage::Fragment).metadata->isFragMultiSampled;
         mUsesSampleIndex = GetStage(SingleShaderStage::Fragment).metadata->usesSampleIndex;
+        mUsesFramebufferFetch =
+            GetStage(SingleShaderStage::Fragment).metadata->fragmentInputMask.any();
+        mUseSampleRateShading =
+            GetSampleCount() > 1 &&
+            (GetStage(SingleShaderStage::Fragment).metadata->usesSampleInterpolants ||
+             mUsesSampleIndex || mUsesFramebufferFetch);
     }
 
     if (HasStage(SingleShaderStage::Vertex)) {
@@ -1079,6 +1084,10 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
 
     // Initialize the cache key to include the cache type and device information.
     StreamIn(&mCacheKey, CacheKey::Type::RenderPipeline, device->GetCacheKey());
+}
+
+MaybeError RenderPipelineBase::InitializeWithShaders() {
+    return InitializeImpl();
 }
 
 RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
@@ -1289,9 +1298,9 @@ bool RenderPipelineBase::UsesFragPosition() const {
     return mUsesFragPosition;
 }
 
-bool RenderPipelineBase::IsFragMultiSampled() const {
+bool RenderPipelineBase::UseSampleRateShading() const {
     DAWN_ASSERT(!IsError());
-    return mIsFragMultiSampled;
+    return mUseSampleRateShading;
 }
 
 bool RenderPipelineBase::UsesVertexIndex() const {
@@ -1302,6 +1311,11 @@ bool RenderPipelineBase::UsesVertexIndex() const {
 bool RenderPipelineBase::UsesInstanceIndex() const {
     DAWN_ASSERT(!IsError());
     return mUsesInstanceIndex;
+}
+
+bool RenderPipelineBase::UsesFramebufferFetch() const {
+    DAWN_ASSERT(!IsError());
+    return mUsesFramebufferFetch;
 }
 
 size_t RenderPipelineBase::ComputeContentHash() {

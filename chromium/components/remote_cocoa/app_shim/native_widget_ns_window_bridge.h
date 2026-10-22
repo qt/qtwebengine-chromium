@@ -134,6 +134,14 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // Called by the NSWindowDelegate when the size of the window changes.
   void OnSizeChanged();
 
+  // Called once by the NSWindowDelegate when the position of the window is
+  // about to change.
+  void OnWindowWillMove();
+
+  // Called once by the NSWindowDelegate when a user-initiated move has
+  // completed.
+  void OnWindowDidEndMove();
+
   // Called once by the NSWindowDelegate when the position of the window has
   // changed.
   void OnPositionChanged();
@@ -244,6 +252,7 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // ui::CATransactionCoordinator::PreCommitObserver:
   bool ShouldWaitInPreCommit() override;
   base::TimeDelta PreCommitTimeout() override;
+  bool IsWindowInLiveResize() override;
 
   // remote_cocoa::mojom::NativeWidgetNSWindow:
   void CreateWindow(mojom::CreateWindowParamsPtr params) override;
@@ -279,6 +288,7 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   void SetTransitionsToAnimate(
       remote_cocoa::mojom::VisibilityTransition transitions) override;
   void SetVisibleOnAllSpaces(bool always_visible) override;
+  void MoveToActiveFullscreenSpace() override;
   void SetZoomed(bool zoomed) override;
   void EnterFullscreen(int64_t target_display_id) override;
   void ExitFullscreen() override;
@@ -372,6 +382,10 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // the clients.
   void CheckAndNotifyZoomedStateChanged();
 
+  // Check if the window's "visible on all workspaces" state has changed. If
+  // changes happen, notify the host.
+  void CheckAndNotifyAllWorkspacesStateChanged();
+
   // Notify descendants of a visibility change.
   void NotifyVisibilityChangeDown();
 
@@ -391,6 +405,10 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
 
   // Returns true if window restoration data exists from session restore.
   bool HasWindowRestorationData();
+
+  // Restores the initial collection behavior after temporarily changing it in
+  // `MoveToActiveFullscreenSpace()`.
+  void RestoreCollectionBehavior();
 
   // CocoaMouseCaptureDelegate:
   bool PostCapturedEvent(NSEvent* event) override;
@@ -456,9 +474,16 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // state changes.
   bool window_zoomed_ = false;
 
+  // Stores the value last read from -[NSWindow collectionBehavior], to detect
+  // "visible on all spaces" state changes.
+  bool visible_on_all_spaces_ = false;
+
   // If true, the window is either visible, or wants to be visible but is
   // currently hidden due to having a hidden parent.
   bool wants_to_be_visible_ = false;
+
+  // If true, the window is currently being moved by the user.
+  bool in_move_ = false;
 
   // If true, then ignore interactions with CATransactionCoordinator until the
   // first frame arrives.
@@ -468,9 +493,9 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // shadow needs to be invalidated when a frame is received for the new shape.
   bool invalidate_shadow_on_frame_swap_ = false;
 
-  // A blob representing the window's saved state, which is applied and cleared
-  // on the first call to SetVisibilityState().
-  std::vector<uint8_t> pending_restoration_data_;
+  // The window's saved state, which is applied and cleared on the first call to
+  // SetVisibilityState().
+  remote_cocoa::mojom::StateRestorationDataPtr pending_restoration_data_;
 
   // Manages immersive mode when in fullscreen.
   std::unique_ptr<ImmersiveModeControllerCocoa> immersive_mode_controller_;
@@ -488,6 +513,10 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // ImmersiveFullscreenRevealUnlock() calls so locks can persist across
   // immersive_mode_controller_ resets.
   int immersive_fullscreen_reveal_lock_count_ = 0;
+
+  // Tracks the initial collection behavior to restore to when we temporarily
+  // change it to move to the active fullscreen space.
+  std::optional<NSWindowCollectionBehavior> collection_behavior_to_restore_;
 
   base::OnceCallback<void(NativeWidgetMacNSWindow*)> window_set_callback_;
 

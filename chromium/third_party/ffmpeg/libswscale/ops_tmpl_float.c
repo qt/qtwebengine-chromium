@@ -57,7 +57,7 @@ DECL_SETUP(setup_dither)
         return AVERROR(ENOMEM);
 
     static_assert(sizeof(out->ptr) <= sizeof(uint8_t[8]), ">8 byte pointers not supported");
-    uint8_t *offset = &out->u8[8];
+    int8_t *offset = &out->i8[8];
     for (int i = 0; i < 4; i++)
         offset[i] = op->dither.y_offset[i];
 
@@ -74,24 +74,25 @@ DECL_SETUP(setup_dither)
 DECL_FUNC(dither, const int size_log2)
 {
     const pixel_t *restrict matrix = impl->priv.ptr;
-    const uint8_t *offset = &impl->priv.u8[8];
+    const int8_t *restrict offset = &impl->priv.i8[8];
     const int mask = (1 << size_log2) - 1;
     const int y_line = iter->y;
-    const int row0 = (y_line + offset[0]) & mask;
-    const int row1 = (y_line + offset[1]) & mask;
-    const int row2 = (y_line + offset[2]) & mask;
-    const int row3 = (y_line + offset[3]) & mask;
     const int size = 1 << size_log2;
     const int width = FFMAX(size, SWS_BLOCK_SIZE);
     const int base = iter->x & ~(SWS_BLOCK_SIZE - 1) & (size - 1);
 
-    SWS_LOOP
-    for (int i = 0; i < SWS_BLOCK_SIZE; i++) {
-        x[i] += size_log2 ? matrix[row0 * width + base + i] : (pixel_t) 0.5;
-        y[i] += size_log2 ? matrix[row1 * width + base + i] : (pixel_t) 0.5;
-        z[i] += size_log2 ? matrix[row2 * width + base + i] : (pixel_t) 0.5;
-        w[i] += size_log2 ? matrix[row3 * width + base + i] : (pixel_t) 0.5;
+#define DITHER_COMP(VAR, IDX)                                                            \
+    if (offset[IDX] >= 0) {                                                              \
+        const int row = (y_line + offset[IDX]) & mask;                                   \
+        SWS_LOOP                                                                         \
+        for (int i = 0; i < SWS_BLOCK_SIZE; i++)                                         \
+            VAR[i] += size_log2 ? matrix[row * width + base + i] : (pixel_t) 0.5;        \
     }
+
+    DITHER_COMP(x, 0)
+    DITHER_COMP(y, 1)
+    DITHER_COMP(z, 2)
+    DITHER_COMP(w, 3)
 
     CONTINUE(block_t, x, y, z, w);
 }
@@ -106,7 +107,7 @@ DECL_ENTRY(dither##N,                                                           
     .op = SWS_OP_DITHER,                                                        \
     .dither_size = N,                                                           \
     .setup = fn(setup_dither),                                                  \
-    .free = av_free,                                                            \
+    .free = ff_op_priv_free,                                                    \
 );
 
 WRAP_DITHER(0)
@@ -192,7 +193,7 @@ DECL_IMPL(linear_##NAME)                                                        
 DECL_ENTRY(linear_##NAME,                                                       \
     .op    = SWS_OP_LINEAR,                                                     \
     .setup = fn(setup_linear),                                                  \
-    .free  = av_free,                                                           \
+    .free  = ff_op_priv_free,                                                   \
     .linear_mask = (MASK),                                                      \
 );
 
@@ -232,6 +233,10 @@ static const SwsOpTable fn(op_table_float) = {
         &fn(op_dither6),
         &fn(op_dither7),
         &fn(op_dither8),
+
+        &fn(op_clear_1110),
+        &fn(op_clear_0111),
+        &fn(op_clear_0011),
 
         &fn(op_linear_luma),
         &fn(op_linear_alpha),

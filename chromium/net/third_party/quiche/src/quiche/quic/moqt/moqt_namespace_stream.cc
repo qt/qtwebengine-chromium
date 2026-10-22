@@ -4,6 +4,7 @@
 
 #include "quiche/quic/moqt/moqt_namespace_stream.h"
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -20,7 +21,6 @@
 #include "quiche/quic/moqt/moqt_session_callbacks.h"
 #include "quiche/quic/moqt/session_namespace_tree.h"
 #include "quiche/common/platform/api/quiche_logging.h"
-#include "quiche/common/quiche_stream.h"
 #include "quiche/web_transport/web_transport.h"
 
 namespace moqt {
@@ -40,33 +40,57 @@ void MoqtNamespaceSubscriberStream::set_stream(
 
 void MoqtNamespaceSubscriberStream::OnRequestOkMessage(
     const MoqtRequestOk& message) {
-  if (message.request_id != request_id_) {
+  if (message.request_id == request_id_) {
+    // Response to the initial SUBSCRIBE_NAMESPACE.
+    if (response_callback_ == nullptr) {
+      OnParsingError(MoqtError::kProtocolViolation, "Two responses");
+      return;
+    }
+    std::move(response_callback_)(std::nullopt);
+    response_callback_ = nullptr;
+    return;
+  }
+  NamespaceTask* task = task_.GetIfAvailable();
+  if (task == nullptr) {
+    // The application has already unsubscribed, and the stream has been reset.
+    // This is irrelevant.
+    return;
+  }
+  MoqtResponseCallback callback = task->GetResponseCallback(message.request_id);
+  if (callback == nullptr) {
     OnParsingError(MoqtError::kProtocolViolation,
                    "Unexpected request ID in response");
     return;
   }
-  if (response_callback_ == nullptr) {
-    OnParsingError(MoqtError::kProtocolViolation, "Two responses");
-    return;
-  }
-  std::move(response_callback_)(std::nullopt);
-  response_callback_ = nullptr;
+  std::move(callback)(std::nullopt);
 }
 
 void MoqtNamespaceSubscriberStream::OnRequestErrorMessage(
     const MoqtRequestError& message) {
-  if (message.request_id != request_id_) {
+  if (message.request_id == request_id_) {
+    if (response_callback_ == nullptr) {
+      OnParsingError(MoqtError::kProtocolViolation, "Two responses");
+      return;
+    }
+    std::move(response_callback_)(MoqtRequestErrorInfo{
+        message.error_code, message.retry_interval, message.reason_phrase});
+    response_callback_ = nullptr;
+    return;
+  }
+  NamespaceTask* task = task_.GetIfAvailable();
+  if (task == nullptr) {
+    // The application has already unsubscribed, and the stream has been reset.
+    // This is irrelevant.
+    return;
+  }
+  MoqtResponseCallback callback = task->GetResponseCallback(message.request_id);
+  if (callback == nullptr) {
     OnParsingError(MoqtError::kProtocolViolation,
-                   "Unexpected request ID in error");
+                   "Unexpected request ID in response");
     return;
   }
-  if (response_callback_ == nullptr) {
-    OnParsingError(MoqtError::kProtocolViolation, "Two responses");
-    return;
-  }
-  std::move(response_callback_)(MoqtRequestErrorInfo{
+  std::move(callback)(MoqtRequestErrorInfo{
       message.error_code, message.retry_interval, message.reason_phrase});
-  response_callback_ = nullptr;
 }
 
 void MoqtNamespaceSubscriberStream::OnNamespaceMessage(
@@ -102,6 +126,8 @@ void MoqtNamespaceSubscriberStream::OnNamespaceMessage(
                    "Two NAMESPACE messages for the same track namespace");
     return;
   }
+  QUIC_DLOG(INFO) << "Received NAMESPACE message for "
+                  << message.track_namespace_suffix;
   task->AddPendingSuffix(message.track_namespace_suffix, TransactionType::kAdd);
 }
 
@@ -121,15 +147,15 @@ void MoqtNamespaceSubscriberStream::OnNamespaceDoneMessage(
                    "NAMESPACE_DONE with no active namespace");
     return;
   }
+  QUIC_DLOG(INFO) << "Received NAMESPACE_DONE message for "
+                  << message.track_namespace_suffix;
   task->AddPendingSuffix(message.track_namespace_suffix,
                          TransactionType::kDelete);
 }
 
 std::unique_ptr<MoqtNamespaceTask> MoqtNamespaceSubscriberStream::CreateTask(
-    const TrackNamespace& prefix,
-    ObjectsAvailableCallback absl_nonnull callback) {
-  auto task =
-      std::make_unique<NamespaceTask>(this, prefix, std::move(callback));
+    const TrackNamespace& prefix) {
+  auto task = std::make_unique<NamespaceTask>(this, prefix);
   QUICHE_DCHECK(task != nullptr);
   task_ = task->GetWeakPtr();
   QUICHE_DCHECK(task_.IsValid());
@@ -138,8 +164,31 @@ std::unique_ptr<MoqtNamespaceTask> MoqtNamespaceSubscriberStream::CreateTask(
 
 MoqtNamespaceSubscriberStream::NamespaceTask::~NamespaceTask() {
   if (state_ != nullptr) {
-    state_->Reset(kResetCodeCanceled);
+    state_->Reset(kResetCodeCancelled);
   }
+}
+
+void MoqtNamespaceSubscriberStream::NamespaceTask::SetObjectsAvailableCallback(
+    ObjectsAvailableCallback absl_nullable callback) {
+  callback_ = std::move(callback);
+  if (!pending_suffixes_.empty() && callback_ != nullptr) {
+    callback_();
+  }
+}
+
+void MoqtNamespaceSubscriberStream::NamespaceTask::Update(
+    const MessageParameters& parameters,
+    MoqtResponseCallback response_callback) {
+  if (state_ == nullptr) {
+    std::move(response_callback)(
+        MoqtRequestErrorInfo{RequestErrorCode::kInternalError, std::nullopt,
+                             "Stream has been reset"});
+    return;
+  }
+  MoqtRequestUpdate message{next_request_id_, state_->request_id_, parameters};
+  pending_updates_[message.request_id] = std::move(response_callback);
+  state_->SendOrBufferMessage(state_->framer_->SerializeRequestUpdate(message));
+  next_request_id_ += 2;
 }
 
 GetNextResult MoqtNamespaceSubscriberStream::NamespaceTask::GetNextSuffix(
@@ -185,47 +234,88 @@ void MoqtNamespaceSubscriberStream::NamespaceTask::DeclareEof() {
   }
 }
 
+MoqtResponseCallback
+MoqtNamespaceSubscriberStream::NamespaceTask::GetResponseCallback(
+    uint64_t request_id) {
+  auto it = pending_updates_.find(request_id);
+  if (it == pending_updates_.end()) {
+    return nullptr;
+  }
+  MoqtResponseCallback callback = std::move(it->second);
+  pending_updates_.erase(it);
+  return callback;
+}
+
 MoqtNamespacePublisherStream::MoqtNamespacePublisherStream(
     MoqtFramer* framer, webtransport::Stream* stream,
-    SessionErrorCallback session_error_callback, SessionNamespaceTree& tree,
-    MoqtIncomingSubscribeNamespaceCallbackNew& application)
+    SessionErrorCallback session_error_callback,
+    SessionNamespaceTree* absl_nonnull tree,
+    MoqtIncomingSubscribeNamespaceCallback& application)
     // No stream_deleted_callback because there's no state yet.
     : MoqtBidiStreamBase(
           framer, []() {}, std::move(session_error_callback)),
-      tree_(tree),
+      tree_(tree->GetWeakPtr()),
       application_(application) {
   // TODO(martinduke): Set the priority for this stream.
   MoqtBidiStreamBase::set_stream(stream, MoqtMessageType::kSubscribeNamespace);
 }
 
 MoqtNamespacePublisherStream::~MoqtNamespacePublisherStream() {
-  if (task_ != nullptr) {
+  if (task_ == nullptr) {
+    return;
+  }
+  SessionNamespaceTree* tree = tree_.GetIfAvailable();
+  if (tree != nullptr) {
     // Could be null if the stream died early.
-    tree_.UnsubscribeNamespace(task_->prefix());
+    tree->UnsubscribeNamespace(task_->prefix());
   }
 }
 
 void MoqtNamespacePublisherStream::OnSubscribeNamespaceMessage(
     const MoqtSubscribeNamespace& message) {
   request_id_ = message.request_id;
-  if (!tree_.SubscribeNamespace(message.track_namespace_prefix)) {
+  SessionNamespaceTree* tree = tree_.GetIfAvailable();
+  if (tree == nullptr) {
+    SendRequestError(request_id_, RequestErrorCode::kInternalError,
+                     std::nullopt, "Session is gone", /*fin=*/true);
+    return;
+  }
+  if (!tree->SubscribeNamespace(message.track_namespace_prefix)) {
     SendRequestError(request_id_, RequestErrorCode::kPrefixOverlap,
-                     std::nullopt, "");
+                     std::nullopt, "", /*fin=*/true);
     return;
   }
   QUICHE_DCHECK(task_ == nullptr);
-  task_ = application_(
-      message.track_namespace_prefix, message.parameters,
-      // Response callback
-      [this](std::optional<MoqtRequestErrorInfo> error) {
-        if (error.has_value()) {
-          SendRequestError(request_id_, *error, /*fin=*/true);
-        } else {
-          SendRequestOk(request_id_, MessageParameters());
-        }
-      },
-      // Objects available callback
-      [this]() { ProcessNamespaces(); });
+  task_ = application_(message.track_namespace_prefix,
+                       message.subscribe_options, message.parameters,
+                       // Response callback
+                       [this](std::optional<MoqtRequestErrorInfo> error) {
+                         if (error.has_value()) {
+                           SendRequestError(request_id_, *error, /*fin=*/true);
+                         } else {
+                           SendRequestOk(request_id_, MessageParameters());
+                         }
+                       });
+  if (task_ != nullptr) {
+    task_->SetObjectsAvailableCallback([this]() { ProcessNamespaces(); });
+  }
+}
+
+void MoqtNamespacePublisherStream::OnRequestUpdateMessage(
+    const MoqtRequestUpdate& message) {
+  if (task_ == nullptr) {
+    // This stream is dying.
+    return;
+  }
+  task_->Update(message.parameters,
+                [this, request_id = message.request_id](
+                    std::optional<MoqtRequestErrorInfo> error) {
+                  if (error.has_value()) {
+                    SendRequestError(request_id, *error, /*fin=*/false);
+                  } else {
+                    SendRequestOk(request_id, MessageParameters());
+                  }
+                });
 }
 
 void MoqtNamespacePublisherStream::ProcessNamespaces() {
@@ -245,7 +335,7 @@ void MoqtNamespacePublisherStream::ProcessNamespaces() {
         };
         return;
       case kError:
-        Reset(kResetCodeCanceled);
+        Reset(kResetCodeCancelled);
         return;
       case kSuccess: {
         switch (type) {

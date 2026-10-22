@@ -73,6 +73,8 @@ class CONTENT_EXPORT VideoPictureInPictureWindowControllerImpl
   void ToggleMicrophone() override;
   void ToggleCamera() override;
   void HangUp() override;
+  void RequestMute(bool mute) override;
+  bool GetMuteStatus() override;
   void PreviousSlide() override;
   void NextSlide() override;
   void SeekTo(base::TimeDelta time) override;
@@ -88,7 +90,6 @@ class CONTENT_EXPORT VideoPictureInPictureWindowControllerImpl
   std::optional<gfx::Rect> GetWindowBoundsInScreen() override;
 
   std::optional<url::Origin> GetOrigin() override;
-  void SetOrigin(std::optional<url::Origin> origin);
 
   // Called by the MediaSessionImpl when the MediaSessionInfo changes.
   void MediaSessionInfoChanged(
@@ -115,6 +116,7 @@ class CONTENT_EXPORT VideoPictureInPictureWindowControllerImpl
   void MediaStoppedPlaying(const MediaPlayerInfo&,
                            const MediaPlayerId&,
                            WebContentsObserver::MediaStoppedReason) override;
+  void MediaMutedStatusChanged(const MediaPlayerId& id, bool muted) override;
   void WebContentsDestroyed() override;
 
   // Embeds a surface in the Picture-in-Picture window.
@@ -124,6 +126,9 @@ class CONTENT_EXPORT VideoPictureInPictureWindowControllerImpl
   void SetShowPlayPauseButton(bool show_play_pause_button);
 
   void SetMediaPosition(const media_session::MediaPosition& media_position);
+
+  // Called to show or hide the playback controls.
+  void SetPlaybackControlsVisibility(bool is_visible);
 
   // Called by PictureInPictureServiceImpl when a session request is received.
   // The call should return the |session_remote| and |window_size| as out
@@ -250,9 +255,6 @@ class CONTENT_EXPORT VideoPictureInPictureWindowControllerImpl
 
   // Coordinates of the video element in WebContents coordinates.
   gfx::Rect source_bounds_;
-
-  // The origin of the initiator.
-  std::optional<url::Origin> origin_;
 
   // Callback to notify the observers about the video PiP window creation event.
   base::OnceClosure on_window_created_notify_observers_callback_;

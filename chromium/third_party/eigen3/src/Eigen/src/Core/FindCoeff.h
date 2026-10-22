@@ -34,11 +34,11 @@ struct max_coeff_functor {
 
 template <typename Scalar>
 struct max_coeff_functor<Scalar, PropagateNaN, false> {
-  EIGEN_DEVICE_FUNC inline Scalar compareCoeff(const Scalar& incumbent, const Scalar& candidate) {
+  EIGEN_DEVICE_FUNC inline Scalar compareCoeff(const Scalar& incumbent, const Scalar& candidate) const {
     return (candidate > incumbent) || ((candidate != candidate) && (incumbent == incumbent));
   }
   template <typename Packet>
-  EIGEN_DEVICE_FUNC inline Packet comparePacket(const Packet& incumbent, const Packet& candidate) {
+  EIGEN_DEVICE_FUNC inline Packet comparePacket(const Packet& incumbent, const Packet& candidate) const {
     return pandnot(pcmp_lt_or_nan(incumbent, candidate), pisnan(incumbent));
   }
   template <typename Packet>
@@ -79,11 +79,11 @@ struct min_coeff_functor {
 
 template <typename Scalar>
 struct min_coeff_functor<Scalar, PropagateNaN, false> {
-  EIGEN_DEVICE_FUNC inline Scalar compareCoeff(const Scalar& incumbent, const Scalar& candidate) {
+  EIGEN_DEVICE_FUNC inline Scalar compareCoeff(const Scalar& incumbent, const Scalar& candidate) const {
     return (candidate < incumbent) || ((candidate != candidate) && (incumbent == incumbent));
   }
   template <typename Packet>
-  EIGEN_DEVICE_FUNC inline Packet comparePacket(const Packet& incumbent, const Packet& candidate) {
+  EIGEN_DEVICE_FUNC inline Packet comparePacket(const Packet& incumbent, const Packet& candidate) const {
     return pandnot(pcmp_lt_or_nan(candidate, incumbent), pisnan(incumbent));
   }
   template <typename Packet>

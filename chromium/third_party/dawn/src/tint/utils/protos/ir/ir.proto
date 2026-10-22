@@ -80,6 +80,7 @@ enum TypeBasic {
     f16 = 5;
     i8 = 6;
     u8 = 7;
+    u64 = 8;
 }
 
 message TypeVector {
@@ -135,6 +136,7 @@ message TypeDepthTexture {
 message TypeSampledTexture {
     TextureDimension dimension = 1;
     uint32 sub_type = 2;  // Module.types
+    TextureFilterable filterable = 3;
 }
 
 message TypeMultisampledTexture {
@@ -158,6 +160,7 @@ message TypeExternalTexture {}
 
 message TypeSampler {
     SamplerKind kind = 1;
+    SamplerFiltering filtering = 2;
 }
 
 message TypeInputAttachment {
@@ -312,7 +315,6 @@ message Instruction {
         InstructionDiscard discard = 6;
         InstructionLet let = 7;
         InstructionVar var = 8;
-        InstructionBitcast bitcast = 9;
         InstructionConstruct construct = 10;
         InstructionConvert convert = 11;
         InstructionAccess access = 12;
@@ -334,6 +336,8 @@ message Instruction {
         InstructionBreakIf break_if = 28;
         InstructionUnreachable unreachable = 29;
     }
+    reserved 9;
+    reserved "bitcast";
 }
 
 message InstructionReturn {}
@@ -508,6 +512,12 @@ enum TextureDimension {
     cube_array = 5;
 }
 
+enum TextureFilterable {
+    filterable_undefined = 0;
+    filterable = 1;
+    unfilterable = 2;
+}
+
 enum TexelFormat {
     bgra8_unorm = 0;
     r8_unorm = 1;
@@ -556,6 +566,12 @@ enum SamplerKind {
     comparison = 1;
 }
 
+enum SamplerFiltering {
+    filtering_undefined = 0;
+    filtering = 1;
+    non_filtering = 2;
+}
+
 enum InterpolationType {
     flat = 0;
     linear = 1;
@@ -592,6 +608,8 @@ enum BuiltinValue {
     primitive_index = 18;
     barycentric_coord = 19;
     num_subgroups = 20;
+    global_invocation_index = 21;
+    workgroup_index = 22;
 }
 
 enum BuiltinFn {
@@ -756,4 +774,8 @@ enum BuiltinFn {
     get_resource = 156;
     buffer_view = 157;
     buffer_length = 158;
+    atomic_store_max = 159;
+    atomic_store_min = 160;
+    bitcast = 161;
+    buffer_array_view = 162;
 }

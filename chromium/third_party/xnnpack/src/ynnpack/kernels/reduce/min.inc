@@ -8,15 +8,21 @@ YNN_UNARY_REDUCE_KERNEL(arch_flag::neon, min_int8_4x16_neon, int8_t, int8_t)
 YNN_UNARY_REDUCE_KERNEL(arch_flag::neon, min_uint8_4x16_neon, uint8_t, uint8_t)
 #endif
 
-#ifdef YNN_ARCH_X86_AVX512BW
-YNN_UNARY_REDUCE_KERNEL(arch_flag::avx512bw, min_bf16_4x32_avx512bw, bfloat16, bfloat16)
-YNN_UNARY_REDUCE_KERNEL(arch_flag::avx512bw, min_fp16_4x32_avx512bw, bfloat16, bfloat16)
-YNN_UNARY_REDUCE_KERNEL(arch_flag::avx512bw, min_int8_4x64_avx512bw, int8_t, int8_t)
-YNN_UNARY_REDUCE_KERNEL(arch_flag::avx512bw, min_uint8_4x64_avx512bw, uint8_t, uint8_t)
-#endif  // YNN_ARCH_X86_AVX512BW
-#ifdef YNN_ARCH_X86_AVX512F
-YNN_UNARY_REDUCE_KERNEL(arch_flag::avx512f, min_fp32_4x16_avx512f, float, float)
-#endif  // YNN_ARCH_X86_AVX512F
+#ifdef YNN_ARCH_HEXAGON_HVX
+YNN_UNARY_REDUCE_KERNEL(arch_flag::hvx, min_fp32_4x32_hvx, float, float)
+YNN_UNARY_REDUCE_KERNEL(arch_flag::hvx, min_bf16_4x64_hvx, bfloat16, bfloat16)
+YNN_UNARY_REDUCE_KERNEL(arch_flag::hvx, min_fp16_4x64_hvx, half, half)
+YNN_UNARY_REDUCE_KERNEL(arch_flag::hvx, min_int8_4x128_hvx, int8_t, int8_t)
+YNN_UNARY_REDUCE_KERNEL(arch_flag::hvx, min_uint8_4x128_hvx, uint8_t, uint8_t)
+#endif  // YNN_ARCH_HEXAGON_HVX
+
+#ifdef YNN_ARCH_X86_AVX512
+YNN_UNARY_REDUCE_KERNEL(arch_flag::avx512, min_bf16_4x32_avx512, bfloat16, bfloat16)
+YNN_UNARY_REDUCE_KERNEL(arch_flag::avx512, min_fp16_4x32_avx512, bfloat16, bfloat16)
+YNN_UNARY_REDUCE_KERNEL(arch_flag::avx512, min_int8_4x64_avx512, int8_t, int8_t)
+YNN_UNARY_REDUCE_KERNEL(arch_flag::avx512, min_uint8_4x64_avx512, uint8_t, uint8_t)
+YNN_UNARY_REDUCE_KERNEL(arch_flag::avx512, min_fp32_4x16_avx512, float, float)
+#endif  // YNN_ARCH_X86_AVX512
 #ifdef YNN_ARCH_X86_AVX2
 YNN_UNARY_REDUCE_KERNEL(arch_flag::avx2, min_bf16_4x16_avx2, bfloat16, bfloat16)
 YNN_UNARY_REDUCE_KERNEL(arch_flag::avx2, min_fp16_4x16_avx2, half, half)

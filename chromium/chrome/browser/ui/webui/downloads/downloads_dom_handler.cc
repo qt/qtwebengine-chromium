@@ -23,6 +23,7 @@
 #include "base/task/current_thread.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
+#include "build/branding_buildflags.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_danger_prompt.h"
 #include "chrome/browser/download/download_history.h"
@@ -39,11 +40,13 @@
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
+#include "chrome/browser/ui/browser_element_identifiers.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/hats/trust_safety_sentiment_service.h"
 #include "chrome/browser/ui/hats/trust_safety_sentiment_service_factory.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/webui/downloads/downloads.mojom.h"
 #include "chrome/browser/ui/webui/fileicon_source.h"
 #include "chrome/common/chrome_switches.h"
@@ -56,6 +59,7 @@
 #include "components/safe_browsing/core/common/features.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/safe_browsing/core/common/safebrowsing_referral_methods.h"
+#include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item_utils.h"
 #include "content/public/browser/download_manager.h"
@@ -72,6 +76,7 @@
 #include "ui/base/l10n/time_format.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/image/image.h"
+#include "ui/views/interaction/element_tracker_views.h"
 
 #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
 #include "chrome/browser/safe_browsing/download_protection/download_protection_util.h"
@@ -260,6 +265,14 @@ void DownloadsDOMHandler::OpenFileRequiringGesture(const std::string& id) {
   CountDownloadsDOMEvents(DOWNLOADS_DOM_EVENT_OPEN_FILE);
   download::DownloadItem* file = GetDownloadByStringId(id);
   if (file) {
+    if (auto* tab_interface =
+            tabs::TabInterface::MaybeGetFromContents(GetWebUIWebContents())) {
+      if (auto* browser_view = BrowserView::GetBrowserViewForBrowser(
+              tab_interface->GetBrowserWindowInterface())) {
+        views::ElementTrackerViews::GetInstance()->NotifyCustomEvent(
+            kDownloadedFileOpenedCustomEventId, browser_view);
+      }
+    }
     file->OpenDownload();
   }
 }
@@ -436,11 +449,10 @@ void DownloadsDOMHandler::RetryDownload(const std::string& id) {
   // initial download request rather than treating it as initiated from the
   // chrome://downloads/ page. Thus we get the NIK from |file|, not from
   // |render_frame_host|.
-  auto dl_params = std::make_unique<download::DownloadUrlParameters>(
-      url, render_frame_host->GetProcess()->GetDeprecatedID(),
-      render_frame_host->GetRoutingID(), traffic_annotation);
+  auto dl_params =
+      render_frame_host->CreateDownloadUrlParameters(url, traffic_annotation);
   dl_params->set_content_initiated(true);
-  dl_params->set_initiator(url::Origin::Create(GURL("chrome://downloads")));
+  dl_params->set_initiator(file->GetRequestInitiator());
   dl_params->set_download_source(download::DownloadSource::RETRY);
 
   web_contents->GetBrowserContext()->GetDownloadManager()->DownloadUrl(

@@ -2,14 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import unittest
-
-import expand_owners
-import mock
 import os
 import shutil
 import tempfile
+import unittest
 import xml.dom.minidom
+
+import mock  # type: ignore
+import setup_modules  # pylint: disable=unused-import
+
+import chromium_src.tools.metrics.histograms.expand_owners as expand_owners
 
 
 def _GetToolsParentDir():
@@ -81,8 +83,8 @@ class ExpandOwnersTest(unittest.TestCase):
 
   def testExpandOwnersUsesMetadataOverOwners(self):
     """Checks that DIR_METADATA is used if available"""
-    with open(os.path.join(self.temp_dir, 'DIR_METADATA'), "w+") as md:
-      md.write("\n".join([
+    with open(os.path.join(self.temp_dir, 'DIR_METADATA'), 'w+') as md:
+      md.write('\n'.join([
           'monorail {', 'component: "Bees"', '}', 'buganizer_public {',
           'component_id:123456', '}'
       ]))
@@ -136,7 +138,10 @@ class ExpandOwnersTest(unittest.TestCase):
     expand_owners.ExpandHistogramsOWNERS(histograms)
     self.assertMultiLineEqual(histograms.toxml(), expected_histograms.toxml())
 
-  @mock.patch('expand_owners.ExtractComponentViaDirmd')
+  @mock.patch(
+      'chromium_src.tools.metrics.histograms.' \
+      'expand_owners.ExtractComponentViaDirmd'
+  )
   def testExpandOwnersWithSimpleOWNERSFilePath(self, mock_dirmd_extract):
     """Checks that OWNERS files are expanded."""
     mock_dirmd_extract.return_value = None
@@ -190,7 +195,10 @@ class ExpandOwnersTest(unittest.TestCase):
     expand_owners.ExpandHistogramsOWNERS(histograms)
     self.assertMultiLineEqual(histograms.toxml(), expected_histograms.toxml())
 
-  @mock.patch('expand_owners.ExtractComponentViaDirmd')
+  @mock.patch(
+      'chromium_src.tools.metrics.histograms.' \
+      'expand_owners.ExtractComponentViaDirmd'
+  )
   def testExpandOwnersWithLongFilePath(self, mock_dirmd_extract):
     """Checks that long OWNERS file paths are supported.
 
@@ -234,7 +242,10 @@ class ExpandOwnersTest(unittest.TestCase):
     expand_owners.ExpandHistogramsOWNERS(histograms)
     self.assertMultiLineEqual(histograms.toxml(), expected_histograms.toxml())
 
-  @mock.patch('expand_owners.ExtractComponentViaDirmd')
+  @mock.patch(
+      'chromium_src.tools.metrics.histograms.' \
+      'expand_owners.ExtractComponentViaDirmd'
+  )
   def testExpandOwnersWithDuplicateOwners(self, mock_dirmd_extract):
     """Checks that owners are unique."""
     mock_dirmd_extract.return_value = None
@@ -272,7 +283,10 @@ class ExpandOwnersTest(unittest.TestCase):
     expand_owners.ExpandHistogramsOWNERS(histograms)
     self.assertMultiLineEqual(histograms.toxml(), expected_histograms.toxml())
 
-  @mock.patch('expand_owners.ExtractComponentViaDirmd')
+  @mock.patch(
+      'chromium_src.tools.metrics.histograms.' \
+      'expand_owners.ExtractComponentViaDirmd'
+  )
   def testExpandOwnersWithFileDirectiveOWNERSFilePath(self, mock_dirmd_extract):
     """Checks that OWNERS files with file directives are expanded."""
     mock_dirmd_extract.return_value = None
@@ -321,7 +335,10 @@ class ExpandOwnersTest(unittest.TestCase):
     expand_owners.ExpandHistogramsOWNERS(histograms)
     self.assertEqual(histograms.toxml(), expected_histograms.toxml())
 
-  @mock.patch('expand_owners.ExtractComponentViaDirmd')
+  @mock.patch(
+      'chromium_src.tools.metrics.histograms.' \
+      'expand_owners.ExtractComponentViaDirmd'
+  )
   def testExpandOwnersForOWNERSFileWithDuplicateComponents(
       self, mock_dirmd_extract):
     """Checks that only one component tag is added if there are duplicates."""

@@ -125,6 +125,7 @@ bug_691967.pdf mac * * skia
 ch_9_android.pdf mac * * skia
 colorspace.pdf mac * * skia
 colorspace_test1.pdf mac * * skia
+en_fqa2.pdf mac * * skia
 en_system.pdf mac * * skia
 en_tem.pdf mac * * skia
 en_uicase_.pdf mac * * skia
@@ -176,6 +177,7 @@ shading_2_7.pdf mac * * skia
 shading_2_8.pdf mac * * skia
 shading_2_9.pdf mac * * skia
 whats_new_in_v3.0.pdf mac * * skia
+xfa_node_caption.pdf mac * * skia
 zh_file_structure.pdf mac * * skia
 zh_function_list.pdf mac * * skia
 zh_page.pdf mac * * skia

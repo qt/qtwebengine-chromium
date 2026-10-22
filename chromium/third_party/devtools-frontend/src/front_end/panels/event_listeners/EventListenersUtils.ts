@@ -263,7 +263,6 @@ export async function frameworkEventListeners(object: SDK.RemoteObject.RemoteObj
     } = {
       eventListeners,
       internalHandlers: internalHandlers.length ? internalHandlers : undefined,
-      errorString: undefined,
     };
 
     // The logic further up seems to expect that if the internalHandlers is set,

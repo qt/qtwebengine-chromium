@@ -198,7 +198,7 @@ void StartURLLoader(
   const ui::TemplateReplacements* replacements = nullptr;
   const std::string mime_type = source->source()->GetMimeType(request.url);
   if (mime_type == "text/html" || mime_type == "text/css" || replace_in_js)
-    replacements = source->source()->GetReplacements();
+    replacements = source->GetReplacements();
 
   // To keep the same behavior as the old WebUI code, we call the source to get
   // the value for |replacements| on the IO thread. Since |replacements| is
@@ -232,21 +232,6 @@ class WebUIURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
     // network::SelfDeletingURLLoaderFactory::OnDisconnect method.
     new WebUIURLLoaderFactory(ftn->current_frame_host()->GetBrowserContext(),
                               ftn->frame_tree_node_id(), scheme,
-                              std::move(allowed_hosts),
-                              pending_remote.InitWithNewPipeAndPassReceiver());
-    return pending_remote;
-  }
-
-  static mojo::PendingRemote<network::mojom::URLLoaderFactory>
-  CreateForServiceWorker(BrowserContext* browser_context,
-                         const std::string& scheme,
-                         base::flat_set<std::string> allowed_hosts) {
-    mojo::PendingRemote<network::mojom::URLLoaderFactory> pending_remote;
-
-    // The WebUIURLLoaderFactory will delete itself when there are no more
-    // receivers - see the
-    // network::SelfDeletingURLLoaderFactory::OnDisconnect method.
-    new WebUIURLLoaderFactory(browser_context, FrameTreeNodeId(), scheme,
                               std::move(allowed_hosts),
                               pending_remote.InitWithNewPipeAndPassReceiver());
     return pending_remote;
@@ -365,15 +350,6 @@ CreateWebUIURLLoaderFactory(RenderFrameHost* render_frame_host,
                             base::flat_set<std::string> allowed_hosts) {
   return WebUIURLLoaderFactory::CreateForFrame(
       FrameTreeNode::From(render_frame_host), scheme, std::move(allowed_hosts));
-}
-
-mojo::PendingRemote<network::mojom::URLLoaderFactory>
-CreateWebUIServiceWorkerLoaderFactory(
-    BrowserContext* browser_context,
-    const std::string& scheme,
-    base::flat_set<std::string> allowed_hosts) {
-  return WebUIURLLoaderFactory::CreateForServiceWorker(
-      browser_context, scheme, std::move(allowed_hosts));
 }
 
 }  // namespace content

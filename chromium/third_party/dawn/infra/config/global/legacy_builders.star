@@ -115,42 +115,6 @@ luci.builder(
     service_account = "dawn-try-builder@chops-service-accounts.iam.gserviceaccount.com",
 )
 
-luci.builder(
-    name = "cts-roller",
-    bucket = "ci",
-    # Run at 5 UTC on weekdays - which is 10pm PST
-    schedule = "0 5 * * 1-5",
-    executable = "recipe:dawn/roll_cts",
-    execution_timeout = 9 * time.hour,
-    dimensions = {
-        "cpu": "x86-64",
-        "os": get_dimension(os.LINUX),
-        "pool": "luci.flex.ci",
-    },
-    properties = {
-        "gardener_rotations": ["dawn"],
-        "repo_name": "dawn",
-        "runhooks": True,
-        # TODO(crbug.com/343503161): Remove sheriff_rotations after SoM is updated.
-        "sheriff_rotations": ["dawn"],
-    },
-    caches = [
-        swarming.cache("golang"),
-        swarming.cache("gocache"),
-        swarming.cache("nodejs"),
-        swarming.cache("npmcache"),
-    ],
-    notifies = ["gardener-notifier"],
-    service_account = "dawn-automated-expectations@chops-service-accounts.iam.gserviceaccount.com",
-)
-
-luci.console_view_entry(
-    console_view = "ci",
-    builder = "ci/cts-roller",
-    category = "cron|roll",
-    short_name = "cts",
-)
-
 # The following standalone builders have been replaced with functionally
 # equivalent ones using the gn_v2 recipe. See crbug.com/385317083.
 # * cron-linux-clang-rel-x64

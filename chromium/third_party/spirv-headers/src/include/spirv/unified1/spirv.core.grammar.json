@@ -5719,6 +5719,17 @@
       "version" : "None"
     },
     {
+      "opname" : "OpAbortKHR",
+      "class"  : "Control-Flow",
+      "opcode" : 5121,
+      "operands" : [
+        { "kind" : "IdRef", "name" : "Message Type" },
+        { "kind" : "IdRef", "name" : "Message'" }
+      ],
+      "capabilities" : [ "AbortKHR" ],
+      "version" : "None"
+    },
+    {
       "opname" : "OpUntypedImageTexelPointerEXT",
       "class"  : "Memory",
       "opcode" : 5126,
@@ -5755,6 +5766,55 @@
         { "kind" : "IdRef", "name" : "Type" }
       ],
       "capabilities": [ "DescriptorHeapEXT" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpConstantDataKHR",
+      "class"  : "Constant-Creation",
+      "opcode" : 5147,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "LiteralString", "name" : "Data" }
+      ],
+      "capabilities" : [ "ConstantDataKHR" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpSpecConstantDataKHR",
+      "class"  : "Constant-Creation",
+      "opcode" : 5148,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "LiteralString", "name" : "Data" }
+      ],
+      "capabilities" : [ "ConstantDataKHR" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpPoisonKHR",
+      "class" : "Miscellaneous",
+      "opcode" : 5158,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" }
+      ],
+      "capabilities" : [ "PoisonFreezeKHR" ],
+      "provisional" : true,
+      "version" : "None"
+    },
+    {
+      "opname" : "OpFreezeKHR",
+      "class" : "Miscellaneous",
+      "opcode" : 5159,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef", "name" : "Value" }
+      ],
+      "capabilities" : [ "PoisonFreezeKHR" ],
+      "provisional" : true,
       "version" : "None"
     },
     {
@@ -11728,6 +11788,48 @@
       "capabilities" : [ "BindlessImagesINTEL" ],
       "provisional"  : true,
       "version" : "None"
+    },
+    {
+      "opname" : "OpFDot2MixAcc32VALVE",
+      "class"  : "Reserved",
+      "opcode" : 6916,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef", "name" : "Vector 1" },
+        { "kind" : "IdRef", "name" : "Vector 2" },
+        { "kind" : "IdRef", "name" : "Accumulator" }
+      ],
+      "capabilities" : [ "DotProductFloat16AccFloat32VALVE", "DotProductBFloat16AccVALVE" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpFDot2MixAcc16VALVE",
+      "class"  : "Reserved",
+      "opcode" : 6917,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef", "name" : "Vector 1" },
+        { "kind" : "IdRef", "name" : "Vector 2" },
+        { "kind" : "IdRef", "name" : "Accumulator" }
+      ],
+      "capabilities" : [ "DotProductFloat16AccFloat16VALVE", "DotProductBFloat16AccVALVE" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpFDot4MixAcc32VALVE",
+      "class"  : "Reserved",
+      "opcode" : 6918,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef", "name" : "Vector 1" },
+        { "kind" : "IdRef", "name" : "Vector 2" },
+        { "kind" : "IdRef", "name" : "Accumulator" }
+      ],
+      "capabilities" : [ "DotProductFloat8AccFloat32VALVE" ],
+      "version" : "None"
     }
   ],
   "operand_kinds" : [
@@ -13236,6 +13338,13 @@
             { "kind" : "IdRef", "name" : "Node Name" },
             { "kind" : "IdRef", "name" : "Shader Index" }
           ],
+          "provisional" : true,
+          "version" : "None"
+        },
+        {
+          "enumerant" : "ArithmeticPoisonKHR",
+          "value" : 5157,
+          "capabilities" : [ "PoisonFreezeKHR" ],
           "provisional" : true,
           "version" : "None"
         },
@@ -15055,6 +15164,12 @@
           "parameters" : [
             { "kind" : "IdRef", "name" : "Byte Offset" }
           ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "UTFEncodedKHR",
+          "value" : 5145,
+          "capabilities" : [ "ConstantDataKHR" ],
           "version" : "None"
         },
         {
@@ -17564,10 +17679,29 @@
           "version" : "None"
         },
         {
+          "enumerant" : "AbortKHR",
+          "value" : 5120,
+          "extensions" : [ "SPV_KHR_abort" ],
+          "version" : "None"
+        },
+        {
           "enumerant" : "DescriptorHeapEXT",
           "value": 5128,
           "capabilities" : [ "UntypedPointersKHR" ],
           "extensions" : [ "SPV_EXT_descriptor_heap" ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "ConstantDataKHR",
+          "value" : 5146,
+          "extensions" : [ "SPV_KHR_constant_data" ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "PoisonFreezeKHR",
+          "value" : 5156,
+          "extensions" : [ "SPV_KHR_poison_freeze" ],
+          "provisional" : true,
           "version" : "None"
         },
         {
@@ -18560,6 +18694,34 @@
           "value" : 6528,
           "extensions" : [ "SPV_INTEL_bindless_images" ],
           "provisional" : true,
+          "version" : "None"
+        },
+        {
+          "enumerant" : "DotProductFloat16AccFloat32VALVE",
+          "value" : 6912,
+          "capabilities" : [ "Float16" ],
+          "extensions" : [ "SPV_VALVE_mixed_float_dot_product" ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "DotProductFloat16AccFloat16VALVE",
+          "value" : 6913,
+          "capabilities" : [ "Float16" ],
+          "extensions" : [ "SPV_VALVE_mixed_float_dot_product" ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "DotProductBFloat16AccVALVE",
+          "value" : 6914,
+          "capabilities" : [ "BFloat16TypeKHR" ],
+          "extensions" : [ "SPV_VALVE_mixed_float_dot_product" ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "DotProductFloat8AccFloat32VALVE",
+          "value" : 6915,
+          "capabilities" : [ "Float8EXT" ],
+          "extensions" : [ "SPV_VALVE_mixed_float_dot_product" ],
           "version" : "None"
         }
       ]

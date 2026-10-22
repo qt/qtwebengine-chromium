@@ -5,6 +5,8 @@
 #include "tools/cddl/parse.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstring>
 #include <iostream>
 #include <iterator>
 #include <memory>
@@ -12,8 +14,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/strings/ascii.h"
-#include "absl/strings/match.h"
 #include "tools/cddl/logging.h"
 
 static_assert(sizeof(std::string_view::size_type) == sizeof(size_t),
@@ -25,20 +25,28 @@ static_assert(sizeof(std::string_view::size_type) == sizeof(size_t),
 // grammar.abnf.  Similarly, methods like ParseMemberKey1 attempt to parse the
 // first choice in the memberkey rule.
 struct Parser {
-  const char* data;
+  std::string_view data;
   std::vector<std::unique_ptr<AstNode>> nodes;
 };
+
+std::string_view StripLeadingAsciiWhitespace(std::string_view view) {
+  while (!view.empty() &&
+         std::isspace(static_cast<unsigned char>(view.front()))) {
+    view.remove_prefix(1);
+  }
+  return view;
+}
 
 AstNode* AddNode(Parser* p,
                  AstNode::Type type,
                  std::string_view text,
                  AstNode* children = nullptr) {
-  p->nodes.emplace_back(new AstNode);
+  p->nodes.push_back(std::make_unique<AstNode>());
   AstNode* node = p->nodes.back().get();
   node->children = children;
   node->sibling = nullptr;
   node->type = type;
-  node->text = std::string(text);
+  node->text = text;
   return node;
 }
 
@@ -48,7 +56,8 @@ bool IsBinaryDigit(char x) {
 
 // Determines if the given character matches regex '[a-zA-Z@_$]'.
 bool IsExtendedAlpha(char x) {
-  return absl::ascii_isalpha(x) || x == '@' || x == '_' || x == '$';
+  return std::isalpha(static_cast<unsigned char>(x)) || x == '@' || x == '_' ||
+         x == '$';
 }
 
 bool IsNewline(char x) {
@@ -61,33 +70,33 @@ bool IsWhitespaceOrSemicolon(char c) {
 
 std::string_view SkipNewline(std::string_view view) {
   size_t index = 0;
-  while (IsNewline(view[index])) {
+  while (index < view.length() && IsNewline(view[index])) {
     ++index;
   }
 
   return view.substr(index);
 }
 
-std::optional<std::string> ParseTypeKeyFromComment(Parser* p);
+std::optional<std::string_view> ParseTypeKeyFromComment(Parser* p);
 
 // Skips over a comment that makes up the remainder of the current line.
 std::string_view SkipComment(std::string_view view, bool skip_type_key = true) {
   size_t index = 0;
-  if (view[index] == ';') {
+  if (!view.empty() && view[index] == ';') {
     if (!skip_type_key) {
-      Parser p = {view.data()};
+      Parser p = {view};
       if (ParseTypeKeyFromComment(&p).has_value()) {
         return view;
       }
     }
 
     ++index;
-    while (!IsNewline(view[index]) && index < view.length()) {
-      CHECK(absl::ascii_isprint(view[index]));
+    while (index < view.length() && !IsNewline(view[index])) {
+      CHECK(std::isprint(static_cast<unsigned char>(view[index])));
       ++index;
     }
 
-    while (IsNewline(view[index])) {
+    while (index < view.length() && IsNewline(view[index])) {
       ++index;
     }
   }
@@ -102,22 +111,22 @@ void SkipWhitespaceImpl(Parser* p, bool skip_type_key = true) {
   while (true) {
     new_view = SkipComment(view, skip_type_key);
     if (new_view.data() == view.data()) {
-      new_view = absl::StripLeadingAsciiWhitespace(view);
+      new_view = StripLeadingAsciiWhitespace(view);
     }
 
-    if (new_view == view) {
+    if (new_view.data() == view.data() && new_view.size() == view.size()) {
       break;
     }
 
     view = new_view;
   }
 
-  p->data = new_view.data();
+  p->data = new_view;
 }
 
 void SkipWhitespace(Parser* p, bool skip_comments = true) {
   if (!skip_comments) {
-    p->data = absl::StripLeadingAsciiWhitespace(p->data).data();
+    p->data = StripLeadingAsciiWhitespace(p->data);
     return;
   }
 
@@ -131,15 +140,15 @@ void SkipStartWhitespace(Parser* p) {
 }
 
 bool TrySkipNewline(Parser* p) {
-  auto* new_view = SkipNewline(p->data).data();
-  bool is_changed = p->data == new_view;
+  std::string_view new_view = SkipNewline(p->data);
+  bool is_changed = p->data.size() != new_view.size();
   p->data = new_view;
   return is_changed;
 }
 
 bool TrySkipCharacter(Parser* p, char c) {
-  if (p->data[0] == c) {
-    p->data++;
+  if (!p->data.empty() && p->data.front() == c) {
+    p->data.remove_prefix(1);
     return true;
   }
 
@@ -154,17 +163,19 @@ enum class AssignType {
 };
 
 AssignType ParseAssignmentType(Parser* p) {
-  const char* it = p->data;
+  std::string_view it = p->data;
+  if (it.empty()) {
+    return AssignType::kInvalid;
+  }
   if (it[0] == '=') {
-    p->data = it + 1;
+    p->data.remove_prefix(1);
     return AssignType::kAssign;
   } else if (it[0] == '/') {
-    ++it;
-    if (it[0] == '/' && it[1] == '=') {
-      p->data = it + 2;
+    if (it.size() >= 3 && it[1] == '/' && it[2] == '=') {
+      p->data.remove_prefix(3);
       return AssignType::kAssignG;
-    } else if (it[0] == '=') {
-      p->data = it + 1;
+    } else if (it.size() >= 2 && it[1] == '=') {
+      p->data.remove_prefix(2);
       return AssignType::kAssignT;
     }
   }
@@ -180,14 +191,15 @@ void SkipUint(Parser* p) {
 
   bool is_binary = false;
   size_t index = 0;
-  if (absl::StartsWith(view, "0b")) {
+  if (view.starts_with("0b")) {
     is_binary = true;
     index = 2;
-  } else if (absl::StartsWith(view, "0x")) {
+  } else if (view.starts_with("0x")) {
     index = 2;
   }
 
-  while (index < view.length() && absl::ascii_isdigit(view[index])) {
+  while (index < view.length() &&
+         std::isdigit(static_cast<unsigned char>(view[index]))) {
     if (is_binary) {
       CHECK(IsBinaryDigit(view[index]));
     }
@@ -195,25 +207,28 @@ void SkipUint(Parser* p) {
     ++index;
   }
 
-  p->data = view.substr(index).data();
+  p->data = view.substr(index);
 }
 
 AstNode* ParseNumber(Parser* p) {
   Parser p_speculative{p->data};
-  if (!absl::ascii_isdigit(p_speculative.data[0]) &&
+  if (p_speculative.data.empty()) {
+    return nullptr;
+  }
+  if (!std::isdigit(static_cast<unsigned char>(p_speculative.data[0])) &&
       p_speculative.data[0] != '-') {
     // TODO(btolsch): Add support for hexfloat, fraction, exponent.
     return nullptr;
   }
   if (p_speculative.data[0] == '-') {
-    ++p_speculative.data;
+    p_speculative.data.remove_prefix(1);
   }
 
   SkipUint(&p_speculative);
 
   AstNode* node =
       AddNode(p, AstNode::Type::kNumber,
-              std::string_view(p->data, p_speculative.data - p->data));
+              p->data.substr(0, p->data.size() - p_speculative.data.size()));
   p->data = p_speculative.data;
   std::move(p_speculative.nodes.begin(), p_speculative.nodes.end(),
             std::back_inserter(p->nodes));
@@ -232,9 +247,10 @@ AstNode* ParseBytes(Parser* p) {
 // This is not a guarantee however, since 'h' and 'b' could also indicate the
 // start of an ID, but value needs to be tried first.
 bool IsValue(char c) {
-  return (c == '-' || absl::ascii_isdigit(c) ||  // FIRST(number)
-          c == '"' ||                            // FIRST(text)
-          c == '\'' || c == 'h' || c == 'b');    // FIRST(bytes)
+  return (c == '-' ||
+          std::isdigit(static_cast<unsigned char>(c)) ||  // FIRST(number)
+          c == '"' ||                                     // FIRST(text)
+          c == '\'' || c == 'h' || c == 'b');             // FIRST(bytes)
 }
 
 AstNode* ParseValue(Parser* p) {
@@ -253,45 +269,51 @@ AstNode* ParseValue(Parser* p) {
 // creates a new Occurrence node if so.
 AstNode* ParseOccur(Parser* p) {
   Parser p_speculative{p->data};
+  if (p_speculative.data.empty()) {
+    return nullptr;
+  }
 
-  if (*p_speculative.data == '?' || *p_speculative.data == '+') {
-    p_speculative.data++;
+  if (p_speculative.data[0] == '?' || p_speculative.data[0] == '+') {
+    p_speculative.data.remove_prefix(1);
   } else {
     SkipUint(&p_speculative);
-    if (*p_speculative.data++ != '*') {
+    if (p_speculative.data.empty() || p_speculative.data[0] != '*') {
       return nullptr;
     }
+    p_speculative.data.remove_prefix(1);
     SkipUint(&p_speculative);
   }
 
   AstNode* node =
       AddNode(p, AstNode::Type::kOccur,
-              std::string_view(p->data, p_speculative.data - p->data));
+              p->data.substr(0, p->data.size() - p_speculative.data.size()));
   p->data = p_speculative.data;
   return node;
 }
 
-std::optional<std::string> ParseTypeKeyFromComment(Parser* p) {
+std::optional<std::string_view> ParseTypeKeyFromComment(Parser* p) {
   Parser p_speculative{p->data};
   if (!TrySkipCharacter(&p_speculative, ';')) {
     return std::nullopt;
   }
 
   SkipWhitespace(&p_speculative, false);
-  const char kTypeKeyPrefix[] = "type key";
-  if (!absl::StartsWith(p_speculative.data, kTypeKeyPrefix)) {
+  constexpr std::string_view kTypeKeyPrefix = "type key";
+  if (!p_speculative.data.starts_with(kTypeKeyPrefix)) {
     return std::nullopt;
   }
-  p_speculative.data += strlen(kTypeKeyPrefix);
+  p_speculative.data.remove_prefix(kTypeKeyPrefix.size());
 
   SkipWhitespace(&p_speculative, false);
   Parser p_speculative2{p_speculative.data};
-  for (; absl::ascii_isdigit(p_speculative2.data[0]); p_speculative2.data++) {
+  while (!p_speculative2.data.empty() &&
+         std::isdigit(static_cast<unsigned char>(p_speculative2.data[0]))) {
+    p_speculative2.data.remove_prefix(1);
   }
-  auto result = std::string_view(p_speculative.data,
-                                 p_speculative2.data - p_speculative.data);
+  auto result = p_speculative.data.substr(
+      0, p_speculative.data.size() - p_speculative2.data.size());
   p->data = p_speculative2.data;
-  return std::string(result.data()).substr(0, result.length());
+  return result;
 }
 
 AstNode* ParseMemberKeyFromComment(Parser* p) {
@@ -307,7 +329,11 @@ AstNode* ParseMemberKeyFromComment(Parser* p) {
     return nullptr;
   }
 
-  SkipWhitespace(&p_speculative, false);
+  while (!p_speculative.data.empty() && (p_speculative.data.front() == ' ' ||
+                                         p_speculative.data.front() == '\t')) {
+    p_speculative.data.remove_prefix(1);
+  }
+
   if (!TrySkipNewline(&p_speculative)) {
     return nullptr;
   }
@@ -328,12 +354,15 @@ AstNode* ParseMemberKey1(Parser* p) {
 
   SkipWhitespace(&p_speculative);
 
-  if (*p_speculative.data++ != '=' || *p_speculative.data++ != '>') {
+  if (p_speculative.data.size() < 2 || p_speculative.data[0] != '=' ||
+      p_speculative.data[1] != '>') {
     return nullptr;
   }
+  p_speculative.data.remove_prefix(2);
+
   AstNode* node =
       AddNode(p, AstNode::Type::kMemberKey,
-              std::string_view(p->data, p_speculative.data - p->data));
+              p->data.substr(0, p->data.size() - p_speculative.data.size()));
   p->data = p_speculative.data;
   std::move(p_speculative.nodes.begin(), p_speculative.nodes.end(),
             std::back_inserter(p->nodes));
@@ -349,13 +378,14 @@ AstNode* ParseMemberKey2(Parser* p) {
 
   SkipWhitespace(&p_speculative);
 
-  if (*p_speculative.data++ != ':') {
+  if (p_speculative.data.empty() || p_speculative.data[0] != ':') {
     return nullptr;
   }
+  p_speculative.data.remove_prefix(1);
 
-  AstNode* node =
-      AddNode(p, AstNode::Type::kMemberKey,
-              std::string_view(p->data, p_speculative.data - p->data), id);
+  AstNode* node = AddNode(
+      p, AstNode::Type::kMemberKey,
+      p->data.substr(0, p->data.size() - p_speculative.data.size()), id);
   p->data = p_speculative.data;
   std::move(p_speculative.nodes.begin(), p_speculative.nodes.end(),
             std::back_inserter(p->nodes));
@@ -371,12 +401,14 @@ AstNode* ParseMemberKey3(Parser* p) {
 
   SkipWhitespace(&p_speculative);
 
-  if (*p_speculative.data++ != ':') {
+  if (p_speculative.data.empty() || p_speculative.data[0] != ':') {
     return nullptr;
   }
-  AstNode* node =
-      AddNode(p, AstNode::Type::kMemberKey,
-              std::string_view(p->data, p_speculative.data - p->data), value);
+  p_speculative.data.remove_prefix(1);
+
+  AstNode* node = AddNode(
+      p, AstNode::Type::kMemberKey,
+      p->data.substr(0, p->data.size() - p_speculative.data.size()), value);
   p->data = p_speculative.data;
   std::move(p_speculative.nodes.begin(), p_speculative.nodes.end(),
             std::back_inserter(p->nodes));
@@ -400,8 +432,8 @@ AstNode* ParseGroupEntry(Parser* p);
 
 bool SkipOptionalComma(Parser* p) {
   SkipWhitespace(p);
-  if (p->data[0] == ',') {
-    ++p->data;
+  if (!p->data.empty() && p->data[0] == ',') {
+    p->data.remove_prefix(1);
     SkipWhitespace(p);
   }
   return true;
@@ -415,17 +447,17 @@ AstNode* ParseGroupChoice(Parser* p) {
   AstNode* tail = nullptr;
   AstNode* group_node =
       AddNode(&p_speculative, AstNode::Type::kGrpchoice, std::string_view());
-  const char* group_node_text = p_speculative.data;
+  std::string_view group_node_text = p_speculative.data;
   while (true) {
-    const char* orig = p_speculative.data;
+    std::string_view orig = p_speculative.data;
     AstNode* group_entry = ParseGroupEntry(&p_speculative);
     if (!group_entry) {
       p_speculative.data = orig;
       if (!group_node->children) {
         return nullptr;
       }
-      group_node->text =
-          std::string(group_node_text, p_speculative.data - group_node_text);
+      group_node->text = group_node_text.substr(
+          0, group_node_text.size() - p_speculative.data.size());
       p->data = p_speculative.data;
       std::move(p_speculative.nodes.begin(), p_speculative.nodes.end(),
                 std::back_inserter(p->nodes));
@@ -445,26 +477,26 @@ AstNode* ParseGroupChoice(Parser* p) {
 }
 
 AstNode* ParseGroup(Parser* p) {
-  const char* orig = p->data;
+  std::string_view orig = p->data;
   AstNode* group_choice = ParseGroupChoice(p);
   if (!group_choice) {
     return nullptr;
   }
   return AddNode(p, AstNode::Type::kGroup,
-                 std::string_view(orig, p->data - orig), group_choice);
+                 orig.substr(0, orig.size() - p->data.size()), group_choice);
 }
 
 // Parse optional range operator .. (inlcusive) or ... (exclusive)
 // ABNF rule: rangeop = "..." / ".."
 AstNode* ParseRangeop(Parser* p) {
-  std::string_view view(p->data);
-  if (absl::StartsWith(view, "...")) {
+  std::string_view view = p->data;
+  if (view.starts_with("...")) {
     // rangeop ...
-    p->data += 3;
+    p->data.remove_prefix(3);
     return AddNode(p, AstNode::Type::kRangeop, view.substr(0, 3));
-  } else if (absl::StartsWith(view, "..")) {
+  } else if (view.starts_with("..")) {
     // rangeop ..
-    p->data += 2;
+    p->data.remove_prefix(2);
     return AddNode(p, AstNode::Type::kRangeop, view.substr(0, 2));
   }
   return nullptr;
@@ -473,23 +505,27 @@ AstNode* ParseRangeop(Parser* p) {
 // Parse optional control operator .id
 // ABNF rule: ctlop = "." id
 AstNode* ParseCtlop(Parser* p) {
-  std::string_view view(p->data);
-  auto* initial_data = p->data;
-  if (!absl::StartsWith(view, ".")) {
+  std::string_view view = p->data;
+  std::string_view initial_data = p->data;
+  if (!view.starts_with(".")) {
     return nullptr;
   }
-  ++p->data;
+  p->data.remove_prefix(1);
   AstNode* id = ParseId(p);
   if (!id) {
     return nullptr;
   }
   return AddNode(p, AstNode::Type::kCtlop,
-                 view.substr(0, p->data - initial_data), id);
+                 view.substr(0, initial_data.size() - p->data.size()), id);
 }
 
 AstNode* ParseType2(Parser* p) {
-  const char* orig = p->data;
-  const char* it = p->data;
+  std::string_view orig = p->data;
+  std::string_view it = p->data;
+  if (it.empty()) {
+    return nullptr;
+  }
+
   AstNode* node = AddNode(p, AstNode::Type::kType2, std::string_view());
   if (IsValue(it[0])) {
     AstNode* value = ParseValue(p);
@@ -512,7 +548,7 @@ AstNode* ParseType2(Parser* p) {
     if (!id) {
       return nullptr;
     }
-    if (p->data[0] == '<') {
+    if (!p->data.empty() && p->data[0] == '<') {
       std::cerr << "It looks like you're trying to use a generic argument, "
                    "which we don't support"
                 << std::endl;
@@ -521,9 +557,9 @@ AstNode* ParseType2(Parser* p) {
     id->type = AstNode::Type::kTypename;
     node->children = id;
   } else if (it[0] == '(') {
-    p->data = it + 1;
+    p->data.remove_prefix(1);
     SkipWhitespace(p);
-    if (p->data[0] == ')') {
+    if (!p->data.empty() && p->data[0] == ')') {
       std::cerr << "It looks like you're trying to provide an empty Type (), "
                    "which we don't support"
                 << std::endl;
@@ -534,15 +570,15 @@ AstNode* ParseType2(Parser* p) {
       return nullptr;
     }
     SkipWhitespace(p);
-    if (p->data[0] != ')') {
+    if (p->data.empty() || p->data[0] != ')') {
       return nullptr;
     }
-    ++p->data;
+    p->data.remove_prefix(1);
     node->children = type;
   } else if (it[0] == '{') {
-    p->data = it + 1;
+    p->data.remove_prefix(1);
     SkipWhitespace(p);
-    if (p->data[0] == '}') {
+    if (!p->data.empty() && p->data[0] == '}') {
       std::cerr << "It looks like you're trying to provide an empty Group {}, "
                    "which we don't support"
                 << std::endl;
@@ -553,43 +589,43 @@ AstNode* ParseType2(Parser* p) {
       return nullptr;
     }
     SkipWhitespace(p);
-    if (p->data[0] != '}') {
+    if (p->data.empty() || p->data[0] != '}') {
       return nullptr;
     }
-    ++p->data;
+    p->data.remove_prefix(1);
     node->children = group;
   } else if (it[0] == '[') {
-    p->data = it + 1;
+    p->data.remove_prefix(1);
     SkipWhitespace(p);
     AstNode* group = ParseGroup(p);
     if (!group) {
       return nullptr;
     }
     SkipWhitespace(p);
-    if (p->data[0] != ']') {
+    if (p->data.empty() || p->data[0] != ']') {
       return nullptr;
     }
-    ++p->data;
+    p->data.remove_prefix(1);
     node->children = group;
   } else if (it[0] == '~') {
-    p->data = it + 1;
+    p->data.remove_prefix(1);
     SkipWhitespace(p);
     if (!ParseId(p)) {
       return nullptr;
     }
-    if (p->data[0] == '<') {
+    if (!p->data.empty() && p->data[0] == '<') {
       std::cerr << "It looks like you're trying to use a generic argument, "
                    "which we don't support"
                 << std::endl;
       return nullptr;
     }
   } else if (it[0] == '&') {
-    p->data = it + 1;
+    p->data.remove_prefix(1);
     SkipWhitespace(p);
-    if (p->data[0] == '(') {
-      ++p->data;
+    if (!p->data.empty() && p->data[0] == '(') {
+      p->data.remove_prefix(1);
       SkipWhitespace(p);
-      if (p->data[0] == ')') {
+      if (!p->data.empty() && p->data[0] == ')') {
         std::cerr << "It looks like you're trying to provide an empty Type &(),"
                      " which we don't support"
                   << std::endl;
@@ -600,15 +636,15 @@ AstNode* ParseType2(Parser* p) {
         return nullptr;
       }
       SkipWhitespace(p);
-      if (p->data[0] != ')') {
+      if (p->data.empty() || p->data[0] != ')') {
         return nullptr;
       }
-      ++p->data;
+      p->data.remove_prefix(1);
       node->children = group;
     } else {
       AstNode* id = ParseId(p);
       if (id) {
-        if (p->data[0] == '<') {
+        if (!p->data.empty() && p->data[0] == '<') {
           std::cerr << "It looks like you're trying to use a generic argument, "
                        "which we don't support"
                     << std::endl;
@@ -621,44 +657,48 @@ AstNode* ParseType2(Parser* p) {
       }
     }
   } else if (it[0] == '#') {
-    ++it;
-    if (it[0] == '6') {
-      ++it;
-      if (it[0] == '.') {
-        p->data = it + 1;
+    p->data.remove_prefix(1);
+    if (!p->data.empty() && p->data[0] == '6') {
+      p->data.remove_prefix(1);
+      if (!p->data.empty() && p->data[0] == '.') {
+        p->data.remove_prefix(1);
         SkipUint(p);
-        it = p->data;
       }
-      if (it[0] != '(') {
+      if (p->data.empty() || p->data[0] != '(') {
         return nullptr;
       }
-      p->data = ++it;
+      p->data.remove_prefix(1);
       SkipWhitespace(p);
       AstNode* type = ParseType(p);
       if (!type) {
         return nullptr;
       }
       SkipWhitespace(p);
-      if (p->data[0] != ')') {
+      if (p->data.empty() || p->data[0] != ')') {
         return nullptr;
       }
-      ++p->data;
+      p->data.remove_prefix(1);
       node->children = type;
-    } else if (absl::ascii_isdigit(it[0])) {
+    } else if (!p->data.empty() &&
+               std::isdigit(static_cast<unsigned char>(p->data[0]))) {
       std::cerr << "# MAJOR unimplemented" << std::endl;
       return nullptr;
     } else {
-      p->data = it;
+      // '#' followed by something else? "p->data = it" logic in original was:
+      // it was incremented.
+      // If we fall through, p->data is updated.
+      // Original: p->data = it; (it was incremented at start of # block)
+      // Here p->data is already incremented.
     }
   } else {
     return nullptr;
   }
-  node->text = std::string(orig, p->data - orig);
+  node->text = orig.substr(0, orig.size() - p->data.size());
   return node;
 }
 
 AstNode* ParseType1(Parser* p) {
-  const char* orig = p->data;
+  std::string_view orig = p->data;
   AstNode* type2 = ParseType2(p);
   if (!type2) {
     return nullptr;
@@ -678,7 +718,7 @@ AstNode* ParseType1(Parser* p) {
     rangeop_or_ctlop->sibling = param;
   }
   return AddNode(p, AstNode::Type::kType1,
-                 std::string_view(orig, p->data - orig), type2);
+                 orig.substr(0, orig.size() - p->data.size()), type2);
 }
 
 // Different valid types for a call are specified as type1 / type2, so we split
@@ -694,8 +734,8 @@ AstNode* ParseType(Parser* p, bool skip_comments) {
   SkipWhitespace(&p_speculative, skip_comments);
 
   AstNode* tail = type1;
-  while (*p_speculative.data == '/') {
-    ++p_speculative.data;
+  while (!p_speculative.data.empty() && p_speculative.data[0] == '/') {
+    p_speculative.data.remove_prefix(1);
     SkipWhitespace(&p_speculative, skip_comments);
 
     AstNode* next_type1 = ParseType1(&p_speculative);
@@ -708,9 +748,9 @@ AstNode* ParseType(Parser* p, bool skip_comments) {
   }
 
   // Create a new AstNode with all parsed types.
-  AstNode* node =
-      AddNode(p, AstNode::Type::kType,
-              std::string_view(p->data, p_speculative.data - p->data), type1);
+  AstNode* node = AddNode(
+      p, AstNode::Type::kType,
+      p->data.substr(0, p->data.size() - p_speculative.data.size()), type1);
   p->data = p_speculative.data;
   std::move(p_speculative.nodes.begin(), p_speculative.nodes.end(),
             std::back_inserter(p->nodes));
@@ -718,33 +758,35 @@ AstNode* ParseType(Parser* p, bool skip_comments) {
 }
 
 AstNode* ParseId(Parser* p) {
-  const char* id = p->data;
+  std::string_view id = p->data;
 
   // If the id doesnt start with a valid name character, return null.
-  if (!IsExtendedAlpha(id[0])) {
+  if (id.empty() || !IsExtendedAlpha(id[0])) {
     return nullptr;
   }
 
   // Read through the name character by character and make sure it's valid.
-  const char* it = id + 1;
+  size_t index = 1;
   while (true) {
-    if (it[0] == '-' || it[0] == '.') {
-      ++it;
-      if (!IsExtendedAlpha(it[0]) && !absl::ascii_isdigit(it[0])) {
+    if (index < id.size() && (id[index] == '-' || id[index] == '.')) {
+      ++index;
+      if (index < id.size() && !IsExtendedAlpha(id[index]) &&
+          !std::isdigit(static_cast<unsigned char>(id[index]))) {
         return nullptr;
       }
-      ++it;
-    } else if (IsExtendedAlpha(it[0]) || absl::ascii_isdigit(it[0])) {
-      ++it;
+      ++index;
+    } else if (index < id.size() &&
+               (IsExtendedAlpha(id[index]) ||
+                std::isdigit(static_cast<unsigned char>(id[index])))) {
+      ++index;
     } else {
       break;
     }
   }
 
   // Create and return a new node with the parsed data.
-  AstNode* node =
-      AddNode(p, AstNode::Type::kId, std::string_view(p->data, it - p->data));
-  p->data = it;
+  AstNode* node = AddNode(p, AstNode::Type::kId, p->data.substr(0, index));
+  p->data.remove_prefix(index);
   return node;
 }
 
@@ -768,7 +810,7 @@ AstNode* UpdateNodesForGroupEntry(Parser* p,
   } else {
     node->children = type;
   }
-  node->text = std::string(p->data, p_speculative->data - p->data);
+  node->text = p->data.substr(0, p->data.size() - p_speculative->data.size());
   p->data = p_speculative->data;
   std::move(p_speculative->nodes.begin(), p_speculative->nodes.end(),
             std::back_inserter(p->nodes));
@@ -787,9 +829,10 @@ AstNode* ParseGroupEntryWithNameInComment(Parser* p) {
     return nullptr;
   }
   SkipWhitespace(&p_speculative, false);
-  if (*p_speculative.data++ != ':') {
+  if (p_speculative.data.empty() || p_speculative.data[0] != ':') {
     return nullptr;
   }
+  p_speculative.data.remove_prefix(1);
   SkipWhitespace(&p_speculative, false);
   AstNode* type = ParseType(&p_speculative, false);
   if (!type) {
@@ -840,7 +883,7 @@ AstNode* ParseGroupEntryWithGroupReference(Parser* p) {
     return nullptr;
   }
   id->type = AstNode::Type::kGroupname;
-  if (*p_speculative.data == '<') {
+  if (!p_speculative.data.empty() && p_speculative.data[0] == '<') {
     std::cerr << "It looks like you're trying to use a generic argument, "
                  "which we don't support"
               << std::endl;
@@ -855,7 +898,7 @@ AstNode* ParseGroupEntryWithGroupReference(Parser* p) {
   } else {
     node->children = id;
   }
-  node->text = std::string(p->data, p_speculative.data - p->data);
+  node->text = p->data.substr(0, p->data.size() - p_speculative.data.size());
   p->data = p_speculative.data;
   std::move(p_speculative.nodes.begin(), p_speculative.nodes.end(),
             std::back_inserter(p->nodes));
@@ -870,10 +913,10 @@ AstNode* ParseGroupEntryWithInlineGroupDefinition(Parser* p) {
   if (occur) {
     SkipWhitespace(&p_speculative);
   }
-  if (*p_speculative.data != '(') {
+  if (p_speculative.data.empty() || p_speculative.data[0] != '(') {
     return nullptr;
   }
-  ++p_speculative.data;
+  p_speculative.data.remove_prefix(1);
   SkipWhitespace(&p_speculative);
   AstNode* group = ParseGroup(&p_speculative);  // Recursive call here.
   if (!group) {
@@ -881,10 +924,10 @@ AstNode* ParseGroupEntryWithInlineGroupDefinition(Parser* p) {
   }
 
   SkipWhitespace(&p_speculative);
-  if (*p_speculative.data != ')') {
+  if (p_speculative.data.empty() || p_speculative.data[0] != ')') {
     return nullptr;
   }
-  ++p_speculative.data;
+  p_speculative.data.remove_prefix(1);
   AstNode* node = AddNode(p, AstNode::Type::kGrpent, std::string_view());
   if (occur) {
     node->children = occur;
@@ -892,7 +935,7 @@ AstNode* ParseGroupEntryWithInlineGroupDefinition(Parser* p) {
   } else {
     node->children = group;
   }
-  node->text = std::string(p->data, p_speculative.data - p->data);
+  node->text = p->data.substr(0, p->data.size() - p_speculative.data.size());
   p->data = p_speculative.data;
   std::move(p_speculative.nodes.begin(), p_speculative.nodes.end(),
             std::back_inserter(p->nodes));
@@ -926,10 +969,10 @@ AstNode* ParseGroupEntry(Parser* p) {
 }
 
 AstNode* ParseRule(Parser* p) {
-  const char* start = p->data;
+  std::string_view start = p->data;
 
   // Parse the type key, if it's present
-  std::optional<std::string> type_key = ParseTypeKeyFromComment(p);
+  std::optional<std::string_view> type_key = ParseTypeKeyFromComment(p);
   SkipWhitespace(p);
 
   // Use the parser to extract the id and data.
@@ -938,7 +981,7 @@ AstNode* ParseRule(Parser* p) {
     Logger::Error("No id found!");
     return nullptr;
   }
-  if (p->data[0] == '<') {
+  if (!p->data.empty() && p->data[0] == '<') {
     std::cerr << "It looks like you're trying to use a generic parameter, "
                  "which we don't support"
               << std::endl;
@@ -947,7 +990,7 @@ AstNode* ParseRule(Parser* p) {
 
   // Determine the type of assignment being done to this variable name (ie '=').
   SkipWhitespace(p);
-  const char* assign_start = p->data;
+  std::string_view assign_start = p->data;
   AssignType assign_type = ParseAssignmentType(p);
   if (assign_type != AssignType::kAssign) {
     Logger::Error("No assignment operator found! assign_type: " +
@@ -959,7 +1002,7 @@ AstNode* ParseRule(Parser* p) {
               (assign_type == AssignType::kAssign)    ? AstNode::Type::kAssign
               : (assign_type == AssignType::kAssignT) ? AstNode::Type::kAssignT
                                                       : AstNode::Type::kAssignG,
-              std::string_view(assign_start, p->data - assign_start));
+              assign_start.substr(0, assign_start.size() - p->data.size()));
   id->sibling = assign_node;
 
   // Parse the object type being assigned.
@@ -979,17 +1022,21 @@ AstNode* ParseRule(Parser* p) {
 
   // Return the results.
   auto rule_node = AddNode(p, AstNode::Type::kRule,
-                           std::string_view(start, p->data - start), id);
+                           start.substr(0, start.size() - p->data.size()), id);
   rule_node->type_key = type_key;
   return rule_node;
 }
 
 // Iteratively parse the CDDL spec into a tree structure.
 ParseResult ParseCddl(std::string_view data) {
-  if (data[0] == 0) {
+  while (!data.empty() && data.back() == 0) {
+    data.remove_suffix(1);
+  }
+
+  if (data.empty()) {
     return {nullptr, {}};
   }
-  Parser p = {data.data()};
+  Parser p = {data};
 
   SkipStartWhitespace(&p);
   AstNode* root = nullptr;
@@ -997,11 +1044,13 @@ ParseResult ParseCddl(std::string_view data) {
   do {
     AstNode* next = ParseRule(&p);
     if (!next) {
-      Logger::Error("Failed to parse next node. Failed starting at: '" +
-                    std::string(p.data) + "'");
+      Logger::Error(
+          std::string("Failed to parse next node. Failed starting at: '") +
+          std::string(p.data) + "'");
       return {nullptr, {}};
     } else {
-      Logger::Log("Processed text \"" + next->text + "\" into node: ");
+      Logger::Log(std::string("Processed text \"") + std::string(next->text) +
+                  "\" into node: ");
       DumpAst(next);
     }
 
@@ -1012,7 +1061,7 @@ ParseResult ParseCddl(std::string_view data) {
       tail->sibling = next;
     }
     tail = next;
-  } while (p.data[0]);
+  } while (!p.data.empty());
   return {root, std::move(p.nodes)};
 }
 
@@ -1113,7 +1162,8 @@ void DumpAst(AstNode* node, int indent_level) {
         break;
     }
     if (node->type_key != std::nullopt) {
-      node_text += " (type key=\"" + node->type_key.value() + "\")";
+      node_text +=
+          " (type key=\"" + std::string(node->type_key.value()) + "\")";
     }
     node_text += ": ";
 

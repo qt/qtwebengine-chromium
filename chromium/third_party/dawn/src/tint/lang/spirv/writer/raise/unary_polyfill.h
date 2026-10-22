@@ -48,10 +48,10 @@ const core::ir::Capabilities kPolyfillUnaryCapabilities{
 
 /// Configuration for the UnaryPolyfill transform.
 struct UnaryPolyfillConfig {
-    /// If true, polyfill f32 negation with bit manipulation.
-    bool polyfill_f32_negation = false;
-    /// If true, polyfill f32 abs with sign() * x.
-    bool polyfill_f32_abs = false;
+    /// If true, polyfill f32 and f16 negation with bit manipulation.
+    bool polyfill_float_negation = false;
+    /// If true, polyfill f32 and f16 abs.
+    bool polyfill_float_abs = false;
 };
 
 /// UnaryPolyfill is a transform that replaces unary instructions with polyfills.

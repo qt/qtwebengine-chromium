@@ -175,6 +175,7 @@ enum class ExecutionMode : unsigned {
     QuadDerivativesKHR = 5088,
     RequireFullQuadsKHR = 5089,
     SharesInputWithAMDX = 5102,
+    ArithmeticPoisonKHR = 5157,
     OutputLinesEXT = 5269,
     OutputLinesNV = 5269,
     OutputPrimitivesEXT = 5270,
@@ -559,6 +560,7 @@ enum class Decoration : unsigned {
     PayloadDispatchIndirectAMDX = 5105,
     ArrayStrideIdEXT = 5124,
     OffsetIdEXT = 5125,
+    UTFEncodedKHR = 5145,
     OverrideCoverageNV = 5248,
     PassthroughNV = 5250,
     ViewportRelativeNV = 5252,
@@ -1196,7 +1198,10 @@ enum class Capability : unsigned {
     BFloat16TypeKHR = 5116,
     BFloat16DotProductKHR = 5117,
     BFloat16CooperativeMatrixKHR = 5118,
+    AbortKHR = 5120,
     DescriptorHeapEXT = 5128,
+    ConstantDataKHR = 5146,
+    PoisonFreezeKHR = 5156,
     SampleMaskOverrideCoverageNV = 5249,
     GeometryShaderPassthroughNV = 5251,
     ShaderViewportIndexLayerEXT = 5254,
@@ -1393,6 +1398,10 @@ enum class Capability : unsigned {
     CacheControlsINTEL = 6441,
     RegisterLimitsINTEL = 6460,
     BindlessImagesINTEL = 6528,
+    DotProductFloat16AccFloat32VALVE = 6912,
+    DotProductFloat16AccFloat16VALVE = 6913,
+    DotProductBFloat16AccVALVE = 6914,
+    DotProductFloat8AccFloat32VALVE = 6915,
     Max = 0x7fffffff,
 };
 
@@ -2152,9 +2161,14 @@ enum class Op : unsigned {
     OpGroupNonUniformQuadAnyKHR = 5111,
     OpTypeBufferEXT = 5115,
     OpBufferPointerEXT = 5119,
+    OpAbortKHR = 5121,
     OpUntypedImageTexelPointerEXT = 5126,
     OpMemberDecorateIdEXT = 5127,
     OpConstantSizeOfEXT = 5129,
+    OpConstantDataKHR = 5147,
+    OpSpecConstantDataKHR = 5148,
+    OpPoisonKHR = 5158,
+    OpFreezeKHR = 5159,
     OpHitObjectRecordHitMotionNV = 5249,
     OpHitObjectRecordHitWithIndexMotionNV = 5250,
     OpHitObjectRecordMissMotionNV = 5251,
@@ -2624,6 +2638,9 @@ enum class Op : unsigned {
     OpConvertHandleToImageINTEL = 6529,
     OpConvertHandleToSamplerINTEL = 6530,
     OpConvertHandleToSampledImageINTEL = 6531,
+    OpFDot2MixAcc32VALVE = 6916,
+    OpFDot2MixAcc16VALVE = 6917,
+    OpFDot4MixAcc32VALVE = 6918,
     Max = 0x7fffffff,
 };
 
@@ -3073,9 +3090,14 @@ inline void HasResultAndType(Op opcode, bool *hasResult, bool *hasResultType) {
     case Op::OpGroupNonUniformQuadAnyKHR: *hasResult = true; *hasResultType = true; break;
     case Op::OpTypeBufferEXT: *hasResult = true; *hasResultType = false; break;
     case Op::OpBufferPointerEXT: *hasResult = true; *hasResultType = true; break;
+    case Op::OpAbortKHR: *hasResult = false; *hasResultType = false; break;
     case Op::OpUntypedImageTexelPointerEXT: *hasResult = true; *hasResultType = true; break;
     case Op::OpMemberDecorateIdEXT: *hasResult = false; *hasResultType = false; break;
     case Op::OpConstantSizeOfEXT: *hasResult = true; *hasResultType = true; break;
+    case Op::OpConstantDataKHR: *hasResult = true; *hasResultType = true; break;
+    case Op::OpSpecConstantDataKHR: *hasResult = true; *hasResultType = true; break;
+    case Op::OpPoisonKHR: *hasResult = true; *hasResultType = true; break;
+    case Op::OpFreezeKHR: *hasResult = true; *hasResultType = true; break;
     case Op::OpHitObjectRecordHitMotionNV: *hasResult = false; *hasResultType = false; break;
     case Op::OpHitObjectRecordHitWithIndexMotionNV: *hasResult = false; *hasResultType = false; break;
     case Op::OpHitObjectRecordMissMotionNV: *hasResult = false; *hasResultType = false; break;
@@ -3498,6 +3520,9 @@ inline void HasResultAndType(Op opcode, bool *hasResult, bool *hasResultType) {
     case Op::OpConvertHandleToImageINTEL: *hasResult = true; *hasResultType = true; break;
     case Op::OpConvertHandleToSamplerINTEL: *hasResult = true; *hasResultType = true; break;
     case Op::OpConvertHandleToSampledImageINTEL: *hasResult = true; *hasResultType = true; break;
+    case Op::OpFDot2MixAcc32VALVE: *hasResult = true; *hasResultType = true; break;
+    case Op::OpFDot2MixAcc16VALVE: *hasResult = true; *hasResultType = true; break;
+    case Op::OpFDot4MixAcc32VALVE: *hasResult = true; *hasResultType = true; break;
     }
 }
 inline const char* SourceLanguageToString(SourceLanguage value) {
@@ -3632,6 +3657,7 @@ inline const char* ExecutionModeToString(ExecutionMode value) {
     case ExecutionMode::QuadDerivativesKHR: return "QuadDerivativesKHR";
     case ExecutionMode::RequireFullQuadsKHR: return "RequireFullQuadsKHR";
     case ExecutionMode::SharesInputWithAMDX: return "SharesInputWithAMDX";
+    case ExecutionMode::ArithmeticPoisonKHR: return "ArithmeticPoisonKHR";
     case ExecutionMode::OutputLinesEXT: return "OutputLinesEXT";
     case ExecutionMode::OutputPrimitivesEXT: return "OutputPrimitivesEXT";
     case ExecutionMode::DerivativeGroupQuadsKHR: return "DerivativeGroupQuadsKHR";
@@ -3949,6 +3975,7 @@ inline const char* DecorationToString(Decoration value) {
     case Decoration::PayloadDispatchIndirectAMDX: return "PayloadDispatchIndirectAMDX";
     case Decoration::ArrayStrideIdEXT: return "ArrayStrideIdEXT";
     case Decoration::OffsetIdEXT: return "OffsetIdEXT";
+    case Decoration::UTFEncodedKHR: return "UTFEncodedKHR";
     case Decoration::OverrideCoverageNV: return "OverrideCoverageNV";
     case Decoration::PassthroughNV: return "PassthroughNV";
     case Decoration::ViewportRelativeNV: return "ViewportRelativeNV";
@@ -4340,7 +4367,10 @@ inline const char* CapabilityToString(Capability value) {
     case Capability::BFloat16TypeKHR: return "BFloat16TypeKHR";
     case Capability::BFloat16DotProductKHR: return "BFloat16DotProductKHR";
     case Capability::BFloat16CooperativeMatrixKHR: return "BFloat16CooperativeMatrixKHR";
+    case Capability::AbortKHR: return "AbortKHR";
     case Capability::DescriptorHeapEXT: return "DescriptorHeapEXT";
+    case Capability::ConstantDataKHR: return "ConstantDataKHR";
+    case Capability::PoisonFreezeKHR: return "PoisonFreezeKHR";
     case Capability::SampleMaskOverrideCoverageNV: return "SampleMaskOverrideCoverageNV";
     case Capability::GeometryShaderPassthroughNV: return "GeometryShaderPassthroughNV";
     case Capability::ShaderViewportIndexLayerEXT: return "ShaderViewportIndexLayerEXT";
@@ -4489,6 +4519,10 @@ inline const char* CapabilityToString(Capability value) {
     case Capability::CacheControlsINTEL: return "CacheControlsINTEL";
     case Capability::RegisterLimitsINTEL: return "RegisterLimitsINTEL";
     case Capability::BindlessImagesINTEL: return "BindlessImagesINTEL";
+    case Capability::DotProductFloat16AccFloat32VALVE: return "DotProductFloat16AccFloat32VALVE";
+    case Capability::DotProductFloat16AccFloat16VALVE: return "DotProductFloat16AccFloat16VALVE";
+    case Capability::DotProductBFloat16AccVALVE: return "DotProductBFloat16AccVALVE";
+    case Capability::DotProductFloat8AccFloat32VALVE: return "DotProductFloat8AccFloat32VALVE";
     default: return "Unknown";
     }
 }
@@ -5121,9 +5155,14 @@ inline const char* OpToString(Op value) {
     case Op::OpGroupNonUniformQuadAnyKHR: return "OpGroupNonUniformQuadAnyKHR";
     case Op::OpTypeBufferEXT: return "OpTypeBufferEXT";
     case Op::OpBufferPointerEXT: return "OpBufferPointerEXT";
+    case Op::OpAbortKHR: return "OpAbortKHR";
     case Op::OpUntypedImageTexelPointerEXT: return "OpUntypedImageTexelPointerEXT";
     case Op::OpMemberDecorateIdEXT: return "OpMemberDecorateIdEXT";
     case Op::OpConstantSizeOfEXT: return "OpConstantSizeOfEXT";
+    case Op::OpConstantDataKHR: return "OpConstantDataKHR";
+    case Op::OpSpecConstantDataKHR: return "OpSpecConstantDataKHR";
+    case Op::OpPoisonKHR: return "OpPoisonKHR";
+    case Op::OpFreezeKHR: return "OpFreezeKHR";
     case Op::OpHitObjectRecordHitMotionNV: return "OpHitObjectRecordHitMotionNV";
     case Op::OpHitObjectRecordHitWithIndexMotionNV: return "OpHitObjectRecordHitWithIndexMotionNV";
     case Op::OpHitObjectRecordMissMotionNV: return "OpHitObjectRecordMissMotionNV";
@@ -5546,6 +5585,9 @@ inline const char* OpToString(Op value) {
     case Op::OpConvertHandleToImageINTEL: return "OpConvertHandleToImageINTEL";
     case Op::OpConvertHandleToSamplerINTEL: return "OpConvertHandleToSamplerINTEL";
     case Op::OpConvertHandleToSampledImageINTEL: return "OpConvertHandleToSampledImageINTEL";
+    case Op::OpFDot2MixAcc32VALVE: return "OpFDot2MixAcc32VALVE";
+    case Op::OpFDot2MixAcc16VALVE: return "OpFDot2MixAcc16VALVE";
+    case Op::OpFDot4MixAcc32VALVE: return "OpFDot4MixAcc32VALVE";
     default: return "Unknown";
     }
 }

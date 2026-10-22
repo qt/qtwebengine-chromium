@@ -4,6 +4,8 @@
 
 #include "media/base/video_frame_layout.h"
 
+#include <algorithm>
+#include <array>
 #include <numeric>
 #include <sstream>
 
@@ -11,6 +13,7 @@
 #include "base/notreached.h"
 #include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
+#include "build/build_config.h"
 #include "media/base/video_frame.h"
 
 namespace media {
@@ -36,11 +39,14 @@ std::vector<ColorPlaneLayout> CreatePlanes(VideoPixelFormat format,
                                            const std::vector<size_t>& strides,
                                            const gfx::Size& coded_size) {
   std::vector<ColorPlaneLayout> planes(strides.size());
+  size_t offset = 0;
   for (size_t i = 0; i < strides.size(); i++) {
     size_t rows =
         VideoFrame::PlaneSizeInSamples(format, i, coded_size).height();
     planes[i].stride = strides[i];
+    planes[i].offset = offset;
     planes[i].size = strides[i] * rows;
+    offset += planes[i].size;
   }
   return planes;
 }
@@ -190,7 +196,40 @@ bool VideoFrameLayout::FitsInContiguousBufferOfSize(size_t data_size) const {
     return false;
   }
 
-  for (const auto& plane : planes_) {
+#if BUILDFLAG(IS_CHROMEOS)
+  if (format_ == PIXEL_FORMAT_MJPEG) {
+    if (planes_.size() != 1) {
+      return false;
+    }
+    const auto& plane = planes_[0];
+    size_t plane_end;
+    return base::CheckAdd(plane.size, plane.offset).AssignIfValid(&plane_end) &&
+           plane_end <= data_size;
+  }
+#endif
+
+  if (planes_.size() != VideoFrame::NumPlanes(format_)) {
+    return false;
+  }
+
+  const size_t num_planes = planes_.size();
+  CHECK_LE(num_planes, VideoFrame::kMaxPlanes);
+
+  // The planes in `planes_` are not guaranteed to be ordered by offset.
+  // We sort the plane indices by offset so that we can check for overlaps in
+  // the offset order.
+  std::array<size_t, VideoFrame::kMaxPlanes> sorted_plane_indices;
+  std::iota(sorted_plane_indices.begin(),
+            sorted_plane_indices.begin() + num_planes, 0);
+  std::sort(sorted_plane_indices.begin(),
+            sorted_plane_indices.begin() + num_planes,
+            [this](size_t a, size_t b) {
+              return planes_[a].offset < planes_[b].offset;
+            });
+
+  for (size_t i = 0; i < num_planes; ++i) {
+    size_t plane_idx = sorted_plane_indices[i];
+    const auto& plane = planes_[plane_idx];
     if (plane.offset > data_size || plane.size > data_size) {
       return false;
     }
@@ -200,6 +239,22 @@ bool VideoFrameLayout::FitsInContiguousBufferOfSize(size_t data_size) const {
     plane_end += plane.offset;
     if (!plane_end.IsValid() || plane_end.ValueOrDie() > data_size) {
       return false;
+    }
+
+    size_t rows = VideoFrame::Rows(plane_idx, format_, coded_size_.height());
+    if (rows > 0) {
+      size_t row_bytes =
+          VideoFrame::RowBytes(plane_idx, format_, coded_size_.width());
+      if (plane.stride < row_bytes) {
+        return false;
+      }
+      // Offset + stride * (rows - 1) + row_bytes: furthermost byte that can be
+      // reasonably read during copying or conversion of the plane.
+      auto read_end =
+          base::CheckMul(plane.stride, rows - 1) + row_bytes + plane.offset;
+      if (!read_end.IsValid() || read_end.ValueOrDie() > data_size) {
+        return false;
+      }
     }
   }
 

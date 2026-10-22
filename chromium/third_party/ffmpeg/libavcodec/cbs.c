@@ -46,6 +46,9 @@ static const CodedBitstreamType *const cbs_type_table[] = {
 #if CBS_H266
     &CBS_FUNC(type_h266),
 #endif
+#if CBS_LCEVC
+    &CBS_FUNC(type_lcevc),
+#endif
 #if CBS_JPEG
     &CBS_FUNC(type_jpeg),
 #endif
@@ -75,6 +78,9 @@ const enum AVCodecID CBS_FUNC(all_codec_ids)[] = {
 #endif
 #if CBS_H266
     AV_CODEC_ID_H266,
+#endif
+#if CBS_LCEVC
+    AV_CODEC_ID_LCEVC,
 #endif
 #if CBS_JPEG
     AV_CODEC_ID_MJPEG,
@@ -961,7 +967,7 @@ static int cbs_clone_noncomplex_unit_content(void **clonep,
 {
     const uint8_t *src;
     uint8_t *copy;
-    int err, i;
+    int err;
 
     av_assert0(unit->content);
     src = unit->content;
@@ -976,7 +982,7 @@ static int cbs_clone_noncomplex_unit_content(void **clonep,
         *(ptr + 1) = NULL;
     }
 
-    for (i = 0; i < desc->type.ref.nb_offsets; i++) {
+    for (int i = 0; i < desc->type.ref.nb_offsets; i++) {
         const uint8_t *const *src_ptr = (const uint8_t* const*)(src + desc->type.ref.offsets[i]);
         const AVBufferRef *src_buf = *(AVBufferRef**)(src_ptr + 1);
         uint8_t **copy_ptr = (uint8_t**)(copy + desc->type.ref.offsets[i]);

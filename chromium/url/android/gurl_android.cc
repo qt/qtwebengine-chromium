@@ -28,14 +28,14 @@ namespace {
 
 static void InitFromGURL(JNIEnv* env,
                          const GURL& gurl,
-                         const JavaRef<jobject>& target) {
+                         const JavaRef<JGURL>& target) {
   // Ensure that the spec only contains US-ASCII (single-byte characters) or the
   // parsed indices will be wrong as the indices are in bytes while Java Strings
   // are always 16-bit.
   DCHECK(base::IsStringASCII(gurl.possibly_invalid_spec()));
-  Java_GURL_init(env, target, gurl.possibly_invalid_spec(), gurl.is_valid(),
-                 ParsedAndroid::InitFromParsed(
-                     env, gurl.parsed_for_possibly_invalid_spec()));
+  target->init(env, gurl.possibly_invalid_spec(), gurl.is_valid(),
+               ParsedAndroid::InitFromParsed(
+                   env, gurl.parsed_for_possibly_invalid_spec()));
 }
 
 // As |GetArrayLength| makes no guarantees about the returned value (e.g., it
@@ -56,47 +56,51 @@ GURL GURLAndroid::ToNativeGURL(JNIEnv* env,
                                const base::android::JavaRef<jobject>& j_gurl) {
   GURL ret;
   Parsed parsed;
-  Java_GURL_toNativeGURL(env, j_gurl, reinterpret_cast<int64_t>(&ret),
-                         reinterpret_cast<int64_t>(&parsed));
+  j_gurl.As<JGURL>()->toNativeGURL(env, reinterpret_cast<int64_t>(&ret),
+                                   reinterpret_cast<int64_t>(&parsed));
   return ret;
 }
 
 // static
-ScopedJavaLocalRef<jobject> GURLAndroid::FromNativeGURL(JNIEnv* env,
-                                                        const GURL& gurl) {
-  ScopedJavaLocalRef<jobject> j_gurl = Java_GURL_Constructor(env);
+ScopedJavaLocalRef<JGURL> GURLAndroid::FromNativeGURL(JNIEnv* env,
+                                                      const GURL& gurl) {
+  ScopedJavaLocalRef<JGURL> j_gurl = GURLJni::New(env);
   InitFromGURL(env, gurl, j_gurl);
   return j_gurl;
 }
 
 // static
-ScopedJavaLocalRef<jobject> GURLAndroid::EmptyGURL(JNIEnv* env) {
-  return Java_GURL_emptyGURL(env);
+ScopedJavaLocalRef<JGURL> GURLAndroid::EmptyGURL(JNIEnv* env) {
+  return GURLJni::emptyGURL(env);
 }
 
 static void JNI_GURL_GetOrigin(JNIEnv* env,
-                               GURL& gurl,
-                               const JavaRef<jobject>& target) {
+                               const GURL& gurl,
+                               const JavaRef<JGURL>& target) {
   InitFromGURL(env, gurl.DeprecatedGetOriginAsURL(), target);
 }
 
-static bool JNI_GURL_DomainIs(JNIEnv* env, GURL& gurl, std::string& domain) {
+static bool JNI_GURL_DomainIs(JNIEnv* env,
+                              const GURL& gurl,
+                              const std::string& domain) {
   return gurl.DomainIs(domain);
 }
 
-static bool JNI_GURL_EqualsIgnoringRef(JNIEnv* env, GURL& gurl, GURL& other) {
+static bool JNI_GURL_EqualsIgnoringRef(JNIEnv* env,
+                                       const GURL& gurl,
+                                       const GURL& other) {
   return gurl.EqualsIgnoringRef(other);
 }
 
 static void JNI_GURL_Init(JNIEnv* env,
-                          std::string& spec,
-                          const base::android::JavaRef<jobject>& target) {
+                          const std::string& spec,
+                          const base::android::JavaRef<JGURL>& target) {
   auto gurl = GURL(spec);
   InitFromGURL(env, gurl, target);
 }
 
 static void JNI_GURL_InitNative(JNIEnv* env,
-                                std::string& spec,
+                                const std::string& spec,
                                 bool is_valid,
                                 int64_t native_gurl,
                                 int64_t native_parsed) {
@@ -107,12 +111,12 @@ static void JNI_GURL_InitNative(JNIEnv* env,
 
 static void JNI_GURL_ReplaceComponents(
     JNIEnv* env,
-    GURL& gurl,
+    const GURL& gurl,
     const JavaRef<jstring>& j_username_replacement,
     bool clear_username,
     const JavaRef<jstring>& j_password_replacement,
     bool clear_password,
-    const JavaRef<jobject>& j_result) {
+    const JavaRef<JGURL>& j_result) {
   GURL::Replacements replacements;
 
   // Replacement strings must remain in scope for ReplaceComponents().

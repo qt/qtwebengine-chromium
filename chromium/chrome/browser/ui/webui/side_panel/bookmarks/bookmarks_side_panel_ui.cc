@@ -25,7 +25,7 @@
 #include "chrome/browser/ui/webui/commerce/shopping_list_context_menu_controller.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/plural_string_handler.h"
-#include "chrome/browser/ui/webui/sanitized_image_source.h"
+#include "chrome/browser/ui/webui/sanitized_image/sanitized_image_source.h"
 #include "chrome/browser/ui/webui/side_panel/bookmarks/bookmarks_page_handler.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/side_panel_bookmarks_resources.h"
@@ -208,11 +208,9 @@ BookmarksSidePanelUI::BookmarksSidePanelUI(content::WebUI* web_ui)
       "bookmarksTreeViewEnabled",
       base::FeatureList::IsEnabled(features::kBookmarksTreeView));
 
-  // TODO(crbug.com/380818698): Replace this with the flag which will be used to
-  // launch account storage for bookmarks.
-  source->AddBoolean("isBookmarksInTransportModeEnabled",
-                     base::FeatureList::IsEnabled(
-                         switches::kSyncEnableBookmarksInTransportMode));
+  source->AddBoolean(
+      "isBookmarksMigrationUiChanges",
+      base::FeatureList::IsEnabled(switches::kBookmarksMigrateUiChanges));
   source->AddInteger(
       "sortOrder",
       prefs->GetInteger(bookmarks_webui::prefs::kBookmarksSortOrder));

@@ -19,8 +19,7 @@ using proto::CastMessage;
 
 CastSocket::Client::~Client() = default;
 
-CastSocket::CastSocket(std::unique_ptr<TlsConnection> connection,
-                       Client* client)
+CastSocket::CastSocket(std::unique_ptr<Connection> connection, Client* client)
     : connection_(std::move(connection)),
       client_(client),
       socket_id_(g_next_socket_id_++) {
@@ -63,12 +62,12 @@ std::array<uint8_t, 2> CastSocket::GetSanitizedIpAddress() {
   return result;
 }
 
-void CastSocket::OnError(TlsConnection* connection, const Error& error) {
+void CastSocket::OnError(Connection* connection, const Error& error) {
   state_ = State::kError;
   client_->OnError(this, error);
 }
 
-void CastSocket::OnRead(TlsConnection* connection, std::vector<uint8_t> block) {
+void CastSocket::OnRead(Connection* connection, std::vector<uint8_t> block) {
   read_buffer_.insert(read_buffer_.end(), block.begin(), block.end());
   // NOTE: Read as many messages as possible out of `read_buffer_` since we only
   // get one callback opportunity for this.

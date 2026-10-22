@@ -14,7 +14,7 @@
 
 import {AsyncLimiter} from '../base/async_limiter';
 import {defer} from '../base/deferred';
-import {assertExists, assertTrue} from '../base/logging';
+import {assertExists, assertTrue} from '../base/assert';
 import {ServiceWorkerController} from '../frontend/service_worker_controller';
 import {App} from '../public/app';
 import {SqlPackage} from '../public/extra_sql_packages';
@@ -41,6 +41,8 @@ import {SerializedAppState} from './state_serialization_schema';
 import {TraceImpl} from './trace_impl';
 import {TraceArrayBufferSource, TraceSource} from './trace_source';
 import {TaskTrackerImpl} from '../frontend/task_tracker/task_tracker';
+import {Embedder} from './embedder/embedder';
+import {createEmbedder} from './embedder/create_embedder';
 
 export type OpenTraceArrayBufArgs = Omit<
   Omit<TraceArrayBufferSource, 'type'>,
@@ -73,7 +75,7 @@ export class AppImpl implements App {
   readonly commands = new CommandManagerImpl(this.omnibox);
   readonly pages: PageManagerImpl;
   readonly sidebar: SidebarManagerImpl;
-  readonly plugins = new PluginManagerImpl();
+  readonly plugins: PluginManagerImpl;
   readonly perfDebugging = new PerfManager();
   readonly analytics: AnalyticsInternal;
   readonly serviceWorkerController = new ServiceWorkerController();
@@ -89,6 +91,7 @@ export class AppImpl implements App {
   readonly testingMode: boolean;
   readonly openTraceAsyncLimiter = new AsyncLimiter();
   readonly settings: SettingsManagerImpl;
+  readonly embedder: Embedder;
 
   // The current active trace (if any).
   private _activeTrace: TraceImpl | undefined;
@@ -104,7 +107,9 @@ export class AppImpl implements App {
   >();
 
   // Command macros. Injected from extensions.
-  private _macrosPromises = new Array<Promise<ReadonlyArray<Macro>>>();
+  private _macrosPromises = new Array<
+    Promise<ReadonlyArray<Macro & {source?: string}>>
+  >();
 
   // Initializes the singleton instance - must be called only once and before
   // AppImpl.instance is used.
@@ -147,10 +152,13 @@ export class AppImpl implements App {
       disabled: this.embeddedMode,
       hidden: this.initialRouteArgs.hideSidebar,
     });
+    this.embedder = createEmbedder();
+    this.plugins = new PluginManagerImpl(this.embedder.defaultPlugins);
     this.analytics = initAnalytics(
       this.testingMode,
       this.embeddedMode,
       initArgs.analyticsSetting.get(),
+      this.embedder.analyticsId,
     );
     this.pages = new PageManagerImpl(this.analytics);
   }
@@ -178,10 +186,12 @@ export class AppImpl implements App {
     return this._isInternalUser;
   }
 
-  set isInternalUser(value: boolean) {
-    localStorage.setItem('isInternalUser', value ? '1' : '0');
-    this._isInternalUser = value;
-    raf.scheduleFullRedraw();
+  setIsInternalUser(promise: Promise<boolean>) {
+    promise.then((value) => {
+      this._isInternalUser = value;
+      localStorage.setItem('isInternalUser', value ? '1' : '0');
+      raf.scheduleFullRedraw();
+    });
   }
 
   get trace(): TraceImpl | undefined {
@@ -312,11 +322,15 @@ export class AppImpl implements App {
     );
   }
 
-  addMacros(args: ReadonlyArray<Macro> | Promise<ReadonlyArray<Macro>>) {
+  addMacros(
+    args:
+      | ReadonlyArray<Macro & {source?: string}>
+      | Promise<ReadonlyArray<Macro & {source?: string}>>,
+  ) {
     this._macrosPromises.push(Promise.resolve(args));
   }
 
-  async macros(): Promise<ReadonlyArray<Macro>> {
+  async macros(): Promise<ReadonlyArray<Macro & {source?: string}>> {
     const macrosArray = await Promise.all(this._macrosPromises);
     return macrosArray.flat();
   }

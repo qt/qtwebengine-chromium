@@ -34,6 +34,7 @@
 #include "dawn/native/ChainUtils.h"
 #include "dawn/native/Features_autogen.h"
 #include "dawn/native/Instance.h"
+#include "dawn/native/Toggles.h"
 #include "dawn/native/webgpu/BackendWGPU.h"
 #include "dawn/native/webgpu/DeviceWGPU.h"
 
@@ -51,6 +52,17 @@ PhysicalDevice::PhysicalDevice(Backend* backend, WGPUAdapter innerAdapter)
       mBackend(backend),
       mInnerAdapter(innerAdapter) {
     WGPUAdapterInfo info = {};
+
+    const bool supportsSubgroupSizeControl = GetFunctions().adapterHasFeature(
+        mInnerAdapter, WGPUFeatureName_ChromiumExperimentalSubgroupSizeControl);
+
+    WGPUAdapterPropertiesExplicitComputeSubgroupSizeConfigs explicitComputeSubgroupSizeConfigs = {};
+    explicitComputeSubgroupSizeConfigs.chain.sType =
+        WGPUSType_AdapterPropertiesExplicitComputeSubgroupSizeConfigs;
+    if (supportsSubgroupSizeControl) {
+        info.nextInChain = &explicitComputeSubgroupSizeConfigs.chain;
+    }
+
     WGPUStatus status = GetFunctions().adapterGetInfo(mInnerAdapter, &info);
     DAWN_ASSERT(status == WGPUStatus_Success);
     DAWN_ASSERT(info.backendType != WGPUBackendType_WebGPU);
@@ -66,6 +78,15 @@ PhysicalDevice::PhysicalDevice(Backend* backend, WGPUAdapter innerAdapter)
     mSubgroupMinSize = info.subgroupMinSize;
     mSubgroupMaxSize = info.subgroupMaxSize;
     mInnerBackendType = info.backendType;
+
+    if (supportsSubgroupSizeControl) {
+        mMinExplicitComputeSubgroupSize =
+            explicitComputeSubgroupSizeConfigs.minExplicitComputeSubgroupSize;
+        mMaxExplicitComputeSubgroupSize =
+            explicitComputeSubgroupSizeConfigs.maxExplicitComputeSubgroupSize;
+        mMaxComputeWorkgroupSubgroups =
+            explicitComputeSubgroupSizeConfigs.maxComputeWorkgroupSubgroups;
+    }
 
     GetFunctions().adapterInfoFreeMembers(info);
 }
@@ -86,6 +107,7 @@ Backend* PhysicalDevice::GetBackend() const {
 }
 
 bool PhysicalDevice::SupportsExternalImages() const {
+    // TODO(crbug.com/494307326): remove the function.
     return false;
 }
 
@@ -134,7 +156,10 @@ void PhysicalDevice::SetupBackendAdapterToggles(dawn::platform::Platform* platfo
                                                 TogglesState* adapterToggles) const {}
 
 void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platform,
-                                               TogglesState* deviceToggles) const {}
+                                               TogglesState* deviceToggles) const {
+    // We should always use this toggle in order to capture the label.
+    deviceToggles->ForceSet(Toggle::UseUserDefinedLabelsInBackend, true);
+}
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
     AdapterBase* adapter,
@@ -149,6 +174,14 @@ void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterInfo>& info,
     // TODO(crbug.com/413053623): Populate other AdapterInfo Chained extensions when necessary.
     if (auto* wgpuProperties = info.Get<AdapterPropertiesWGPU>()) {
         wgpuProperties->backendType = FromAPI(mInnerBackendType);
+    }
+    if (auto* explicitSubgroupSizeConfigs =
+            info.Get<AdapterPropertiesExplicitComputeSubgroupSizeConfigs>()) {
+        explicitSubgroupSizeConfigs->minExplicitComputeSubgroupSize =
+            mMinExplicitComputeSubgroupSize;
+        explicitSubgroupSizeConfigs->maxExplicitComputeSubgroupSize =
+            mMaxExplicitComputeSubgroupSize;
+        explicitSubgroupSizeConfigs->maxComputeWorkgroupSubgroups = mMaxComputeWorkgroupSubgroups;
     }
 }
 

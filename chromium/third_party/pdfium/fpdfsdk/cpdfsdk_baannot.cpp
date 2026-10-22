@@ -193,7 +193,7 @@ BorderStyle CPDFSDK_BAAnnot::GetBorderStyle() const {
   if (pBorder) {
     if (pBorder->size() >= 4) {
       RetainPtr<const CPDF_Array> pDP = pBorder->GetArrayAt(3);
-      if (pDP && pDP->size() > 0) {
+      if (pDP && !pDP->IsEmpty()) {
         return BorderStyle::kDash;
       }
     }

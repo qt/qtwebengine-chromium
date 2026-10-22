@@ -26,17 +26,6 @@
     EIGEN_CI_TARGET_ARCH: x86_64
     EIGEN_CI_CROSS_TARGET_TRIPLE: x86_64-linux-gnu
 
-# GCC-6 (minimum on Ubuntu 18.04)
-build:linux:cross:x86-64:gcc-6:default:
-  extends: .build:linux:cross:x86-64
-  image: ubuntu:18.04
-  variables:
-    EIGEN_CI_C_COMPILER: gcc-6
-    EIGEN_CI_CXX_COMPILER: g++-6
-    EIGEN_CI_CROSS_INSTALL: g++-6-x86-64-linux-gnu
-    EIGEN_CI_CROSS_C_COMPILER: x86_64-linux-gnu-gcc-6
-    EIGEN_CI_CROSS_CXX_COMPILER: x86_64-linux-gnu-g++-6
-
 # GCC-10 (stable recent version)
 build:linux:cross:x86-64:gcc-10:default:
   extends: .build:linux:cross:x86-64
@@ -62,45 +51,28 @@ build:linux:cross:x86-64:gcc-10:avx512dq:
   variables:
     EIGEN_CI_ADDITIONAL_ARGS: "-DEIGEN_TEST_AVX512DQ=on"
 
-# Clang-6 (minimum on Ubuntu 20.04)
-build:linux:cross:x86-64:clang-6:default:
-  extends: .build:linux:cross:x86-64
-  image: ubuntu:20.04
-  variables:
-    EIGEN_CI_INSTALL: g++-8 clang-6.0 lld-6.0
-    EIGEN_CI_C_COMPILER: clang-6.0
-    EIGEN_CI_CXX_COMPILER: clang++-6.0
-    EIGEN_CI_CROSS_INSTALL: g++-8-x86-64-linux-gnu clang-6.0 lld-6.0
-    EIGEN_CI_ADDITIONAL_ARGS: -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld-6.0
-
-# Clang-12 (stable recent version)
-build:linux:cross:x86-64:clang-12:default:
+# Clang-14 (stable recent version)
+build:linux:cross:x86-64:clang-14:default:
   extends: .build:linux:cross:x86-64
   variables:
-    EIGEN_CI_INSTALL: clang-12
-    EIGEN_CI_C_COMPILER: clang-12
-    EIGEN_CI_CXX_COMPILER: clang++-12
-    EIGEN_CI_CROSS_INSTALL: g++-10-x86-64-linux-gnu clang-12
+    EIGEN_CI_INSTALL: clang-14
+    EIGEN_CI_C_COMPILER: clang-14
+    EIGEN_CI_CXX_COMPILER: clang++-14
+    EIGEN_CI_CROSS_INSTALL: g++-10-x86-64-linux-gnu clang-14
 
-build:linux:cross:x86-64:clang-12:avx:
-  extends: build:linux:cross:x86-64:clang-12:default
-  variables:
-    EIGEN_CI_ADDITIONAL_ARGS: "-DEIGEN_TEST_AVX=on"
-
-build:linux:cross:x86-64:clang-12:avx2:
-  extends: build:linux:cross:x86-64:clang-12:default
+build:linux:cross:x86-64:clang-14:avx2:
+  extends: build:linux:cross:x86-64:clang-14:default
   variables:
     EIGEN_CI_ADDITIONAL_ARGS: "-DEIGEN_TEST_AVX2=on"
 
-build:linux:cross:x86-64:clang-12:avx512dq:
-  extends: build:linux:cross:x86-64:clang-12:default
+build:linux:cross:x86-64:clang-14:avx512dq:
+  extends: build:linux:cross:x86-64:clang-14:default
   variables:
     EIGEN_CI_ADDITIONAL_ARGS: "-DEIGEN_TEST_AVX512DQ=on"
 
 # Generic vector extension backend.
 build:linux:cross:x86-64:clang-19:generic:avx512dq:
-  image: ubuntu:24.04
-  extends: build:linux:cross:x86-64:clang-12:default
+  extends: build:linux:cross:x86-64:clang-14:default
   variables:
     EIGEN_CI_INSTALL: clang-19
     EIGEN_CI_C_COMPILER: clang-19
@@ -108,6 +80,20 @@ build:linux:cross:x86-64:clang-19:generic:avx512dq:
     EIGEN_CI_CROSS_INSTALL: g++-14-x86-64-linux-gnu clang-19
     EIGEN_CI_ADDITIONAL_ARGS: >
       -DEIGEN_TEST_CUSTOM_CXX_FLAGS=-mfma;-mavx512dq;-DEIGEN_VECTORIZE_GENERIC=1
+
+# Nightly full test suite in C++20 mode.
+build:linux:cross:x86-64:clang-19:cxx20:nightly:
+  extends: .build:linux:cross:x86-64
+  variables:
+    EIGEN_CI_INSTALL: clang-19
+    EIGEN_CI_C_COMPILER: clang-19
+    EIGEN_CI_CXX_COMPILER: clang++-19
+    EIGEN_CI_CROSS_INSTALL: g++-14-x86-64-linux-gnu clang-19
+    EIGEN_CI_ADDITIONAL_ARGS: -DCMAKE_CXX_STANDARD=20
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_MERGE_REQUEST_LABELS =~ "/all-tests/"
 
 build:linux:docs:
   extends: .build:linux:cross
@@ -118,6 +104,8 @@ build:linux:docs:
     EIGEN_CI_C_COMPILER: clang
     EIGEN_CI_CXX_COMPILER: clang++
     EIGEN_CI_BEFORE_SCRIPT: ". ci/scripts/build_and_install_doxygen.sh Release_1_13_2"
+  tags:
+    - saas-linux-medium-amd64
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_PROJECT_NAMESPACE == "libeigen"
     - if: $CI_PIPELINE_SOURCE == "web" && $CI_PROJECT_NAMESPACE == "libeigen"
@@ -125,20 +113,66 @@ build:linux:docs:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_PROJECT_NAMESPACE == "libeigen" && $CI_MERGE_REQUEST_LABELS =~ "/all-tests/"
 
 
-# # Sanitizers (Disabled because ASAN hangs and MSAN requires instrumented libc++)
-# build:linux:cross:x86-64:clang-12:default:asan:
-#   extends: build:linux:cross:x86-64:clang-12:default
-#   variables:
-#     EIGEN_CI_ADDITIONAL_ARGS:
-#       -DEIGEN_TEST_CUSTOM_CXX_FLAGS=-fsanitize=address,undefined
-#       -DEIGEN_TEST_CUSTOM_LINKER_FLAGS=-fsanitize=address,undefined
+######## Sanitizers ############################################################
 
-# build:linux:cross:x86-64:clang-12:default:msan:
-#   extends: build:linux:cross:x86-64:clang-12:default
-#   variables:
-#     EIGEN_CI_ADDITIONAL_ARGS:
-#       -DEIGEN_TEST_CUSTOM_CXX_FLAGS=-fsanitize=memory
-#       -DEIGEN_TEST_CUSTOM_LINKER_FLAGS=-fsanitize=memory
+# ASAN/UBSAN builds are split into official/unsupported because the
+# instrumented executables are too large to upload as a single artifact.
+.build:linux:cross:x86-64:clang-19:default:asan-ubsan:
+  extends: .build:linux:cross:x86-64
+  # Disable cache for ASAN builds: instrumented .o files are so large that
+  # downloading the cache can take longer than a clean build from scratch.
+  cache: []
+  timeout: 2h
+  variables:
+    EIGEN_CI_INSTALL: clang-19 libclang-rt-19-dev
+    EIGEN_CI_C_COMPILER: clang-19
+    EIGEN_CI_CXX_COMPILER: clang++-19
+    EIGEN_CI_CROSS_INSTALL: g++-14-x86-64-linux-gnu clang-19 libclang-rt-19-dev
+    EIGEN_CI_ADDITIONAL_ARGS: >-
+      -DEIGEN_TEST_CUSTOM_CXX_FLAGS=-fsanitize=address,undefined;-fno-omit-frame-pointer;-fno-sanitize-recover=undefined
+      -DEIGEN_TEST_CUSTOM_LINKER_FLAGS=-fsanitize=address,undefined
+
+build:linux:cross:x86-64:clang-19:default:asan-ubsan:official:
+  extends: .build:linux:cross:x86-64:clang-19:default:asan-ubsan
+  variables:
+    EIGEN_CI_BUILD_TARGET: BuildOfficial
+
+build:linux:cross:x86-64:clang-19:default:asan-ubsan:unsupported:
+  extends: .build:linux:cross:x86-64:clang-19:default:asan-ubsan
+  variables:
+    EIGEN_CI_BUILD_TARGET: BuildUnsupported
+
+######## NVHPC #################################################################
+
+# NVHPC (nvc++) uses NVIDIA's HPC SDK container image with the compilers
+# pre-installed. We override EIGEN_CI_INSTALL to avoid trying to apt-get
+# install the compiler.
+# Split into official/unsupported because nvc++ is so slow that the full
+# build exceeds the 3-hour GitLab SaaS shared-runner timeout.
+.build:linux:x86-64:nvhpc-26.1:
+  extends: .build:linux:cross:x86-64
+  image: nvcr.io/nvidia/nvhpc:26.1-devel-cuda13.1-ubuntu24.04
+  variables:
+    EIGEN_CI_C_COMPILER: nvc
+    EIGEN_CI_CXX_COMPILER: nvc++
+    EIGEN_CI_INSTALL: ""
+    EIGEN_CI_CROSS_INSTALL: ""
+    # NVHPC's compiler frontend is very memory-hungry with template-heavy code.
+    # The 2xlarge runner has 128 GB, so 16 jobs gives ~8 GB per process.
+    # The shuffled-batch build strategy spreads memory-hungry targets across
+    # batches, preventing simultaneous OOM-prone compilations.
+    EIGEN_CI_BUILD_JOBS: "16"
+    EIGEN_CI_FALLBACK_JOBS: "4"
+
+build:linux:x86-64:nvhpc-26.1:default:official:
+  extends: .build:linux:x86-64:nvhpc-26.1
+  variables:
+    EIGEN_CI_BUILD_TARGET: BuildOfficial
+
+build:linux:x86-64:nvhpc-26.1:default:unsupported:
+  extends: .build:linux:x86-64:nvhpc-26.1
+  variables:
+    EIGEN_CI_BUILD_TARGET: BuildUnsupported
 
 ######## CUDA ##################################################################
 
@@ -151,11 +185,13 @@ build:linux:docs:
     EIGEN_CI_CUDA_COMPUTE_ARCH: "50;75"
     EIGEN_CI_BUILD_TARGET: buildtests_gpu
     EIGEN_CI_TEST_CUDA_CLANG: "off"
+    EIGEN_CI_TEST_CUDA_NVC: "off"
     EIGEN_CI_ADDITIONAL_ARGS:
       -DEIGEN_TEST_CUDA=on
       -DEIGEN_CUDA_CXX_FLAGS=${EIGEN_CI_CUDA_CXX_FLAGS}
       -DEIGEN_CUDA_COMPUTE_ARCH=${EIGEN_CI_CUDA_COMPUTE_ARCH}
       -DEIGEN_TEST_CUDA_CLANG=${EIGEN_CI_TEST_CUDA_CLANG}
+      -DEIGEN_TEST_CUDA_NVC=${EIGEN_CI_TEST_CUDA_NVC}
   tags:
     # Build on regular linux to limit GPU cost.
     - saas-linux-2xlarge-amd64
@@ -175,6 +211,7 @@ build:linux:cuda-12.2:clang-12:
     EIGEN_CI_C_COMPILER: clang-12
     EIGEN_CI_CXX_COMPILER: clang++-12
     EIGEN_CI_TEST_CUDA_CLANG: "on"
+
 
 ######### HIP ##################################################################
 # Note: these are currently build-only, until we get an AMD-supported runner.
@@ -210,13 +247,13 @@ build:linux:cross:arm:gcc-10:default:
     EIGEN_CI_CROSS_C_COMPILER: arm-linux-gnueabihf-gcc-10
     EIGEN_CI_CROSS_CXX_COMPILER: arm-linux-gnueabihf-g++-10
 
-build:linux:cross:arm:clang-12:default:
+build:linux:cross:arm:clang-14:default:
   extends: .build:linux:cross:arm
   variables:
-    EIGEN_CI_INSTALL: clang-12
-    EIGEN_CI_C_COMPILER: clang-12
-    EIGEN_CI_CXX_COMPILER: clang++-12
-    EIGEN_CI_CROSS_INSTALL: g++-10-arm-linux-gnueabihf clang-12 qemu-user-static
+    EIGEN_CI_INSTALL: clang-14
+    EIGEN_CI_C_COMPILER: clang-14
+    EIGEN_CI_CXX_COMPILER: clang++-14
+    EIGEN_CI_CROSS_INSTALL: g++-10-arm-linux-gnueabihf clang-14 qemu-user-static
 
 ######## aarch64 ###############################################################
 
@@ -238,19 +275,18 @@ build:linux:cross:aarch64:gcc-10:default:
     EIGEN_CI_CROSS_C_COMPILER: aarch64-linux-gnu-gcc-10
     EIGEN_CI_CROSS_CXX_COMPILER: aarch64-linux-gnu-g++-10
 
-build:linux:cross:aarch64:clang-12:default:
+build:linux:cross:aarch64:clang-14:default:
   extends: .build:linux:cross:aarch64
   variables:
-    EIGEN_CI_INSTALL: clang-12
-    EIGEN_CI_C_COMPILER: clang-12
-    EIGEN_CI_CXX_COMPILER: clang++-12
-    EIGEN_CI_CROSS_INSTALL: g++-10-aarch64-linux-gnu clang-12
+    EIGEN_CI_INSTALL: clang-14
+    EIGEN_CI_C_COMPILER: clang-14
+    EIGEN_CI_CXX_COMPILER: clang++-14
+    EIGEN_CI_CROSS_INSTALL: g++-10-aarch64-linux-gnu clang-14
 
 ######## ppc64le ###############################################################
 
 .build:linux:cross:ppc64le:
   extends: .build:linux:cross
-  image: ubuntu:24.04
   variables:
     EIGEN_CI_TARGET_ARCH: ppc64le
     EIGEN_CI_CROSS_TARGET_TRIPLE: powerpc64le-linux-gnu
@@ -283,7 +319,6 @@ build:linux:cross:ppc64le:clang-16:default:
 # GCC-14 (minimum on Ubuntu 24)
 build:linux:cross:loongarch64:gcc-14:default:
   extends: .build:linux:cross:loongarch64
-  image: ubuntu:24.04
   variables:
     EIGEN_CI_CROSS_INSTALL: g++-14-loongarch64-linux-gnu qemu-user-static
     EIGEN_CI_CROSS_C_COMPILER: loongarch64-linux-gnu-gcc-14
@@ -304,11 +339,38 @@ build:linux:cross:x86-64:gcc-10:default:smoketest:
   tags:
     - saas-linux-medium-amd64
 
-build:linux:cross:x86-64:clang-12:default:smoketest:
-  extends: build:linux:cross:x86-64:clang-12:default
+build:linux:cross:x86-64:clang-14:default:smoketest:
+  extends: build:linux:cross:x86-64:clang-14:default
   variables:
     EIGEN_CI_BUILD_TARGET: buildsmoketests
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   tags:
     - saas-linux-medium-amd64
+
+build:linux:aarch64:gcc-10:default:smoketest:
+  extends: build:linux:cross:aarch64:gcc-10:default
+  variables:
+    EIGEN_CI_BUILD_TARGET: buildsmoketests
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  tags:
+    - saas-linux-medium-arm64
+
+######## Sanitizer Smoke Tests #################################################
+
+build:linux:cross:x86-64:clang-14:sanitizer:smoketest:
+  extends: build:linux:cross:x86-64:clang-14:default
+  variables:
+    EIGEN_CI_BUILD_TARGET: buildsmoketests
+    EIGEN_CI_INSTALL: clang-14 libclang-rt-14-dev
+    EIGEN_CI_CROSS_INSTALL: g++-10-x86-64-linux-gnu clang-14 libclang-rt-14-dev
+    EIGEN_CI_ADDITIONAL_ARGS: >-
+      -DEIGEN_TEST_CUSTOM_CXX_FLAGS=-fsanitize=address,undefined;-fno-sanitize-recover=address;-fno-omit-frame-pointer
+      -DEIGEN_TEST_CUSTOM_LINKER_FLAGS=-fsanitize=address,undefined
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  tags:
+    - saas-linux-medium-amd64
+  allow_failure: true
+  timeout: 30m

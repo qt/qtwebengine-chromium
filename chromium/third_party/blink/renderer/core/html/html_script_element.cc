@@ -86,7 +86,10 @@ bool HTMLScriptElement::HasLegalLinkAttribute(const QualifiedName& name) const {
 
 void HTMLScriptElement::ChildrenChanged(const ChildrenChange& change) {
   HTMLElement::ChildrenChanged(change);
-  loader_->ChildrenChanged(change);
+
+  if (!GetDocument().StatePreservingAtomicMoveInProgress()) {
+    loader_->ChildrenChanged(change);
+  }
 
   // We'll record whether the script element children were ever changed by
   // the API (as opposed to the parser).
@@ -244,17 +247,17 @@ void HTMLScriptElement::setTextContent(const String& string) {
   Node::setTextContent(string);
 }
 
-V8UnionStringOrTrustedScript* HTMLScriptElement::scriptTextContentForBinding() {
+String HTMLScriptElement::scriptTextContentForBinding() {
   return textContentForBinding();
 }
 
-V8UnionStringLegacyNullToEmptyStringOrTrustedScript*
-HTMLScriptElement::scriptInnerTextForBinding() {
+String HTMLScriptElement::scriptInnerTextForBinding() {
   return innerTextForBinding();
 }
 
-V8UnionStringOrTrustedScript* HTMLScriptElement::text() {
-  return MakeGarbageCollected<V8UnionStringOrTrustedScript>(TextFromChildren());
+V8UnionStringOrTrustedScript::Ret HTMLScriptElement::text(
+    ScriptState* script_state) {
+  return V8UnionStringOrTrustedScript::Ret(script_state, TextFromChildren());
 }
 
 void HTMLScriptElement::setText(V8UnionStringOrTrustedScript* value,
@@ -272,9 +275,8 @@ void HTMLScriptElement::setTextWithoutTrustedTypes(const String& value) {
   setTextContent(value);
 }
 
-V8UnionTrustedScriptURLOrUSVString* HTMLScriptElement::src() {
-  return MakeGarbageCollected<V8UnionTrustedScriptURLOrUSVString>(
-      GetURLAttribute(html_names::kSrcAttr));
+String HTMLScriptElement::src() {
+  return GetURLAttribute(html_names::kSrcAttr);
 }
 
 void HTMLScriptElement::setSrc(const V8UnionTrustedScriptURLOrUSVString* value,

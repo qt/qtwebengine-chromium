@@ -18,9 +18,9 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/pickle.h"
 #include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "components/sync/base/time.h"
 #include "components/sync/model/entity_change.h"
@@ -48,7 +48,7 @@ std::string EncodeStorageKey(const std::string& session_tag, int tab_node_id) {
   base::Pickle pickle;
   pickle.WriteString(session_tag);
   pickle.WriteInt(tab_node_id);
-  return std::string(pickle.data_as_char(), pickle.size());
+  return std::string(pickle.AsStringView());
 }
 
 bool DecodeStorageKey(const std::string& storage_key,

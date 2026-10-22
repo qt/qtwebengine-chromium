@@ -4,7 +4,7 @@
  *
  *   FreeType API for accessing BDF-specific strings (specification).
  *
- * Copyright (C) 2002-2025 by
+ * Copyright (C) 2002-2026 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -200,8 +200,8 @@ FT_BEGIN_HEADER
    *   In case of error, `aproperty->type` is always set to
    *   @BDF_PROPERTY_TYPE_NONE.
    *
-   *   This also with SFNT fonts that have a 'BDF~' table, after a bitmap
-   *   strike size has been selected.
+   *   This also works with SFNT fonts that have a 'BDF~' table, after a
+   *   bitmap strike size has been selected.
    */
   FT_EXPORT( FT_Error )
   FT_Get_BDF_Property( FT_Face           face,

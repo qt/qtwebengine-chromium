@@ -1,0 +1,54 @@
+// Copyright 2026 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#ifndef PLATFORM_API_CONNECTION_H_
+#define PLATFORM_API_CONNECTION_H_
+
+#include <cstdint>
+#include <vector>
+
+#include "platform/base/error.h"
+#include "platform/base/ip_address.h"
+#include "platform/base/span.h"
+
+namespace openscreen {
+
+// Represents a connection between two endpoints. This class provides an
+// interface for sending and receiving byte data over a connection.
+class Connection {
+ public:
+  // Client callbacks are run via the TaskRunner used by TlsConnectionFactory.
+  class Client {
+   public:
+    // Called when `connection` experiences an error, such as a read error.
+    virtual void OnError(Connection* connection, const Error& error) = 0;
+
+    // Called when a `block` arrives on `connection`.
+    virtual void OnRead(Connection* connection, std::vector<uint8_t> block) = 0;
+
+   protected:
+    virtual ~Client() = default;
+  };
+
+  virtual ~Connection() = default;
+
+  // Sets the Client associated with this instance. This should be called as
+  // soon as the factory provides a new Connection instance via
+  // TlsConnectionFactory::OnAccepted(), OnConnected() or CreateSocket().
+  // Pass nullptr to unset the Client.
+  virtual void SetClient(Client* client) = 0;
+
+  // Sends a message. Returns true iff the message will be sent.
+  [[nodiscard]] virtual bool Send(ByteView data) = 0;
+
+  // Get the connected remote address.
+  virtual IPEndpoint GetRemoteEndpoint() const = 0;
+
+ protected:
+  Connection() = default;
+};
+
+}  // namespace openscreen
+
+#endif  // PLATFORM_API_CONNECTION_H_

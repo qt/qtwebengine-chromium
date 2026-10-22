@@ -22,6 +22,7 @@
 #define SWSCALE_OPS_CHAIN_H
 
 #include "libavutil/cpu.h"
+#include "libavutil/mem.h"
 
 #include "ops_internal.h"
 
@@ -44,10 +45,17 @@ typedef union SwsOpPriv {
 
     /* Common types */
     void *ptr;
-    uint8_t   u8[16];
-    uint16_t u16[8];
-    uint32_t u32[4];
-    float    f32[4];
+    uint8_t    u8[16];
+    int8_t     i8[16];
+    uint16_t   u16[8];
+    int16_t    i16[8];
+    uint32_t   u32[4];
+    int32_t    i32[4];
+    float      f32[4];
+    uint64_t   u64[2];
+    int64_t    i64[2];
+    uintptr_t uptr[2];
+    intptr_t  iptr[2];
 } SwsOpPriv;
 
 static_assert(sizeof(SwsOpPriv) == 16, "SwsOpPriv size mismatch");
@@ -80,7 +88,7 @@ static_assert(offsetof(SwsOpImpl, priv) == 16, "SwsOpImpl layout mismatch");
 typedef struct SwsOpChain {
 #define SWS_MAX_OPS 16
     SwsOpImpl impl[SWS_MAX_OPS + 1]; /* reserve extra space for the entrypoint */
-    void (*free[SWS_MAX_OPS + 1])(void *);
+    void (*free[SWS_MAX_OPS + 1])(SwsOpPriv *);
     int num_impl;
     int cpu_flags; /* set of all used CPU flags */
 } SwsOpChain;
@@ -94,7 +102,7 @@ static inline void ff_sws_op_chain_free(SwsOpChain *chain)
 
 /* Returns 0 on success, or a negative error code. */
 int ff_sws_op_chain_append(SwsOpChain *chain, SwsFuncPtr func,
-                           void (*free)(void *), const SwsOpPriv *priv);
+                           void (*free)(SwsOpPriv *), const SwsOpPriv *priv);
 
 typedef struct SwsOpEntry {
     /* Kernel metadata; reduced size subset of SwsOp */
@@ -111,13 +119,19 @@ typedef struct SwsOpEntry {
         uint32_t       linear_mask; /* subset of SwsLinearOp */
         int            dither_size; /* subset of SwsDitherOp */
         int            clear_value; /* clear value for integer clears */
+        AVRational     scale;       /* scale factor for SWS_OP_SCALE */
     };
 
     /* Kernel implementation */
     SwsFuncPtr func;
     int (*setup)(const SwsOp *op, SwsOpPriv *out); /* optional */
-    void (*free)(void *priv);
+    void (*free)(SwsOpPriv *priv);
 } SwsOpEntry;
+
+static inline void ff_op_priv_free(SwsOpPriv *priv)
+{
+    av_freep(&priv->ptr);
+}
 
 typedef struct SwsOpTable {
     unsigned cpu_flags;   /* required CPU flags for this table */

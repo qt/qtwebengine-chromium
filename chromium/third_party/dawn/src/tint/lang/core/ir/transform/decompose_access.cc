@@ -92,7 +92,8 @@ struct State {
                 var_worklist.Push(var);
             } else if ((var_ty->AddressSpace() == AddressSpace::kStorage && options.storage) ||
                        (var_ty->AddressSpace() == AddressSpace::kUniform && options.uniform) ||
-                       (var_ty->AddressSpace() == AddressSpace::kWorkgroup && options.workgroup)) {
+                       (var_ty->AddressSpace() == AddressSpace::kWorkgroup && options.workgroup) ||
+                       (var_ty->AddressSpace() == AddressSpace::kImmediate && options.immediate)) {
                 // Atomics could be handled in some backends, but not in a generic way.
                 if (!ContainsAtomic(var_ty->StoreType())) {
                     var_worklist.Push(var);
@@ -178,6 +179,9 @@ struct State {
                 array_ty = ty.runtime_array(BaseEleType());
             } else {
                 auto array_length = NumBaseElements(var_ty->StoreType());
+
+                array_length =
+                    std::max(array_length, options.minimum_array_size / BaseEleType()->Size());
                 array_ty = ty.array(BaseEleType(), array_length);
             }
             result->SetType(ty.ptr(var_ty->AddressSpace(), array_ty, var_ty->Access()));
@@ -289,6 +293,8 @@ struct State {
         auto* var_ty = var->Result()->Type()->As<core::type::Pointer>();
         if (var_ty->AddressSpace() == AddressSpace::kUniform) {
             size = 16u;
+        } else if (var_ty->AddressSpace() == AddressSpace::kImmediate) {
+            size = 4u;
         } else {
             size = SmallestAccessSize(var);
         }
@@ -351,14 +357,14 @@ struct State {
     // correct vector array element in the underlying variable.
     core::ir::Value* CalculateVectorOffset(core::ir::Value* byte_idx, const type::Vector* src_ty) {
         if (auto* byte_cnst = byte_idx->As<core::ir::Constant>()) {
-            return b.Value(
-                u32((byte_cnst->Value()->ValueAs<uint32_t>() % src_ty->Size()) / src_ty->Width()));
+            return b.Value(u32((byte_cnst->Value()->ValueAs<uint32_t>() % src_ty->Size()) /
+                               src_ty->Type()->Size()));
         }
         // Note: Using bitwise-and and shift instead of modulo and divide here was necessary to
         // avoid an FXC miscompile. See https://crbug.com/454366353.
         return b
             .ShiftRight(b.And(byte_idx, b.Constant(u32(src_ty->Size() - 1))),
-                        u32(log2(src_ty->Width())))
+                        u32(log2(src_ty->Type()->Size())))
             ->Result();
     }
 
@@ -1053,7 +1059,7 @@ struct State {
         TINT_IR_ASSERT(ir, buffer_ty && (buffer_ty->Count()->Is<type::RuntimeArrayCount>() ||
                                          buffer_ty->Count()->Is<type::ConstantArrayCount>()));
 
-        if (call->Args().Length() > 1) {
+        if (call->Args().size() > 1) {
             // Direct variable access encoded a lower limit.
             call->Result()->ReplaceAllUsesWith(call->Args()[1]);
         } else if (auto* cnst = buffer_ty->Count()->As<type::ConstantArrayCount>()) {
@@ -1117,7 +1123,10 @@ struct State {
     // 1. The base type is a vector.
     //    i.  If a single store is needed, we simply cast the result if necessary
     //    ii. Multiple stores are needed, break the vector in sub-vectors and store those.
-    // 2. The base type is a scalar. Store each element at successive indices.
+    // 2. The base type is a scalar.
+    //    i.  If the vector element is smaller than base type (e.g., vec4h with u32 base),
+    //        bitcast the entire vector to u32(s) and store.
+    //    ii. Otherwise, store each element at successive indices.
     void MakeVectorStore(core::ir::Var* var, core::ir::Value* from, core::ir::Value* byte_idx) {
         auto* st_ty = from->Type()->As<type::Vector>();
         // Number of array elements need to store the scalar.
@@ -1154,6 +1163,43 @@ struct State {
             }
         } else {
             auto* st_ele_ty = st_ty->DeepestElement();
+
+            // Case A: Vector element is smaller than base type.
+            // This occurs when storing vec<N, f16> but the base type is u32.
+            if (st_ele_ty->Size() < BaseEleType()->Size()) {
+                TINT_IR_ASSERT(ir, BaseEleType()->Is<type::U32>());
+                TINT_IR_ASSERT(ir, st_ele_ty->Size() == 2);  // f16 or similar 2-byte type
+
+                // vec3<f16> forces a u16 base type, so width must be even here.
+                TINT_IR_ASSERT(ir, st_ty->Width() % 2 == 0);
+
+                // vec2h -> bitcast to u32, vec4h -> bitcast to vec2u
+                uint32_t num_u32s = (st_ty->Width() == 2) ? 1 : 2;
+                Value* cast_val = (num_u32s == 1) ? b.Bitcast(ty.u32(), from)->Result()
+                                                  : b.Bitcast(ty.vec2u(), from)->Result();
+
+                for (uint32_t i = 0; i < num_u32s; i++) {
+                    Value* elem =
+                        (num_u32s == 1) ? cast_val : b.Access(ty.u32(), cast_val, u32(i))->Result();
+                    auto* access = b.Access(BaseEleTypePtr(), var, array_idx);
+                    b.Store(access, elem);
+                    if (i < num_u32s - 1) {
+                        if (auto* cnst = array_idx->As<Constant>()) {
+                            array_idx = b.Constant(u32(cnst->Value()->ValueAs<uint32_t>() + 1));
+                        } else {
+                            array_idx = b.Add(array_idx, 1_u)->Result();
+                        }
+                    }
+                }
+                return;
+            }
+
+            // Case B: Vector element is equal to or larger than base type.
+            // ratio == 1: element size == base type size.
+            //   e.g. vec4<f32> with u32 base  → 4× u32  (bitcast each f32)
+            // ratio == 2: element size is 2× base type size.
+            //   e.g. vec4<f32> with u16 base  → 8× u16 (bitcast vec4<f32> to vec2<u32>, then
+            //   bitcast each u32 to 2× u16)
             uint32_t ratio = st_ele_ty->Size() / BaseEleType()->Size();
             TINT_IR_ASSERT(ir, ratio == 1 || ratio == 2);
             for (uint32_t i = 0; i < num_array_eles; i++) {
@@ -1218,6 +1264,7 @@ struct State {
             auto* byte_idx = OffsetToValue(offset);
             MakeStore(s, var, s->Value(), byte_idx);
         });
+        s->Destroy();
     }
 
     // Create a store function for the given `var` and `struct` combination. Essentially creates a
@@ -1323,15 +1370,17 @@ struct State {
 }  // namespace
 
 Result<SuccessType> DecomposeAccess(core::ir::Module& ir, const DecomposeAccessOptions& options) {
-    TINT_CHECK_RESULT(
-        ValidateAndDumpIfNeeded(ir, "core.DecomposeUniformAccess",
-                                core::ir::Capabilities{
-                                    core::ir::Capability::kAllow8BitIntegers,
-                                    core::ir::Capability::kAllow16BitIntegers,
-                                    core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
-                                    core::ir::Capability::kAllowDuplicateBindings,
-                                    core::ir::Capability::kAllowNonCoreTypes,
-                                }));
+    core::ir::AssertValid(ir,
+                          core::ir::Capabilities{
+                              core::ir::Capability::kAllow8BitIntegers,
+                              core::ir::Capability::kAllow16BitIntegers,
+                              core::ir::Capability::kAllowHandleVarsWithoutBindings,
+                              core::ir::Capability::kAllowClipDistancesOnF32ScalarAndVector,
+                              core::ir::Capability::kAllowDuplicateBindings,
+                              core::ir::Capability::kAllowNonCoreTypes,
+                              core::ir::Capability::kLoosenValidationForShaderIO,
+                          },
+                          "before core.DecomposeUniformAccess");
 
     State{ir, options}.Process();
 

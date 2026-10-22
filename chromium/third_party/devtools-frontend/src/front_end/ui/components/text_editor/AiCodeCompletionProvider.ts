@@ -18,6 +18,7 @@ import {
   acceptAiAutoCompleteSuggestion,
   aiAutoCompleteSuggestion,
   aiAutoCompleteSuggestionState,
+  AiSuggestionSource,
   hasActiveAiSuggestion,
   setAiAutoCompleteSuggestion,
   showCompletionHint,
@@ -45,6 +46,9 @@ export interface AiCodeCompletionConfig {
     inferenceLanguage?: Host.AidaClient.AidaInferenceLanguage,
     getPrefix?: () => string,
     stopSequences?: string[],
+  };
+  generationContext: {
+    additionalPreambleContext?: string,
   };
   onFeatureEnabled: () => void;
   onFeatureDisabled: () => void;
@@ -85,6 +89,7 @@ export class AiCodeCompletionProvider {
       this.#aiCodeGenerationConfig = {
         generationContext: {
           inferenceLanguage: this.#aiCodeCompletionConfig.completionContext.inferenceLanguage,
+          additionalPreambleContext: this.#aiCodeCompletionConfig.generationContext.additionalPreambleContext,
         },
         onSuggestionAccepted: this.#aiCodeCompletionConfig.onSuggestionAccepted.bind(this),
         onRequestTriggered: this.#aiCodeCompletionConfig.onRequestTriggered.bind(this),
@@ -199,6 +204,12 @@ export class AiCodeCompletionProvider {
         key: 'Escape',
         run: (): boolean => {
           if (!this.#aiCodeCompletion || !this.#editor || !hasActiveAiSuggestion(this.#editor.state)) {
+            return false;
+          }
+          if (this.#editor.state.field(aiAutoCompleteSuggestionState)?.source === AiSuggestionSource.GENERATION) {
+            // If the suggestion is from code generation, we don't want to
+            // dismiss it here. The user should use the code generation
+            // provider's keymap to dismiss the suggestion.
             return false;
           }
           this.#editor.dispatch({
@@ -347,6 +358,7 @@ export class AiCodeCompletionProvider {
               startTime,
               clearCachedRequest: this.clearCache.bind(this),
               onImpression: this.#aiCodeCompletion?.registerUserImpression.bind(this.#aiCodeCompletion),
+              source: AiSuggestionSource.COMPLETION,
             })
           });
         }
@@ -389,7 +401,7 @@ export class AiCodeCompletionProvider {
       return null;
     }
 
-    const suggestionText = this.#trimSuggestionOverlap(suggestionSample.generationString, suffix);
+    const suggestionText = AiCodeCompletionProvider.trimSuggestionOverlap(suggestionSample.generationString, suffix);
     if (suggestionText.length === 0) {
       return null;
     }
@@ -430,7 +442,7 @@ export class AiCodeCompletionProvider {
   /**
    * Removes the end of a suggestion if it overlaps with the start of the suffix.
    */
-  #trimSuggestionOverlap(generationString: string, suffix?: string): string {
+  static trimSuggestionOverlap(generationString: string, suffix?: string): string {
     if (!suffix) {
       return generationString;
     }

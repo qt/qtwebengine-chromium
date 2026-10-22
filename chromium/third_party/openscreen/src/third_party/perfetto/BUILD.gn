@@ -1,0 +1,16 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build_overrides/build.gni")
+
+if (build_with_chromium) {
+  group("perfetto") {
+    public_deps = [ "//third_party/perfetto" ]
+  }
+} else {
+  group("perfetto") {
+    public_deps =
+        [ "//third_party/perfetto/src:libperfetto_client_experimental" ]
+  }
+}

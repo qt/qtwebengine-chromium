@@ -6,7 +6,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2016-2023 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2016-2025 Sebastian Pipping <sebastian@pipping.org>
 # Copyright (c) 2019      Philippe Antoine <contact@catenacyber.fr>
 # Copyright (c) 2019-2025 Hanno Böck <hanno@gentoo.org>
 # Copyright (c) 2024      Alexander Bluhm <alexander.bluhm@gmx.net>
@@ -175,11 +175,20 @@ run_tests() {
         CTEST_OUTPUT_ON_FAILURE=1
         CTEST_PARALLEL_LEVEL=2
         VERBOSE=1
-        test
     )
-    [[ $* =~ -DEXPAT_DTD=OFF ]] || make_args+=( run-xmltest )
 
-    RUN "${MAKE}" "${make_args[@]}"
+    RUN "${MAKE}" "${make_args[@]}" test
+
+    if [[ ! $* =~ -DEXPAT_DTD=OFF ]]; then
+        # NOTE: This is meant to mitigate Wine crashing randomly in CI
+        if [[ ${CC} =~ mingw ]]; then
+            local retry='retry --times 5 --'
+        else
+            local retry=
+        fi
+
+        RUN ${retry} "${MAKE}" "${make_args[@]}" run-xmltest
+    fi
 }
 
 

@@ -33,9 +33,8 @@ bool CPDF_ScaledRenderBuffer::Initialize(CPDF_RenderContext* context,
                                          int max_dpi) {
   matrix_ = CPDF_DeviceBuffer::CalculateMatrix(device_, rect_, max_dpi,
                                                /*scale=*/true);
-  bool bIsAlpha =
-      !!(device_->GetDeviceCaps(FXDC_RENDER_CAPS) & FXRC_ALPHA_OUTPUT);
-  FXDIB_Format dibFormat = bIsAlpha ? FXDIB_Format::kBgra : FXDIB_Format::kBgr;
+  FXDIB_Format dibFormat = device_->RenderCapAlphaOutput() ? FXDIB_Format::kBgra
+                                                           : FXDIB_Format::kBgr;
   while (true) {
     FX_RECT bitmap_rect =
         matrix_.TransformRect(CFX_FloatRect(rect_)).GetOuterRect();

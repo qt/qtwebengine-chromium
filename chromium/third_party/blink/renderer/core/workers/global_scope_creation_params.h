@@ -15,6 +15,7 @@
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/cpp/permissions_policy/permissions_policy.h"
 #include "services/network/public/mojom/referrer_policy.mojom-blink-forward.h"
+#include "third_party/blink/public/common/permissions_policy/document_policy.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "third_party/blink/public/mojom/blob/blob_url_store.mojom-blink-forward.h"
@@ -58,6 +59,7 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
       Vector<network::mojom::blink::ContentSecurityPolicyPtr>
           response_content_security_policies,
       network::mojom::ReferrerPolicy referrer_policy,
+      DocumentPolicy::DocumentPolicyBundle document_policy,
       const SecurityOrigin*,
       bool starter_secure_context,
       HttpsState starter_https_state,
@@ -82,6 +84,7 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
           std::nullopt,
       bool cross_origin_isolated_capability = false,
       bool parent_is_isolated_context = false,
+      bool direct_sockets_force_enabled_in_parent = false,
       InterfaceRegistry* interface_registry = nullptr,
       scoped_refptr<base::SingleThreadTaskRunner>
           agent_group_scheduler_compositor_task_runner = nullptr,
@@ -134,6 +137,8 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
       response_content_security_policies;
 
   network::mojom::ReferrerPolicy referrer_policy;
+
+  DocumentPolicy::DocumentPolicyBundle document_policy;
 
   // Origin trial features to be inherited by worker/worklet from the document
   // loading it.
@@ -221,11 +226,14 @@ struct CORE_EXPORT GlobalScopeCreationParams final {
   // Whether the execution context has access to cross-origin isolated APIs.
   const bool cross_origin_isolated_capability;
 
-  // Governs whether Direct Sockets are available in a worker context, false
-  // when no parent exists.
-  //
-  // TODO(crbug.com/1206150): We need a specification for this capability.
+  // Governs whether Isolated Context APIs are available in a worker context,
+  // false when no parent exists.
+  // https://wicg.github.io/isolated-web-apps/isolated-contexts.html
   const bool parent_is_isolated_context;
+
+  // Direct Sockets might be enabled outside of Isolated Context in selected
+  // scenarios.
+  const bool direct_sockets_force_enabled_in_parent;
 
   InterfaceRegistry* const interface_registry;
 

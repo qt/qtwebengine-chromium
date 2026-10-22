@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 import './file_thumbnail.js';
 
-import {CrLitElement, type PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
+import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
+import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 import type {UnguessableToken} from '//resources/mojo/mojo/public/mojom/base/unguessable_token.mojom-webui.js';
 
 import type {ComposeboxFile} from './common.js';
@@ -80,11 +81,7 @@ export class ComposeboxFileCarouselElement extends CrLitElement {
     this.resizeObserver_ = new ResizeObserver(debounce(this, () => {
       const height =
           this.clientHeight ? this.clientHeight + CAROUSEL_HEIGHT_PADDING : 0;
-      this.dispatchEvent(new CustomEvent('carousel-resize', {
-        bubbles: true,
-        composed: true,
-        detail: {height: height},
-      }));
+      this.fire('carousel-resize', {height: height});
     }, DEBOUNCE_TIMEOUT_MS));
     this.resizeObserver_.observe(this);
   }

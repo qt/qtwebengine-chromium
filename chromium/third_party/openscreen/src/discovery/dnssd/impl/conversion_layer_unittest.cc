@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <variant>
 #include <vector>
 
 #include "discovery/dnssd/impl/instance_key.h"
@@ -114,7 +115,7 @@ TEST(DnsSdConversionLayerTest, GetDnsRecordsPtr) {
             FakeDnsRecordFactory::kServiceNameProtocolPart);
   EXPECT_EQ(it->name().labels()[2], FakeDnsRecordFactory::kDomainName);
 
-  const auto& rdata = absl::get<PtrRecordRdata>(it->rdata());
+  const auto& rdata = std::get<PtrRecordRdata>(it->rdata());
   EXPECT_EQ(rdata.ptr_domain().labels().size(), size_t{4});
   EXPECT_EQ(rdata.ptr_domain().labels()[0],
             FakeDnsRecordFactory::kInstanceName);
@@ -151,7 +152,7 @@ TEST(DnsSdConversionLayerTest, GetDnsRecordsSrv) {
             FakeDnsRecordFactory::kServiceNameProtocolPart);
   EXPECT_EQ(it->name().labels()[3], FakeDnsRecordFactory::kDomainName);
 
-  const auto& rdata = absl::get<SrvRecordRdata>(it->rdata());
+  const auto& rdata = std::get<SrvRecordRdata>(it->rdata());
   EXPECT_EQ(rdata.priority(), 0);
   EXPECT_EQ(rdata.weight(), 0);
   EXPECT_EQ(rdata.port(), FakeDnsRecordFactory::kPortNum);
@@ -183,7 +184,7 @@ TEST(DnsSdConversionLayerTest, GetDnsRecordsAPresent) {
             FakeDnsRecordFactory::kServiceNameProtocolPart);
   EXPECT_EQ(it->name().labels()[3], FakeDnsRecordFactory::kDomainName);
 
-  const auto& rdata = absl::get<ARecordRdata>(it->rdata());
+  const auto& rdata = std::get<ARecordRdata>(it->rdata());
   EXPECT_EQ(rdata.ipv4_address(),
             IPAddress(FakeDnsRecordFactory::kV4AddressOctets));
 }
@@ -227,7 +228,7 @@ TEST(DnsSdConversionLayerTest, GetDnsRecordsAAAAPresent) {
             FakeDnsRecordFactory::kServiceNameProtocolPart);
   EXPECT_EQ(it->name().labels()[3], FakeDnsRecordFactory::kDomainName);
 
-  const auto& rdata = absl::get<AAAARecordRdata>(it->rdata());
+  const auto& rdata = std::get<AAAARecordRdata>(it->rdata());
   EXPECT_EQ(rdata.ipv6_address(),
             IPAddress(FakeDnsRecordFactory::kV6AddressHextets));
 }
@@ -274,7 +275,7 @@ TEST(DnsSdConversionLayerTest, GetDnsRecordsTxt) {
             FakeDnsRecordFactory::kServiceNameProtocolPart);
   EXPECT_EQ(it->name().labels()[3], FakeDnsRecordFactory::kDomainName);
 
-  const auto& rdata = absl::get<TxtRecordRdata>(it->rdata());
+  const auto& rdata = std::get<TxtRecordRdata>(it->rdata());
   EXPECT_EQ(rdata.texts().size(), size_t{2});
   EXPECT_TRUE(Contains(
       rdata.texts(),

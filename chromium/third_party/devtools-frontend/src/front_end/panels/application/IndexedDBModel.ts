@@ -143,8 +143,7 @@ export class IndexedDBModel extends SDK.SDKModel.SDKModel<EventTypes> implements
     }
 
     for (const [storageBucketName] of this.databaseNamesByStorageKeyAndBucket.get(storageKey) || []) {
-      const storageBucket =
-          this.storageBucketModel?.getBucketByName(storageKey, storageBucketName ?? undefined)?.bucket;
+      const storageBucket = this.storageBucketModel?.getBucketByName(storageKey, storageBucketName)?.bucket;
       if (storageBucket) {
         this.removeStorageBucket(storageBucket);
       }
@@ -169,8 +168,7 @@ export class IndexedDBModel extends SDK.SDKModel.SDKModel<EventTypes> implements
     for (const [storageKey] of this.databaseNamesByStorageKeyAndBucket) {
       const storageBucketNames = this.databaseNamesByStorageKeyAndBucket.get(storageKey)?.keys() || [];
       for (const storageBucketName of storageBucketNames) {
-        const storageBucket =
-            this.storageBucketModel?.getBucketByName(storageKey, storageBucketName ?? undefined)?.bucket;
+        const storageBucket = this.storageBucketModel?.getBucketByName(storageKey, storageBucketName)?.bucket;
         if (storageBucket) {
           await this.loadDatabaseNamesByStorageBucket(storageBucket);
         }
@@ -418,8 +416,6 @@ export class IndexedDBModel extends SDK.SDKModel.SDKModel<EventTypes> implements
       this.dispatchEventToListeners(Events.IndexedDBContentUpdated, {databaseId, objectStoreName, model: this});
     }
   }
-  attributionReportingTriggerRegistered(_event: Protocol.Storage.AttributionReportingTriggerRegisteredEvent): void {
-  }
 
   cacheStorageListUpdated(_event: Protocol.Storage.CacheStorageListUpdatedEvent): void {
   }
@@ -448,14 +444,6 @@ export class IndexedDBModel extends SDK.SDKModel.SDKModel<EventTypes> implements
   }
 
   storageBucketDeleted(_event: Protocol.Storage.StorageBucketDeletedEvent): void {
-  }
-
-  attributionReportingSourceRegistered(_event: Protocol.Storage.AttributionReportingSourceRegisteredEvent): void {
-  }
-  attributionReportingReportSent(_event: Protocol.Storage.AttributionReportingReportSentEvent): void {
-  }
-  attributionReportingVerboseDebugReportSent(_event: Protocol.Storage.AttributionReportingVerboseDebugReportSentEvent):
-      void {
   }
 }
 

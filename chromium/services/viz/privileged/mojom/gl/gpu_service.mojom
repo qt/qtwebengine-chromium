@@ -19,6 +19,7 @@ import "mojo/public/mojom/base/byte_string.mojom";
 import "mojo/public/mojom/base/process_id.mojom";
 import "services/webnn/public/mojom/features.mojom";
 import "services/webnn/public/mojom/webnn_context_provider.mojom";
+import "services/webnn/public/mojom/webnn_service_introspection.mojom";
 import "ui/gfx/geometry/mojom/geometry.mojom";
 import "ui/gfx/mojom/buffer_types.mojom";
 import "ui/gl/mojom/gpu_preference.mojom";
@@ -51,9 +52,10 @@ import "mojo/public/mojom/base/unguessable_token.mojom";
 import "ui/gfx/mojom/dxgi_info.mojom";
 
 interface GpuService {
-  // Tells the GPU service to create a new channel for communication with a
-  // client. The GPU service responds with an IPC handle. |gpu_info| and
-  // |gpu_feature_info| are returned so that if this method is called
+  // Tells the GPU service to connect `channel_handle` for communication with a
+  // client. The GPU service responds with `success` to indicate whether the
+  // connecting of `channel_handle` succeeds or not.  `gpu_info` and
+  // `gpu_feature_info` are returned so that if this method is called
   // synchronously they are available (since the PostTask for
   // GpuHost::DidInitialize might not be dispatched yet).
   [Sync, NoInterrupt]
@@ -61,8 +63,9 @@ interface GpuService {
       int32 client_id,
       uint64 client_tracing_id,
       bool is_gpu_host,
-      bool enable_extra_handles_validation)
-      => (handle<message_pipe>? channel_handle,
+      bool enable_extra_handles_validation,
+      handle<message_pipe> channel_handle)  => (
+          bool success,
           gpu.mojom.GpuInfo gpu_info,
           gpu.mojom.GpuFeatureInfo gpu_feature_info,
           gpu.mojom.SharedImageCapabilities shared_image_capabilities);
@@ -127,7 +130,12 @@ interface GpuService {
   BindWebNNContextProvider(
       pending_receiver<webnn.mojom.WebNNContextProvider>? receiver,
       int32 client_id,
+      uint64 client_tracing_id,
       bool is_incognito);
+
+  // Binds the pending receiver used to send the WebNN introspection data.
+  BindWebNNServiceIntrospection(
+      pending_receiver<webnn.mojom.WebNNServiceIntrospection>? receiver);
 
   // Returns current video memory usage.
   GetVideoMemoryUsageStats() => (gpu.mojom.VideoMemoryUsageStats stats);

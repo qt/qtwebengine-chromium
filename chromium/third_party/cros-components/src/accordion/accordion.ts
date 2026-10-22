@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import '../card/card';
+import '../card/card.js';
 
 import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
 
-import {CardStyle} from '../card/card';
+import {CardStyle} from '../card/card.js';
 
-import {AccordionItem, type AccordionItemExpandedEvent, type AccordionItemVariant} from './accordion_item';
+import {AccordionItem, type AccordionItemExpandedEvent, type AccordionItemVariant} from './accordion_item.js';
 
 /** A chromeOS compliant accordion. */
 export class Accordion extends LitElement {

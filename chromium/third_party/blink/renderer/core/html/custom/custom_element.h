@@ -50,8 +50,9 @@ class CORE_EXPORT CustomElement {
       return false;
 
     // name's 0th code point is an ASCII lower alpha
-    if (!IsASCIILower(name[0]))
+    if (!IsAsciiLower(name[0])) {
       return false;
+    }
 
     // https://github.com/whatwg/html/pull/7991
     // name is a valid element local name
@@ -59,14 +60,7 @@ class CORE_EXPORT CustomElement {
       return false;
     }
     // name does not contain any ASCII upper alphas
-    if (!VisitCharacters(name.GetString(), [](auto characters) {
-          for (size_t i = 0; i < characters.size(); i++) {
-            if (IsASCIIUpper(characters[i])) {
-              return false;
-            }
-          }
-          return true;
-        })) {
+    if (!name.ContainsNoAsciiUpper()) {
       return false;
     }
 
@@ -118,6 +112,7 @@ class CORE_EXPORT CustomElement {
   static void EnqueueFormStateRestoreCallback(Element& element,
                                               const V8ControlValue* value,
                                               const String& mode);
+  static void EnqueueToolFillCallback(Element& element, const String& value);
 
   static void TryToUpgrade(Element&);
 

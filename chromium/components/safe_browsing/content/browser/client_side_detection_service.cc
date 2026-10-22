@@ -17,7 +17,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/escape.h"
 #include "base/strings/strcat.h"
 #include "base/task/single_thread_task_runner.h"
@@ -55,12 +54,9 @@
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
-#include "url/gurl.h"
-
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
 #include "tensorflow_lite_support/cc/port/statusor.h"
 #include "third_party/tflite_support/src/tensorflow_lite_support/cc/task/vision/image_embedder.h"
-#endif
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -150,6 +146,11 @@ void ClientSideDetectionService::OnPrefsUpdated() {
                             weak_factory_.GetWeakPtr()));
     if (IsEnhancedProtectionEnabled(*delegate_->GetPrefs())) {
       client_side_phishing_model_->SubscribeToImageEmbedderOptimizationGuide();
+      if (base::FeatureList::IsEnabled(
+              kClientSideDetectionOnlyESBClassification)) {
+        client_side_phishing_model_
+            ->SubscribeToImageClassifierOptimizationGuide();
+      }
     } else {
       UnsubscribeToModelSubscription();
     }
@@ -180,6 +181,11 @@ void ClientSideDetectionService::UnsubscribeToModelSubscription() {
   // when the model object is not available.
   if (client_side_phishing_model_) {
     client_side_phishing_model_->UnsubscribeToImageEmbedderOptimizationGuide();
+    if (base::FeatureList::IsEnabled(
+            kClientSideDetectionOnlyESBClassification)) {
+      client_side_phishing_model_
+          ->UnsubscribeToImageClassifierOptimizationGuide();
+    }
   }
 }
 
@@ -271,10 +277,13 @@ void ClientSideDetectionService::StartClientReportPhishingRequest(
     return;
   }
 
-  // Record that we made a request. Logged before the request is made
-  // to ensure it gets recorded. If this returns false due to being at ping cap
-  // or prefs are null, abandon the request.
-  if (!AddPhishingReport(base::Time::Now())) {
+  // If the report was not requested by the user, record that we made a request.
+  // Logged before the request is made to ensure it gets recorded. If this
+  // returns false due to being at ping cap or prefs are null, abandon the
+  // request.
+  if (request->client_side_detection_type() !=
+          ClientSideDetectionType::USER_REPORT &&
+      !AddPhishingReport(base::Time::Now())) {
     if (!callback.is_null()) {
       std::move(callback).Run(GURL(request->url()), false, std::nullopt,
                               std::nullopt);
@@ -329,9 +338,6 @@ void ClientSideDetectionService::StartClientReportPhishingRequest(
           })");
   auto resource_request = std::make_unique<network::ResourceRequest>();
   if (!access_token.empty()) {
-    LogAuthenticatedCookieResets(
-        *resource_request,
-        SafeBrowsingAuthenticatedEndpoint::kClientSideDetection);
     SetAccessToken(resource_request.get(), access_token);
   }
 
@@ -715,7 +721,6 @@ ClientSideDetectionService::GetVisualTfLiteModelThresholds() {
   return client_side_phishing_model_->GetVisualTfLiteModelThresholds();
 }
 
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
 const std::vector<TargetEmbedding>&
 ClientSideDetectionService::GetTargetImageEmbeddings() {
   return client_side_phishing_model_->GetTargetImageEmbeddings();
@@ -728,7 +733,6 @@ void ClientSideDetectionService::SetTargetImageEmbeddingsForTesting(
         std::move(target_embeddings));
   }
 }
-#endif
 
 void ClientSideDetectionService::ClassifyPhishingThroughThresholds(
     ClientPhishingRequest* verdict) {
@@ -787,7 +791,6 @@ void ClientSideDetectionService::ClassifyPhishingThroughThresholds(
         client_side_phishing_model_->GetTriggerModelVersion());
   }
 
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
   auto target_image_embeddings =
       client_side_phishing_model_->GetTargetImageEmbeddings();
   if (!target_image_embeddings.empty() && !verdict->is_phishing() &&
@@ -825,7 +828,6 @@ void ClientSideDetectionService::ClassifyPhishingThroughThresholds(
       }
     }
   }
-#endif
 
   base::UmaHistogramEnumeration(
       "SBClientPhishing.ClassifyThresholdsResult",
@@ -864,6 +866,12 @@ bool ClientSideDetectionService::IsSubscribedToImageEmbeddingModelUpdates() {
   return client_side_phishing_model_ &&
          client_side_phishing_model_
              ->IsSubscribedToImageEmbeddingModelUpdates();
+}
+
+bool ClientSideDetectionService::IsSubscribedToImageClassifierModelUpdates() {
+  return client_side_phishing_model_ &&
+         client_side_phishing_model_
+             ->IsSubscribedToImageClassifierModelUpdates();
 }
 
 base::CallbackListSubscription

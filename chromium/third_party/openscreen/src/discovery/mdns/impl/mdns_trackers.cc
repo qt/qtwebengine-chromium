@@ -7,6 +7,7 @@
 #include <array>
 #include <limits>
 #include <utility>
+#include <variant>
 
 #include "discovery/common/config.h"
 #include "discovery/mdns/impl/mdns_random.h"
@@ -46,7 +47,7 @@ bool IsNegativeResponseForType(const MdnsRecord& record, DnsType dns_type) {
     return false;
   }
 
-  const auto& nsec_types = absl::get<NsecRecordRdata>(record.rdata()).types();
+  const auto& nsec_types = std::get<NsecRecordRdata>(record.rdata()).types();
   return ContainsIf(nsec_types, [dns_type](DnsType type) {
     return type == dns_type || type == DnsType::kANY;
   });

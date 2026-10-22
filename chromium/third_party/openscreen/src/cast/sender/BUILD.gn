@@ -21,7 +21,6 @@ openscreen_source_set("channel") {
   ]
 
   deps = [
-    "../../third_party/abseil",
     "../common:channel",
     "../common/certificate/proto:certificate_proto",
     "../common/channel/proto:channel_proto",
@@ -58,7 +57,6 @@ openscreen_source_set("sender") {
   public_deps = [
     ":channel",
     "../../platform",
-    "../../third_party/abseil",
     "../../util",
     "../common:channel",
     "../common:public",

@@ -210,7 +210,6 @@ class MEDIA_GPU_EXPORT H264Decoder : public AcceleratedVideoDecoder {
   uint8_t GetBitDepth() const override;
   VideoChromaSampling GetChromaSampling() const override;
   VideoColorSpace GetVideoColorSpace() const override;
-  gfx::HDRMetadata GetHDRMetadata() const override;
   size_t GetRequiredNumOfPictures() const override;
   size_t GetNumReferenceFrames() const override;
 
@@ -225,6 +224,12 @@ class MEDIA_GPU_EXPORT H264Decoder : public AcceleratedVideoDecoder {
   static bool FillH264PictureFromSliceHeader(const H264SPS* sps,
                                              const H264SliceHeader& slice_hdr,
                                              H264Picture* pic);
+
+  void SetCurrPicForTesting(scoped_refptr<H264Picture> pic) { curr_pic_ = pic; }
+  void StoreDPBPicForTesting(scoped_refptr<H264Picture> p);
+  bool ModifyReferencePicListsForTesting(const H264SliceHeader* slice_hdr,
+                                         H264Picture::Vector* ref_pic_list0,
+                                         H264Picture::Vector* ref_pic_list1);
 
  private:
   // Internal state of the decoder.
@@ -438,7 +443,7 @@ class MEDIA_GPU_EXPORT H264Decoder : public AcceleratedVideoDecoder {
   // Video picture color space of input bitstream.
   VideoColorSpace picture_color_space_;
   // HDR metadata in the bitstream.
-  gfx::HDRMetadata hdr_metadata_;
+  gfx::HDRMetadata hdr_metadata_bitstream_;
 
   // PicOrderCount of the previously outputted frame.
   int last_output_poc_;

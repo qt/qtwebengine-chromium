@@ -22,7 +22,7 @@ template <typename MatrixType>
 struct TridiagonalizationMatrixTReturnType;
 template <typename MatrixType>
 struct traits<TridiagonalizationMatrixTReturnType<MatrixType>> : public traits<typename MatrixType::PlainObject> {
-  typedef typename MatrixType::PlainObject ReturnType;  // FIXME shall it be a BandMatrix?
+  typedef typename MatrixType::PlainObject ReturnType;  // FIXME: consider using BandMatrix as ReturnType.
   enum { Flags = 0 };
 };
 

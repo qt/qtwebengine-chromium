@@ -4,7 +4,10 @@
 
 import enum
 import os
-import print_histogram_names
+
+import setup_modules  # pylint: disable=unused-import
+
+import chromium_src.tools.metrics.histograms.print_histogram_names as print_histogram_names
 
 
 class WellKnownAllowlistPath(enum.Enum):

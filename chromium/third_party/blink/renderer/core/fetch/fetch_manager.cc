@@ -532,9 +532,7 @@ class FetchManager::Loader final
       if (result == Result::kDone) {
         bool integrity_failed = false;
 
-        if (RuntimeEnabledFeatures::UnencodedDigestEnabled(
-                loader_->GetExecutionContext()) &&
-            !SubresourceIntegrity::CheckUnencodedDigests(unencoded_digests_,
+        if (!SubresourceIntegrity::CheckUnencodedDigests(unencoded_digests_,
                                                          &buffer_)) {
           integrity_failed = true;
           error_message =
@@ -725,7 +723,7 @@ void FetchManager::Loader::DidReceiveResponse(
   response_http_status_code_ = response.HttpStatusCode();
 
   if (response.MimeType() == "application/wasm" &&
-      (response.CurrentRequestUrl().ProtocolIsInHTTPFamily() ||
+      (response.CurrentRequestUrl().ProtocolIsInHttpFamily() ||
        CommonSchemeRegistry::IsExtensionScheme(
            response.CurrentRequestUrl().Protocol().Ascii()))) {
     // We create a ScriptCachedMetadataHandler for WASM modules.
@@ -795,8 +793,7 @@ void FetchManager::Loader::DidReceiveResponse(
                                  tainted_response);
   r->headers()->SetGuard(Headers::kImmutableGuard);
   if (GetFetchRequestData()->Integrity().empty() &&
-      (!RuntimeEnabledFeatures::UnencodedDigestEnabled(GetExecutionContext()) ||
-       response.GetUnencodedDigests().empty())) {
+      response.GetUnencodedDigests().empty()) {
     response_resolver_->Resolve(r);
     response_resolver_.Clear();
   } else {
@@ -1677,7 +1674,7 @@ FetchLaterResult* FetchLaterManager::FetchLater(
 
   // 8. If request’s URL’s scheme is not an HTTP(S) scheme, then throw a
   // TypeError.
-  if (!request->Url().ProtocolIsInHTTPFamily()) {
+  if (!request->Url().ProtocolIsInHttpFamily()) {
     exception_state.ThrowTypeError(
         "fetchLater is only supported over HTTP(S).");
     return nullptr;
@@ -1794,9 +1791,11 @@ FetchLaterManager::FetchLaterManager(ExecutionContext* ec)
     // not have enough time to wait for response.
     auto descriptor = mojom::blink::PermissionDescriptor::New();
     descriptor->name = mojom::blink::PermissionName::BACKGROUND_SYNC;
-    permission_service->AddPermissionObserver(std::move(descriptor),
-                                              background_sync_permission_,
-                                              std::move(observer));
+    permission_service->AddPermissionObserver(
+        std::move(descriptor),
+        mojom::blink::PermissionStatusWithDetails::New(
+            background_sync_permission_, nullptr),
+        std::move(observer));
   }
 }
 
@@ -1854,8 +1853,8 @@ bool FetchLaterManager::IsBackgroundSyncGranted() const {
 }
 
 void FetchLaterManager::OnPermissionStatusChange(
-    mojom::blink::PermissionStatus status) {
-  background_sync_permission_ = status;
+    mojom::blink::PermissionStatusWithDetailsPtr status) {
+  background_sync_permission_ = status->status;
 }
 
 size_t FetchLaterManager::NumLoadersForTesting() const {
@@ -1890,7 +1889,7 @@ FetchLaterManager::PrepareNetworkRequest(
 
   FetchManagerResourceRequestContext resource_request_context;
   if (PrepareResourceRequestForCacheAccess(
-          kFetchLaterResourceType, fetch_client_settings_object, KURL(),
+          kFetchLaterResourceType, fetch_client_settings_object, NullUrl(),
           resource_request_context, fetcher->Context(),
           params) != std::nullopt) {
     return nullptr;

@@ -1,0 +1,34 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# This file is imported by Perfetto's BUILD.gn files.
+
+# The location of the Perfetto checkout.
+perfetto_root = "//third_party/perfetto/src"
+perfetto_root_path = "//third_party/perfetto/src/"
+
+# Prevent Perfetto from trying to use its own standalone build setup.
+perfetto_build_with_embedder = true
+
+# We don't want to build the trace processor, just the tracing SDK.
+enable_perfetto_trace_processor = false
+
+# We don't need the IPC layer.
+enable_perfetto_ipc = false
+
+# We want the client library.
+enable_perfetto_platform_services = false
+
+# Other flags to minimize build size/deps.
+enable_perfetto_heapprofd = false
+enable_perfetto_traced_probes = false
+enable_perfetto_tools = false
+enable_perfetto_unittests = false
+enable_perfetto_benchmarks = false
+enable_perfetto_fuzzers = false
+enable_perfetto_integration_tests = false
+
+# Map dependencies.
+perfetto_protobuf_target = "//third_party/protobuf:protobuf_lite"
+perfetto_protobuf_config = "//third_party/protobuf:protobuf_config"

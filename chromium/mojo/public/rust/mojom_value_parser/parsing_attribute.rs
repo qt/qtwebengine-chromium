@@ -2,7 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! FOR_RELEASE: Docs
+//! This crate defines proc-macros for deriving the `MojomParse` trait (and
+//! `PrimitiveEnum`, which also derives `MojomParse`).
+//!
+//! The behavior of the proc macros is conceptually very simple: we require
+//! every field to implement `MojomParse` independently, and then just invoke
+//! those implementations for each field.
+//!
+//! These macros are necessary because Rust does not support reflection; in
+//! order to iterate over the fields of a struct, we need to use compile-time
+//! syntax processing (that is, a proc-macro).
+//!
+//! When deriving `PrimitiveEnum`, we instead implement traits that allow easy
+//! conversion between the enum and `i32`, then use those to implement
+//! `MojomParse`.
 
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
@@ -109,28 +122,31 @@ fn derive_mojomparse_struct(
             impl TryFrom<MojomValue> for #name {
                 type Error = ::anyhow::Error;
 
-                fn try_from(value : MojomValue) -> ::anyhow::Result<Self> {
-                    // FOR_RELEASE: Don't clone here
-                    if let MojomValue::Struct(_field_names, fields) = value.clone() {
-                        // Try to extract all the field values at once
-                        let fields : [MojomValue; #num_fields] = fields.try_into()
-                        .or(Err(::anyhow::anyhow!(
-                                "Wrong number of fields to construct a value of type {} from MojomValue {:?}",
-                                    std::any::type_name::<#name>(),
-                                    value)))?;
-                        let [#(#field_idents),*] = fields;
-                        return Ok(Self {
-                            #(#from_mojom_value_fields),*
-                        })
-                    } else {
+                fn try_from(value: MojomValue) -> ::anyhow::Result<Self> {
+                    let MojomValue::Struct(field_names, fields) = value else {
                         ::anyhow::bail!(
                             "Cannot construct a value of type {} from non-struct MojomValue {:?}",
                             std::any::type_name::<#name>(),
                             value
                         );
-                    }
+                    };
+
+                    if fields.len() != #num_fields {
+                        ::anyhow::bail!(
+                            "Wrong number of fields to construct a value of type {} from MojomValue {:?}",
+                            std::any::type_name::<#name>(),
+                            MojomValue::Struct(field_names, fields)
+                        )
+                    };
+
+                    // Try to extract all the field values at once
+                    let fields: [MojomValue; #num_fields] = fields.try_into().unwrap();
+                    let [#(#field_idents),*] = fields;
+                    return Ok(Self {
+                        #(#from_mojom_value_fields),*
+                    })
                 }
-            }
+            };
         };
     };
 }
@@ -141,8 +157,9 @@ fn derive_mojomparse_union(
 ) -> proc_macro2::TokenStream {
     // Extract/compute just the bits of the variants that we care about:
     // The name, type, and discriminant value
-    let mut next_discriminant: u32 = 0;
-    let variant_info : Vec<(syn::Ident, syn::Type, u32)> = variants.into_iter().map(|variant: syn::Variant| {
+    let mut next_discriminant: i32 = 0;
+    let variant_info : Vec<(syn::Ident, syn::Type, i32)>
+        = variants.into_iter().map(|variant: syn::Variant| {
         let variant_name = variant.ident;
         let mut fields = match variant.fields {
             syn::Fields::Unnamed(syn::FieldsUnnamed { unnamed, .. }) => unnamed,
@@ -183,7 +200,7 @@ fn derive_mojomparse_union(
 
             impl MojomParse for #name {
                 fn mojom_type() -> MojomType {
-                    let variants : BTreeMap<u32, MojomType> = [
+                    let variants : BTreeMap<i32, MojomType> = [
                         #(#mojom_type_fields),*
                     ].into();
                     MojomType::Union { variants }
@@ -203,21 +220,20 @@ fn derive_mojomparse_union(
                 type Error = ::anyhow::Error;
 
                 fn try_from(value : MojomValue) -> ::anyhow::Result<Self> {
-                    // FOR_RELEASE: Don't clone here
-                    if let MojomValue::Union(discriminant, boxed_value) = value.clone() {
-                        match discriminant {
-                            #(#from_mojom_value_branches)*
-                            _ => ::anyhow::bail!(
-                                     "Invalid discriminant to construct a value of type {} from MojomValue {:?}",
-                                     std::any::type_name::<#name>(),
-                                     value)
-                        }
-                    } else {
+                    let MojomValue::Union(discriminant, boxed_value) = value else {
                         ::anyhow::bail!(
                             "Cannot construct a value of type {} from non-union MojomValue {:?}",
                             std::any::type_name::<#name>(),
                             value
                         );
+                    };
+
+                    match discriminant {
+                        #(#from_mojom_value_branches)*
+                        discriminant => ::anyhow::bail!(
+                                    "Invalid discriminant to construct a value of type {} from MojomValue {:?}",
+                                    std::any::type_name::<#name>(),
+                                    MojomValue::Union(discriminant, boxed_value))
                     }
                 }
             }
@@ -229,15 +245,25 @@ fn derive_mojomparse_union(
 // value of `next_discriminant`. In either case, set `next_discriminant` to the
 // computed value + 1
 fn compute_next_discriminant(
-    next_discriminant: &mut u32,
+    next_discriminant: &mut i32,
     discriminant_opt: Option<(syn::Token![=], syn::Expr)>,
-) -> u32 {
+) -> i32 {
     let discriminant = match discriminant_opt {
         Some((_, syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Int(n), .. }))) => {
             let discriminant = n
-                .base10_parse::<u32>()
+                .base10_parse::<i32>()
                 .expect("Enum/Union discriminants must be a 32-bit integer literal.");
             discriminant
+        }
+        Some((_, syn::Expr::Unary(syn::ExprUnary { op: syn::UnOp::Neg(_), expr, .. }))) => {
+            if let syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Int(n), .. }) = *expr {
+                let discriminant = n
+                    .base10_parse::<i32>()
+                    .expect("Enum/Union discriminants must be a 32-bit integer literal.");
+                -discriminant
+            } else {
+                panic!("Enum/Union discriminants must be a 32-bit integer literal.");
+            }
         }
         None => *next_discriminant,
         _ => panic!("Enum/Union discriminants must be a 32-bit integer literal."),
@@ -256,14 +282,14 @@ pub fn derive_primitiveenum(input: proc_macro::TokenStream) -> proc_macro::Token
         _ => panic!("No structs or unions allowed!"),
     };
 
-    let mut next_discriminant: u32 = 0;
+    let mut next_discriminant: i32 = 0;
     let mut default_variant: Option<syn::Ident> = None;
     let generate_branch = |variant: syn::Variant| {
         if !variant.fields.is_empty() {
             panic!("Mojom enums must not have any variants with fields!")
         }
 
-        // FOR_RELEASE: See if any variants have a "default" attribute
+        // TODO(crbug.com/496945860): See if any variants have a "default" attribute
         default_variant = None; // Silence compiler until we do that
 
         let discriminant = compute_next_discriminant(&mut next_discriminant, variant.discriminant);
@@ -292,14 +318,14 @@ pub fn derive_primitiveenum(input: proc_macro::TokenStream) -> proc_macro::Token
 
             use mojom_value_parser_core::*;
 
-            impl From<#name> for u32 {
-                fn from(value: #name) -> u32 { value as u32 }
+            impl From<#name> for i32 {
+                fn from(value: #name) -> i32 { value as i32 }
             }
 
-            impl TryFrom<u32> for #name {
+            impl TryFrom<i32> for #name {
                 type Error = ::anyhow::Error;
 
-                fn try_from(value : u32) -> ::anyhow::Result<Self> {
+                fn try_from(value : i32) -> ::anyhow::Result<Self> {
                     match value {
                         #(#branches),*
                     }

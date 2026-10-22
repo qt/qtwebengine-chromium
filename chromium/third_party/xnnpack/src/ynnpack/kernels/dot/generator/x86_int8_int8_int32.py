@@ -1,6 +1,16 @@
+# Copyright 2025 Google LLC
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Specializations for int8 x86 dot kernel generators."""
 
-from ynnpack.kernels.dot.generator.x86 import x86_avx, x86_avx512f
+# pylint: disable=missing-class-docstring
+# pylint: disable=invalid-name
+
+from ynnpack.kernels.dot.generator.dot_base import generate_dot_kernels
+from ynnpack.kernels.dot.generator.x86 import x86_avx
+from ynnpack.kernels.dot.generator.x86 import x86_avx512
 
 
 class x86_avx2_int8_int8_int32(x86_avx):
@@ -17,7 +27,7 @@ class x86_avx2_int8_int8_int32(x86_avx):
 
 namespace {
 
-YNN_INTRINSIC int32_t unaligned_load_int8x4(const void* ptr) {
+YNN_INTRINSIC int32_t unaligned_load_int8x4(const int8_t* ptr) {
     int32_t value;
     memcpy(&value, ptr, sizeof(int32_t));
     return value;
@@ -49,26 +59,41 @@ __m{self.bits}i c_{i}_{j+4} = {self._mm()}_setzero_si{self.bits}();
 """
 
   def load_a_tile(self, i, k):
-    return f"__m{self.bits}i a_{i}_{k} = {self._mm()}_cvtepi8_epi16({self._mm(self.bits//2)}_set1_epi32(unaligned_load_int8x4({self.a_ptr(i, k)})));\n"
+    bits = self.bits
+    mm = self._mm()
+    mm2 = self._mm(bits//2)
+    a = f"unaligned_load_int8x4({self.a_ptr(i, k)})"
+    a_ik = f"a_{i}_{k}"
+    return f"__m{bits}i {a_ik} = {mm}_cvtepi8_epi16({mm2}_set1_epi32({a}));\n"
 
   def load_b_tile(self, k, j):
+    bits = self.bits
+    mm = self._mm()
+    mm2 = self._mm(bits//2)
+    b0_ptr = self.b_ptr(k, j+0, f"__m{bits//2}i")
+    b4_ptr = self.b_ptr(k, j+4, f"__m{bits//2}i")
     return f"""
-__m{self.bits}i b_{k}_{j+0} = {self._mm()}_cvtepi8_epi16({self._mm(self.bits//2)}_load_si{self.bits//2}({self.b_ptr(k, j+0, f'__m{self.bits//2}i')}));
-__m{self.bits}i b_{k}_{j+4} = {self._mm()}_cvtepi8_epi16({self._mm(self.bits//2)}_load_si{self.bits//2}({self.b_ptr(k, j+4, f'__m{self.bits//2}i')}));
+__m{bits}i b_{k}_{j+0} = {mm}_cvtepi8_epi16({mm2}_load_si{bits//2}({b0_ptr}));
+__m{bits}i b_{k}_{j+4} = {mm}_cvtepi8_epi16({mm2}_load_si{bits//2}({b4_ptr}));
 """
 
   def product(self, i, j, k):
+    mm = self._mm()
+    c_ij0 = f"c_{i}_{j+0}"
+    c_ij4 = f"c_{i}_{j+4}"
     return f"""
-c_{i}_{j+0} = {self._mm()}_add_epi32(c_{i}_{j+0}, {self._mm()}_madd_epi16(a_{i}_{k}, b_{k}_{j+0}));
-c_{i}_{j+4} = {self._mm()}_add_epi32(c_{i}_{j+4}, {self._mm()}_madd_epi16(a_{i}_{k}, b_{k}_{j+4}));
+{c_ij0} = {mm}_add_epi32({c_ij0}, {mm}_madd_epi16(a_{i}_{k}, b_{k}_{j+0}));
+{c_ij4} = {mm}_add_epi32({c_ij4}, {mm}_madd_epi16(a_{i}_{k}, b_{k}_{j+4}));
 """
 
 
-class x86_avx512bw_int8_int8_int32(x86_avx512f):
-  def __init__(self, arch="avx512bw", vector_bits=512):
+class x86_avx512_int8_int8_int32(x86_avx512):
+
+  def __init__(self, arch="avx512", vector_bits=512):
     super().__init__(arch, "int8_int8_int32", "int32_t", vector_bits, tile_shape=(1, 16, 4))
     self.a_type = "int8_t"
     self.b_type = "int8_t"
+    self.flags += ["dot_flag::consistent_arithmetic"]
     # This kernel already has 2 accumulators per tile.
     self.min_tiles = max(1, self.min_tiles // 2)
 
@@ -112,16 +137,55 @@ __m{self.bits}i c_{i}_{j+8} = {self._mm()}_setzero_si{self.bits}();
 """
 
   def load_a_tile(self, i, k):
-    return f"__m{self.bits}i a_{i}_{k} = {self._mm()}_cvtepi8_epi16({self._mm(self.bits//2)}_set1_epi32(unaligned_load_int8x4({self.a_ptr(i, k)})));\n"
+    bits = self.bits
+    mm = self._mm()
+    mm2 = self._mm(bits//2)
+    a = f"unaligned_load_int8x4({self.a_ptr(i, k)})"
+    a_ik = f"a_{i}_{k}"
+    return f"__m{bits}i {a_ik} = {mm}_cvtepi8_epi16({mm2}_set1_epi32({a}));\n"
 
   def load_b_tile(self, k, j):
+    bits = self.bits
+    b0_ptr = self.b_ptr(k, j+0, f"__m{bits//2}i")
+    b8_ptr = self.b_ptr(k, j+8, f"__m{bits//2}i")
+    mm = self._mm()
+    mm2 = self._mm(bits//2)
     return f"""
-__m{self.bits}i b_{k}_{j+0} = {self._mm()}_cvtepi8_epi16({self._mm(self.bits//2)}_load_si{self.bits//2}({self.b_ptr(k, j+0, f'__m{self.bits//2}i')}));
-__m{self.bits}i b_{k}_{j+8} = {self._mm()}_cvtepi8_epi16({self._mm(self.bits//2)}_load_si{self.bits//2}({self.b_ptr(k, j+8, f'__m{self.bits//2}i')}));
+__m{bits}i b_{k}_{j+0} = {mm}_cvtepi8_epi16({mm2}_load_si{bits//2}({b0_ptr}));
+__m{bits}i b_{k}_{j+8} = {mm}_cvtepi8_epi16({mm2}_load_si{bits//2}({b8_ptr}));
 """
 
   def product(self, i, j, k):
+    mm = self._mm()
+    c_ij0 = f"c_{i}_{j+0}"
+    c_ij8 = f"c_{i}_{j+8}"
     return f"""
-c_{i}_{j+0} = {self._mm()}_add_epi32(c_{i}_{j+0}, {self._mm()}_madd_epi16(a_{i}_{k}, b_{k}_{j+0}));
-c_{i}_{j+8} = {self._mm()}_add_epi32(c_{i}_{j+8}, {self._mm()}_madd_epi16(a_{i}_{k}, b_{k}_{j+8}));
+{c_ij0} = {mm}_add_epi32({c_ij0}, {mm}_madd_epi16(a_{i}_{k}, b_{k}_{j+0}));
+{c_ij8} = {mm}_add_epi32({c_ij8}, {mm}_madd_epi16(a_{i}_{k}, b_{k}_{j+8}));
 """
+
+
+generate_dot_kernels(
+    x86_avx2_int8_int8_int32(),
+    [
+        (1, 32, 4),
+        (2, 16, 4),
+        (3, 8, 4),
+        (4, 8, 4),
+        (6, 8, 4),
+    ],
+)
+
+generate_dot_kernels(
+    x86_avx512_int8_int8_int32(),
+    [
+        (1, 64, 4),
+        (2, 64, 4),
+        (3, 32, 4),
+        (4, 32, 4),
+        (5, 32, 4),
+        (6, 32, 4),
+        (8, 16, 4),
+        (12, 16, 4),
+    ],
+)

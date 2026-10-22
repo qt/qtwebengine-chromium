@@ -37,6 +37,7 @@
 #include "dawn/native/Adapter.h"
 #include "dawn/native/BindGroupLayoutInternal.h"
 #include "dawn/native/CacheRequest.h"
+#include "dawn/native/ImmediateConstantsLayout.h"
 #include "dawn/native/Pipeline.h"
 #include "dawn/native/TintUtils.h"
 #include "dawn/native/opengl/BindGroupLayoutGL.h"
@@ -65,7 +66,9 @@ using InterstageLocationAndName = std::pair<uint32_t, std::string>;
 DAWN_MAKE_CACHE_REQUEST(GLSLCompilationRequest, GLSL_COMPILATION_REQUEST_MEMBERS);
 #undef GLSL_COMPILATION_REQUEST_MEMBERS
 
-#define GLSL_COMPILATION_MEMBERS(X) X(std::string, glsl)
+#define GLSL_COMPILATION_MEMBERS(X) \
+    X(std::string, glsl)            \
+    X(Extent3D, workgroupSize)
 DAWN_SERIALIZABLE(struct, GLSLCompilation, GLSL_COMPILATION_MEMBERS) {
     static ResultOrError<GLSLCompilation> FromValidatedBlob(Blob blob);
 };
@@ -193,17 +196,23 @@ void GenerateCombinedSamplerInfo(
         // This is an external texture, add planes individually.
         const auto& bindingLayout = std::get<ExternalTextureBindingInfo>(bindingInfo.bindingLayout);
 
+        auto& tint_data = bindings.external_texture.at(ToTint(use.texture));
+        DAWN_ASSERT(std::holds_alternative<tint::ExternalMultiplanarTexture>(tint_data));
+
+        tint::ExternalMultiplanarTexture mp_data =
+            std::get<tint::ExternalMultiplanarTexture>(tint_data);
+
         CombinedBindingInfo plane0 = {
             .group = use.texture.group,
             .index = bindingLayout.plane0,
-            .remappedBinding = bindings.external_texture.at(ToTint(use.texture)).plane0,
+            .remappedBinding = mp_data.plane0,
         };
         AddCombinedSampler(plane0, sampler, false);
 
         CombinedBindingInfo plane1 = {
             .group = use.texture.group,
             .index = bindingLayout.plane1,
-            .remappedBinding = bindings.external_texture.at(ToTint(use.texture)).plane1,
+            .remappedBinding = mp_data.plane1,
         };
         AddCombinedSampler(plane1, sampler, true);
     }
@@ -264,6 +273,7 @@ void GenerateTextureBuiltinFromUniformData(
 bool GenerateArrayLengthFromuniformData(
     const BindingInfoArray& moduleBindingInfo,
     const PipelineLayout* layout,
+    SingleShaderStage stage,
     tint::glsl::writer::ArrayLengthFromUniformOptions& options) {
     const PipelineLayout::BindingIndexInfo& indexInfo = layout->GetBindingIndexInfo();
 
@@ -272,6 +282,11 @@ bool GenerateArrayLengthFromuniformData(
 
         for (BindingIndex binding : bgl->GetBufferIndices()) {
             const BindingInfo& bindingInfo = bgl->GetBindingInfo(binding);
+
+            // Skip bindings that aren't visible to this stage.
+            if (!(bindingInfo.visibility & StageBit(stage))) {
+                continue;
+            }
 
             switch (std::get<BufferBindingInfo>(bindingInfo.bindingLayout).type) {
                 case wgpu::BufferBindingType::Storage:
@@ -340,14 +355,13 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
     const OpenGLFunctions& gl,
     const ProgrammableStage& programmableStage,
     SingleShaderStage stage,
-    bool usesVertexIndex,
-    bool usesInstanceIndex,
-    bool usesFragDepth,
+    const ImmediateConstantMask& pipelineImmediateMask,
     VertexAttributeMask bgraSwizzleAttributes,
     std::vector<CombinedSampler>* combinedSamplersOut,
     const PipelineLayout* layout,
     EmulatedTextureBuiltinRegistrar* emulatedTextureBuiltins,
-    bool* needsSSBOLengthUniformBuffer) {
+    bool* needsSSBOLengthUniformBuffer,
+    Extent3D* workgroupSize) {
     TRACE_EVENT0(GetDevice()->GetPlatform(), General, "TranslateToGLSL");
 
     const OpenGLVersion& version = gl.GetVersion();
@@ -401,7 +415,7 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
 
     if (GetDevice()->IsToggleEnabled(Toggle::GLUseArrayLengthFromUniform)) {
         *needsSSBOLengthUniformBuffer = GenerateArrayLengthFromuniformData(
-            moduleBindingInfo, layout, req.tintOptions.array_length_from_uniform);
+            moduleBindingInfo, layout, stage, req.tintOptions.array_length_from_uniform);
         if (*needsSSBOLengthUniformBuffer) {
             req.tintOptions.use_array_length_from_uniform = true;
             req.tintOptions.array_length_from_uniform.ubo_binding = {
@@ -431,18 +445,29 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
     req.tintOptions.disable_workgroup_init =
         GetDevice()->IsToggleEnabled(Toggle::DisableWorkgroupInit);
 
-    if (usesVertexIndex) {
-        req.tintOptions.first_vertex_offset = 4 * PipelineLayout::ImmediateLocation::FirstVertex;
+    // If the size or alignment of the vertex and fragment stage immediate variables differ (e.g.,
+    // the vertex shader immediates contain a vec4 and the fragment shader do not), the generated
+    // structs may have differing alignment or size, and GLSL will give an error at link time. Count
+    // the actual used slots, round up to the widest possible alignment (4 u32s), multiply by the
+    // element byte size and pass that to Tint.
+    auto immediateCount = RoundUp(pipelineImmediateMask.count(), 4u);
+
+    req.tintOptions.minimum_immediate_size = immediateCount * kImmediateConstantElementByteSize;
+    if (HasImmediateConstants(&RenderImmediateConstants::firstVertex, pipelineImmediateMask)) {
+        req.tintOptions.first_vertex_offset = GetImmediateByteOffsetInPipelineIfAny(
+            &RenderImmediateConstants::firstVertex, pipelineImmediateMask);
     }
 
-    if (usesInstanceIndex) {
-        req.tintOptions.first_instance_offset =
-            4 * PipelineLayout::ImmediateLocation::FirstInstance;
+    if (HasImmediateConstants(&RenderImmediateConstants::firstInstance, pipelineImmediateMask)) {
+        req.tintOptions.first_instance_offset = GetImmediateByteOffsetInPipelineIfAny(
+            &RenderImmediateConstants::firstInstance, pipelineImmediateMask);
     }
 
-    if (usesFragDepth) {
-        req.tintOptions.depth_range_offsets = {4 * PipelineLayout::ImmediateLocation::MinDepth,
-                                               4 * PipelineLayout::ImmediateLocation::MaxDepth};
+    if (HasImmediateConstants(&RenderImmediateConstants::clampFragDepth, pipelineImmediateMask)) {
+        uint32_t offsetStartBytes = GetImmediateByteOffsetInPipeline(
+            &RenderImmediateConstants::clampFragDepth, pipelineImmediateMask);
+        req.tintOptions.depth_range_offsets = {
+            offsetStartBytes, offsetStartBytes + kImmediateConstantElementByteSize};
     }
 
     if (stage == SingleShaderStage::Vertex) {
@@ -476,14 +501,21 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
         compilationResult, GetDevice(), std::move(req), GLSLCompilation::FromValidatedBlob,
         [](GLSLCompilationRequest r) -> ResultOrError<GLSLCompilation> {
             // Requires Tint Program here right before actual using.
-            auto inputProgram = r.inputProgram.UnsafeGetValue()->GetTintProgram();
+            auto shaderModule = r.inputProgram.UnsafeGetValue();
+            auto inputProgram = shaderModule->GetTintProgram();
+            auto device = shaderModule->GetDevice();
             const tint::Program* tintInputProgram = &(inputProgram->program);
             // Convert the AST program to an IR module.
             tint::Result<tint::core::ir::Module> ir;
             {
                 SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(r.platform.UnsafeGetValue(),
                                                    "ShaderModuleProgramToIR");
-                ir = tint::wgsl::reader::ProgramToLoweredIR(*tintInputProgram);
+                tint::wgsl::reader::IROptions irOptions{
+                    .dump_ir_when_validating = device->IsToggleEnabled(Toggle::DumpTintIR),
+                    .enable_validation_asserts =
+                        device->IsToggleEnabled(Toggle::EnableTintIRValidationAsserts),
+                };
+                ir = tint::wgsl::reader::ProgramToLoweredIR(*tintInputProgram, irOptions);
                 DAWN_INVALID_IF(ir != tint::Success,
                                 "An error occurred while generating Tint IR\n%s",
                                 ir.Failure().reason);
@@ -500,22 +532,26 @@ ResultOrError<GLuint> ShaderModule::CompileShader(
                                 result.Failure().reason);
             }
 
+            GLSLCompilation compResult{{.glsl = std::move(result->glsl)}};
             // Workgroup validation has to come after `Generate` because it may require
             // overrides to have been substituted.
             if (r.stage == SingleShaderStage::Compute) {
                 // Validate workgroup size after program runs transforms.
                 // Subgroups are not supported on OpenGL backend.
-                Extent3D _;
-                DAWN_TRY_ASSIGN(_, ValidateComputeStageWorkgroupSize(
-                                       result->workgroup_info,
-                                       /*usesSubgroupMatrix=*/false,
-                                       /*maxSubgroupSize=*/0, r.limits,
-                                       r.adapterSupportedLimits.UnsafeGetValue()));
+                Extent3D workgroupSize;
+                DAWN_TRY_ASSIGN(workgroupSize, ValidateComputeStageWorkgroupSize(
+                                                   result->workgroup_info,
+                                                   /*usesSubgroupMatrix=*/false,
+                                                   /*maxSubgroupSize=*/0, r.limits,
+                                                   r.adapterSupportedLimits.UnsafeGetValue()));
+                compResult.workgroupSize = workgroupSize;
             }
 
-            return GLSLCompilation{{std::move(result->glsl)}};
+            return compResult;
         },
         "OpenGL.CompileShaderToGLSL");
+
+    *workgroupSize = compilationResult->workgroupSize;
 
     if (GetDevice()->IsToggleEnabled(Toggle::DumpShaders)) {
         std::ostringstream dumpedMsg;

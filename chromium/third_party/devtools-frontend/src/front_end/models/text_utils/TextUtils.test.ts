@@ -242,201 +242,133 @@ describe('TextUtils', () => {
         };
 
         let result = parse('text');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'text', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'text', negative: false}, 'result was incorrect');
 
         result = parse('spaced text');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'spaced', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: undefined, regex: undefined, text: 'text', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'spaced', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {text: 'text', negative: false}, 'result was incorrect');
 
         result = parse('-');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: '-', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: '-', negative: false}, 'result was incorrect');
 
         result = parse('-text');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'text', negative: true}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'text', negative: true}, 'result was incorrect');
 
         result = parse('//');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: '//', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: '//', negative: false}, 'result was incorrect');
 
         result = parse('/regex/');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: /regex/im, text: undefined, negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {regex: /regex/im, negative: false}, 'result was incorrect');
 
         result = parse('/regex/ /another/');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: /regex/im, text: undefined, negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: undefined, regex: /another/im, text: undefined, negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {regex: /regex/im, negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {regex: /another/im, negative: false}, 'result was incorrect');
 
         result = parse(String.raw`/complex\/regex/`);
-        assert.deepEqual(
-            result[0], {key: undefined, regex: /complex\/regex/im, text: undefined, negative: false},
-            'result was incorrect');
+        assert.deepEqual(result[0], {regex: /complex\/regex/im, negative: false}, 'result was incorrect');
 
         result = parse(String.raw`/regex\?/`);
-        assert.deepEqual(
-            result[0], {key: undefined, regex: /regex\?/im, text: undefined, negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {regex: /regex\?/im, negative: false}, 'result was incorrect');
 
         result = parse(String.raw`/regex\//`);
-        assert.deepEqual(
-            result[0], {key: undefined, regex: /regex\//im, text: undefined, negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {regex: /regex\//im, negative: false}, 'result was incorrect');
 
         result = parse(String.raw`/regex\?/ text`);
-        assert.deepEqual(
-            result[0], {key: undefined, regex: /regex\?/im, text: undefined, negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: undefined, regex: undefined, text: 'text', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {regex: /regex\?/im, negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {text: 'text', negative: false}, 'result was incorrect');
 
         result = parse('/regex with spaces/');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: /regex with spaces/im, text: undefined, negative: false},
-            'result was incorrect');
+        assert.deepEqual(result[0], {regex: /regex with spaces/im, negative: false}, 'result was incorrect');
 
         result = parse('/regex/ text');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: /regex/im, text: undefined, negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: undefined, regex: undefined, text: 'text', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {regex: /regex/im, negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {text: 'text', negative: false}, 'result was incorrect');
 
         result = parse('/regex with spaces/ text');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: /regex with spaces/im, text: undefined, negative: false},
-            'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: undefined, regex: undefined, text: 'text', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {regex: /regex with spaces/im, negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {text: 'text', negative: false}, 'result was incorrect');
 
         result = parse('key1:foo');
-        assert.deepEqual(
-            result[0], {key: 'key1', regex: undefined, text: 'foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {key: 'key1', text: 'foo', negative: false}, 'result was incorrect');
 
         result = parse('-key1:foo');
-        assert.deepEqual(
-            result[0], {key: 'key1', regex: undefined, text: 'foo', negative: true}, 'result was incorrect');
+        assert.deepEqual(result[0], {key: 'key1', text: 'foo', negative: true}, 'result was incorrect');
 
         result = parse('key1:foo key2:bar');
-        assert.deepEqual(
-            result[0], {key: 'key1', regex: undefined, text: 'foo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: 'key2', regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {key: 'key1', text: 'foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {key: 'key2', text: 'bar', negative: false}, 'result was incorrect');
 
         result = parse('-key1:foo key2:bar');
-        assert.deepEqual(
-            result[0], {key: 'key1', regex: undefined, text: 'foo', negative: true}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: 'key2', regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {key: 'key1', text: 'foo', negative: true}, 'result was incorrect');
+        assert.deepEqual(result[1], {key: 'key2', text: 'bar', negative: false}, 'result was incorrect');
 
         result = parse('key1:foo -key2:bar');
-        assert.deepEqual(
-            result[0], {key: 'key1', regex: undefined, text: 'foo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: 'key2', regex: undefined, text: 'bar', negative: true}, 'result was incorrect');
+        assert.deepEqual(result[0], {key: 'key1', text: 'foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {key: 'key2', text: 'bar', negative: true}, 'result was incorrect');
 
         result = parse('-key1:foo -key2:bar');
-        assert.deepEqual(
-            result[0], {key: 'key1', regex: undefined, text: 'foo', negative: true}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: 'key2', regex: undefined, text: 'bar', negative: true}, 'result was incorrect');
+        assert.deepEqual(result[0], {key: 'key1', text: 'foo', negative: true}, 'result was incorrect');
+        assert.deepEqual(result[1], {key: 'key2', text: 'bar', negative: true}, 'result was incorrect');
 
         result = parse('key1:/regex/');
-        assert.deepEqual(
-            result[0], {key: 'key1', regex: undefined, text: '/regex/', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {key: 'key1', text: '/regex/', negative: false}, 'result was incorrect');
 
         result = parse('key1:foo innerText key2:bar');
-        assert.deepEqual(
-            result[0], {key: 'key1', regex: undefined, text: 'foo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: undefined, regex: undefined, text: 'innerText', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[2], {key: 'key2', regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {key: 'key1', text: 'foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {text: 'innerText', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[2], {key: 'key2', text: 'bar', negative: false}, 'result was incorrect');
 
         result = parse('bar key1 foo');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: undefined, regex: undefined, text: 'key1', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[2], {key: undefined, regex: undefined, text: 'foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {text: 'key1', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[2], {text: 'foo', negative: false}, 'result was incorrect');
 
         result = parse('bar key1:foo');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: 'key1', regex: undefined, text: 'foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {key: 'key1', text: 'foo', negative: false}, 'result was incorrect');
 
         result = parse('bar key1:foo baz');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: 'key1', regex: undefined, text: 'foo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[2], {key: undefined, regex: undefined, text: 'baz', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {key: 'key1', text: 'foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[2], {text: 'baz', negative: false}, 'result was incorrect');
 
         result = parse('bar key1:foo yek:roo baz');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: 'key1', regex: undefined, text: 'foo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[2], {key: undefined, regex: undefined, text: 'yek:roo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[3], {key: undefined, regex: undefined, text: 'baz', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {key: 'key1', text: 'foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[2], {text: 'yek:roo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[3], {text: 'baz', negative: false}, 'result was incorrect');
 
         result = parse('bar key1:foo -yek:roo baz');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: 'key1', regex: undefined, text: 'foo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[2], {key: undefined, regex: undefined, text: 'yek:roo', negative: true}, 'result was incorrect');
-        assert.deepEqual(
-            result[3], {key: undefined, regex: undefined, text: 'baz', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {key: 'key1', text: 'foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[2], {text: 'yek:roo', negative: true}, 'result was incorrect');
+        assert.deepEqual(result[3], {text: 'baz', negative: false}, 'result was incorrect');
 
         result = parse('bar baz key1:foo goo zoo');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: undefined, regex: undefined, text: 'baz', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[2], {key: 'key1', regex: undefined, text: 'foo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[3], {key: undefined, regex: undefined, text: 'goo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[4], {key: undefined, regex: undefined, text: 'zoo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {text: 'baz', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[2], {key: 'key1', text: 'foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[3], {text: 'goo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[4], {text: 'zoo', negative: false}, 'result was incorrect');
 
         result = parse('bar key1:key1:foo');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: 'key1', regex: undefined, text: 'key1:foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {key: 'key1', text: 'key1:foo', negative: false}, 'result was incorrect');
 
         result = parse('bar :key1:foo baz');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: undefined, regex: undefined, text: ':key1:foo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[2], {key: undefined, regex: undefined, text: 'baz', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {text: ':key1:foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[2], {text: 'baz', negative: false}, 'result was incorrect');
 
         result = parse('bar -:key1:foo baz');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: undefined, regex: undefined, text: '-:key1:foo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[2], {key: undefined, regex: undefined, text: 'baz', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {text: '-:key1:foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[2], {text: 'baz', negative: false}, 'result was incorrect');
 
         result = parse('bar key1:-foo baz');
-        assert.deepEqual(
-            result[0], {key: undefined, regex: undefined, text: 'bar', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[1], {key: 'key1', regex: undefined, text: '-foo', negative: false}, 'result was incorrect');
-        assert.deepEqual(
-            result[2], {key: undefined, regex: undefined, text: 'baz', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[0], {text: 'bar', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[1], {key: 'key1', text: '-foo', negative: false}, 'result was incorrect');
+        assert.deepEqual(result[2], {text: 'baz', negative: false}, 'result was incorrect');
       });
     });
 

@@ -350,16 +350,6 @@ Response ServiceWorkerHandler::DispatchPeriodicSyncEvent(
   return Response::Success();
 }
 
-void ServiceWorkerHandler::OpenNewDevToolsWindow(int process_id,
-                                                 int devtools_agent_route_id) {
-  scoped_refptr<DevToolsAgentHostImpl> agent_host(
-      ServiceWorkerDevToolsManager::GetInstance()
-          ->GetDevToolsAgentHostForWorker(process_id, devtools_agent_route_id));
-  if (!agent_host.get())
-    return;
-  agent_host->Inspect();
-}
-
 void ServiceWorkerHandler::OnWorkerRegistrationUpdated(
     const std::vector<ServiceWorkerRegistrationInfo>& registrations) {
   using Registration = ServiceWorker::ServiceWorkerRegistration;
@@ -416,9 +406,8 @@ void ServiceWorkerHandler::OnWorkerVersionUpdated(
             .Build();
     scoped_refptr<DevToolsAgentHostImpl> host(
         ServiceWorkerDevToolsManager::GetInstance()
-            ->GetDevToolsAgentHostForWorker(
-                version.process_id,
-                version.devtools_agent_route_id));
+            ->GetDevToolsAgentHostForWorker(version.process_id,
+                                            version.devtools_agent_route_id));
     if (host) {
       version_value->SetTargetId(host->GetId());
     }

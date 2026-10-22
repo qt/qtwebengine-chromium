@@ -28,11 +28,10 @@
 #ifndef SRC_DAWN_NATIVE_DEVICE_H_
 #define SRC_DAWN_NATIVE_DEVICE_H_
 
-#include <shared_mutex>
-
 #include <atomic>
 #include <memory>
 #include <optional>
+#include <shared_mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -45,11 +44,13 @@
 #include "dawn/common/RefCountedWithExternalCount.h"
 #include "dawn/common/StackAllocated.h"
 #include "dawn/common/ThreadLocal.h"
+#include "dawn/common/WGPUDeviceCallbackInfos.h"
 #include "dawn/native/AsyncTask.h"
 #include "dawn/native/CacheKey.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/ComputePipeline.h"
 #include "dawn/native/CreatePipelineAsyncEvent.h"
+#include "dawn/native/DawnNative.h"
 #include "dawn/native/DeviceGuard.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/ErrorSink.h"
@@ -63,11 +64,9 @@
 #include "dawn/native/ObjectType_autogen.h"
 #include "dawn/native/Toggles.h"
 #include "dawn/native/UsageValidationMode.h"
+#include "dawn/native/dawn_platform.h"
 #include "partition_alloc/pointers/raw_ptr.h"
 #include "partition_alloc/pointers/raw_ptr_exclusion.h"
-
-#include "dawn/native/DawnNative.h"
-#include "dawn/native/dawn_platform.h"
 
 namespace dawn::platform {
 class WorkerTaskPool;
@@ -89,6 +88,11 @@ class SharedTextureMemoryBase;
 struct CallbackTask;
 struct InternalPipelineStore;
 struct ShaderModuleParseResult;
+
+enum class ValidationMode {
+    Validate,
+    Skip,
+};
 
 class DeviceBase : public ErrorSink,
                    public RefCountedWithExternalCount<RefCounted>,
@@ -153,10 +157,11 @@ class DeviceBase : public ErrorSink,
     ResultOrError<const Format*> GetInternalFormat(wgpu::TextureFormat format) const;
 
     // Returns the Format corresponding to the wgpu::TextureFormat and assumes the format is
-    // valid and supported.
+    // valid (such that the FormatTable contains an entry for it).
     // The reference returned has the same lifetime as the device.
     const Format& GetValidInternalFormat(wgpu::TextureFormat format) const;
     const Format& GetValidInternalFormat(FormatIndex formatIndex) const;
+
     // Get compatible view formats. The returned span contains all compatible formats not equal to
     // `format`.
     std::vector<const Format*> GetCompatibleViewFormats(const Format& format) const;
@@ -187,8 +192,9 @@ class DeviceBase : public ErrorSink,
         const UnpackedPtr<BindGroupLayoutDescriptor>& descriptor,
         PipelineCompatibilityToken pipelineCompatibilityToken = kExplicitPCT);
 
-    BindGroupLayoutBase* GetEmptyBindGroupLayout();
-    PipelineLayoutBase* GetEmptyPipelineLayout();
+    BindGroupLayoutBase* GetEmptyBindGroupLayout() const;
+    PipelineLayoutBase* GetEmptyPipelineLayout() const;
+    SamplerBase* GetPlaceholderSampler() const;
 
     ResultOrError<Ref<TextureViewBase>> GetOrCreatePlaceholderTextureViewForExternalTexture();
 
@@ -236,7 +242,9 @@ class DeviceBase : public ErrorSink,
         bool allowInternalBinding = false);
     ResultOrError<Ref<ResourceTableBase>> CreateResourceTable(
         const ResourceTableDescriptor* descriptor);
-    ResultOrError<Ref<SamplerBase>> CreateSampler(const SamplerDescriptor* descriptor = nullptr);
+    ResultOrError<Ref<SamplerBase>> CreateSampler(
+        const SamplerDescriptor* descriptor = nullptr,
+        ValidationMode validate = ValidationMode::Validate);
     ResultOrError<Ref<ShaderModuleBase>> CreateShaderModule(
         const ShaderModuleDescriptor* descriptor,
         const std::vector<tint::wgsl::Extension>& internalExtensions = {});
@@ -413,6 +421,9 @@ class DeviceBase : public ErrorSink,
     virtual bool CanAddStorageUsageToBufferWithoutSideEffects(wgpu::BufferUsage storageUsage,
                                                               wgpu::BufferUsage originalUsage,
                                                               size_t bufferSize) const;
+
+    // Whether the backend needs to use static samplers to support YCbCr ExternalTextures.
+    virtual bool NeedsStaticSamplerForExternalTexture() const;
 
     // Whether the backend needs to validate the indirect buffer on GPU.
     virtual bool NeedsIndirectGPUValidation() const;
@@ -621,11 +632,7 @@ class DeviceBase : public ErrorSink,
                                                     const TextureCopy& dst,
                                                     const Extent3D& copySizePixels) = 0;
 
-    WGPUUncapturedErrorCallbackInfo mUncapturedErrorCallbackInfo =
-        WGPU_UNCAPTURED_ERROR_CALLBACK_INFO_INIT;
-
-    std::shared_mutex mLoggingMutex;
-    WGPULoggingCallbackInfo mLoggingCallbackInfo = WGPU_LOGGING_CALLBACK_INFO_INIT;
+    WGPUDeviceCallbackInfos mCallbackInfos;
 
     // Error scopes need to be thread local, but also need to be cleaned up when the device is
     // destroyed. To do this, we can't use thread_local natively because we wouldn't have a way to
@@ -643,6 +650,7 @@ class DeviceBase : public ErrorSink,
 
     Ref<BindGroupLayoutBase> mEmptyBindGroupLayout;
     Ref<PipelineLayoutBase> mEmptyPipelineLayout;
+    Ref<SamplerBase> mPlaceholderSampler;
 
     Ref<TextureViewBase> mExternalTexturePlaceholderView;
 

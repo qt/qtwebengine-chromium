@@ -1,9 +1,11 @@
 Name: flac
-URL: https://github.com/xiph/flac/archive/refs/tags/1.4.2.zip
+URL: https://github.com/xiph/flac.git
 Version: 1.4.2
+Revision: b32e5cbf9818ca23dd22aaa75522042c16ea7d17
 License: BSD-3-Clause
 License File: COPYING.Xiph
 Security Critical: yes
+Update Mechanism: Manual
 Shipped: yes
 
 Description:

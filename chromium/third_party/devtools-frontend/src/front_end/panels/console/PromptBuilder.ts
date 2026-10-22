@@ -9,6 +9,7 @@ import * as Formatter from '../../models/formatter/formatter.js';
 import * as Logs from '../../models/logs/logs.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
+import * as UI from '../../ui/legacy/legacy.js';
 
 import type {ConsoleViewMessage} from './ConsoleViewMessage.js';
 
@@ -85,7 +86,7 @@ export class PromptBuilder {
 
     const relatedCode = sourceCode?.text ? formatRelatedCode(sourceCode) : '';
     const relatedRequest = request ? formatNetworkRequest(request) : '';
-    const stacktrace = sourcesTypes.includes(SourceType.STACKTRACE) ? formatStackTrace(this.#consoleMessage) : '';
+    const stacktrace = sourcesTypes.includes(SourceType.STACKTRACE) ? await formatStackTrace(this.#consoleMessage) : '';
 
     const message = formatConsoleMessage(this.#consoleMessage);
 
@@ -290,14 +291,25 @@ export function formatConsoleMessage(message: ConsoleViewMessage): string {
  * This formats the stacktrace from the console message which might or might not
  * match the content of stacktrace(s) in the console message arguments.
  */
-export function formatStackTrace(message: ConsoleViewMessage): string {
+async function formatStackTrace(message: ConsoleViewMessage): Promise<string> {
   const previewContainer = message.contentElement().querySelector('.stack-preview-container');
 
   if (!previewContainer) {
     return '';
   }
 
-  const preview = previewContainer.shadowRoot?.querySelector('.stack-preview-container') as HTMLElement;
+  const widget =
+      UI.Widget.Widget.get(previewContainer) as Components.JSPresentationUtils.StackTracePreviewContent | undefined;
+  if (!widget) {
+    return '';
+  }
+
+  await widget.updateComplete;
+
+  // TODO(crbug.com/433162438): Get the `StackTrace` from the widget and render that instead
+  //    of crawling the DOM. `StackTrace` is source mapped and has ignore listing.
+
+  const preview = widget.contentElement.querySelector('.stack-preview-container') as HTMLElement;
 
   const nodes = preview.childTextNodes();
   // Gets application-level source mapped stack trace taking the ignore list

@@ -278,8 +278,7 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
   Position canonical_pos =
       CreateVisiblePosition(insertion_position).DeepEquivalent();
   if (!start_block || !start_block->NonShadowBoundaryParentNode() ||
-      (RuntimeEnabledFeatures::InsertLineBreakIfPhrasingContentEnabled() &&
-       IsEditableRootPhrasingContent(insertion_position)) ||
+      IsEditableRootPhrasingContent(insertion_position) ||
       IsDisplayInlineType(list_child) || IsTableCell(start_block) ||
       IsA<HTMLFormElement>(*start_block) ||
       (RuntimeEnabledFeatures::FixLinebreakForPreTagEnabled() &&
@@ -554,8 +553,9 @@ void InsertParagraphSeparatorCommand::DoApply(EditingState* editing_state) {
   // causing the newline to be turned into a nbsp.
   if (leading_whitespace.IsNotNull()) {
     if (auto* text_node = DynamicTo<Text>(leading_whitespace.AnchorNode())) {
-      DCHECK(!text_node->GetLayoutObject() ||
-             text_node->GetLayoutObject()->Style()->ShouldCollapseWhiteSpaces())
+      DCHECK(
+          !text_node->GetLayoutObject() ||
+          text_node->GetLayoutObject()->StyleRef().ShouldCollapseWhiteSpaces())
           << text_node;
       ReplaceTextInNode(text_node,
                         leading_whitespace.ComputeOffsetInContainerNode(), 1,

@@ -17,7 +17,9 @@
 #include "base/containers/flat_map.h"
 #include "base/containers/span.h"
 #include "base/containers/to_vector.h"
+#include "base/feature_list.h"
 #include "base/memory/raw_ref.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
@@ -162,12 +164,16 @@ std::vector<Suggestion> GetFooterSuggestions(
   suggestions.reserve(3);
 
   suggestions.emplace_back(SuggestionType::kSeparator);
-  if (trigger_field.is_autofilled()) {
+  // TODO(crbug.com/393114125): Change to use `AutofillField::field_modifiers_`
+  // after launching `kAutofillFixIsAutofilled`.
+  if (trigger_field.is_autofilled_according_to_renderer()) {
     suggestions.emplace_back(CreateUndoSuggestion());
   }
   if (base::FeatureList::IsEnabled(
           autofill::features::
-              kSuggestionManageButtonSplitForEnhancedAutofill)) {
+              kSuggestionManageButtonSplitForEnhancedAutofill) &&
+      base::FeatureList::IsEnabled(
+          autofill::features::kYourSavedInfoSettingsPage)) {
     CHECK(suggestions_contain_travel_entity ||
           suggestions_contain_identity_docs_entity);
 
@@ -312,6 +318,7 @@ std::vector<const EntityInstance*> DedupedEntitiesForSuggestions(
       case EntityInstance::RecordType::kServerWallet:
         return true;
       case EntityInstance::RecordType::kLocal:
+      case EntityInstance::RecordType::kAccessibilityAnnotator:
         return false;
     }
     NOTREACHED();
@@ -355,6 +362,12 @@ std::vector<const EntityInstance*> DedupedEntitiesForSuggestions(
 }
 
 Suggestion::Icon GetSuggestionIcon(EntityType trigger_entity_type) {
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillAiNoFillingIconsExperiment)) {
+    return Suggestion::Icon::kNoIcon;
+  }
+#endif
   switch (trigger_entity_type.name()) {
     case EntityTypeName::kDriversLicense:
       return Suggestion::Icon::kIdCard;
@@ -362,14 +375,22 @@ Suggestion::Icon GetSuggestionIcon(EntityType trigger_entity_type) {
       return Suggestion::Icon::kFlight;
     case EntityTypeName::kNationalIdCard:
       return Suggestion::Icon::kIdCard;
+    case EntityTypeName::kOrder:
+      return Suggestion::Icon::kNoIcon;
     case EntityTypeName::kPassport:
-      return Suggestion::Icon::kIdCard;
+      return base::FeatureList::IsEnabled(
+                 features::kAutofillAiWalletPrivatePasses)
+                 ? Suggestion::Icon::kPassport
+                 : Suggestion::Icon::kIdCard;
     case EntityTypeName::kKnownTravelerNumber:
       return Suggestion::Icon::kPersonCheck;
     case EntityTypeName::kRedressNumber:
       return Suggestion::Icon::kPersonCheck;
     case EntityTypeName::kVehicle:
       return Suggestion::Icon::kVehicle;
+    case EntityTypeName::kShipment:
+      NOTIMPLEMENTED();
+      return Suggestion::Icon::kNoIcon;
   }
   NOTREACHED();
 }
@@ -383,7 +404,9 @@ bool IsTravelType(EntityType trigger_entity_type) {
       return true;
     case EntityTypeName::kDriversLicense:
     case EntityTypeName::kNationalIdCard:
+    case EntityTypeName::kOrder:
     case EntityTypeName::kPassport:
+    case EntityTypeName::kShipment:
       return false;
   }
   NOTREACHED();
@@ -397,8 +420,10 @@ bool IsIdentityDocsType(EntityType trigger_entity_type) {
       return true;
     case EntityTypeName::kFlightReservation:
     case EntityTypeName::kKnownTravelerNumber:
+    case EntityTypeName::kOrder:
     case EntityTypeName::kRedressNumber:
     case EntityTypeName::kVehicle:
+    case EntityTypeName::kShipment:
       return false;
   }
   NOTREACHED();
@@ -461,6 +486,7 @@ bool CanFillSomeField(const EntityInstance& entity,
 }
 
 Suggestion GetSuggestionForEntity(
+    const FormStructure& form,
     const EntityInstance& entity,
     base::span<const AutofillFieldWithAttributeType> fields,
     const AutofillFieldWithAttributeType& trigger_field,
@@ -480,7 +506,11 @@ Suggestion GetSuggestionForEntity(
   Suggestion suggestion =
       Suggestion(main_text, SuggestionType::kFillAutofillAi);
   suggestion.labels = {{Suggestion::Text(std::move(label))}};
-  suggestion.payload = Suggestion::AutofillAiPayload(entity.guid());
+
+  const bool requires_server_fetch = WillRequireServerFetch(
+      entity, form, trigger_field.field->section(), app_locale);
+  suggestion.payload =
+      Suggestion::AutofillAiPayload(entity.guid(), requires_server_fetch);
   suggestion.icon = GetSuggestionIcon(entity.type());
   if (entity.record_type() == EntityInstance::RecordType::kServerWallet) {
     suggestion.iph_metadata = Suggestion::IPHMetadata(
@@ -589,9 +619,9 @@ std::vector<Suggestion> CreateAutofillAiFillingSuggestions(
     base::optional_ref<const AutofillFieldWithAttributeType>
         trigger_field_with_type =
             FindField(fields_with_types, trigger_field.global_id());
-    suggestions.push_back(GetSuggestionForEntity(entity, fields_with_types,
-                                                 *trigger_field_with_type,
-                                                 std::move(label), app_locale));
+    suggestions.push_back(GetSuggestionForEntity(
+        form, entity, fields_with_types, *trigger_field_with_type,
+        std::move(label), app_locale));
     contains_travel_entity |= IsTravelType(entity.type());
     contains_identity_docs_entity |= IsIdentityDocsType(entity.type());
   }

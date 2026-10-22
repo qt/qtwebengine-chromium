@@ -4,6 +4,11 @@
 
 #include "components/page_content_annotations/content/page_content_extraction_service.h"
 
+#include <memory>
+#include <optional>
+#include <utility>
+#include <vector>
+
 #include "base/base64.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
@@ -120,8 +125,7 @@ bool PageContentExtractionService::ShouldEnablePageContentExtraction() const {
 
 void PageContentExtractionService::OnPageContentExtracted(
     content::Page& page,
-    const optimization_guide::proto::AnnotatedPageContent&
-        annotated_page_content,
+    scoped_refptr<const RefCountedAnnotatedPageContent> annotated_page_content,
     const std::vector<uint8_t>& screenshot_data,
     std::optional<int> tab_id) {
   for (auto& observer : observers_) {
@@ -140,7 +144,8 @@ void PageContentExtractionService::OnPageContentExtracted(
 
   page_content_cache_handler_->ProcessPageContentExtraction(
       tab_id, ToWebStateWrapper(web_contents),
-      ToPageContext(annotated_page_content, web_contents, screenshot_data),
+      ToPageContext(annotated_page_content->data, web_contents,
+                    screenshot_data),
       base::Time::Now());
 }
 
@@ -151,6 +156,25 @@ PageContentExtractionService::GetExtractedPageContentAndEligibilityForPage(
       GetAnnotatedPageContentRequestFromWebContents(
           content::WebContents::FromRenderFrameHost(&page.GetMainDocument()));
   return request ? request->GetCachedContentAndEligibility() : std::nullopt;
+}
+
+void PageContentExtractionService::
+    RefreshExtractedPageContentAndEligibilityForPage(
+        content::Page& page,
+        GetExtractedPageContentAndEligibilityCallback callback) {
+  AnnotatedPageContentRequest* request =
+      GetAnnotatedPageContentRequestFromWebContents(
+          content::WebContents::FromRenderFrameHost(&page.GetMainDocument()));
+  if (request) {
+    request->RefreshExtractedPageContentAndEligibilityForPage(
+        std::move(callback));
+  } else {
+    // TODO(b/490161242): Improve this behavior: allow for constructing an
+    // AnnotatedPageContentRequest if one doesn't already exist, and, if not
+    // constructible, return the reason why via a base::expected. For now, we
+    // just match the behavior of the other calls.
+    std::move(callback).Run(std::nullopt);
+  }
 }
 
 std::optional<bool>
@@ -193,7 +217,7 @@ void PageContentExtractionService::OnVisibilityChanged(
   if (extracted_result) {
     page_content_cache_handler_->OnVisibilityChanged(
         tab_id, ToWebStateWrapper(web_contents),
-        ToPageContext(std::move(extracted_result->page_content), web_contents,
+        ToPageContext(extracted_result->page_content->data, web_contents,
                       std::move(extracted_result->screenshot_data)),
         extracted_result->extraction_timestamp);
   }

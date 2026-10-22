@@ -79,8 +79,21 @@ using EventStatusMap = std::array<T, 3>;
 
 using Extents = angle::Extents<size_t>;
 constexpr Extents kExtentsZero(0, 0, 0);
-using Offset  = angle::Offset<size_t>;
+using Offset = angle::Offset<size_t>;
 constexpr Offset kOffsetZero(0, 0, 0);
+
+using ChannelMapping = std::array<uint32_t, 4>;
+union PixelColor
+{
+    uint8_t u8[4];
+    int8_t s8[4];
+    uint16_t u16[4];
+    int16_t s16[4];
+    uint32_t u32[4];
+    int32_t s32[4];
+    cl_half fp16[4];
+    cl_float fp32[4];
+};
 
 struct KernelArg
 {
@@ -225,6 +238,15 @@ struct ImageDescriptor
             arraySize = 1;
         }
     }
+
+    bool operator==(const ImageDescriptor &other) const
+    {
+        return (type == other.type && width == other.width && height == other.height &&
+                depth == other.depth && arraySize == other.arraySize &&
+                rowPitch == other.rowPitch && slicePitch == other.slicePitch &&
+                numMipLevels == other.numMipLevels && numSamples == other.numSamples);
+    }
+    bool operator!=(const ImageDescriptor &other) const { return !(*this == other); }
 };
 
 struct NDRange
@@ -283,18 +305,16 @@ struct NDRange
     std::vector<NDRange> createUniformRegions(
         const std::array<uint32_t, 3> maxComputeWorkGroupCount) const
     {
+        // Work-group sizes could be non-uniform in multiple dimensions, potentially producing
+        // work-groups of up to 4 different sizes in a 2D range and 8 different sizes in a 3D range.
+        constexpr size_t kMaxNonUniformWorkGroupShapes = 8u;
+
         std::vector<NDRange> regions;
+        regions.reserve(kMaxNonUniformWorkGroupShapes);
         regions.push_back(*this);
         regions.front().globalWorkOffset = {0};
-        uint32_t regionCount             = 1;
-        for (uint32_t regionPos = 0; regionPos < regionCount; ++regionPos)
+        for (uint32_t regionPos = 0; regionPos < regions.size(); ++regionPos)
         {
-            // "Work-group sizes could be non-uniform in multiple dimensions, potentially producing
-            // work-groups of up to 4 different sizes in a 2D range and 8 different sizes in a 3D
-            // range."
-            // https://registry.khronos.org/OpenCL/specs/3.0-unified/html/OpenCL_API.html#_mapping_work_items_onto_an_nd_range
-            ASSERT(regionPos < 8);
-
             for (uint32_t dim = 0; dim < workDimensions; dim++)
             {
                 NDRange &region    = regions.at(regionPos);
@@ -311,21 +331,23 @@ struct NDRange
                     region.globalWorkSize[dim] = newRegion.globalWorkOffset[dim] =
                         (region.globalWorkSize[dim] - remainder);
                     regions.push_back(newRegion);
-                    regionCount++;
                 }
             }
         }
+        ASSERT(regions.size() <= kMaxNonUniformWorkGroupShapes);
+
         // Break into uniform regions that fit into given maxComputeWorkGroupCount (if needed)
-        uint32_t limitRegionCount = 1;
         std::vector<NDRange> regionsWithinDeviceLimits;
+        regionsWithinDeviceLimits.reserve(regions.size());
         for (const auto &region : regions)
         {
             regionsWithinDeviceLimits.push_back(region);
-            for (uint32_t regionPos = 0; regionPos < limitRegionCount; ++regionPos)
+            for (uint32_t regionPos = 0; regionPos < regionsWithinDeviceLimits.size(); ++regionPos)
             {
-                NDRange &currentRegion = regionsWithinDeviceLimits.at(regionPos);
                 for (uint32_t dim = 0; dim < workDimensions; dim++)
                 {
+                    NDRange &currentRegion = regionsWithinDeviceLimits.at(regionPos);
+
                     uint32_t maxGwsForRegion = gl::clampCast<uint32_t, uint64_t>(
                         static_cast<uint64_t>(maxComputeWorkGroupCount[dim]) *
                         static_cast<uint64_t>(currentRegion.localWorkSize[dim]));
@@ -342,7 +364,7 @@ struct NDRange
                                 (currentRegion.globalWorkSize[dim] - remainderGws);
                             currentRegion.globalWorkSize[dim] = maxGwsForRegion;
                             regionsWithinDeviceLimits.push_back(remainderRegion);
-                            limitRegionCount++;
+                            continue;
                         }
                     }
                 }

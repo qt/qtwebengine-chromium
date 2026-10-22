@@ -58,7 +58,7 @@ const UIStrings = {
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/performance_monitor/PerformanceMonitor.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-const {widgetConfig} = UI.Widget;
+const {widget} = UI.Widget;
 const {classMap, ref} = Directives;
 
 interface PerformanceMonitorInput {
@@ -81,7 +81,7 @@ type PerformanceMonitorView = (input: PerformanceMonitorInput, output: Performan
 const DEFAULT_VIEW: PerformanceMonitorView = (input, output, target) => {
   // clang-format off
   render(html`
-    <devtools-widget .widgetConfig=${widgetConfig(ControlPane, {
+    <devtools-widget ${widget(ControlPane, {
       onMetricChanged: input.onMetricChanged,
       chartsInfo: input.chartsInfo,
       metrics: input.metrics
@@ -506,14 +506,7 @@ export class PerformanceMonitorImpl extends UI.Widget.HBox implements
     const themeSupport = ThemeSupport.ThemeSupport.instance();
     const elementForStyles = this.contentElement;
 
-    const defaults = {
-      color: undefined,
-      format: undefined,
-      currentMax: undefined,
-      max: undefined,
-      smooth: undefined,
-      stacked: undefined,
-    };
+    const defaults: Partial<ChartInfo> = {};
 
     return [
       {
@@ -543,7 +536,6 @@ export class PerformanceMonitorImpl extends UI.Widget.HBox implements
         stacked: true,
         color: themeSupport.getComputedValue('--override-color-perf-monitor-cpu', elementForStyles),
         max: 1,
-        currentMax: undefined,
       },
       {
         ...defaults,

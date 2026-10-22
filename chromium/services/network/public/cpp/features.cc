@@ -9,7 +9,9 @@
 #include "base/no_destructor.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/system/sys_info.h"
+#include "base/task/current_thread.h"
 #include "build/build_config.h"
+#include "mojo/public/cpp/bindings/direct_receiver.h"
 #include "net/base/mime_sniffer.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -194,6 +196,9 @@ BASE_FEATURE(kCorsNonWildcardRequestHeadersSupport,
 // and continue the handshake without sending one if requested.
 BASE_FEATURE(kOmitCorsClientCert, base::FEATURE_DISABLED_BY_DEFAULT);
 
+// Ignore CorsPreflightPolicy and always perform CORS checks.
+BASE_FEATURE(kIgnoreCorsPreflightPolicy, base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Enables support for the `Variants` response header and reduce
 // accept-language. https://github.com/Tanych/accept-language
 BASE_FEATURE(kReduceAcceptLanguage, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -266,7 +271,7 @@ BASE_FEATURE_PARAM(bool,
 //
 // Spec: https://wicg.github.io/local-network-access/
 BASE_FEATURE(kLocalNetworkAccessChecksWebSockets,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables Local Network Access checks for WebTransport.
 // Blocks local network requests without user permission to prevent exploitation
@@ -274,7 +279,7 @@ BASE_FEATURE(kLocalNetworkAccessChecksWebSockets,
 //
 // Spec: https://wicg.github.io/local-network-access/
 BASE_FEATURE(kLocalNetworkAccessChecksWebTransport,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Splits the Local Network Access permission into 2 permissions. See
 // crbug.com/465491626.
@@ -350,41 +355,11 @@ BASE_FEATURE_PARAM(
     /*name=*/"RendererSideContentDecodingForceMojoFailureForTesting",
     /*default_value=*/false);
 
-// This feature allows skipping TPCD mitigation checks when the cookie access
-// is tagged as being used for advertising purposes. This means that cookies
-// will continue to be blocked for cookie accesses on ad requests even if the
-// 3PC mitigations would otherwise allow the access.
-BASE_FEATURE(kSkipTpcdMitigationsForAds, base::FEATURE_DISABLED_BY_DEFAULT);
-// Controls whether we ignore opener heuristic grants for 3PC accesses.
-BASE_FEATURE_PARAM(bool,
-                   kSkipTpcdMitigationsForAdsHeuristics,
-                   &kSkipTpcdMitigationsForAds,
-                   /*name=*/"SkipTpcdMitigationsForAdsHeuristics",
-                   /*default_value=*/false);
-// Controls whether we ignore checks on the metadata allowlist for 3PC cookies.
-BASE_FEATURE_PARAM(bool,
-                   kSkipTpcdMitigationsForAdsMetadata,
-                   &kSkipTpcdMitigationsForAds,
-                   /*name=*/"SkipTpcdMitigationsForAdsMetadata",
-                   /*default_value=*/false);
-// Controls whether we ignore checks on the deprecation trial for 3PC.
-BASE_FEATURE_PARAM(bool,
-                   kSkipTpcdMitigationsForAdsTrial,
-                   &kSkipTpcdMitigationsForAds,
-                   /*name=*/"SkipTpcdMitigationsForAdsSupport",
-                   /*default_value=*/false);
-// Controls whether we ignore checks on the top-level deprecation trial for 3PC.
-BASE_FEATURE_PARAM(bool,
-                   kSkipTpcdMitigationsForAdsTopLevelTrial,
-                   &kSkipTpcdMitigationsForAds,
-                   /*name=*/"SkipTpcdMitigationsForAdsTopLevelTrial",
-                   /*default_value=*/false);
-
 // Enables Document-Isolation-Policy (DIP).
 // https://github.com/WICG/document-isolation-policy
 BASE_FEATURE(kDocumentIsolationPolicy, base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kConnectionAllowlists, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kConnectionAllowlists, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // This feature enables the Prefetch() method on the NetworkContext, and makes
 // the PrefetchMatchingURLLoaderFactory check the match quality.
@@ -583,9 +558,6 @@ BASE_FEATURE_PARAM(int,
 BASE_FEATURE(kPopulatePermissionsPolicyOnRequest,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kProtectedAudienceCorsSafelistKVv2Signals,
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kStorageAccessHeadersRespectPermissionsPolicy,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -612,6 +584,9 @@ BASE_FEATURE_PARAM(size_t,
                    /*name=*/"max_size",
                    1'000'000);
 
+BASE_FEATURE(kCompressionDictionaryLimitEarlyMatching,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kNetworkServiceTaskScheduler, base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE_PARAM(bool,
                    kNetworkServiceTaskSchedulerResourceScheduler,
@@ -630,6 +605,9 @@ BASE_FEATURE(kNetworkServicePerPriorityTaskQueues,
 BASE_FEATURE(kUseUnexportableKeyServiceInBrowserProcess,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kBypassRequestForbiddenHeadersCheck,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kServiceWorkerSyntheticResponseHeaderCheck,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
@@ -645,5 +623,30 @@ BASE_FEATURE_PARAM(bool,
                    &kServiceWorkerSyntheticResponseHeaderCheck,
                    /*name=*/"report_inconsistent_header",
                    /*default_value=*/false);
+
+BASE_FEATURE(kAllowUnsafeRedirectSchemesForManualMode,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kDurableMessages, base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE_PARAM(int,
+                   kDurableMessagesGlobalBufferSize,
+                   &kDurableMessages,
+                   /*name=*/"max_global_buffer_size",
+                   /*default_value=*/base::MiB(350).InBytes());
+
+BASE_FEATURE(kNetworkContextDirectReceiver, base::FEATURE_DISABLED_BY_DEFAULT);
+
+bool ShouldBindNetworkContextDirectReceiver() {
+  return mojo::IsDirectReceiverSupported() && base::CurrentIOThread::IsSet() &&
+         base::FeatureList::IsEnabled(features::kNetworkContextDirectReceiver);
+}
+
+BASE_FEATURE(kDelayInitialDohProbeTimeout, base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE_PARAM(base::TimeDelta,
+                   kDelayInitialDohProbeTimeoutParam,
+                   &kDelayInitialDohProbeTimeout,
+                   "initial_doh_probe_timeout",
+                   base::Seconds(5));
 
 }  // namespace network::features

@@ -41,6 +41,24 @@ message ConstraintSet {
   // `enforce_anchor_expiry` and `enforce_anchor_constraints` were briefly
   // represented in this message, but moved to TrustAnchor.
   reserved 6, 7;
+
+  // A leaf MTC chaining to a MtcAnchor with this constraint must not have an
+  // index higher than the specified value. Ignored if specified on a classical
+  // TrustAnchor.
+  optional uint64 index_not_after = 8;
+
+  // A leaf MTC chaining to a MtcAnchor with this constraint must have an index
+  // higher than the specified value. Ignored if specified on a classical
+  // TrustAnchor.
+  optional uint64 index_after = 9;
+
+  // The leaf certificate validity notBefore time must not be after the
+  // specified value, specified in seconds since the unix epoch.
+  optional int64 validity_starts_not_after_sec = 10;
+
+  // The leaf certificate validity notBefore time must be after the specified
+  // value, specified in seconds since the unix epoch.
+  optional int64 validity_starts_after_sec = 11;
 }
 
 message TrustAnchor {
@@ -87,6 +105,12 @@ message TrustAnchor {
   // Trust Anchor IDs are represented as relative OID suffixes of the Private
   // Enterprise Number (PEN) OID prefix of "1.3.6.1.4.1.".
   optional bytes trust_anchor_id = 11;
+
+  // A stable identifier for this anchor, or if it is an intermediate, the
+  // identifier of the root that issued it. IDs should not be changed, and
+  // should not be reused except for the trusted intermediate case. The
+  // identifiers 0, 1 and 2 are reserved and should not be used.
+  optional int32 crs_root_id = 12;
 }
 
 message MtcAnchor {
@@ -99,6 +123,11 @@ message MtcAnchor {
 
   // If true, indicates that this MTC is a trust anchor for TLS connections.
   optional bool tls_trust_anchor = 3;
+
+  // A stable identifier for this anchor. IDs should not be changed, and should
+  // not be reused. The identifiers 0, 1 and 2 are reserved and should not be
+  // used.
+  optional int32 crs_root_id = 4;
 
   // TODO(crbug.com/452983502): Add co-signer configuration.
   //

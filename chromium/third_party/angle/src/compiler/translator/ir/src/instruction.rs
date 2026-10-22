@@ -11,6 +11,7 @@ use crate::*;
 // Helper functions that perform constant folding per instruction
 mod const_fold {
     use crate::ir::*;
+    use crate::util;
 
     fn apply_unary_componentwise<FloatOp, IntOp, UintOp, BoolOp>(
         ir_meta: &mut IRMeta,
@@ -423,7 +424,7 @@ mod const_fold {
                     // This function is called on scalars, so `Composite` is impossible.
                     // Additionally, GLSL forbids type conversion to and from
                     // yuvCscStandardEXT.
-                    arg
+                    panic!("Internal error: Invalid constructor argument type");
                 }
             })
             .collect()
@@ -435,10 +436,14 @@ mod const_fold {
         arg: ConstantId,
         result_type_id: TypeId,
     ) -> ConstantId {
-        let type_info = ir_meta.get_type(result_type_id);
-        let vec_size = type_info.get_vector_size().unwrap();
-        let args = vec![arg; vec_size as usize];
-        ir_meta.get_constant_composite(result_type_id, args)
+        util::construct_vector_from_scalar(
+            ir_meta,
+            &mut (),
+            arg,
+            result_type_id,
+            None,
+            |ir_meta, _, type_id, args, _| ir_meta.get_constant_composite(type_id, args),
+        )
     }
 
     // Construct a matrix from a scalar by setting the diagonal elements with that scalar while
@@ -448,20 +453,15 @@ mod const_fold {
         arg: ConstantId,
         result_type_id: TypeId,
     ) -> ConstantId {
-        let type_info = ir_meta.get_type(result_type_id);
-        let &Type::Matrix(vector_type_id, column_count) = type_info else { unreachable!() };
-        let &Type::Vector(_, row_count) = ir_meta.get_type(vector_type_id) else { unreachable!() };
-
-        // Create columns where every component is 0 except the one at index = column_index.
-        let columns = (0..column_count)
-            .map(|column| {
-                let column_components = (0..row_count)
-                    .map(|row| if row == column { arg } else { CONSTANT_ID_FLOAT_ZERO })
-                    .collect();
-                ir_meta.get_constant_composite(vector_type_id, column_components)
-            })
-            .collect();
-        ir_meta.get_constant_composite(result_type_id, columns)
+        util::construct_matrix_from_scalar(
+            ir_meta,
+            &mut (),
+            arg,
+            result_type_id,
+            None,
+            CONSTANT_ID_FLOAT_ZERO,
+            |ir_meta, _, type_id, args, _| ir_meta.get_constant_composite(type_id, args),
+        )
     }
 
     // Construct a matrix from a matrix by starting with the identity matrix and overwriting it with
@@ -471,48 +471,23 @@ mod const_fold {
         arg: ConstantId,
         result_type_id: TypeId,
     ) -> ConstantId {
-        let type_info = ir_meta.get_type(result_type_id);
-        let &Type::Matrix(vector_type_id, column_count) = type_info else { unreachable!() };
-        let &Type::Vector(_, row_count) = ir_meta.get_type(vector_type_id) else { unreachable!() };
-
-        let input = ir_meta.get_constant(arg);
-        let input_columns = input.value.get_composite_elements();
-        let input_column_components: Vec<_> = input_columns
-            .iter()
-            .map(|&column_id| ir_meta.get_constant(column_id).value.get_composite_elements())
-            .collect();
-        let input_column_count = input_columns.len() as u32;
-        let input_row_count = input_column_components[0].len() as u32;
-
-        // Create columns where every component is taken from the input matrix, except if it's out
-        // of bounds.  In that case, the component is 1 on the diagonal and 0 elsewhere.
-        let columns: Vec<_> = (0..column_count)
-            .map(|column| {
-                (0..row_count)
-                    .map(|row| {
-                        if column < input_column_count && row < input_row_count {
-                            input_column_components[column as usize][row as usize]
-                        } else if row == column {
-                            CONSTANT_ID_FLOAT_ONE
-                        } else {
-                            CONSTANT_ID_FLOAT_ZERO
-                        }
-                    })
-                    .collect()
-            })
-            .collect();
-
-        let columns = columns
-            .into_iter()
-            .map(|column_components| {
-                ir_meta.get_constant_composite(vector_type_id, column_components)
-            })
-            .collect();
-        ir_meta.get_constant_composite(result_type_id, columns)
+        util::construct_matrix_from_matrix(
+            ir_meta,
+            &mut (),
+            arg,
+            result_type_id,
+            None,
+            CONSTANT_ID_FLOAT_ZERO,
+            CONSTANT_ID_FLOAT_ONE,
+            |ir_meta, _, constant_id| {
+                ir_meta.get_constant(constant_id).value.get_composite_elements().clone()
+            },
+            |ir_meta, _, type_id, args, _| ir_meta.get_constant_composite(type_id, args),
+        )
     }
 
     // Construct a vector from multiple components.
-    fn construct_vector_from_many(
+    fn construct_vector_from_multiple(
         ir_meta: &mut IRMeta,
         args: Vec<ConstantId>,
         result_type_id: TypeId,
@@ -521,23 +496,19 @@ mod const_fold {
     }
 
     // Construct a matrix from multiple components.
-    fn construct_matrix_from_many(
+    fn construct_matrix_from_multiple(
         ir_meta: &mut IRMeta,
         args: Vec<ConstantId>,
         result_type_id: TypeId,
     ) -> ConstantId {
-        let type_info = ir_meta.get_type(result_type_id);
-        let &Type::Matrix(vector_type_id, column_count) = type_info else { unreachable!() };
-        let &Type::Vector(_, row_count) = ir_meta.get_type(vector_type_id) else { unreachable!() };
-
-        let columns = (0..column_count)
-            .map(|column| {
-                let start = (column * row_count) as usize;
-                let end = start + row_count as usize;
-                ir_meta.get_constant_composite(vector_type_id, args[start..end].to_vec())
-            })
-            .collect();
-        ir_meta.get_constant_composite(result_type_id, columns)
+        util::construct_matrix_from_multiple(
+            ir_meta,
+            &mut (),
+            &args,
+            result_type_id,
+            None,
+            |ir_meta, _, type_id, args, _| ir_meta.get_constant_composite(type_id, args),
+        )
     }
 
     pub fn construct(
@@ -577,9 +548,9 @@ mod const_fold {
             } else if is_matrix && args.len() == 1 {
                 construct_matrix_from_scalar(ir_meta, args[0], result_type_id)
             } else if is_vector {
-                construct_vector_from_many(ir_meta, args, result_type_id)
+                construct_vector_from_multiple(ir_meta, args, result_type_id)
             } else if is_matrix {
-                construct_matrix_from_many(ir_meta, args, result_type_id)
+                construct_matrix_from_multiple(ir_meta, args, result_type_id)
             } else {
                 // The type cast is enough to satisfy scalar constructors.
                 args[0]
@@ -2095,11 +2066,24 @@ mod const_fold {
                     let rhs = ir_meta.get_constant(rhs_component_id).value.clone();
 
                     match lhs {
-                        ConstantValue::Float(lhs) => ir_meta.get_constant_bool(float_op(lhs, rhs.get_float())),
-                        ConstantValue::Int(lhs) => ir_meta.get_constant_bool(int_op(lhs, rhs.get_int())),
-                        ConstantValue::Uint(lhs) => ir_meta.get_constant_bool(uint_op(lhs, rhs.get_uint())),
-                        ConstantValue::Bool(lhs) => ir_meta.get_constant_bool(bool_op(lhs, rhs.get_bool())),
-                        _ => { panic!("Internal error: Comparison built-ins only valid on float, [u]int and bool values"); }
+                        ConstantValue::Float(lhs) => {
+                            ir_meta.get_constant_bool(float_op(lhs, rhs.get_float()))
+                        }
+                        ConstantValue::Int(lhs) => {
+                            ir_meta.get_constant_bool(int_op(lhs, rhs.get_int()))
+                        }
+                        ConstantValue::Uint(lhs) => {
+                            ir_meta.get_constant_bool(uint_op(lhs, rhs.get_uint()))
+                        }
+                        ConstantValue::Bool(lhs) => {
+                            ir_meta.get_constant_bool(bool_op(lhs, rhs.get_bool()))
+                        }
+                        _ => {
+                            panic!(
+                                "Internal error: Comparison built-ins only valid on float, [u]int \
+                                 and bool values"
+                            );
+                        }
                     }
                 })
                 .collect();
@@ -4115,7 +4099,8 @@ pub mod precision {
             | OpCode::LoopIf(_)
             | OpCode::Switch(..)
             | OpCode::Store(..) => panic!(
-                "Internal error: Unexpected void instruction when propagating precision to constants"
+                "Internal error: Unexpected void instruction when propagating precision to \
+                 constants"
             ),
         }
     }
@@ -4452,6 +4437,20 @@ pub fn index(ir_meta: &mut IRMeta, indexed: TypedId, index: TypedId) -> Result {
     // Note: constant index on a vector should use vector_component() instead.
     debug_assert!(!(ir_meta.get_type(indexed.type_id).is_vector() && index.id.is_constant()));
 
+    // If selecting constant index of a constructed array, just return the element from the
+    // constructor. Note: the same could be done for constructed matrices if needed, but needs
+    // to handle a multitude of possible matrix constructors.  See
+    // `const_fold::construct_matrix_from_*`.
+    if let (Id::Register(indexed_register_id), Id::Constant(index_constant_id)) =
+        (indexed.id, index.id)
+    {
+        let indexed_instruction = ir_meta.get_instruction(indexed_register_id);
+        if let OpCode::ConstructArray(args) = &indexed_instruction.op {
+            let index = ir_meta.get_constant(index_constant_id).value.get_index();
+            return Result::NoOp(args[index as usize]);
+        }
+    }
+
     binary_op(
         ir_meta,
         indexed,
@@ -4497,6 +4496,14 @@ pub fn index(ir_meta: &mut IRMeta, indexed: TypedId, index: TypedId) -> Result {
 
 // Select a field of a struct, like `block.field`.
 pub fn struct_field(ir_meta: &mut IRMeta, struct_id: TypedId, field_index: u32) -> Result {
+    // If selecting field of a constructed type, just return the field from the constructor.
+    if let Id::Register(register_id) = struct_id.id {
+        let operand_instruction = ir_meta.get_instruction(register_id);
+        if let OpCode::ConstructStruct(args) = &operand_instruction.op {
+            return Result::NoOp(args[field_index as usize]);
+        }
+    }
+
     // Use the precision of the field itself on the result
     let mut struct_type_info = ir_meta.get_type(struct_id.type_id);
     if struct_type_info.is_pointer() {
@@ -4584,7 +4591,7 @@ pub fn construct(ir_meta: &mut IRMeta, type_id: TypeId, args: Vec<TypedId>) -> R
     if all_constants {
         let folded = const_fold::construct(
             ir_meta,
-            &mut args.iter().map(|id| id.id.get_constant().unwrap()),
+            &mut args.iter().map(|id| id.id.get_constant()),
             type_id,
         );
         make_constant(folded, type_id, promoted_precision)
@@ -5180,7 +5187,7 @@ pub fn built_in(ir_meta: &mut IRMeta, op: BuiltInOpCode, operands: Vec<TypedId>)
         // Note: No built-in that returns `void` can possibly take all-constant arguments.
         debug_assert!(result_type_id != TYPE_ID_VOID);
 
-        let constants = operands.iter().map(|id| id.id.get_constant().unwrap()).collect();
+        let constants = operands.iter().map(|id| id.id.get_constant()).collect();
         let folded = const_fold::built_in(ir_meta, op, constants, result_type_id);
         make_constant(folded, result_type_id, precision.unwrap())
     } else {
@@ -5209,7 +5216,7 @@ pub fn built_in_texture(
     let result_type_id = promote::built_in_texture(ir_meta, &op, sampler.type_id);
 
     // Constant folding is impossible, as the sampler cannot be a constant.
-    debug_assert!(sampler.id.get_constant().is_none());
+    debug_assert!(!sampler.id.is_constant());
 
     // Make an instruction
     let precision = precision::built_in_texture(&op, sampler.precision);

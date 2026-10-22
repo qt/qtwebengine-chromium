@@ -213,7 +213,7 @@ Vector3f Camera::unProject(const Vector2f& uv, float depth, const Matrix4f& invM
   a.x() *= depth / mProjectionMatrix(0, 0);
   a.y() *= depth / mProjectionMatrix(1, 1);
   a.z() = -depth;
-  // FIXME /\/|
+  // FIXME: verify this transformation.
   Vector4f b = invModelview * Vector4f(a.x(), a.y(), a.z(), 1.);
   return Vector3f(b.x(), b.y(), b.z());
 }

@@ -63,10 +63,9 @@ int CPDF_SimpleFont::GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) {
 }
 
 void CPDF_SimpleFont::LoadCharMetrics(int charcode) {
-  if (!font_.HasFaceRec()) {
+  if (!font_.HasFace()) {
     return;
   }
-
   if (charcode < 0 || charcode > 0xff) {
     return;
   }
@@ -211,7 +210,7 @@ void CPDF_SimpleFont::LoadPDFEncoding(bool bEmbedded, bool bTrueType) {
   LoadDifferences(dict);
 }
 
-int CPDF_SimpleFont::GetCharWidthF(uint32_t charcode) {
+int CPDF_SimpleFont::GetCharWidth(uint32_t charcode) {
   if (charcode > 0xff) {
     charcode = 0;
   }
@@ -245,9 +244,7 @@ bool CPDF_SimpleFont::LoadCommon() {
   }
   LoadCharWidths(font_desc.Get());
   if (font_file_) {
-    if (base_font_name_.GetLength() > 7 && base_font_name_[6] == '+') {
-      base_font_name_ = base_font_name_.Last(base_font_name_.GetLength() - 7);
-    }
+    MaybeRemoveSubsettedFontPrefix(base_font_name_);
   } else {
     LoadSubstFont();
   }
@@ -308,8 +305,9 @@ void CPDF_SimpleFont::LoadSubstFont() {
       weight > pdfium::kFontWeightExtraBold) {
     weight = pdfium::kFontWeightNormal;
   }
-  font_.LoadSubst(base_font_name_, IsTrueTypeFont(), flags_, weight,
-                  italic_angle_, FX_CodePage::kDefANSI, /*bVertical=*/false);
+  font_.LoadSubstFace(base_font_name_, IsTrueTypeFont(), flags_, weight,
+                      italic_angle_, FX_CodePage::kDefANSI,
+                      /*bVertical=*/false);
 }
 
 bool CPDF_SimpleFont::IsUnicodeCompatible() const {

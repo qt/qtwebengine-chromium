@@ -39,10 +39,10 @@
 #include "core/fxcrt/ptr_util.h"
 #include "core/fxcrt/span.h"
 #include "core/fxcrt/stl_util.h"
-#include "core/fxge/agg/cfx_agg_imagerenderer.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_font.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_path.h"
 #include "core/fxge/cfx_renderdevice.h"
@@ -653,8 +653,7 @@ RetainPtr<CFX_DIBitmap> MakeDebugBitmap(int width, int height, uint32_t color) {
   return bitmap;
 }
 
-bool HasRSX(pdfium::span<const TextCharPos> char_pos,
-            bool* oneAtATimePtr) {
+bool HasRSX(pdfium::span<const TextCharPos> char_pos, bool* oneAtATimePtr) {
   bool useRSXform = false;
   bool oneAtATime = false;
   float scaleX = 1;
@@ -819,7 +818,8 @@ bool CFX_SkiaDeviceDriver::DrawDeviceText(
                   options)) {
     return true;
   }
-  sk_sp<SkTypeface> typeface(SkSafeRef(pFont->GetDeviceCache()));
+  sk_sp<SkTypeface> typeface(
+      SkSafeRef(pFont->GetFace()->GetOrCreateSkTypeface()));
   SkPaint paint;
   paint.setAntiAlias(true);
   paint.setColor(color);
@@ -945,8 +945,8 @@ bool CFX_SkiaDeviceDriver::TryDrawText(pdfium::span<const TextCharPos> char_pos,
   skPaint.setColor(color);
 
   SkFont font = SkFontFromCFXFont(pFont, font_size, options);
-  if (pFont->HasFaceRec()) {  // exclude placeholder test fonts
-    font.setTypeface(sk_ref_sp(pFont->GetDeviceCache()));
+  if (pFont->HasFace()) {  // exclude placeholder test fonts
+    font.setTypeface(sk_ref_sp(pFont->GetFace()->GetOrCreateSkTypeface()));
   }
 
   SkAutoCanvasRestore scoped_save_restore(canvas_, /*doSave=*/true);
@@ -1022,24 +1022,52 @@ DeviceType CFX_SkiaDeviceDriver::GetDeviceType() const {
   return DeviceType::kDisplay;
 }
 
-int CFX_SkiaDeviceDriver::GetDeviceCaps(int caps_id) const {
-  switch (caps_id) {
-    case FXDC_PIXEL_WIDTH:
-      return canvas_->imageInfo().width();
-    case FXDC_PIXEL_HEIGHT:
-      return canvas_->imageInfo().height();
-    case FXDC_BITS_PIXEL:
-      return 32;
-    case FXDC_HORZ_SIZE:
-    case FXDC_VERT_SIZE:
-      return 0;
-    case FXDC_RENDER_CAPS:
-      return FXRC_GET_BITS | FXRC_ALPHA_PATH | FXRC_ALPHA_IMAGE |
-             FXRC_BLEND_MODE | FXRC_SOFT_CLIP | FXRC_ALPHA_OUTPUT |
-             FXRC_FILLSTROKE_PATH | FXRC_SHADING | FXRC_PREMULTIPLIED_ALPHA;
-    default:
-      NOTREACHED();
-  }
+bool CFX_SkiaDeviceDriver::RenderCapGetBits() const {
+  return true;
+}
+
+bool CFX_SkiaDeviceDriver::RenderCapAlphaPath() const {
+  return true;
+}
+
+bool CFX_SkiaDeviceDriver::RenderCapAlphaImage() const {
+  return true;
+}
+
+bool CFX_SkiaDeviceDriver::RenderCapBlendMode() const {
+  return true;
+}
+
+bool CFX_SkiaDeviceDriver::RenderCapSoftClip() const {
+  return true;
+}
+
+bool CFX_SkiaDeviceDriver::RenderCapAlphaOutput() const {
+  return true;
+}
+
+bool CFX_SkiaDeviceDriver::RenderCapFillStrokePath() const {
+  return true;
+}
+
+bool CFX_SkiaDeviceDriver::RenderCapShading() const {
+  return true;
+}
+
+bool CFX_SkiaDeviceDriver::RenderCapPremultipliedAlpha() const {
+  return true;
+}
+
+int CFX_SkiaDeviceDriver::GetPixelWidth() const {
+  return canvas_->imageInfo().width();
+}
+
+int CFX_SkiaDeviceDriver::GetPixelHeight() const {
+  return canvas_->imageInfo().height();
+}
+
+int CFX_SkiaDeviceDriver::GetBitsPerPixel() const {
+  return 32;
 }
 
 void CFX_SkiaDeviceDriver::SaveState() {
@@ -1066,9 +1094,8 @@ bool CFX_SkiaDeviceDriver::SetClip_PathFill(
     std::optional<CFX_FloatRect> maybe_rectf = path.GetRect(&deviceMatrix);
     if (maybe_rectf.has_value()) {
       CFX_FloatRect& rectf = maybe_rectf.value();
-      rectf.Intersect(CFX_FloatRect(0, 0,
-                                    (float)GetDeviceCaps(FXDC_PIXEL_WIDTH),
-                                    (float)GetDeviceCaps(FXDC_PIXEL_HEIGHT)));
+      rectf.Intersect(
+          CFX_FloatRect(0, 0, (float)GetPixelWidth(), (float)GetPixelHeight()));
       FX_RECT outer = rectf.GetOuterRect();
       // note that PDF's y-axis goes up; Skia's y-axis goes down
       skClipPathBuilder.addRect({(float)outer.left, (float)outer.bottom,
@@ -1173,7 +1200,8 @@ bool CFX_SkiaDeviceDriver::DrawPath(const CFX_Path& cfx_path,
       // Drawing it as a stroke normally already operates in the knockout way
       // but not for the AA pixels in some cases.
       SkPathBuilder stroke_outline_builder;
-      skpathutils::FillPathWithPaint(path, stroke_paint, &stroke_outline_builder);
+      skpathutils::FillPathWithPaint(path, stroke_paint,
+                                     &stroke_outline_builder);
       SkPath stroke_outline = stroke_outline_builder.detach();
       layer_paint.setColor(stroke_color);
       DrawPathImpl(stroke_outline, layer_paint);
@@ -1464,7 +1492,7 @@ RenderDeviceDriverIface::StartResult CFX_SkiaDeviceDriver::StartDIBits(
 }
 
 void CFX_DIBitmap::PreMultiply() {
-  CHECK(CFX_DefaultRenderDevice::UseSkiaRenderer());
+  CHECK(CFX_GEModule::Get()->UseSkiaRenderer());
   if (GetFormat() != FXDIB_Format::kBgra) {
     return;
   }
@@ -1488,7 +1516,7 @@ void CFX_DIBitmap::PreMultiply() {
 }
 
 void CFX_DIBitmap::UnPreMultiply() {
-  CHECK(CFX_DefaultRenderDevice::UseSkiaRenderer());
+  CHECK(CFX_GEModule::Get()->UseSkiaRenderer());
   if (GetFormat() != FXDIB_Format::kBgraPremul) {
     return;
   }

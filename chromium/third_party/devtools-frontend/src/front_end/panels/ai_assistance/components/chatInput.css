@@ -218,9 +218,9 @@
   gap: var(--sys-size-3);
   align-items: center;
 
-  .resource-link,
-  .resource-task {
+  .resource-link {
     display: flex;
+    background-color: var(--sys-color-cdt-base-container);
     align-items: center;
     cursor: pointer;
     padding: var(--sys-size-2) var(--sys-size-3);
@@ -239,17 +239,16 @@
 
     & .title {
       vertical-align: middle;
+      /* Fixed italic text getting cut off */
+      padding-right: var(--sys-size-2);
       font: var(--sys-typescale-body5-regular);
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    & .remove-context {
+    & .remove-context,
+    & .add-context {
       vertical-align: middle;
-    }
-
-    &.has-picker-behavior {
-      overflow: visible;
     }
 
     &:focus-visible {
@@ -262,6 +261,28 @@
       vertical-align: middle;
       min-width: var(--sys-size-7);
       min-height: var(--sys-size-7);
+    }
+
+    &.disabled {
+      border-style: dashed;
+      border-color: var(--sys-color-neutral-outline);
+      color: var(--sys-color-on-surface-light);
+
+      devtools-icon,
+      devtools-file-source-icon {
+        /* Override devtools-file-source-icon */
+        --override-file-source-icon-color: var(
+          --sys-color-on-surface-light-graphics
+        );
+        /* Some icons set their style attribute and we need to override it */
+        /* stylelint-disable-next-line declaration-no-important */
+        color: var(--sys-color-on-surface-light-graphics) !important;
+      }
+
+      .title {
+        color: var(--sys-color-on-surface-light);
+        font-style: italic;
+      }
     }
 
     /*
@@ -300,13 +321,6 @@
         max-height: var(--sys-size-7);
       }
     }
-  }
-
-  .resource-link.disabled,
-  .resource-task.disabled {
-    color: var(--sys-color-state-disabled);
-    border-color: var(--sys-color-neutral-outline);
-    pointer-events: none;
   }
 }
 

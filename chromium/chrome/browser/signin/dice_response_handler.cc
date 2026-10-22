@@ -55,6 +55,8 @@ const char kDiceResponseHeaderHistogram[] = "Signin.DiceResponseHeader";
 const char kDiceTokenFetchResultHistogram[] = "Signin.DiceTokenFetchResult";
 const char kDiceTokenBindingOutcomeHistogram[] =
     "Signin.DiceTokenBindingOutcome";
+const char kDiceEnableSyncHeaderAccountInfoIsPresent[] =
+    "Signin.DiceEnableSyncHeaderAccountInfoIsPresent";
 
 // Used for UMA. Do not reorder, append new values at the end.
 enum DiceResponseHeader {
@@ -114,15 +116,17 @@ DiceResponseHandler::DiceTokenFetcher::DiceTokenFetcher(
     const GaiaId& gaia_id,
     const std::string& email,
     const std::string& authorization_code,
+    bool mtls_token_binding,
     SigninClient* signin_client,
     AccountReconcilor* account_reconcilor,
     std::unique_ptr<ProcessDiceHeaderDelegate> delegate,
-    base::expected<raw_ref<BindingKeyRegistrationTokenHelper>, TokenBindingOutcome>
-        registration_token_helper_or_error,
+    base::expected<raw_ref<BindingKeyRegistrationTokenHelper>,
+                   TokenBindingOutcome> registration_token_helper_or_error,
     DiceResponseHandler* dice_response_handler)
     : gaia_id_(gaia_id),
       email_(email),
       authorization_code_(authorization_code),
+      mtls_token_binding_(mtls_token_binding),
       delegate_(std::move(delegate)),
       dice_response_handler_(dice_response_handler),
       signin_client_(signin_client),
@@ -150,7 +154,7 @@ void DiceResponseHandler::DiceTokenFetcher::OnTimeout() {
   gaia_auth_fetcher_.reset();
   timeout_closure_.Cancel();
   dice_response_handler_->OnTokenExchangeFailure(
-      this, GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED));
+      this, GoogleServiceAuthError::CreateRequestCanceled());
   // |this| may be deleted at this point.
 }
 
@@ -197,7 +201,8 @@ void DiceResponseHandler::DiceTokenFetcher::StartTokenFetch() {
   gaia_auth_fetcher_->StartAuthCodeForOAuth2TokenExchange(
       authorization_code_, binding_registration_token_,
       {.full_version_list = ua_metadata.SerializeBrandFullVersionList(),
-       .platform = SerializeHeaderString(ua_metadata.platform)});
+       .platform = SerializeHeaderString(ua_metadata.platform)},
+      mtls_token_binding_);
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, timeout_closure_.callback(),
       base::Seconds(kDiceTokenFetchTimeoutSeconds));
@@ -257,28 +262,45 @@ DiceResponseHandler::~DiceResponseHandler() = default;
 void DiceResponseHandler::ProcessDiceHeader(
     const signin::DiceResponseParams& dice_params,
     std::unique_ptr<ProcessDiceHeaderDelegate> delegate) {
-  DCHECK(delegate);
-  switch (dice_params.user_intention) {
+  if (!dice_params.IsValid()) {
+    return;
+  }
+
+  CHECK(delegate);
+  switch (dice_params.user_intention()) {
     case signin::DiceAction::SIGNIN: {
+      const signin::DiceResponseParams::SigninInfo* signin_info =
+          dice_params.signin_info();
+      CHECK(signin_info);
+      const signin::DiceResponseParams::SigninInfo::SigninAccount* initiator =
+          signin_info->GetInitiator();
+      CHECK(initiator);
       const signin::DiceResponseParams::AccountInfo& info =
-          dice_params.signin_info->account_info;
+          initiator->account_info;
       ProcessDiceSigninHeader(
-          info.gaia_id, info.email, dice_params.signin_info->authorization_code,
-          dice_params.signin_info->no_authorization_code,
-          dice_params.signin_info->supported_algorithms_for_token_binding,
-          std::move(delegate));
+          info.gaia_id, info.email, initiator->authorization_code,
+          initiator->no_authorization_code,
+          initiator->supported_algorithms_for_token_binding,
+          initiator->mtls_token_binding, std::move(delegate));
       return;
     }
     case signin::DiceAction::ENABLE_SYNC: {
+      const signin::DiceResponseParams::EnableSyncInfo* enable_sync_info =
+          dice_params.enable_sync_info();
+      CHECK(enable_sync_info);
       const signin::DiceResponseParams::AccountInfo& info =
-          dice_params.enable_sync_info->account_info;
+          enable_sync_info->account_info;
       ProcessEnableSyncHeader(info.gaia_id, info.email, std::move(delegate));
       return;
     }
-    case signin::DiceAction::SIGNOUT:
-      DCHECK_GT(dice_params.signout_info->account_infos.size(), 0u);
-      ProcessDiceSignoutHeader(dice_params.signout_info->account_infos);
+    case signin::DiceAction::SIGNOUT: {
+      const signin::DiceResponseParams::SignoutInfo* signout_info =
+          dice_params.signout_info();
+      CHECK(signout_info);
+      DCHECK_GT(signout_info->account_infos.size(), 0u);
+      ProcessDiceSignoutHeader(signout_info->account_infos);
       return;
+    }
     case signin::DiceAction::NONE:
       NOTREACHED() << "Invalid Dice response parameters.";
   }
@@ -311,6 +333,7 @@ void DiceResponseHandler::ProcessDiceSigninHeader(
     const std::string& authorization_code,
     bool no_authorization_code,
     const std::string& supported_algorithms_for_token_binding,
+    bool mtls_token_binding,
     std::unique_ptr<ProcessDiceHeaderDelegate> delegate) {
   if (no_authorization_code) {
     lock_ = std::make_unique<AccountReconcilor::Lock>(account_reconcilor_);
@@ -361,8 +384,9 @@ void DiceResponseHandler::ProcessDiceSigninHeader(
               supported_algorithms_for_token_binding);
 
   token_fetchers_.push_back(std::make_unique<DiceTokenFetcher>(
-      gaia_id, email, authorization_code, signin_client_, account_reconcilor_,
-      std::move(delegate), registration_token_helper_or_error, this));
+      gaia_id, email, authorization_code, mtls_token_binding, signin_client_,
+      account_reconcilor_, std::move(delegate),
+      registration_token_helper_or_error, this));
 }
 
 void DiceResponseHandler::ProcessEnableSyncHeader(
@@ -382,8 +406,14 @@ void DiceResponseHandler::ProcessEnableSyncHeader(
       return;  // There is already a request in flight with the same parameters.
     }
   }
-  delegate->CompleteChromeSignInAfterGaiaSignin(
-      identity_manager_->FindExtendedAccountInfoByGaiaId(gaia_id));
+  AccountInfo account_info =
+      identity_manager_->FindExtendedAccountInfoByGaiaId(gaia_id);
+  base::UmaHistogramBoolean(kDiceEnableSyncHeaderAccountInfoIsPresent,
+                            !account_info.IsEmpty());
+  if (account_info.IsEmpty()) {
+    return;
+  }
+  delegate->CompleteChromeSignInAfterGaiaSignin(account_info);
 }
 
 void DiceResponseHandler::ProcessDiceSignoutHeader(
@@ -464,13 +494,15 @@ void DiceResponseHandler::OnTokenExchangeSuccess(
       identity_manager_->PickAccountIdForAccount(gaia_id, email);
   bool is_new_account =
       !identity_manager_->HasAccountWithRefreshToken(account_id);
+  const bool mtls_token_binding = token_fetcher->mtls_token_binding();
 
   identity_manager_->GetAccountsMutator()->AddOrUpdateAccount(
       gaia_id, email, refresh_token, is_under_advanced_protection,
       token_fetcher->delegate()->GetAccessPoint(),
       signin_metrics::SourceForRefreshTokenOperation::
           kDiceResponseHandler_Signin,
-      wrapped_binding_key);
+      signin::TokenBindingInfo(wrapped_binding_key, mtls_token_binding));
+
   about_signin_internals_->OnRefreshTokenReceived(
       base::StringPrintf("Successful (%s)", account_id.ToString().c_str()));
   token_fetcher->delegate()->HandleTokenExchangeSuccess(account_id,

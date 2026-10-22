@@ -10,7 +10,7 @@
 #include "base/check_op.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
-#include "base/memory/memory_pressure_monitor.h"
+#include "base/memory_coordinator/utils.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
@@ -54,6 +54,12 @@ namespace content {
 
 namespace {
 
+// If enabled, cancels the prerender when a navigation in the prerendered page
+// is restarted as cross-document. This feature is enabled by default as
+// a crash fix. The feature flag is kept as a kill switch.
+BASE_FEATURE(kPrerenderCancelOnCrossDocumentRestart,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 bool IsBackground(Visibility visibility) {
   // PrerenderHostRegistry treats HIDDEN and OCCLUDED as background.
   switch (visibility) {
@@ -94,21 +100,6 @@ bool DeviceHasEnoughMemoryForPrerender() {
       kDefaultMemoryThresholdMb);
 
   return base::SysInfo::AmountOfPhysicalMemory().InMiB() > memory_threshold_mb;
-}
-
-base::MemoryPressureLevel GetCurrentMemoryPressureLevel() {
-  // Ignore the memory pressure event if the memory control is disabled.
-  if (!base::FeatureList::IsEnabled(
-          blink::features::kPrerender2MemoryControls)) {
-    return base::MEMORY_PRESSURE_LEVEL_NONE;
-  }
-
-  auto* monitor = base::MemoryPressureMonitor::Get();
-  if (!monitor) {
-    return base::MEMORY_PRESSURE_LEVEL_NONE;
-  }
-  return monitor->GetCurrentPressureLevel(
-      base::MemoryPressureMonitorTag::kPrerenderHostRegistry);
 }
 
 // Create a resource request for `back_url` that only checks whether the
@@ -247,6 +238,7 @@ PreloadingEligibility ToEligibility(PrerenderFinalStatus status) {
     case PrerenderFinalStatus::kUaChangeRequiresReload:
     case PrerenderFinalStatus::kBlockedByClient:
     case PrerenderFinalStatus::kMixedContent:
+    case PrerenderFinalStatus::kCrossDocumentRestart:
       NOTREACHED();
     case PrerenderFinalStatus::kTriggerBackgrounded:
       return PreloadingEligibility::kHidden;
@@ -320,6 +312,7 @@ PreloadingEligibility ToEligibility(PrerenderFinalStatus status) {
     case PrerenderFinalStatus::kBrowsingDataRemoved:
       NOTREACHED();
     case PrerenderFinalStatus::kPrerenderHostReused:
+    case PrerenderFinalStatus::kFormSubmitWhenPrerendering:
       NOTREACHED();
   }
 
@@ -644,14 +637,10 @@ PrerenderHostId PrerenderHostRegistry::CreateAndStartHost(
     }
 
     // Don't prerender under critical memory pressure.
-    switch (GetCurrentMemoryPressureLevel()) {
-      case base::MEMORY_PRESSURE_LEVEL_NONE:
-      case base::MEMORY_PRESSURE_LEVEL_MODERATE:
-        break;
-      case base::MEMORY_PRESSURE_LEVEL_CRITICAL:
-        builder.RejectAsNotEligible(
-            attributes, PrerenderFinalStatus::kMemoryPressureOnTrigger);
-        return PrerenderHostId();
+    if (GetCurrentMemoryLimit() <= base::kCriticalMemoryPressureThreshold) {
+      builder.RejectAsNotEligible(
+          attributes, PrerenderFinalStatus::kMemoryPressureOnTrigger);
+      return PrerenderHostId();
     }
 
     // Disable prerendering on slow network.
@@ -836,7 +825,7 @@ PrerenderHostId PrerenderHostRegistry::CreateAndStartHost(
         // the head of the queue if there's no running prerender and the
         // initiator is in the foreground. If the initiator page is in the
         // background, `StartPrerendering` will return a corresponding
-        // frame_tree_node_id if allowed by
+        // PrerenderHostId if allowed by
         // `PrerenderCanBeStartedWhenInitiatorIsInBackground`.
         if (IsBackground(initiator_web_contents.GetVisibility()) &&
             !initiator_web_contents.GetPrerenderHostRegistry()
@@ -1133,14 +1122,8 @@ bool PrerenderHostRegistry::CancelNewTabHostInternal(
   prerender_new_tab_handle_by_id_.erase(iter);
   NotifyCancel(handle->prerender_host_id(), reason);
 
-  if (reason.final_status() == PrerenderFinalStatus::kSpeculationRuleRemoved) {
-    auto& new_tab_registry = handle->GetPrerenderHostRegistry();
-    new_tab_registry.SchedulePendingDeletionPrerenderNewTabHandle(
-        std::move(handle));
-    new_tab_registry.CancelHost(prerender_host_id, reason);
-  } else {
-    handle->CancelPrerendering(reason);
-  }
+  PrerenderNewTabHandle::CancelPrerenderingAndDestroy(std::move(handle),
+                                                      reason);
 
   return true;
 }
@@ -1320,17 +1303,6 @@ void PrerenderHostRegistry::OnActivationFinished(
 }
 
 PrerenderHost* PrerenderHostRegistry::FindNonReservedHostById(
-    FrameTreeNodeId frame_tree_node_id) {
-  auto* frame_tree_node = FrameTreeNode::GloballyFindByID(frame_tree_node_id);
-  if (!frame_tree_node) {
-    return nullptr;
-  }
-  PrerenderHostId prerender_host_id =
-      frame_tree_node->frame_tree().delegate()->GetPrerenderHostId();
-  return FindNonReservedHostById(prerender_host_id);
-}
-
-PrerenderHost* PrerenderHostRegistry::FindNonReservedHostById(
     PrerenderHostId prerender_host_id) {
   auto id_iter = prerender_host_by_id_.find(prerender_host_id);
   if (id_iter == prerender_host_by_id_.end()) {
@@ -1350,12 +1322,17 @@ PrerenderHostRegistry::TakePreCreatedWebContentsForNewTabIfExists(
   // Don't serve a prerendered page if the window needs the opener or is created
   // for non-regular navigations.
   if (!create_new_window_params.opener_suppressed ||
-      create_new_window_params.is_form_submission ||
       create_new_window_params.pip_options) {
     return nullptr;
   }
 
   for (auto& iter : prerender_new_tab_handle_by_id_) {
+    // Skip those PrerenderHosts that are not for form submission if the window
+    // is created by form submission.
+    if (create_new_window_params.is_form_submission &&
+        !iter.second->form_submission()) {
+      continue;
+    }
     std::unique_ptr<WebContentsImpl> web_contents =
         iter.second->TakeWebContentsIfAvailable(create_new_window_params,
                                                 web_contents_create_params);
@@ -1643,6 +1620,19 @@ void PrerenderHostRegistry::DidFinishNavigation(
   auto* navigation_request = NavigationRequest::From(navigation_handle);
 
   if (navigation_request->IsSameDocument()) {
+    // If a navigation in the prerendered page starts as same-document but is
+    // restarted as cross-document, it can cause duplicate DidFinishNavigation
+    // calls and CHECK failures because the initial start was ignored.
+    // Since prerendering is an optimization, we cancel the prerender in this
+    // corner case to avoid complex state management.
+    // This is guarded by a kill switch feature flag.
+    if (navigation_request->was_reset_for_cross_document_restart() &&
+        base::FeatureList::IsEnabled(kPrerenderCancelOnCrossDocumentRestart)) {
+      PrerenderHostId prerender_host_id =
+          navigation_handle->GetPrerenderHostId();
+      CancelHost(prerender_host_id,
+                 PrerenderFinalStatus::kCrossDocumentRestart);
+    }
     return;
   }
 
@@ -1829,6 +1819,7 @@ void PrerenderHostRegistry::DeletePendingDeletionHosts(
 }
 
 void PrerenderHostRegistry::SchedulePendingDeletionPrerenderNewTabHandle(
+    base::PassKey<PrerenderNewTabHandle>,
     std::unique_ptr<PrerenderNewTabHandle> handle) {
   CHECK(!pending_deletion_new_tab_prerender_handle_);
   pending_deletion_new_tab_prerender_handle_ = std::move(handle);
@@ -1838,22 +1829,20 @@ void PrerenderHostRegistry::ScheduleToDeleteAbandonedHost(
     std::unique_ptr<PrerenderHost> prerender_host,
     const PrerenderCancellationReason& cancellation_reason) {
   prerender_host->RecordFailedFinalStatus(PassKey(), cancellation_reason);
-  if (base::FeatureList::IsEnabled(
-          blink::features::kPageHideEventForPrerender2)) {
-    // TODO(crbug.com/353628449): Support pagehide event dispatch for
-    // PrerenderFinalStatus::kWindowClosed.
-    if (cancellation_reason.final_status() ==
-        PrerenderFinalStatus::kSpeculationRuleRemoved) {
-      // Fire unload related events upon intended prerender cancellation.
-      RenderFrameHostImpl* rfhi = prerender_host->GetPrerenderedMainFrameHost();
-      PrerenderHostId prerender_host_id = prerender_host->prerender_host_id();
-      pending_deletion_hosts_[prerender_host_id] = std::move(prerender_host);
-      rfhi->ClosePage(RenderFrameHostImpl::ClosePageSource::kPrerenderDiscard,
-                      base::BindRepeating(
-                          &PrerenderHostRegistry::DeletePendingDeletionHosts,
-                          weak_factory_.GetWeakPtr(), prerender_host_id));
-      return;
-    }
+
+  // TODO(crbug.com/353628449): Support pagehide event dispatch for
+  // PrerenderFinalStatus::kWindowClosed.
+  if (cancellation_reason.final_status() ==
+      PrerenderFinalStatus::kSpeculationRuleRemoved) {
+    // Fire unload related events upon intended prerender cancellation.
+    RenderFrameHostImpl* rfhi = prerender_host->GetPrerenderedMainFrameHost();
+    PrerenderHostId prerender_host_id = prerender_host->prerender_host_id();
+    pending_deletion_hosts_[prerender_host_id] = std::move(prerender_host);
+    rfhi->ClosePage(
+        RenderFrameHostImpl::ClosePageSource::kPrerenderDiscard,
+        base::BindRepeating(&PrerenderHostRegistry::DeletePendingDeletionHosts,
+                            weak_factory_.GetWeakPtr(), prerender_host_id));
+    return;
   }
 
   // Asynchronously delete the prerender host.
@@ -1977,13 +1966,8 @@ void PrerenderHostRegistry::OnMemoryPressure(
     return;
   }
 
-  switch (memory_pressure_level) {
-    case base::MEMORY_PRESSURE_LEVEL_NONE:
-    case base::MEMORY_PRESSURE_LEVEL_MODERATE:
-      break;
-    case base::MEMORY_PRESSURE_LEVEL_CRITICAL:
-      CancelAllHosts(PrerenderFinalStatus::kMemoryPressureAfterTriggered);
-      break;
+  if (GetMemoryLimit() <= base::kCriticalMemoryPressureThreshold) {
+    CancelAllHosts(PrerenderFinalStatus::kMemoryPressureAfterTriggered);
   }
 }
 
@@ -1992,6 +1976,16 @@ PrerenderHostRegistry::GetTimerTaskRunner() {
   return timer_task_runner_for_testing_
              ? timer_task_runner_for_testing_
              : base::SingleThreadTaskRunner::GetCurrentDefault();
+}
+
+int PrerenderHostRegistry::GetCurrentMemoryLimit() {
+  // Ignore the memory pressure event if the memory control is disabled.
+  if (!base::FeatureList::IsEnabled(
+          blink::features::kPrerender2MemoryControls)) {
+    return base::kNoMemoryPressureThreshold;
+  }
+
+  return GetMemoryLimit();
 }
 
 void PrerenderHostRegistry::SetTaskRunnerForTesting(
@@ -2061,11 +2055,11 @@ void PrerenderHostRegistry::CancelHostsByOriginFilter(
 }
 
 void PrerenderHostRegistry::RecordPotentialPrerenderProcessReuse(
-    bool kHasMatchableHosts,
+    bool has_matchable_hosts,
     const GURL& navigation_url) {
   static constexpr char kPrerenderProcessReuseUMAName[] =
       "Prerender.Experimental.PrerenderProcessReuseAvailability";
-  if (kHasMatchableHosts) {
+  if (has_matchable_hosts) {
     base::UmaHistogramEnumeration(
         kPrerenderProcessReuseUMAName,
         PrerenderProcessReuseAvailability::kHasMatchableHosts);

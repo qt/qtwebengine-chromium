@@ -5,6 +5,7 @@
 #ifndef UTIL_HASHING_H_
 #define UTIL_HASHING_H_
 
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -39,9 +40,7 @@ uint64_t ComputeAggregateHash(uint64_t original_seed, const T&... objs) {
 
 template <typename... T>
 uint64_t ComputeAggregateHash(const T&... objs) {
-  // This value is taken from absl::Hash implementation.
-  constexpr uint64_t default_seed = UINT64_C(0xc3a5c85c97cb3127);
-  return ComputeAggregateHash(default_seed, objs...);
+  return ComputeAggregateHash(kDefaultSeed, objs...);
 }
 
 struct PairHash {

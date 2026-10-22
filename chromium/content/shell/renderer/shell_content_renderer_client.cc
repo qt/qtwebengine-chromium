@@ -31,6 +31,7 @@
 #include "content/shell/common/main_frame_counter_test_impl.h"
 #include "content/shell/common/power_monitor_test_impl.h"
 #include "content/shell/common/shell_switches.h"
+#include "content/shell/renderer/memory_coordinator/memory_coordinator_test_impl.h"
 #include "content/shell/renderer/shell_render_frame_observer.h"
 #include "mojo/public/cpp/bindings/binder_map.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -202,16 +203,17 @@ class ShellContentRendererUrlLoaderThrottleProvider
               [](const blink::LocalFrameToken& token,
                  const scoped_refptr<base::SequencedTaskRunner>
                      main_thread_task_runner,
-                 const url::Origin& origin,
+                 const std::optional<url::Origin>& initiator,
+                 const url::Origin& idp_origin,
                  blink::mojom::IdpSigninStatus status) {
                 if (content::RenderThread::IsMainThread()) {
-                  blink::SetIdpSigninStatus(token, origin, status);
+                  blink::SetIdpSigninStatus(token, idp_origin, status);
                   return;
                 }
                 if (main_thread_task_runner) {
                   main_thread_task_runner->PostTask(
                       FROM_HERE, base::BindOnce(&blink::SetIdpSigninStatus,
-                                                token, origin, status));
+                                                token, idp_origin, status));
                 }
               },
               local_frame_token.value(), main_thread_task_runner_));
@@ -305,6 +307,9 @@ void ShellContentRendererClient::ExposeInterfacesToBrowser(
     mojo::BinderMap* binders) {
   binders->Add<mojom::TestService>(
       &CreateRendererTestService,
+      base::SingleThreadTaskRunner::GetCurrentDefault());
+  binders->Add<mojom::MemoryCoordinatorTest>(
+      base::BindRepeating(&MemoryCoordinatorTestImpl::Bind),
       base::SingleThreadTaskRunner::GetCurrentDefault());
   binders->Add<mojom::PowerMonitorTest>(
       &PowerMonitorTestImpl::MakeSelfOwnedReceiver,

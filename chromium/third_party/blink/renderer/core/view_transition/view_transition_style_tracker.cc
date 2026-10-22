@@ -9,10 +9,12 @@
 #include <unordered_map>
 
 #include "base/check.h"
+#include "base/debug/dump_without_crashing.h"
 #include "cc/base/features.h"
 #include "components/viz/common/view_transition_element_resource_id.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/resources/grit/blink_resources.h"
+#include "third_party/blink/renderer/bindings/core/v8/frozen_array.h"
 #include "third_party/blink/renderer/core/animation/element_animations.h"
 #include "third_party/blink/renderer/core/animation/property_handle.h"
 #include "third_party/blink/renderer/core/css/css_default_style_sheets.h"
@@ -23,8 +25,11 @@
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
 #include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/core/display_lock/display_lock_document_state.h"
+#include "third_party/blink/renderer/core/dom/first_letter_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
+#include "third_party/blink/renderer/core/dom/scroll_marker_group_pseudo_element.h"
+#include "third_party/blink/renderer/core/dom/scroll_marker_pseudo_element.h"
 #include "third_party/blink/renderer/core/frame/browser_controls.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/page_scale_constraints_set.h"
@@ -144,34 +149,6 @@ CSSPropertyID FromTransitionPropertyId(
     return CSSPropertyID::k##id;
   switch (id) { FOR_EACH_CSS_PROPERTY(FROM_TRANSITION_PROPERTY_ID) }
   return CSSPropertyID::kInvalid;
-}
-
-const String& StaticUAStyles() {
-  DEFINE_STATIC_LOCAL(
-      String, kStaticUAStyles,
-      (UncompressResourceAsASCIIString(IDR_UASTYLE_TRANSITION_CSS)));
-  return kStaticUAStyles;
-}
-
-const String& StaticUAStylesScoped() {
-  DEFINE_STATIC_LOCAL(
-      String, kStaticUAStylesScoped,
-      (UncompressResourceAsASCIIString(IDR_UASTYLE_TRANSITION_SCOPED_CSS)));
-  return kStaticUAStylesScoped;
-}
-
-const String& AnimationUAStyles() {
-  DEFINE_STATIC_LOCAL(
-      String, kAnimationUAStyles,
-      (UncompressResourceAsASCIIString(IDR_UASTYLE_TRANSITION_ANIMATIONS_CSS)));
-  return kAnimationUAStyles;
-}
-
-const String& AnimationUAStylesScoped() {
-  DEFINE_STATIC_LOCAL(String, kAnimationUAStyles,
-                      (UncompressResourceAsASCIIString(
-                          IDR_UASTYLE_TRANSITION_ANIMATIONS_SCOPED_CSS)));
-  return kAnimationUAStyles;
 }
 
 // Computes and returns the start offset for element's painting in horizontal or
@@ -484,8 +461,7 @@ ViewTransitionStyleTracker::ViewTransitionStyleTracker(
   VectorOf<AtomicString> transition_names;
   transition_names.ReserveInitialCapacity(captured_name_count_);
   for (const auto& transition_state_element : transition_state.elements) {
-    auto name =
-        AtomicString::FromUTF8(transition_state_element.tag_name.c_str());
+    auto name = AtomicString::FromUtf8(transition_state_element.tag_name);
     transition_names.push_back(name);
 
     DCHECK(!element_data_map_.Contains(name));
@@ -516,7 +492,7 @@ ViewTransitionStyleTracker::ViewTransitionStyleTracker(
 
           for (const auto& [id, value] : source) {
             builder.Insert(FromTransitionPropertyId(id),
-                           String::FromUTF8(value));
+                           String::FromUtf8(value));
           }
           destination = std::move(builder).Finish();
         };
@@ -534,15 +510,14 @@ ViewTransitionStyleTracker::ViewTransitionStyleTracker(
     element_data->border_offset = transition_state_element.border_offset;
 
     for (const auto& class_name : transition_state_element.class_list) {
-      element_data->class_list.push_back(
-          AtomicString::FromUTF8(class_name.c_str()));
+      element_data->class_list.push_back(AtomicString::FromUtf8(class_name));
     }
 
     element_data->containing_group_name =
         transition_state_element.containing_group_name.empty()
             ? AtomicString()
-            : AtomicString::FromUTF8(
-                  transition_state_element.containing_group_name.c_str());
+            : AtomicString::FromUtf8(
+                  transition_state_element.containing_group_name);
     element_data->CacheStateForOldSnapshot();
 
     element_data_map_.insert(name, std::move(element_data));
@@ -557,8 +532,8 @@ ViewTransitionStyleTracker::ViewTransitionStyleTracker(
   }
 
   for (auto& p : transition_state.id_to_auto_name_map) {
-    id_to_auto_name_map_.Set(AtomicString::FromUTF8(p.first),
-                             AtomicString::FromUTF8(p.second));
+    id_to_auto_name_map_.Set(AtomicString::FromUtf8(p.first),
+                             AtomicString::FromUtf8(p.second));
   }
 
   // The aim of this flag is to serialize/deserialize SPA state using MPA
@@ -659,6 +634,20 @@ bool ViewTransitionStyleTracker::MatchForOnlyChild(
 void ViewTransitionStyleTracker::AddTransitionElementsFromCSS() {
   DCHECK(document_ && document_->View());
 
+  if (element_ && element_ != document_->documentElement()) {
+    // Scoped view transition apply auto-nesting. The nested group applies
+    // clipping unless overflow explicitly set to visible.
+    // TODO(https://github.com/w3c/csswg-drafts/issues/13445) we might consider
+    // having per axis values here. Revisit once we have a resolution for this
+    // issue.
+    if (const ComputedStyle* style = element_->GetComputedStyle()) {
+      if (style->OverflowX() != EOverflow::kVisible ||
+          style->OverflowY() != EOverflow::kVisible) {
+        apply_overflow_clip_ = true;
+      }
+    }
+  }
+
   // We need our paint layers, and z-order lists which is done during
   // compositing inputs update.
   DCHECK_GE(document_->Lifecycle().GetState(),
@@ -739,16 +728,6 @@ void ViewTransitionStyleTracker::AddTransitionElementsFromCSSRecursive(
   // (unless changed by something like z-index on the pseudo-elements).
   auto& root_object = root->GetLayoutObject();
   auto& root_style = root_object.StyleRef();
-  if (element_ && (root_object.GetNode() != *element_) &&
-      (root_style.ViewTransitionScope() == EViewTransitionScope::kAuto)) {
-    // Having "view-transition-scope: auto" on a descendant of the scoped
-    // element halts propagation of tag discovery into the descendant's subtree.
-    // If the scoped element itself has "view-transition-scope: auto", the tag
-    // discovery process proceeds normally.
-    // TODO(crbug.com/478214441): Handle "view-transition-scope: auto" on an
-    // element with "display: contents".
-    return;
-  }
 
   const auto& view_transition_name = root_style.ViewTransitionName();
   AtomicString current_name;
@@ -796,6 +775,13 @@ void ViewTransitionStyleTracker::AddTransitionElementsFromCSSRecursive(
   // children can have outer tree scope.
   PaintLayerPaintOrderIterator child_iterator(root, kAllChildren);
   while (auto* child = child_iterator.Next()) {
+    // View-transition-scope: auto is not confined to elements with directly
+    // corresponding paint layers. Scan the DOM elements for containment
+    // within the interval including checking elements with "display: contents".
+    if (HasContainmentBoundary(root, child)) {
+      continue;
+    }
+
     // Note that both 'contain' and 'nearest' contain descendant names, per
     // https://www.w3.org/TR/css-view-transitions-2/#nearest-containing-group-name
     AddTransitionElementsFromCSSRecursive(
@@ -896,6 +882,82 @@ bool ViewTransitionStyleTracker::FlattenAndVerifyElements(
     elements.push_back(element);
   }
   return true;
+}
+
+bool ViewTransitionStyleTracker::HasContainmentBoundary(
+    PaintLayer* root,
+    PaintLayer* child) const {
+  auto& root_object = root->GetLayoutObject();
+  auto& child_object = child->GetLayoutObject();
+  Node* node = child_object.GetNode();
+  if (!node) {
+    return false;
+  }
+  // The search for "view-transition-scope: all" is done using flat-tree
+  // traversal rather than layout objects as the containment boundary could
+  // be on an element without a layout object (e.g. "display: contents").
+  // There are several discrepancies between the element hierarchy and
+  // layout hierarchy that need to be taken into account to ensure that we
+  // properly scan the correct range.
+  Node* root_node = root_object.GetNode();
+  while (node != root_node) {
+    if (Element* element = DynamicTo<Element>(node)) {
+      if (element != element_ &&
+          element->GetComputedStyle()->ViewTransitionScope() ==
+              EViewTransitionScope::kAll) {
+        return true;
+      }
+
+      // No need to search inside the VT-pseudo tree. The ultimate
+      // originating element is already marked as a containment boundary while
+      // the view-transition is active.
+      if (IsTransitionPseudoElement(element->GetPseudoId())) {
+        return true;
+      }
+
+      // See LayoutTreeBuilderTraversal::ParentLayoutObject
+      if (element->IsScrollMarkerPseudoElement()) {
+        node = static_cast<ScrollMarkerPseudoElement*>(element)
+                   ->ScrollMarkerGroup();
+        continue;
+      }
+
+      // ::first-letter's originating element can be outside of a nested div.
+      // In the following example:
+      // <div id="a">
+      //   <div id="b">A</div>
+      // <div>
+      // #a::first-letter is associated with a LayoutText object inside #b.
+      // If #a::first-letter and #b both have paint layers, the pseudo's
+      // paint layer will be a descendant of #b, but the traversal
+      // through the pseudo's ancestors will bypass #b.
+      // Though we could drill down to the text node for the first letter and
+      // resume the search from there, we can abort since a text node cannot
+      // contain a VT participant.
+      if (element->GetPseudoId() == PseudoId::kPseudoIdFirstLetter) {
+        // TODO(crbug.com/434891109): Currently, inline elements are not
+        // supported. Should this change, we'll need to change this return to
+        // traverse from the associated layout text box.
+        return true;
+      }
+    }
+    node = FlatTreeTraversal::Parent(*node);
+    // Sanity check in case we have missed anything.
+    if (!node && root_node) {
+      StringBuilder sb;
+      sb.Append(child_object.GetNode()->nodeName());
+      sb.Append(" / ");
+      sb.Append(root_node->nodeName());
+      String message = sb.ReleaseString();
+      DCHECK(false) << "Failed traversal: " << message;
+      auto* key = base::debug::AllocateCrashKeyString(
+          "Bug493082131-view-transition", base::debug::CrashKeySize::Size1024);
+      base::debug::SetCrashKeyString(key, message.Ascii().c_str());
+      base::debug::DumpWithoutCrashing();
+      break;
+    }
+  }
+  return false;
 }
 
 AtomicString ViewTransitionStyleTracker::ComputeContainingGroupName(
@@ -1416,11 +1478,11 @@ bool ViewTransitionStyleTracker::RunPostPrePaintSteps() {
     return false;
   }
 
-  if (!scope->GetLayoutObject()) {
-    // If we have any view transition elements, while having no
-    // scope->GetLayoutObject(), we should abort. Target elements are
-    // only set on the current phase of the animation, so it means that the
-    // scope's layout object disappeared in this phase.
+  if (!DynamicTo<LayoutBox>(scope->GetLayoutObject())) {
+    // If we have any view transition elements, while not having a layout box
+    // for the scoped element, we should abort. Target elements are only set
+    // on the current phase of the animation, so it means that the scope's
+    // layout object changed in this phase.
     for (auto& entry : element_data_map_) {
       auto& element_data = entry.value;
       if (element_data->target_element) {
@@ -1601,6 +1663,10 @@ bool ViewTransitionStyleTracker::RunPostPrePaintStepsForElement(
 
   for (CSSPropertyID id : kPropertiesToCaptureOnGroupChildren) {
     capture_property(id, group_children_css_property_builder);
+  }
+  if (apply_overflow_clip_) {
+    group_children_css_property_builder.Insert(CSSPropertyID::kOverflow,
+                                               "clip");
   }
 
   auto css_properties = std::move(css_property_builder).Finish();
@@ -2244,14 +2310,10 @@ CSSStyleSheet& ViewTransitionStyleTracker::UAStyleSheet() {
   const bool in_start_phase = state_ == State::kStarted;
 
   ViewTransitionStyleBuilder builder;
-  builder.AddUAStyle(RuntimeEnabledFeatures::ScopedViewTransitionsEnabled()
-                         ? StaticUAStylesScoped()
-                         : StaticUAStyles());
-  if (in_start_phase) {
-    builder.AddUAStyle(RuntimeEnabledFeatures::ScopedViewTransitionsEnabled()
-                           ? AnimationUAStylesScoped()
-                           : AnimationUAStyles());
-  }
+
+  // Default rules that are not specific to the instance of the transition
+  // are loaded via CSSDefaultStyleSheets. Only need to add rules specific
+  // to the active transition here.
 
   // If we started the animation then we always create the full dynamic style
   // sheet. However, before the animation phase, the dynamic sheet should only

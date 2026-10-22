@@ -47,8 +47,8 @@ RetainPtr<CPDF_Font> AddNativeTrueTypeFontToPDF(CPDF_Document* doc,
   }
 
   auto pFXFont = std::make_unique<CFX_Font>();
-  pFXFont->LoadSubst(sFontFaceName, true, 0, 0, 0,
-                     FX_GetCodePageFromCharset(nCharset), false);
+  pFXFont->LoadSubstFace(sFontFaceName, true, 0, 0, 0,
+                         FX_GetCodePageFromCharset(nCharset), false);
 
   auto* pDocPageData = CPDF_DocPageData::FromDocument(doc);
   return pDocPageData->AddFont(std::move(pFXFont), nCharset);

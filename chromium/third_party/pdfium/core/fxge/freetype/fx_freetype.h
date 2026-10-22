@@ -21,11 +21,9 @@
 #include FT_TRUETYPE_TABLES_H
 
 using FXFT_LibraryRec = struct FT_LibraryRec_;
-using FXFT_FaceRec = struct FT_FaceRec_;
-using FXFT_StreamRec = struct FT_StreamRec_;
 
 struct FXFTFaceRecDeleter {
-  inline void operator()(FXFT_FaceRec* pRec) { FT_Done_Face(pRec); }
+  inline void operator()(FT_FaceRec* pRec) { FT_Done_Face(pRec); }
 };
 
 struct FXFTLibraryRecDeleter {
@@ -36,13 +34,13 @@ struct FXFTMMVarDeleter {
   void operator()(FT_MM_Var* variation_desc);
 };
 
-using ScopedFXFTFaceRec = std::unique_ptr<FXFT_FaceRec, FXFTFaceRecDeleter>;
+using ScopedFXFTFaceRec = std::unique_ptr<FT_FaceRec, FXFTFaceRecDeleter>;
 using ScopedFXFTLibraryRec =
     std::unique_ptr<FXFT_LibraryRec, FXFTLibraryRecDeleter>;
 
 class ScopedFXFTMMVar {
  public:
-  explicit ScopedFXFTMMVar(FXFT_FaceRec* face);
+  explicit ScopedFXFTMMVar(FT_FaceRec* face);
   ~ScopedFXFTMMVar();
 
   explicit operator bool() const { return !!variation_desc_; }

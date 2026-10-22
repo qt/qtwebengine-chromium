@@ -316,7 +316,7 @@ void CaptureGetBooleanv_data(const State &glState,
 
 void CaptureGetBufferParameteriv_params(const State &glState,
                                         BufferBinding targetPacked,
-                                        GLenum pname,
+                                        BufferParam pnamePacked,
                                         GLint *params,
                                         ParamCapture *paramCapture)
 {
@@ -458,7 +458,7 @@ void CaptureGetShaderSource_source(const State &glState,
 
 void CaptureGetShaderiv_params(const State &glState,
                                ShaderProgramID shader,
-                               GLenum pname,
+                               ShaderParameter pnamePacked,
                                GLint *params,
                                ParamCapture *paramCapture)
 {

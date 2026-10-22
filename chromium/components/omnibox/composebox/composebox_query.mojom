@@ -106,6 +106,8 @@ enum InputType {
   kLensFile = 2,
   // Input is a browser tab.
   kBrowserTab = 3,
+  // Input is from Google Drive.
+  kDrive = 4,
 };
 // LINT.ThenChange(//third_party/omnibox_proto/input_type.proto:InputType)
 
@@ -179,7 +181,7 @@ struct InputState {
   // Hint text to display in the input.
   string hint_text;
   // The max number of inputs of a given type.
-  map<InputType, int32> max_instances;
+  map<InputType, int32> max_inputs_by_type;
   // The max total number of inputs.
   int32 max_total_inputs;
 };

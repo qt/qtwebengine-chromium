@@ -10,7 +10,6 @@ import type {ContextualEntrypointButtonElement} from './contextual_entrypoint_bu
 export function getHtml(this: ContextualEntrypointButtonElement) {
   // clang-format off
   return html`<!--_html_template_start_-->
-${this.hasAllowedInputs_() ? html`
   <div id="${this.getWrapperId_()}" class="${this.getWrapperCssClass_()}">
     ${this.showContextMenuDescription && !this.windowWidthBelowThreshold_ ? html`
       <cr-button id="entrypoint" class="ai-mode-button" part="entrypoint-button"
@@ -20,7 +19,7 @@ ${this.hasAllowedInputs_() ? html`
           aria-label="${this.i18n('addContextTitle')}">
         <cr-icon id="entrypointIcon" icon="cr:add" slot="prefix-icon"></cr-icon>
         <span id="description"
-            @animationend="${this.onDescriptionAnimationEnd_}">
+            @animationend="${this.onDescriptionAnimationend_}">
           ${this.i18n('addContext')}
         </span>
       </cr-button>
@@ -38,11 +37,10 @@ ${this.hasAllowedInputs_() ? html`
       <div class="aim-gradient-outer-blur aim-c"></div>
       <div class="aim-gradient-solid aim-c"></div>
       <div class="aim-background aim-c"
-          @animationend="${this.onAimBackgroundAnimationEnd_}">
+          @animationend="${this.onAimBackgroundAnimationend_}">
       </div>
     ` : ''}
-  </div>`
-: ''}
+  </div>
 <!--_html_template_end_-->`;
   // clang-format off
 }

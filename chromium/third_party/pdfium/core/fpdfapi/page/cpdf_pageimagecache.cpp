@@ -27,7 +27,7 @@
 
 #if defined(PDF_USE_SKIA)
 #include "core/fxcrt/data_vector.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "third_party/skia/include/core/SkImage.h"   // nogncheck
 #include "third_party/skia/include/core/SkRefCnt.h"  // nogncheck
 #endif
@@ -102,7 +102,7 @@ class CachedImage final : public CFX_DIBBase {
 RetainPtr<CFX_DIBBase> MakeCachedImage(RetainPtr<CFX_DIBBase> image,
                                        bool realize_hint) {
 #if defined(PDF_USE_SKIA)
-  if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+  if (CFX_GEModule::Get()->UseSkiaRenderer()) {
     // Ignore `realize_hint`, as `RealizeSkImage()` doesn't benefit from it.
     return pdfium::MakeRetain<CachedImage>(std::move(image));
   }

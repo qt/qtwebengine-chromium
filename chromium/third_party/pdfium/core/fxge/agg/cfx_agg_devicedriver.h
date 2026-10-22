@@ -43,7 +43,16 @@ class CFX_AggDeviceDriver final : public RenderDeviceDriverIface {
 
   // RenderDeviceDriverIface:
   DeviceType GetDeviceType() const override;
-  int GetDeviceCaps(int caps_id) const override;
+  bool RenderCapGetBits() const override;
+  bool RenderCapAlphaPath() const override;
+  bool RenderCapAlphaImage() const override;
+  bool RenderCapBlendMode() const override;
+  bool RenderCapSoftClip() const override;
+  bool RenderCapAlphaOutput() const override;
+  bool RenderCapByteMaskOutput() const override;
+  int GetPixelWidth() const override;
+  int GetPixelHeight() const override;
+  int GetBitsPerPixel() const override;
   void SaveState() override;
   void RestoreState(bool bKeepSaved) override;
   bool SetClip_PathFill(const CFX_Path& path,
@@ -85,7 +94,7 @@ class CFX_AggDeviceDriver final : public RenderDeviceDriverIface {
                           const CFX_Matrix& matrix,
                           const FXDIB_ResampleOptions& options,
                           BlendMode blend_type) override;
-  bool ContinueDIBits(CFX_AggImageRenderer* handle,
+  bool ContinueDIBits(RenderDeviceDriverIface::Continuation* continuation,
                       PauseIndicatorIface* pPause) override;
   bool DrawDeviceText(pdfium::span<const TextCharPos> pCharPos,
                       CFX_Font* font,

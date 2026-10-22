@@ -64,7 +64,17 @@ class StringTableSection(Section):
         """ Get the string stored at the given offset in this string table.
         """
         table_offset = self['sh_offset']
+        table_size = self['sh_size']
+
+        elf_assert(offset < table_size,
+                   'Expected string offset %x < table size %x' %
+                   (offset, table_size))
+
         s = parse_cstring_from_stream(self.stream, table_offset + offset)
+
+        elf_assert((offset + len(s)) < table_size,
+                   'Expected string offset + length %x < table size %x' %
+                   (offset + len(s), table_size))
         return s
 
 

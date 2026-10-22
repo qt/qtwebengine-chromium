@@ -16,7 +16,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/callback_list.h"
 #include "base/cancelable_callback.h"
 #include "base/containers/id_map.h"
 #include "base/functional/callback.h"
@@ -46,6 +45,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/service_worker_client_info.h"
+#include "content/public/common/child_process_id.h"
 #include "mojo/public/cpp/bindings/associated_receiver.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -248,17 +248,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
   FetchHandlerType fetch_handler_type() const;
   void set_fetch_handler_type(FetchHandlerType fetch_handler_type);
 
-  // Return the option indicating how the fetch handler should be bypassed.
-  // This is used to let the renderer know to bypass fetch handlers for
-  // subresources.
-  FetchHandlerBypassOption fetch_handler_bypass_option() {
-    return fetch_handler_bypass_option_;
-  }
-  void set_fetch_handler_bypass_option(
-      FetchHandlerBypassOption fetch_handler_bypass_option) {
-    fetch_handler_bypass_option_ = fetch_handler_bypass_option;
-  }
-
   bool has_hid_event_handlers() const { return has_hid_event_handlers_; }
   void set_has_hid_event_handlers(bool has_hid_event_handlers);
 
@@ -332,6 +321,30 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   // Schedules an update to be run 'soon'.
   void ScheduleUpdate();
+
+  // Implements the "Fire Functional Event" algorithm from the Service Worker
+  // specification. Starts the worker if needed, then runs |callback| with the
+  // result. On worker start failure, triggers a soft update check (spec step
+  // 5). Callers should use StartRequestForFunctionalEvent() (or
+  // StartRequestForFunctionalEventWithCustomTimeout()) to track the actual
+  // event dispatch; the completion soft-update (spec step 8) is handled
+  // automatically.
+  void RunAfterStartWorkerForFunctionalEvent(
+      ServiceWorkerMetrics::EventType purpose,
+      StatusCallback callback);
+
+  // Like StartRequest(), but marks the request for soft-update on completion.
+  int StartRequestForFunctionalEvent(
+      ServiceWorkerMetrics::EventType event_type,
+      StatusCallback error_callback);
+
+  // Like StartRequestWithCustomTimeout(), but marks the request for
+  // soft-update on completion.
+  int StartRequestForFunctionalEventWithCustomTimeout(
+      ServiceWorkerMetrics::EventType event_type,
+      StatusCallback error_callback,
+      const base::TimeDelta& timeout,
+      TimeoutBehavior timeout_behavior);
 
   // Starts an update now.
   void StartUpdate();
@@ -486,6 +499,10 @@ class CONTENT_EXPORT ServiceWorkerVersion
     return worker_host_.get();
   }
 
+  const std::optional<blink::ServiceWorkerToken>& start_worker_token() const {
+    return start_worker_token_;
+  }
+
   base::WeakPtr<ServiceWorkerContextCore> context() const { return context_; }
 
   // Adds and removes Observers.
@@ -562,11 +579,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   // Sets the response information used to load the main script.
   void SetMainScriptResponse(std::unique_ptr<MainScriptResponse> response);
-
-  // Ensures that the response information for the main script is set. If it is
-  // not set yet, it starts fetching it.
-  void EnsureMainScriptResponseSet(base::OnceClosure callback);
-  bool main_script_fetched() const;
   const MainScriptResponse* GetMainScriptResponse();
 
   // Simulate ping timeout. Should be used for tests-only.
@@ -662,7 +674,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   // Called by the EmbeddedWorkerInstance to determine if its worker process
   // should be kept at foreground priority.
-  bool ShouldRequireForegroundPriority(int worker_process_id) const;
+  bool ShouldRequireForegroundPriority(ChildProcessId worker_process_id) const;
 
   // Called when a controlled client's state changes in a way that might effect
   // whether the service worker should be kept at foreground priority.
@@ -696,7 +708,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void InitializeGlobalScope();
 
   // Returns true if |process_id| is a controllee process ID of this version.
-  bool IsControlleeProcessID(int process_id) const;
+  bool IsControlleeProcessID(ChildProcessId process_id) const;
 
   // Executes the given `script` in the associated worker. If `callback` is
   // non-empty, invokes `callback` with the result of the script after
@@ -894,6 +906,9 @@ class CONTENT_EXPORT ServiceWorkerVersion
     base::Time start_time;
     base::TimeTicks start_time_ticks;
     ServiceWorkerMetrics::EventType event_type;
+    // When true, FinishRequestWithFetchCount() will check for a stale
+    // registration and schedule a soft update (spec step 8).
+    bool soft_update_on_completion = false;
     // Points to this request's entry in |request_timeouts_|. Please invalidate
     // this when the corresponding entry is removed from `request_timeouts_`.
     // TODO(crbug.com/499449324): Refactor this code by simplifying ownerships.
@@ -940,6 +955,16 @@ class CONTENT_EXPORT ServiceWorkerVersion
                               const GURL& source_url) override;
 
   void OnStartSent(blink::ServiceWorkerStatusCode status);
+
+  // Returns true if the registration is stale (i.e. context is available,
+  // no installing version, and last update check exceeds the max cache age).
+  bool IsRegistrationStale();
+
+  // Callback for RunAfterStartWorker inside
+  // RunAfterStartWorkerForFunctionalEvent. On failure, triggers a soft update
+  // check (spec step 5) before forwarding status.
+  void DidStartWorkerForFunctionalEvent(StatusCallback callback,
+                                        blink::ServiceWorkerStatusCode status);
 
   // Implements blink::mojom::ServiceWorkerHost.
   void SetCachedMetadata(const GURL& url,
@@ -1200,9 +1225,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
   std::unique_ptr<ServiceWorkerInstalledScriptsSender>
       installed_scripts_sender_;
 
-  base::OnceClosureList main_script_response_callbacks_;
-  bool main_script_fetched_ = false;
-
   std::vector<SkipWaitingCallback> pending_skip_waiting_requests_;
   base::TimeTicks skip_waiting_time_;
   base::TimeTicks no_controllees_time_;
@@ -1223,6 +1245,10 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // The host for this version's running service worker. |worker_host_| is
   // always valid as long as this version is running.
   std::unique_ptr<content::ServiceWorkerHost> worker_host_;
+
+  // A token that uniquely identifies this running instance of the Service
+  // Worker. It is valid from worker started until stopped.
+  std::optional<blink::ServiceWorkerToken> start_worker_token_;
 
   // |controllee_map_| and |bfcached_controllee_map_| should not share the same
   // controllee.  ServiceWorkerClient in the controllee maps should be

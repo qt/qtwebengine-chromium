@@ -238,12 +238,13 @@ bool IsValidMimeType(const String& content_type,
   if (!parsed_content_type.IsValid())
     return false;
 
+  String mime_type = parsed_content_type.MimeType();
   // Valid ParsedContentType implies we have a mime type.
-  DCHECK(parsed_content_type.MimeType());
-  if (!parsed_content_type.MimeType().StartsWith(prefix) &&
-      (is_webrtc ||
-       !parsed_content_type.MimeType().StartsWith(kApplicationMimeTypePrefix)))
+  DCHECK(mime_type);
+  if (!mime_type.starts_with(prefix) &&
+      (is_webrtc || !mime_type.starts_with(kApplicationMimeTypePrefix))) {
     return false;
+  }
 
   // No requirement on parameters for RTP MIME types.
   if (is_webrtc)
@@ -257,7 +258,7 @@ bool IsValidMimeType(const String& content_type,
   if (parameters.ParameterCount() == 0)
     return true;
 
-  return EqualIgnoringASCIICase(parameters.begin()->name, kCodecsMimeTypeParam);
+  return EqualIgnoringAsciiCase(parameters.begin()->name, kCodecsMimeTypeParam);
 }
 
 bool IsValidMediaConfiguration(const MediaConfiguration* configuration) {
@@ -386,7 +387,7 @@ WebAudioConfiguration ToWebAudioConfiguration(
   DCHECK(parsed_content_type.IsValid());
   DCHECK(!parsed_content_type.GetParameters().HasDuplicatedNames());
 
-  web_configuration.mime_type = parsed_content_type.MimeType().LowerASCII();
+  web_configuration.mime_type = parsed_content_type.MimeType().ToAsciiLower();
   web_configuration.codec =
       parsed_content_type.ParameterValueForName(kCodecsMimeTypeParam);
 
@@ -413,7 +414,7 @@ WebVideoConfiguration ToWebVideoConfiguration(
   ParsedContentType parsed_content_type(configuration->contentType());
   DCHECK(parsed_content_type.IsValid());
   DCHECK(!parsed_content_type.GetParameters().HasDuplicatedNames());
-  web_configuration.mime_type = parsed_content_type.MimeType().LowerASCII();
+  web_configuration.mime_type = parsed_content_type.MimeType().ToAsciiLower();
   web_configuration.codec =
       parsed_content_type.ParameterValueForName(kCodecsMimeTypeParam);
 
@@ -722,15 +723,15 @@ bool ParseContentType(const String& content_type,
     return false;
   }
 
-  *mime_type = parsed_content_type.MimeType().LowerASCII();
+  *mime_type = parsed_content_type.MimeType().ToAsciiLower();
   *codec = parsed_content_type.ParameterValueForName(kCodecsMimeTypeParam);
   return true;
 }
 
 #if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
 bool IsDolbyVisionVideoCodec(const String& video_codec_str) {
-  return video_codec_str.StartsWith("dvh1.", kTextCaseSensitive) ||
-         video_codec_str.StartsWith("dvhe.", kTextCaseSensitive);
+  return video_codec_str.starts_with("dvh1.") ||
+         video_codec_str.starts_with("dvhe.");
 }
 #endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
 
@@ -1257,9 +1258,15 @@ ScriptPromise<MediaCapabilitiesDecodingInfo> MediaCapabilities::GetEmeSupport(
     audio_capability->setContentType(configuration->audio()->contentType());
     // If config.keySystemConfiguration.audio is present, set the robustness
     // attribute to config.keySystemConfiguration.audio.robustness.
-    if (key_system_config->hasAudio())
+    if (key_system_config->hasAudio()) {
       audio_capability->setRobustness(key_system_config->audio()->robustness());
-
+      if (RuntimeEnabledFeatures::
+              KeySystemTrackConfigurationEncryptionSchemeEnabled() &&
+          key_system_config->audio()->hasEncryptionScheme()) {
+        audio_capability->setEncryptionScheme(
+            key_system_config->audio()->encryptionScheme());
+      }
+    }
     eme_config->setAudioCapabilities(
         HeapVector<Member<MediaKeySystemMediaCapability>>(1, audio_capability));
   }
@@ -1274,9 +1281,15 @@ ScriptPromise<MediaCapabilitiesDecodingInfo> MediaCapabilities::GetEmeSupport(
     video_capability->setContentType(configuration->video()->contentType());
     // If config.keySystemConfiguration.video is present, set the robustness
     // attribute to config.keySystemConfiguration.video.robustness.
-    if (key_system_config->hasVideo())
+    if (key_system_config->hasVideo()) {
       video_capability->setRobustness(key_system_config->video()->robustness());
-
+      if (RuntimeEnabledFeatures::
+              KeySystemTrackConfigurationEncryptionSchemeEnabled() &&
+          key_system_config->video()->hasEncryptionScheme()) {
+        video_capability->setEncryptionScheme(
+            key_system_config->video()->encryptionScheme());
+      }
+    }
     eme_config->setVideoCapabilities(
         HeapVector<Member<MediaKeySystemMediaCapability>>(1, video_capability));
   }

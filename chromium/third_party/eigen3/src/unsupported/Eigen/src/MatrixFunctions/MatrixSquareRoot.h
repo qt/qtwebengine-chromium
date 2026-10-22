@@ -21,8 +21,7 @@ namespace internal {
 // post: sqrtT.block(i,i,2,2) is square root of T.block(i,i,2,2)
 template <typename MatrixType, typename ResultType>
 void matrix_sqrt_quasi_triangular_2x2_diagonal_block(const MatrixType& T, Index i, ResultType& sqrtT) {
-  // TODO: This case (2-by-2 blocks with complex conjugate eigenvalues) is probably hidden somewhere
-  //       in EigenSolver. If we expose it, we could call it directly from here.
+  // TODO: this 2x2 complex-conjugate eigenvalue case could reuse logic from EigenSolver if exposed.
   typedef typename traits<MatrixType>::Scalar Scalar;
   Matrix<Scalar, 2, 2> block = T.template block<2, 2>(i, i);
   EigenSolver<Matrix<Scalar, 2, 2> > es(block);

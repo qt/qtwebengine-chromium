@@ -63,12 +63,14 @@ void AddPreferredFeatures(const wgpu::Adapter& adapter, std::vector<wgpu::Featur
     addFeature(wgpu::FeatureName::FramebufferFetch);
     addFeature(wgpu::FeatureName::ImplicitDeviceSynchronization);
     addFeature(wgpu::FeatureName::MSAARenderToSingleSampled);
+    addFeature(wgpu::FeatureName::ShaderF16);
     addFeature(wgpu::FeatureName::TextureCompressionBC);
     addFeature(wgpu::FeatureName::TextureCompressionETC2);
     addFeature(wgpu::FeatureName::TextureFormatsTier1);
     addFeature(wgpu::FeatureName::TimestampQuery);
     addFeature(wgpu::FeatureName::TransientAttachments);
     addFeature(wgpu::FeatureName::Unorm16TextureFormats);
+    addFeature(wgpu::FeatureName::RenderPassRenderArea);
 }
 
 

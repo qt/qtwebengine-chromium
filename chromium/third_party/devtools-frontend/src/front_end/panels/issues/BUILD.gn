@@ -23,12 +23,12 @@ devtools_ui_module("issues") {
     "AffectedDirectivesView.ts",
     "AffectedDocumentsInQuirksModeView.ts",
     "AffectedElementsView.ts",
-    "AffectedElementsWithLowContrastView.ts",
     "AffectedHeavyAdView.ts",
     "AffectedMetadataAllowedSitesView.ts",
     "AffectedPartitioningBlobURLView.ts",
     "AffectedPermissionElementsView.ts",
     "AffectedResourcesView.ts",
+    "AffectedSelectivePermissionsInterventionView.ts",
     "AffectedSharedArrayBufferIssueDetailsView.ts",
     "AffectedSourcesView.ts",
     "AffectedTrackingSitesView.ts",
@@ -49,6 +49,7 @@ devtools_ui_module("issues") {
     "../../core/platform:bundle",
     "../../core/sdk:bundle",
     "../../generated:protocol",
+    "../../models/bindings:bundle",
     "../../models/issues_manager:bundle",
     "../../models/logs:bundle",
     "../../panels/console_counters:bundle",
@@ -104,6 +105,7 @@ devtools_ui_module("unittests") {
   testonly = true
 
   sources = [
+    "AffectedSelectivePermissionsInterventionView.test.ts",
     "IssueView.test.ts",
     "IssuesPane.test.ts",
   ]

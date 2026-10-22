@@ -18,16 +18,22 @@ import type {Origin} from '//resources/mojo/url/mojom/origin.mojom-webui.js';
 import type {Url} from '//resources/mojo/url/mojom/url.mojom-webui.js';
 
 import type {PageMetadata as PageMetadataMojo} from '../../ai_page_content_metadata.mojom-webui.js';
-import type {AdditionalContext as AdditionalContextMojo, AdditionalContextPart as AdditionalContextPartMojo, AnnotatedPageData as AnnotatedPageDataMojo, CaptureRegionResult as CaptureRegionResultMojo, ContextData as ContextDataMojo, ConversationInfo as ConversationInfoMojo, FocusedTabData as FocusedTabDataMojo, GetPinCandidatesOptions as GetPinCandidatesOptionsMojo, GetTabContextOptions as TabContextOptionsMojo, HostCapability as HostCapabilityMojo, InvokeOptions as InvokeOptionsMojo, PanelOpeningData as PanelOpeningDataMojo, PanelState as PanelStateMojo, PdfDocumentData as PdfDocumentDataMojo, PinTabsOptions as PinTabsOptionsMojo, Platform as PlatformMojo, Screenshot as ScreenshotMojo, TabContext as TabContextMojo, TabData as TabDataMojo, UnpinTabsOptions as UnpinTabsOptionsMojo, WebPageData as WebPageDataMojo, ZeroStateSuggestionsV2 as ZeroStateSuggestionsV2Mojo} from '../../glic.mojom-webui.js';
-import {PinTrigger as PinTriggerMojo, UnpinTrigger as UnpinTriggerMojo, WebClientMode as WebClientModeMojo} from '../../glic.mojom-webui.js';
-import type {AdditionalContextSource, CaptureRegionResult, ConversationInfo, FeatureMode, FreOverride as glicFreOverride, GetPinCandidatesOptions, HostCapability, InvocationSource, LightweightPageFeature, PageMetadata, PanelOpeningData, PanelState, PinTabsOptions, PinTrigger, Platform, Screenshot, TabContextOptions, TaskOptions, UnpinTabsOptions, UnpinTrigger, WebPageData, ZeroStateSuggestionsV2} from '../../glic_api/glic_api.js';
-import {DEFAULT_INNER_TEXT_BYTES_LIMIT, DEFAULT_PDF_SIZE_LIMIT, WebClientMode} from '../../glic_api/glic_api.js';
+import type {AdditionalContext as AdditionalContextMojo, AdditionalContextPart as AdditionalContextPartMojo, AnnotatedPageData as AnnotatedPageDataMojo, CaptureRegionResult as CaptureRegionResultMojo, ContextData as ContextDataMojo, ConversationInfo as ConversationInfoMojo, FocusedTabData as FocusedTabDataMojo, GetPinCandidatesOptions as GetPinCandidatesOptionsMojo, GetTabContextOptions as TabContextOptionsMojo, HostCapability as HostCapabilityMojo, InvokeOptions as InvokeOptionsMojo, PanelOpeningData as PanelOpeningDataMojo, PanelState as PanelStateMojo, PdfDocumentData as PdfDocumentDataMojo, PinTabsOptions as PinTabsOptionsMojo, Screenshot as ScreenshotMojo, ScreenshotCollectionOptions as ScreenshotCollectionOptionsMojo, TabContext as TabContextMojo, TabData as TabDataMojo, UnpinTabsOptions as UnpinTabsOptionsMojo, WebPageData as WebPageDataMojo, ZeroStateSuggestionsV2 as ZeroStateSuggestionsV2Mojo} from '../../glic.mojom-webui.js';
+import {MicrophoneStatus as MicrophoneStatusMojo, PinTrigger as PinTriggerMojo, ScreenshotCompressionQuality as ScreenshotCompressionQualityMojo, ScreenshotImageFormat as ScreenshotImageFormatMojo, UnpinTrigger as UnpinTriggerMojo, WebClientMode as WebClientModeMojo} from '../../glic.mojom-webui.js';
+import type {CaptureRegionResult, ConversationInfo, GetPinCandidatesOptions, HostCapability, PageMetadata, PanelOpeningData, PanelState, PinTabsOptions, PinTrigger, Screenshot, ScreenshotCollectionOptions, TabContextOptions, TaskOptions, UnpinTabsOptions, UnpinTrigger, WebPageData, ZeroStateSuggestionsV2} from '../../glic_api/glic_api.js';
+import {DEFAULT_INNER_TEXT_BYTES_LIMIT, DEFAULT_PDF_SIZE_LIMIT, MicrophoneStatus, Platform, WebClientMode} from '../../glic_api/glic_api.js';
+import {enumFromClient, enumToClient} from '../enum_conversions.js';
 
 import type {ConfirmationRequestErrorReason as ConfirmationRequestErrorReasonMojo, NavigationConfirmationRequest as NavigationConfirmationRequestMojo, NavigationConfirmationResponse as NavigationConfirmationResponseMojo, SelectAutofillSuggestionsDialogErrorReason as SelectAutofillSuggestionsDialogErrorReasonMojo, SelectAutofillSuggestionsDialogRequest as SelectAutofillSuggestionsDialogRequestMojo, SelectAutofillSuggestionsDialogResponse as SelectAutofillSuggestionsDialogResponseMojo, SelectCredentialDialogErrorReason as SelectCredentialDialogErrorReasonMojo, SelectCredentialDialogRequest as SelectCredentialDialogRequestMojo, SelectCredentialDialogResponse as SelectCredentialDialogResponseMojo, TaskOptions as TaskOptionsMojo, UserConfirmationDialogRequest as UserConfirmationDialogRequestMojo, UserConfirmationDialogResponse as UserConfirmationDialogResponseMojo, UserGrantedPermissionDuration as UserGrantedPermissionDurationMojo} from './../../actor_webui.mojom-webui.js';
 import {replaceProperties} from './../conversions.js';
 import type {ResponseExtras} from './../post_message_transport.js';
 import type {AdditionalContextPartPrivate, AdditionalContextPrivate, AnnotatedPageDataPrivate, FocusedTabDataPrivate, InvokeOptionsPrivate, NavigationConfirmationRequestPrivate, NavigationConfirmationResponsePrivate, PdfDocumentDataPrivate, ResumeActorTaskResultPrivate, RgbaImage, SelectAutofillSuggestionsDialogRequestPrivate, SelectAutofillSuggestionsDialogResponsePrivate, SelectCredentialDialogRequestPrivate, SelectCredentialDialogResponsePrivate, TabContextResultPrivate, TabDataPrivate, UserConfirmationDialogRequestPrivate, UserConfirmationDialogResponsePrivate} from './../request_types.js';
 import {ImageAlphaType, ImageColorType} from './../request_types.js';
+
+export const conversionSettings = {
+  platform: undefined as Platform | undefined,
+  omitFaviconInTabData: false as boolean,
+};
 
 
 export function idToClient(windowId: number): string;
@@ -200,7 +206,7 @@ export function tabDataToClient(
   }
 
   let favicon: RgbaImage|undefined = undefined;
-  if (tabData.favicon) {
+  if (tabData.favicon && !conversionSettings.omitFaviconInTabData) {
     favicon = bitmapN32ToRGBAImage(tabData.favicon);
     if (favicon) {
       extras.addTransfer(favicon.dataRGBA);
@@ -225,8 +231,8 @@ export function tabDataToClient(
     isTabContentCaptured,
     isActiveInWindow,
     isWindowActive,
-    lightweightPageFeatures: tabData.lightweightPageFeatures?.map(
-        feature => feature as number as LightweightPageFeature),
+    lightweightPageFeatures:
+        tabData.lightweightPageFeatures?.map(feature => enumToClient(feature)),
   };
 }
 
@@ -266,10 +272,11 @@ export function bitmapN32ToRGBAImage(bitmap: BitmapN32): RgbaImage|undefined {
   if (!bytes) {
     return undefined;
   }
-  // We don't transmit ColorType over mojo, because it's determined by the
-  // endianness of the platform. Chromium only supports little endian, which
-  // maps to BGRA. See third_party/skia/include/core/SkColorType.h.
-  const colorType = ImageColorType.BGRA;
+  // Color type on Android is different from other platforms. Because color type
+  // isn't transmitted over mojo, we need use platform to detect it here.
+  const colorType = conversionSettings.platform === Platform.ANDROID ?
+      ImageColorType.RGBA :
+      ImageColorType.BGRA;
 
   return {
     width: bitmap.imageInfo.width,
@@ -286,12 +293,9 @@ export function panelOpeningDataToClient(
     panelOpeningData: PanelOpeningDataMojo): PanelOpeningData {
   const conversationInfo =
       conversationInfoToClient(panelOpeningData.conversationInfo);
-  const mappedFreOverride = (panelOpeningData.freOverride ?? undefined) as
-          unknown as glicFreOverride |
-      undefined;
   return {
     panelState: panelStateToClient(panelOpeningData.panelState),
-    invocationSource: panelOpeningData.invocationSource as number,
+    invocationSource: enumToClient(panelOpeningData.invocationSource),
     conversationId: conversationInfo?.conversationId || undefined,
     promptSuggestion: optionalToClient(panelOpeningData.promptSuggestion),
     autoSend: panelOpeningData.autoSend && !!panelOpeningData.promptSuggestion,
@@ -300,7 +304,7 @@ export function panelOpeningDataToClient(
             conversationInfoToClient) :
         undefined,
     conversationInfo,
-    freOverride: mappedFreOverride,
+    freOverride: enumToClient(panelOpeningData.freOverride),
   };
 }
 
@@ -313,6 +317,7 @@ export function conversationInfoToClient(
         new TextDecoder().decode(
             new Uint8Array(conversationInfo.clientData.data)) :
         undefined,
+    turnId: optionalToClient(conversationInfo.turnId),
   };
 }
 
@@ -325,12 +330,13 @@ export function conversationInfoFromClient(conversationInfo: ConversationInfo):
       data: Array.from(new TextEncoder().encode(conversationInfo.clientData)),
     } :
                                               null,
+    turnId: optionalFromClient(conversationInfo.turnId),
   };
 }
 
 export function panelStateToClient(panelState: PanelStateMojo): PanelState {
   return {
-    kind: panelState.kind as number,
+    kind: enumToClient(panelState.kind),
     windowId: idToClient(panelState.windowId),
   };
 }
@@ -403,7 +409,8 @@ export function tabContextOptionsFromClient(options: TabContextOptions):
     includeInnerText: options.innerText ?? false,
     innerTextBytesLimit:
         options.innerTextBytesLimit ?? DEFAULT_INNER_TEXT_BYTES_LIMIT,
-    includeViewportScreenshot: options.viewportScreenshot ?? false,
+    includeViewportScreenshot: options.viewportScreenshot === true ||
+        options.screenshotCollectionOptions !== undefined,
     includePdf: options.pdfData ?? false,
     includeAnnotatedPageContent: options.annotatedPageContent ?? false,
     maxMetaTags: options.maxMetaTags ?? 0,
@@ -413,6 +420,8 @@ export function tabContextOptionsFromClient(options: TabContextOptions):
     annotatedPageContentMode: options.annotatedPageContentMode === undefined ?
         0 :
         options.annotatedPageContentMode,
+    screenshotCollectionOptions: screenshotCollectionOptionsFromClient(
+        options.screenshotCollectionOptions),
   };
 }
 
@@ -462,11 +471,7 @@ export function byteArrayFromClient(buffer: ArrayBuffer): number[] {
 
 export function hostCapabilitiesToClient(capabilities: HostCapabilityMojo[]):
     HostCapability[] {
-  return capabilities.map(capability => capability as number as HostCapability);
-}
-
-export function platformToClient(platform: PlatformMojo): Platform {
-  return platform as number as Platform;
+  return capabilities.map(capability => enumToClient(capability));
 }
 
 export function selectCredentialDialogResponseToMojo(
@@ -508,6 +513,10 @@ export function selectCredentialDialogRequestToClient(
         credential => ({
           ...credential,
           requestOrigin: originToClient(credential.requestOrigin),
+          type: enumToClient(credential.type),
+          accountPicture: credential.accountPicture ?
+              bitmapN32ToRGBAImage(credential.accountPicture) :
+              undefined,
         })),
     icons,
   };
@@ -576,6 +585,7 @@ export function selectAutofillSuggestionsDialogRequestToClient(
         r => ({
           ...r,
           requestedData: Number(r.requestedData),
+          formattedRequestOrigin: r.formattedRequestOrigin,
           suggestions: r.suggestions.map(
               s => ({
                 ...s,
@@ -611,6 +621,7 @@ export function taskOptionsToMojo(taskOptions?: TaskOptions): TaskOptionsMojo|
   if (taskOptions) {
     return {
       title: taskOptions.title ?? null,
+      duration: enumFromClient(taskOptions.duration),
     };
   }
   return null;
@@ -625,6 +636,19 @@ export function webClientModeToMojo(mode: WebClientMode|undefined):
       return WebClientModeMojo.kText;
     default:
       return WebClientModeMojo.kUnknown;
+  }
+}
+
+export function microphoneStatusToMojo(status: MicrophoneStatus):
+    MicrophoneStatusMojo {
+  switch (status) {
+    case MicrophoneStatus.LISTENING:
+      return MicrophoneStatusMojo.kListening;
+    case MicrophoneStatus.NOT_LISTENING:
+      return MicrophoneStatusMojo.kNotListening;
+    case MicrophoneStatus.UNKNOWN:
+    default:
+      return MicrophoneStatusMojo.kUnknown;
   }
 }
 
@@ -645,21 +669,20 @@ export function zeroStateSuggestionsToClient(
   return {
     suggestions: zeroStateSuggestions.suggestions,
     isPending: zeroStateSuggestions.isPending,
-    invocationSource: zeroStateSuggestions.invocationSource as number as
-        InvocationSource,
+    invocationSource: enumToClient(zeroStateSuggestions.invocationSource),
   };
 }
 
 export function invokeOptionsToClient(
     options: InvokeOptionsMojo, extras: ResponseExtras): InvokeOptionsPrivate {
   return {
-    invocationSource: options.invocationSource as number as InvocationSource,
+    invocationSource: enumToClient(options.invocationSource),
     prompts: options.prompts || undefined,
     context: options.context ?
         additionalContextToClient(options.context, extras) :
         undefined,
     autoSubmit: options.autoSubmit,
-    featureMode: options.featureMode as number as FeatureMode,
+    featureMode: enumToClient(options.featureMode),
     disableZeroStateSuggestions: options.disableZeroStateSuggestions,
     skillId: options.skillId || undefined,
   };
@@ -680,7 +703,7 @@ export function additionalContextToClient(
   }
 
   return {
-    source: context.source as number as AdditionalContextSource,
+    source: enumToClient(context.source),
     name: context.name || undefined,
     tabId: idToClient(context.tabId),
     origin: context.origin ? originToClient(context.origin) : undefined,
@@ -719,6 +742,33 @@ export function additionalContextPartToClient(
         },
       };
     }
+  } else if (part.pendingRegion) {
+    const regionMojo = part.pendingRegion.region;
+    if (regionMojo) {
+      return {
+        pendingRegion: {
+          id: part.pendingRegion.id,
+          region: {
+            rect: regionMojo.rect,
+          },
+        },
+      };
+    }
   }
   return result;
+}
+
+export function screenshotCollectionOptionsFromClient(
+    options: ScreenshotCollectionOptions|
+    undefined): ScreenshotCollectionOptionsMojo {
+  return {
+    maxWidth: options?.maxWidth ?? 0,
+    maxHeight: options?.maxHeight ?? 0,
+    screenshotImageFormat: options?.screenshotImageFormat ?
+        enumFromClient(options.screenshotImageFormat) :
+        ScreenshotImageFormatMojo.kJpeg,
+    screenshotCompressionQuality: options?.screenshotCompressionQuality ?
+        enumFromClient(options.screenshotCompressionQuality) :
+        ScreenshotCompressionQualityMojo.kMedium,
+  };
 }

@@ -35,6 +35,7 @@ struct GpuAVSettings {
     bool validate_copy_memory_indirect = true;
     bool validate_index_buffers = true;
     bool validate_acceleration_structures_builds = true;
+    bool ray_tracing_buffers_consistency = false;
 
     // Currently turned of due to some false positives still observed
     bool validate_image_layout = false;
@@ -54,8 +55,6 @@ struct GpuAVSettings {
     uint32_t invalid_index_command = 8191;                      // N-1
     uint32_t indices_buffer_count = invalid_index_command + 1;  // N
 
-    bool descriptor_buffer_override = false;
-
     // Note - even though DebugPrintf basically fits in here, from the user point of view they are different and that is reflected
     // in the settings (which are reflected in VkConfig). To make our lives easier, we just make these settings with the hierarchy
     // of the settings exposed
@@ -63,11 +62,12 @@ struct GpuAVSettings {
         bool descriptor_checks = true;
         bool buffer_device_address = true;
         bool ray_query = true;
-        bool ray_hit_object = true;
         bool mesh_shading = true;
         bool post_process_descriptor_indexing = true;
+        bool trace_ray = true;
         bool vertex_attribute_fetch_oob = true;
         bool sanitizer = true;
+        bool shared_memory_data_race = true;
     } shader_instrumentation;
 
     bool IsShaderInstrumentationEnabled() const;
@@ -89,6 +89,9 @@ struct GpuAVSettings {
     bool debug_printf_to_stdout = false;
     bool debug_printf_verbose = false;
     uint32_t debug_printf_buffer_size = 1024;
+
+    bool debug_descriptor_enabled = false;
+    bool debug_descriptor_to_stdout = false;
 
     void TracyLogSettings() const;
 };

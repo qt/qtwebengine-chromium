@@ -4,19 +4,21 @@
 
 #include "components/optimization_guide/core/delivery/prediction_model_download_manager.h"
 
+#include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/containers/flat_set.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/observer_list.h"
 #include "base/path_service.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
+#include "base/time/time.h"
 #include "base/uuid.h"
 #include "build/build_config.h"
 #include "components/component_updater/pref_names.h"
@@ -32,6 +34,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/services/unzip/public/cpp/unzip.h"
 #include "components/services/unzip/public/mojom/unzipper.mojom.h"
+#include "components/variations/variations_switches.h"
 #include "crypto/hash.h"
 #include "google_apis/common/api_key_request_util.h"
 #include "google_apis/google_api_keys.h"
@@ -95,9 +98,9 @@ void RecordPredictionModelDownloadState(
     proto::OptimizationTarget optimization_target,
     PredictionModelDownloadManager::PredictionModelDownloadState state) {
   base::UmaHistogramEnumeration(
-      "OptimizationGuide.PredictionModelDownloadManager.State." +
-          optimization_guide::GetStringNameForOptimizationTarget(
-              optimization_target),
+      base::StrCat({"OptimizationGuide.PredictionModelDownloadManager.State.",
+                    optimization_guide::GetStringNameForOptimizationTarget(
+                        optimization_target)}),
       state);
 }
 
@@ -197,7 +200,9 @@ bool PredictionModelDownloadManager::IsAvailableForDownloads() const {
 
 bool PredictionModelDownloadManager::ShouldFetchModels() const {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          kDisableModelDownloadsForBenchmarking)) {
+          kDisableModelDownloadsForBenchmarking) ||
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          ::switches::kEnableBenchmarking)) {
     return false;
   }
   return (switches::ShouldSkipGoogleApiKeyConfigurationCheck() ||
@@ -243,10 +248,10 @@ void PredictionModelDownloadManager::OnDownloadStarted(
     pending_download_guids_.insert(guid);
     RecordPredictionModelDownloadState(optimization_target, kStarted);
     base::UmaHistogramLongTimes(
-        "OptimizationGuide.PredictionModelDownloadManager."
-        "DownloadStartLatency." +
-            optimization_guide::GetStringNameForOptimizationTarget(
-                optimization_target),
+        base::StrCat({"OptimizationGuide.PredictionModelDownloadManager."
+                      "DownloadStartLatency.",
+                      optimization_guide::GetStringNameForOptimizationTarget(
+                          optimization_target)}),
         base::TimeTicks::Now() - download_requested_time);
     for (PredictionModelDownloadObserver& observer : observers_) {
       observer.OnModelDownloadStarted(optimization_target);

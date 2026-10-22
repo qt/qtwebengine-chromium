@@ -49,13 +49,23 @@ class ContextualSearchSessionHandle {
 
   // Provides a WeakPtr to this instance. The caller is responsible to only use
   // this on the same sequence that the `ContextualSearchSessionHandle` is
-  // destructed on.
-  base::WeakPtr<ContextualSearchSessionHandle> AsWeakPtr();
+  // destructed on. Inlined to fix linking issues on iOS.
+  base::WeakPtr<ContextualSearchSessionHandle> AsWeakPtr() {
+    return weak_ptr_factory_.GetWeakPtr();
+  }
 
   base::UnguessableToken session_id() const { return session_id_; }
 
   std::optional<lens::LensOverlayInvocationSource> invocation_source() const {
     return invocation_source_;
+  }
+
+  bool is_contextual_lens_session() const {
+    return is_contextual_lens_session_;
+  }
+
+  void set_is_contextual_lens_session(bool is_contextual_lens_session) {
+    is_contextual_lens_session_ = is_contextual_lens_session;
   }
 
   // Returns the ContextualSearchContextController reference held by this
@@ -68,6 +78,9 @@ class ContextualSearchSessionHandle {
 
   // Notifies the session handle that the session has started.
   virtual void NotifySessionStarted();
+
+  // Sets whether or not the session is backgrounded.
+  virtual void SetIsBackgrounded(bool backgrounded);
 
   // Notifies the session handle that the session has been abandoned.
   void NotifySessionAbandoned();
@@ -104,6 +117,20 @@ class ContextualSearchSessionHandle {
       const base::UnguessableToken& file_token,
       std::unique_ptr<lens::ContextualInputData> contextual_input_data,
       std::optional<lens::ImageEncodingOptions> image_options);
+
+  // Starts the URL context upload flow for the given file token. The file
+  // token must have been previously returned by `CreateContextToken`.
+  virtual void StartUrlContextUploadFlow(
+      const base::UnguessableToken& file_token,
+      const GURL& url);
+
+  // Starts the Drive context upload flow for the given file token. The file
+  // token must have been previously returned by `CreateContextToken`.
+  virtual void StartDriveContextUploadFlow(
+      const base::UnguessableToken& file_token,
+      const std::string& drive_id,
+      const std::string& resource_key,
+      const std::string& mime_type_string);
 
   // Starts the Modality Chip upload flow for the given file token. The file
   // token must have been previously returned by `CreateContextToken`.
@@ -184,8 +211,8 @@ class ContextualSearchSessionHandle {
 
   // Notifies the metrics recorder that a query has been submitted, providing
   // information about the presence of tab and non-tab context.
-  void NotifyQuerySubmittedSessionState(
-      const std::vector<FileInfo>& file_infos);
+  void NotifyQuerySubmittedSessionState(const std::vector<FileInfo>& file_infos,
+                                        int query_text_length);
 
   // The list of uploaded but not yet committed context tokens for this
   // particular instance of the session. This list is unique to this instance of
@@ -209,6 +236,11 @@ class ContextualSearchSessionHandle {
 
   // The invocation source to send with generated search URLs or query payloads.
   const std::optional<lens::LensOverlayInvocationSource> invocation_source_;
+
+  // Whether this session was initiated by a contextual Lens query. This could
+  // apply to entrypoints like contextual suggestions in the Omnibox or the
+  // contextual searchbox within the Lens overlay.
+  bool is_contextual_lens_session_ = false;
 
   // This needs to be the last member to ensure all outstanding WeakPtrs are
   // invalidated before the rest of the members.

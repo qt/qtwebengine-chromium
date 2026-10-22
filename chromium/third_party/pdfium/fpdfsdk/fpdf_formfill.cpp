@@ -22,6 +22,7 @@
 #include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fpdfdoc/cpdf_interactiveform.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
@@ -214,7 +215,7 @@ void FFLCommon(FPDF_FORMHANDLE hHandle,
     CHECK(holder);
   } else {
 #if defined(PDF_USE_SKIA)
-    if (!CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+    if (!CFX_GEModule::Get()->UseSkiaRenderer()) {
       return;
     }
 

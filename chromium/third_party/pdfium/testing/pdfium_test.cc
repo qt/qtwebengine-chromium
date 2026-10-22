@@ -182,6 +182,9 @@ struct Options {
   bool save_thumbnails_decoded = false;
   bool save_thumbnails_raw = false;
   RendererType use_renderer_type = RendererType::kDefault;
+#if defined(PDF_ENABLE_SKIA)
+  bool use_fontations_backend = false;
+#endif  // defined(PDF_ENABLE_SKIA)
 #ifdef PDF_ENABLE_V8
   bool disable_javascript = false;
   std::string js_flags;  // Extra flags to pass to v8 init.
@@ -567,6 +570,8 @@ bool ParseCommandLine(const std::vector<std::string>& args,
 #if defined(PDF_ENABLE_SKIA)
     } else if (cur_arg == "--render-premultiplied") {
       options->render_premultiplied_alpha = true;
+    } else if (cur_arg == "--fontations") {
+      options->use_fontations_backend = true;
 #endif  // defined(PDF_ENABLE_SKIA)
 #ifdef PDF_ENABLE_V8
     } else if (cur_arg == "--disable-javascript") {
@@ -775,6 +780,11 @@ bool ParseCommandLine(const std::vector<std::string>& args,
       options->use_renderer_type != RendererType::kSkia) {
     fprintf(stderr,
             "Cannot use --render_premultiplied with selected renderer\n");
+    return false;
+  }
+  if (options->use_fontations_backend &&
+      options->use_renderer_type != RendererType::kSkia) {
+    fprintf(stderr, "Cannot use --fontations with selected renderer\n");
     return false;
   }
 #endif  // defined(PDF_ENABLE_SKIA)
@@ -1880,6 +1890,7 @@ constexpr char kUsageString[] =
 #endif  // _WIN32
     "  --render-premultiplied - render image using premultiplied alpha when "
     "the renderer is Skia\n"
+    " -- fontations           - Use fontations back-end library\n"
 #else
 #ifdef _WIN32
     "  --use-renderer         - renderer to use, one of [agg | gdi]\n"
@@ -1974,11 +1985,12 @@ int main(int argc, const char* argv[]) {
   }
 
   FPDF_LIBRARY_CONFIG config;
-  config.version = 4;
+  config.version = 5;
   config.m_pUserFontPaths = nullptr;
   config.m_pIsolate = nullptr;
   config.m_v8EmbedderSlot = 0;
   config.m_pPlatform = nullptr;
+  config.m_FontLibraryType = FPDF_FONTBACKENDTYPE_FREETYPE;
 
   switch (options.use_renderer_type) {
     case RendererType::kDefault:
@@ -2003,13 +2015,18 @@ int main(int argc, const char* argv[]) {
 #endif  // defined(PDF_ENABLE_SKIA)
   }
 
-#if defined(PDF_ENABLE_SKIA) && defined(BUILD_WITH_CHROMIUM)
+#if defined(PDF_ENABLE_SKIA)
+  if (options.use_fontations_backend) {
+    config.m_FontLibraryType = FPDF_FONTBACKENDTYPE_FONTATIONS;
+  }
+#if defined(BUILD_WITH_CHROMIUM)
   // Needed to support Chromium's copy of Skia, which uses a
   // `DiscardableMemoryAllocator`.
   if (config.m_RendererType == FPDF_RENDERERTYPE_SKIA) {
     chromium_support::InitializeDiscardableMemoryAllocator();
   }
-#endif
+#endif  // defined(BUILD_WITH_CHROMIUM)
+#endif  // defined(PDF_ENABLE_SKIA)
 
   std::function<void()> idler = []() {};
 #ifdef PDF_ENABLE_V8

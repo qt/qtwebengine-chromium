@@ -298,15 +298,25 @@ class DidFinishRunningAllTilesTask : public TileTask {
   using CompletionCb = base::OnceCallback<void(bool has_pending_queries)>;
   DidFinishRunningAllTilesTask(base::SequencedTaskRunner* task_runner,
                                RasterQueryQueue* pending_raster_queries,
+                               RasterBufferProvider* raster_buffer_provider,
+                               size_t num_tile_tasks,
                                CompletionCb completion_cb)
       : TileTask(TileTask::SupportsConcurrentExecution::kNo,
                  TileTask::SupportsBackgroundThreadPriority::kYes),
         task_runner_(task_runner),
         pending_raster_queries_(pending_raster_queries),
+        // Only flush graphite commands if there are tile tasks that may have
+        // recorded graphite commands.
+        raster_buffer_provider_for_flush_(num_tile_tasks > 0
+                                              ? raster_buffer_provider
+                                              : nullptr),
         completion_cb_(std::move(completion_cb)) {}
 
   void RunOnWorkerThread() override {
     TRACE_EVENT0("cc", "DidFinishRunningAllTilesTask::RunOnWorkerThread");
+    if (raster_buffer_provider_for_flush_) {
+      raster_buffer_provider_for_flush_->FlushTileRasterGraphiteCommands();
+    }
     bool has_pending_queries = false;
     if (pending_raster_queries_) {
       has_pending_queries =
@@ -324,6 +334,7 @@ class DidFinishRunningAllTilesTask : public TileTask {
  private:
   raw_ptr<base::SequencedTaskRunner> task_runner_;
   raw_ptr<RasterQueryQueue> pending_raster_queries_;
+  raw_ptr<RasterBufferProvider> raster_buffer_provider_for_flush_;
   CompletionCb completion_cb_;
 };
 
@@ -709,13 +720,15 @@ bool TileManager::PrepareTiles(
   return true;
 }
 
-void TileManager::PrepareToDraw() {
+bool TileManager::PrepareToDraw() {
   TRACE_EVENT0("cc", "TileManager::PrepareToDraw");
 
   if (!tile_task_manager_) {
     TRACE_EVENT_INSTANT0("cc", "TileManager::PrepareToDrawAborted",
                          TRACE_EVENT_SCOPE_THREAD);
-    return;
+    // TODO(zmo): Audit if returning true is the right thing to do when
+    // TreesInViz is enabled for UI and tile_task_manager_ may not exist.
+    return true;
   }
 
   tile_task_manager_->CheckForCompletedTasks();
@@ -725,7 +738,8 @@ void TileManager::PrepareToDraw() {
 
   // We want to reset the flag back to false now that we're drawing. This may be
   // set to true again in future PrepareTiles calls.
-  if (IsReadyToDraw()) {
+  bool is_ready_to_draw = IsReadyToDraw();
+  if (is_ready_to_draw) {
     client_->SetIsLikelyToRequireADraw(false);
   }
 
@@ -733,6 +747,7 @@ void TileManager::PrepareToDraw() {
       "cc", "TileManager::PrepareToDrawFinished", TRACE_EVENT_SCOPE_THREAD,
       "stats", RasterTaskCompletionStatsAsValue(raster_task_completion_stats_));
   raster_task_completion_stats_ = RasterTaskCompletionStats();
+  return is_ready_to_draw;
 }
 
 void TileManager::DidModifyTilePriorities() {
@@ -1245,8 +1260,8 @@ void TileManager::ScheduleTasks(PrioritizedWorkToSchedule work_to_schedule) {
       task_set_finished_weak_ptr_factory_.GetWeakPtr(), start_time);
   scoped_refptr<TileTask> all_done_task =
       base::MakeRefCounted<DidFinishRunningAllTilesTask>(
-          task_runner_, pending_raster_queries_, std::move(all_done_cb));
-
+          task_runner_, pending_raster_queries_, raster_buffer_provider_.get(),
+          tiles_that_need_to_be_rasterized.size(), std::move(all_done_cb));
   // Build a new task queue containing all task currently needed. Tasks
   // are added in order of priority, highest priority task first.
   for (auto& prioritized_tile : tiles_that_need_to_be_rasterized) {
@@ -1369,8 +1384,7 @@ void TileManager::ScheduleTasks(PrioritizedWorkToSchedule work_to_schedule) {
   // common case when e.g. scrolling, where we get a compositor frame, but do
   // not need to raster anything (if the page is not running any rAF for
   // instance).
-  if (only_completion_tasks &&
-      base::FeatureList::IsEnabled(features::kFastPathNoRaster)) {
+  if (only_completion_tasks) {
     DCHECK_EQ(required_for_activate_count, 0u);
     DCHECK_EQ(required_for_draw_count, 0u);
     DCHECK_EQ(all_count, 0u);

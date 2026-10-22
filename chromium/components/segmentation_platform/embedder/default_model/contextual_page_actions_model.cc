@@ -114,7 +114,7 @@ ContextualPageActionsModel::GetModelConfig() {
   (*reader_mode_input->mutable_additional_args())["name"] =
       kContextualPageActionModelInputReaderMode;
 
-  // Add tab grouping cusotm input.
+  // Add tab grouping custom input.
   proto::CustomInput* tab_grouping_input =
       writer.AddCustomInput(CreateCustomInput("tab_grouping_input"));
   (*tab_grouping_input->mutable_additional_args())["name"] =
@@ -172,7 +172,6 @@ void ContextualPageActionsModel::ExecuteModelWithInput(
         !(tab_group_shown_count > 0 && tab_group_clicked_count == 0);
   }
   response[4] = show_tab_grouping;
-
   // TODO(crbug.com/40249852): Set a classifier threshold.
 
   // TODO(shaktisahu): This class needs some rethinking to correctly associate

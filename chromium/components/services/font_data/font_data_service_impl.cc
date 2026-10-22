@@ -119,10 +119,10 @@ std::tuple<base::File, uint64_t> FontDataServiceImpl::GetFileHandle(
   typeface.getResourceName(&font_path);
   base::UmaHistogramBoolean("Chrome.FontDataService.EmptyPathOnGetFileHandle",
                             font_path.isEmpty());
-#if BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   // TODO(crbug.com/463411679): `getResourceName()` is not implemented for
-  // Linux, so the returned file will always be invalid and a memory region will
-  // be shared instead.
+  // Linux nor ChromeOS, so the returned file will always be invalid and a
+  // memory region will be shared instead.
   CHECK(font_path.isEmpty());
 #endif  // BUILDFLAG(IS_LINUX)
   if (font_path.isEmpty()) {
@@ -227,6 +227,16 @@ bool FontDataServiceImpl::CheckMatchesRequiredStyle(
 
   for (const auto& family_name : kFamiliesWithRequiredStyles) {
     if (base::EqualsCaseInsensitiveASCII(requested_family_name, family_name)) {
+      // As an additional check, verify if the family actually contains a
+      // regular face. If it doesn't, we should refuse to use any face from this
+      // family to avoid poor UX (e.g. using ultra-bold for a regular request).
+      // This matches the legacy logic in DWriteFontProxyImpl::FindFamily.
+      sk_sp<SkTypeface> regular_face = font_manager_->matchFamilyStyle(
+          requested_family_name.c_str(), SkFontStyle::Normal());
+      if (!regular_face || regular_face->fontStyle() != SkFontStyle::Normal()) {
+        return false;
+      }
+
       int found_weight_direction = find_style_component_direction(
           actual_style.weight(), SkFontStyle::kLight_Weight,
           SkFontStyle::kSemiBold_Weight);

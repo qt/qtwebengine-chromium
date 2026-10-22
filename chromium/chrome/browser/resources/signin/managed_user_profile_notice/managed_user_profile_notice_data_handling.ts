@@ -43,7 +43,7 @@ export class ManagedUserProfileNoticeDataHandlingElement extends CrLitElement {
   accessor separateDataChoiceDetails: string = '';
   accessor mergeDataChoiceTitle: string = '';
   accessor mergeDataChoiceDetails: string = '';
-  accessor selectedDataHandling: BrowsingDataHandling|null = null;
+  accessor selectedDataHandling: BrowsingDataHandling|undefined;
 
   override firstUpdated() {
     const titleElement = this.shadowRoot.querySelector<HTMLElement>('.title');
@@ -51,8 +51,7 @@ export class ManagedUserProfileNoticeDataHandlingElement extends CrLitElement {
     titleElement.focus();
   }
 
-  protected onSelectedRadioOptionChanged_(
-      e: CustomEvent<{value: BrowsingDataHandling}>) {
+  protected onSelectedChanged_(e: CustomEvent<{value: BrowsingDataHandling}>) {
     this.selectedDataHandling = e.detail.value;
   }
 }

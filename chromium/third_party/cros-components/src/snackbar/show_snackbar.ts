@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {Snackbar} from './snackbar';
+import {Snackbar} from './snackbar.js';
 
 /**
  * Allow popover show and hide functions. See

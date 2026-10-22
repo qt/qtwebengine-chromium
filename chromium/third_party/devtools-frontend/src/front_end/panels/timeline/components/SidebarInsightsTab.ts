@@ -14,7 +14,7 @@ import sidebarInsightsTabStyles from './sidebarInsightsTab.css.js';
 import {SidebarSingleInsightSet, type SidebarSingleInsightSetData} from './SidebarSingleInsightSet.js';
 
 const {html} = Lit;
-const {widgetConfig} = UI.Widget;
+const {widget} = UI.Widget;
 
 interface ViewInput {
   parsedTrace: Trace.TraceModel.ParsedTrace;
@@ -67,7 +67,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
         const contents = html`
           <devtools-widget
             data-insight-set-key=${id}
-            .widgetConfig=${widgetConfig(SidebarSingleInsightSet, {data})}
+            ${widget(SidebarSingleInsightSet, {data})}
           ></devtools-widget>
         `;
 
@@ -140,6 +140,7 @@ function renderDropdownIcon(insightSetToggled: boolean): Lit.TemplateResult {
 export class SidebarInsightsTab extends UI.Widget.Widget {
   static createWidgetElement(): UI.Widget.WidgetElement<SidebarInsightsTab> {
     const widgetElement = document.createElement('devtools-widget') as UI.Widget.WidgetElement<SidebarInsightsTab>;
+    new SidebarInsightsTab(widgetElement);
     return widgetElement;
   }
 
@@ -200,6 +201,16 @@ export class SidebarInsightsTab extends UI.Widget.Widget {
     this.requestUpdate();
   }
 
+  setActiveInsightSet(insightSetKey: string): void {
+    if (this.#parsedTrace?.insights) {
+      const insightSet = this.#parsedTrace.insights.get(insightSetKey);
+      if (insightSet) {
+        this.#selectedInsightSet = insightSet;
+        this.requestUpdate();
+      }
+    }
+  }
+
   #onInsightSetToggled(insightSet: Trace.Insights.Types.InsightSet): void {
     this.#selectedInsightSet = this.#selectedInsightSet === insightSet ? null : insightSet;
     // Update the active insight set.
@@ -229,7 +240,7 @@ export class SidebarInsightsTab extends UI.Widget.Widget {
     // Find the right set for this insight via the set key.
     const set = this.element.shadowRoot?.querySelector<UI.Widget.WidgetElement<SidebarSingleInsightSet>>(
         `[data-insight-set-key="${this.#activeInsight.insightSetKey}"]`);
-    set?.getWidget()?.highlightActiveInsight();
+    void set?.getWidget()?.highlightActiveInsight();
   }
 
   override performUpdate(): void {

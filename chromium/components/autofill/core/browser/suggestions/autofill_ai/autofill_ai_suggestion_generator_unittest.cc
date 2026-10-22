@@ -41,6 +41,7 @@ using enum SuggestionType;
 using FieldPrediction =
     AutofillQueryResponse::FormSuggestion::FieldSuggestion::FieldPrediction;
 using test::GetFlightReservationEntityInstanceWithRandomGuid;
+using test::GetPassportEntityInstance;
 using test::GetPassportEntityInstanceWithRandomGuid;
 using test::MaskEntityInstance;
 using ::testing::Contains;
@@ -67,6 +68,16 @@ Matcher<const Suggestion&> HasLabel(const std::u16string& label) {
 
 Matcher<const Suggestion&> HasType(SuggestionType type) {
   return Field("Suggestion::type", &Suggestion::type, type);
+}
+
+Matcher<const Suggestion&> HasRequiresServerFetch(bool requires_server_fetch) {
+  return ResultOf(
+      "Suggestion::payload",
+      [](const Suggestion& s) {
+        return std::get<Suggestion::AutofillAiPayload>(s.payload)
+            .requires_server_fetch;
+      },
+      requires_server_fetch);
 }
 
 auto SuggestionsAre(auto&&... matchers) {
@@ -111,6 +122,7 @@ class AutofillAiSuggestionGeneratorTest : public testing::Test {
             webdata_helper_.autofill_webdata_service(),
             /*history_service=*/nullptr,
             /*strike_database=*/nullptr,
+            /*accessibility_annotator_service=*/nullptr,
             /*variation_country_code=*/GeoIpCountryCode("US")));
     autofill_client_.SetUpPrefsAndIdentityForAutofillAi();
     generator_ = std::make_unique<AutofillAiSuggestionGenerator>();
@@ -197,6 +209,7 @@ class AutofillAiSuggestionGeneratorTest : public testing::Test {
   static std::vector<base::test::FeatureRef> GetDefaultEnabledFeatures() {
     return {features::kAutofillAiWithDataSchema,
             features::kAutofillAiServerModel,
+            features::kAutofillAiWalletPrivatePasses,
             features::kAutofillAiWalletFlightReservation};
   }
 
@@ -375,7 +388,7 @@ TEST_F(AutofillAiSuggestionGeneratorTest, GetFillingSuggestion_PassportEntity) {
   const Suggestion::AutofillAiPayload* payload =
       std::get_if<Suggestion::AutofillAiPayload>(&suggestions[0].payload);
   ASSERT_TRUE(payload);
-  EXPECT_THAT(suggestions[0], HasIcon(Suggestion::Icon::kIdCard));
+  EXPECT_THAT(suggestions[0], HasIcon(Suggestion::Icon::kPassport));
 
   // The triggering/first field is of Autofill AI type.
   EXPECT_EQ(GetFillValueForField(*payload, field(0)),
@@ -385,6 +398,59 @@ TEST_F(AutofillAiSuggestionGeneratorTest, GetFillingSuggestion_PassportEntity) {
             GetPassportNumber(passport_entity));
   // The third field is not of Autofill AI type.
   EXPECT_EQ(GetFillValueForField(*payload, field(2)), std::nullopt);
+}
+
+TEST_F(AutofillAiSuggestionGeneratorTest,
+       GetFillingSuggestion_LocalPassportEntity_DoesNotRequireServerFetch) {
+  EntityInstance passport_entity = GetPassportEntityInstanceWithRandomGuid();
+  SetEntities({passport_entity});
+  SetForm({NAME_FULL, PASSPORT_NUMBER, PHONE_HOME_WHOLE_NUMBER});
+
+  // Local passport should not require a server fetch.
+  EXPECT_THAT(
+      CreateAutofillAiFillingSuggestions(field(0)),
+      SuggestionsAre(AllOf(HasMainText(GetPassportName(passport_entity)),
+                           HasIcon(Suggestion::Icon::kPassport),
+                           HasRequiresServerFetch(false))));
+}
+
+// Tests that a masked server entity requires a server fetch when the feature
+// is enabled.
+TEST_F(AutofillAiSuggestionGeneratorTest,
+       GetFillingSuggestion_MaskedServerPassport_RequiresServerFetch) {
+  base::test::ScopedFeatureList scoped_feature_list(
+      features::kAutofillAiWalletPrivatePasses);
+
+  EntityInstance passport_entity = MaskEntityInstance(GetPassportEntityInstance(
+      {.record_type = EntityInstance::RecordType::kServerWallet}));
+  SetEntities({passport_entity});
+  SetForm({PASSPORT_NUMBER});
+
+  // Masked server passport should require a server fetch.
+  EXPECT_THAT(CreateAutofillAiFillingSuggestions(field(0)),
+              SuggestionsAre(AllOf(HasIcon(Suggestion::Icon::kPassport),
+                                   HasRequiresServerFetch(true))));
+}
+
+TEST_F(
+    AutofillAiSuggestionGeneratorTest,
+    GetFillingSuggestion_MaskedServerPassport_DoesNotRequireServerFetchIfNoSensitiveFieldInForm) {
+  base::test::ScopedFeatureList scoped_feature_list(
+      features::kAutofillAiWalletPrivatePasses);
+
+  EntityInstance passport_entity = MaskEntityInstance(GetPassportEntityInstance(
+      {.record_type = EntityInstance::RecordType::kServerWallet}));
+  SetEntities({passport_entity});
+  // Form has Name and Issue date, not Passport Number.
+  SetForm({NAME_FULL, PASSPORT_ISSUE_DATE});
+
+  // Since the form doesn't ask for any sensitive attribute (like Passport
+  // Number), we don't need a server fetch, even if the entity is a masked
+  // server entity.
+  EXPECT_THAT(
+      CreateAutofillAiFillingSuggestions(field(0)),
+      SuggestionsAre(AllOf(HasMainText(GetPassportName(passport_entity)),
+                           HasRequiresServerFetch(false))));
 }
 
 // Tests that the flight icon is shown for flight reservation entities.
@@ -398,6 +464,23 @@ TEST_F(AutofillAiSuggestionGeneratorTest,
       CreateAutofillAiFillingSuggestions(field(0));
   EXPECT_THAT(suggestions[0], HasIcon(Suggestion::Icon::kFlight));
 }
+
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+// Tests that no icon is set when `kAutofillAiNoFillingIconsExperiment` is
+// enabled.
+TEST_F(AutofillAiSuggestionGeneratorTest,
+       GetFillingSuggestion_FlightReservationEntity_NoIconIfFeatureIsEnabled) {
+  base::test::ScopedFeatureList scoped_feature_list(
+      features::kAutofillAiNoFillingIconsExperiment);
+  SetEntities({GetFlightReservationEntityInstanceWithRandomGuid()});
+  SetForm({FLIGHT_RESERVATION_FLIGHT_NUMBER, FLIGHT_RESERVATION_TICKET_NUMBER,
+           FLIGHT_RESERVATION_CONFIRMATION_CODE});
+
+  std::vector<Suggestion> suggestions =
+      CreateAutofillAiFillingSuggestions(field(0));
+  EXPECT_THAT(suggestions[0], HasIcon(Suggestion::Icon::kNoIcon));
+}
+#endif
 
 TEST_F(AutofillAiSuggestionGeneratorTest, GetFillingSuggestion_PrefixMatching) {
   EntityInstance passport_prefix_matches =
@@ -662,7 +745,7 @@ TEST_F(AutofillAiSuggestionGeneratorTest, GetFillingSuggestions_Undo) {
 
   EXPECT_THAT(CreateAutofillAiFillingSuggestions(field(0)),
               Not(Contains(HasType(SuggestionType::kUndoOrClear))));
-  field(0).set_is_autofilled(true);
+  field_data().set_is_autofilled_according_to_renderer(true);
   EXPECT_THAT(CreateAutofillAiFillingSuggestions(field(0)),
               Contains(HasType(SuggestionType::kUndoOrClear)));
 }
@@ -943,6 +1026,7 @@ class AutofillAiSuggestionGeneratorSplitManageSuggestionTest
     auto features = GetDefaultEnabledFeatures();
     features.push_back(
         autofill::features::kSuggestionManageButtonSplitForEnhancedAutofill);
+    features.push_back(autofill::features::kYourSavedInfoSettingsPage);
     return features;
   }
 };

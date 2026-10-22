@@ -59,8 +59,8 @@ TEST_F(SwitchStatementTest, Creation_WithSource) {
 }
 
 TEST_F(SwitchStatementTest, Creation_WithAttributes) {
-    auto* attr1 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "foo");
-    auto* attr2 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "bar");
+    auto* attr1 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, DiagnosticRuleName("foo"));
+    auto* attr2 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, DiagnosticRuleName("bar"));
     auto* ident = Expr("ident");
     auto* stmt =
         create<SwitchStatement>(ident, tint::Empty, tint::Vector{attr1, attr2}, tint::Empty);
@@ -69,8 +69,8 @@ TEST_F(SwitchStatementTest, Creation_WithAttributes) {
 }
 
 TEST_F(SwitchStatementTest, Creation_WithBodyAttributes) {
-    auto* attr1 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "foo");
-    auto* attr2 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "bar");
+    auto* attr1 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, DiagnosticRuleName("foo"));
+    auto* attr2 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, DiagnosticRuleName("bar"));
     auto* ident = Expr("ident");
     auto* stmt =
         create<SwitchStatement>(ident, tint::Empty, tint::Empty, tint::Vector{attr1, attr2});

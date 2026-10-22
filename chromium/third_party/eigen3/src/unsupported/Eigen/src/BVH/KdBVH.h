@@ -33,7 +33,7 @@ struct vector_int_pair {
 // iterator range or using bounding_box in a unified way
 template <typename ObjectList, typename VolumeList, typename BoxIter>
 struct get_boxes_helper {
-  void operator()(const ObjectList &objects, BoxIter boxBegin, BoxIter boxEnd, VolumeList &outBoxes) {
+  void operator()(const ObjectList &objects, BoxIter boxBegin, BoxIter boxEnd, VolumeList &outBoxes) const {
     outBoxes.insert(outBoxes.end(), boxBegin, boxEnd);
     eigen_assert(outBoxes.size() == objects.size());
     EIGEN_ONLY_USED_FOR_DEBUG(objects);
@@ -42,7 +42,7 @@ struct get_boxes_helper {
 
 template <typename ObjectList, typename VolumeList>
 struct get_boxes_helper<ObjectList, VolumeList, int> {
-  void operator()(const ObjectList &objects, int, int, VolumeList &outBoxes) {
+  void operator()(const ObjectList &objects, int, int, VolumeList &outBoxes) const {
     outBoxes.reserve(objects.size());
     for (int i = 0; i < (int)objects.size(); ++i) outBoxes.push_back(bounding_box(objects[i]));
   }

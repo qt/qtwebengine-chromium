@@ -13,7 +13,6 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/typed_macros.h"
@@ -238,7 +237,7 @@ v8::Local<v8::Object> CreateRootBinding(v8::Local<v8::Context> context,
   auto* bridge = cppgc::MakeGarbageCollected<APIBindingBridge>(
       isolate->GetCppHeap()->GetAllocationHandle(), hooks, context,
       binding_object, script_context->GetExtensionID(),
-      script_context->GetContextTypeDescription());
+      std::string(script_context->GetContextTypeDescription()));
   v8::Local<v8::Value> native_api_bridge =
       bridge->GetWrapper(isolate).ToLocalChecked();
   script_context->module_system()->OnNativeBindingCreated(name,
@@ -438,7 +437,7 @@ void BrowserDevtoolsAccessor(v8::Local<v8::Name> name,
                              const v8::PropertyCallbackInfo<v8::Value>& info) {
   v8::Isolate* isolate = info.GetIsolate();
   v8::HandleScope handle_scope(isolate);
-  v8::Local<v8::Context> context = info.HolderV2()->GetCreationContextChecked();
+  v8::Local<v8::Context> context = info.Holder()->GetCreationContextChecked();
   v8::Context::Scope context_scope(context);
   v8::Local<v8::Object> chrome =
       GetOrCreateGlobalObjectProperty(context, "chrome");
@@ -835,7 +834,7 @@ void NativeExtensionBindingsSystem::HandleResponse(
     mojom::ExtraResponseDataPtr extra_data) {
   // Some API calls result in failure, but don't set an error. Use a generic and
   // unhelpful error string.
-  // TODO(devlin): Track these down and fix them. See crbug.com/648275.
+  // TODO(devlin): Track these down and fix them. See crbug.com/40485455.
   api_system_.CompleteRequest(
       request_id, response,
       !success && error.empty() ? "Unknown error." : error,
@@ -883,12 +882,12 @@ void NativeExtensionBindingsSystem::BindingAccessor(
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   v8::Isolate* isolate = info.GetIsolate();
   v8::HandleScope handle_scope(isolate);
-  v8::Local<v8::Context> context = info.HolderV2()->GetCreationContextChecked();
+  v8::Local<v8::Context> context = info.Holder()->GetCreationContextChecked();
 
   // Force binding creation in the owning context (even if another context is
   // calling in). This is also important to ensure that objects created through
   // the initialization process are all instantiated for the owning context.
-  // See https://crbug.com/819968.
+  // See https://crbug.com/41375376.
   v8::Context::Scope context_scope(context);
 
   // We use info.Data() to store a real name here instead of using the provided

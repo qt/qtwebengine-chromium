@@ -1,11 +1,20 @@
+# Copyright 2025 Google LLC
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Specializations for uint8 x86 dot kernel generators."""
 
-from ynnpack.kernels.dot.generator.x86 import x86_avx
+# pylint: disable=missing-class-docstring
+# pylint: disable=invalid-name
+
+from ynnpack.kernels.dot.generator.dot_base import generate_dot_kernels
+from ynnpack.kernels.dot.generator.x86 import x86_avx512
 
 
 # In this generator, we tell the base class that we are generating 128-bit
 # tiles, but we accumulate in 512-bit vectors.
-class x86_avx512vnni_uint8_int8_int32_k16(x86_avx):  # pylint: disable=invalid-name
+class x86_avx512vnni_uint8_int8_int32_k16(x86_avx512):
   """Generates tile_k=16 avx512vnni dot kernels."""
 
   def __init__(self):
@@ -59,19 +68,24 @@ __m128i c_{i+3}_{j} = _mm512_extracti32x4_epi32(c16_{i}_{j}, 3);
 """
 
   def load_a_tile(self, i, k):
-    return (
-        f"__m512i a_{i}_{k} ="
-        f" _mm512_broadcast_i32x4(_mm_loadu_si128({self.a_ptr(i, k, '__m128i')}));\n"
-    )
+    a_x16 = f"_mm_loadu_si128({self.a_ptr(i, k, '__m128i')})"
+    return f"__m512i a_{i}_{k} = _mm512_broadcast_i32x4({a_x16});\n"
 
   def load_b_tile(self, k, j):
-    return (
-        f"__m512i b_{k}_{j} ="
-        f" _mm512_load_si512({self.b_ptr(k, j, '__m512i')});\n"
-    )
+    b_ptr = self.b_ptr(k, j, "__m512i")
+    return f"__m512i b_{k}_{j} = _mm512_load_si512({b_ptr});\n"
 
   def product(self, i, j, k):
-    return (
-        f"c16_{i}_{j} = _mm512_dpbusd_epi32(c16_{i}_{j}, a_{i}_{k},"
-        f" b_{k}_{j});\n"
-    )
+    c_ij = f"c16_{i}_{j}"
+    return f"{c_ij} = _mm512_dpbusd_epi32({c_ij}, a_{i}_{k}, b_{k}_{j});\n"
+
+
+generate_dot_kernels(
+    x86_avx512vnni_uint8_int8_int32_k16(),
+    [
+        (4, 8, 16),
+        (8, 8, 16),
+        (4, 4, 16),
+        (8, 4, 16),
+    ],
+)

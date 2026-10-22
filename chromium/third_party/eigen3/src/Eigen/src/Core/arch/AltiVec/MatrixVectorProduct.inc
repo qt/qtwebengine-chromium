@@ -1866,7 +1866,7 @@ EIGEN_ALWAYS_INLINE void disassembleResults(__vector_quad* c0, PacketBlock<Scala
   if (GEMV_GETN_COMPLEX(N) > iter1) {                      \
     if (GEMV_IS_COMPLEX_FLOAT) {                           \
       GEMV_LOADPAIR2_COL_COMPLEX_MMA(iter2, iter2);        \
-      EIGEN_UNUSED_VARIABLE(a##iter3)                      \
+      EIGEN_UNUSED_VARIABLE(a##iter3);                     \
     } else {                                               \
       GEMV_LOADPAIR2_COL_COMPLEX_MMA(iter2, iter2 << 1);   \
       GEMV_LOADPAIR2_COL_COMPLEX_MMA(iter3, iter3 << 1);   \

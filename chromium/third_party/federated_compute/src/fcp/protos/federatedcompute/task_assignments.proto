@@ -240,6 +240,19 @@ message TaskAssignment {
     Resource signed_endorsements = 2;
   }
 
+  message WillowAggregationInfo {
+    // The input spec that will be used to encode the client's contribution
+    // before it is sent to the server.
+    Resource input_spec = 1;
+
+    // The maximum size of the Cartesian product of input spec domains. This is
+    // used by the Willow library in conjunction with the input_spec.
+    int64 max_flattened_domain_size = 3;
+
+    // The maximum number of clients that can participate in the aggregations.
+    int64 max_number_of_clients = 2;
+  }
+
   oneof aggregation_type {
     // If set, indicates that the Aggregations service (see
     // `aggregations.proto`) should be used to perform aggregation.
@@ -252,6 +265,11 @@ message TaskAssignment {
     // If set, indicates that the ConfidentialAggregations service (see
     // `confidential_aggregations.proto`) should be used to perform aggregation.
     ConfidentialAggregationInfo confidential_aggregation_info = 11;
+
+    // If set, indicates that the Willow encryption should be used in
+    // conjunction with the ConfidentialAggregations service (see
+    // `confidential_aggregations.proto`).
+    WillowAggregationInfo willow_aggregation_info = 12;
   }
 
   // Identifier for the client's protocol session, matching the session_id sent

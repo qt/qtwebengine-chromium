@@ -392,8 +392,8 @@ export class ParsedURL {
 
   static splitLineAndColumn(string: string): {
     url: Platform.DevToolsPath.UrlString,
-    lineNumber: (number|undefined),
-    columnNumber: (number|undefined),
+    lineNumber?: number,
+    columnNumber?: number,
   } {
     // Only look for line and column numbers in the path to avoid matching port numbers.
     const beforePathMatch = string.match(ParsedURL.urlRegex());
@@ -504,7 +504,7 @@ export class ParsedURL {
     return this.scheme === 'data';
   }
 
-  extractDataUrlMimeType(): {type: string|undefined, subtype: string|undefined} {
+  extractDataUrlMimeType(): {type?: string, subtype?: string|undefined} {
     const regexp = /^data:((?<type>\w+)\/(?<subtype>\w+))?(;base64)?,/;
     const match = this.url.match(regexp);
     return {

@@ -1,0 +1,13 @@
+Name: perfetto
+URL: https://github.com/google/perfetto
+Version: 47.0
+Revision: 1d9994a93c6ada2fb261dc72984fa07683a6c86e
+License: Apache 2.0
+License File: src/LICENSE
+Security Critical: yes
+Update Mechanism: Manual
+Shipped: yes
+
+Description:
+Perfetto is a production-grade open source stack for performance instrumentation
+and trace analysis.

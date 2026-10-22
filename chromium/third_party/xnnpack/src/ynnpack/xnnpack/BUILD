@@ -44,6 +44,7 @@ cc_library(
     name = "xnnpack",
     srcs = [
         "deprecated.cc",
+        "experimental.cc",
         "operator.cc",
         "runtime.cc",
         "subgraph.cc",
@@ -65,6 +66,7 @@ cc_library(
         "//ynnpack/subgraph",
         "@pthreadpool",
         "@slinky//slinky/base:thread_pool",
+        "@slinky//slinky/base:thread_pool_impl",
     ],
 )
 

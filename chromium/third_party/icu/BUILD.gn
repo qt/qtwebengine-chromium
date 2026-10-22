@@ -126,6 +126,9 @@ config("icu_code") {
       # putil.cpp contains unused variables when building for iOS simulators.
       "-Wno-unused-variable",
 
+      # Required for uversion.h putting a using namespace directive in the header.
+      "-Wno-header-hygiene",
+
       # ICU has decided not to fix this warning as doing so would break its
       # stable API.
       "-Wno-ambiguous-reversed-operator",
@@ -138,33 +141,34 @@ config("icu_code") {
     ]
   }
   if (icu_is_in_fuchsia) {
-    cflags += [
-      # Disable spurious thread safety errors in umutex.cpp
-      "-Wno-thread-safety",
+    cflags +=
+        [
+          # Disable spurious thread safety errors in umutex.cpp
+          "-Wno-thread-safety",
 
-      # Can probably remove the below after
-      # https://unicode-org.atlassian.net/projects/ICU/issues/ICU-20869
-      # is fixed.
-      "-Wno-implicit-int-float-conversion",
-      "-Wno-conversion",
+          # Can probably remove the below after
+          # https://unicode-org.atlassian.net/projects/ICU/issues/ICU-20869
+          # is fixed.
+          "-Wno-implicit-int-float-conversion",
+          "-Wno-conversion",
 
-      # Needed for C++20
-      "-Wno-ambiguous-reversed-operator",
-      "-Wno-rewrite-not-bool",
-      "-Wno-deprecated-anon-enum-enum-conversion",
-      "-Wno-deprecated-array-compare",
-      "-Wno-deprecated-pragma",
+          # Needed for C++20
+          "-Wno-ambiguous-reversed-operator",
+          "-Wno-rewrite-not-bool",
+          "-Wno-deprecated-anon-enum-enum-conversion",
+          "-Wno-deprecated-array-compare",
+          "-Wno-deprecated-pragma",
 
-      # Used for conditional changes to the compilation process that
-      # are only needed for the Fuchsia toolchain.
-      "-DICU_IS_IN_FUCHSIA",
+          # Used for conditional changes to the compilation process that
+          # are only needed for the Fuchsia toolchain.
+          "-DICU_IS_IN_FUCHSIA",
 
-      # Fuchsia's default compilation config makes
-      # no-newline-after-eof an error. While in ICU it
-      # probably does not matter. So we instruct Fuchsia
-      # to lower its standards when compiling ICU.
-      "-Wno-newline-eof",
-    ] + icu_fuchsia_extra_compile_flags
+          # Fuchsia's default compilation config makes
+          # no-newline-after-eof an error. While in ICU it
+          # probably does not matter. So we instruct Fuchsia
+          # to lower its standards when compiling ICU.
+          "-Wno-newline-eof",
+        ] + icu_fuchsia_extra_compile_flags
   }
   if (current_cpu == "wasm") {
     # Tell ICU that we are a 32 bit platform, otherwise,
@@ -216,8 +220,10 @@ template("generate_icu_component") {
       # take effect.
       configs += [ ":icu_code" ]
       configs += extra_configs
+
       # Add Fuchsia-specific configs
       configs += icu_fuchsia_extra_configs
+
       # Remove Fuchsia-specific configs, the "add-then-remove" ensures that
       # removing a config that is not there does not fail.
       configs += icu_fuchsia_remove_configs
@@ -272,6 +278,7 @@ template("generate_icu_component") {
       # take effect.
       configs += [ ":icu_code" ]
       configs += extra_configs
+
       # See a similar stanza above for details.
       configs += icu_fuchsia_extra_configs
       configs += icu_fuchsia_remove_configs
@@ -321,10 +328,10 @@ template("generate_icui18n") {
 generate_icui18n("icui18n") {
   extra_configs = []
   if (icu_is_in_fuchsia) {
-      # See similar stanza above for details.
-      extra_configs += icu_fuchsia_extra_configs
-      extra_configs += icu_fuchsia_remove_configs
-      extra_configs -= icu_fuchsia_remove_configs
+    # See similar stanza above for details.
+    extra_configs += icu_fuchsia_extra_configs
+    extra_configs += icu_fuchsia_remove_configs
+    extra_configs -= icu_fuchsia_remove_configs
   }
   icuuc_deps = [ ":icuuc_private" ]
 }
@@ -332,10 +339,10 @@ generate_icui18n("icui18n") {
 generate_icui18n("icui18n_hidden_visibility") {
   extra_configs = [ ":visibility_hidden" ]
   if (icu_is_in_fuchsia) {
-      # See similar stanza above for details.
-      extra_configs += icu_fuchsia_extra_configs
-      extra_configs += icu_fuchsia_remove_configs
-      extra_configs -= icu_fuchsia_remove_configs
+    # See similar stanza above for details.
+    extra_configs += icu_fuchsia_extra_configs
+    extra_configs += icu_fuchsia_remove_configs
+    extra_configs -= icu_fuchsia_remove_configs
   }
   icuuc_deps = [ ":icuuc_private_hidden_visibility" ]
   if (is_fuchsia && !icu_is_in_fuchsia) {
@@ -391,10 +398,10 @@ source_set("icuuc_public") {
 generate_icuuc("icuuc_private") {
   extra_configs = []
   if (icu_is_in_fuchsia) {
-      # See similar stanza above for details.
-      extra_configs += icu_fuchsia_extra_configs
-      extra_configs += icu_fuchsia_remove_configs
-      extra_configs -= icu_fuchsia_remove_configs
+    # See similar stanza above for details.
+    extra_configs += icu_fuchsia_extra_configs
+    extra_configs += icu_fuchsia_remove_configs
+    extra_configs -= icu_fuchsia_remove_configs
   }
   output_name = "icuuc"
   visibility = [
@@ -406,10 +413,10 @@ generate_icuuc("icuuc_private") {
 generate_icuuc("icuuc_private_hidden_visibility") {
   extra_configs = [ ":visibility_hidden" ]
   if (icu_is_in_fuchsia) {
-      # See similar stanza above for details.
-      extra_configs += icu_fuchsia_extra_configs
-      extra_configs += icu_fuchsia_remove_configs
-      extra_configs -= icu_fuchsia_remove_configs
+    # See similar stanza above for details.
+    extra_configs += icu_fuchsia_extra_configs
+    extra_configs += icu_fuchsia_remove_configs
+    extra_configs -= icu_fuchsia_remove_configs
   }
   output_name = "icuuc_hidden_visibility"
   visibility = [

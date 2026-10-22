@@ -97,8 +97,11 @@ export class PanelUtils {
 
       // clang-format off
       return html`<devtools-icon
-          class="icon" name=${iconName} title=${title}> role=img
-        </devtools-icon>`;
+          class="icon"
+          name=${iconName}
+          title=${title}
+          role=img
+        ></devtools-icon>`;
       // clang-format on
     }
 
@@ -151,12 +154,20 @@ export class PanelUtils {
     }
 
     if (type === Common.ResourceType.resourceTypes.Image) {
+      // clang-format off
       return html`<div class="image icon">
-          <img class="image-network-icon-preview"
-               title=${iconTitleForRequest(request)}
-               alt=${iconTitleForRequest(request)}
-               ${ref(e => request.populateImageSource(e as HTMLImageElement))}>
-        </div>`;
+        <img
+          class="image-network-icon-preview"
+          title=${iconTitleForRequest(request)}
+          alt=${iconTitleForRequest(request)}
+          ${ref(el => {
+            if (el) {
+             void request.populateImageSource(el as HTMLImageElement);
+            }
+          })}
+        />
+      </div>`;
+      // clang-format on
     }
 
     // Exclude Manifest here because it has mimeType:application/json but it has its own icon
@@ -253,9 +264,12 @@ export class PanelUtils {
         binding ? PanelCommon.PersistenceUtils.PersistenceUtils.tooltipForUISourceCode(uiSourceCode) : undefined;
     // clang-format off
     return html`<devtools-file-source-icon
-        name=${iconType} title=${ifDefined(title)} .data=${{
-          contentType: uiSourceCode.contentType().name(), hasDotBadge, isDotPurple, iconType}}>
-      </devtools-file-source-icon>`;
+        class="icon"
+        name=${iconType} 
+        title=${ifDefined(title)} 
+        .data=${{
+          contentType: uiSourceCode.contentType().name(), hasDotBadge, isDotPurple, iconType}
+        }></devtools-file-source-icon>`;
     // clang-format on
   }
 

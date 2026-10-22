@@ -6,6 +6,8 @@
 
 #include "base/functional/bind.h"
 #include "components/skills/proto/skill.pb.h"
+#include "components/skills/public/skills_metrics.h"
+#include "components/skills/public/skills_types.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
@@ -54,9 +56,6 @@ constexpr net::NetworkTrafficAnnotationTag kSkillsDownloaderNetworkTag =
         policy_exception_justification: "World-readable data is being "
         "downloaded to be displayed on all Chrome accounts."
       })");
-
-inline constexpr char kSkillsDownloaderGstaticUrl[] =
-    "https://www.gstatic.com/chrome/skills/first_party_skills_binary";
 
 std::unique_ptr<network::SimpleURLLoader> CreateSimpleURLLoader(
     const GURL& url,
@@ -109,19 +108,30 @@ void SkillsDownloader::OnUrlDownloadComplete(
     return;
   }
 
-  // Response code is not 200 or `response_body` is empty.
-  if (!request->ResponseInfo() || !request->ResponseInfo()->headers ||
-      request->ResponseInfo()->headers->response_code() != net::HTTP_OK ||
-      !response_body.has_value() || response_body->empty()) {
-    // TODO(crbug.com/478924560): Add metrics to track network failures and
-    // other error cases.
+  if (!request->ResponseInfo() || !request->ResponseInfo()->headers) {
+    RecordSkillsFetchResult(SkillsFetchResult::kEmptyResponseHeader);
+    return;
+  }
+
+  int response_code = request->ResponseInfo()->headers->response_code();
+  RecordSkillsHttpCode(response_code);
+  if (response_code != net::HTTP_OK) {
+    RecordSkillsFetchResult(SkillsFetchResult::kNetworkError);
+    return;
+  }
+
+  if (!response_body.has_value() || response_body->empty()) {
+    RecordSkillsFetchResult(SkillsFetchResult::kEmptyResponseBody);
     return;
   }
 
   auto skills_list = std::make_unique<skills::proto::SkillsList>();
   if (!skills_list->ParseFromString(response_body.value())) {
+    RecordSkillsFetchResult(SkillsFetchResult::kProtoParseFailure);
     return;
   }
+
+  RecordSkillsFetchResult(SkillsFetchResult::kSuccess);
 
   std::string last_modified_value;
   if (request->ResponseInfo()->headers->EnumerateHeader(
@@ -129,12 +139,22 @@ void SkillsDownloader::OnUrlDownloadComplete(
     last_modified_header_ = last_modified_value;
   }
 
-  auto skills_map = std::make_unique<SkillsMap>();
+  auto first_party_skill_data = std::make_unique<FirstPartySkillData>();
+  // If a skill curated by field is not set, default to Chrome
   for (auto& skill : *skills_list->mutable_skills()) {
-    skills_map->insert_or_assign(skill.id(), std::move(skill));
+    if (!skill.has_curated_by() || skill.curated_by().empty()) {
+      skill.set_curated_by("Chrome");
+    }
+  }
+  first_party_skill_data->skills_list.insert(
+      first_party_skill_data->skills_list.end(),
+      std::make_move_iterator(skills_list->mutable_skills()->begin()),
+      std::make_move_iterator(skills_list->mutable_skills()->end()));
+  for (auto& topic : *skills_list->mutable_topics_list()) {
+    first_party_skill_data->topics_list.push_back(std::move(topic));
   }
 
-  std::move(callback).Run(std::move(skills_map));
+  std::move(callback).Run(std::move(first_party_skill_data));
 }
 
 }  // namespace skills

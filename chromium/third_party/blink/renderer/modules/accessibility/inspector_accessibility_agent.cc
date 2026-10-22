@@ -6,18 +6,17 @@
 
 #include <memory>
 
+#include "base/containers/adapters.h"
 #include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/node.h"
-#include "third_party/blink/renderer/core/dom/node_list.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/inspector/identifiers_factory.h"
 #include "third_party/blink/renderer/core/inspector/inspected_frames.h"
 #include "third_party/blink/renderer/core/inspector/inspector_dom_agent.h"
-#include "third_party/blink/renderer/core/inspector/inspector_style_sheet.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object-inl.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object_cache_impl.h"
@@ -44,9 +43,8 @@ void AddChildren(AXObject& ax_object,
                  bool follow_ignored,
                  std::unique_ptr<protocol::Array<AXNode>>& nodes,
                  AXObjectCacheImpl& cache) {
-  HeapVector<Member<AXObject>> reachable;
-  reachable.AppendRange(ax_object.ChildrenIncludingIgnored().rbegin(),
-                        ax_object.ChildrenIncludingIgnored().rend());
+  HeapVector<Member<AXObject>> reachable(
+      base::Reversed(ax_object.ChildrenIncludingIgnored()));
 
   while (!reachable.empty()) {
     AXObject* descendant = reachable.back();
@@ -59,8 +57,8 @@ void AddChildren(AXObject& ax_object,
     // another layer of children.
     if (follow_ignored &&
         (descendant->IsIgnoredButIncludedInTree() || !descendant->GetNode())) {
-      reachable.AppendRange(descendant->ChildrenIncludingIgnored().rbegin(),
-                            descendant->ChildrenIncludingIgnored().rend());
+      reachable.append_range(
+          base::Reversed(descendant->ChildrenIncludingIgnored()));
     }
     auto child_node = BuildProtocolAXNodeForAXObject(*descendant);
     nodes->emplace_back(std::move(child_node));
@@ -356,7 +354,7 @@ protocol::Response InspectorAccessibilityAgent::getChildAXNodes(
 
   ScopedFreezeAXCache freeze(cache);
 
-  AXID ax_id = StringToInt(in_id).value_or(0);
+  AXID ax_id = StringToIntLoose(in_id).value_or(0);
   AXObject* ax_object = cache.ObjectFromAXID(ax_id);
 
   if (!ax_object || ax_object->IsDetached())
@@ -368,7 +366,7 @@ protocol::Response InspectorAccessibilityAgent::getChildAXNodes(
   AddChildren(*ax_object, /* follow_ignored */ true, *out_nodes, cache);
 
   for (const auto& child : **out_nodes) {
-    nodes_requested_.insert(StringToInt(child->getNodeId()).value_or(0));
+    nodes_requested_.insert(StringToIntLoose(child->getNodeId()).value_or(0));
   }
 
   return protocol::Response::Success();
@@ -460,7 +458,7 @@ void InspectorAccessibilityAgent::CompleteQuery(
     reachable.pop_back();
     const AXObject::AXObjectVector& children =
         ax_object->ChildrenIncludingIgnored();
-    reachable.AppendRange(children.rbegin(), children.rend());
+    reachable.append_range(base::Reversed(children));
 
     const bool ignored = ax_object->IsIgnored();
     // if querying by name: skip if name of current object does not match.
@@ -614,7 +612,7 @@ void InspectorAccessibilityAgent::AXObjectModified(AXObject* ax_object,
         continue;
       const AXObject::AXObjectVector& children =
           descendant->ChildrenIncludingIgnored();
-      reachable.AppendRange(children.rbegin(), children.rend());
+      reachable.append_range(base::Reversed(children));
     }
   } else {
     MarkAXObjectDirty(ax_object);

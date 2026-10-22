@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_PAINT_TIMING_LARGEST_CONTENTFUL_PAINT_CALCULATOR_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_PAINT_TIMING_LARGEST_CONTENTFUL_PAINT_CALCULATOR_H_
 
+#include "base/feature_list.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/paint/timing/lcp_objects.h"
@@ -111,9 +112,9 @@ class CORE_EXPORT LargestContentfulPaintCalculator final
   }
   TextRecord* LargestTextForTest() const { return largest_text_; }
 
- private:
-  friend class LargestContentfulPaintCalculatorTest;
+  void SetDelegateForTest(Delegate* delegate) { delegate_ = delegate; }
 
+ private:
   bool UpdateMetricsIfLargestImagePaintChanged();
   bool UpdateMetricsIfLargestTextPaintChanged();
 
@@ -147,7 +148,6 @@ class CORE_EXPORT LargestContentfulPaintCalculator final
   Member<WindowPerformance> window_performance_;
 
   uint64_t largest_reported_size_ = 0u;
-  double largest_image_bpp_ = 0.0;
   unsigned web_exposed_candidate_count_ = 0;
   unsigned ukm_largest_image_candidate_count_ = 0;
   unsigned ukm_largest_text_candidate_count_ = 0;

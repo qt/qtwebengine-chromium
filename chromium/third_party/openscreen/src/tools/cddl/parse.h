@@ -59,13 +59,13 @@ struct AstNode {
   Type type;
 
   // Text parsed from the CDDL spec to create this node.
-  std::string text;
+  std::string_view text;
 
   // Text parsed from another source but used when serializing this node.
-  std::string integer_member_key_text;
+  std::string_view integer_member_key_text;
 
   // Text parsed from the CDDL spec for the type key.
-  std::optional<std::string> type_key;
+  std::optional<std::string_view> type_key;
 };
 
 // Override for << operator to simplify logging.

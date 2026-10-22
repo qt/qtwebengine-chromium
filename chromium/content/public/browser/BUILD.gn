@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/ui.gni")
+import("//components/surface_embed/buildflags/buildflags.gni")
 import("//content/common/features.gni")
 import("//content/public/common/features.gni")
 import("//device/vr/buildflags/buildflags.gni")
@@ -62,6 +63,7 @@ source_set("browser_sources") {
     "blob_handle.h",
     "bluetooth_chooser.cc",
     "bluetooth_chooser.h",
+    "bluetooth_delegate.cc",
     "bluetooth_delegate.h",
     "bluetooth_scanning_prompt.cc",
     "bluetooth_scanning_prompt.h",
@@ -311,9 +313,12 @@ source_set("browser_sources") {
     "platform_notification_context.h",
     "platform_notification_service.h",
     "popup_menu.h",
+    "pre_prefetch_handle.h",
+    "pre_prefetch_service.h",
     "preconnect_manager.h",
     "preconnect_request.cc",
     "preconnect_request.h",
+    "prefetch_deduplication_utils.h",
     "prefetch_handle.h",
     "prefetch_metrics.h",
     "prefetch_priority.h",
@@ -390,6 +395,7 @@ source_set("browser_sources") {
     "screenlock_observer.h",
     "secure_payment_confirmation_utils.cc",
     "secure_payment_confirmation_utils.h",
+    "security_principal.h",
     "select_audio_output_request.cc",
     "select_audio_output_request.h",
     "serial_chooser.cc",
@@ -400,6 +406,7 @@ source_set("browser_sources") {
     "service_process_host_passkeys.h",
     "service_process_info.cc",
     "service_process_info.h",
+    "service_process_observer_hub.h",
     "service_worker_client_info.h",
     "service_worker_context.h",
     "service_worker_context_observer.h",
@@ -518,6 +525,7 @@ source_set("browser_sources") {
     "webid/autofill_source.h",
     "webid/constants.h",
     "webid/email_verifier.h",
+    "webid/federated_embedder_login_request.h",
     "webid/federated_identity_api_permission_context_delegate.cc",
     "webid/federated_identity_api_permission_context_delegate.h",
     "webid/federated_identity_auto_reauthn_permission_context_delegate.h",
@@ -527,6 +535,8 @@ source_set("browser_sources") {
     "webid/identity_request_account.h",
     "webid/identity_request_dialog_controller.cc",
     "webid/identity_request_dialog_controller.h",
+    "webnn_introspection_manager.cc",
+    "webnn_introspection_manager.h",
     "webrtc_event_logger.cc",
     "webrtc_event_logger.h",
     "webrtc_log.cc",
@@ -561,6 +571,7 @@ source_set("browser_sources") {
     "//components/file_access",
     "//components/services/storage/privileged/mojom",
     "//components/services/storage/public/mojom",
+    "//components/surface_embed/buildflags",
     "//content/public/common:buildflags",
     "//content/public/common:common_sources",
     "//device/vr/buildflags",
@@ -587,6 +598,8 @@ source_set("browser_sources") {
     "//services/tracing/public/mojom",
     "//services/video_capture/public/mojom",
     "//services/viz/public/mojom",
+    "//services/webnn/public/cpp",
+    "//services/webnn/public/mojom:webnn_service_introspection",
 
     # We expose skia headers in the public API.
     "//skia",
@@ -637,6 +650,10 @@ source_set("browser_sources") {
       "plugin_service.h",
       "plugin_service_filter.h",
     ]
+  }
+
+  if (enable_surface_embed) {
+    sources += [ "surface_embed_connector.h" ]
   }
 
   if (is_posix || is_fuchsia) {

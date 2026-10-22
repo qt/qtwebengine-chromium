@@ -150,6 +150,7 @@ struct Options {
     bool enable_robustness = true;
 
     bool dump_ir = false;
+    bool enable_ir_validation_asserts = true;
     bool ir_roundtrip = false;
 
 #if TINT_BUILD_SPV_READER
@@ -162,6 +163,8 @@ struct Options {
 #if TINT_BUILD_SPV_WRITER
     bool use_storage_input_output_16 = true;
     tint::spirv::writer::SpvVersion spirv_version = tint::spirv::writer::SpvVersion::kSpv13;
+
+    std::unordered_set<tint::BindingPoint> ycbcr_bindings;
 #endif  // TINT_BULD_SPV_WRITER
 
 #if TINT_BUILD_MSL_WRITER
@@ -445,6 +448,15 @@ violations that may be produced)",
 Valid values are 1.3 and 1.4)",
         version_enum_names, Default{tint::spirv::writer::SpvVersion::kSpv13});
     TINT_DEFER(opts->spirv_version = *spirv_version.value);
+
+    auto& ycbcr_binding_data = options.Add<StringOption>(
+        "ycbcr-bindings",
+        "Allows setting an external texture as YCBCR. "
+        "This allows specifying that the external texture at the given binding point should be "
+        "considered a YCBCR texture. Entries are provided as binding point pairs (group, binding) "
+        "(e.g. 1,2). Multiple entries should be separated with a space.",
+        Default{""});
+
 #endif  // TINT_BUILD_SPV_WRITER
 
 #if TINT_BUILD_GLSL_WRITER
@@ -482,16 +494,17 @@ When specified, automatically enables MSL validation)",
 
     auto& dynamic_offset = options.Add<StringOption>(
         "dynamic-offset",
-        R"(Mapping for dynamic buffers to be attached to the entry point, format is GROUP.BINDING=OFFSET, comma separated))");
+        R"(Mapping for dynamic buffers to be attached to the entry point, format is GROUP.BINDING=OFFSET, comma separated. BINDING is the BindingIndex, not @binding BindingNumber))");
 
     // Default to validating against MSL 2.3, which corresponds to macOS 11.0.
     tint::Vector<EnumName<tint::msl::validate::MslVersion>, 2> msl_version_enum_names{
         EnumName(tint::msl::validate::MslVersion::kMsl_2_3, "2.3"),
+        EnumName(tint::msl::validate::MslVersion::kMsl_2_4, "2.4"),
         EnumName(tint::msl::validate::MslVersion::kMsl_3_2, "3.2"),
     };
     auto& msl_version = options.Add<EnumOption<tint::msl::validate::MslVersion>>(
         "msl-version", R"(Specify the MSL version.
-Valid values are 2.3 and 3.2)",
+Valid values are 2.3, 2.4, and 3.2)",
         msl_version_enum_names, Default{tint::msl::validate::MslVersion::kMsl_2_3});
     TINT_DEFER(opts->msl_version = *msl_version.value);
 #endif  // TINT_BUILD_MSL_WRITER
@@ -514,9 +527,22 @@ When specified, automatically enables HLSL validation)",
         "validate", "Validates the generated shader with all available validators", Default{false});
     TINT_DEFER(opts->validate = *validate.value);
 
-    auto& dump_ir = options.Add<BoolOption>("dump-ir", "Writes the IR to stdout", Alias{"emit-ir"},
-                                            Default{false});
+    auto& dump_ir =
+        options.Add<BoolOption>("dump-ir", "Dump IR at each stage of the compilation flow",
+                                Alias{"emit-ir"}, Default{false});
     TINT_DEFER(opts->dump_ir = *dump_ir.value);
+#if TINT_BUILD_SPV_READER
+    TINT_DEFER(opts->spirv_reader_options.dump_ir_when_validating = *dump_ir.value);
+#endif
+
+    auto& disable_validation_asserts = options.Add<BoolOption>(
+        "disable-ir-validation-asserts",
+        "Disable IR validation assertions at each stage of the compilation flow", Default{false});
+    TINT_DEFER(opts->enable_ir_validation_asserts = !*disable_validation_asserts.value);
+#if TINT_BUILD_SPV_READER
+    TINT_DEFER(opts->spirv_reader_options.enable_validation_asserts =
+                   !*disable_validation_asserts.value);
+#endif
 
     auto& ir_roundtrip = options.Add<BoolOption>(
         "ir-roundtrip", "Converts the Program to IR and then back to a Program", Default{false});
@@ -614,6 +640,37 @@ Options:
         }
     }
 #endif  // TINT_BUILD_SPV_READER
+
+#if TINT_BUILD_SPV_WRITER
+    if (!ycbcr_binding_data.value->empty()) {
+        auto str_to_bp = [](const std::string_view& str) -> std::optional<tint::BindingPoint> {
+            auto parts = tint::Split(str, ",");
+            if (parts.Length() != 2) {
+                std::cerr << "A binding point requires a 'group,binding' pair, found "
+                          << parts.Length() << " components instead of 2.\n";
+                return std::nullopt;
+            }
+
+            uint32_t group = 0;
+            std::from_chars(parts[0].data(), parts[0].data() + parts[0].size(), group);
+
+            uint32_t binding = 0;
+            std::from_chars(parts[1].data(), parts[1].data() + parts[1].size(), binding);
+
+            return {tint::BindingPoint{group, binding}};
+        };
+
+        for (auto mapping : tint::Split(*ycbcr_binding_data.value, " ")) {
+            auto opt_src = str_to_bp(mapping);
+            if (!opt_src.has_value()) {
+                return false;
+            }
+            tint::BindingPoint src_bp = opt_src.value();
+            opts->ycbcr_bindings.emplace(src_bp);
+        }
+    }
+
+#endif
 
 #if TINT_BUILD_MSL_WRITER
     if (arg_buffer.value.has_value()) {
@@ -906,6 +963,20 @@ std::string Disassemble(const std::vector<uint32_t>& data) {
     }
     gen_options.substitute_overrides_config = substitute_override_cfg.Get();
 
+    std::unordered_map<uint32_t, tint::BindingPoint> colour_binding_points{};
+    uint32_t binding = 0;
+    for (auto& var : entry_point.input_variables) {
+        if (var.attributes.color.has_value()) {
+            // TODO(dsinclair): At some point, we may want to add a config option to set the default
+            // group number for input attachment bindings
+            colour_binding_points.emplace(var.attributes.color.value(), tint::BindingPoint{
+                                                                            .group = 66,
+                                                                            .binding = binding++,
+                                                                        });
+        }
+    }
+    gen_options.colour_index_to_binding_point = colour_binding_points;
+
     // Immediate data Offset must be 4-byte aligned.
     uint32_t offset = tint::RoundUp(4u, entry_point.immediate_data_size);
 
@@ -916,7 +987,8 @@ std::string Disassemble(const std::vector<uint32_t>& data) {
         offset += 8;
     }
 
-    gen_options.bindings = tint::GenerateBindings(ir, options.ep_name, false, false);
+    gen_options.bindings =
+        tint::GenerateBindings(ir, options.ep_name, false, false, options.ycbcr_bindings);
     gen_options.resource_table = tint::core::ir::transform::GenerateResourceTableConfig(ir);
 
     // Enable the Vulkan Memory Model if needed.
@@ -924,13 +996,6 @@ std::string Disassemble(const std::vector<uint32_t>& data) {
         if (ty->Is<tint::core::type::SubgroupMatrix>()) {
             gen_options.extensions.use_vulkan_memory_model = true;
         }
-    }
-
-    // Check that the module and options are supported by the backend.
-    auto check = tint::spirv::writer::CanGenerate(ir, gen_options);
-    if (check != tint::Success) {
-        std::cerr << check.Failure() << "\n";
-        return false;
     }
 
     // Generate SPIR-V from Tint IR.
@@ -1115,13 +1180,6 @@ tint::msl::writer::ArrayLengthOptions GenerateArrayLengthFromConstants(tint::cor
     }
     gen_options.substitute_overrides_config = substitute_override_cfg.Get();
 
-    // Check that the module and options are supported by the backend.
-    auto check = tint::msl::writer::CanGenerate(ir, gen_options);
-    if (check != tint::Success) {
-        std::cerr << check.Failure() << "\n";
-        return false;
-    }
-
     auto result = tint::msl::writer::Generate(ir, gen_options);
     if (result != tint::Success) {
         options.printer->Print(tint::core::ir::Disassembler(ir).Text());
@@ -1139,7 +1197,7 @@ tint::msl::writer::ArrayLengthOptions GenerateArrayLengthFromConstants(tint::cor
     }
 
     if (options.validate && options.skip_hash.count(hash) == 0) {
-        tint::msl::validate::Result res;
+        tint::Result<tint::SuccessType> res;
 #if TINT_BUILD_IS_MAC
         res = tint::msl::validate::ValidateUsingMetal(result->msl, options.msl_version);
 #else
@@ -1153,12 +1211,11 @@ tint::msl::writer::ArrayLengthOptions GenerateArrayLengthFromConstants(tint::cor
         if (xcrun.Found()) {
             res = tint::msl::validate::Validate(xcrun.Path(), result->msl, options.msl_version);
         } else {
-            res.output = "xcrun executable not found. Cannot validate.";
-            res.failed = true;
+            res = tint::Failure{"xcrun executable not found. Cannot validate."};
         }
 #endif  // TINT_BUILD_IS_MAC
-        if (res.failed) {
-            std::cerr << res.output << "\n";
+        if (res != tint::Success) {
+            std::cerr << res.Failure() << "\n";
             return false;
         }
     }
@@ -1197,6 +1254,7 @@ tint::msl::writer::ArrayLengthOptions GenerateArrayLengthFromConstants(tint::cor
     gen_options.compiler = for_fxc ? tint::hlsl::writer::Options::Compiler::kFXC
                                    : tint::hlsl::writer::Options::Compiler::kDXC;
     gen_options.bindings = tint::GenerateBindings(ir, options.ep_name, false, false);
+    gen_options.resource_table = tint::core::ir::transform::GenerateResourceTableConfig(ir);
 
     // Run SubstituteOverrides to replace override instructions with constants.
     // This needs to run after SingleEntryPoint which removes unused overrides.
@@ -1206,13 +1264,6 @@ tint::msl::writer::ArrayLengthOptions GenerateArrayLengthFromConstants(tint::cor
         return false;
     }
     gen_options.substitute_overrides_config = substitute_override_cfg.Get();
-
-    // Check that the module and options are supported by the backend.
-    auto check = tint::hlsl::writer::CanGenerate(ir, gen_options);
-    if (check != tint::Success) {
-        std::cerr << check.Failure() << "\n";
-        return false;
-    }
 
     auto result = tint::hlsl::writer::Generate(ir, gen_options);
     if (result != tint::Success) {
@@ -1361,13 +1412,6 @@ tint::msl::writer::ArrayLengthOptions GenerateArrayLengthFromConstants(tint::cor
     gen_options.bindings = std::move(data.bindings);
     gen_options.texture_builtins_from_uniform = std::move(data.texture_builtins_from_uniform);
 
-    // Check that the module and options are supported by the backend.
-    auto check = tint::glsl::writer::CanGenerate(ir, gen_options);
-    if (check != tint::Success) {
-        std::cerr << check.Failure() << "\n";
-        return false;
-    }
-
     // Generate GLSL.
     auto result = tint::glsl::writer::Generate(ir, gen_options);
     if (result != tint::Success) {
@@ -1453,7 +1497,11 @@ bool Generate([[maybe_unused]] const Options& options,
               [[maybe_unused]] const tint::Program& program) {
 #if TINT_BUILD_WGSL_READER
     // Convert the AST program to an IR module.
-    auto ir = tint::wgsl::reader::ProgramToLoweredIR(program);
+    tint::wgsl::reader::IROptions ir_options{
+        .dump_ir_when_validating = options.dump_ir,
+        .enable_validation_asserts = options.enable_ir_validation_asserts,
+    };
+    auto ir = tint::wgsl::reader::ProgramToLoweredIR(program, ir_options);
     if (ir != tint::Success) {
         std::cerr << "Failed to generate IR: " << ir << "\n";
         return false;
@@ -1535,7 +1583,7 @@ int Run(tint::VectorRef<std::string_view> arguments, ExeMode exe_mode) {
         return 1;
     }
 
-    if (options.dump_ir || options.format == Format::kIr) {
+    if (options.format == Format::kIr) {
         auto res = DumpIR(info.program, options);
         if (options.format == Format::kIr) {
             return static_cast<int>(res);
@@ -1544,7 +1592,11 @@ int Run(tint::VectorRef<std::string_view> arguments, ExeMode exe_mode) {
 
 #if TINT_BUILD_WGSL_WRITER && TINT_BUILD_WGSL_READER
     if (options.ir_roundtrip) {
-        auto ir = tint::wgsl::reader::ProgramToIR(info.program);
+        tint::wgsl::reader::IROptions ir_options{
+            .dump_ir_when_validating = options.dump_ir,
+            .enable_validation_asserts = options.enable_ir_validation_asserts,
+        };
+        auto ir = tint::wgsl::reader::ProgramToLoweredIR(info.program, ir_options);
         if (ir != tint::Success) {
             std::cerr << "Failed convert program to IR: " << ir.Failure() << "\n";
             return 1;

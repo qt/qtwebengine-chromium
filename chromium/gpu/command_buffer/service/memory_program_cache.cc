@@ -15,7 +15,6 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/numerics/checked_math.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/system/sys_info.h"
@@ -29,6 +28,8 @@
 #include "gpu/config/gpu_preferences.h"
 #include "third_party/zlib/zlib.h"
 #include "ui/gl/gl_bindings.h"
+#include "base/check.h"
+#include <array>
 
 namespace gpu {
 namespace gles2 {
@@ -95,7 +96,6 @@ void FillShaderInterfaceBlockProto(ShaderInterfaceBlockProto* proto,
   proto->set_instance_name(interfaceBlock.instanceName);
   proto->set_array_size(interfaceBlock.arraySize);
   proto->set_layout(interfaceBlock.layout);
-  proto->set_is_row_major_layout(interfaceBlock.isRowMajorLayout);
   proto->set_static_use(interfaceBlock.staticUse);
   for (size_t ii = 0; ii < interfaceBlock.fields.size(); ++ii) {
     ShaderInterfaceBlockFieldProto* field = proto->add_fields();
@@ -191,7 +191,6 @@ void RetrieveShaderInterfaceBlockInfo(const ShaderInterfaceBlockProto& proto,
   interface_block.instanceName = proto.instance_name();
   interface_block.arraySize = proto.array_size();
   interface_block.layout = static_cast<sh::BlockLayoutType>(proto.layout());
-  interface_block.isRowMajorLayout = proto.is_row_major_layout();
   interface_block.staticUse = proto.static_use();
   interface_block.fields.resize(proto.fields_size());
   for (int ii = 0; ii < proto.fields_size(); ++ii) {

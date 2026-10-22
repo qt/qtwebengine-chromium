@@ -99,6 +99,7 @@
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/clipboard/clipboard.h"
+#include "ui/base/clipboard/test/clipboard_test_util.h"
 #include "ui/base/ime/init/input_method_factory.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/mock_input_method.h"
@@ -5086,8 +5087,8 @@ TEST_F(RenderWidgetHostViewAuraTest, KeyEventsHandled) {
 #if BUILDFLAG(IS_WIN)
 // Arabic keyboard layouts on Windows do not natively support Arabic-Indic
 // digit input. This is worked around for web page input scenarios by
-// forwarding NativeWebKeyboardEvents with Arabic-Indic digit in InsertChar
-// upon receipt of a KeyEvent containing an ASCII digit.
+// forwarding NativeWebKeyboardEvents with Arabic-Indic digits in OnKeyEvent
+// upon receipt of a top-row digit KeyEvent while AltGr is held.
 // This test verifies that behavior.
 TEST_F(RenderWidgetHostViewAuraTest, ArabicIndicDigitInputRightAlt) {
   ResetArabicIndicDigitInputStateForTesting();
@@ -5112,13 +5113,19 @@ TEST_F(RenderWidgetHostViewAuraTest, ArabicIndicDigitInputRightAlt) {
   keyboard_state[VK_RMENU] = kKeyDown;
   ASSERT_TRUE(SetKeyboardState(keyboard_state));
   for (int i = 0; i < 10; ++i) {
-    ui::KeyEvent key_event = ui::KeyEvent::FromCharacter(
-        i + u'0', static_cast<ui::KeyboardCode>(ui::VKEY_0 + i),
-        ui::DomCode::NONE, ui::EF_ALT_DOWN);
-    view_->InsertChar(key_event);
+    ui::KeyEvent key_event(ui::EventType::kKeyPressed,
+                           static_cast<ui::KeyboardCode>(ui::VKEY_0 + i),
+                           ui::DomCode::NONE, ui::EF_ALT_DOWN);
+    view_->OnKeyEvent(&key_event);
     const input::NativeWebKeyboardEvent* event =
         delegates_.back()->last_event();
     ASSERT_TRUE(event);
+
+    // InsertChar should no-op for right alt + digit key. On Windows versions
+    // where Arabic 101 does not implement AltGr, this generates WM_SYSCHAR
+    // which invokes InsertChar.
+    view_->InsertChar(key_event);
+    EXPECT_EQ(event, delegates_.back()->last_event()) << "Digit index: " << i;
 
     char16_t expected = static_cast<char16_t>(i + kArabicIndicZero);
     EXPECT_EQ(expected, event->windows_key_code) << "Digit index: " << i;
@@ -6659,9 +6666,8 @@ TEST_F(InputMethodStateAuraTest, SelectedTextCopiedToClipboard) {
     views_[index]->SelectionChanged(expected_text, 0U, gfx::Range(0, 5));
 
     // Retrieve the selected text from clipboard and verify it is as expected.
-    std::u16string result_text;
-    clipboard->ReadText(ui::ClipboardBuffer::kSelection,
-                        /* data_dst = */ nullptr, &result_text);
+    std::u16string result_text = ui::clipboard_test_util::ReadText(
+        clipboard, ui::ClipboardBuffer::kSelection, /* data_dst = */ nullptr);
     EXPECT_EQ(expected_text, result_text);
   }
 }
@@ -6853,6 +6859,84 @@ TEST_F(RenderWidgetHostViewAuraInputMethodTest,
   EXPECT_EQ(parent_view_, text_input_client_);
 
   GetInputMethod()->RemoveObserver(this);
+}
+
+// Mock InputMethod that runs a closure when OnCaretBoundsChanged is invoked.
+// Simulates a Windows TSF IME whose ITextStoreACPSink::OnLayoutChange handler
+// pumps the thread message queue, allowing a queued task to synchronously
+// destroy the RenderWidgetHostViewAura while it is still inside
+// OnBoundsChanged().
+class DestroyingMockInputMethod : public ui::MockInputMethod {
+ public:
+  DestroyingMockInputMethod() : ui::MockInputMethod(nullptr) {}
+
+  void OnCaretBoundsChanged(const ui::TextInputClient* client) override {
+    ui::MockInputMethod::OnCaretBoundsChanged(client);
+    if (on_caret_bounds_changed_) {
+      std::move(on_caret_bounds_changed_).Run();
+    }
+  }
+
+  void set_on_caret_bounds_changed(base::OnceClosure closure) {
+    on_caret_bounds_changed_ = std::move(closure);
+  }
+
+ private:
+  base::OnceClosure on_caret_bounds_changed_;
+};
+
+class RenderWidgetHostViewAuraOnBoundsChangedUAFTest
+    : public RenderWidgetHostViewAuraTest {
+ public:
+  void SetUp() override {
+    input_method_ = new DestroyingMockInputMethod();
+    // Ownership is transferred to the WindowTreeHost via the InputMethod
+    // factory; see SetUpInputMethodForTesting().
+    ui::SetUpInputMethodForTesting(input_method_);
+    SetUpEnvironment();
+  }
+
+  void TearDown() override {
+    input_method_ = nullptr;
+    RenderWidgetHostViewAuraTest::TearDown();
+  }
+
+ protected:
+  raw_ptr<DestroyingMockInputMethod> input_method_ = nullptr;
+};
+
+// RWHVA::OnBoundsChanged() constructs a base::AutoReset<bool> holding
+// &in_bounds_changed_, then calls GetInputMethod()->OnCaretBoundsChanged(this).
+// On Windows that reaches TSFTextStore::SendOnLayoutChange ->
+// text_store_acp_sink_->OnLayoutChange(), a synchronous COM call into the
+// active third-party IME. If the IME pumps messages and the view is destroyed
+// re-entrantly, on unwind UpdateInsetsWithVirtualKeyboardEnabled() and
+// ~AutoReset both touch freed memory. AutoReset::scoped_variable_ is
+// RAW_PTR_EXCLUSION, so it is not MiraclePtr-protected: the ~AutoReset write
+// lands in a freed (un-quarantined) slot.
+TEST_F(RenderWidgetHostViewAuraOnBoundsChangedUAFTest,
+       DestroyDuringOnCaretBoundsChanged) {
+  InitViewForFrame(nullptr);
+  ParentHostView(view_, parent_view_);
+  // `view_` shares the root window (and thus the InputMethod) with
+  // `parent_view_`.
+  ASSERT_EQ(static_cast<ui::InputMethod*>(input_method_.get()),
+            GetInputMethod());
+
+  // Arrange for the view to be synchronously destroyed inside
+  // OnCaretBoundsChanged, simulating re-entrant destruction triggered by a
+  // TSF IME callout that pumps a queued window.close() / renderer-gone task.
+  FakeRenderWidgetHostViewAura* raw_view = view_.get();
+  input_method_->set_on_caret_bounds_changed(base::BindLambdaForTesting([&]() {
+    widget_host_ = nullptr;
+    view_.ExtractAsDangling()->Destroy();
+  }));
+
+  // Under ASAN this triggers heap-use-after-free in
+  // UpdateInsetsWithVirtualKeyboardEnabled() (read of freed
+  // keyboard_occluded_bounds_) followed by a write-after-free in
+  // ~AutoReset<bool> to the freed in_bounds_changed_ slot.
+  raw_view->OnBoundsChanged(gfx::Rect(), gfx::Rect(0, 0, 100, 100));
 }
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)

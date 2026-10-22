@@ -22,7 +22,7 @@ import {Events as JSONEditorEvents, JSONEditor, type Parameter} from './JSONEdit
 import protocolMonitorStyles from './protocolMonitor.css.js';
 
 const {styleMap} = Directives;
-const {widgetConfig, widgetRef} = UI.Widget;
+const {widget, widgetRef} = UI.Widget;
 const UIStrings = {
   /**
    * @description Text for one or a group of functions
@@ -303,7 +303,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                       </tr>`)}
                   </table>
               </devtools-data-grid>
-              <devtools-widget .widgetConfig=${widgetConfig(InfoWidget, {
+              <devtools-widget ${widget(InfoWidget, {
                     request: input.selectedMessage?.params,
                     response: input.selectedMessage?.result || input.selectedMessage?.error,
                     type: !input.selectedMessage           ? undefined :
@@ -349,7 +349,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
             </devtools-toolbar>
           </div>
           <devtools-widget slot="sidebar"
-              .widgetConfig=${widgetConfig(JSONEditor, { metadataByCommand, typesByName, enumsByName})}
+              ${widget(JSONEditor, { metadataByCommand, typesByName, enumsByName})}
               ${widgetRef(JSONEditor, e => {output.editorWidget = e;})}>
           </devtools-widget>
         </devtools-split-view>`,
@@ -675,29 +675,33 @@ type InfoWidgetView = (input: InfoWidgetViewInput, output: undefined, target: HT
 
 const INFO_WIDGET_VIEW: InfoWidgetView = (input, _output, target) => {
   // clang-format off
-  render(html`<devtools-widget .widgetConfig=${widgetConfig(UI.TabbedPane.TabbedPane, {
-    tabs: [
-      {
-        id: 'request',
-        title: i18nString(UIStrings.request),
-        view: input.type === undefined ?
-            new UI.EmptyWidget.EmptyWidget(
-                i18nString(UIStrings.noMessageSelected), i18nString(UIStrings.selectAMessageToView)) :
-            SourceFrame.JSONView.JSONView.createViewSync(input.request || null),
-        enabled: input.type === 'sent',
-        selected: input.selectedTab === 'request',
-      },
-      {
-        id: 'response',
-        title: i18nString(UIStrings.response),
-        view: input.type === undefined ?
-            new UI.EmptyWidget.EmptyWidget(
-                i18nString(UIStrings.noMessageSelected), i18nString(UIStrings.selectAMessageToView)) :
-            SourceFrame.JSONView.JSONView.createViewSync(input.response || null),
-        selected: input.selectedTab === 'response',
-      }
-    ]})}>
-  </devtools-widget>`, target);
+  render(html`
+    <devtools-tabbed-pane>${input.type === undefined ? html`
+      <devtools-widget
+          id="request" title=${i18nString(UIStrings.request)}
+          ?selected=${input.selectedTab === 'request'} disabled
+          ${widget(UI.EmptyWidget.EmptyWidget, {
+              header: i18nString(UIStrings.noMessageSelected),
+              text: i18nString(UIStrings.selectAMessageToView)})}>
+      </devtools-widget>
+      <devtools-widget
+          id="response" title=${i18nString(UIStrings.response)}
+          ?selected=${input.selectedTab === 'response'}
+          ${widget(UI.EmptyWidget.EmptyWidget, {
+              header: i18nString(UIStrings.noMessageSelected),
+              text: i18nString(UIStrings.selectAMessageToView)})}>
+      </devtools-widget>`: html`
+      <devtools-widget
+          id="request" title=${i18nString(UIStrings.request)}
+          ?selected=${input.selectedTab === 'request'} ?disabled=${input.type !== 'sent'}
+          ${widget(SourceFrame.JSONView.SearchableJsonView, {jsonObject: input.request})}>
+      </devtools-widget>
+      <devtools-widget
+          id="response" title=${i18nString(UIStrings.response)}
+          ?selected=${input.selectedTab === 'response'}
+          ${widget(SourceFrame.JSONView.SearchableJsonView, {jsonObject: input.response})}>
+      </devtools-widget>`}
+    </devtools-tabbed-pane>`, target);
   // clang-format on
 };
 

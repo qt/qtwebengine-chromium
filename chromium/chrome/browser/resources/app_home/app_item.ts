@@ -68,7 +68,7 @@ export class AppItemElement extends CrLitElement {
       return;
     }
     this.$.menu.close();
-    this.fire_('on-menu-closed', {appItem: this});
+    this.fire('on-menu-closed', {appItem: this});
   }
 
   private handleContextMenu_(e: Event) {
@@ -76,9 +76,7 @@ export class AppItemElement extends CrLitElement {
     if (this.isValidPosition(position)) {
       // Show custom context menu only if it is inside the area of the item that
       // triggered it.
-      this.fire_('on-menu-open-triggered', {
-        appItem: this,
-      });
+      this.fire('on-menu-open-triggered', {appItem: this});
       this.$.menu.showAtPosition(position);
       recordUserAction(AppHomeUserAction.CONTEXT_MENU_TRIGGERED);
     }
@@ -144,11 +142,6 @@ export class AppItemElement extends CrLitElement {
 
     e.preventDefault();
     e.stopPropagation();
-  }
-
-  private fire_(eventName: string, detail?: any) {
-    this.dispatchEvent(
-        new CustomEvent(eventName, {bubbles: true, composed: true, detail}));
   }
 
   // The CrActionMenuElement is a modal that does not listen to any other
@@ -229,7 +222,7 @@ export class AppItemElement extends CrLitElement {
     event.stopPropagation();
   }
 
-  protected openStorePage_() {
+  protected onStorePageClick_() {
     if (!this.appInfo.storePageUrl) {
       return;
     }
@@ -299,7 +292,7 @@ export class AppItemElement extends CrLitElement {
     this.closeContextMenu();
   }
 
-  protected getIconUrl_() {
+  protected getIconUrl_(): string {
     const url = new URL(this.appInfo.iconUrl);
     // For web app, the backend serves grayscale image when the app is not
     // locally installed automatically and doesn't recognize this query param,
@@ -307,7 +300,7 @@ export class AppItemElement extends CrLitElement {
     if (!this.isLocallyInstalled_()) {
       url.searchParams.append('grayscale', 'true');
     }
-    return url;
+    return url.href;
   }
 }
 

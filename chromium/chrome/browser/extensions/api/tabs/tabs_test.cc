@@ -39,6 +39,8 @@
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
+#include "chrome/browser/tab_group_sync/tab_group_sync_service_factory.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -53,6 +55,7 @@
 #include "components/saved_tab_groups/public/tab_group_sync_service.h"
 #include "components/split_tabs/split_tab_id.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_features.h"
@@ -71,6 +74,7 @@
 #include "extensions/common/mojom/context_type.mojom.h"
 #include "extensions/test/extension_test_message_listener.h"
 #include "extensions/test/result_catcher.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "pdf/buildflags.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -86,7 +90,6 @@
 #include "url/gurl.h"
 
 #if !BUILDFLAG(IS_ANDROID)
-#include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
 #include "chrome/browser/resource_coordinator/tab_lifecycle_unit_source.h"
 #include "chrome/browser/resource_coordinator/tab_manager.h"
 #include "chrome/browser/resource_coordinator/time.h"
@@ -97,6 +100,7 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+#include "chrome/browser/ui/tabs/saved_tab_groups/tab_group_sync_service_initialized_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/web_applications/test/isolated_web_app_test_utils.h"
 #include "chrome/browser/web_applications/isolated_web_apps/commands/install_isolated_web_app_command.h"
@@ -178,6 +182,14 @@ class ExtensionTabsTest : public ExtensionApiTest {
   ExtensionTabsTest(const ExtensionTabsTest&) = delete;
   ExtensionTabsTest& operator=(const ExtensionTabsTest&) = delete;
 
+  // ExtensionApiTest overrides:
+  void SetUpOnMainThread() override {
+    ExtensionApiTest::SetUpOnMainThread();
+    // Map all hosts to localhost.
+    host_resolver()->AddRule("*", "127.0.0.1");
+  }
+
+ protected:
   std::string GetWindowType(BrowserWindowInterface* test_browser,
                             scoped_refptr<const Extension> extension) {
     auto function = base::MakeRefCounted<WindowsGetFunction>();
@@ -202,6 +214,27 @@ class ExtensionTabsTest : public ExtensionApiTest {
     return utils::RunFunctionWithDelegateAndReturnSingleResult(
         std::move(function), args, std::move(dispatcher),
         utils::FunctionMode::kNone);
+  }
+
+  content::WebContents* OpenUrlAndWaitForLoad(const GURL& url) {
+    NavigateToURLInNewTab(url);
+    return GetActiveWebContents();
+  }
+
+  base::ListValue RunQueryFunction(const Extension* extension,
+                                   const char* query_info) {
+    auto function = base::MakeRefCounted<TabsQueryFunction>();
+    function->set_extension(extension);
+    return utils::ToList(utils::RunFunctionAndReturnSingleResult(
+        function.get(), query_info, profile()));
+  }
+
+  base::DictValue RunUpdateFunction(const Extension* extension,
+                                    const std::string& update_info) {
+    auto function = base::MakeRefCounted<TabsUpdateFunction>();
+    function->set_extension(extension);
+    return utils::ToDict(utils::RunFunctionAndReturnSingleResult(
+        function.get(), update_info, profile()));
   }
 };
 
@@ -956,6 +989,28 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, InvalidUpdateWindowBounds) {
             profile()),
         keys::kInvalidWindowBoundsError));
   }
+}
+
+// On Android this fails when Run() calls BaseWindow::CanResize() returns false
+// due to default Android Browser Tests not having free-form windows.
+#if !BUILDFLAG(IS_ANDROID)
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest,
+                       UpdatingWindowBoundsSucceedsForValidBounds) {
+  scoped_refptr<const Extension> extension(ExtensionBuilder("Test").Build());
+
+  // Get the display bounds so we can test whether the window intersects.
+  gfx::Rect displays;
+  for (const auto& display : display::Screen::Get()->GetAllDisplays()) {
+    displays.Union(display.bounds());
+  }
+
+  int window_id = ExtensionTabUtil::GetWindowId(browser_window_interface());
+  gfx::Rect window_bounds =
+      browser_window_interface()->GetWindow()->GetBounds();
+
+  static const char kArgsUpdateFunction[] = "[%u, {\"left\": %d, \"top\": %d}]";
+  // We use a small value to move the window outside or inside the bounds.
+  int window_offset = window_bounds.size().width() * 0.1;
 
   {
     // Window bounds that intersect 50% or more with the display are valid.
@@ -970,6 +1025,73 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, InvalidUpdateWindowBounds) {
                            profile(), api_test_utils::FunctionMode::kNone));
   }
 }
+#endif  // !BUILDFLAG(IS_ANDROID)
+
+#if BUILDFLAG(IS_ANDROID)
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest,
+                       UpdateWindowStateFailsWhenNotResizable) {
+  scoped_refptr<const Extension> extension(ExtensionBuilder("Test").Build());
+  std::vector<BrowserWindowInterface*> windows =
+      GetAllBrowserWindowInterfaces();
+  ASSERT_FALSE(windows.empty());
+  int window_id = ExtensionTabUtil::GetWindowId(windows[0]);
+
+  auto function = base::MakeRefCounted<WindowsUpdateFunction>();
+  function->set_extension(extension.get());
+
+  // Attempting to maximize on Android triggers the CanResize() check. Since
+  // the standard test environment is not in desktop windowing mode (and may
+  // run on older SDKs), this is expected to fail. We verify that an error is
+  // returned without checking the exact string.
+  std::string error = utils::RunFunctionAndReturnError(
+      function.get(),
+      base::StringPrintf("[%u, {\"state\": \"maximized\"}]", window_id),
+      profile());
+  EXPECT_FALSE(error.empty());
+}
+
+// TODO(crbug.com/491868694) Remove once overlapping tests are enabled on
+// Android.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest,
+                       UpdateWindowStateSucceedsWhenNoResizeNeeded) {
+  scoped_refptr<const Extension> extension(ExtensionBuilder("Test").Build());
+  std::vector<BrowserWindowInterface*> windows =
+      GetAllBrowserWindowInterfaces();
+  ASSERT_FALSE(windows.empty());
+  int window_id = ExtensionTabUtil::GetWindowId(windows[0]);
+
+  auto function = base::MakeRefCounted<WindowsUpdateFunction>();
+  function->set_extension(extension.get());
+
+  // A simple update that does not require resizing bypasses the CanResize()
+  // check, succeeding without an error code.
+  EXPECT_TRUE(utils::RunFunction(
+      function.get(),
+      base::StringPrintf("[%u, {\"drawAttention\": true}]", window_id),
+      profile(), api_test_utils::FunctionMode::kNone));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest,
+                       UpdateWindowStateFullscreenFailsOnAndroid) {
+  scoped_refptr<const Extension> extension(ExtensionBuilder("Test").Build());
+  std::vector<BrowserWindowInterface*> windows =
+      GetAllBrowserWindowInterfaces();
+  ASSERT_FALSE(windows.empty());
+  int window_id = ExtensionTabUtil::GetWindowId(windows[0]);
+
+  auto function = base::MakeRefCounted<WindowsUpdateFunction>();
+  function->set_extension(extension.get());
+
+  // Attempting to enter fullscreen on Android should explicitly fail with
+  // the kUnableToEnterFullScreenAndroid error message.
+  std::string error = utils::RunFunctionAndReturnError(
+      function.get(),
+      base::StringPrintf("[%u, {\"state\": \"fullscreen\"}]", window_id),
+      profile());
+
+  EXPECT_EQ(tabs_constants::kUnableToEnterFullScreenAndroid, error);
+}
+#endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 
@@ -1033,7 +1155,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, ExtensionAPICannotNavigateDevtools) {
 }
 
 #if BUILDFLAG(IS_MAC)
-// https://crbug.com/836327
+// https://crbug.com/41385204
 #define MAYBE_AcceptState DISABLED_AcceptState
 #else
 #define MAYBE_AcceptState AcceptState
@@ -1098,6 +1220,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWindowCreateTest, MAYBE_AcceptState) {
       ChromeExtensionFunctionDetails(function.get()), window_id, &error);
   ASSERT_TRUE(new_controller);
   EXPECT_TRUE(error.empty());
+  ui_test_utils::WaitForBrowserSetLastActive(new_controller->GetBrowser());
   EXPECT_TRUE(new_controller->GetBrowser()->window()->IsFullscreen());
 
   // Let the message loop run so that |fake_fullscreen| finishes transition.
@@ -1503,7 +1626,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTestWithApps, NoTabsAppWindow) {
   CloseAppWindow(app_window);
 }
 
-// Crashes on Mac/Win only.  http://crbug.com/708996
+// Crashes on Mac/Win only.  http://crbug.com/40514319
 #if BUILDFLAG(IS_MAC)
 #define MAYBE_FilteredEvents DISABLED_FilteredEvents
 #else
@@ -1575,6 +1698,31 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, WindowsCreate) {
   ASSERT_TRUE(RunExtensionTest("windows/create")) << message_;
 }
 
+// Tests that non-validation failure in tabs.executeScript results in error, and
+// not bad_message.
+// Regression test for https://crbug.com/40482984.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, ExecuteScriptNoTabIsNonFatalError) {
+  scoped_refptr<const Extension> extension_with_tabs_permission =
+      ExtensionBuilder("Test")
+          .AddAPIPermission("tabs")
+          .AddHostPermission("*://*/*")
+          .Build();
+  auto function = base::MakeRefCounted<TabsExecuteScriptFunction>();
+  function->set_extension(extension_with_tabs_permission.get());
+  const char* kArgs = R"(["", {"code": ""}])";
+
+  // Use another profile: `profile()` already has a browser window set up as
+  // part of a browser test so executing the "script" would succeed instead of
+  // failing as the test intends.
+  auto* second_profile = profile()->GetOffTheRecordProfile(
+      Profile::OTRProfileID::CreateUniqueForTesting(),
+      /*create_if_needed=*/true);
+
+  std::string error = utils::RunFunctionAndReturnError(
+      function.get(), kArgs, second_profile, utils::FunctionMode::kNone);
+  EXPECT_EQ(ExtensionTabUtil::kNoCurrentWindowError, error);
+}
+
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 
 IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, ExecuteScriptOnDevTools) {
@@ -1620,16 +1768,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardedProperty) {
 
   // Set up query function with an extension.
   scoped_refptr<const Extension> extension = ExtensionBuilder("Test").Build();
-  auto RunQueryFunction = [this, &extension](const char* query_info) {
-    auto function = base::MakeRefCounted<TabsQueryFunction>();
-    function->set_extension(extension.get());
-    return utils::ToList(utils::RunFunctionAndReturnSingleResult(
-        function.get(), query_info, profile()));
-  };
 
   // Get non-discarded tabs.
   {
-    base::ListValue result(RunQueryFunction("[{\"discarded\": false}]"));
+    base::ListValue result(
+        RunQueryFunction(extension.get(), "[{\"discarded\": false}]"));
 
     // The two created plus the default tab.
     EXPECT_EQ(3u, result.size());
@@ -1637,7 +1780,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardedProperty) {
 
   // Get discarded tabs.
   {
-    base::ListValue result(RunQueryFunction("[{\"discarded\": true}]"));
+    base::ListValue result(
+        RunQueryFunction(extension.get(), "[{\"discarded\": true}]"));
     EXPECT_EQ(0u, result.size());
   }
 
@@ -1660,13 +1804,15 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardedProperty) {
 
   // Get non-discarded tabs after discarding one tab.
   {
-    base::ListValue result(RunQueryFunction("[{\"discarded\": false}]"));
+    base::ListValue result(
+        RunQueryFunction(extension.get(), "[{\"discarded\": false}]"));
     EXPECT_EQ(2u, result.size());
   }
 
   // Get discarded tabs after discarding one tab.
   {
-    base::ListValue result(RunQueryFunction("[{\"discarded\": true}]"));
+    base::ListValue result(
+        RunQueryFunction(extension.get(), "[{\"discarded\": true}]"));
     EXPECT_EQ(1u, result.size());
 
     // Make sure the returned tab is the correct one.
@@ -1684,7 +1830,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardedProperty) {
 
   // Get non-discarded tabs after discarding two created tabs.
   {
-    base::ListValue result(RunQueryFunction("[{\"discarded\": false}]"));
+    base::ListValue result(
+        RunQueryFunction(extension.get(), "[{\"discarded\": false}]"));
     ASSERT_EQ(1u, result.size());
 
     // Make sure the returned tab is the correct one.
@@ -1700,7 +1847,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardedProperty) {
 
   // Get discarded tabs after discarding two created tabs.
   {
-    base::ListValue result(RunQueryFunction("[{\"discarded\": true}]"));
+    base::ListValue result(
+        RunQueryFunction(extension.get(), "[{\"discarded\": true}]"));
     EXPECT_EQ(2u, result.size());
   }
 
@@ -1709,26 +1857,34 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardedProperty) {
 
   // Get non-discarded tabs after activating a discarded tab.
   {
-    base::ListValue result(RunQueryFunction("[{\"discarded\": false}]"));
+    base::ListValue result(
+        RunQueryFunction(extension.get(), "[{\"discarded\": false}]"));
     EXPECT_EQ(2u, result.size());
   }
 
   // Get discarded tabs after activating a discarded tab.
   {
-    base::ListValue result(RunQueryFunction("[{\"discarded\": true}]"));
+    base::ListValue result(
+        RunQueryFunction(extension.get(), "[{\"discarded\": true}]"));
     EXPECT_EQ(1u, result.size());
   }
 }
 
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
+
 // Tests chrome.tabs.discard(tabId).
 IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithId) {
-  // Create an additional tab.
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), GURL(url::kAboutBlankURL),
-      WindowOpenDisposition::NEW_BACKGROUND_TAB,
-      ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
+  // Create an additional tab and navigate to `url::kAboutBlankURL`.
+  GetTabListInterface()->OpenTab(GURL(url::kAboutBlankURL), -1);
   content::WebContents* web_contents =
       GetTabListInterface()->GetTab(1)->GetContents();
+  content::WaitForLoadStop(web_contents);
+  EXPECT_FALSE(web_contents->WasDiscarded());
+
+  // Activate the first tab since the second one will be discarded and active
+  // tabs cannot be discarded on Android.
+  GetTabListInterface()->ActivateTab(
+      GetTabListInterface()->GetTab(0)->GetHandle());
 
   // Set up the function with an extension.
   scoped_refptr<const Extension> extension = ExtensionBuilder("Test").Build();
@@ -1741,12 +1897,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithId) {
       utils::ToDict(utils::RunFunctionAndReturnSingleResult(
           discard.get(), base::StringPrintf("[%u]", tab_id), profile()));
 
-  // Confirms that TabManager sees the tab as discarded.
+  // Confirm that the tab was discarded.
   web_contents = GetTabListInterface()->GetTab(1)->GetContents();
-  EXPECT_EQ(resource_coordinator::TabLifecycleUnitExternal::FromWebContents(
-                web_contents)
-                ->GetTabState(),
-            ::mojom::LifecycleUnitState::DISCARDED);
+  EXPECT_TRUE(web_contents->WasDiscarded());
 
   // Make sure the returned tab is the one discarded and its discarded state is
   // correct.
@@ -1768,10 +1921,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithId) {
 // Tests chrome.tabs.discard(invalidId).
 IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithInvalidId) {
   // Create an additional tab.
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), GURL(url::kAboutBlankURL),
-      WindowOpenDisposition::NEW_BACKGROUND_TAB,
-      ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
+  GetTabListInterface()->OpenTab(GURL(url::kAboutBlankURL), -1);
+  content::WebContents* web_contents =
+      GetTabListInterface()->GetTab(1)->GetContents();
+  content::WaitForLoadStop(web_contents);
+  EXPECT_FALSE(web_contents->WasDiscarded());
 
   // Set up the function with an extension.
   scoped_refptr<const Extension> extension = ExtensionBuilder("Test").Build();
@@ -1784,30 +1938,37 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithInvalidId) {
   tab_invalid_id = std::max(
       tab_invalid_id, ExtensionTabUtil::GetTabId(
                           GetTabListInterface()->GetTab(1)->GetContents()));
-  tab_invalid_id++;
+  tab_invalid_id += 999999;
 
   std::string error = utils::RunFunctionAndReturnError(
       discard.get(), base::StringPrintf("[%u]", tab_invalid_id), profile());
 
-  // State should still be `ACTIVE` as no tab was discarded.
-  EXPECT_EQ(resource_coordinator::TabLifecycleUnitExternal::FromWebContents(
-                GetTabListInterface()->GetTab(1)->GetContents())
-                ->GetTabState(),
-            ::mojom::LifecycleUnitState::ACTIVE);
+  // The tab should not be discarded.
+  EXPECT_FALSE(GetTabListInterface()->GetTab(1)->GetContents()->WasDiscarded());
 
   // Check error message.
   EXPECT_TRUE(base::MatchPattern(error, ExtensionTabUtil::kTabNotFoundError));
 }
 
+// TODO(crbug.com/487907630): Flaky on macos
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_DiscardWithoutId DISABLED_DiscardWithoutId
+#else
+#define MAYBE_DiscardWithoutId DiscardWithoutId
+#endif
 // Tests chrome.tabs.discard().
-IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithoutId) {
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, MAYBE_DiscardWithoutId) {
   // Create an additional tab.
-  ui_test_utils::NavigateToURLWithDisposition(
-      browser(), GURL(url::kAboutBlankURL),
-      WindowOpenDisposition::NEW_BACKGROUND_TAB,
-      ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
+  GetTabListInterface()->OpenTab(GURL(url::kAboutBlankURL), -1);
   content::WebContents* web_contents =
       GetTabListInterface()->GetTab(1)->GetContents();
+  content::WaitForLoadStop(web_contents);
+  EXPECT_FALSE(web_contents->WasDiscarded());
+
+  // Activate the first created tab to make the second one the least recently
+  // used and therefore the one that should be discarded.
+  GetTabListInterface()->ActivateTab(
+      GetTabListInterface()->GetTab(0)->GetHandle());
 
   // Set up the function with an extension.
   scoped_refptr<const Extension> extension = ExtensionBuilder("Test").Build();
@@ -1818,12 +1979,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithoutId) {
   const base::DictValue result = utils::ToDict(
       utils::RunFunctionAndReturnSingleResult(discard.get(), "[]", profile()));
 
-  // Confirms that TabManager sees the tab as discarded.
+  // Confirm that the tab was discarded.
   web_contents = GetTabListInterface()->GetTab(1)->GetContents();
-  EXPECT_EQ(resource_coordinator::TabLifecycleUnitExternal::FromWebContents(
-                web_contents)
-                ->GetTabState(),
-            ::mojom::LifecycleUnitState::DISCARDED);
+  EXPECT_TRUE(web_contents->WasDiscarded());
 
   // Make sure the returned tab is the one discarded and its discarded state is
   // correct.
@@ -1833,6 +1991,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardWithoutId) {
   // The result should be scrubbed.
   EXPECT_FALSE(result.contains("url"));
 }
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
 
 IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TestGroupDetachedAndReInserted) {
   // Create the `TabsEventRouter`, which is required to get a tab update event.
@@ -2007,18 +2167,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, AutoDiscardableProperty) {
 
   // Set up query and update functions with the extension.
   scoped_refptr<const Extension> extension = ExtensionBuilder("Test").Build();
-  auto RunQueryFunction = [this, &extension](const char* query_info) {
-    auto function = base::MakeRefCounted<TabsQueryFunction>();
-    function->set_extension(extension.get());
-    return utils::ToList(utils::RunFunctionAndReturnSingleResult(
-        function.get(), query_info, profile()));
-  };
-  auto RunUpdateFunction = [this, &extension](std::string update_info) {
-    auto function = base::MakeRefCounted<TabsUpdateFunction>();
-    function->set_extension(extension.get());
-    return utils::ToDict(utils::RunFunctionAndReturnSingleResult(
-        function.get(), update_info, profile()));
-  };
 
   // Queries and results used.
   const char* kAutoDiscardableQueryInfo = "[{\"autoDiscardable\": true}]";
@@ -2026,16 +2174,19 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, AutoDiscardableProperty) {
 
   // Get auto-discardable tabs. Returns all since tabs are auto-discardable
   // by default.
-  base::ListValue query_result = RunQueryFunction(kAutoDiscardableQueryInfo);
+  base::ListValue query_result =
+      RunQueryFunction(extension.get(), kAutoDiscardableQueryInfo);
   EXPECT_EQ(3u, query_result.size());
 
   // Get non auto-discardable tabs.
-  query_result = RunQueryFunction(kNonAutoDiscardableQueryInfo);
+  query_result =
+      RunQueryFunction(extension.get(), kNonAutoDiscardableQueryInfo);
   EXPECT_EQ(0u, query_result.size());
 
   // Update the auto-discardable state of web contents A.
   int tab_id_a = ExtensionTabUtil::GetTabId(web_contents_a);
   base::DictValue update_result = RunUpdateFunction(
+      extension.get(),
       base::StringPrintf("[%u, {\"autoDiscardable\": false}]", tab_id_a));
   EXPECT_EQ(tab_id_a, api_test_utils::GetInteger(update_result, "id"));
   EXPECT_FALSE(api_test_utils::GetBoolean(update_result, "autoDiscardable"));
@@ -2046,11 +2197,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, AutoDiscardableProperty) {
   EXPECT_FALSE(tab_object_a.auto_discardable);
 
   // Get auto-discardable tabs after changing the status of web contents A.
-  query_result = RunQueryFunction(kAutoDiscardableQueryInfo);
+  query_result = RunQueryFunction(extension.get(), kAutoDiscardableQueryInfo);
   EXPECT_EQ(2u, query_result.size());
 
   // Get non auto-discardable tabs after changing the status of web contents A.
-  query_result = RunQueryFunction(kNonAutoDiscardableQueryInfo);
+  query_result =
+      RunQueryFunction(extension.get(), kNonAutoDiscardableQueryInfo);
   ASSERT_EQ(1u, query_result.size());
 
   // Make sure the returned tab is the correct one.
@@ -2063,12 +2215,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, AutoDiscardableProperty) {
   // Update the auto-discardable state of web contents B.
   int tab_id_b = ExtensionTabUtil::GetTabId(web_contents_b);
   update_result = RunUpdateFunction(
+      extension.get(),
       base::StringPrintf("[%u, {\"autoDiscardable\": false}]", tab_id_b));
   EXPECT_EQ(tab_id_b, api_test_utils::GetInteger(update_result, "id"));
   EXPECT_FALSE(api_test_utils::GetBoolean(update_result, "autoDiscardable"));
 
   // Get auto-discardable tabs after changing the status of both created tabs.
-  query_result = RunQueryFunction(kAutoDiscardableQueryInfo);
+  query_result = RunQueryFunction(extension.get(), kAutoDiscardableQueryInfo);
   EXPECT_EQ(1u, query_result.size());
 
   // Make sure the returned tab is the correct one.
@@ -2081,21 +2234,24 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, AutoDiscardableProperty) {
             *id_value);
 
   // Get auto-discardable tabs after changing the status of both created tabs.
-  query_result = RunQueryFunction(kNonAutoDiscardableQueryInfo);
+  query_result =
+      RunQueryFunction(extension.get(), kNonAutoDiscardableQueryInfo);
   EXPECT_EQ(2u, query_result.size());
 
   // Resets the first tab back to auto-discardable.
   update_result = RunUpdateFunction(
+      extension.get(),
       base::StringPrintf("[%u, {\"autoDiscardable\": true}]", tab_id_a));
   EXPECT_EQ(tab_id_a, api_test_utils::GetInteger(update_result, "id"));
   EXPECT_TRUE(api_test_utils::GetBoolean(update_result, "autoDiscardable"));
 
   // Get auto-discardable tabs after resetting the status of web contents A.
-  query_result = RunQueryFunction(kAutoDiscardableQueryInfo);
+  query_result = RunQueryFunction(extension.get(), kAutoDiscardableQueryInfo);
   EXPECT_EQ(2u, query_result.size());
 
   // Get non auto-discardable tabs after resetting the status of web contents A.
-  query_result = RunQueryFunction(kNonAutoDiscardableQueryInfo);
+  query_result =
+      RunQueryFunction(extension.get(), kNonAutoDiscardableQueryInfo);
   EXPECT_EQ(1u, query_result.size());
 }
 
@@ -2129,8 +2285,6 @@ class ExtensionTabsZoomTest : public ExtensionTabsTest {
   std::string RunSetZoomSettingsExpectError(int tab_id,
                                             const char* mode,
                                             const char* scope);
-
-  content::WebContents* OpenUrlAndWaitForLoad(const GURL& url);
 
  private:
   scoped_refptr<const Extension> extension_;
@@ -2281,11 +2435,6 @@ std::string ExtensionTabsZoomTest::RunSetZoomSettingsExpectError(
       profile());
 }
 
-content::WebContents* ExtensionTabsZoomTest::OpenUrlAndWaitForLoad(
-    const GURL& url) {
-  NavigateToURLInNewTab(url);
-  return GetActiveWebContents();
-}
 
 namespace {
 
@@ -2537,7 +2686,7 @@ class ExtensionApiPdfTest : public base::test::WithFeatureOverride,
   bool UseOopif() const override { return GetParam(); }
 };
 
-// Regression test for crbug.com/660498.
+// Regression test for crbug.com/40085816.
 IN_PROC_BROWSER_TEST_P(ExtensionApiPdfTest, TemporaryAddressSpoof) {
   content::WebContents* first_web_contents = GetActiveWebContents();
   ASSERT_TRUE(first_web_contents);
@@ -2591,7 +2740,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionApiPdfTest, TemporaryAddressSpoof) {
   EXPECT_EQ(url, second_web_contents->GetVisibleURL());
 
   // Wait for the TestNavigationManager-monitored navigation to complete to
-  // avoid a race during browser teardown (see crbug.com/882213).
+  // avoid a race during browser teardown (see crbug.com/41412718).
   ASSERT_TRUE(navigation_manager.WaitForNavigationFinished());
 }
 
@@ -2601,9 +2750,9 @@ INSTANTIATE_FEATURE_OVERRIDE_TEST_SUITE(ExtensionApiPdfTest);
 #endif  // BUILDFLAG(ENABLE_PDF)
 
 // Tests how chrome.windows.create behaves when setSelfAsOpener parameter is
-// used.  setSelfAsOpener was introduced as a fix for https://crbug.com/713888
-// and https://crbug.com/718489.  This is a (slightly morphed) regression test
-// for https://crbug.com/597750.
+// used. setSelfAsOpener was introduced as a fix for https://crbug.com/40516654
+// and https://crbug.com/40518908. This is a (slightly morphed) regression test
+// for https://crbug.com/40462301.
 IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, WindowsCreate_WithOpener) {
   const extensions::Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII("../simple_with_file"));
@@ -2617,13 +2766,26 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, WindowsCreate_WithOpener) {
   // Execute chrome.windows.create and store the new tab in |new_contents|.
   content::WebContents* new_contents = nullptr;
   {
-    content::WebContentsAddedObserver observer;
+    content::TestNavigationObserver nav_observer(extension_url);
+    nav_observer.StartWatchingNewWebContents();
     std::string script = base::StringPrintf(
         R"( window.name = 'old-contents';
-            chrome.windows.create({url: '%s', setSelfAsOpener: true}); )",
+            new Promise(resolve => {
+              chrome.windows.create(
+                {url: '%s', setSelfAsOpener: true}, (win) => {
+                resolve(win.tabs[0].id);
+              });
+            }); )",
         extension_url.spec().c_str());
-    ASSERT_TRUE(content::ExecJs(old_contents, script));
-    new_contents = observer.GetWebContents();
+    // We need to get the tabId from the callback because simply waiting for a
+    // new WebContents via WebContentsAddedObserver is flaky when InitialWebUI
+    // is enabled (which creates multiple WebContents). We also wait for the
+    // specific extension URL to load to avoid races with initial intermediate
+    // page loads.
+    int tab_id = content::EvalJs(old_contents, script).ExtractInt();
+    EXPECT_TRUE(
+        ExtensionTabUtil::GetTabById(tab_id, profile(), true, &new_contents));
+    nav_observer.Wait();
     ASSERT_TRUE(content::WaitForLoadStop(new_contents));
   }
 
@@ -2673,8 +2835,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, WindowsCreate_WithOpener) {
 }
 
 // Tests how chrome.windows.create behaves when setSelfAsOpener parameter is not
-// used.  setSelfAsOpener was introduced as a fix for https://crbug.com/713888
-// and https://crbug.com/718489.
+// used. setSelfAsOpener was introduced as a fix for https://crbug.com/40516654
+// and https://crbug.com/40518908.
 IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, WindowsCreate_NoOpener) {
   const Extension* extension =
       LoadExtension(test_data_dir_.AppendASCII("../simple_with_file"));
@@ -2688,13 +2850,22 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, WindowsCreate_NoOpener) {
   // Execute chrome.windows.create and store the new tab in |new_contents|.
   content::WebContents* new_contents = nullptr;
   {
-    content::WebContentsAddedObserver observer;
+    content::TestNavigationObserver nav_observer(extension_url);
+    nav_observer.StartWatchingNewWebContents();
     std::string script = base::StringPrintf(
         R"( window.name = 'old-contents';
-            chrome.windows.create({url: '%s'}); )",
+            new Promise(resolve => {
+              chrome.windows.create({url: '%s'}, (win) => {
+                resolve(win.tabs[0].id);
+              });
+            }); )",
         extension_url.spec().c_str());
-    ASSERT_TRUE(content::ExecJs(old_contents, script));
-    new_contents = observer.GetWebContents();
+    // We need to get the tabId from the callback to accept the case where
+    // multiple WebContents are created.
+    int tab_id = content::EvalJs(old_contents, script).ExtractInt();
+    EXPECT_TRUE(
+        ExtensionTabUtil::GetTabById(tab_id, profile(), true, &new_contents));
+    nav_observer.Wait();
     ASSERT_TRUE(content::WaitForLoadStop(new_contents));
   }
 
@@ -2707,8 +2878,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, WindowsCreate_NoOpener) {
   // Verify that the |new_contents| doesn't have |window.opener| set.
   EXPECT_EQ(false, EvalJs(new_contents, "!!window.opener"));
 
-  // TODO(lukasza): http://crbug.com/786411: Verify that |new_contents| can NOT
-  // find |old_contents| using window.open/name.  This is currently broken,
+  // TODO(lukasza): http://crbug.com/40550544: Verify that |new_contents| can
+  // NOT find |old_contents| using window.open/name.  This is currently broken,
   // because browsing instance boundaries are pierced for all extension frames
   // (we hope this can be limited to background pages / contents).
 }
@@ -2759,7 +2930,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, WindowsCreate_OpenerAndOrigin) {
       {extension_url_str, std::nullopt, extension_origin_str},
   });
 
-  auto run_test_case = [&web_contents](const TestCase& test_case) {
+  Profile* profile = this->profile();
+  auto run_test_case = [&web_contents, profile](const TestCase& test_case) {
     std::string maybe_specify_set_self_as_opener;
     if (test_case.set_self_as_opener) {
       maybe_specify_set_self_as_opener =
@@ -2767,14 +2939,21 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, WindowsCreate_OpenerAndOrigin) {
                              base::ToString(*test_case.set_self_as_opener));
     }
     std::string script = base::StringPrintf(
-        R"( chrome.windows.create({url: '%s'%s}); )", test_case.url.c_str(),
-        maybe_specify_set_self_as_opener.c_str());
+        R"( new Promise(resolve => {
+              chrome.windows.create({url: '%s'%s}, (win) => {
+                resolve(win.tabs[0].id);
+              });
+            }); )",
+        test_case.url.c_str(), maybe_specify_set_self_as_opener.c_str());
 
     content::WebContents* new_contents = nullptr;
     {
-      content::WebContentsAddedObserver observer;
-      ASSERT_TRUE(content::ExecJs(web_contents, script));
-      new_contents = observer.GetWebContents();
+      content::TestNavigationObserver nav_observer(GURL(test_case.url));
+      nav_observer.StartWatchingNewWebContents();
+      int tab_id = content::EvalJs(web_contents, script).ExtractInt();
+      EXPECT_TRUE(
+          ExtensionTabUtil::GetTabById(tab_id, profile, true, &new_contents));
+      nav_observer.Wait();
     }
     ASSERT_TRUE(new_contents);
     ASSERT_TRUE(content::WaitForLoadStop(new_contents));
@@ -2790,6 +2969,263 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, WindowsCreate_OpenerAndOrigin) {
         base::StringPrintf("#%" PRIuS " %s", i, test_case.url.c_str()));
     run_test_case(test_case);
   }
+}
+
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
+
+// Tests that calling chrome.tabs.update updates the URL as expected.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsUpdate) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("UpdateTest").Build();
+
+  const GURL example_url =
+      embedded_test_server()->GetURL("example.com", "/title1.html");
+  const GURL chromium_url =
+      embedded_test_server()->GetURL("chromium.org", "/title1.html");
+
+  // Navigate the browser to example.com
+  content::WebContents* web_contents = GetActiveWebContents();
+  ASSERT_TRUE(NavigateToURL(web_contents, example_url));
+  EXPECT_EQ(example_url, web_contents->GetLastCommittedURL());
+
+  int tab_id = ExtensionTabUtil::GetTabId(web_contents);
+
+  // Use the TabsUpdateFunction to navigate to chromium.org
+  auto function = base::MakeRefCounted<TabsUpdateFunction>();
+  function->set_extension(extension.get());
+  static constexpr char kFormatArgs[] = R"([%d, {"url": "%s"}])";
+  const std::string args =
+      base::StringPrintf(kFormatArgs, tab_id, chromium_url.spec().c_str());
+  ASSERT_TRUE(api_test_utils::RunFunction(function.get(), args, profile(),
+                                          api_test_utils::FunctionMode::kNone));
+
+  EXPECT_TRUE(content::WaitForLoadStop(web_contents));
+  EXPECT_EQ(chromium_url, web_contents->GetLastCommittedURL());
+}
+
+// Tests that calling chrome.tabs.update does not update a saved tab.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsUpdate_SavedTabGroupTab) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("UpdateTest").Build();
+
+  const GURL example_url =
+      embedded_test_server()->GetURL("example.com", "/title1.html");
+  const GURL chromium_url =
+      embedded_test_server()->GetURL("chromium.org", "/title1.html");
+
+  TabListInterface* tab_list = GetTabListInterface();
+
+  // Create 2 tabs.
+  content::WebContents* tab1_contents = OpenUrlAndWaitForLoad(example_url);
+  content::WebContents* tab2_contents =
+      OpenUrlAndWaitForLoad(GURL(url::kAboutBlankURL));
+
+  EXPECT_EQ(tab_list->GetActiveTab()->GetContents(), tab2_contents);
+  int tab1_id = ExtensionTabUtil::GetTabId(tab1_contents);
+  int non_updated_tab2_id = ExtensionTabUtil::GetTabId(tab2_contents);
+
+  tab_groups::TabGroupSyncService* saved_service =
+      tab_groups::TabGroupSyncServiceFactory::GetForProfile(profile());
+  ASSERT_TRUE(saved_service);
+  // Wait for the TabGroupSyncService to properly initialize before making any
+  // changes to tab groups. This is not used on Android.
+#if !BUILDFLAG(IS_ANDROID)
+  tab_groups::TabGroupSyncServiceInitializedObserver observer(saved_service);
+  observer.Wait();
+#endif
+
+  // Group the tab and save it.
+  tab_groups::TabGroupId group =
+      tab_list->CreateTabGroup({tab_list->GetTab(1)->GetHandle()}).value();
+  tab_groups::TabGroupVisualData visual_data(
+      u"Initial title", tab_groups::TabGroupColorId::kBlue);
+  tab_list->SetTabGroupVisualData(group, visual_data);
+
+  std::optional<tab_groups::TabGroupId> tab1_group_id =
+      tab_list->GetTab(1)->GetGroup();
+  ASSERT_TRUE(tab1_group_id.has_value());
+
+// TabGroupSyncService takes in different types for its methods depending on
+// platform.
+#if BUILDFLAG(IS_ANDROID)
+  EXPECT_TRUE(saved_service->GetGroup(tab1_group_id->token()).has_value());
+  auto group_id = group.token();
+#else
+  EXPECT_TRUE(saved_service->GetGroup(*tab1_group_id).has_value());
+  tab_groups::TabGroupId group_id = group;
+#endif
+
+  {  // Test the active state change for a saved tab.
+    tab_list->ActivateTab(tab_list->GetTab(2)->GetHandle());
+
+    auto function = base::MakeRefCounted<TabsUpdateFunction>();
+    function->set_extension(extension.get());
+    static constexpr char kFormatArgs[] = R"([%d, {"active": true}])";
+    const std::string args = base::StringPrintf(kFormatArgs, tab1_id);
+    EXPECT_TRUE(api_test_utils::RunFunction(
+        function.get(), args, profile(), api_test_utils::FunctionMode::kNone));
+    EXPECT_EQ(tab_list->GetActiveTab()->GetContents(), tab1_contents);
+  }
+
+  ASSERT_TRUE(saved_service->GetGroup(group_id));
+
+  {  // Reset the active states, and then test highlighted for a saved tab.
+    tab_list->ActivateTab(tab_list->GetTab(2)->GetHandle());
+
+    auto function = base::MakeRefCounted<TabsUpdateFunction>();
+    function->set_extension(extension.get());
+    static constexpr char kFormatArgs[] = R"([%d, {"highlighted": true}])";
+    const std::string args = base::StringPrintf(kFormatArgs, tab1_id);
+    EXPECT_TRUE(api_test_utils::RunFunction(
+        function.get(), args, profile(), api_test_utils::FunctionMode::kNone));
+    EXPECT_TRUE(tab_list->GetTab(1)->IsSelected());
+  }
+
+  ASSERT_TRUE(saved_service->GetGroup(group_id));
+
+  {  // Reset the active states, and then test selected state for a saved tab.
+    tab_list->ActivateTab(tab_list->GetTab(2)->GetHandle());
+
+    auto function = base::MakeRefCounted<TabsUpdateFunction>();
+    function->set_extension(extension.get());
+    static constexpr char kFormatArgs[] = R"([%d, {"selected": true}])";
+    const std::string args = base::StringPrintf(kFormatArgs, tab1_id);
+    EXPECT_TRUE(api_test_utils::RunFunction(
+        function.get(), args, profile(), api_test_utils::FunctionMode::kNone));
+    EXPECT_TRUE(tab_list->GetTab(1)->IsSelected());
+  }
+
+  ASSERT_TRUE(saved_service->GetGroup(group_id));
+
+  {  // Test Muted state.
+    // Tab should not be muted by default.
+    EXPECT_FALSE(tab1_contents->IsAudioMuted());
+
+    auto function = base::MakeRefCounted<TabsUpdateFunction>();
+    function->set_extension(extension.get());
+    static constexpr char kFormatArgs[] = R"([%d, {"muted": true}])";
+    const std::string args = base::StringPrintf(kFormatArgs, tab1_id);
+    EXPECT_TRUE(api_test_utils::RunFunction(
+        function.get(), args, profile(), api_test_utils::FunctionMode::kNone));
+    EXPECT_TRUE(tab1_contents->IsAudioMuted());
+  }
+
+  ASSERT_TRUE(saved_service->GetGroup(group_id));
+
+  {  // Test setting the opener.
+    auto function = base::MakeRefCounted<TabsUpdateFunction>();
+    function->set_extension(extension.get());
+    static constexpr char kFormatArgs[] = R"([%d, {"openerTabId": %d}])";
+    const std::string args =
+        base::StringPrintf(kFormatArgs, tab1_id, non_updated_tab2_id);
+    EXPECT_TRUE(api_test_utils::RunFunction(
+        function.get(), args, profile(), api_test_utils::FunctionMode::kNone));
+
+    auto* opener_tab =
+        tab_list->GetOpenerForTab(tab_list->GetTab(1)->GetHandle());
+    EXPECT_EQ(tab_list->GetTab(2), opener_tab);
+  }
+
+  ASSERT_TRUE(saved_service->GetGroup(group_id));
+
+// TODO(https://crbug.com/447211263): Re-enable this subtest once there is
+// support on desktop android.
+#if !BUILDFLAG(IS_ANDROID)
+  {  // Test setting the discard state.
+    auto function = base::MakeRefCounted<TabsUpdateFunction>();
+    function->set_extension(extension.get());
+    static constexpr char kFormatArgs[] = R"([%d, {"autoDiscardable": false}])";
+    const std::string args = base::StringPrintf(kFormatArgs, tab1_id);
+    EXPECT_TRUE(api_test_utils::RunFunction(
+        function.get(), args, profile(), api_test_utils::FunctionMode::kNone));
+
+    auto* lifecycle_unit =
+        resource_coordinator::TabLifecycleUnitExternal::FromWebContents(
+            tab1_contents);
+    ASSERT_TRUE(lifecycle_unit);
+    EXPECT_FALSE(lifecycle_unit->IsAutoDiscardable());
+  }
+
+  ASSERT_TRUE(saved_service->GetGroup(group_id));
+#endif
+
+  {  // Test setting URL should pass.
+    EXPECT_EQ(example_url, tab1_contents->GetLastCommittedURL());
+
+    auto function = base::MakeRefCounted<TabsUpdateFunction>();
+    function->set_extension(extension.get());
+    static constexpr char kFormatArgs[] = R"([%d, {"url": "%s"}])";
+    const std::string args =
+        base::StringPrintf(kFormatArgs, tab1_id, chromium_url.spec().c_str());
+    EXPECT_TRUE(api_test_utils::RunFunction(
+        function.get(), args, profile(), api_test_utils::FunctionMode::kNone));
+
+    content::WaitForLoadStop(tab1_contents);
+    EXPECT_EQ(chromium_url, tab1_contents->GetLastCommittedURL());
+  }
+
+  ASSERT_TRUE(saved_service->GetGroup(group_id));
+
+  // Test setting pinned state should pass. This must be done last since pinning
+  // destroys the group.
+  {
+    EXPECT_FALSE(tab_list->GetTab(1)->IsPinned());
+
+    auto function = base::MakeRefCounted<TabsUpdateFunction>();
+    function->set_extension(extension.get());
+    static constexpr char kFormatArgs[] = R"([%d, {"pinned": true}])";
+    const std::string args = base::StringPrintf(kFormatArgs, tab1_id);
+    EXPECT_TRUE(api_test_utils::RunFunction(
+        function.get(), args, profile(), api_test_utils::FunctionMode::kNone));
+
+    // Pinned tab moves to the front of the tab strip, so it becomes tab 0.
+    EXPECT_EQ(tab1_contents, tab_list->GetTab(0)->GetContents());
+    EXPECT_TRUE(tab_list->GetTab(0)->IsPinned());
+  }
+
+  ASSERT_FALSE(saved_service->GetGroup(group_id));
+}
+
+// Tests that calling chrome.tabs.update with a JavaScript URL results
+// in an error.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsUpdate_JavaScriptUrlNotAllowed) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  // An extension with access to www.example.com.
+  // TODO(crbug.com/371432155): Use the semantic extension builder and Manifest
+  // V3.
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder()
+          .SetManifest(base::DictValue()
+                           .Set("name", "Extension with a host permission")
+                           .Set("version", "1.0")
+                           .Set("manifest_version", 2)
+                           .Set("permissions", base::ListValue().Append(
+                                                   "http://www.example.com/*")))
+          .Build();
+  auto function = base::MakeRefCounted<TabsUpdateFunction>();
+  function->set_extension(extension.get());
+
+  const GURL example_url =
+      embedded_test_server()->GetURL("example.com", "/title1.html");
+
+  // Navigate the browser to example.com
+  content::WebContents* web_contents = GetActiveWebContents();
+  ASSERT_TRUE(NavigateToURL(web_contents, example_url));
+
+  int tab_id = ExtensionTabUtil::GetTabId(web_contents);
+
+  static constexpr char kFormatArgs[] = R"([%d, {"url": "%s"}])";
+  const std::string args = base::StringPrintf(
+      kFormatArgs, tab_id, "javascript:void(document.title = 'Won't work')");
+  std::string error = api_test_utils::RunFunctionAndReturnError(
+      function.get(), args, profile(), api_test_utils::FunctionMode::kNone);
+  EXPECT_EQ(ExtensionTabUtil::kJavaScriptUrlsNotAllowedInExtensionNavigations,
+            error);
 }
 
 // Tests updating a URL of a web tab to an about:blank.  Verify that the new
@@ -2817,10 +3253,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsUpdate_WebToAboutBlank) {
   content::WebContents* test_contents = nullptr;
   {
     content::WebContentsAddedObserver test_contents_observer;
-    ui_test_utils::NavigateToURLWithDisposition(
-        browser(), web_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
-        ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
+    GetTabListInterface()->OpenTab(web_url, -1);
     test_contents = test_contents_observer.GetWebContents();
+    content::WaitForLoadStop(test_contents);
   }
   EXPECT_EQ(web_origin,
             test_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin());
@@ -2869,8 +3304,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsUpdate_WebToAboutNewTab) {
   // definitely undesirable for http-initiated navigations (see r818969), but
   // it is less clear what should happen in extension-initiated navigations.
   GURL about_newtab_url = GURL("about:newtab");
+#if BUILDFLAG(IS_ANDROID)
+  GURL chrome_newtab_url = GURL("chrome-native://newtab/");
+#else
   GURL chrome_newtab_url = GURL("chrome://new-tab-page/");
-
+#endif
   // Navigate a tab to an extension page.
   content::WebContents* extension_contents = GetActiveWebContents();
   ASSERT_TRUE(NavigateToURL(extension_contents, extension_url));
@@ -2882,10 +3320,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsUpdate_WebToAboutNewTab) {
   content::WebContents* test_contents = nullptr;
   {
     content::WebContentsAddedObserver test_contents_observer;
-    ui_test_utils::NavigateToURLWithDisposition(
-        browser(), web_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
-        ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
+    GetTabListInterface()->OpenTab(web_url, -1);
     test_contents = test_contents_observer.GetWebContents();
+    content::WaitForLoadStop(test_contents);
   }
 
   // Use |chrome.tabs.update| API to navigate |test_contents| to an about:newtab
@@ -2905,8 +3342,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsUpdate_WebToAboutNewTab) {
   // Verify the origin and process of the about:newtab tab.
   content::RenderFrameHost* test_frame = test_contents->GetPrimaryMainFrame();
   EXPECT_EQ(chrome_newtab_url, test_frame->GetLastCommittedURL());
+
+#if BUILDFLAG(IS_ANDROID)
+  // "chrome-native://newtab/" has an opaque origin.
+  EXPECT_TRUE(test_frame->GetLastCommittedOrigin().opaque());
+#else
   EXPECT_EQ(url::Origin::Create(chrome_newtab_url),
             test_frame->GetLastCommittedOrigin());
+#endif
   EXPECT_NE(extension_contents->GetPrimaryMainFrame()->GetProcess(),
             test_contents->GetPrimaryMainFrame()->GetProcess());
 }
@@ -2935,10 +3378,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsUpdate_WebToNonWAR) {
   content::WebContents* test_contents = nullptr;
   {
     content::WebContentsAddedObserver test_contents_observer;
-    ui_test_utils::NavigateToURLWithDisposition(
-        browser(), web_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
-        ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
+    GetTabListInterface()->OpenTab(web_url, -1);
     test_contents = test_contents_observer.GetWebContents();
+    content::WaitForLoadStop(test_contents);
   }
   EXPECT_EQ(web_origin,
             test_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin());
@@ -2966,6 +3408,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsUpdate_WebToNonWAR) {
   EXPECT_EQ(extension_contents->GetPrimaryMainFrame()->GetProcess(),
             test_contents->GetPrimaryMainFrame()->GetProcess());
 }
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
 
 IN_PROC_BROWSER_TEST_F(ExtensionTabsTest,
                        ExtensionAPICannotCreateWindowForDevtools) {
@@ -3046,5 +3490,845 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest,
 }
 
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
+
+// Bug fix for crbug.com/1196309. Ensure that an extension can't update the tab
+// strip while a tab drag is in progress.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, IsTabStripEditable) {
+  // Add a couple of web contents to the browser and get their tab IDs.
+  NavigateToURLInNewTab(GURL(url::kAboutBlankURL));
+
+  constexpr int kNumTabs = 2;
+  ASSERT_EQ(kNumTabs, GetTabListInterface()->GetTabCount());
+
+  std::vector<int> tab_ids;
+  std::vector<content::WebContents*> web_contentses;
+  for (int i = 0; i < kNumTabs; ++i) {
+    content::WebContents* contents =
+        GetTabListInterface()->GetTab(i)->GetContents();
+    tab_ids.push_back(ExtensionTabUtil::GetTabId(contents));
+    web_contentses.push_back(contents);
+  }
+
+  ASSERT_TRUE(ExtensionTabUtil::IsTabStripEditable(*profile()));
+  scoped_refptr<const Extension> extension(
+      ExtensionBuilder("Test").AddAPIPermission("tabs").Build());
+
+  // Succeed while tab drag not in progress.
+  {
+    std::string args = base::StringPrintf("[{\"tabs\": [%d]}]", 0);
+    scoped_refptr<TabsHighlightFunction> function =
+        base::MakeRefCounted<TabsHighlightFunction>();
+    function->set_extension(extension.get());
+    ASSERT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                   utils::FunctionMode::kNone));
+  }
+
+  // Disable tab list editing. This simulates a tab drag without actually
+  // performing a drag.
+  base::AutoReset<bool> disable_tab_list_editing =
+      ExtensionTabUtil::DisableTabListEditingForTesting();
+
+  ASSERT_FALSE(ExtensionTabUtil::IsTabStripEditable(*profile()));
+
+  // Succeed with updates that don't interact with the tab strip model.
+  {
+    const char* url = "https://example.com/";
+    std::string args =
+        base::StringPrintf("[%d, {\"url\": \"%s\"}]", tab_ids[0], url);
+    scoped_refptr<TabsUpdateFunction> function =
+        base::MakeRefCounted<TabsUpdateFunction>();
+    function->set_extension(extension.get());
+    std::optional<base::Value> value = utils::RunFunctionAndReturnSingleResult(
+        function.get(), args, profile(), utils::FunctionMode::kNone);
+    ASSERT_TRUE(value && value->is_dict());
+    EXPECT_EQ(*value->GetDict().FindString(tabs_constants::kPendingUrlKey),
+              url);
+  }
+
+  // Succeed while edit in progress and calling chrome.tabs.query.
+  {
+    const char* args = "[{}]";
+    scoped_refptr<TabsQueryFunction> function =
+        base::MakeRefCounted<TabsQueryFunction>();
+    function->set_extension(extension.get());
+    ASSERT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                   utils::FunctionMode::kNone));
+  }
+
+  // Succeed while edit in progress and calling chrome.tabs.get.
+  {
+    std::string args = base::StringPrintf("[%d]", tab_ids[0]);
+    scoped_refptr<TabsGetFunction> function =
+        base::MakeRefCounted<TabsGetFunction>();
+    function->set_extension(extension.get());
+    ASSERT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                   utils::FunctionMode::kNone));
+  }
+
+  // Bug fix for crbug.com/1198717. Error updating tabs while drag in progress.
+  {
+    std::string args =
+        base::StringPrintf("[%d, {\"highlighted\": true}]", tab_ids[1]);
+    auto function = base::MakeRefCounted<TabsUpdateFunction>();
+    function->set_extension(extension.get());
+    std::string error =
+        utils::RunFunctionAndReturnError(function.get(), args, profile());
+    EXPECT_EQ(ExtensionTabUtil::kTabStripNotEditableError, error);
+  }
+
+  // Error highlighting tab while drag in progress.
+  {
+    std::string args = base::StringPrintf("[{\"tabs\": [%d]}]", tab_ids[0]);
+    auto function = base::MakeRefCounted<TabsHighlightFunction>();
+    function->set_extension(extension.get());
+    std::string error = utils::RunFunctionAndReturnError(
+        function.get(), args, profile(), utils::FunctionMode::kNone);
+    EXPECT_EQ(ExtensionTabUtil::kTabStripNotEditableError, error);
+  }
+
+  // Bug fix for crbug.com/1197146. Tab group modification during drag.
+  {
+    std::string args = base::StringPrintf("[{\"tabIds\": [%d]}]", tab_ids[0]);
+    scoped_refptr<TabsGroupFunction> function =
+        base::MakeRefCounted<TabsGroupFunction>();
+    function->set_extension(extension.get());
+    std::string error =
+        utils::RunFunctionAndReturnError(function.get(), args, profile());
+    EXPECT_EQ(ExtensionTabUtil::kTabStripNotEditableError, error);
+  }
+
+  // TODO(crbug.com/493957479): Consider adding tests for drag cancellation.
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, QueryWithoutTabsPermission) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  auto tab_urls = std::to_array<GURL>({
+      embedded_test_server()->GetURL("www.google.com", "/empty.html"),
+      embedded_test_server()->GetURL("www.example.com", "/empty.html"),
+      embedded_test_server()->GetURL("www.google.com", "/empty.html"),
+  });
+  auto tab_titles =
+      std::to_array<std::string>({"", "Sample title", "Sample title"});
+
+  // Add 3 web contentses to the browser.
+  std::array<content::WebContents*, std::size(tab_urls)> web_contentses;
+  for (size_t i = 0; i < std::size(tab_urls); ++i) {
+    tabs::TabInterface* tab = GetTabListInterface()->OpenTab(tab_urls[i], -1);
+    content::WebContents* raw_web_contents = tab->GetContents();
+    web_contentses[i] = raw_web_contents;
+    content::WaitForLoadStop(raw_web_contents);
+    raw_web_contents->GetController().GetVisibleEntry()->SetTitle(
+        base::ASCIIToUTF16(tab_titles[i]));
+  }
+
+  const char* kTitleAndURLQueryInfo =
+      "[{\"title\": \"Sample title\", \"url\": \"*://www.google.com/*\"}]";
+
+  // An extension without "tabs" permission will see none of the 3 tabs.
+  scoped_refptr<const Extension> extension = ExtensionBuilder("Test").Build();
+  base::ListValue tabs_list_without_permission =
+      RunQueryFunction(extension.get(), kTitleAndURLQueryInfo);
+  EXPECT_EQ(0u, tabs_list_without_permission.size());
+
+  // An extension with "tabs" permission however will see the third tab.
+  scoped_refptr<const Extension> extension_with_permission =
+      ExtensionBuilder()
+          .SetManifest(
+              base::DictValue()
+                  .Set("name", "Extension with tabs permission")
+                  .Set("version", "1.0")
+                  .Set("manifest_version", 3)
+                  .Set("permissions", base::ListValue().Append("tabs")))
+          .Build();
+  base::ListValue tabs_list_with_permission =
+      RunQueryFunction(extension_with_permission.get(), kTitleAndURLQueryInfo);
+  ASSERT_EQ(1u, tabs_list_with_permission.size());
+
+  const base::Value& third_tab_info = tabs_list_with_permission[0];
+  ASSERT_TRUE(third_tab_info.is_dict());
+  std::optional<int> third_tab_id = third_tab_info.GetDict().FindInt("id");
+  EXPECT_EQ(ExtensionTabUtil::GetTabId(web_contentses[2]), third_tab_id);
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, QueryWithHostPermission) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  auto tab_urls = std::to_array<GURL>({
+      embedded_test_server()->GetURL("www.google.com", "/empty.html"),
+      embedded_test_server()->GetURL("www.example.com", "/empty.html"),
+      embedded_test_server()->GetURL("www.google.com", "/test.html"),
+  });
+  auto tab_titles =
+      std::to_array<std::string>({"", "Sample title", "Sample title"});
+
+  // Add 3 web contentses to the browser.
+  std::array<content::WebContents*, std::size(tab_urls)> web_contentses;
+  for (size_t i = 0; i < std::size(tab_urls); ++i) {
+    tabs::TabInterface* tab = GetTabListInterface()->OpenTab(tab_urls[i], -1);
+    content::WebContents* raw_web_contents = tab->GetContents();
+    web_contentses[i] = raw_web_contents;
+    content::WaitForLoadStop(raw_web_contents);
+    raw_web_contents->GetController().GetVisibleEntry()->SetTitle(
+        base::ASCIIToUTF16(tab_titles[i]));
+  }
+
+  const char* kTitleAndURLQueryInfo =
+      "[{\"title\": \"Sample title\", \"url\": \"*://www.google.com/*\"}]";
+
+  // An extension with "host" permission will only see the third tab.
+  scoped_refptr<const Extension> extension_with_permission =
+      ExtensionBuilder()
+          .SetManifest(
+              base::DictValue()
+                  .Set("name", "Extension with tabs permission")
+                  .Set("version", "1.0")
+                  .Set("manifest_version", 3)
+                  .Set("host_permissions",
+                       base::ListValue().Append("*://www.google.com/*")))
+          .Build();
+
+  {
+    base::ListValue tabs_list_with_permission = RunQueryFunction(
+        extension_with_permission.get(), kTitleAndURLQueryInfo);
+    ASSERT_EQ(1u, tabs_list_with_permission.size());
+
+    const base::Value& third_tab_info = tabs_list_with_permission[0];
+    ASSERT_TRUE(third_tab_info.is_dict());
+    std::optional<int> third_tab_id = third_tab_info.GetDict().FindInt("id");
+    EXPECT_EQ(ExtensionTabUtil::GetTabId(web_contentses[2]), third_tab_id);
+  }
+
+  // Try the same without title, first and third tabs will match.
+  const char* kURLQueryInfo = "[{\"url\": \"*://www.google.com/*\"}]";
+  {
+    base::ListValue tabs_list_with_permission =
+        RunQueryFunction(extension_with_permission.get(), kURLQueryInfo);
+    ASSERT_EQ(2u, tabs_list_with_permission.size());
+
+    const base::Value& first_tab_info = tabs_list_with_permission[0];
+    ASSERT_TRUE(first_tab_info.is_dict());
+    const base::Value& third_tab_info = tabs_list_with_permission[1];
+    ASSERT_TRUE(third_tab_info.is_dict());
+
+    std::vector<int> expected_tabs_ids;
+    expected_tabs_ids.push_back(ExtensionTabUtil::GetTabId(web_contentses[0]));
+    expected_tabs_ids.push_back(ExtensionTabUtil::GetTabId(web_contentses[2]));
+
+    std::optional<int> first_tab_id = first_tab_info.GetDict().FindInt("id");
+    ASSERT_TRUE(first_tab_id);
+    EXPECT_TRUE(std::ranges::contains(expected_tabs_ids, *first_tab_id));
+
+    std::optional<int> third_tab_id = third_tab_info.GetDict().FindInt("id");
+    ASSERT_TRUE(third_tab_id);
+    EXPECT_TRUE(std::ranges::contains(expected_tabs_ids, *third_tab_id));
+  }
+}
+
+#if BUILDFLAG(ENABLE_PDF)
+// Test that using the PDF extension for tab updates is treated as a
+// renderer-initiated navigation. crbug.com/40085816
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, PDFExtensionNavigation) {
+  auto manifest = base::DictValue()
+                      .Set("name", "pdfext")
+                      .Set("description", "desc")
+                      .Set("version", "0.1")
+                      .Set("manifest_version", 3)
+                      .Set("permissions", base::ListValue().Append("tabs"));
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder()
+          .SetManifest(std::move(manifest))
+          .SetID(extension_misc::kPdfExtensionId)
+          .Build();
+  ASSERT_TRUE(extension);
+
+  ASSERT_TRUE(embedded_test_server()->Start());
+  const GURL kGoogle =
+      embedded_test_server()->GetURL("www.google.com", "/empty.html");
+  tabs::TabInterface* tab = GetTabListInterface()->OpenTab(kGoogle, -1);
+  content::WebContents* raw_web_contents = tab->GetContents();
+  content::WaitForLoadStop(raw_web_contents);
+
+  EXPECT_EQ(kGoogle, raw_web_contents->GetLastCommittedURL());
+  EXPECT_EQ(kGoogle, raw_web_contents->GetVisibleURL());
+
+  int tab_id = ExtensionTabUtil::GetTabId(raw_web_contents);
+  std::string args =
+      base::StringPrintf(R"([%d, {"url":"http://example.com"}])", tab_id);
+  std::ignore = RunUpdateFunction(extension.get(), args);
+
+  EXPECT_EQ(kGoogle, raw_web_contents->GetLastCommittedURL());
+  EXPECT_EQ(kGoogle, raw_web_contents->GetVisibleURL());
+}
+#endif  // BUILDFLAG(ENABLE_PDF)
+
+// Test that the tabs.move() function correctly rearranges sets of tabs within a
+// single window.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsMoveWithinWindow) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("MoveWithinWindowTest").Build();
+
+  // Continue adding tabs until there are `kNumTabs` tabs.
+  constexpr int kNumTabs = 5;
+  for (int i = GetTabListInterface()->GetTabCount(); i < kNumTabs; i++) {
+    GetTabListInterface()->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+
+  ASSERT_EQ(kNumTabs, GetTabListInterface()->GetTabCount());
+
+  std::vector<int> tab_ids;
+  std::vector<content::WebContents*> web_contentses;
+  for (int i = 0; i < kNumTabs; ++i) {
+    content::WebContents* contents =
+        GetTabListInterface()->GetTab(i)->GetContents();
+    tab_ids.push_back(ExtensionTabUtil::GetTabId(contents));
+    web_contentses.push_back(contents);
+  }
+
+  // Use the TabsMoveFunction to move tabs 0, 2, and 4 to index 1.
+  auto function = base::MakeRefCounted<TabsMoveFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] = R"([[%d, %d, %d], {"index": 1}])";
+  const std::string args =
+      base::StringPrintf(kFormatArgs, tab_ids[0], tab_ids[2], tab_ids[4]);
+  ASSERT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                 utils::FunctionMode::kNone));
+
+  TabListInterface* tab_list = GetTabListInterface();
+  EXPECT_EQ(tab_list->GetTab(0)->GetContents(), web_contentses[1]);
+  EXPECT_EQ(tab_list->GetTab(1)->GetContents(), web_contentses[0]);
+  EXPECT_EQ(tab_list->GetTab(2)->GetContents(), web_contentses[2]);
+  EXPECT_EQ(tab_list->GetTab(3)->GetContents(), web_contentses[4]);
+  EXPECT_EQ(tab_list->GetTab(4)->GetContents(), web_contentses[3]);
+}
+
+// Test that the tabs.move() function correctly rearranges sets of tabs across
+// windows.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsMoveAcrossWindows) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("MoveAcrossWindowTest").Build();
+
+  TabListInterface* tab_list1 = GetTabListInterface();
+
+  // Continue adding tabs until there are `kNumTabs` tabs.
+  constexpr int kNumTabs = 5;
+  for (int i = tab_list1->GetTabCount(); i < kNumTabs; ++i) {
+    tab_list1->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+
+  ASSERT_EQ(kNumTabs, tab_list1->GetTabCount());
+
+  std::vector<int> tab_ids;
+  std::vector<content::WebContents*> web_contentses;
+  for (int i = 0; i < kNumTabs; ++i) {
+    content::WebContents* contents = tab_list1->GetTab(i)->GetContents();
+    tab_ids.push_back(ExtensionTabUtil::GetTabId(contents));
+    web_contentses.push_back(contents);
+  }
+
+  // Create a new window with three tabs.
+  BrowserWindowInterface* window_2 =
+      CreateBrowserWindowWithType(BrowserWindowInterface::Type::TYPE_NORMAL);
+  auto window_2_id = ExtensionTabUtil::GetWindowId(window_2);
+  TabListInterface* tab_list2 = TabListInterface::From(window_2);
+
+  constexpr int kNumTabs2 = 3;
+  for (int i = tab_list2->GetTabCount(); i < kNumTabs2; ++i) {
+    tab_list2->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+  ASSERT_EQ(kNumTabs2, tab_list2->GetTabCount());
+
+  content::WebContents* web_contents2 = tab_list2->GetTab(2)->GetContents();
+  int tab_id2 = ExtensionTabUtil::GetTabId(web_contents2);
+
+  constexpr int kNumTabsMovedAcrossWindows = 3;
+  auto function = base::MakeRefCounted<TabsMoveFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] =
+      R"([[%d, %d, %d, %d], {"windowId": %d, "index": 1}])";
+  const std::string args = base::StringPrintf(
+      kFormatArgs, tab_id2, tab_ids[0], tab_ids[2], tab_ids[4], window_2_id);
+  ASSERT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                 utils::FunctionMode::kNone));
+
+  ASSERT_EQ(kNumTabs2 + kNumTabsMovedAcrossWindows, tab_list2->GetTabCount());
+  EXPECT_EQ(tab_list2->GetTab(1)->GetContents(), web_contents2);
+  EXPECT_EQ(tab_list2->GetTab(2)->GetContents(), web_contentses[0]);
+  EXPECT_EQ(tab_list2->GetTab(3)->GetContents(), web_contentses[2]);
+  EXPECT_EQ(tab_list2->GetTab(4)->GetContents(), web_contentses[4]);
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest,
+                       TabsMoveAcrossWindowsShouldRespectGroupContiguity) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("MoveAcrossWindowWithInvalidIndexTest").Build();
+
+  TabListInterface* tab_list1 = GetTabListInterface();
+  // original browser has 1 tab, add 4 to make 5.
+  for (int i = 0; i < 4; ++i) {
+    tab_list1->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+
+  constexpr int kNumTabs = 5;
+  ASSERT_EQ(kNumTabs, tab_list1->GetTabCount());
+
+  // Create a new window with three tabs.
+  BrowserWindowInterface* window_2 =
+      CreateBrowserWindowWithType(BrowserWindowInterface::Type::TYPE_NORMAL);
+  auto window_2_id = ExtensionTabUtil::GetWindowId(window_2);
+  TabListInterface* tab_list2 = TabListInterface::From(window_2);
+
+  constexpr int kNumTabs2 = 3;
+  for (int i = tab_list2->GetTabCount(); i < kNumTabs2; ++i) {
+    tab_list2->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+  ASSERT_EQ(kNumTabs2, tab_list2->GetTabCount());
+
+  tab_list2->CreateTabGroup(
+      {tab_list2->GetTab(0)->GetHandle(), tab_list2->GetTab(1)->GetHandle()});
+
+  content::WebContents* web_contents1 = tab_list1->GetTab(2)->GetContents();
+  int tab_extension_id = ExtensionTabUtil::GetTabId(web_contents1);
+
+  // Attempt to move the tab at index 2 from `tab_list1` to the middle of a
+  // group in `tab_list2`. This should return an error.
+  auto function = base::MakeRefCounted<TabsMoveFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] = R"([[%d], {"windowId": %d, "index": 1}])";
+  const std::string args =
+      base::StringPrintf(kFormatArgs, tab_extension_id, window_2_id);
+
+  std::string error = utils::RunFunctionAndReturnError(
+      function.get(), args, profile(), utils::FunctionMode::kNone);
+  EXPECT_EQ(tabs_constants::kInvalidTabIndexBreaksGroupContiguity, error);
+}
+
+// Tests that saved tabs in a group can be moved.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsMoveSavedTabGroupTabAllowed) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("MoveWithinWindowTest").Build();
+
+  TabListInterface* tab_list = GetTabListInterface();
+  // Continue adding tabs until there are `kNumTabs` tabs.
+  constexpr int kNumTabs = 5;
+  for (int i = tab_list->GetTabCount(); i < kNumTabs; ++i) {
+    tab_list->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+
+  ASSERT_EQ(kNumTabs, tab_list->GetTabCount());
+
+  std::vector<int> tab_ids;
+  std::vector<content::WebContents*> web_contentses;
+  for (int i = 0; i < kNumTabs; ++i) {
+    content::WebContents* contents = tab_list->GetTab(i)->GetContents();
+    tab_ids.push_back(ExtensionTabUtil::GetTabId(contents));
+    web_contentses.push_back(contents);
+  }
+
+  tab_groups::TabGroupSyncService* saved_service =
+      tab_groups::TabGroupSyncServiceFactory::GetForProfile(profile());
+  ASSERT_TRUE(saved_service);
+  // Wait for the TabGroupSyncService to properly initialize before making any
+  // changes to tab groups. This is not used on Android.
+#if !BUILDFLAG(IS_ANDROID)
+  tab_groups::TabGroupSyncServiceInitializedObserver observer(saved_service);
+  observer.Wait();
+#endif
+
+  // Group the tab and save it.
+  std::optional<tab_groups::TabGroupId> group = tab_list->CreateTabGroup(
+      {tab_list->GetTab(0)->GetHandle(), tab_list->GetTab(1)->GetHandle(),
+       tab_list->GetTab(2)->GetHandle()});
+  ASSERT_TRUE(group.has_value());
+
+  tab_groups::TabGroupVisualData visual_data(
+      u"Initial title", tab_groups::TabGroupColorId::kBlue);
+  tab_list->SetTabGroupVisualData(*group, visual_data);
+
+  // Verify that the first tab can be moved to index 1.
+  auto function = base::MakeRefCounted<TabsMoveFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] = R"([[%d], {"index": 1}])";
+  const std::string args = base::StringPrintf(kFormatArgs, tab_ids[0]);
+
+  EXPECT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                 utils::FunctionMode::kNone));
+
+  EXPECT_EQ(tab_list->GetTab(0)->GetContents(), web_contentses[1]);
+  EXPECT_EQ(tab_list->GetTab(1)->GetContents(), web_contentses[0]);
+}
+
+// Test that the `tabs.group()` function correctly groups tabs.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsGroupWithinWindow) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("GroupWithinWindowTest").Build();
+
+  TabListInterface* tab_list = GetTabListInterface();
+  // Add several web contents to the browser.
+  constexpr int kNumTabs = 5;
+  for (int i = tab_list->GetTabCount(); i < kNumTabs; ++i) {
+    tab_list->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+  ASSERT_EQ(kNumTabs, tab_list->GetTabCount());
+
+  // Get the tab IDs of the web contents added in the above loop.
+  std::vector<int> tab_ids;
+  std::vector<content::WebContents*> web_contentses;
+  for (int i = 0; i < kNumTabs; ++i) {
+    content::WebContents* contents = tab_list->GetTab(i)->GetContents();
+    tab_ids.push_back(ExtensionTabUtil::GetTabId(contents));
+    web_contentses.push_back(contents);
+  }
+
+  // Use the `TabsGroupFunction` to group tabs 0, 2, and 4.
+  auto function = base::MakeRefCounted<TabsGroupFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] = R"([{"tabIds": [%d, %d, %d]}])";
+  const std::string args =
+      base::StringPrintf(kFormatArgs, tab_ids[0], tab_ids[2], tab_ids[4]);
+  ASSERT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                 utils::FunctionMode::kNone));
+
+  EXPECT_EQ(tab_list->GetTab(0)->GetContents(), web_contentses[0]);
+  EXPECT_EQ(tab_list->GetTab(1)->GetContents(), web_contentses[2]);
+  EXPECT_EQ(tab_list->GetTab(2)->GetContents(), web_contentses[4]);
+  EXPECT_EQ(tab_list->GetTab(3)->GetContents(), web_contentses[1]);
+  EXPECT_EQ(tab_list->GetTab(4)->GetContents(), web_contentses[3]);
+
+  std::optional<tab_groups::TabGroupId> group = tab_list->GetTab(0)->GetGroup();
+  EXPECT_TRUE(group.has_value());
+  EXPECT_EQ(group, tab_list->GetTab(1)->GetGroup());
+  EXPECT_EQ(group, tab_list->GetTab(2)->GetGroup());
+  EXPECT_FALSE(tab_list->GetTab(3)->GetGroup());
+  EXPECT_FALSE(tab_list->GetTab(4)->GetGroup());
+}
+
+// Test that the `tabs.group()` function correctly groups tabs even when given
+// out-of-order or duplicate tab IDs.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsGroupMixedTabIds) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("GroupMixedTabIdsTest").Build();
+
+  TabListInterface* tab_list = GetTabListInterface();
+  // Add several web contents to the browser.
+  constexpr int kNumTabs = 5;
+  for (int i = tab_list->GetTabCount(); i < kNumTabs; ++i) {
+    tab_list->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+  ASSERT_EQ(kNumTabs, tab_list->GetTabCount());
+
+  // Get the tab IDs of the web contents added in the above loop.
+  std::vector<int> tab_ids;
+  std::vector<content::WebContents*> web_contentses;
+  for (int i = 0; i < kNumTabs; ++i) {
+    content::WebContents* contents = tab_list->GetTab(i)->GetContents();
+    tab_ids.push_back(ExtensionTabUtil::GetTabId(contents));
+    web_contentses.push_back(contents);
+  }
+
+  // Use the `TabsGroupFunction` to group tab 1 twice, along with tabs 3 and 2.
+  auto function = base::MakeRefCounted<TabsGroupFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] = R"([{"tabIds": [%d, %d, %d, %d]}])";
+  const std::string args = base::StringPrintf(
+      kFormatArgs, tab_ids[1], tab_ids[1], tab_ids[3], tab_ids[2]);
+  ASSERT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                 utils::FunctionMode::kNone));
+
+  EXPECT_EQ(tab_list->GetTab(0)->GetContents(), web_contentses[0]);
+  EXPECT_EQ(tab_list->GetTab(1)->GetContents(), web_contentses[1]);
+  EXPECT_EQ(tab_list->GetTab(2)->GetContents(), web_contentses[2]);
+  EXPECT_EQ(tab_list->GetTab(3)->GetContents(), web_contentses[3]);
+  EXPECT_EQ(tab_list->GetTab(4)->GetContents(), web_contentses[4]);
+
+  std::optional<tab_groups::TabGroupId> group = tab_list->GetTab(1)->GetGroup();
+  EXPECT_TRUE(group.has_value());
+  EXPECT_FALSE(tab_list->GetTab(0)->GetGroup());
+  EXPECT_EQ(group, tab_list->GetTab(1)->GetGroup());
+  EXPECT_EQ(group, tab_list->GetTab(2)->GetGroup());
+  EXPECT_EQ(group, tab_list->GetTab(3)->GetGroup());
+  EXPECT_FALSE(tab_list->GetTab(4)->GetGroup());
+}
+
+// Test that the `tabs.group()` function throws an error if both
+// `createProperties` and `groupId` are specified.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsGroupParamsError) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("GroupParamsErrorTest").Build();
+
+  TabListInterface* tab_list = GetTabListInterface();
+  // Add several web contents to the browser.
+  constexpr int kNumTabs = 5;
+  for (int i = tab_list->GetTabCount(); i < kNumTabs; ++i) {
+    tab_list->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+  ASSERT_EQ(kNumTabs, tab_list->GetTabCount());
+
+  // Get the tab IDs of the web contents added in the above loop.
+  std::vector<int> tab_ids;
+  for (int i = 0; i < kNumTabs; ++i) {
+    content::WebContents* contents = tab_list->GetTab(i)->GetContents();
+    tab_ids.push_back(ExtensionTabUtil::GetTabId(contents));
+  }
+
+  // Add a tab to a group to have an existing group ID.
+  std::optional<tab_groups::TabGroupId> group =
+      tab_list->CreateTabGroup({tab_list->GetTab(1)->GetHandle()});
+  ASSERT_TRUE(group.has_value());
+  int group_id = ExtensionTabUtil::GetGroupId(*group);
+
+  // Attempt to specify both `createProperties` and `groupId`.
+  auto function = base::MakeRefCounted<TabsGroupFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] =
+      R"([{"tabIds": [%d, %d, %d],
+           "groupId": %d, "createProperties": {"windowId": -1}}])";
+  const std::string args = base::StringPrintf(kFormatArgs, tab_ids[0],
+                                              tab_ids[2], tab_ids[4], group_id);
+  std::string error = utils::RunFunctionAndReturnError(
+      function.get(), args, profile(), utils::FunctionMode::kNone);
+  EXPECT_EQ(tabs_constants::kGroupParamsError, error);
+}
+
+// Test that the `tabs.group()` function correctly rearranges sets of tabs
+// across windows before grouping.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsGroupAcrossWindows) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("GroupAcrossWindowsTest").Build();
+
+  TabListInterface* tab_list1 = GetTabListInterface();
+  // Add several web contents to the browser.
+  constexpr int kNumTabs = 5;
+  for (int i = tab_list1->GetTabCount(); i < kNumTabs; ++i) {
+    tab_list1->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+  ASSERT_EQ(kNumTabs, tab_list1->GetTabCount());
+
+  // Get the tab IDs of the web contents added in the above loop.
+  std::vector<int> tab_ids;
+  std::vector<content::WebContents*> web_contentses;
+  for (int i = 0; i < kNumTabs; ++i) {
+    content::WebContents* contents = tab_list1->GetTab(i)->GetContents();
+    tab_ids.push_back(ExtensionTabUtil::GetTabId(contents));
+    web_contentses.push_back(contents);
+  }
+
+  // Create a new window and add a few tabs, adding one to a group.
+  BrowserWindowInterface* bwi2 =
+      CreateBrowserWindowWithType(BrowserWindowInterface::Type::TYPE_NORMAL);
+  TabListInterface* tab_list2 = TabListInterface::From(bwi2);
+
+  constexpr int kNumTabs2 = 3;
+  for (int i = tab_list2->GetTabCount(); i < kNumTabs2; ++i) {
+    tab_list2->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+  ASSERT_EQ(kNumTabs2, tab_list2->GetTabCount());
+
+  std::optional<tab_groups::TabGroupId> group2 =
+      tab_list2->CreateTabGroup({tab_list2->GetTab(1)->GetHandle()});
+  ASSERT_TRUE(group2.has_value());
+  int group_id2 = ExtensionTabUtil::GetGroupId(*group2);
+
+  // Use the `TabsGroupFunction` to group tabs 0, 2, and 4 from the original
+  // browser into the same group as the one in `bwi2`.
+  constexpr int kNumTabsMovedAcrossWindows = 3;
+  auto function = base::MakeRefCounted<TabsGroupFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] = R"([{"tabIds": [%d, %d, %d], "groupId": %d}])";
+  const std::string args = base::StringPrintf(
+      kFormatArgs, tab_ids[0], tab_ids[2], tab_ids[4], group_id2);
+  ASSERT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                 utils::FunctionMode::kNone));
+
+  ASSERT_EQ(kNumTabs2 + kNumTabsMovedAcrossWindows, tab_list2->GetTabCount());
+  EXPECT_EQ(tab_list2->GetTab(2)->GetContents(), web_contentses[0]);
+  EXPECT_EQ(tab_list2->GetTab(3)->GetContents(), web_contentses[2]);
+  EXPECT_EQ(tab_list2->GetTab(4)->GetContents(), web_contentses[4]);
+
+  EXPECT_EQ(*group2, tab_list2->GetTab(1)->GetGroup().value());
+  EXPECT_EQ(*group2, tab_list2->GetTab(2)->GetGroup().value());
+  EXPECT_EQ(*group2, tab_list2->GetTab(3)->GetGroup().value());
+  EXPECT_EQ(*group2, tab_list2->GetTab(4)->GetGroup().value());
+}
+
+// Test that grouping tabs that are in a saved group should fail.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsGroupForSavedTabGroupTab) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("GroupWithinWindowTest").Build();
+
+  TabListInterface* tab_list = GetTabListInterface();
+  // Create 2 tabs.
+  constexpr int kNumTabs = 2;
+  for (int i = tab_list->GetTabCount(); i < kNumTabs; ++i) {
+    tab_list->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+  ASSERT_EQ(kNumTabs, tab_list->GetTabCount());
+
+  std::vector<int> tab_ids;
+  for (int i = 0; i < kNumTabs; ++i) {
+    content::WebContents* contents = tab_list->GetTab(i)->GetContents();
+    tab_ids.push_back(ExtensionTabUtil::GetTabId(contents));
+  }
+
+  tab_groups::TabGroupSyncService* saved_service =
+      tab_groups::TabGroupSyncServiceFactory::GetForProfile(profile());
+  ASSERT_TRUE(saved_service);
+
+#if !BUILDFLAG(IS_ANDROID)
+  tab_groups::TabGroupSyncServiceInitializedObserver observer(saved_service);
+  observer.Wait();
+#endif
+
+  // Group the first tab.
+  std::optional<tab_groups::TabGroupId> old_group =
+      tab_list->CreateTabGroup({tab_list->GetTab(0)->GetHandle()});
+  ASSERT_TRUE(old_group.has_value());
+
+  // Use the `TabsGroupFunction` to group the 2 tabs into a new group.
+  auto function = base::MakeRefCounted<TabsGroupFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] = R"([{"tabIds": [%d, %d]}])";
+  const std::string args =
+      base::StringPrintf(kFormatArgs, tab_ids[0], tab_ids[1]);
+  EXPECT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                 utils::FunctionMode::kNone));
+
+  // Make sure the new group exists and is different than the old group.
+  EXPECT_TRUE(tab_list->GetTab(0)->GetGroup().has_value());
+  EXPECT_NE(*old_group, tab_list->GetTab(0)->GetGroup().value());
+  EXPECT_EQ(tab_list->GetTab(0)->GetGroup(), tab_list->GetTab(1)->GetGroup());
+}
+
+// Test that the `tabs.ungroup()` function correctly ungroups tabs from a single
+// group and deletes it.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsUngroupSingleGroup) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("UngroupSingleGroupTest").Build();
+
+  TabListInterface* tab_list = GetTabListInterface();
+  // Add several web contents to the browser.
+  constexpr int kNumTabs = 5;
+  for (int i = tab_list->GetTabCount(); i < kNumTabs; ++i) {
+    tab_list->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+  ASSERT_EQ(kNumTabs, tab_list->GetTabCount());
+
+  // Get the tab IDs of the web contents added in the above loop.
+  std::vector<int> tab_ids;
+  for (int i = 0; i < kNumTabs; ++i) {
+    content::WebContents* contents = tab_list->GetTab(i)->GetContents();
+    tab_ids.push_back(ExtensionTabUtil::GetTabId(contents));
+  }
+
+  // Add tabs 1, 2, and 3 to a group.
+  std::optional<tab_groups::TabGroupId> group = tab_list->CreateTabGroup(
+      {tab_list->GetTab(1)->GetHandle(), tab_list->GetTab(2)->GetHandle(),
+       tab_list->GetTab(3)->GetHandle()});
+  ASSERT_TRUE(group.has_value());
+
+  // Use the `TabsUngroupFunction` to ungroup tabs 1, 2, and 3.
+  auto function = base::MakeRefCounted<TabsUngroupFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] = R"([[%d, %d, %d]])";
+  const std::string args =
+      base::StringPrintf(kFormatArgs, tab_ids[1], tab_ids[2], tab_ids[3]);
+  ASSERT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                 utils::FunctionMode::kNone));
+
+  // Expect the group to be deleted because all tabs were ungrouped from it.
+  EXPECT_FALSE(tab_list->GetTab(1)->GetGroup());
+  EXPECT_FALSE(tab_list->GetTab(2)->GetGroup());
+  EXPECT_FALSE(tab_list->GetTab(3)->GetGroup());
+  EXPECT_FALSE(tab_list->ContainsTabGroup(*group));
+}
+
+// Saved groups should be ungroupable from extensions.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest,
+                       TabsUngroupSingleGroupForSavedTabGroup) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("UngroupSingleGroupTest").Build();
+
+  TabListInterface* tab_list = GetTabListInterface();
+  // Ensure we have at least one tab.
+  if (tab_list->GetTabCount() == 0) {
+    tab_list->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+  ASSERT_GE(tab_list->GetTabCount(), 1);
+
+  int tab_id = ExtensionTabUtil::GetTabId(tab_list->GetTab(0)->GetContents());
+
+  tab_groups::TabGroupSyncService* saved_service =
+      tab_groups::TabGroupSyncServiceFactory::GetForProfile(profile());
+  ASSERT_TRUE(saved_service);
+
+#if !BUILDFLAG(IS_ANDROID)
+  tab_groups::TabGroupSyncServiceInitializedObserver observer(saved_service);
+  observer.Wait();
+#endif
+
+  // Group the tab and save it.
+  std::optional<tab_groups::TabGroupId> group =
+      tab_list->CreateTabGroup({tab_list->GetTab(0)->GetHandle()});
+  ASSERT_TRUE(group.has_value());
+  tab_groups::TabGroupVisualData visual_data(
+      u"Initial title", tab_groups::TabGroupColorId::kBlue);
+  tab_list->SetTabGroupVisualData(*group, visual_data);
+
+  auto function = base::MakeRefCounted<TabsUngroupFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] = R"([[%d]])";
+  const std::string args = base::StringPrintf(kFormatArgs, tab_id);
+  EXPECT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                 utils::FunctionMode::kNone));
+
+  // The tab should no longer be in the group.
+  EXPECT_EQ(std::nullopt, tab_list->GetTab(0)->GetGroup());
+}
+
+// Test that the `tabs.ungroup()` function correctly ungroups tabs from several
+// different groups and deletes any empty ones.
+IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, TabsUngroupFromMultipleGroups) {
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("UngroupFromMultipleGroupsTest").Build();
+
+  TabListInterface* tab_list = GetTabListInterface();
+  // Add several web contents to the browser.
+  constexpr int kNumTabs = 5;
+  for (int i = tab_list->GetTabCount(); i < kNumTabs; ++i) {
+    tab_list->OpenTab(GURL(url::kAboutBlankURL), -1);
+  }
+  ASSERT_EQ(kNumTabs, tab_list->GetTabCount());
+
+  // Get the tab IDs of the web contents added in the above loop.
+  std::vector<int> tab_ids;
+  for (int i = 0; i < kNumTabs; ++i) {
+    content::WebContents* contents = tab_list->GetTab(i)->GetContents();
+    tab_ids.push_back(ExtensionTabUtil::GetTabId(contents));
+  }
+
+  // Add tabs 1, 2, and 3 to `group1`, and tab 4 to `group2`.
+  std::optional<tab_groups::TabGroupId> group1 = tab_list->CreateTabGroup(
+      {tab_list->GetTab(1)->GetHandle(), tab_list->GetTab(2)->GetHandle(),
+       tab_list->GetTab(3)->GetHandle()});
+  ASSERT_TRUE(group1.has_value());
+  std::optional<tab_groups::TabGroupId> group2 =
+      tab_list->CreateTabGroup({tab_list->GetTab(4)->GetHandle()});
+  ASSERT_TRUE(group2.has_value());
+
+  // Use the `TabsUngroupFunction` to ungroup tabs 2, 3, and 4.
+  auto function = base::MakeRefCounted<TabsUngroupFunction>();
+  function->set_extension(extension.get());
+  constexpr char kFormatArgs[] = R"([[%d, %d, %d]])";
+  const std::string args =
+      base::StringPrintf(kFormatArgs, tab_ids[2], tab_ids[3], tab_ids[4]);
+  ASSERT_TRUE(utils::RunFunction(function.get(), args, profile(),
+                                 utils::FunctionMode::kNone));
+
+  // Expect `group2` to be deleted because all tabs were ungrouped from it.
+  EXPECT_EQ(group1, tab_list->GetTab(1)->GetGroup());
+  EXPECT_FALSE(tab_list->GetTab(2)->GetGroup());
+  EXPECT_FALSE(tab_list->GetTab(3)->GetGroup());
+  EXPECT_FALSE(tab_list->GetTab(4)->GetGroup());
+  EXPECT_TRUE(tab_list->ContainsTabGroup(*group1));
+  EXPECT_FALSE(tab_list->ContainsTabGroup(*group2));
+}
 
 }  // namespace extensions

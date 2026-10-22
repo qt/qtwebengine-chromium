@@ -368,17 +368,20 @@ export const enum CSSWideKeyword {
   INITIAL = 'initial',
   REVERT = 'revert',
   REVERT_LAYER = 'revert-layer',
+  REVERT_RULE = 'revert-rule',
   UNSET = 'unset',
 }
 /**
  * Spec: https://drafts.csswg.org/css-cascade/#defaulting-keywords
  * https://drafts.csswg.org/css-cascade-5/#revert-layer
+ * https://drafts.csswg.org/css-cascade-6/#revert-rule
  **/
 export const CSSWideKeywords: CSSWideKeyword[] = [
   CSSWideKeyword.INHERIT,
   CSSWideKeyword.INITIAL,
   CSSWideKeyword.REVERT,
   CSSWideKeyword.REVERT_LAYER,
+  CSSWideKeyword.REVERT_RULE,
   CSSWideKeyword.UNSET,
 ];
 
@@ -1341,6 +1344,24 @@ const extraPropertyValues = new Map<string, Set<string>>([
   ['-webkit-transform-origin-x', new Set(['left', 'right', 'center'])],
   ['-webkit-transform-origin-y', new Set(['top', 'bottom', 'center'])],
   ['width', new Set(['-webkit-fill-available', 'stretch'])],
+  [
+    'animation-trigger',
+    new Set([
+      'play',
+      'pause',
+      'play-once',
+      'play-alternate',
+      'play-forwards',
+      'play-backwards',
+      'play-pause',
+      'replay',
+    ]),
+  ],
+  ['timeline-trigger-activation-range-start', new Set(['normal'])],
+  ['timeline-trigger-activation-range-end', new Set(['normal'])],
+  ['timeline-trigger-active-range-start', new Set(['normal'])],
+  ['timeline-trigger-active-range-end', new Set(['normal'])],
+
   ['contain-intrinsic-width', new Set(['auto none', 'auto 100px'])],
   ['contain-intrinsic-height', new Set(['auto none', 'auto 100px'])],
   ['contain-intrinsic-size', new Set(['auto none', 'auto 100px'])],

@@ -10,13 +10,13 @@
  *
  */
 
-import './snackbar';
+import './snackbar.js';
 
 import {html, LitElement} from 'lit';
 
-import {Button} from '../button/button';
+import {Button} from '../button/button.js';
 
-import {HTMLElementWithPopoverAPI, ShowSnackbarEventDetail, SnackbarOptions} from './show_snackbar';
+import {HTMLElementWithPopoverAPI, ShowSnackbarEventDetail, SnackbarOptions} from './show_snackbar.js';
 
 /**
  * SnackbarManager is responsible for handling requests to show the snackbar

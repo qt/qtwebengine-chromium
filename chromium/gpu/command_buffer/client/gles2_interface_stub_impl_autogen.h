@@ -1138,12 +1138,14 @@ GLboolean GLES2InterfaceStub::IsEnablediOES(GLenum /* target */,
 void GLES2InterfaceStub::ProvokingVertexANGLE(GLenum /* provokeMode */) {}
 void GLES2InterfaceStub::FramebufferMemorylessPixelLocalStorageANGLE(
     GLint /* plane */,
-    GLenum /* internalformat */) {}
+    GLenum /* internalformat */,
+    GLbitfield /* usage */) {}
 void GLES2InterfaceStub::FramebufferTexturePixelLocalStorageANGLE(
     GLint /* plane */,
     GLuint /* backingtexture */,
     GLint /* level */,
-    GLint /* layer */) {}
+    GLint /* layer */,
+    GLbitfield /* usage */) {}
 void GLES2InterfaceStub::FramebufferPixelLocalClearValuefvANGLE(
     GLint /* plane */,
     const GLfloat* /* value */) {}
@@ -1159,6 +1161,7 @@ void GLES2InterfaceStub::BeginPixelLocalStorageANGLE(
 void GLES2InterfaceStub::EndPixelLocalStorageANGLE(
     GLsizei /* count */,
     const GLenum* /* storeops */) {}
+void GLES2InterfaceStub::EndPixelLocalStorageImplicitANGLE() {}
 void GLES2InterfaceStub::PixelLocalStorageBarrierANGLE() {}
 void GLES2InterfaceStub::FramebufferPixelLocalStorageInterruptANGLE() {}
 void GLES2InterfaceStub::FramebufferPixelLocalStorageRestoreANGLE() {}
@@ -1170,6 +1173,10 @@ void GLES2InterfaceStub::GetFramebufferPixelLocalStorageParameterivANGLE(
     GLint /* plane */,
     GLenum /* pname */,
     GLint* /* params */) {}
+void GLES2InterfaceStub::GetFramebufferPixelLocalStorageParameteruivANGLE(
+    GLint /* plane */,
+    GLenum /* pname */,
+    GLuint* /* params */) {}
 void GLES2InterfaceStub::ClipControlEXT(GLenum /* origin */,
                                         GLenum /* depth */) {}
 void GLES2InterfaceStub::PolygonModeANGLE(GLenum /* face */,

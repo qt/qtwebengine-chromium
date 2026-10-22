@@ -14,6 +14,7 @@
 #include <string_view>
 #include <vector>
 
+#include "base/byte_size.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
@@ -80,8 +81,8 @@ class NET_EXPORT_PRIVATE WebSocketHttp3HandshakeStream final
   bool IsConnectionReused() const override;
   void SetConnectionReused() override;
   bool CanReuseConnection() const override;
-  int64_t GetTotalReceivedBytes() const override;
-  int64_t GetTotalSentBytes() const override;
+  base::ByteSize GetTotalReceivedBytes() const override;
+  base::ByteSize GetTotalSentBytes() const override;
   bool GetAlternativeService(
       AlternativeService* alternative_service) const override;
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
@@ -89,6 +90,8 @@ class NET_EXPORT_PRIVATE WebSocketHttp3HandshakeStream final
   int GetRemoteEndpoint(IPEndPoint* endpoint) override;
   void Drain(HttpNetworkSession* session) override;
   void SetPriority(RequestPriority priority) override;
+  void PopulateLoadTimingInternalInfo(
+      LoadTimingInternalInfo* load_timing_internal_info) const override;
   void PopulateNetErrorDetails(NetErrorDetails* details) override;
   std::unique_ptr<HttpStream> RenewStreamForAuth() override;
   const std::set<std::string>& GetDnsAliases() const override;
@@ -129,9 +132,10 @@ class NET_EXPORT_PRIVATE WebSocketHttp3HandshakeStream final
 
   void OnHandshakeConfirmed(CompletionOnceCallback callback, int rv);
 
-  HandshakeResult result_ = HandshakeResult::HTTP3_INCOMPLETE;
+  // Applies the current `priority_` to the underlying QUIC stream.
+  void ApplyPriorityToStream();
 
-  std::unique_ptr<WebSocketSpdyStreamAdapter> adapter_;
+  HandshakeResult result_ = HandshakeResult::HTTP3_INCOMPLETE;
 
   // True if `stream_` has been created then closed.
   bool stream_closed_ = false;

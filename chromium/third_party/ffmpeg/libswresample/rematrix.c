@@ -66,7 +66,10 @@ int swr_set_matrix(struct SwrContext *s, const double *matrix, int stride)
 {
     int nb_in, nb_out, in, out;
 
-    if (!s || s->in_convert) // s needs to be allocated but not initialized
+    if (!s || s->in_convert ||   // s needs to be allocated but not initialized
+        swri_check_chlayout(s, &s->user_in_chlayout , "input") ||
+        swri_check_chlayout(s, &s->user_out_chlayout, "output")
+    )
         return AVERROR(EINVAL);
     memset(s->matrix, 0, sizeof(s->matrix));
 
@@ -552,7 +555,7 @@ av_cold int swri_rematrix_init(SwrContext *s){
         s->matrix_ch[i][0]= ch_in;
     }
 
-#if ARCH_X86 && HAVE_X86ASM && HAVE_MMX
+#if ARCH_X86 && HAVE_X86ASM
     return swri_rematrix_init_x86(s);
 #endif
 

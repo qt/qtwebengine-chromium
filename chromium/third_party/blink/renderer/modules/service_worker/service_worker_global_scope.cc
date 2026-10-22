@@ -223,9 +223,8 @@ ServiceWorkerGlobalScope* ServiceWorkerGlobalScope::Create(
   // loaded.
   if (installed_scripts_manager && installed_scripts_manager->IsScriptInstalled(
                                        creation_params->script_url)) {
-    // CSP headers, referrer policy, and origin trial tokens will be provided by
+    // Referrer policy, and origin trial tokens will be provided by
     // the InstalledScriptsManager in EvaluateClassicScript().
-    DCHECK(creation_params->outside_content_security_policies.empty());
     DCHECK_EQ(network::mojom::ReferrerPolicy::kDefault,
               creation_params->referrer_policy);
     DCHECK(creation_params->inherited_trial_features->empty());
@@ -477,6 +476,7 @@ void ServiceWorkerGlobalScope::DidFetchClassicScript(
           ? mojo::Clone(classic_script_loader->GetContentSecurityPolicy()
                             ->GetParsedPolicies())
           : Vector<network::mojom::blink::ContentSecurityPolicyPtr>(),
+      classic_script_loader->GetDocumentPolicy(),
       classic_script_loader->OriginTrialTokens(),
       classic_script_loader->SourceText(),
       classic_script_loader->ReleaseCachedMetadata(), stack_id);
@@ -487,6 +487,7 @@ void ServiceWorkerGlobalScope::Initialize(
     const KURL& response_url,
     network::mojom::ReferrerPolicy response_referrer_policy,
     Vector<network::mojom::blink::ContentSecurityPolicyPtr> response_csp,
+    DocumentPolicy::DocumentPolicyBundle response_document_policy,
     const Vector<String>* response_origin_trial_tokens) {
   // Step 4.5. "Set workerGlobalScope's url to serviceWorker's script url."
   InitializeURL(response_url);
@@ -511,6 +512,8 @@ void ServiceWorkerGlobalScope::Initialize(
   //   policy, the user agent must monitor policy for serviceWorker."
   InitContentSecurityPolicyFromVector(std::move(response_csp));
   BindContentSecurityPolicyToExecutionContext();
+
+  // TODO(crbug.com/488089240): Enable Document Policy in Service Workers.
 
   OriginTrialContext::AddTokens(this, response_origin_trial_tokens);
 
@@ -551,12 +554,14 @@ void ServiceWorkerGlobalScope::LoadAndRunInstalledClassicScript(
         kDoNotSupportReferrerPolicyLegacyKeywords, &referrer_policy);
   }
 
-  RunClassicScript(script_url, referrer_policy,
-                   ParseContentSecurityPolicyHeaders(
-                       script_data->GetContentSecurityPolicyResponseHeaders()),
-                   script_data->CreateOriginTrialTokens().get(),
-                   script_data->TakeSourceText(), script_data->TakeMetaData(),
-                   stack_id);
+  RunClassicScript(
+      script_url, referrer_policy,
+      ParseContentSecurityPolicyHeaders(
+          script_data->GetContentSecurityPolicyResponseHeaders()),
+      // TODO(crbug.com/488089240): Plumb Document Policy in Service Workers.
+      DocumentPolicy::DocumentPolicyBundle{},
+      script_data->CreateOriginTrialTokens().get(),
+      script_data->TakeSourceText(), script_data->TakeMetaData(), stack_id);
 }
 
 // https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
@@ -564,13 +569,14 @@ void ServiceWorkerGlobalScope::RunClassicScript(
     const KURL& response_url,
     network::mojom::ReferrerPolicy response_referrer_policy,
     Vector<network::mojom::blink::ContentSecurityPolicyPtr> response_csp,
+    DocumentPolicy::DocumentPolicyBundle response_document_policy,
     const Vector<String>* response_origin_trial_tokens,
     const String& source_code,
     std::unique_ptr<Vector<uint8_t>> cached_meta_data,
     const v8_inspector::V8StackTraceId& stack_id) {
   // Step 4.5-4.11 are implemented in Initialize().
   Initialize(response_url, response_referrer_policy, std::move(response_csp),
-             response_origin_trial_tokens);
+             std::move(response_document_policy), response_origin_trial_tokens);
 
   // Step 4.12. "Let evaluationStatus be the result of running the classic
   // script script if script is a classic script, otherwise, the result of
@@ -1637,16 +1643,33 @@ void ServiceWorkerGlobalScope::DispatchFetchEventForSubresource(
 
 void ServiceWorkerGlobalScope::Clone(
     mojo::PendingReceiver<mojom::blink::ControllerServiceWorker> receiver,
-    const network::CrossOriginEmbedderPolicy& cross_origin_embedder_policy,
-    mojo::PendingRemote<
-        network::mojom::blink::CrossOriginEmbedderPolicyReporter> coep_reporter,
-    const network::DocumentIsolationPolicy& document_isolation_policy,
-    mojo::PendingRemote<network::mojom::blink::DocumentIsolationPolicyReporter>
-        dip_reporter) {
+    mojom::blink::CrossOriginEmbedderPolicyInfoPtr
+        cross_origin_embedder_policy_info,
+    mojom::blink::DocumentIsolationPolicyInfoPtr
+        document_isolation_policy_info) {
   DCHECK(IsContextThread());
+  network::CrossOriginEmbedderPolicy cross_origin_embedder_policy;
+  mojo::PendingRemote<network::mojom::blink::CrossOriginEmbedderPolicyReporter>
+      cross_origin_embedder_policy_reporter;
+  if (cross_origin_embedder_policy_info) {
+    cross_origin_embedder_policy = cross_origin_embedder_policy_info->value;
+    cross_origin_embedder_policy_reporter =
+        std::move(cross_origin_embedder_policy_info->reporter);
+  }
+
+  network::DocumentIsolationPolicy document_isolation_policy;
+  mojo::PendingRemote<network::mojom::blink::DocumentIsolationPolicyReporter>
+      document_isolation_policy_reporter;
+  if (document_isolation_policy_info) {
+    document_isolation_policy = document_isolation_policy_info->value;
+    document_isolation_policy_reporter =
+        std::move(document_isolation_policy_info->reporter);
+  }
+
   auto checker = std::make_unique<CrossOriginResourcePolicyChecker>(
-      cross_origin_embedder_policy, std::move(coep_reporter),
-      document_isolation_policy, std::move(dip_reporter));
+      cross_origin_embedder_policy,
+      std::move(cross_origin_embedder_policy_reporter),
+      document_isolation_policy, std::move(document_isolation_policy_reporter));
 
   controller_receivers_.Add(
       std::move(receiver), std::move(checker),
@@ -2423,7 +2446,7 @@ void ServiceWorkerGlobalScope::StartPaymentRequestEvent(
   if (std::ranges::any_of(
           event_data->method_data,
           [](const payments::mojom::blink::PaymentMethodDataPtr& datum) {
-            return datum && !datum->supported_method.StartsWith("http");
+            return datum && !datum->supported_method.starts_with("http");
           })) {
     UseCounter::Count(
         this, WebFeature::kPaymentHandlerStandardizedPaymentMethodIdentifier);
@@ -2776,9 +2799,15 @@ void ServiceWorkerGlobalScope::InsertNewItemToRaceNetworkRequests(
   auto info = std::make_unique<RaceNetworkRequestInfo>(
       fetch_event_id, race_network_request_token,
       std::move(url_loader_factory));
-  race_network_request_fetch_event_ids_.insert(fetch_event_id, info.get());
+  RaceNetworkRequestInfo* info_raw = info.get();
   auto insert_result = race_network_requests_.insert(race_network_request_token,
                                                      std::move(info));
+  // WTF::HashMap::insert does not consume |info| on a duplicate key; in that
+  // case |info| (and |info_raw|) is freed at scope exit. Only publish the raw
+  // pointer into the secondary index after the owning insert succeeds.
+  if (insert_result.is_new_entry) {
+    race_network_request_fetch_event_ids_.insert(fetch_event_id, info_raw);
+  }
 
   // DumpWithoutCrashing if the token is empty, or not inserted as a new entry
   // to |race_network_request_loader_factories_|.

@@ -32,7 +32,6 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-
 #include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/spirv/reader/common/helper_test.h"
@@ -62,13 +61,17 @@ class SpirvReaderTestHelperBase : public BASE {
         TINT_CHECK_RESULT_UNWRAP(binary, Assemble(spirv_asm));
 
         // Parse the SPIR-V to produce a core IR module.
-        TINT_CHECK_RESULT_UNWRAP(parsed, ReadIR(binary));
+        Options options{
+            .enable_validation_asserts = true,
+        };
+        TINT_CHECK_RESULT_UNWRAP(parsed, ReadIR(binary, options));
 
         // Validate the IR module against the capabilities supported by the core dialect.
-        TINT_CHECK_RESULT(
-            core::ir::Validate(parsed, core::ir::Capabilities{
-                                           core::ir::Capability::kAllowMultipleEntryPoints,
-                                       }));
+        TINT_CHECK_RESULT(core::ir::Validate(parsed,
+                                             core::ir::Capabilities{
+                                                 core::ir::Capability::kAllowMultipleEntryPoints,
+                                             },
+                                             "after lowering to core IR"));
 
         // Return the disassembled IR module.
         return "\n" + core::ir::Disassembler(parsed).Plain();

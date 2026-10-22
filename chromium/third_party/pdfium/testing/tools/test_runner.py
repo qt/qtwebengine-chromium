@@ -201,6 +201,11 @@ class TestRunner:
         help='Sets whether to render using premultiplied alpha.')
 
     parser.add_argument(
+        '--fontations',
+        action='store_true',
+        help='Sets whether to render using Fontations library.')
+
+    parser.add_argument(
         '--run-skia-gold',
         action='store_true',
         default=False,
@@ -750,6 +755,9 @@ class _TestCaseRunner:
 
     if self.options.render_premultiplied:
       cmd_to_run.append('--render-premultiplied')
+
+    if self.options.fontations:
+      cmd_to_run.append('--fontations')
 
     if self.options.reverse_byte_order:
       cmd_to_run.append('--reverse-byte-order')

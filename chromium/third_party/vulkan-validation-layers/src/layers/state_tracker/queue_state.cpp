@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2025 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
@@ -27,47 +27,53 @@
 #include "profiling/profiling.h"
 
 void vvl::QueueSubmission::BeginUse() {
-    for (SemaphoreInfo &wait : wait_semaphores) {
+    for (SemaphoreInfo& wait : wait_semaphores) {
         wait.semaphore->BeginUse();
     }
-    for (CommandBufferSubmission &cb_submission : cb_submissions) {
+    for (CommandBufferSubmission& cb_submission : cb_submissions) {
         cb_submission.cb->BeginUse();
     }
-    for (SemaphoreInfo &signal : signal_semaphores) {
+    for (SemaphoreInfo& signal : signal_semaphores) {
         signal.semaphore->BeginUse();
     }
     if (fence) {
         fence->BeginUse();
     }
+    if (swapchain) {
+        swapchain->BeginUse();
+    }
 }
 
 void vvl::QueueSubmission::EndUse() {
-    for (SemaphoreInfo &wait : wait_semaphores) {
+    for (SemaphoreInfo& wait : wait_semaphores) {
         wait.semaphore->EndUse();
     }
-    for (CommandBufferSubmission &cb_submission : cb_submissions) {
+    for (CommandBufferSubmission& cb_submission : cb_submissions) {
         cb_submission.cb->EndUse();
     }
-    for (SemaphoreInfo &signal : signal_semaphores) {
+    for (SemaphoreInfo& signal : signal_semaphores) {
         signal.semaphore->EndUse();
     }
     if (fence) {
         fence->EndUse();
     }
+    if (swapchain) {
+        swapchain->EndUse();
+    }
 }
 
-vvl::PreSubmitResult vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&submissions) {
+uint64_t vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission>&& submissions) {
     if (!submissions.empty()) {
         submissions.back().is_last_submission = true;
     }
-    for (auto &item : sub_states_) {
+    for (auto& item : sub_states_) {
         item.second->PreSubmit(submissions);
     }
-    PreSubmitResult result;
-    for (QueueSubmission &submission : submissions) {
-        for (CommandBufferSubmission &cb_submission : submission.cb_submissions) {
+    uint64_t last_batch_seq = 0;
+    for (QueueSubmission& submission : submissions) {
+        for (CommandBufferSubmission& cb_submission : submission.cb_submissions) {
             auto cb_guard = cb_submission.cb->WriteLock();
-            for (CommandBuffer *secondary_cmd_buffer : cb_submission.cb->linked_command_buffers) {
+            for (CommandBuffer* secondary_cmd_buffer : cb_submission.cb->linked_command_buffers) {
                 auto secondary_guard = secondary_cmd_buffer->WriteLock();
                 secondary_cmd_buffer->submit_count++;
             }
@@ -78,14 +84,14 @@ vvl::PreSubmitResult vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&s
         // Note that this relies on the external synchonization requirements for the
         // VkQueue
         submission.seq = ++seq_;
-        result.submission_seq = submission.seq;
+        last_batch_seq = submission.seq;
         submission.BeginUse();
-        for (SemaphoreInfo &wait : submission.wait_semaphores) {
+        for (SemaphoreInfo& wait : submission.wait_semaphores) {
             wait.semaphore->EnqueueWait(SubmissionReference(this, submission.seq), wait.payload);
             timeline_wait_count_ += (wait.semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE) ? 1 : 0;
         }
 
-        for (SemaphoreInfo &signal : submission.signal_semaphores) {
+        for (SemaphoreInfo& signal : submission.signal_semaphores) {
             signal.semaphore->EnqueueSignal(SubmissionReference(this, submission.seq), signal.payload);
         }
 
@@ -102,7 +108,7 @@ vvl::PreSubmitResult vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&s
             }
         }
     }
-    return result;
+    return last_batch_seq;
 }
 
 void vvl::Queue::Notify(uint64_t until_seq) {
@@ -116,7 +122,7 @@ void vvl::Queue::Notify(uint64_t until_seq) {
     cond_.notify_one();
 }
 
-void vvl::Queue::Wait(const Location &loc, uint64_t until_seq) {
+void vvl::Queue::Wait(const Location& loc, uint64_t until_seq) {
     std::shared_future<void> waiter;
     {
         auto guard = Lock();
@@ -132,14 +138,14 @@ void vvl::Queue::Wait(const Location &loc, uint64_t until_seq) {
     }
     auto wait_status = waiter.wait_until(GetCondWaitTimeout());
     if (wait_status != std::future_status::ready) {
-        dev_data_.LogError("INTERNAL-ERROR-VkQueue-state-timeout", Handle(), loc,
-                           "The Validation Layers hit a timeout waiting for queue state to update."
-                           " seq=%" PRIu64 " until=%" PRIu64,
-                           seq_.load(), until_seq);
+        device_state_.LogError("INTERNAL-ERROR-VkQueue-state-timeout", Handle(), loc,
+                               "The Validation Layers hit a timeout waiting for queue state to update."
+                               " seq=%" PRIu64 " until=%" PRIu64,
+                               seq_.load(), until_seq);
     }
 }
 
-void vvl::Queue::NotifyAndWait(const Location &loc, uint64_t until_seq) {
+void vvl::Queue::NotifyAndWait(const Location& loc, uint64_t until_seq) {
     Notify(until_seq);
     Wait(loc, until_seq);
 }
@@ -167,9 +173,9 @@ std::optional<vvl::SemaphoreInfo> vvl::Queue::FindTimelineWaitWithoutResolvingSi
     {
         auto guard = Lock();
         for (auto it = submissions_.rbegin(); it != submissions_.rend() && processed_waits < timeline_wait_count_; ++it) {
-            const vvl::QueueSubmission &submission = *it;
+            const vvl::QueueSubmission& submission = *it;
             if (submission.seq <= until_seq) {
-                for (const auto &wait_info : submission.wait_semaphores) {
+                for (const auto& wait_info : submission.wait_semaphores) {
                     if (wait_info.semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE) {
                         timeline_waits.emplace_back(wait_info);
                         processed_waits++;
@@ -179,7 +185,7 @@ std::optional<vvl::SemaphoreInfo> vvl::Queue::FindTimelineWaitWithoutResolvingSi
         }
     }
     // Step 2. Query each timeline wait (read-locks Semaphore)
-    for (const SemaphoreInfo &wait_info : timeline_waits) {
+    for (const SemaphoreInfo& wait_info : timeline_waits) {
         if (wait_info.semaphore->Scope() != vvl::Semaphore::kInternal) {
             // For external semaphore we can't track the signal. The conservative assumption
             // for false positive free validation is that the signal is available, so skip
@@ -204,19 +210,19 @@ std::optional<vvl::SemaphoreInfo> vvl::Queue::FindTimelineWaitWithoutResolvingSi
 // This implementation assumes that if error-free program has more active present requests than
 // swapchain images, then at least the oldest present request was completed and corresponding
 // image was re-acquired (and it got pushed to the present queue again).
-void vvl::Queue::UpdatePresentOnlyQueueProgress(const DeviceState &device_state) {
+void vvl::Queue::UpdatePresentOnlyQueueProgress(const DeviceState& device_state) {
     uint64_t seq_to_advance_to = 0;
     {
         auto guard = Lock();
         assert(is_used_for_presentation && !is_used_for_regular_submits);
         small_unordered_map<VkSwapchainKHR, uint32_t, 4> active_presentations;
-        for (const QueueSubmission &submission : submissions_) {
-            assert(submission.swapchain != VK_NULL_HANDLE);
-            active_presentations[submission.swapchain]++;
+        for (const QueueSubmission& submission : submissions_) {
+            assert(submission.swapchain);
+            active_presentations[submission.swapchain->VkHandle()]++;
         }
         // Search for the swapchain with too many enqueued presentation requests
         VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-        for (const auto &[handle, count] : active_presentations) {
+        for (const auto& [handle, count] : active_presentations) {
             if (auto swapchain_state = device_state.Get<Swapchain>(handle)) {
                 if (count > swapchain_state->images.size()) {
                     swapchain = handle;
@@ -226,8 +232,8 @@ void vvl::Queue::UpdatePresentOnlyQueueProgress(const DeviceState &device_state)
         }
         // Get seq to retire the oldest presentation submissions.
         if (swapchain != VK_NULL_HANDLE) {
-            for (const QueueSubmission &submission : submissions_) {
-                if (submission.swapchain == swapchain) {
+            for (const QueueSubmission& submission : submissions_) {
+                if (submission.swapchain->VkHandle() == swapchain) {
                     seq_to_advance_to = submission.seq;
                     break;
                 }
@@ -251,7 +257,7 @@ void vvl::Queue::Destroy() {
         dead_thread->join();
         dead_thread.reset();
     }
-    for (auto &item : sub_states_) {
+    for (auto& item : sub_states_) {
         item.second->Destroy();
     }
     StateObject::Destroy();
@@ -260,25 +266,19 @@ void vvl::Queue::Destroy() {
 void vvl::Queue::PostSubmit() {
     auto guard = Lock();
     if (!submissions_.empty()) {
-        PostSubmit(submissions_.back());
+        for (auto& item : sub_states_) {
+            item.second->PostSubmit(submissions_);
+        }
+        // Wait on the external fence because we may not be able to track when it's signaled
+        QueueSubmission& submission = submissions_.back();
+        if (submission.has_external_fence) {
+            submission.fence->NotifyAndWait(submission.loc.Get());
+        }
     }
 }
 
-void vvl::Queue::PostSubmit(QueueSubmission &submission) {
-    for (auto &item : sub_states_) {
-        item.second->PostSubmit(submissions_);
-    }
-
-    // If dealing with external fences, the app might call vkWaitForFences, but might not and we might not know when the queue
-    // submission is done. If we find adding a "big lock" here is slow for real cases, we could have something run in a background
-    // thread calling vkGetFenceStatus to check for us. (This would require a good thing to test against)
-    if (submission.has_external_fence) {
-        submission.fence->NotifyAndWait(submission.loc.Get());
-    }
-}
-
-vvl::QueueSubmission *vvl::Queue::NextSubmission() {
-    QueueSubmission *result = nullptr;
+vvl::QueueSubmission* vvl::Queue::NextSubmission() {
+    QueueSubmission* result = nullptr;
     // Find if the next submission is ready so that the thread function doesn't need to worry
     // about locking.
     auto guard = Lock();
@@ -294,19 +294,23 @@ vvl::QueueSubmission *vvl::Queue::NextSubmission() {
     return result;
 }
 
-void vvl::Queue::Retire(QueueSubmission &submission) {
+void vvl::Queue::Retire(QueueSubmission& submission) {
     submission.EndUse();
-    if (dev_data_.is_device_lost) {
-        return;  // the underlying objects might be destroyed/garbage
-    }
-    for (auto &wait : submission.wait_semaphores) {
+    for (auto& wait : submission.wait_semaphores) {
         wait.semaphore->RetireWait(this, wait.payload, submission.loc.Get(), true);
         timeline_wait_count_ -= (wait.semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE) ? 1 : 0;
     }
-    for (auto &item : sub_states_) {
-        item.second->Retire(submission);
+
+    // When device is lost skip updating substates which might access destroyed/garbage objects.
+    // NOTE: we still need to run semaphore/fence retire routines which do not work with Vulkan
+    // handles but ensure correct invariants (for example, Fence::Retire sets its std::promise)
+    if (!device_state_.is_device_lost) {
+        for (auto& item : sub_states_) {
+            item.second->Retire(submission);
+        }
     }
-    for (auto &signal : submission.signal_semaphores) {
+
+    for (auto& signal : submission.signal_semaphores) {
         signal.semaphore->RetireSignal(signal.payload);
     }
     if (submission.fence) {
@@ -317,7 +321,7 @@ void vvl::Queue::Retire(QueueSubmission &submission) {
 void vvl::Queue::ThreadFunc() {
     VVL_TracySetThreadName(__FUNCTION__);
 
-    QueueSubmission *submission = nullptr;
+    QueueSubmission* submission = nullptr;
 
     // Roll this queue forward, one submission at a time.
     while (true) {

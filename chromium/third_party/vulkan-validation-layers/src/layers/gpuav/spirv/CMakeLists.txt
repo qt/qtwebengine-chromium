@@ -1,5 +1,5 @@
 # ~~~
-# Copyright (c) 2024-2025 LunarG, Inc.
+# Copyright (c) 2024-2026 LunarG, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,10 +27,14 @@ target_sources(gpu_av_spirv PRIVATE
     buffer_device_address_pass.cpp
     ray_query_pass.h
     ray_query_pass.cpp
-    ray_hit_object_pass.h
-    ray_hit_object_pass.cpp
     sanitizer_pass.h
     sanitizer_pass.cpp
+    shared_memory_data_race_pass.h
+    shared_memory_data_race_pass.cpp
+    debug_descriptor_pass.h
+    debug_descriptor_pass.cpp
+    trace_ray_pass.h
+    trace_ray_pass.cpp
     debug_printf_pass.h
     debug_printf_pass.cpp
     post_process_descriptor_indexing_pass.h
@@ -54,6 +58,7 @@ target_sources(gpu_av_spirv PRIVATE
     type_manager.cpp
     pass.h
     pass.cpp
+    spec_constant.cpp
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/spirv_grammar_helper.cpp
 
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/gpuav_offline_spirv.h
@@ -88,6 +93,11 @@ elseif(MSVC)
         /wd4702 # unreachable code
         /wd4389 # signed/unsigned mismatch
     )
+endif()
+
+# No matter what I do, MinGW is unaware how small_vector works
+if(MINGW)
+    target_compile_options(gpu_av_spirv PRIVATE -Wno-maybe-uninitialized)
 endif()
 
 # Auto generate Shaders' SPIR-V code upon GLSL changes

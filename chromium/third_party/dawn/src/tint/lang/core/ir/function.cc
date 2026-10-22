@@ -27,6 +27,8 @@
 
 #include "src/tint/lang/core/ir/function.h"
 
+#include <utility>
+
 #include "src/tint/lang/core/ir/clone_context.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/utils/containers/predicates.h"
@@ -54,7 +56,7 @@ Function* Function::Clone(CloneContext& ctx) {
     auto* new_func =
         ctx.ir.CreateValue<Function>(Type(), return_.type, pipeline_stage_, workgroup_size_);
     new_func->block_ = ctx.ir.blocks.Create<ir::Block>();
-    new_func->SetParams(ctx.Clone<1>(params_.Slice()));
+    new_func->SetParams(ctx.Clone<1>(params_.AsSpan()));
     new_func->return_.attributes = return_.attributes;
 
     ctx.Replace(this, new_func);

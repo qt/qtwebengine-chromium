@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "core/fxcrt/fx_codepage.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_substfont.h"
 #include "core/fxge/systemfontinfo_iface.h"
@@ -49,7 +50,7 @@ class MockSystemFontInfo : public SystemFontInfoIface {
 // Class that exposes private CFX_FontMapper methods.
 class TestFontMapper : public CFX_FontMapper {
  public:
-  TestFontMapper() : CFX_FontMapper(CFX_GEModule::Get()->GetFontMgr()) {}
+  TestFontMapper() = default;
 
   using CFX_FontMapper::GetCachedFace;
   using CFX_FontMapper::GetCachedTTCFace;
@@ -117,7 +118,7 @@ TEST(CFXFontMapperTest, MakeTag) {
 
 TEST(CFXFontMapperTest, AddInstalledFontBasic) {
   const char kFontName[] = "dummy";
-  CFX_FontMapper font_mapper(nullptr);
+  CFX_FontMapper font_mapper;
   font_mapper.SetSystemFontInfo(std::make_unique<MockSystemFontInfo>());
 
   font_mapper.AddInstalledFont(kFontName, FX_Charset::kANSI);
@@ -267,7 +268,7 @@ TEST_F(CFXFontMapperSystemFontInfoTest, SetSubstFontNameWhenGetFaceNameFails) {
 }
 
 TEST(CFXFontMapperTest, LoadInstalledFontsWithEnumeration) {
-  CFX_FontMapper font_mapper(nullptr);
+  CFX_FontMapper font_mapper;
   auto system_font_info = std::make_unique<MockSystemFontInfo>();
   auto* mock_font_info = system_font_info.get();
   font_mapper.SetSystemFontInfo(std::move(system_font_info));
@@ -278,7 +279,7 @@ TEST(CFXFontMapperTest, LoadInstalledFontsWithEnumeration) {
 }
 
 TEST(CFXFontMapperTest, LoadInstalledFontsSkipEnumeration) {
-  CFX_FontMapper font_mapper(nullptr);
+  CFX_FontMapper font_mapper;
   auto system_font_info = std::make_unique<MockSystemFontInfo>();
   auto* mock_font_info = system_font_info.get();
   font_mapper.SetSystemFontInfo(std::move(system_font_info));
@@ -292,7 +293,7 @@ TEST(CFXFontMapperTest, LoadInstalledFontsSkipEnumeration) {
 }
 
 TEST(CFXFontMapperTest, LoadInstalledFontsCalledOnlyOnce) {
-  CFX_FontMapper font_mapper(nullptr);
+  CFX_FontMapper font_mapper;
   auto system_font_info = std::make_unique<MockSystemFontInfo>();
   auto* mock_font_info = system_font_info.get();
   font_mapper.SetSystemFontInfo(std::move(system_font_info));

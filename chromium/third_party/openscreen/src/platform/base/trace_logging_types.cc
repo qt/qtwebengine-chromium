@@ -34,25 +34,25 @@ bool operator!=(const TraceIdHierarchy& lhs, const TraceIdHierarchy& rhs) {
 const char* ToString(TraceCategory category) {
   switch (category) {
     case TraceCategory::kAny:
-      return "Any";
+      return "any";
     case TraceCategory::kMdns:
-      return "Mdns";
+      return "mdns";
     case TraceCategory::kQuic:
-      return "Quic";
+      return "quic";
     case TraceCategory::kSsl:
-      return "SSL";
+      return "ssl";
     case TraceCategory::kPresentation:
-      return "Presentation";
+      return "presentation";
     case TraceCategory::kStandaloneReceiver:
-      return "StandaloneReceiver";
+      return "standalone_receiver";
     case TraceCategory::kDiscovery:
-      return "Discovery";
+      return "discovery";
     case TraceCategory::kStandaloneSender:
-      return "StandaloneSender";
+      return "standalone_sender";
     case TraceCategory::kReceiver:
-      return "Receiver";
+      return "receiver";
     case TraceCategory::kSender:
-      return "Sender";
+      return "sender";
   }
 
   // OSP_NOTREACHED is not available in platform/base.

@@ -40,7 +40,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
-import {html, nothing, render} from '../../ui/lit/lit.js';
+import {Directives, html, nothing, render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import propertiesWidgetStyles from './propertiesWidget.css.js';
@@ -48,6 +48,7 @@ import propertiesWidgetStyles from './propertiesWidget.css.js';
 const OBJECT_GROUP_NAME = 'properties-sidebar-pane';
 
 const {bindToSetting} = UI.UIUtils;
+const {repeat} = Directives;
 
 const UIStrings = {
   /**
@@ -73,8 +74,10 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 interface PropertiesWidgetInput {
   onFilterChanged: (e: CustomEvent<string>) => void;
-  treeOutlineElement: HTMLElement;
-  displayNoMatchingPropertyMessage: boolean;
+  onRegexToggled: () => void;
+  isRegex: boolean;
+  objectTree: ObjectUI.ObjectPropertiesSection.ObjectTree|null;
+  allChildrenFiltered: boolean;
 }
 
 type View = (input: PropertiesWidgetInput, output: object, target: HTMLElement) => void;
@@ -85,17 +88,32 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
     <div jslog=${VisualLogging.pane('element-properties').track({resize: true})}>
       <div class="hbox properties-widget-toolbar">
         <devtools-toolbar class="styles-pane-toolbar" role="presentation">
-          <devtools-toolbar-input type="filter" @change=${input.onFilterChanged} style="flex-grow:1; flex-shrink:1"></devtools-toolbar-input>
-          <devtools-checkbox title=${i18nString(UIStrings.showAllTooltip)} ${bindToSetting(getShowAllPropertiesSetting())}
-              jslog=${VisualLogging.toggle('show-all-properties').track({change: true})}>
+          <devtools-toolbar-input
+            type="filter"
+            ?regex=${true}
+            @change=${input.onFilterChanged}
+            @regextoggle=${input.onRegexToggled}
+            style="flex-grow:1; flex-shrink:1"
+          ></devtools-toolbar-input>
+          <devtools-checkbox title=${i18nString(UIStrings.showAllTooltip)} ${bindToSetting(getShowAllPropertiesSetting())}>
             ${i18nString(UIStrings.showAll)}
           </devtools-checkbox>
         </devtools-toolbar>
       </div>
-      ${input.displayNoMatchingPropertyMessage ? html`
+      ${input.objectTree && input.allChildrenFiltered ? html`
         <div class="gray-info-message">${i18nString(UIStrings.noMatchingProperty)}</div>
       ` : nothing}
-      ${input.treeOutlineElement}
+      <devtools-tree .template=${html`
+        <ul role=tree class="source-code object-properties-section">
+          <style>${ObjectUI.ObjectPropertiesSection.objectValueStyles}</style>;
+          <style>${ObjectUI.ObjectPropertiesSection.objectPropertiesSectionStyles}</style>;
+          ${repeat(ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement.createPropertyNodes(
+                        input.objectTree?.children ?? {},
+                        true /* skipProto */,
+                        true /* skipGettersAndSetters */),
+                   node => html`<devtools-tree-wrapper .treeElement=${node}></devtools-tree-wrapper>`)}
+        </ul>
+      `}></devtools-tree>
     </div>`, target);
   // clang-format on
 };
@@ -104,20 +122,22 @@ const getShowAllPropertiesSetting = (): Common.Settings.Setting<boolean> =>
     Common.Settings.Settings.instance().createSetting('show-all-properties', /* defaultValue */ false);
 
 export class PropertiesWidget extends UI.Widget.VBox {
-  private node: SDK.DOMModel.DOMNode|null;
   private readonly showAllPropertiesSetting: Common.Settings.Setting<boolean>;
   private filterRegex: RegExp|null = null;
   private readonly treeOutline: ObjectUI.ObjectPropertiesSection.ObjectPropertiesSectionsTreeOutline;
-  private lastRequestedNode?: SDK.DOMModel.DOMNode;
+  #lastRequestedNode: SDK.DOMModel.DOMNode|null = null;
   readonly #view: View;
-  #displayNoMatchingPropertyMessage = false;
+  #pendingNodeUpdate = true;
+  #objectTree: ObjectUI.ObjectPropertiesSection.ObjectTree|null = null;
+  #isRegex = false;
+  #filterText = '';
 
   constructor(view: View = DEFAULT_VIEW) {
     super({useShadowDom: true});
     this.registerRequiredCSS(propertiesWidgetStyles);
 
     this.showAllPropertiesSetting = getShowAllPropertiesSetting();
-    this.showAllPropertiesSetting.addChangeListener(this.filterAndScheduleUpdate.bind(this));
+    this.showAllPropertiesSetting.addChangeListener(this.onFilterChanged.bind(this));
 
     SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.DOMModel.DOMModel, SDK.DOMModel.Events.AttrModified, this.onNodeChange, this, {scoped: true});
@@ -128,79 +148,99 @@ export class PropertiesWidget extends UI.Widget.VBox {
     SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.DOMModel.DOMModel, SDK.DOMModel.Events.ChildNodeCountUpdated, this.onNodeChange, this, {scoped: true});
     UI.Context.Context.instance().addFlavorChangeListener(SDK.DOMModel.DOMNode, this.setNode, this);
-    this.node = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
 
     this.#view = view;
-    this.treeOutline = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSectionsTreeOutline({readOnly: true});
+    this.treeOutline = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSectionsTreeOutline();
     this.treeOutline.setShowSelectionOnKeyboardFocus(/* show */ true, /* preventTabOrder */ false);
 
     this.treeOutline.addEventListener(UI.TreeOutline.Events.ElementExpanded, () => {
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.DOMPropertiesExpanded);
     });
 
-    void this.performUpdate();
-  }
-
-  private onFilterChanged(event: CustomEvent<string>): void {
-    this.filterRegex = event.detail ? new RegExp(Platform.StringUtilities.escapeForRegExp(event.detail), 'i') : null;
-    this.filterAndScheduleUpdate();
-  }
-
-  private filterAndScheduleUpdate(): void {
-    const previousDisplay = this.#displayNoMatchingPropertyMessage;
-    this.internalFilterProperties();
-    if (previousDisplay !== this.#displayNoMatchingPropertyMessage) {
-      this.requestUpdate();
-    }
-  }
-
-  private internalFilterProperties(): void {
-    this.#displayNoMatchingPropertyMessage = true;
-    for (const element of this.treeOutline.rootElement().children()) {
-      const {property} = element as ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement;
-      const hidden = !property?.property.match({
-        includeNullOrUndefinedValues: this.showAllPropertiesSetting.get(),
-        regex: this.filterRegex,
-      });
-      this.#displayNoMatchingPropertyMessage = this.#displayNoMatchingPropertyMessage && hidden;
-      element.hidden = hidden;
-    }
-  }
-
-  private setNode(event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMNode|null>): void {
-    this.node = event.data;
     this.requestUpdate();
   }
 
-  override async performUpdate(): Promise<void> {
-    if (this.lastRequestedNode) {
-      this.lastRequestedNode.domModel().runtimeModel().releaseObjectGroup(OBJECT_GROUP_NAME);
-      delete this.lastRequestedNode;
+  #buildFilterRegex(text: string): RegExp|null {
+    if (!text) {
+      return null;
     }
-
-    if (!this.node) {
-      this.treeOutline.removeChildren();
-      this.#displayNoMatchingPropertyMessage = false;
-    } else {
-      this.lastRequestedNode = this.node;
-      const object = await this.node.resolveToObject(OBJECT_GROUP_NAME);
-      if (!object) {
-        return;
+    if (this.#isRegex) {
+      try {
+        return new RegExp(text, 'i');
+      } catch {
+        // Invalid regex: fall through to plain-text matching.
       }
-
-      const treeElement = this.treeOutline.rootElement();
-      treeElement.removeChildren();
-      const root = new ObjectUI.ObjectPropertiesSection.ObjectTree(
-          object, ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED);
-      ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement.populateWithProperties(
-          treeElement, await root.populateChildrenIfNeeded(), true /* skipProto */, true /* skipGettersAndSetters */);
-      this.internalFilterProperties();
     }
+    return new RegExp(Platform.StringUtilities.escapeForRegExp(text), 'i');
+  }
+
+  private onFilterChanged(event: CustomEvent<string>|Common.EventTarget.EventTargetEvent<boolean>): void {
+    if ('detail' in event) {
+      this.#filterText = event.detail;
+      this.filterRegex = this.#buildFilterRegex(event.detail);
+    }
+    this.#updateFilter();
+    this.requestUpdate();
+  }
+
+  private onRegexToggled(): void {
+    this.#isRegex = !this.#isRegex;
+    this.filterRegex = this.#buildFilterRegex(this.#filterText);
+    this.#updateFilter();
+    this.requestUpdate();
+  }
+
+  #updateFilter(): void {
+    this.#objectTree?.setFilter({
+      includeNullOrUndefinedValues: this.showAllPropertiesSetting.get(),
+      regex: this.filterRegex,
+    });
+  }
+
+  private setNode(): void {
+    this.#pendingNodeUpdate = true;
+    this.requestUpdate();
+  }
+
+  async #updateNodeIfRequired(): Promise<void> {
+    if (!this.#pendingNodeUpdate) {
+      return;
+    }
+    this.#pendingNodeUpdate = false;
+    this.#lastRequestedNode?.domModel().runtimeModel().releaseObjectGroup(OBJECT_GROUP_NAME);
+    this.#lastRequestedNode = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
+
+    if (!this.#lastRequestedNode) {
+      this.#objectTree = null;
+      return;
+    }
+    const object = await this.#lastRequestedNode.resolveToObject(OBJECT_GROUP_NAME);
+    if (!object) {
+      return;
+    }
+
+    this.#objectTree = new ObjectUI.ObjectPropertiesSection.ObjectTree(object, {
+      propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+      readOnly: true,
+    });
+    this.#updateFilter();
+  }
+
+  override async performUpdate(): Promise<void> {
+    await this.#updateNodeIfRequired();
+    await this.#objectTree?.populateChildrenIfNeeded();
+    const allChildrenFiltered =
+        !(this.#objectTree?.children?.accessors?.some(c => !c.isFiltered) ||
+          this.#objectTree?.children?.arrayRanges?.some(() => true) ||
+          this.#objectTree?.children?.internalProperties?.some(c => !c.isFiltered) ||
+          this.#objectTree?.children?.properties?.some(c => !c.isFiltered));
     this.#view(
         {
           onFilterChanged: this.onFilterChanged.bind(this),
-          treeOutlineElement: this.treeOutline.element,
-          displayNoMatchingPropertyMessage: this.#displayNoMatchingPropertyMessage,
+          onRegexToggled: this.onRegexToggled.bind(this),
+          isRegex: this.#isRegex,
+          allChildrenFiltered,
+          objectTree: this.#objectTree,
         },
         {}, this.contentElement);
   }
@@ -208,14 +248,15 @@ export class PropertiesWidget extends UI.Widget.VBox {
   private onNodeChange(
       event: Common.EventTarget.EventTargetEvent<{node: SDK.DOMModel.DOMNode, name: string}|SDK.DOMModel.DOMNode>,
       ): void {
-    if (!this.node) {
+    if (!this.#lastRequestedNode) {
       return;
     }
     const data = event.data;
     const node = (data instanceof SDK.DOMModel.DOMNode ? data : data.node);
-    if (this.node !== node) {
+    if (this.#lastRequestedNode !== node) {
       return;
     }
+    this.#pendingNodeUpdate = true;
     this.requestUpdate();
   }
 }

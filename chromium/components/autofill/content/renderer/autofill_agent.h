@@ -172,6 +172,7 @@ class AutofillAgent : public content::RenderFrameObserver,
                      base::OnceCallback<void(bool)> callback) override;
 
   // mojom::AutofillAgent:
+  void ScrollFieldIntoView(FieldRendererId field_id) override;
   void TriggerFormExtraction() override;
   void TriggerFormExtractionWithResponse(
       base::OnceCallback<void(bool)> callback) override;
@@ -316,14 +317,6 @@ class AutofillAgent : public content::RenderFrameObserver,
   // To be called when all forms are irretrievably gone, e.g., when a new
   // document is loaded.
   void Reset();
-
-  // Tries to show the given `passwords_request` for the given fields and update
-  // `is_popup_possibly_visible` accordingly. Returns true if the password agent
-  // handles the request.
-  bool TryShowPasswordSuggestions(
-      const blink::WebInputElement& input,
-      IsPasswordRequestManuallyTriggered manually_triggered_password_request,
-      base::optional_ref<const PasswordSuggestionRequest> password_request);
 
   // blink::WebAutofillClient:
   void TextFieldCleared(const blink::WebFormControlElement&) override;

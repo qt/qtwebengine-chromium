@@ -82,6 +82,7 @@ typedef enum SwsDither {
     SWS_DITHER_A_DITHER, /* arithmetic addition */
     SWS_DITHER_X_DITHER, /* arithmetic xor */
     SWS_DITHER_NB,       /* not part of the ABI */
+    SWS_DITHER_MAX_ENUM = 0x7FFFFFFF, /* force size to 32 bits, not a valid dither type */
 } SwsDither;
 
 typedef enum SwsAlphaBlend {
@@ -89,24 +90,24 @@ typedef enum SwsAlphaBlend {
     SWS_ALPHA_BLEND_UNIFORM,
     SWS_ALPHA_BLEND_CHECKERBOARD,
     SWS_ALPHA_BLEND_NB,  /* not part of the ABI */
+    SWS_ALPHA_BLEND_MAX_ENUM = 0x7FFFFFFF, /* force size to 32 bits, not a valid blend mode */
 } SwsAlphaBlend;
 
-typedef enum SwsFlags {
-    /**
-     * Scaler selection options. Only one may be active at a time.
-     */
-    SWS_FAST_BILINEAR = 1 <<  0, ///< fast bilinear filtering
-    SWS_BILINEAR      = 1 <<  1, ///< bilinear filtering
-    SWS_BICUBIC       = 1 <<  2, ///< 2-tap cubic B-spline
-    SWS_X             = 1 <<  3, ///< experimental
-    SWS_POINT         = 1 <<  4, ///< nearest neighbor
-    SWS_AREA          = 1 <<  5, ///< area averaging
-    SWS_BICUBLIN      = 1 <<  6, ///< bicubic luma, bilinear chroma
-    SWS_GAUSS         = 1 <<  7, ///< gaussian approximation
-    SWS_SINC          = 1 <<  8, ///< unwindowed sinc
-    SWS_LANCZOS       = 1 <<  9, ///< 3-tap sinc/sinc
-    SWS_SPLINE        = 1 << 10, ///< cubic Keys spline
+typedef enum SwsScaler {
+    SWS_SCALE_AUTO = 0,
+    SWS_SCALE_BILINEAR, ///< bilinear filtering
+    SWS_SCALE_BICUBIC,  ///< 2-tap cubic BC-spline
+    SWS_SCALE_POINT,    ///< nearest neighbor (point sampling)
+    SWS_SCALE_AREA,     ///< area averaging
+    SWS_SCALE_GAUSSIAN, ///< 2-tap gaussian approximation
+    SWS_SCALE_SINC,     ///< unwindowed sinc
+    SWS_SCALE_LANCZOS,  ///< 3-tap sinc/sinc
+    SWS_SCALE_SPLINE,   ///< unwindowned natural cubic spline
+    SWS_SCALE_NB,       ///< not part of the ABI
+    SWS_SCALE_MAX_ENUM = 0x7FFFFFFF, ///< force size to 32 bits, not a valid filter type
+} SwsScaler;
 
+typedef enum SwsFlags {
     /**
      * Return an error on underspecified conversions. Without this flag,
      * unspecified fields are defaulted to sensible values.
@@ -167,6 +168,22 @@ typedef enum SwsFlags {
      */
     SWS_DIRECT_BGR      = 1 << 15, ///< This flag has no effect
     SWS_ERROR_DIFFUSION = 1 << 23, ///< Set `SwsContext.dither` instead
+
+    /**
+     * Scaler selection options. Only one may be active at a time.
+     * Deprecated in favor of `SwsContext.scaler`.
+     */
+    SWS_FAST_BILINEAR = 1 <<  0, ///< fast bilinear filtering
+    SWS_BILINEAR      = 1 <<  1, ///< bilinear filtering
+    SWS_BICUBIC       = 1 <<  2, ///< 2-tap cubic B-spline
+    SWS_X             = 1 <<  3, ///< experimental
+    SWS_POINT         = 1 <<  4, ///< nearest neighbor
+    SWS_AREA          = 1 <<  5, ///< area averaging
+    SWS_BICUBLIN      = 1 <<  6, ///< bicubic luma, bilinear chroma
+    SWS_GAUSS         = 1 <<  7, ///< gaussian approximation
+    SWS_SINC          = 1 <<  8, ///< unwindowed sinc
+    SWS_LANCZOS       = 1 <<  9, ///< 3-tap sinc/sinc
+    SWS_SPLINE        = 1 << 10, ///< unwindowed natural cubic spline
 } SwsFlags;
 
 typedef enum SwsIntent {
@@ -202,7 +219,8 @@ typedef struct SwsContext {
     /**
      * Extra parameters for fine-tuning certain scalers.
      */
-    double scaler_params[2];
+#define SWS_NUM_SCALER_PARAMS 2
+    double scaler_params[SWS_NUM_SCALER_PARAMS];
 
     /**
      * How many threads to use for processing, or 0 for automatic selection.
@@ -246,6 +264,22 @@ typedef struct SwsContext {
      */
     int intent;
 
+    /**
+     * Scaling filter. If set to something other than SWS_SCALE_AUTO, this will
+     * override the filter implied by `SwsContext.flags`.
+     *
+     * Note: Does not affect the legacy (stateful) API.
+     */
+    SwsScaler scaler;
+
+    /**
+     * Scaler used specifically for up/downsampling subsampled (chroma) planes.
+     * If set to something other than SWS_SCALE_AUTO, this will override the
+     * filter implied by `SwsContext.scaler`. Otherwise, the same filter
+     * will be used for both main scaling and chroma subsampling.
+     */
+    SwsScaler scaler_sub;
+
     /* Remember to add new fields to graph.c:opts_equal() */
 } SwsContext;
 
@@ -265,7 +299,7 @@ void sws_free_context(SwsContext **ctx);
  ***************************/
 
 /**
- * Test if a given pixel format is supported.
+ * Test if a given (software) pixel format is supported.
  *
  * @param output  If 0, test if compatible with the source/input frame;
  *                otherwise, with the destination/output frame.
@@ -274,6 +308,15 @@ void sws_free_context(SwsContext **ctx);
  * @return A positive integer if supported, 0 otherwise.
  */
 int sws_test_format(enum AVPixelFormat format, int output);
+
+/**
+ * Test if a given hardware pixel format is supported.
+ *
+ * @param format  The hardware format to check, or AV_PIX_FMT_NONE.
+ *
+ * @return A positive integer if supported or AV_PIX_FMT_NONE, 0 otherwise.
+ */
+int sws_test_hw_format(enum AVPixelFormat format);
 
 /**
  * Test if a given color space is supported.
@@ -429,7 +472,7 @@ int sws_isSupportedEndiannessConversion(enum AVPixelFormat pix_fmt);
  * Initialize the swscaler context sws_context.
  *
  * This function is considered deprecated, and provided only for backwards
- * compatibility with sws_scale() and sws_start_frame(). The preferred way to
+ * compatibility with sws_scale() and sws_frame_start(). The preferred way to
  * use libswscale is to set all frame properties correctly and call
  * sws_scale_frame() directly, without explicitly initializing the context.
  *
@@ -474,8 +517,8 @@ SwsContext *sws_getContext(int srcW, int srcH, enum AVPixelFormat srcFormat,
 /**
  * Scale the image slice in srcSlice and put the resulting scaled
  * slice in the image in dst. A slice is a sequence of consecutive
- * rows in an image. Requires a context that has been previously
- * been initialized with sws_init_context().
+ * rows in an image. Requires a context that has previously been
+ * initialized with sws_init_context().
  *
  * Slices have to be provided in sequential order, either in
  * top-bottom or bottom-top order. If slices are provided in
@@ -505,8 +548,7 @@ int sws_scale(SwsContext *c, const uint8_t *const srcSlice[],
 /**
  * Initialize the scaling process for a given pair of source/destination frames.
  * Must be called before any calls to sws_send_slice() and sws_receive_slice().
- * Requires a context that has been previously been initialized with
- * sws_init_context().
+ * Requires a context that has previously been initialized with sws_init_context().
  *
  * This function will retain references to src and dst, so they must both use
  * refcounted buffers (if allocated by the caller, in case of dst).
@@ -577,7 +619,7 @@ int sws_receive_slice(SwsContext *c, unsigned int slice_start,
                       unsigned int slice_height);
 
 /**
- * Get the alignment required for slices. Requires a context that has been
+ * Get the alignment required for slices. Requires a context that has
  * previously been initialized with sws_init_context().
  *
  * @param c   The scaling context
@@ -589,8 +631,8 @@ unsigned int sws_receive_slice_alignment(const SwsContext *c);
 
 /**
  * @param c the scaling context
- * @param dstRange flag indicating the while-black range of the output (1=jpeg / 0=mpeg)
- * @param srcRange flag indicating the while-black range of the input (1=jpeg / 0=mpeg)
+ * @param dstRange flag indicating the white-black range of the output (1=jpeg / 0=mpeg)
+ * @param srcRange flag indicating the white-black range of the input (1=jpeg / 0=mpeg)
  * @param table the yuv2rgb coefficients describing the output yuv space, normally ff_yuv2rgb_coeffs[x]
  * @param inv_table the yuv2rgb coefficients describing the input yuv space, normally ff_yuv2rgb_coeffs[x]
  * @param brightness 16.16 fixed point brightness correction

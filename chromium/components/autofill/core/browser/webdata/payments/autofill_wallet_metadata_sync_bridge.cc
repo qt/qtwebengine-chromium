@@ -6,6 +6,7 @@
 
 #include <map>
 #include <optional>
+#include <ranges>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -379,8 +380,8 @@ std::unique_ptr<syncer::DataBatch>
 AutofillWalletMetadataSyncBridge::GetDataForCommit(
     StorageKeyList storage_keys) {
   // Build a set out of the list to allow quick lookup.
-  absl::flat_hash_set<std::string> storage_keys_set(storage_keys.begin(),
-                                                    storage_keys.end());
+  absl::flat_hash_set<std::string> storage_keys_set(std::from_range,
+                                                    storage_keys);
   return GetDataImpl(std::move(storage_keys_set));
 }
 
@@ -405,6 +406,14 @@ std::string AutofillWalletMetadataSyncBridge::GetStorageKey(
   return GetStorageKeyForWalletMetadataTypeAndSpecificsId(
       entity_data.specifics.wallet_metadata().type(),
       entity_data.specifics.wallet_metadata().id());
+}
+
+sync_pb::EntitySpecifics
+AutofillWalletMetadataSyncBridge::TrimAllSupportedFieldsFromRemoteSpecifics(
+    const sync_pb::EntitySpecifics& entity_specifics) const {
+  // Clears all fields by default to avoid the memory and I/O overhead of an
+  // additional copy of the data.
+  return sync_pb::EntitySpecifics();
 }
 
 bool AutofillWalletMetadataSyncBridge::IsEntityDataValid(

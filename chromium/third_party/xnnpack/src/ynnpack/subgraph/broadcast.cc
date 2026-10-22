@@ -28,9 +28,11 @@ ynn_status ynn_define_broadcast(ynn_subgraph_t subgraph, size_t num_axes,
                                 const int32_t* axes, uint32_t input_id,
                                 uint32_t* output_id, uint32_t flags) {
   // Validate arguments.
-  assert(subgraph);
-  assert(subgraph->is_valid_value(input_id));
-  assert(output_id);
+  YNN_RETURN_IF_ERROR(validate_subgraph("broadcast", subgraph));
+  YNN_RETURN_IF_ERROR(
+      validate_input_tensor("broadcast", subgraph, "input_id", input_id));
+  YNN_RETURN_IF_ERROR(
+      validate_output_tensor("broadcast", subgraph, "output_id", output_id));
   const ynn_value& input = subgraph->value(input_id);
 
   ynn::axes_set axes_set;
@@ -59,7 +61,7 @@ ynn_status ynn_define_broadcast(ynn_subgraph_t subgraph, size_t num_axes,
 
     node.checks.push_back({
         input.extents[d] == 1,
-        {"In node 'broadcast', invalid broadcast in dimension ", d, " of ",
+        {"For node 'broadcast', invalid broadcast in dimension ", d, " of ",
          ynn_node::input_idx{0}},
     });
   }
@@ -91,7 +93,7 @@ ynn_status ynn_define_broadcast(ynn_subgraph_t subgraph, size_t num_axes,
 
     output.make_buffer(runtime, input.buffer->elem_size());
 
-    std::vector<slinky::var> dims = make_dims(output.rank(), runtime.symbols);
+    std::vector<slinky::var> dims = runtime.globals.make_dims(output.rank());
     slinky::box_expr bounds = make_elementwise_bounds(dims, input.extents);
 
     for (size_t i = 0; i < std::min(bounds.size(), axes.size()); ++i) {

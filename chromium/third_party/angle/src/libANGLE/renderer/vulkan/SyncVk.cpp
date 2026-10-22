@@ -248,8 +248,13 @@ angle::Result SyncHelper::serverWait(ContextVk *contextVk)
 
 angle::Result SyncHelper::getStatus(ErrorContext *context, ContextVk *contextVk, bool *signaledOut)
 {
-    // Submit commands if it was deferred on the context that issued the sync object
-    ANGLE_TRY(submitSyncIfDeferred(contextVk, RenderPassClosureReason::SyncObjectClientWait));
+    ASSERT(context);
+    if (!context->getFeatures().disableSubmitCommandsOnSyncStatusCheckForTesting.enabled)
+    {
+        // Submit commands if it was deferred on the context that issued the sync object
+        ANGLE_TRY(submitSyncIfDeferred(contextVk, RenderPassClosureReason::SyncObjectClientWait));
+    }
+
     ASSERT(mUse.valid());
     Renderer *renderer = context->getRenderer();
     if (renderer->hasResourceUseFinished(mUse))
@@ -537,6 +542,7 @@ angle::Result SyncHelperNativeFence::serverWait(ContextVk *contextVk)
     importFdInfo.flags                      = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT_KHR;
     importFdInfo.handleType                 = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT_KHR;
     importFdInfo.fd                         = dup(mExternalFence->getFenceFd());
+    ANGLE_VK_CHECK(contextVk, importFdInfo.fd >= 0, VK_ERROR_OUT_OF_HOST_MEMORY);
     ANGLE_VK_TRY(contextVk, waitSemaphore.get().importFd(device, importFdInfo));
 
     // Add semaphore to next submit job.
@@ -567,6 +573,7 @@ angle::Result SyncHelperNativeFence::dupNativeFenceFD(ErrorContext *context, int
     }
 
     *fdOut = dup(mExternalFence->getFenceFd());
+    ANGLE_VK_CHECK(context, *fdOut >= 0, VK_ERROR_OUT_OF_HOST_MEMORY);
 
     return angle::Result::Continue;
 }

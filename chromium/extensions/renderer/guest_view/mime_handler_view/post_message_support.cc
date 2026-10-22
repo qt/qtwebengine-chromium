@@ -4,6 +4,8 @@
 
 #include "extensions/renderer/guest_view/mime_handler_view/post_message_support.h"
 
+#include <utility>
+
 #include "base/metrics/histogram_functions.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/v8_value_converter.h"
@@ -145,8 +147,14 @@ void PostMessageSupport::PostJavaScriptMessage(v8::Isolate* isolate,
   v8::Local<v8::Object> target_window_proxy =
       target_frame->GlobalProxy(isolate);
   gin::Dictionary window_object(isolate, target_window_proxy);
+  auto weak_this = weak_factory_.GetWeakPtr();
   v8::Local<v8::Function> post_message;
   if (!window_object.Get(std::string(kPostMessageName), &post_message)) {
+    return;
+  }
+  if (!weak_this) {
+    // Getting the function may have executed a malicious script that destroyed
+    // `this`. See https://crbug.com/516910450
     return;
   }
 
@@ -181,12 +189,22 @@ void PostMessageSupport::SetActive() {
   v8::Isolate* isolate = source->GetAgentGroupScheduler()->Isolate();
   v8::HandleScope handle_scope(isolate);
   v8::Context::Scope context_scope(source->MainWorldScriptContext());
-  for (const auto& pending_message : pending_messages_) {
+
+  // PostJavaScriptMessage() runs script (structured clone of attacker-supplied
+  // values) and may re-enter delegate_->GetTargetFrame(), either of which can
+  // synchronously delete |this| and free |pending_messages_|'s backing buffer.
+  // Move the queue onto the stack and bail out if |this| goes away.
+  // See crbug.com/506375731.
+  auto weak_this = weak_factory_.GetWeakPtr();
+  std::vector<v8::Global<v8::Value>> messages =
+      std::exchange(pending_messages_, {});
+  for (const auto& pending_message : messages) {
     PostJavaScriptMessage(isolate,
                           v8::Local<v8::Value>::New(isolate, pending_message));
+    if (!weak_this) {
+      return;
+    }
   }
-
-  pending_messages_.clear();
 }
 
 }  // namespace extensions

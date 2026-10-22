@@ -6,6 +6,7 @@
 
 #include <string_view>
 
+#include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/numerics/byte_conversions.h"
@@ -44,7 +45,7 @@ std::optional<uint32_t> ConvertToHashInteger(std::string_view chars) {
     return std::nullopt;
   }
   for (auto c : chars) {
-    if (!IsASCIIHexDigit(c)) {
+    if (!IsAsciiHexDigit(c)) {
       return std::nullopt;
     }
   }
@@ -98,7 +99,7 @@ BackgroundTracingHelper::BackgroundTracingHelper(ExecutionContext* context) {
   // Get the hash of the domain in an encoded format (friendly for converting to
   // ASCII, and matching the format in which URLs will be encoded prior to
   // hashing in the Finch list).
-  String this_site = EncodeWithURLEscapeSequences(origin->Domain());
+  String this_site = EncodeWithUrlEscapeSequences(origin->Domain());
   std::string this_site_ascii = this_site.Ascii();
   uint32_t this_site_hash = MD5Hash32(this_site_ascii);
 
@@ -181,9 +182,11 @@ size_t BackgroundTracingHelper::GetIdSuffixPos(StringView string) {
   // Extract any trailing integers.
   size_t cursor = string.length();
   while (cursor > 0) {
-    char c = string[cursor - 1];
-    if (c < '0' || c > '9')
+    // SAFETY: non-zero cursor <= length implies cursor - 1 is valid.
+    char c = UNSAFE_BUFFERS(string[cursor - 1]);
+    if (!IsAsciiDigit(c)) {
       break;
+    }
     --cursor;
   }
 
@@ -198,8 +201,10 @@ size_t BackgroundTracingHelper::GetIdSuffixPos(StringView string) {
     return 0;
 
   // A valid suffix must be preceded by an underscore.
-  if (string[cursor - 1] != '_')
+  // SAFETY: cursor is 2 or more and not EOS per checks above.
+  if (UNSAFE_BUFFERS(string[cursor - 1]) != '_') {
     return 0;
+  }
 
   // Return the location of the underscore.
   return cursor - 1;
@@ -221,12 +226,7 @@ BackgroundTracingHelper::SplitMarkNameAndId(StringView mark_name) {
   }
   auto suffix = StringView(mark_name, sequence_number_pos + 1);
   mark_name = StringView(mark_name, 0, sequence_number_pos);
-  bool result = false;
-  int seq_num = CharactersToInt(suffix, NumberParsingOptions(), &result);
-  if (!result) {
-    return std::make_pair(mark_name, std::nullopt);
-  }
-  return std::make_pair(mark_name, seq_num);
+  return std::make_pair(mark_name, StringToUint(suffix, {}));
 }
 
 // static

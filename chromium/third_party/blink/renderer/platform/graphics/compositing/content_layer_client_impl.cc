@@ -96,7 +96,8 @@ void ContentLayerClientImpl::AppendAdditionalInfoAsJSON(
 }
 
 void ContentLayerClientImpl::UpdateCcPictureLayer(
-    const PendingLayer& pending_layer) {
+    const PendingLayer& pending_layer,
+    PropertyTreeState property_state_for_paint) {
   const auto& paint_chunks = pending_layer.Chunks();
   CHECK_EQ(cc_picture_layer_->client(), this);
 #if EXPENSIVE_DCHECKS_ARE_ON()
@@ -136,6 +137,12 @@ void ContentLayerClientImpl::UpdateCcPictureLayer(
             paint_chunks[0].id.client_id));
   }
 
+  if (const auto* state = layer_state.Effect().canvas_child_paint_state()) {
+    canvas_child_paint_state_ = std::make_unique<CanvasChildPaintState>(*state);
+  } else {
+    canvas_child_paint_state_.reset();
+  }
+
   // Note: cc::Layer API assumes the layer bounds start at (0, 0), but the
   // bounding box of a paint chunk does not necessarily start at (0, 0) (and
   // could even be negative). Internally the generated layer translates the
@@ -168,7 +175,7 @@ void ContentLayerClientImpl::UpdateCcPictureLayer(
   auto previous_display_list = std::move(cc_display_item_list_);
   cc_display_item_list_ = base::MakeRefCounted<cc::DisplayItemList>();
   PaintChunksToCcLayer::ConvertInto(
-      paint_chunks, layer_state, layer_offset,
+      paint_chunks, property_state_for_paint, layer_offset,
       base::OptionalToPtr(raster_under_invalidation_params),
       *cc_display_item_list_);
 
@@ -235,6 +242,24 @@ void ContentLayerClientImpl::InvalidateRect(const gfx::Rect& rect) {
   }
   cc_display_item_list_ = nullptr;
   cc_picture_layer_->SetNeedsDisplayRect(rect);
+}
+
+std::optional<CanvasChildPaintRecord>
+ContentLayerClientImpl::GetCanvasChildPaintRecord() const {
+  if (!canvas_child_paint_state_) {
+    return std::nullopt;
+  }
+  gfx::Vector2dF offset = cc_picture_layer_->offset_to_transform_parent();
+  cc::PaintRecord record;
+  if (offset.IsZero()) {
+    record = cc_display_item_list_->paint_op_buffer().DeepCopyAsRecord();
+  } else {
+    auto result = sk_make_sp<cc::PaintOpBuffer>();
+    result->push<cc::TranslateOp>(offset.x(), offset.y());
+    *result += cc_display_item_list_->paint_op_buffer();
+    record = result->ReleaseAsRecord();
+  }
+  return CanvasChildPaintRecord{*canvas_child_paint_state_, std::move(record)};
 }
 
 size_t ContentLayerClientImpl::ApproximateUnsharedMemoryUsage() const {

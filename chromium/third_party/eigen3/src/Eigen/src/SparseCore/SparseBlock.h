@@ -68,6 +68,32 @@ class BlockImpl<XprType, BlockRows, BlockCols, true, Sparse>
   Index blockRows() const { return IsRowMajor ? m_outerSize.value() : m_matrix.rows(); }
   Index blockCols() const { return IsRowMajor ? m_matrix.cols() : m_outerSize.value(); }
 
+  inline const Scalar* valuePtr() const { return m_matrix.valuePtr(); }
+  inline Scalar* valuePtr() { return m_matrix.valuePtr(); }
+
+  inline const StorageIndex* innerIndexPtr() const { return m_matrix.innerIndexPtr(); }
+  inline StorageIndex* innerIndexPtr() { return m_matrix.innerIndexPtr(); }
+
+  inline const StorageIndex* outerIndexPtr() const {
+    const StorageIndex* p = m_matrix.outerIndexPtr();
+    return p ? p + m_outerStart : 0;
+  }
+  inline StorageIndex* outerIndexPtr() {
+    StorageIndex* p = m_matrix.outerIndexPtr();
+    return p ? p + m_outerStart : 0;
+  }
+
+  inline const StorageIndex* innerNonZeroPtr() const {
+    const StorageIndex* p = m_matrix.innerNonZeroPtr();
+    return p ? p + m_outerStart : 0;
+  }
+  inline StorageIndex* innerNonZeroPtr() {
+    StorageIndex* p = m_matrix.innerNonZeroPtr();
+    return p ? p + m_outerStart : 0;
+  }
+
+  bool isCompressed() const { return m_matrix.innerNonZeroPtr() == 0; }
+
  protected:
   typename internal::ref_selector<XprType>::non_const_type m_matrix;
   Index m_outerStart;

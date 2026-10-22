@@ -206,15 +206,14 @@ class JPEGImageReader final {
   USING_FAST_MALLOC(JPEGImageReader);
 
  public:
-  JPEGImageReader(JPEGImageDecoder* decoder, wtf_size_t initial_offset)
+  explicit JPEGImageReader(JPEGImageDecoder* decoder)
       : decoder_(decoder),
         needs_restart_(false),
-        restart_position_(initial_offset),
-        next_read_position_(initial_offset),
+        restart_position_(0),
+        next_read_position_(0),
         last_set_byte_(nullptr),
         state_(kJpegHeader),
         samples_(nullptr) {
-
     // Set up the normal JPEG error routines, then override error_exit.
     info_.err = jpeg_std_error(&err_.pub);
     err_.pub.error_exit = error_exit;
@@ -823,14 +822,12 @@ void term_source(j_decompress_ptr jd) {
 JPEGImageDecoder::JPEGImageDecoder(AlphaOption alpha_option,
                                    ColorBehavior color_behavior,
                                    cc::AuxImage aux_image,
-                                   wtf_size_t max_decoded_bytes,
-                                   wtf_size_t offset)
+                                   wtf_size_t max_decoded_bytes)
     : ImageDecoder(alpha_option,
                    ImageDecoder::kDefaultBitDepth,
                    color_behavior,
                    aux_image,
-                   max_decoded_bytes),
-      offset_(offset) {}
+                   max_decoded_bytes) {}
 
 JPEGImageDecoder::~JPEGImageDecoder() = default;
 
@@ -951,11 +948,12 @@ unsigned JPEGImageDecoder::DesiredScaleNumerator(wtf_size_t max_decoded_bytes,
     return scale_denominator;
   }
 
-  // Downsample according to the maximum decoded size.
-  return static_cast<unsigned>(floor(sqrt(
-      // MSVC needs explicit parameter type for sqrt().
-      static_cast<float>(max_decoded_bytes) / original_bytes *
-      scale_denominator * scale_denominator)));
+  // Downsample according to the maximum decoded size. Use double to prevent
+  // precision loss that can trigger redundant decoder creation
+  // (crbug.com/500104917).
+  return static_cast<unsigned>(
+      floor(sqrt(static_cast<double>(max_decoded_bytes) / original_bytes) *
+            scale_denominator));
 }
 
 bool JPEGImageDecoder::ShouldGenerateAllSizes() const {
@@ -1337,7 +1335,7 @@ void JPEGImageDecoder::Decode(DecodingMode decoding_mode) {
   }
 
   if (!reader_) {
-    reader_ = std::make_unique<JPEGImageReader>(this, offset_);
+    reader_ = std::make_unique<JPEGImageReader>(this);
     reader_->SetData(data_);
   }
 

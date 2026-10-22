@@ -792,7 +792,7 @@ export class Lab implements Color {
     return params;
   }
 
-  constructor(l: number, a: number, b: number, alpha: number|null, authoredText?: string|undefined) {
+  constructor(l: number, a: number, b: number, alpha: number|null, authoredText?: string) {
     this.#rawParams = [l, a, b];
     this.l = clamp(l, {min: 0, max: 100});
     if (equals(this.l, 0, WIDE_RANGE_EPSILON) || equals(this.l, 100, WIDE_RANGE_EPSILON)) {
@@ -931,7 +931,7 @@ export class LCH implements Color {
     return params;
   }
 
-  constructor(l: number, c: number, h: number, alpha: number|null, authoredText?: string|undefined) {
+  constructor(l: number, c: number, h: number, alpha: number|null, authoredText?: string) {
     this.#rawParams = [l, c, h];
     this.l = clamp(l, {min: 0, max: 100});
     c = equals(this.l, 0, WIDE_RANGE_EPSILON) || equals(this.l, 100, WIDE_RANGE_EPSILON) ? 0 : c;
@@ -1073,7 +1073,7 @@ export class Oklab implements Color {
     return params;
   }
 
-  constructor(l: number, a: number, b: number, alpha: number|null, authoredText?: string|undefined) {
+  constructor(l: number, a: number, b: number, alpha: number|null, authoredText?: string) {
     this.#rawParams = [l, a, b];
     this.l = clamp(l, {min: 0, max: 1});
     if (equals(this.l, 0) || equals(this.l, 1)) {
@@ -1212,7 +1212,7 @@ export class Oklch implements Color {
     return params;
   }
 
-  constructor(l: number, c: number, h: number, alpha: number|null, authoredText?: string|undefined) {
+  constructor(l: number, c: number, h: number, alpha: number|null, authoredText?: string) {
     this.#rawParams = [l, c, h];
     this.l = clamp(l, {min: 0, max: 1});
     c = equals(this.l, 0) || equals(this.l, 1) ? 0 : c;
@@ -1379,8 +1379,7 @@ export class ColorFunction implements Color {
     return params;
   }
 
-  constructor(
-      colorSpace: ColorSpace, p0: number, p1: number, p2: number, alpha: number|null, authoredText?: string|undefined) {
+  constructor(colorSpace: ColorSpace, p0: number, p1: number, p2: number, alpha: number|null, authoredText?: string) {
     this.#rawParams = [p0, p1, p2];
     this.colorSpace = colorSpace;
     this.#authoredText = authoredText;
@@ -1534,7 +1533,7 @@ export class HSL implements Color {
   readonly l: number;
   readonly alpha: number|null;
   readonly #rawParams: Color3D;
-  #authoredText: string|undefined;
+  #authoredText?: string;
   readonly channels: [ColorChannel, ColorChannel, ColorChannel, ColorChannel] =
       [ColorChannel.H, ColorChannel.S, ColorChannel.L, ColorChannel.ALPHA];
 
@@ -1588,7 +1587,7 @@ export class HSL implements Color {
     return ColorConverter.srgbToXyzd50(rgb[0], rgb[1], rgb[2]);
   }
 
-  constructor(h: number, s: number, l: number, alpha: number|null|undefined, authoredText?: string) {
+  constructor(h: number, s: number, l: number, alpha?: number|null, authoredText?: string) {
     this.#rawParams = [h, s, l];
     this.l = clamp(l, {min: 0, max: 1});
     s = equals(this.l, 0) || equals(this.l, 1) ? 0 : s;
@@ -1603,7 +1602,7 @@ export class HSL implements Color {
     const hsl = color.as(Format.HSL);
     return equals(this.h, hsl.h) && equals(this.s, hsl.s) && equals(this.l, hsl.l) && equals(this.alpha, hsl.alpha);
   }
-  asString(format?: Format|undefined): string {
+  asString(format?: Format): string {
     if (format) {
       return this.as(format).asString();
     }
@@ -1688,7 +1687,7 @@ export class HWB implements Color {
   readonly b: number;
   readonly alpha: number|null;
   readonly #rawParams: Color3D;
-  #authoredText: string|undefined;
+  #authoredText?: string;
   readonly channels: [ColorChannel, ColorChannel, ColorChannel, ColorChannel] =
       [ColorChannel.H, ColorChannel.W, ColorChannel.B, ColorChannel.ALPHA];
 
@@ -1760,7 +1759,7 @@ export class HWB implements Color {
     const hwb = color.as(Format.HWB);
     return equals(this.h, hwb.h) && equals(this.w, hwb.w) && equals(this.b, hwb.b) && equals(this.alpha, hwb.alpha);
   }
-  asString(format?: Format|undefined): string {
+  asString(format?: Format): string {
     if (format) {
       return this.as(format).asString();
     }
@@ -1886,7 +1885,7 @@ abstract class ShortFormatColorBase implements Color {
   isGamutClipped(): boolean {
     return this.color.isGamutClipped();
   }
-  asString(format?: Format|undefined): string {
+  asString(format?: Format): string {
     if (format) {
       return this.as(format).asString();
     }
@@ -1909,7 +1908,7 @@ export class ShortHex extends ShortFormatColorBase {
     return new ShortHex(this.color.setAlpha(alpha));
   }
 
-  override asString(format?: Format|undefined): string {
+  override asString(format?: Format): string {
     return format && format !== this.format() ? super.as(format).asString() : super.asString();
   }
 
@@ -1949,7 +1948,7 @@ export class Nickname extends ShortFormatColorBase {
     return this.nickname;
   }
 
-  override getAsRawString(format?: Format|undefined): string {
+  override getAsRawString(format?: Format): string {
     return this.color.getAsRawString(format);
   }
 }
@@ -2065,7 +2064,7 @@ export class Legacy implements Color {
     return isShort ? new ShortHex(color) : color;
   }
 
-  static fromRGBAFunction(r: string, g: string, b: string, alpha: string|undefined, text: string): Legacy|null {
+  static fromRGBAFunction(r: string, g: string, b: string, alpha: string, text: string): Legacy|null {
     const rgba = [
       parseRgbNumeric(r),
       parseRgbNumeric(g),
@@ -2183,15 +2182,15 @@ export class Legacy implements Color {
     r: number,
     g: number,
     b: number,
-    a: (number|undefined),
+    a?: number,
   } {
     const rgba = this.canonicalRGBA();
     const result: {
       r: number,
       g: number,
       b: number,
-      a: number|undefined,
-    } = {r: rgba[0], g: rgba[1], b: rgba[2], a: undefined};
+      a?: number,
+    } = {r: rgba[0], g: rgba[1], b: rgba[2]};
     if (rgba[3] !== 1) {
       result.a = rgba[3];
     }
@@ -2453,7 +2452,7 @@ export const IsolationModeHighlight = {
 type Space = number|{
   min: number,
   max: number,
-  count: (number|undefined),
+  count?: number,
 };
 
 export class Generator {
@@ -2463,7 +2462,7 @@ export class Generator {
   readonly #alphaSpace: Space;
   readonly #colors = new Map<string, string>();
   constructor(hueSpace?: Space, satSpace?: Space, lightnessSpace?: Space, alphaSpace?: Space) {
-    this.#hueSpace = hueSpace || {min: 0, max: 360, count: undefined};
+    this.#hueSpace = hueSpace || {min: 0, max: 360};
     this.#satSpace = satSpace || 67;
     this.#lightnessSpace = lightnessSpace || 80;
     this.#alphaSpace = alphaSpace || 1;

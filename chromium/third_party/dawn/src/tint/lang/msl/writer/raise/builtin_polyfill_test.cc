@@ -3399,7 +3399,7 @@ TEST_F(MslWriter_BuiltinPolyfillTest, Pack2x16Float) {
 %foo = func(%input:vec2<f32>):u32 {
   $B1: {
     %3:vec2<f16> = convert %input
-    %4:u32 = bitcast %3
+    %4:u32 = bitcast<u32> %3
     ret %4
   }
 }
@@ -3433,7 +3433,7 @@ TEST_F(MslWriter_BuiltinPolyfillTest, Unpack2x16Float) {
     auto* expect = R"(
 %foo = func(%input:u32):vec2<f32> {
   $B1: {
-    %3:vec2<f16> = bitcast %input
+    %3:vec2<f16> = bitcast<vec2<f16>> %input
     %4:vec2<f32> = convert %3
     ret %4
   }
@@ -4001,6 +4001,239 @@ TEST_F(MslWriter_BuiltinPolyfillTest, SubgroupMatrixScalarSubtract) {
     %11:subgroup_matrix_result<f32, 8, 8> = load %4
     %12:subgroup_matrix_result<f32, 8, 8> = msl.convert<subgroup_matrix_result<f32, 8, 8>> %11
     %r:subgroup_matrix_result<f32, 8, 8> = let %12
+    ret
+  }
+}
+)";
+
+    BuiltinPolyfillConfig config;
+    Run(BuiltinPolyfill, config);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_BuiltinPolyfillTest, Tanh_f32) {
+    auto* func = b.ComputeFunction("main");
+    b.Append(func->Block(), [&] {
+        b.Let("r", b.Call(ty.f32(), core::BuiltinFn::kTanh, 1_f));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:f32 = tanh 1.0f
+    %r:f32 = let %2
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = src;
+
+    BuiltinPolyfillConfig config{
+        .polyfill_tanh_f16 = true,
+    };
+    Run(BuiltinPolyfill, config);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_BuiltinPolyfillTest, Tanh_NoFlag_f16) {
+    auto* func = b.ComputeFunction("main");
+    b.Append(func->Block(), [&] {
+        b.Let("r", b.Call(ty.f16(), core::BuiltinFn::kTanh, 1_h));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:f16 = tanh 1.0h
+    %r:f16 = let %2
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = src;
+
+    BuiltinPolyfillConfig config{
+        .polyfill_tanh_f16 = false,
+    };
+    Run(BuiltinPolyfill, config);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_BuiltinPolyfillTest, Tanh_f16) {
+    auto* func = b.ComputeFunction("main");
+    b.Append(func->Block(), [&] {
+        b.Let("r", b.Call(ty.f16(), core::BuiltinFn::kTanh, 1_h));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:f16 = tanh 1.0h
+    %r:f16 = let %2
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:f32 = convert 1.0h
+    %3:f32 = tanh %2
+    %4:f16 = convert %3
+    %r:f16 = let %4
+    ret
+  }
+}
+)";
+
+    BuiltinPolyfillConfig config{
+        .polyfill_tanh_f16 = true,
+    };
+    Run(BuiltinPolyfill, config);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_BuiltinPolyfillTest, Tanh_vec2_f16) {
+    auto* func = b.ComputeFunction("main");
+    b.Append(func->Block(), [&] {
+        b.Let("r", b.Call(ty.vec2(ty.f16()), core::BuiltinFn::kTanh,
+                          b.Construct(ty.vec2<f16>(), 1_h, 2_h)));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:vec2<f16> = construct 1.0h, 2.0h
+    %3:vec2<f16> = tanh %2
+    %r:vec2<f16> = let %3
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%main = @compute @workgroup_size(1u, 1u, 1u) func():void {
+  $B1: {
+    %2:vec2<f16> = construct 1.0h, 2.0h
+    %3:vec2<f32> = convert %2
+    %4:vec2<f32> = tanh %3
+    %5:vec2<f16> = convert %4
+    %r:vec2<f16> = let %5
+    ret
+  }
+}
+)";
+
+    BuiltinPolyfillConfig config{
+        .polyfill_tanh_f16 = true,
+    };
+    Run(BuiltinPolyfill, config);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_BuiltinPolyfillTest, AtomicStoreMin) {
+    this->capabilities.Add(core::ir::Capability::kAllow64BitIntegers);
+    auto* var = b.Var(ty.ptr(storage, ty.atomic(ty.u64())));
+    var->SetBindingPoint(0, 0);
+    mod.root_block->Append(var);
+    auto* arg1 = b.FunctionParam("arg1", ty.vec2u());
+    auto* func = b.Function("foo", ty.void_());
+    func->SetParams({arg1});
+
+    b.Append(func->Block(), [&] {
+        b.Call(ty.void_(), core::BuiltinFn::kAtomicStoreMin, var, b.Bitcast(ty.u64(), arg1));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %1:ptr<storage, atomic<u64>, read_write> = var undef @binding_point(0, 0)
+}
+
+%foo = func(%arg1:vec2<u32>):void {
+  $B2: {
+    %4:u64 = bitcast<u64> %arg1
+    %5:void = atomicStoreMin %1, %4
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+$B1: {  # root
+  %1:ptr<storage, atomic<u64>, read_write> = var undef @binding_point(0, 0)
+}
+
+%foo = func(%arg1:vec2<u32>):void {
+  $B2: {
+    %4:u64 = bitcast<u64> %arg1
+    %5:void = msl.atomic_min_explicit %1, %4, 0u
+    ret
+  }
+}
+)";
+
+    BuiltinPolyfillConfig config;
+    Run(BuiltinPolyfill, config);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(MslWriter_BuiltinPolyfillTest, AtomicStoreMax) {
+    this->capabilities.Add(core::ir::Capability::kAllow64BitIntegers);
+    auto* var = b.Var(ty.ptr(storage, ty.atomic(ty.u64())));
+    var->SetBindingPoint(0, 0);
+    mod.root_block->Append(var);
+    auto* arg1 = b.FunctionParam("arg1", ty.vec2u());
+    auto* func = b.Function("foo", ty.void_());
+    func->SetParams({arg1});
+
+    b.Append(func->Block(), [&] {
+        b.Call(ty.void_(), core::BuiltinFn::kAtomicStoreMax, var, b.Bitcast(ty.u64(), arg1));
+        b.Return(func);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %1:ptr<storage, atomic<u64>, read_write> = var undef @binding_point(0, 0)
+}
+
+%foo = func(%arg1:vec2<u32>):void {
+  $B2: {
+    %4:u64 = bitcast<u64> %arg1
+    %5:void = atomicStoreMax %1, %4
+    ret
+  }
+}
+)";
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+$B1: {  # root
+  %1:ptr<storage, atomic<u64>, read_write> = var undef @binding_point(0, 0)
+}
+
+%foo = func(%arg1:vec2<u32>):void {
+  $B2: {
+    %4:u64 = bitcast<u64> %arg1
+    %5:void = msl.atomic_max_explicit %1, %4, 0u
     ret
   }
 }

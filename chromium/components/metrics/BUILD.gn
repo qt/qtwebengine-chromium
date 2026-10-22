@@ -97,6 +97,11 @@ source_set("client_info") {
 }
 
 # Used by the Chrome installer, which doesn't need the whole metrics library.
+source_set("metrics_reporting_level") {
+  sources = [ "metrics_reporting_level.h" ]
+}
+
+# Used by the Chrome installer, which doesn't need the whole metrics library.
 source_set("metrics_pref_names") {
   sources = [ "metrics_pref_names.h" ]
   configs += [
@@ -185,6 +190,7 @@ if (!is_cronet_build || is_ios) {
       "persistent_histograms.cc",
       "persistent_synthetic_trial_observer.cc",
       "persistent_system_profile.cc",
+      "profile_metrics_service.cc",
       "reporting_service.cc",
       "sampling_metrics_provider.cc",
       "server_urls.cc",
@@ -247,6 +253,7 @@ if (!is_cronet_build || is_ios) {
       "persistent_histograms.h",
       "persistent_synthetic_trial_observer.h",
       "persistent_system_profile.h",
+      "profile_metrics_service.h",
       "reporting_service.h",
       "sampling_metrics_provider.h",
       "server_urls.h",
@@ -269,6 +276,7 @@ if (!is_cronet_build || is_ios) {
       "//components/country_codes",
       "//components/metrics:client_info",
       "//components/metrics:metrics_pref_names",
+      "//components/metrics:metrics_reporting_level",
       "//components/regional_capabilities:country_id",
       "//components/variations",
       "//third_party/metrics_proto",
@@ -284,6 +292,7 @@ if (!is_cronet_build || is_ios) {
       "//base:i18n",
       "//build:branding_buildflags",
       "//components/background_task_scheduler",
+      "//components/keyed_service/core",
       "//components/metrics/public/mojom:call_stack_mojo_bindings",
       "//components/metrics/public/mojom:histogram_fetcher_mojo_bindings",
       "//components/network_time",
@@ -416,6 +425,7 @@ if (!is_cronet_build) {
       public_deps = [ ":metrics" ]
       deps = [
         "//base",
+        "//components/metrics/mapping",
         "//components/metrics/private_metrics",
         "//content/public/browser",
         "//extensions/buildflags",
@@ -597,6 +607,7 @@ if (!is_cronet_build) {
       "daily_event_unittest.cc",
       "data_use_tracker_unittest.cc",
       "date_changed_helper_unittest.cc",
+      "drive_metrics_provider_unittest.cc",
       "entropy_state_provider_unittest.cc",
       "entropy_state_unittest.cc",
       "environment_recorder_unittest.cc",
@@ -617,6 +628,7 @@ if (!is_cronet_build) {
       "net/network_metrics_provider_unittest.cc",
       "persistent_synthetic_trial_observer_unittest.cc",
       "persistent_system_profile_unittest.cc",
+      "profile_metrics_service_unittest.cc",
       "reporting_service_unittest.cc",
       "server_urls_unittest.cc",
       "single_sample_metrics_factory_impl_unittest.cc",
@@ -643,6 +655,7 @@ if (!is_cronet_build) {
       "//build:branding_buildflags",
       "//components/component_updater:test_support",
       "//components/encrypted_messages:encrypted_message_proto",
+      "//components/metrics/mapping:unit_tests",
       "//components/metrics/private_metrics",
       "//components/metrics/public/mojom:call_stack_mojo_bindings",
       "//components/network_time:network_time_test_support",

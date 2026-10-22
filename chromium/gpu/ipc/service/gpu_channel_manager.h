@@ -36,6 +36,7 @@
 #include "gpu/command_buffer/service/shared_context_state.h"
 #include "gpu/config/gpu_driver_bug_workarounds.h"
 #include "gpu/config/gpu_feature_info.h"
+#include "gpu/config/gpu_info.h"
 #include "gpu/config/gpu_preferences.h"
 #include "gpu/ipc/common/gpu_disk_cache_type.h"
 #include "gpu/ipc/common/gpu_peak_memory.h"
@@ -99,7 +100,6 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
       GpuProcessShmCount* use_shader_cache_shm_count,
       scoped_refptr<gl::GLSurface> default_offscreen_surface,
       viz::VulkanContextProvider* vulkan_context_provider = nullptr,
-      viz::MetalContextProvider* metal_context_provider = nullptr,
       DawnContextProvider* dawn_context_provider = nullptr,
       webgpu::DawnCachingInterfaceFactory* dawn_caching_interface_factory =
           nullptr,
@@ -120,7 +120,9 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
                                uint64_t client_tracing_id,
                                bool is_gpu_host,
                                bool enable_extra_handles_validation,
-                               const gfx::GpuExtraInfo& gpu_extra_info);
+                               const gfx::GpuExtraInfo& gpu_extra_info,
+                               const gpu::GPUInfo& gpu_info,
+                               const gpu::GpuFeatureInfo& gpu_feature_info);
 
   void SetChannelClientPid(int client_id, base::ProcessId client_pid);
   void SetChannelDiskCacheHandle(int client_id,
@@ -363,10 +365,6 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
   // viz::GpuServiceImpl. The raster decoders will use it for rasterization if
   // features::Vulkan is used.
   raw_ptr<viz::VulkanContextProvider> vulkan_context_provider_ = nullptr;
-
-  // If features::SkiaGraphite, |metal_context_provider_| will be set from
-  // viz::GpuServiceImpl. The raster decoders may use it for rasterization.
-  raw_ptr<viz::MetalContextProvider> metal_context_provider_ = nullptr;
 
   // With features::SkiaGraphite, |dawn_context_provider_| will be set from
   // viz::GpuServiceImpl. The raster decoders may use it for rasterization.

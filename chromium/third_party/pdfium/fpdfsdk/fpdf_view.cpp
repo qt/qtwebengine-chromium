@@ -31,6 +31,7 @@
 #include "core/fpdfapi/render/cpdf_renderoptions.h"
 #include "core/fpdfdoc/cpdf_nametree.h"
 #include "core/fpdfdoc/cpdf_viewerpreferences.h"
+#include "core/fxcrt/cfx_fileaccess_stream.h"
 #include "core/fxcrt/cfx_read_only_span_stream.h"
 #include "core/fxcrt/cfx_timer.h"
 #include "core/fxcrt/check_op.h"
@@ -38,7 +39,6 @@
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/fx_safe_types.h"
-#include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
@@ -100,43 +100,15 @@ static_assert(
 
 #if defined(PDF_USE_SKIA)
 // These checks are here because core/ and public/ cannot depend on each other.
-static_assert(static_cast<int>(CFX_DefaultRenderDevice::RendererType::kAgg) ==
+static_assert(static_cast<int>(CFX_GEModule::RendererType::kAgg) ==
               FPDF_RENDERERTYPE_AGG);
-static_assert(static_cast<int>(CFX_DefaultRenderDevice::RendererType::kSkia) ==
+static_assert(static_cast<int>(CFX_GEModule::RendererType::kSkia) ==
               FPDF_RENDERERTYPE_SKIA);
 #endif  // defined(PDF_USE_SKIA)
 
 namespace {
 
 bool g_bLibraryInitialized = false;
-
-void SetRendererType(FPDF_RENDERER_TYPE public_type) {
-  // Internal definition of renderer types must stay updated with respect to
-  // the public definition, such that all public definitions can be mapped to
-  // an internal definition in `CFX_DefaultRenderDevice`. A public definition
-  // value might not be meaningful for a particular build configuration, which
-  // would mean use of that value is an error for that build.
-
-  // AGG is always present in a build. `FPDF_RENDERERTYPE_SKIA` is valid to use
-  // only if it is included in the build.
-#if defined(PDF_USE_SKIA)
-  // This build configuration has the option for runtime renderer selection.
-  CHECK(public_type == FPDF_RENDERERTYPE_AGG ||
-        public_type == FPDF_RENDERERTYPE_SKIA);
-  CFX_DefaultRenderDevice::SetRendererType(
-      static_cast<CFX_DefaultRenderDevice::RendererType>(public_type));
-#else
-  // AGG-only builds should always use `FPDF_RENDERERTYPE_AGG`.
-  CHECK_EQ(public_type, FPDF_RENDERERTYPE_AGG);
-#endif
-}
-
-void ResetRendererType() {
-#if defined(PDF_USE_SKIA)
-  CFX_DefaultRenderDevice::SetRendererType(
-      CFX_DefaultRenderDevice::kDefaultRenderer);
-#endif
-}
 
 RetainPtr<const CPDF_Object> GetXFAEntryFromDocument(const CPDF_Document* doc) {
   const CPDF_Dictionary* root = doc->GetRoot();
@@ -225,15 +197,41 @@ FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* config) {
   if (g_bLibraryInitialized) {
     return;
   }
-
-  FX_InitializeMemoryAllocators();
   CFX_Timer::InitializeGlobals();
-  CFX_GEModule::Create(config ? config->m_pUserFontPaths : nullptr);
-  pdfium::InitializePageModule();
 
+  CFX_GEModule::RendererType renderer_type =
+      CFX_GEModule::RendererType::kDefault;
+  if (config && config->version >= 4) {
 #if defined(PDF_USE_SKIA)
-  CFX_GlyphCache::InitializeGlobals();
+    CHECK(config->m_RendererType == FPDF_RENDERERTYPE_AGG ||
+          config->m_RendererType == FPDF_RENDERERTYPE_SKIA);
+    renderer_type =
+        static_cast<CFX_GEModule::RendererType>(config->m_RendererType);
+#else
+    // AGG-only builds should always use `FPDF_RENDERERTYPE_AGG`.
+    CHECK_EQ(config->m_RendererType, FPDF_RENDERERTYPE_AGG);
 #endif
+  }
+
+  CFX_FontMgr::FontBackend backend = CFX_FontMgr::FontBackend::kFreeType;
+  if (config && config->version >= 5) {
+#if defined(PDF_USE_SKIA)
+    CHECK(config->m_FontLibraryType == FPDF_FONTBACKENDTYPE_FREETYPE ||
+          config->m_FontLibraryType == FPDF_FONTBACKENDTYPE_FONTATIONS);
+    if (config->m_FontLibraryType == FPDF_FONTBACKENDTYPE_FONTATIONS) {
+      CHECK_EQ(renderer_type, CFX_GEModule::RendererType::kSkia);
+      backend = CFX_FontMgr::FontBackend::kFontations;
+    }
+#else
+    // AGG-only builds should always use `FPDF_FONTBACKENDTYPE_FREETYPE`.
+    CHECK_EQ(config->m_FontLibraryType, FPDF_FONTBACKENDTYPE_FREETYPE);
+#endif
+  }
+
+  CFX_GEModule::Create(config ? config->m_pUserFontPaths : nullptr,
+                       renderer_type, backend);
+
+  pdfium::InitializePageModule();
 
 #ifdef PDF_ENABLE_XFA
   CPDFXFA_ModuleInit();
@@ -243,10 +241,6 @@ FPDF_InitLibraryWithConfig(const FPDF_LIBRARY_CONFIG* config) {
     void* platform = config->version >= 3 ? config->m_pPlatform : nullptr;
     IJS_Runtime::Initialize(config->m_v8EmbedderSlot, config->m_pIsolate,
                             platform);
-
-    if (config->version >= 4) {
-      SetRendererType(config->m_RendererType);
-    }
   }
   g_bLibraryInitialized = true;
 }
@@ -257,22 +251,15 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_DestroyLibrary() {
   }
 
   // Note: we teardown/destroy things in reverse order.
-  ResetRendererType();
-
   IJS_Runtime::Destroy();
 
 #ifdef PDF_ENABLE_XFA
   CPDFXFA_ModuleDestroy();
 #endif  // PDF_ENABLE_XFA
 
-#if defined(PDF_USE_SKIA)
-  CFX_GlyphCache::DestroyGlobals();
-#endif
-
   pdfium::DestroyPageModule();
   CFX_GEModule::Destroy();
   CFX_Timer::DestroyGlobals();
-  FX_DestroyMemoryAllocators();
 
   g_bLibraryInitialized = false;
 }
@@ -298,7 +285,7 @@ FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
 FPDF_LoadDocument(FPDF_STRING file_path, FPDF_BYTESTRING password) {
   // NOTE: the creation of the file needs to be by the embedder on the
   // other side of this API.
-  return LoadDocumentImpl(IFX_SeekableReadStream::CreateFromFilename(file_path),
+  return LoadDocumentImpl(CFX_FileAccessStream::CreateFromFilename(file_path),
                           password);
 }
 
@@ -472,7 +459,7 @@ FPDF_EXPORT FPDF_PAGE FPDF_CALLCONV FPDF_LoadPage(FPDF_DOCUMENT document,
 #endif  // PDF_ENABLE_XFA
 
   RetainPtr<CPDF_Dictionary> dict = doc->GetMutablePageDictionary(page_index);
-  if (!dict) {
+  if (!CPDF_Page::IsValidPageDictLoose(dict)) {
     return nullptr;
   }
 
@@ -594,7 +581,7 @@ void RenderBitmap(CFX_RenderDevice* device,
 
   dest->Clear(0xffffffff);
   dest->CompositeBitmap(0, 0, size_x_bm, size_y_bm, std::move(source), 0, 0,
-                        BlendMode::kNormal, nullptr, false);
+                        BlendMode::kNormal);
 
   if (device->GetDeviceType() == DeviceType::kPrinter) {
     device->StretchDIBits(std::move(dest), mask_area.left, mask_area.top,
@@ -650,11 +637,12 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_RenderPage(HDC dc,
   if (!pBitmap->Create(size_x, size_y, FXDIB_Format::kBgra)) {
     return false;
   }
-  if (!CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+#if defined(PDF_USE_SKIA)
+  if (!CFX_GEModule::Get()->UseSkiaRenderer()) {
     // Not needed by Skia. Call it for AGG to preserve pre-existing behavior.
     pBitmap->Clear(0x00ffffff);
   }
-
+#endif
   auto device = std::make_unique<CFX_DefaultRenderDevice>();
   device->Attach(pBitmap);
   context->device_ = std::move(device);
@@ -678,7 +666,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_RenderPage(HDC dc,
                               pBitmap->GetPitch() * size_y),
                           -1);
         dest_bitmap->CompositeBitmap(0, 0, size_x, size_y, pBitmap, 0, 0,
-                                     BlendMode::kNormal, nullptr, false);
+                                     BlendMode::kNormal);
         win_dc.StretchDIBits(std::move(dest_bitmap), 0, 0, size_x, size_y);
         bitsStretched = true;
       }
@@ -983,8 +971,8 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFBitmap_GetFormat(FPDF_BITMAP bitmap) {
       return FPDFBitmap_BGRA;
 #if defined(PDF_USE_SKIA)
     case FXDIB_Format::kBgraPremul:
-      return CFX_DefaultRenderDevice::UseSkiaRenderer() ? FPDFBitmap_BGRA_Premul
-                                                        : FPDFBitmap_Unknown;
+      return CFX_GEModule::Get()->UseSkiaRenderer() ? FPDFBitmap_BGRA_Premul
+                                                    : FPDFBitmap_Unknown;
 #endif
     default:
       return FPDFBitmap_Unknown;
@@ -1121,7 +1109,7 @@ FPDF_GetPageSizeByIndexF(FPDF_DOCUMENT document,
 #endif  // PDF_ENABLE_XFA
 
   RetainPtr<CPDF_Dictionary> dict = doc->GetMutablePageDictionary(page_index);
-  if (!dict) {
+  if (!CPDF_Page::IsValidPageDictLoose(dict)) {
     return false;
   }
 

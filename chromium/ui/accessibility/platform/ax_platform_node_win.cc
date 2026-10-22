@@ -236,7 +236,7 @@ size_t g_live_node_count_ = 0;
 // tool holding references).
 size_t g_ghost_node_count_ = 0;
 
-typedef absl::flat_hash_set<AXPlatformNodeWin*> AXPlatformNodeWinSet;
+using AXPlatformNodeWinSet = absl::flat_hash_set<AXPlatformNodeWin*>;
 // Set of all AXPlatformNodeWin objects that were the target of an
 // alert event.
 AXPlatformNodeWinSet& GetAlertTargets() {
@@ -573,20 +573,21 @@ SAFEARRAY* AXPlatformNodeWin::CreateUIAElementsArrayForReverseRelation(
 }
 
 SAFEARRAY* AXPlatformNodeWin::CreateClickablePointArray() {
-  SAFEARRAY* clickable_point_array = SafeArrayCreateVector(VT_R8, 0, 2);
+  base::win::ScopedSafearray clickable_point_array(
+      ::SafeArrayCreateVector(VT_R8, 0, 2));
   gfx::Point center = GetDelegate()
                           ->GetBoundsRect(AXCoordinateSystem::kScreenDIPs,
                                           AXClippingBehavior::kUnclipped)
                           .CenterPoint();
+  auto locked_array = clickable_point_array.CreateLockScope<VT_R8>();
+  if (!locked_array) {
+    return nullptr;
+  }
+  auto double_span = base::span(*locked_array);
+  double_span[0] = center.x();
+  double_span[1] = center.y();
 
-  double* double_array;
-  SafeArrayAccessData(clickable_point_array,
-                      reinterpret_cast<void**>(&double_array));
-  double_array[0] = center.x();
-  UNSAFE_TODO(double_array[1]) = center.y();
-  SafeArrayUnaccessData(clickable_point_array);
-
-  return clickable_point_array;
+  return clickable_point_array.Release();
 }
 
 gfx::Vector2d AXPlatformNodeWin::CalculateUIAScrollPoint(
@@ -755,16 +756,24 @@ void AXPlatformNodeWin::NotifyAccessibilityEvent(ax::mojom::Event event_type) {
   if (AXPlatform::GetInstance().IsUiaProviderEnabled()) {
     if (std::optional<PROPERTYID> uia_property =
             MojoEventToUIAProperty(event_type);
-        uia_property.has_value() &&
-        HasEventListenerForProperty(*uia_property)) {
-      // For this event, we're not concerned with the old value.
-      base::win::ScopedVariant old_value;
-      ::VariantInit(old_value.Receive());
-      base::win::ScopedVariant new_value;
-      ::VariantInit(new_value.Receive());
-      GetPropertyValueImpl(*uia_property, new_value.Receive());
-      ::UiaRaiseAutomationPropertyChangedEvent(this, *uia_property, old_value,
-                                               new_value);
+        uia_property.has_value()) {
+      // For kValueChanged on range-value nodes (e.g. sliders), fire the
+      // range-specific UIA property to match what BrowserAccessibilityManager
+      // fires for the auto-generated RANGE_VALUE_CHANGED event.
+      if (event_type == ax::mojom::Event::kValueChanged &&
+          GetData().IsRangeValueSupported()) {
+        uia_property = UIA_RangeValueValuePropertyId;
+      }
+      if (HasEventListenerForProperty(*uia_property)) {
+        // For this event, we're not concerned with the old value.
+        base::win::ScopedVariant old_value;
+        ::VariantInit(old_value.Receive());
+        base::win::ScopedVariant new_value;
+        ::VariantInit(new_value.Receive());
+        GetPropertyValueImpl(*uia_property, new_value.Receive());
+        ::UiaRaiseAutomationPropertyChangedEvent(this, *uia_property,
+                                                 old_value, new_value);
+      }
     }
 
     if (std::optional<EVENTID> uia_event = MojoEventToUIAEvent(event_type);
@@ -802,8 +811,19 @@ void AXPlatformNodeWin::OnActiveComposition(
 void AXPlatformNodeWin::FireUiaTextEditTextChangedEvent(
     const std::wstring& active_composition_text,
     bool is_composition_committed) {
+  // When a composition is committed, the standard text change events
+  // (VALUE_IN_TEXT_FIELD_CHANGED / EDITABLE_TEXT_CHANGED) will fire
+  // separately and report the same change via UIA_Text_TextChangedEventId.
+  // Firing both causes Narrator to announce the text twice — the same
+  // class of duplicate that text_changed_nodes_ deduplicates for
+  // same-type events, but across event types.
+  // See https://crbug.com/493951242.
+  if (is_composition_committed) {
+    return;
+  }
+
   if (!AXPlatform::GetInstance().IsUiaProviderEnabled() ||
-      !HasEventListenerForEvent(UIA_Text_TextChangedEventId)) {
+      !HasEventListenerForEvent(UIA_TextEdit_TextChangedEventId)) {
     return;
   }
 
@@ -2135,10 +2155,14 @@ IFACEMETHODIMP AXPlatformNodeWin::get_relationTargetsOfType(BSTR type_bstr,
 
     // Allocate COM memory for the result array and populate it.
     *targets =
-        static_cast<IUnknown**>(CoTaskMemAlloc(count * sizeof(IUnknown*)));
+        static_cast<IUnknown**>(::CoTaskMemAlloc(count * sizeof(IUnknown*)));
+    // SAFETY: Trust CoTaskMemAlloc allocated space for `count` IUnknown*'s.
+    auto target_span =
+        UNSAFE_BUFFERS(base::span(*targets, static_cast<size_t>(count)));
     for (LONG i = 0; i < count; ++i) {
-      UNSAFE_TODO((*targets)[i]) = static_cast<IAccessible*>(alert_targets[i]);
-      UNSAFE_TODO((*targets)[i]->AddRef());
+      IAccessible* accessible = alert_targets[i];
+      accessible->AddRef();
+      target_span[i] = accessible;
     }
     return S_OK;
   }
@@ -2157,13 +2181,18 @@ IFACEMETHODIMP AXPlatformNodeWin::get_relationTargetsOfType(BSTR type_bstr,
     count = max_targets;
 
   // Allocate COM memory for the result array and populate it.
-  *targets = static_cast<IUnknown**>(CoTaskMemAlloc(count * sizeof(IUnknown*)));
+  *targets =
+      static_cast<IUnknown**>(::CoTaskMemAlloc(count * sizeof(IUnknown*)));
+  // SAFETY: Trust CoTaskMemAlloc allocated space for `count` IUnknown*'s.
+  auto target_span =
+      UNSAFE_BUFFERS(base::span(*targets, static_cast<size_t>(count)));
   int index = 0;
   for (AXPlatformNode* target : enumerated_targets) {
     if (target) {
       AXPlatformNodeWin* win_target = static_cast<AXPlatformNodeWin*>(target);
-      UNSAFE_TODO((*targets)[index]) = static_cast<IAccessible*>(win_target);
-      UNSAFE_TODO((*targets)[index]->AddRef());
+      IAccessible* accessible = win_target;
+      accessible->AddRef();
+      target_span[index] = accessible;
       if (++index >= count) {
         break;
       }
@@ -2258,9 +2287,12 @@ IFACEMETHODIMP AXPlatformNodeWin::get_relations(LONG max_relations,
   if (!SUCCEEDED(hr))
     return hr;
   count = std::min(count, max_relations);
+  // SAFETY: Trust that get_nRelations returns the right count.
+  auto relations_span =
+      UNSAFE_BUFFERS(base::span(relations, base::checked_cast<size_t>(count)));
   *n_relations = count;
   for (LONG i = 0; i < count; i++) {
-    hr = get_relation(i, &UNSAFE_TODO(relations[i]));
+    hr = get_relation(i, &relations_span[i]);
     if (!SUCCEEDED(hr))
       return hr;
   }
@@ -4196,11 +4228,12 @@ IFACEMETHODIMP AXPlatformNodeWin::get_selectedCells(IUnknown*** cells,
 
   *n_selected_cells = static_cast<LONG>(selected.size());
   *cells = static_cast<IUnknown**>(
-      CoTaskMemAlloc(selected.size() * sizeof(IUnknown*)));
-
+      ::CoTaskMemAlloc(selected.size() * sizeof(IUnknown*)));
+  // Safety: Trust CoTaskMemAlloc allocated the requested number of bytes.
+  auto cell_span = UNSAFE_BUFFERS(base::span(*cells, selected.size()));
   for (size_t i = 0; i < selected.size(); ++i) {
     auto* node_win = static_cast<AXPlatformNodeWin*>(selected[i]);
-    node_win->QueryInterface(IID_PPV_ARGS(&UNSAFE_TODO((*cells)[i])));
+    node_win->QueryInterface(IID_PPV_ARGS(&cell_span[i]));
   }
   return S_OK;
 }
@@ -4246,19 +4279,21 @@ IFACEMETHODIMP AXPlatformNodeWin::get_columnHeaderCells(
   std::vector<int32_t> column_header_ids =
       GetDelegate()->GetColHeaderNodeIds(*column);
   *cell_accessibles = static_cast<IUnknown**>(
-      CoTaskMemAlloc(column_header_ids.size() * sizeof(IUnknown*)));
+      ::CoTaskMemAlloc(column_header_ids.size() * sizeof(IUnknown*)));
+  // SAFETY: Trust CoTaskMemAlloc allocated the requested number of bytes.
+  auto cell_span =
+      UNSAFE_BUFFERS(base::span(*cell_accessibles, column_header_ids.size()));
   int index = 0;
   for (int32_t node_id : column_header_ids) {
     AXPlatformNodeWin* node_win =
         static_cast<AXPlatformNodeWin*>(GetDelegate()->GetFromNodeID(node_id));
     if (node_win) {
-      node_win->QueryInterface(
-          IID_PPV_ARGS(&UNSAFE_TODO((*cell_accessibles)[index])));
+      node_win->QueryInterface(IID_PPV_ARGS(&cell_span[index]));
       ++index;
     }
   }
 
-  *n_column_header_cells = static_cast<LONG>(column_header_ids.size());
+  *n_column_header_cells = static_cast<LONG>(index);
   return S_OK;
 }
 
@@ -4300,19 +4335,21 @@ IFACEMETHODIMP AXPlatformNodeWin::get_rowHeaderCells(
   std::vector<int32_t> row_header_ids =
       GetDelegate()->GetRowHeaderNodeIds(*row);
   *cell_accessibles = static_cast<IUnknown**>(
-      CoTaskMemAlloc(row_header_ids.size() * sizeof(IUnknown*)));
+      ::CoTaskMemAlloc(row_header_ids.size() * sizeof(IUnknown*)));
+  // SAFETY: Trust CoTaskMemAlloc allocated the requested number of bytes.
+  auto cell_span =
+      UNSAFE_BUFFERS(base::span(*cell_accessibles, row_header_ids.size()));
   int index = 0;
   for (int32_t node_id : row_header_ids) {
     AXPlatformNodeWin* node_win =
         static_cast<AXPlatformNodeWin*>(GetDelegate()->GetFromNodeID(node_id));
     if (node_win) {
-      node_win->QueryInterface(
-          IID_PPV_ARGS(&UNSAFE_TODO((*cell_accessibles)[index])));
+      node_win->QueryInterface(IID_PPV_ARGS(&(cell_span[index])));
       ++index;
     }
   }
 
-  *n_row_header_cells = static_cast<LONG>(row_header_ids.size());
+  *n_row_header_cells = static_cast<LONG>(index);
   return S_OK;
 }
 
@@ -8076,6 +8113,10 @@ std::optional<DWORD> AXPlatformNodeWin::MojoEventToMSAAEvent(
     case ax::mojom::Event::kSelectionRemove:
       return EVENT_OBJECT_SELECTIONREMOVE;
     case ax::mojom::Event::kTextChanged:
+      // TODO(crbug.com/40672441): This mapping is incorrect for text fields
+      // where kTextChanged fires on value changes — the accessible name
+      // doesn't change, only the value does. Fixed with ViewsAX enabled,
+      // where the BAM path fires the correct events instead.
       return EVENT_OBJECT_NAMECHANGE;
     case ax::mojom::Event::kTextSelectionChanged:
       return IA2_EVENT_TEXT_CARET_MOVED;
@@ -8140,8 +8181,6 @@ std::optional<PROPERTYID> AXPlatformNodeWin::MojoEventToUIAProperty(
     case ax::mojom::Event::kCheckedStateChanged:
       return UIA_ToggleToggleStatePropertyId;
     case ax::mojom::Event::kExpandedChanged:
-    case ax::mojom::Event::kRowCollapsed:
-    case ax::mojom::Event::kRowExpanded:
       return UIA_ExpandCollapseExpandCollapseStatePropertyId;
     case ax::mojom::Event::kSelection:
     case ax::mojom::Event::kSelectionAdd:
@@ -8230,7 +8269,21 @@ HRESULT AXPlatformNodeWin::ComputeListItemNameAsBstr(BSTR* value_bstr) const {
 }
 
 void AXPlatformNodeWin::AddAlertTarget() {
+  // Firing an alert event can reentrantly destroy this node via the STA
+  // message pump; don't insert a dangling pointer. crbug.com/503419515.
+  if (IsDestroyed()) {
+    return;
+  }
   GetAlertTargets().insert(this);
+}
+
+// static
+size_t AXPlatformNodeWin::GetAlertTargetCountForTesting() {
+  return GetAlertTargets().size();
+}
+
+void AXPlatformNodeWin::AddAlertTargetForTesting() {
+  AddAlertTarget();
 }
 
 void AXPlatformNodeWin::RemoveAlertTarget() {
@@ -8258,6 +8311,31 @@ LONG AXPlatformNodeWin::FindBoundary(IA2TextBoundaryType ia2_boundary,
                                      LONG start_offset,
                                      ax::mojom::MoveDirection direction) {
   HandleSpecialTextOffset(&start_offset);
+
+  const std::u16string& text_str = GetHypertext();
+  if (ia2_boundary == IA2_TEXT_BOUNDARY_WORD && start_offset >= 0 &&
+      start_offset < static_cast<LONG>(text_str.length()) &&
+      text_str[start_offset] == '\n') {
+    // The IAccessible2 spec for IA2_TEXT_BOUNDARY_WORD states that behavior
+    // should match Ctrl+Arrow navigation, but acknowledges that handling of the
+    // end of a line varies across applications.
+    // Reference:
+    // https://accessibility.linuxfoundation.org/a11yspecs/ia2/docs/html/_accessible_text_8idl.html
+    //
+    // In standard Windows controls (e.g. Notepad), the newline character is
+    // treated as a distinct word boundary. Without this explicit check,
+    // FindBoundary logic often merges the newline with the preceding token,
+    // causing screen readers to incorrectly re-announce the previous word /
+    // punctuation. This check enforces native-like behavior at line ends.
+    switch (direction) {
+      case ax::mojom::MoveDirection::kForward:
+        return start_offset + 1;
+      case ax::mojom::MoveDirection::kBackward:
+        return start_offset;
+      default:
+        break;
+    }
+  }
 
   // If the |start_offset| is equal to the location of the caret, then use the
   // focus affinity, otherwise default to downstream affinity.
@@ -8327,12 +8405,14 @@ HRESULT AXPlatformNodeWin::AllocateComArrayFromVector(
   DCHECK(selected);
   DCHECK(n_selected);
 
-  auto count = std::min((LONG)results.size(), max);
+  auto count = std::min(static_cast<LONG>(results.size()), max);
   *n_selected = count;
-  *selected = static_cast<LONG*>(CoTaskMemAlloc(sizeof(LONG) * count));
+  *selected = static_cast<LONG*>(::CoTaskMemAlloc(sizeof(LONG) * count));
 
-  for (LONG i = 0; i < count; i++)
-    UNSAFE_TODO((*selected)[i]) = results[i];
+  // SAFETY: Trust that CoTaskMemAlloc allocated `count` LONGs.
+  auto selected_span =
+      UNSAFE_BUFFERS(base::span(*selected, static_cast<size_t>(count)));
+  std::ranges::copy_n(results.begin(), count, selected_span.begin());
   return S_OK;
 }
 

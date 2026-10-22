@@ -15,6 +15,7 @@
 #include "components/browsing_data/core/pref_names.h"
 #include "components/commerce/core/pref_names.h"
 #include "components/content_settings/core/common/pref_names.h"
+#include "components/contextual_search/pref_names.h"
 #include "components/desktop_to_mobile_promos/pref_names.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/metrics/demographics/user_demographics.h"
@@ -159,6 +160,7 @@ enum {
   kAutofillAiSyncedOptInStatus = 110,
   kIOSPromoReminder = 111,
   kAutofillAiReauthBeforeViewingSensitiveData = 112,
+  kDriveDisclaimerAccepted = 113,
   // See components/sync_preferences/README.md about adding new entries here.
   // vvvvv IMPORTANT! vvvvv
   // Note to the reviewer: IT IS YOUR RESPONSIBILITY to ensure that new syncable
@@ -191,7 +193,7 @@ constexpr auto kCommonSyncablePrefsAllowlist =
          {syncable_prefs_ids::kAutofillAiTravelEntitiesEnabled,
           syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) || \
-    BUILDFLAG(IS_CHROMEOS)
+    BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_IOS)
         {autofill::prefs::kAutofillAiReauthBeforeViewingSensitiveData,
          {syncable_prefs_ids::kAutofillAiReauthBeforeViewingSensitiveData,
           syncer::PREFERENCES, PrefSensitivity::kNone, MergeBehavior::kNone}},
@@ -458,6 +460,9 @@ constexpr auto kCommonSyncablePrefsAllowlist =
         {prefs::kIOSPromoReminder,
          {syncable_prefs_ids::kIOSPromoReminder, syncer::PREFERENCES,
           PrefSensitivity::kNone, MergeBehavior::kMergeableDict}},
+        {contextual_search::kDriveDisclaimerAccepted,
+         {syncable_prefs_ids::kDriveDisclaimerAccepted, syncer::PREFERENCES,
+          PrefSensitivity::kNone, MergeBehavior::kNone}},
     });
 
 }  // namespace

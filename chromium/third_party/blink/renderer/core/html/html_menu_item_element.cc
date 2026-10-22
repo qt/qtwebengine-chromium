@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/core/events/mouse_event.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/html/forms/html_field_set_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_option_element.h"
 #include "third_party/blink/renderer/core/html/html_menu_bar_element.h"
 #include "third_party/blink/renderer/core/html/html_menu_list_element.h"
 #include "third_party/blink/renderer/core/html/menu_item_list.h"
@@ -172,13 +173,14 @@ bool HTMLMenuItemElement::setChecked(bool checked) {
   DCHECK(nearest_ancestor_field_set_);
   const AtomicString& checkable_keyword =
       nearest_ancestor_field_set_->FastGetAttribute(html_names::kCheckableAttr);
-  if (is_checked_ &&
-      EqualIgnoringASCIICase(checkable_keyword, keywords::kSingle)) {
-    nearest_ancestor_field_set_->UpdateMenuItemCheckableExclusivity(this);
+  if (EqualIgnoringAsciiCase(checkable_keyword, keywords::kSingle)) {
+    if (is_checked_) {
+      nearest_ancestor_field_set_->UpdateMenuItemCheckableExclusivity(this);
+    }
     // Exclusive checkbox - close the containing menulist after changing.
     return true;
   } else {
-    // Nop-exclusive checkbox - don't close the containing menulist, so that
+    // Non-exclusive checkbox - don't close the containing menulist, so that
     // multiple values can be chosen.
     return false;
   }
@@ -432,22 +434,21 @@ void HTMLMenuItemElement::HandleMenuPointerEvents(Event& event) {
       }
     }
     bool same_element = this == mouse_down_menuitem;
-    // TODO(masonf) This kEpsilon should be combined with the one in
-    // html_option_element.cc.
-    constexpr float kEpsilon = 5;  // 5 pixels in any direction
     bool mouse_moved = !mouse_down_info.location.IsWithinDistance(
-        mouse_event->AbsoluteLocation(), kEpsilon);
+        mouse_event->AbsoluteLocation(),
+        HTMLOptionElement::kPopupMenuDragEpsilon);
     // We "pick" a menu item here, iff:
     //  1. This was a mouse, not touchscreen, interaction,
     //  2. The mousedown was on a <menuitem> that triggers a sub-menu via
     //     `commandfor`, so we have a mousedown location stored,
     //  3. The mouseup is on a different menuitem than the mouseup, and
-    //  4. The mouseup on this <menuitem> is *not* within kEpsilon layout units
-    //  (post zoom, page-relative) of the location of the mousedown. I.e. the
-    //  mouse was dragged at least a little bit between mousedown and mouseup.
-    //  This ensures that if the new sub-menu is rendered over the top of the
-    //  triggering menuitem, and the user is just "clicking" to activate the
-    //  sub-menu, the menuitem under the cursor isn't selected.
+    //  4. The mouseup on this <menuitem> is *not* within kPopupMenuDragEpsilon
+    //     layout units (post zoom, page-relative) of the location of the
+    //     mousedown. I.e. the mouse was dragged at least a little bit between
+    //     mousedown and mouseup.  This ensures that if the new sub-menu is
+    //     rendered over the top of the triggering menuitem, and the user is
+    //     just "clicking" to activate the sub-menu, the menuitem under the
+    //     cursor isn't selected.
 
     bool activate_menu_item =
         mouse_down_menuitem && !same_element && mouse_moved;
@@ -506,6 +507,10 @@ HTMLMenuOwnerElement* HTMLMenuItemElement::OwningMenuElement() const {
 void HTMLMenuItemElement::ResetAncestorElementCache() {
   owning_menu_element_ = nullptr;
   nearest_ancestor_field_set_ = nullptr;
+  // TODO(https://crbug.com/406566432): Should this be stricter about the
+  // content model?
+  // TODO(https://crbug.com/406566432): Should this consider flat tree
+  // ancestors?
   for (Node& ancestor : NodeTraversal::AncestorsOf(*this)) {
     if (auto* owning_menu = DynamicTo<HTMLMenuOwnerElement>(ancestor)) {
       owning_menu_element_ = owning_menu;
@@ -544,6 +549,10 @@ void HTMLMenuItemElement::RemovedFrom(ContainerNode& insertion_point) {
   // Run various ancestor/state resets.
   ResetAncestorElementCache();
   return;
+}
+
+bool HTMLMenuItemElement::ShouldHaveExpandIcon() const {
+  return HasOwnerMenuList() && GetInvokedSubmenu();
 }
 
 }  // namespace blink

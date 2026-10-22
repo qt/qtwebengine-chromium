@@ -1774,7 +1774,6 @@ tint_arg_buffer_struct_1 = struct @align(1), @core.explicit_layout {
 
     ArgumentBufferInfo info{
         .id = 2,
-        .binding_info_to_offset_index = {{2, 3}},
     };
 
     ArgumentBuffersConfig cfg{};

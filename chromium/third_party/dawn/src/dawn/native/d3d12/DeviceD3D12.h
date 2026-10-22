@@ -119,10 +119,13 @@ class Device final : public d3d::Device {
 
     void DeallocateMemory(ResourceHeapAllocation& allocation);
 
-    MutexProtected<ShaderVisibleDescriptorAllocator>& GetViewShaderVisibleDescriptorAllocator()
-        const;
-    MutexProtected<ShaderVisibleDescriptorAllocator>& GetSamplerShaderVisibleDescriptorAllocator()
-        const;
+    // Returns the shader-visible view (SRV) allocator. Not MutexProtected as it is only accessed by
+    // a single thread, during command recording.
+    ShaderVisibleDescriptorAllocator* GetViewShaderVisibleDescriptorAllocator() const;
+
+    // Returns the shader-visible view (SRV) allocator. Not MutexProtected as it is only accessed by
+    // a single thread, during command recording.
+    ShaderVisibleDescriptorAllocator* GetSamplerShaderVisibleDescriptorAllocator() const;
 
     // Returns nullptr when descriptor count is zero.
     MutexProtected<StagingDescriptorAllocator>* GetViewStagingDescriptorAllocator(
@@ -272,11 +275,9 @@ class Device final : public d3d::Device {
 
     std::unique_ptr<MutexProtected<StagingDescriptorAllocator>> mDepthStencilViewAllocator;
 
-    std::unique_ptr<MutexProtected<ShaderVisibleDescriptorAllocator>>
-        mViewShaderVisibleDescriptorAllocator;
+    std::unique_ptr<ShaderVisibleDescriptorAllocator> mViewShaderVisibleDescriptorAllocator;
 
-    std::unique_ptr<MutexProtected<ShaderVisibleDescriptorAllocator>>
-        mSamplerShaderVisibleDescriptorAllocator;
+    std::unique_ptr<ShaderVisibleDescriptorAllocator> mSamplerShaderVisibleDescriptorAllocator;
 
     // Sampler cache needs to be destroyed before the CPU sampler allocator to ensure the final
     // release is called.

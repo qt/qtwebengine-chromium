@@ -26,12 +26,12 @@ const {ref} = Directives;
 interface EmptyWidgetInput {
   header: string;
   text: string;
-  link?: Platform.DevToolsPath.UrlString|undefined|null;
+  link?: Platform.DevToolsPath.UrlString|null;
   extraElements?: Element[];
 }
 
 interface EmptyWidgetOutput {
-  contentElement: Element|undefined;
+  contentElement?: Element;
 }
 
 type View = (input: EmptyWidgetInput, output: EmptyWidgetOutput, target: HTMLElement) => void;
@@ -100,12 +100,12 @@ export class EmptyWidget extends VBox {
       this.#extraElements = [...this.element.children];
       this.#firstUpdate = false;
     }
-    const output = {contentElement: undefined};
+    const output: EmptyWidgetOutput = {};
     this.#view(
         {header: this.#header, text: this.#text, link: this.#link, extraElements: this.#extraElements}, output,
         this.element);
     if (output.contentElement) {
-      this.contentElement = output.contentElement;
+      this.contentElement = output.contentElement as HTMLElement;
     }
   }
 }

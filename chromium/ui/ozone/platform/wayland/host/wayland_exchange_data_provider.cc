@@ -145,11 +145,8 @@ void AddFiles(PlatformClipboard::Data data, OSExchangeDataProvider* provider) {
       continue;
     }
 
-    url::RawCanonOutputT<char16_t> unescaped;
-    url::DecodeURLEscapeSequences(
-        url.path(), url::DecodeURLMode::kUTF8OrIsomorphic, &unescaped);
-
-    const base::FilePath path(base::UTF16ToUTF8(unescaped.view()));
+    const base::FilePath path(url::DecodeUrlEscapeSequences(
+        url.path(), url::DecodeUrlMode::kUtf8OrIsomorphic));
     filenames.emplace_back(path, path.BaseName());
   }
   if (filenames.empty())
@@ -222,16 +219,6 @@ std::unique_ptr<OSExchangeDataProvider> WaylandExchangeDataProvider::Clone()
 void WaylandExchangeDataProvider::SetFilenames(
     const std::vector<FileInfo>& filenames) {
   OSExchangeDataProviderNonBacked::SetFilenames(filenames);
-
-#if BUILDFLAG(IS_LINUX)
-  // Synchronously register files to get the key. This blocks the UI thread
-  // briefly but ensures the key is ready for the data offer.
-  std::string key = ui::clipboard_util::RegisterFilesWithPortal(filenames);
-  if (!key.empty()) {
-    additional_data_[kMimeTypePortalFileTransfer] = key;
-    additional_data_[kMimeTypePortalFiles] = key;
-  }
-#endif
 }
 
 std::vector<std::string> WaylandExchangeDataProvider::BuildMimeTypesList()
@@ -355,8 +342,7 @@ bool WaylandExchangeDataProvider::ExtractData(const std::string& mime_type,
       HasCustomFormat(ui::ClipboardFormatType::DataTransferCustomType())) {
     std::optional<base::Pickle> pickle =
         GetPickledData(ui::ClipboardFormatType::DataTransferCustomType());
-    *out_content = std::string(reinterpret_cast<const char*>(pickle->data()),
-                               pickle->size());
+    *out_content = std::string(pickle->AsStringView());
     return true;
   }
 #if BUILDFLAG(IS_LINUX)

@@ -15,6 +15,7 @@
 #include "base/types/zip.h"
 #include "components/autofill/core/browser/autofill_ai_form_rationalization.h"
 #include "components/autofill/core/browser/autofill_field.h"
+#include "components/autofill/core/browser/autofill_format_string.h"
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
@@ -220,8 +221,8 @@ std::vector<EntityInstance> GetPossibleEntitiesFromSubmittedForm(
 
 std::optional<std::u16string> MaybeGetLocalizedDate(
     const AttributeInstance& attribute) {
-  FieldType field_type = attribute.type().field_type();
-  if (!IsDateFieldType(field_type)) {
+  std::optional<FieldType> field_type = attribute.type().field_type();
+  if (!field_type || !IsDateFieldType(*field_type)) {
     return std::nullopt;
   }
   auto get_part = [&](std::u16string format) {

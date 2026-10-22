@@ -154,17 +154,7 @@ std::vector<CharCodeAndIndex> CFX_Font::GetCharCodesAndIndices(
   return face_->GetCharCodesAndIndices(max_char);
 }
 
-#ifdef PDF_ENABLE_XFA
-bool CFX_Font::LoadFromVectorStream(
-    const RetainPtr<CFX_ReadOnlyVectorStream>& vector_stream,
-    int face_index) {
-  object_tag_ = 0;
-  face_ = CFX_Face::NewFromVectorStream(CFX_GEModule::Get()->GetFontMgr(),
-                                        vector_stream, face_index);
-  return !!face_;
-}
-
-#if !BUILDFLAG(IS_WIN)
+#if defined(PDF_ENABLE_XFA) && !BUILDFLAG(IS_WIN)
 void CFX_Font::SetFaceFromFont(const CFX_Font& that) {
   ClearGlyphCache();
   object_tag_ = 0;
@@ -174,8 +164,7 @@ void CFX_Font::SetFaceFromFont(const CFX_Font& that) {
 void CFX_Font::SetSubstFont(std::unique_ptr<CFX_SubstFont> subst) {
   subst_font_ = std::move(subst);
 }
-#endif  // !BUILDFLAG(IS_WIN)
-#endif  // PDF_ENABLE_XFA
+#endif  // defined(PDF_ENABLE_XFA) & !BUILDFLAG(IS_WIN)
 
 CFX_Font::~CFX_Font() {
   font_data_ = {};  // font_data_ can't outive face_.
@@ -186,17 +175,37 @@ CFX_Font::~CFX_Font() {
 #endif
 }
 
-void CFX_Font::LoadSubst(const ByteString& face_name,
-                         bool bTrueType,
-                         uint32_t flags,
-                         int weight,
-                         int italic_angle,
-                         FX_CodePage code_page,
-                         bool bVertical) {
+bool CFX_Font::LoadFaceZeroFromSpan(pdfium::span<const uint8_t> src_span,
+                                    bool force_vertical,
+                                    uint64_t object_tag) {
+  vertical_ = force_vertical;
+  font_data_allocation_ = DataVector<uint8_t>(src_span.begin(), src_span.end());
+  font_data_ = font_data_allocation_;
+  return LoadFaceFromSpanStream(
+      pdfium::MakeRetain<CFX_ReadOnlySpanStream>(font_data_allocation_), 0,
+      object_tag);
+}
+
+bool CFX_Font::LoadFaceFromSpanStream(
+    const RetainPtr<CFX_ReadOnlySpanStream>& stream,
+    int face_index,
+    uint64_t object_tag) {
+  object_tag_ = object_tag;
+  face_ = CFX_Face::New(nullptr, stream, face_index);
+  return !!face_;
+}
+
+void CFX_Font::LoadSubstFace(const ByteString& face_name,
+                             bool bTrueType,
+                             uint32_t flags,
+                             int weight,
+                             int italic_angle,
+                             FX_CodePage code_page,
+                             bool bVertical) {
   vertical_ = bVertical;
   object_tag_ = 0;
   subst_font_ = std::make_unique<CFX_SubstFont>();
-  face_ = CFX_GEModule::Get()->GetFontMgr()->GetBuiltinMapper()->FindSubstFont(
+  face_ = CFX_GEModule::Get()->GetFontMgr()->GetBuiltinMapper()->FindSubstFace(
       face_name, bTrueType, flags, weight, italic_angle, code_page,
       subst_font_.get());
   if (face_) {
@@ -228,18 +237,6 @@ int CFX_Font::GetGlyphWidthImpl(uint32_t glyph_index,
 
   return face_->GetGlyphWidth(glyph_index, dest_width, weight,
                               subst_font_.get());
-}
-
-bool CFX_Font::LoadEmbedded(pdfium::span<const uint8_t> src_span,
-                            bool force_vertical,
-                            uint64_t object_tag) {
-  vertical_ = force_vertical;
-  object_tag_ = object_tag;
-  font_data_allocation_ = DataVector<uint8_t>(src_span.begin(), src_span.end());
-  face_ = CFX_Face::New(CFX_GEModule::Get()->GetFontMgr(), nullptr,
-                        font_data_allocation_, 0);
-  font_data_ = font_data_allocation_;
-  return !!face_;
 }
 
 bool CFX_Font::IsTTFont() const {
@@ -406,9 +403,3 @@ const CFX_Path* CFX_Font::LoadGlyphPath(uint32_t glyph_index,
                                         int dest_width) const {
   return GetOrCreateGlyphCache()->LoadGlyphPath(this, glyph_index, dest_width);
 }
-
-#if defined(PDF_USE_SKIA)
-SkTypeface* CFX_Font::GetDeviceCache() const {
-  return GetOrCreateGlyphCache()->GetDeviceCache(this);
-}
-#endif

@@ -27,6 +27,7 @@
 
 #include "base/memory/ptr_util.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/html/parser/html_meta_charset_parser.h"
 #include "third_party/blink/renderer/platform/loader/fetch/body_text_decoder.h"
 #include "third_party/blink/renderer/platform/loader/fetch/text_resource_decoder_options.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
@@ -34,21 +35,21 @@
 
 namespace blink {
 
-class HTMLMetaCharsetParser;
-
 // Implements https://encoding.spec.whatwg.org/#decode or
 // https://encoding.spec.whatwg.org/#utf-8-decode when an appropriate
 // TextResourceDecoderOptions is given.
 // See comments in text_resource_decoder_options.h.
 //
 // To construct a string from known-UTF-8 data without BOM, please use
-// blink::String::FromUTF8 instead.
+// blink::String::FromUtf8 instead.
 // TODO(crbug.com/1373623): Move this to blink/renderer/platform and remove
 // BodyTextDecoder.
 class CORE_EXPORT TextResourceDecoder : public BodyTextDecoder {
   USING_FAST_MALLOC(TextResourceDecoder);
 
  public:
+  using MetaCharsetDisposition = HTMLMetaCharsetParser::MetaCharsetDisposition;
+
   enum EncodingSource {
     kDefaultEncoding,
     kAutoDetectedEncoding,
@@ -83,6 +84,9 @@ class CORE_EXPORT TextResourceDecoder : public BodyTextDecoder {
   WebEncodingData GetEncodingData() const override;
 
   bool SawError() const { return saw_error_; }
+  MetaCharsetDisposition GetMetaCharsetDisposition() const {
+    return meta_charset_disposition_;
+  }
   wtf_size_t CheckForBOM(base::span<const char>);
 
  private:
@@ -95,6 +99,7 @@ class CORE_EXPORT TextResourceDecoder : public BodyTextDecoder {
   bool CheckForCSSCharset(base::span<const char>);
   bool CheckForXMLCharset(base::span<const char>);
   void CheckForMetaCharset(base::span<const char>);
+  void FinalizeMetaCharsetCheck();
   void AutoDetectEncodingIfAllowed(base::span<const char> data,
                                    String* auto_detected_charset = nullptr);
 
@@ -111,6 +116,8 @@ class CORE_EXPORT TextResourceDecoder : public BodyTextDecoder {
   bool saw_error_;
   bool detection_completed_;
 
+  MetaCharsetDisposition meta_charset_disposition_ =
+      MetaCharsetDisposition::kUnknown;
   std::unique_ptr<HTMLMetaCharsetParser> charset_parser_;
 };
 

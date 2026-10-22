@@ -18,6 +18,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/decoder_buffer.h"
@@ -36,6 +37,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest-param-test.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gfx/switches.h"
 
 using ::testing::InSequence;
 using ::testing::StrictMock;
@@ -142,6 +144,8 @@ class MP4StreamParserTest : public testing::Test {
               params.detected_audio_track_count);
     EXPECT_EQ(expected_params.detected_video_track_count,
               params.detected_video_track_count);
+    EXPECT_EQ(expected_params.detected_metadata_track_count,
+              params.detected_metadata_track_count);
   }
 
   bool NewConfigF(std::unique_ptr<MediaTracks> tracks) {
@@ -669,6 +673,8 @@ TEST_F(MP4StreamParserTest, DemuxingDVProfile5WithHEVCMimeTypeSourceBuffer) {
 
   scoped_refptr<DecoderBuffer> buffer =
       ReadTestDataFile("glass-blowing2-dolby-vision-profile-5-frag.mp4");
+  EXPECT_MEDIA_LOG(testing::HasSubstr("Dolby Vision video track with track_id"))
+      .Times(testing::AtMost(1));
   EXPECT_EQ(expect_success, AppendAllDataThenParseInPieces(*buffer, 512));
 #if BUILDFLAG(ENABLE_PLATFORM_HEVC)
   EXPECT_EQ(VideoCodec::kDolbyVision, video_decoder_config_.codec());
@@ -980,11 +986,11 @@ TEST_F(MP4StreamParserTest, Vp9) {
                             gfx::ColorSpace::RangeID::LIMITED));
 
   const auto& hdr_metadata = video_decoder_config_.hdr_metadata();
-  EXPECT_EQ(hdr_metadata.cta_861_3->max_content_light_level, 1000u);
-  EXPECT_EQ(hdr_metadata.cta_861_3->max_frame_average_light_level, 640u);
+  EXPECT_EQ(hdr_metadata.GetCLLI().fMaxCLL, 1000u);
+  EXPECT_EQ(hdr_metadata.GetCLLI().fMaxFALL, 640u);
 
-  const auto& smpte_st_2086 = hdr_metadata.smpte_st_2086.value();
-  const auto& primaries = smpte_st_2086.primaries;
+  const auto& mdcv = hdr_metadata.GetMDCV();
+  const auto& primaries = mdcv.fDisplayPrimaries;
 
   constexpr float kColorCoordinateUnit = 1 / 16.0f;
   EXPECT_NEAR(primaries.fRX, 0.68, kColorCoordinateUnit);
@@ -997,10 +1003,11 @@ TEST_F(MP4StreamParserTest, Vp9) {
   EXPECT_NEAR(primaries.fWY, 0.351, kColorCoordinateUnit);
 
   constexpr float kLuminanceMaxUnit = 1 / 8.0f;
-  EXPECT_NEAR(smpte_st_2086.luminance_max, 1000.0f, kLuminanceMaxUnit);
+  EXPECT_NEAR(mdcv.fMaximumDisplayMasteringLuminance, 1000.0f,
+              kLuminanceMaxUnit);
 
   constexpr float kLuminanceMinUnit = 1 / 14.0;
-  EXPECT_NEAR(smpte_st_2086.luminance_min, 0.01f, kLuminanceMinUnit);
+  EXPECT_NEAR(mdcv.fMinimumDisplayMasteringLuminance, 0.01f, kLuminanceMinUnit);
 }
 
 TEST_F(MP4StreamParserTest, FourCCToString) {
@@ -1072,6 +1079,19 @@ TEST_F(MP4StreamParserTest, MultiTrackFile) {
   EXPECT_EQ(audio_track2.kind().value(), "");
   EXPECT_EQ(audio_track2.label().value(), "SoundHandler");
   EXPECT_EQ(audio_track2.language().value(), "und");
+}
+
+TEST_F(MP4StreamParserTest, TimedMetadataTrackDetected) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitWithFeatures({kMP4TimedMetadataTrack, features::kHdrAgtm},
+                                {});
+
+  auto params = GetDefaultInitParametersExpectations();
+  params.detected_video_track_count = 1;
+  params.detected_audio_track_count = 1;
+  params.detected_metadata_track_count = 1;
+  InitializeParserWithInitParametersExpectations(params);
+  ParseMP4File("agtm-metadata-track-frag.mp4", 16 * 1024 * 1024);
 }
 
 // <cos(θ), sin(θ), θ expressed as a rotation Enum>

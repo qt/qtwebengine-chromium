@@ -146,14 +146,14 @@ class MatrixMarketIterator {
 
   inline std::string& matname() { return m_matname; }
 
-  inline int sym() { return m_sym; }
+  inline int sym() const { return m_sym; }
 
-  bool hasRhs() { return m_hasRhs; }
-  bool hasrefX() { return m_hasrefX; }
-  bool isFolderValid() { return bool(m_folder_id); }
+  bool hasRhs() const { return m_hasRhs; }
+  bool hasrefX() const { return m_hasrefX; }
+  bool isFolderValid() const { return bool(m_folder_id); }
 
  protected:
-  inline bool Fileexists(std::string file) {
+  inline bool Fileexists(std::string file) const {
     std::ifstream file_id(file.c_str());
     if (!file_id.good()) {
       return false;
@@ -171,10 +171,7 @@ class MatrixMarketIterator {
       std::string curfile;
       curfile = m_folder + "/" + m_curs_id->d_name;
       // Discard if it is a folder
-      if (m_curs_id->d_type == DT_DIR) continue;  // FIXME This may not be available on non BSD systems
-      //         struct stat st_buf;
-      //         stat (curfile.c_str(), &st_buf);
-      //         if (S_ISDIR(st_buf.st_mode)) continue;
+      if (m_curs_id->d_type == DT_DIR) continue;  // FIXME: This may not be available on non-BSD systems.
 
       // Determine from the header if it is a matrix or a right hand side
       bool isvector, iscomplex = false;

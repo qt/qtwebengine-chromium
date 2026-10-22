@@ -25,10 +25,9 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/tint/lang/spirv/writer/common/helper_test.h"
-
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/type/builtin_structs.h"
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 using namespace tint::core::number_suffixes;  // NOLINT
 using namespace tint::core::fluent_types;     // NOLINT
@@ -57,7 +56,8 @@ TEST_P(Builtin_1arg, Scalar) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(params.spirv_inst);
 }
 TEST_P(Builtin_1arg, Vector) {
@@ -69,7 +69,8 @@ TEST_P(Builtin_1arg, Vector) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(params.spirv_inst);
 }
 INSTANTIATE_TEST_SUITE_P(
@@ -161,7 +162,8 @@ TEST_F(SpirvWriterTest, Builtin_Abs_u32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
         %foo = OpFunction %uint None %3
           %4 = OpLabel
@@ -186,7 +188,8 @@ TEST_F(SpirvWriterTest, Builtin_Abs_i32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %6 = OpBitcast %uint %arg
           %8 = OpNot %uint %6
@@ -211,7 +214,8 @@ TEST_F(SpirvWriterTest, Builtin_Abs_vec2u) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
         %foo = OpFunction %v2uint None %4
           %5 = OpLabel
@@ -236,7 +240,8 @@ TEST_F(SpirvWriterTest, Builtin_All_Scalar) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpReturnValue %arg");
 }
 
@@ -256,7 +261,8 @@ TEST_F(SpirvWriterTest, Builtin_All_Vector) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpAll %bool %arg");
 }
 
@@ -276,7 +282,8 @@ TEST_F(SpirvWriterTest, Builtin_Any_Scalar) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpReturnValue %arg");
 }
 
@@ -296,7 +303,8 @@ TEST_F(SpirvWriterTest, Builtin_Any_Vector) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpAny %bool %arg");
 }
 
@@ -316,7 +324,8 @@ TEST_F(SpirvWriterTest, Builtin_Determinant_Mat4x4f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %float %9 Determinant %arg");
 }
 
@@ -336,7 +345,8 @@ TEST_F(SpirvWriterTest, Builtin_Determinant_Mat3x3h) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %half %9 Determinant %arg");
 }
 
@@ -357,7 +367,8 @@ TEST_F(SpirvWriterTest, Builtin_Frexp_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %__frexp_result_f32 %9 FrexpStruct %arg");
 }
 
@@ -378,7 +389,8 @@ TEST_F(SpirvWriterTest, Builtin_Frexp_F16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %__frexp_result_f16 %9 FrexpStruct %arg");
 }
 
@@ -399,7 +411,8 @@ TEST_F(SpirvWriterTest, Builtin_Frexp_Vec2f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %__frexp_result_vec2_f32 %11 FrexpStruct %arg");
 }
 
@@ -420,7 +433,8 @@ TEST_F(SpirvWriterTest, Builtin_Frexp_Vec3h) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %__frexp_result_vec3_f16 %11 FrexpStruct %arg");
 }
 
@@ -440,7 +454,8 @@ TEST_F(SpirvWriterTest, Builtin_Length_vec4f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %float %8 Length %arg");
 }
 
@@ -461,7 +476,8 @@ TEST_F(SpirvWriterTest, Builtin_Modf_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %__modf_result_f32 %8 ModfStruct %arg");
 }
 
@@ -482,7 +498,8 @@ TEST_F(SpirvWriterTest, Builtin_Modf_F16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %__modf_result_f16 %8 ModfStruct %arg");
 }
 
@@ -503,7 +520,8 @@ TEST_F(SpirvWriterTest, Builtin_Modf_Vec2f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %__modf_result_vec2_f32 %9 ModfStruct %arg");
 }
 
@@ -524,7 +542,8 @@ TEST_F(SpirvWriterTest, Builtin_Modf_Vec3h) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %__modf_result_vec3_f16 %9 ModfStruct %arg");
 }
 
@@ -544,7 +563,8 @@ TEST_F(SpirvWriterTest, Builtin_Normalize_vec4f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v4float %8 Normalize %arg");
 }
 
@@ -564,7 +584,8 @@ TEST_F(SpirvWriterTest, Builtin_Transpose_Mat2x3f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpTranspose %mat3v2float %arg");
 }
 
@@ -584,7 +605,8 @@ TEST_F(SpirvWriterTest, Builtin_Transpose_Mat4x4f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpTranspose %mat4v4float %arg");
 }
 
@@ -604,7 +626,8 @@ TEST_F(SpirvWriterTest, Builtin_Transpose_Mat4x3h) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpTranspose %mat3v4half %arg");
 }
 
@@ -624,7 +647,8 @@ TEST_F(SpirvWriterTest, Builtin_Transpose_Mat2x2h) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpTranspose %mat2v2half %arg");
 }
 
@@ -644,7 +668,8 @@ TEST_F(SpirvWriterTest, Builtin_Pack2X16Float) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %uint %9 PackHalf2x16 %arg");
 }
 
@@ -664,7 +689,8 @@ TEST_F(SpirvWriterTest, Builtin_Pack2X16Snorm) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %uint %9 PackSnorm2x16 %arg");
 }
 
@@ -684,7 +710,8 @@ TEST_F(SpirvWriterTest, Builtin_Pack2X16Unorm) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %uint %9 PackUnorm2x16 %arg");
 }
 
@@ -704,7 +731,8 @@ TEST_F(SpirvWriterTest, Builtin_Pack4X8Snorm) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %uint %9 PackSnorm4x8 %arg");
 }
 
@@ -724,7 +752,8 @@ TEST_F(SpirvWriterTest, Builtin_Pack4X8Unorm) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %uint %9 PackUnorm4x8 %arg");
 }
 
@@ -744,7 +773,8 @@ TEST_F(SpirvWriterTest, Builtin_Unpack2X16Float) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v2float %9 UnpackHalf2x16 %arg");
 }
 
@@ -764,7 +794,8 @@ TEST_F(SpirvWriterTest, Builtin_Unpack2X16Snorm) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v2float %9 UnpackSnorm2x16 %arg");
 }
 
@@ -784,7 +815,8 @@ TEST_F(SpirvWriterTest, Builtin_Unpack2X16Unorm) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v2float %9 UnpackUnorm2x16 %arg");
 }
 
@@ -804,7 +836,8 @@ TEST_F(SpirvWriterTest, Builtin_Unpack4X8Snorm) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v4float %9 UnpackSnorm4x8 %arg");
 }
 
@@ -824,7 +857,8 @@ TEST_F(SpirvWriterTest, Builtin_Unpack4X8Unorm) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v4float %9 UnpackUnorm4x8 %arg");
 }
 
@@ -844,7 +878,8 @@ TEST_F(SpirvWriterTest, Builtin_CountLeadingZeros_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %6 = OpULessThanEqual %bool %arg %uint_65535
           %9 = OpSelect %uint %6 %uint_16 %uint_0
@@ -887,7 +922,8 @@ TEST_F(SpirvWriterTest, Builtin_CountLeadingZeros_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %7 = OpBitcast %uint %arg
           %8 = OpULessThanEqual %bool %7 %uint_65535
@@ -932,7 +968,8 @@ TEST_F(SpirvWriterTest, Builtin_CountLeadingZeros_Vec2U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%8 = OpConstantComposite %v2uint %uint_65535 %uint_65535");
     EXPECT_INST("%13 = OpConstantComposite %v2uint %uint_16 %uint_16");
     EXPECT_INST("%15 = OpConstantNull %v2uint");
@@ -986,7 +1023,8 @@ TEST_F(SpirvWriterTest, Builtin_CountTrailingZeros_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %6 = OpBitwiseAnd %uint %arg %uint_65535
           %8 = OpIEqual %bool %6 %uint_0
@@ -1033,7 +1071,8 @@ TEST_F(SpirvWriterTest, Builtin_CountTrailingZeros_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %7 = OpBitcast %uint %arg
           %8 = OpBitwiseAnd %uint %7 %uint_65535
@@ -1082,7 +1121,8 @@ TEST_F(SpirvWriterTest, Builtin_CountTrailingZeros_Vec2U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%8 = OpConstantComposite %v2uint %uint_65535 %uint_65535");
     EXPECT_INST("%11 = OpConstantNull %v2uint");
     EXPECT_INST("%15 = OpConstantComposite %v2uint %uint_16 %uint_16");
@@ -1139,7 +1179,8 @@ TEST_F(SpirvWriterTest, Builtin_FirstLeadingBit_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %6 = OpBitwiseAnd %uint %arg %uint_4294901760
           %8 = OpIEqual %bool %6 %uint_0
@@ -1185,7 +1226,8 @@ TEST_F(SpirvWriterTest, Builtin_FirstLeadingBit_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %7 = OpBitcast %uint %arg
           %8 = OpNot %uint %7
@@ -1236,7 +1278,8 @@ TEST_F(SpirvWriterTest, Builtin_FirstLeadingBit_Vec2U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%8 = OpConstantComposite %v2uint %uint_4294901760 %uint_4294901760");
     EXPECT_INST("%11 = OpConstantNull %v2uint");
     EXPECT_INST("%15 = OpConstantComposite %v2uint %uint_16 %uint_16");
@@ -1293,7 +1336,8 @@ TEST_F(SpirvWriterTest, Builtin_FirstTrailingBit_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %6 = OpBitwiseAnd %uint %arg %uint_65535
           %8 = OpIEqual %bool %6 %uint_0
@@ -1339,7 +1383,8 @@ TEST_F(SpirvWriterTest, Builtin_FirstTrailingBit_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %7 = OpBitcast %uint %arg
           %8 = OpBitwiseAnd %uint %7 %uint_65535
@@ -1387,7 +1432,8 @@ TEST_F(SpirvWriterTest, Builtin_FirstTrailingBit_Vec2U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%8 = OpConstantComposite %v2uint %uint_65535 %uint_65535");
     EXPECT_INST("%11 = OpConstantNull %v2uint");
     EXPECT_INST("%15 = OpConstantComposite %v2uint %uint_16 %uint_16");
@@ -1444,7 +1490,8 @@ TEST_F(SpirvWriterTest, Builtin_Saturate_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %float %7 NClamp %arg %float_0 %float_1");
 }
 
@@ -1464,7 +1511,8 @@ TEST_F(SpirvWriterTest, Builtin_Saturate_Vec4h) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%9 = OpConstantNull %v4half");
     EXPECT_INST(
         "%10 = OpConstantComposite %v4half %half_0x1p_0 %half_0x1p_0 %half_0x1p_0 %half_0x1p_0");
@@ -1483,7 +1531,8 @@ TEST_P(Builtin_2arg, Scalar) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(params.spirv_inst);
 }
 TEST_P(Builtin_2arg, Vector) {
@@ -1496,7 +1545,8 @@ TEST_P(Builtin_2arg, Vector) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(params.spirv_inst);
 }
 INSTANTIATE_TEST_SUITE_P(SpirvWriterTest,
@@ -1530,7 +1580,8 @@ TEST_F(SpirvWriterTest, Builtin_Cross_vec3f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v3float %9 Cross %arg1 %arg2");
 }
 
@@ -1551,7 +1602,8 @@ TEST_F(SpirvWriterTest, Builtin_Distance_vec2f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %float %9 Distance %arg1 %arg2");
 }
 
@@ -1572,7 +1624,8 @@ TEST_F(SpirvWriterTest, Builtin_Distance_vec3h) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %half %9 Distance %arg1 %arg2");
 }
 
@@ -1593,7 +1646,8 @@ TEST_F(SpirvWriterTest, Builtin_Dot_vec4f) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpDot %float %arg1 %arg2");
 }
 
@@ -1614,7 +1668,8 @@ TEST_F(SpirvWriterTest, Builtin_Dot_vec2i) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %8 = OpCompositeExtract %int %arg1 0
           %9 = OpCompositeExtract %int %arg2 0
@@ -1652,7 +1707,8 @@ TEST_F(SpirvWriterTest, Builtin_Dot_vec4u) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %8 = OpCompositeExtract %uint %arg1 0
           %9 = OpCompositeExtract %uint %arg2 0
@@ -1689,7 +1745,8 @@ TEST_F(SpirvWriterTest, Builtin_Ldexp_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %float %9 Ldexp %arg1 %arg2");
 }
 
@@ -1710,7 +1767,8 @@ TEST_F(SpirvWriterTest, Builtin_Ldexp_F16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %half %9 Ldexp %arg1 %arg2");
 }
 
@@ -1731,7 +1789,8 @@ TEST_F(SpirvWriterTest, Builtin_Ldexp_Vec2_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v2float %11 Ldexp %arg1 %arg2");
 }
 
@@ -1752,7 +1811,8 @@ TEST_F(SpirvWriterTest, Builtin_Ldexp_Vec3_F16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v3half %11 Ldexp %arg1 %arg2");
 }
 
@@ -1773,7 +1833,8 @@ TEST_F(SpirvWriterTest, Builtin_Reflect_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v3float %9 Reflect %arg1 %arg2");
 }
 
@@ -1794,7 +1855,8 @@ TEST_F(SpirvWriterTest, Builtin_Reflect_F16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v4half %9 Reflect %arg1 %arg2");
 }
 
@@ -1810,7 +1872,8 @@ TEST_P(Builtin_3arg, Scalar) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(params.spirv_inst);
 }
 TEST_P(Builtin_3arg, Vector) {
@@ -1823,7 +1886,8 @@ TEST_P(Builtin_3arg, Vector) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(params.spirv_inst);
 }
 INSTANTIATE_TEST_SUITE_P(SpirvWriterTest,
@@ -1853,7 +1917,8 @@ TEST_F(SpirvWriterTest, Builtin_Clamp_Scalar_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %8 = OpExtInst %int %9 SMax %value %low
      %result = OpExtInst %int %9 SMin %8 %high
@@ -1879,7 +1944,8 @@ TEST_F(SpirvWriterTest, Builtin_Clamp_Scalar_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %8 = OpExtInst %uint %9 UMax %value %low
      %result = OpExtInst %uint %9 UMin %8 %high
@@ -1905,7 +1971,8 @@ TEST_F(SpirvWriterTest, Builtin_Clamp_Vector_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %9 = OpExtInst %v4int %10 SMax %value %low
      %result = OpExtInst %v4int %10 SMin %9 %high
@@ -1931,7 +1998,8 @@ TEST_F(SpirvWriterTest, Builtin_Clamp_Vector_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %9 = OpExtInst %v2uint %10 UMax %value %low
      %result = OpExtInst %v2uint %10 UMin %9 %high
@@ -1957,7 +2025,8 @@ TEST_F(SpirvWriterTest, Builtin_ExtractBits_Scalar_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %9 = OpExtInst %uint %10 UMin %offset %uint_32
          %12 = OpISub %uint %uint_32 %9
@@ -1985,7 +2054,8 @@ TEST_F(SpirvWriterTest, Builtin_Smoothstep_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %8 = OpFSub %float %high %value
           %9 = OpFSub %float %low %value
@@ -2017,7 +2087,8 @@ TEST_F(SpirvWriterTest, Builtin_Smoothstep_F16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %8 = OpFSub %half %high %value
           %9 = OpFSub %half %low %value
@@ -2048,7 +2119,8 @@ TEST_F(SpirvWriterTest, Builtin_ExtractBits_Scalar_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %8 = OpExtInst %uint %9 UMin %offset %uint_32
          %11 = OpISub %uint %uint_32 %8
@@ -2076,7 +2148,8 @@ TEST_F(SpirvWriterTest, Builtin_ExtractBits_Vector_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %10 = OpExtInst %uint %11 UMin %offset %uint_32
          %13 = OpISub %uint %uint_32 %10
@@ -2104,7 +2177,8 @@ TEST_F(SpirvWriterTest, Builtin_ExtractBits_Vector_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %9 = OpExtInst %uint %10 UMin %offset %uint_32
          %12 = OpISub %uint %uint_32 %9
@@ -2134,7 +2208,8 @@ TEST_F(SpirvWriterTest, Builtin_InsertBits_Scalar_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %10 = OpExtInst %uint %11 UMin %offset %uint_32
          %13 = OpISub %uint %uint_32 %10
@@ -2164,7 +2239,8 @@ TEST_F(SpirvWriterTest, Builtin_InsertBits_Scalar_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %9 = OpExtInst %uint %10 UMin %offset %uint_32
          %12 = OpISub %uint %uint_32 %9
@@ -2195,7 +2271,8 @@ TEST_F(SpirvWriterTest, Builtin_InsertBits_Vector_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %11 = OpExtInst %uint %12 UMin %offset %uint_32
          %14 = OpISub %uint %uint_32 %11
@@ -2226,7 +2303,8 @@ TEST_F(SpirvWriterTest, Builtin_InsertBits_Vector_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %10 = OpExtInst %uint %11 UMin %offset %uint_32
          %13 = OpISub %uint %uint_32 %10
@@ -2253,7 +2331,8 @@ TEST_F(SpirvWriterTest, Builtin_FaceForward_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v3float %10 FaceForward %arg1 %arg2 %arg3");
 }
 
@@ -2275,7 +2354,8 @@ TEST_F(SpirvWriterTest, Builtin_FaceForward_F16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v4half %10 FaceForward %arg1 %arg2 %arg3");
 }
 
@@ -2298,7 +2378,8 @@ TEST_F(SpirvWriterTest, Builtin_Mix_VectorOperands_ScalarFactor) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%9 = OpCompositeConstruct %v4float %factor %factor %factor %factor");
     EXPECT_INST("%result = OpExtInst %v4float %11 FMix %arg1 %arg2 %9");
 }
@@ -2322,7 +2403,8 @@ TEST_F(SpirvWriterTest, Builtin_Mix_VectorOperands_VectorFactor) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v4float %10 FMix %arg1 %arg2 %factor");
 }
 
@@ -2345,7 +2427,8 @@ TEST_F(SpirvWriterTest, Builtin_Refract_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v4float %10 Refract %arg1 %arg2 %i");
 }
 
@@ -2368,7 +2451,8 @@ TEST_F(SpirvWriterTest, Builtin_Refract_F16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpExtInst %v4half %10 Refract %arg1 %arg2 %i");
 }
 
@@ -2391,7 +2475,8 @@ TEST_F(SpirvWriterTest, Builtin_Select_ScalarCondition_ScalarOperands) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpSelect %int %cond %argt %argf");
 }
 
@@ -2414,7 +2499,8 @@ TEST_F(SpirvWriterTest, Builtin_Select_VectorCondition_VectorOperands) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpSelect %v4int %cond %argt %argf");
 }
 
@@ -2437,7 +2523,8 @@ TEST_F(SpirvWriterTest, Builtin_Select_ScalarCondition_VectorOperands) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%11 = OpCompositeConstruct %v4bool %cond %cond %cond %cond");
     EXPECT_INST("%result = OpSelect %v4int %11 %argt %argf");
 }
@@ -2449,7 +2536,8 @@ TEST_F(SpirvWriterTest, Builtin_StorageBarrier) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpControlBarrier %uint_2 %uint_2 %uint_72");
 }
 
@@ -2462,7 +2550,8 @@ TEST_F(SpirvWriterTest, Builtin_StorageBarrier_VulkanMemoryModel) {
 
     Options opts{};
     opts.extensions.use_vulkan_memory_model = true;
-    ASSERT_TRUE(Generate(opts)) << Error() << output_;
+    auto result = Generate(opts);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpControlBarrier %uint_2 %uint_2 %uint_24648");
 }
 
@@ -2473,7 +2562,8 @@ TEST_F(SpirvWriterTest, Builtin_TextureBarrier) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpControlBarrier %uint_2 %uint_2 %uint_2056");
 }
 
@@ -2486,7 +2576,8 @@ TEST_F(SpirvWriterTest, Builtin_TextureBarrier_Vulkan) {
 
     Options opts{};
     opts.extensions.use_vulkan_memory_model = true;
-    ASSERT_TRUE(Generate(opts)) << Error() << output_;
+    auto result = Generate(opts);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpControlBarrier %uint_2 %uint_2 %uint_26632");
 }
 
@@ -2497,7 +2588,8 @@ TEST_F(SpirvWriterTest, Builtin_WorkgroupBarrier) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpControlBarrier %uint_2 %uint_2 %uint_264");
 }
 
@@ -2510,7 +2602,8 @@ TEST_F(SpirvWriterTest, Builtin_WorkgroupBarrier_VulkanMemoryModel) {
 
     Options opts{};
     opts.extensions.use_vulkan_memory_model = true;
-    ASSERT_TRUE(Generate(opts)) << Error() << output_;
+    auto result = Generate(opts);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpControlBarrier %uint_2 %uint_2 %uint_24840");
 }
 
@@ -2528,7 +2621,8 @@ TEST_F(SpirvWriterTest, Builtin_SubgroupBallot) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpCapability GroupNonUniformBallot");
     EXPECT_INST("%result = OpGroupNonUniformBallot %v4uint %uint_3 %true");
 }
@@ -2547,7 +2641,8 @@ TEST_F(SpirvWriterTest, Builtin_SubgroupBroadcastValueF32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpCapability GroupNonUniformBallot");
     EXPECT_INST("%result = OpGroupNonUniformBroadcast %float %uint_3 %float_1 %uint_0");
 }
@@ -2566,7 +2661,8 @@ TEST_F(SpirvWriterTest, Builtin_SubgroupBroadcastValueI32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpCapability GroupNonUniformBallot");
     EXPECT_INST("%result = OpGroupNonUniformBroadcast %int %uint_3 %int_1 %uint_0");
 }
@@ -2585,7 +2681,8 @@ TEST_F(SpirvWriterTest, Builtin_SubgroupBroadcastValueU32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpCapability GroupNonUniformBallot");
     EXPECT_INST("%result = OpGroupNonUniformBroadcast %uint %uint_3 %uint_1 %uint_0");
 }
@@ -2609,7 +2706,8 @@ TEST_F(SpirvWriterTest, Builtin_ArrayLength) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%1 = OpVariable %_ptr_StorageBuffer_var_block_tint_explicit_layout StorageBuffer");
     EXPECT_INST("%result = OpArrayLength %uint %1 0");
 }
@@ -2639,7 +2737,8 @@ TEST_F(SpirvWriterTest, Builtin_ArrayLength_WithStruct) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%var = OpVariable %_ptr_StorageBuffer_Buffer_tint_explicit_layout StorageBuffer");
     EXPECT_INST("%result = OpArrayLength %uint %var 2");
 }
@@ -2665,7 +2764,8 @@ TEST_F(SpirvWriterTest, Builtin_Dot4I8Packed) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                OpCapability DotProduct
                OpCapability DotProductInput4x8BitPacked
@@ -2725,7 +2825,8 @@ TEST_F(SpirvWriterTest, Builtin_Dot4U8Packed) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                OpCapability DotProduct
                OpCapability DotProductInput4x8BitPacked

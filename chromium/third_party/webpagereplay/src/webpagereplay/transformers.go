@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -39,6 +38,29 @@ func (r *readerWithError) Read(p []byte) (int, error) {
 		err = r.err
 	}
 	return n, err
+}
+
+func isHtmlMimeType(contentType string) bool {
+	contentType = strings.ToLower(contentType)
+	return strings.HasPrefix(contentType, "text/html")
+}
+
+func isJavascriptMimeType(contentType string) bool {
+	contentType = strings.ToLower(contentType)
+
+	if strings.HasPrefix(contentType, "application/javascript") ||
+		strings.HasPrefix(contentType, "application/x-javascript") ||
+		strings.HasPrefix(contentType, "text/javascript") {
+		// Legal MIME types referring to JS.
+		return true
+	}
+
+	if strings.HasPrefix(contentType, "javascript") {
+		// Not a legal MIME type, it sometimes occurs "in the wild."
+		return true
+	}
+
+	return false
 }
 
 // cloneHeaders clones h.
@@ -66,7 +88,7 @@ func transformResponseBody(resp *http.Response, f func([]byte) []byte) {
 		// We were unable to read the body, e.g. because it was ill-formed. Nothing
 		// else we can do, just keep it as is.
 		resp.Body = ioutil.NopCloser(bytes.NewReader(oldBody))
-		log.Printf("Error while injecting script: %v", err)
+		Log().Error("Script injection issue", "error", err)
 		return
 	}
 
@@ -87,7 +109,7 @@ func transformResponseBody(resp *http.Response, f func([]byte) []byte) {
 			// web but not by webpagereplay. We don't want the tool to fail completely
 			// in that case, so just log the error and keep the body as is.
 			resp.Body = ioutil.NopCloser(bytes.NewReader(oldBody))
-			log.Printf("Error while injecting script: %v", err)
+			Log().Error("Script injection issue", "error", err)
 			return
 		}
 	}
@@ -101,7 +123,7 @@ func transformResponseBody(resp *http.Response, f func([]byte) []byte) {
 			// possible to recompress it. On the off-chance recompression fails, the
 			// same comment as above applies: log the error, keep the body as is.
 			resp.Body = ioutil.NopCloser(bytes.NewReader(oldBody))
-			log.Printf("Error while injecting script: %v", err)
+			Log().Error("Script injection issue", "error", err)
 			return
 		}
 	}
@@ -193,18 +215,20 @@ func CompressBody(ae string, uncompressed []byte) ([]byte, string, error) {
 func getCSPScriptSrcDirectiveFromHeaders(header http.Header) string {
 	// There might be multiple Content-Security-Policy instances. Look for
 	// script-src across all of them first, then  default-src.
-	for _, csp := range header.Values("Content-Security-Policy") {
-		for _, directive := range strings.Split(csp, ";") {
-			directive = strings.TrimSpace(directive)
-			if strings.HasPrefix(directive, "script-src") {
-				return directive
-			}
+	directives := []string{"script-src", "default-src"}
+	for _, d := range directives {
+		if directive := getCSPDirective(header, d); directive != "" {
+			return directive
 		}
 	}
+	return ""
+}
+
+func getCSPDirective(header http.Header, name string) string {
 	for _, csp := range header.Values("Content-Security-Policy") {
 		for _, directive := range strings.Split(csp, ";") {
 			directive = strings.TrimSpace(directive)
-			if strings.HasPrefix(directive, "default-src") {
+			if strings.HasPrefix(directive, name) {
 				return directive
 			}
 		}
@@ -348,11 +372,7 @@ type ResponseTransformer interface {
 // NewScriptInjector constructs a transformer that injects the given script
 // after the first <head>, <html>, or <!doctype html> tag. The script is
 // minified before injection.
-func NewScriptInjector(
-	script []byte, replacements map[string]string) (ResponseTransformer, error) {
-	for oldstr, newstr := range replacements {
-		script = bytes.Replace(script, []byte(oldstr), []byte(newstr), -1)
-	}
+func NewScriptInjector(script []byte) (ResponseTransformer, error) {
 	m := minify.New()
 	m.AddFunc("application/javascript", js.Minify)
 	var minifiedJsBuffer bytes.Buffer
@@ -370,14 +390,13 @@ func NewScriptInjector(
 
 // NewScriptInjectorFromFile creates a script injector from a script stored in
 // a file.
-func NewScriptInjectorFromFile(
-	filename string, replacements map[string]string) (
+func NewScriptInjectorFromFile(filename string) (
 	ResponseTransformer, error) {
 	script, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	return NewScriptInjector(script, replacements)
+	return NewScriptInjector(script)
 }
 
 var (
@@ -415,9 +434,11 @@ func (si *scriptInjector) getScriptWithNonce(nonce string) []byte {
 }
 
 func (si *scriptInjector) Transform(_ *http.Request, resp *http.Response) {
-	// Skip non-HTML non-200 responses.
-	if !strings.HasPrefix(
-		strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
+	contentType := resp.Header.Get("Content-Type")
+	isHTML := isHtmlMimeType(contentType)
+	isJS := isJavascriptMimeType(contentType)
+
+	if !isHTML && !isJS {
 		return
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -426,9 +447,23 @@ func (si *scriptInjector) Transform(_ *http.Request, resp *http.Response) {
 
 	transformResponseBody(resp, func(body []byte) []byte {
 		// Don't inject if the script has already been injected.
+		// This is not strictly necessary given `__WPR_DETERMINISTIC_INJECTED`
+		// in deterministic.js, but it doesn't hurt and is a guard against JS bloat.
 		if bytes.Contains(body, si.script) {
-			log.Printf("ScriptInjector(%s): already injected", resp.Request.URL)
+			Log().Warn("ScriptInjector already injected", "url", resp.Request.URL)
 			return body
+		}
+
+		if isJS {
+			var buffer bytes.Buffer
+			buffer.Write(si.script)
+			// Note that the semicolon here is necessary to avoid minification
+			// messing up the original script.
+			buffer.Write([]byte(";\n"))
+			buffer.Write(body)
+			Log().Info("ScriptInjector successfully injected into JS",
+				"url", resp.Request.URL)
+			return buffer.Bytes()
 		}
 
 		// Find an appropriate place to inject the script, then inject.
@@ -440,9 +475,9 @@ func (si *scriptInjector) Transform(_ *http.Request, resp *http.Response) {
 			idx = doctypeRE.FindIndex(body)
 		}
 		if idx == nil {
-			log.Printf(
-				"ScriptInjector(%s): no start tags found, skip injecting script",
-				resp.Request.URL)
+			Log().Warn(
+				"ScriptInjector did not find the start tags; script injection skipped",
+				"url", resp.Request.URL)
 			return body
 		}
 		n := idx[1]
@@ -470,7 +505,7 @@ func (si *scriptInjector) Transform(_ *http.Request, resp *http.Response) {
 		// execute.
 		transformCSPHeader(resp.Header, si.sha256)
 
-		log.Printf("ScriptInjector(%s): succesfully injected", resp.Request.URL)
+		Log().Info("ScriptInjector succesfully injected", "url", resp.Request.URL)
 		return buffer.Bytes()
 	})
 }
@@ -558,7 +593,7 @@ func (r *TransformerRule) compile() error {
 		r.urlRE = re
 	}
 	if r.InjectedScript != "" {
-		scriptInjector, err := NewScriptInjectorFromFile(r.InjectedScript, make(map[string]string))
+		scriptInjector, err := NewScriptInjectorFromFile(r.InjectedScript)
 		if err != nil {
 			return err
 		}
@@ -601,7 +636,7 @@ func (rt *ruleBasedTransformer) Transform(
 		if !r.matches(req) {
 			continue
 		}
-		log.Printf("Rule(%s): matched rule %v", req.URL, r.shortString())
+		Log().Debug("Matched rule", "url", req.URL, "rule", r.shortString())
 		for k, v := range r.ExtraHeaders {
 			resp.Header[k] = append(resp.Header[k], v...)
 		}

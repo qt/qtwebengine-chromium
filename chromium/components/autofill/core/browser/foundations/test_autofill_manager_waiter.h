@@ -16,6 +16,7 @@
 #include "base/test/scoped_run_loop_timeout.h"
 #include "base/time/time.h"
 #include "components/autofill/core/browser/foundations/autofill_manager.h"
+#include "components/autofill/core/browser/suggestions/suggestion_hiding_reason.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/unique_ids.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -196,8 +197,7 @@ class TestAutofillManagerWaiter : public AutofillManager::Observer {
                                      FieldGlobalId field) override;
   void OnAfterTextFieldValueChanged(AutofillManager& manager,
                                     FormGlobalId form,
-                                    FieldGlobalId field,
-                                    const std::u16string& text_value) override;
+                                    FieldGlobalId field) override;
 
   void OnBeforeTextFieldDidScroll(AutofillManager& manager,
                                   FormGlobalId form,
@@ -478,10 +478,8 @@ class TestAutofillManagerSingleEventWaiter::Impl
   }
   void OnAfterTextFieldValueChanged(AutofillManager& manager,
                                     FormGlobalId form,
-                                    FieldGlobalId field,
-                                    const std::u16string& text_value) override {
-    MaybeQuit(&Observer::OnAfterTextFieldValueChanged, manager, form, field,
-              text_value);
+                                    FieldGlobalId field) override {
+    MaybeQuit(&Observer::OnAfterTextFieldValueChanged, manager, form, field);
   }
   void OnBeforeTextFieldDidScroll(AutofillManager& manager,
                                   FormGlobalId form,
@@ -566,7 +564,8 @@ class TestAutofillManagerSingleEventWaiter::Impl
                           base::span<const Suggestion> suggestions) override {
     MaybeQuit(&Observer::OnSuggestionsShown, manager, suggestions);
   }
-  void OnSuggestionsHidden(AutofillManager& manager) override {
+  void OnSuggestionsHidden(AutofillManager& manager,
+                           SuggestionHidingReason reason) override {
     MaybeQuit(&Observer::OnSuggestionsHidden, manager);
   }
   void OnFillOrPreviewForm(

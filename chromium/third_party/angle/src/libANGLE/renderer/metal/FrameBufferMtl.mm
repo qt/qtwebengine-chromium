@@ -18,6 +18,7 @@
 
 #include "common/MemoryBuffer.h"
 #include "common/angleutils.h"
+#include "common/base/anglebase/numerics/checked_math.h"
 #include "common/debug.h"
 #include "libANGLE/ErrorStrings.h"
 #include "libANGLE/renderer/metal/BufferMtl.h"
@@ -77,14 +78,18 @@ angle::Result CopyTextureSliceLevelToTempBuffer(const gl::Context *context,
     const mtl::Format &metalFormat   = contextMtl->getPixelFormat(formatId);
     const angle::Format &angleFormat = metalFormat.actualAngleFormat();
 
-    uint32_t width       = srcTexture->width(mipNativeLevel);
-    uint32_t height      = srcTexture->height(mipNativeLevel);
-    uint32_t sizeInBytes = width * height * angleFormat.pixelBytes;
+    uint32_t width                                  = srcTexture->width(mipNativeLevel);
+    uint32_t height                                 = srcTexture->height(mipNativeLevel);
+    angle::base::CheckedNumeric<size_t> sizeInBytes = width;
+    sizeInBytes *= height;
+    sizeInBytes *= angleFormat.pixelBytes;
+
+    ANGLE_CHECK_GL_MATH(contextMtl, sizeInBytes.IsValid());
 
     mtl::BufferRef tempBuffer;
     ANGLE_TRY(mtl::Buffer::MakeBufferWithStorageMode(
-        contextMtl, mtl::Buffer::getStorageModeForSharedBuffer(contextMtl), sizeInBytes, nullptr,
-        &tempBuffer));
+        contextMtl, mtl::Buffer::getStorageModeForSharedBuffer(contextMtl),
+        sizeInBytes.ValueOrDie(), &tempBuffer));
 
     gl::Rectangle region(0, 0, width, height);
     uint32_t bytesPerRow = angleFormat.pixelBytes * width;
@@ -1631,7 +1636,7 @@ angle::Result FramebufferMtl::readPixelsImpl(const gl::Context *context,
             texture->width(renderTarget->getLevelIndex()) * readAngleFormat.pixelBytes;
 
         buffer->syncContent(contextMtl, contextMtl->getBlitCommandEncoder());
-        const uint8_t *bufferData = buffer->mapReadOnly(contextMtl);
+        const uint8_t *bufferData = buffer->mapReadOnly(contextMtl).data();
 
         angle::Result result = readPixelsCopyImpl(
             context, area, packPixelsParams, renderTarget,
@@ -1653,15 +1658,18 @@ angle::Result FramebufferMtl::readPixelsImpl(const gl::Context *context,
     }
 
     angle::MemoryBuffer readPixelRowBuffer;
-    int bufferRowPitch = area.width * readAngleFormat.pixelBytes;
+    auto checkedRowPitch = angle::CheckedNumeric<size_t>(area.width) * readAngleFormat.pixelBytes;
+    ANGLE_CHECK_GL_MATH(contextMtl, checkedRowPitch.IsValid());
+    size_t bufferRowPitch = checkedRowPitch.ValueOrDie();
     ANGLE_CHECK_GL_ALLOC(contextMtl, readPixelRowBuffer.resize(bufferRowPitch));
     return readPixelsCopyImpl(
         context, area, packPixelsParams, renderTarget,
         [&](const gl::Rectangle &region, const uint8_t *&src) {
             // Read the pixels data to the row buffer
+            ASSERT(region.height == 1);
             ANGLE_TRY(mtl::ReadTexturePerSliceBytes(
                 context, texture, bufferRowPitch, region, renderTarget->getLevelIndex(),
-                renderTarget->getLayerIndex(), readPixelRowBuffer.data()));
+                renderTarget->getLayerIndex(), readPixelRowBuffer.span()));
             src = readPixelRowBuffer.data();
             return angle::Result::Continue;
         },

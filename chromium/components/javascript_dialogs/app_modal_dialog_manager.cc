@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "base/functional/bind.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "components/javascript_dialogs/app_modal_dialog_manager_delegate.h"
@@ -21,6 +20,8 @@
 #include "content/public/common/javascript_dialog_type.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/font_list.h"
+
+class GURL;
 
 namespace javascript_dialogs {
 
@@ -82,15 +83,18 @@ std::u16string AppModalDialogManager::GetTitle(
 
   // Otherwise, return the formatted URL.
   return GetSiteFrameTitle(
+      web_contents->GetPrimaryMainFrame()->GetLastCommittedURL(),
       web_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin(),
       alerting_frame_origin);
 }
 
 // static
 std::u16string AppModalDialogManager::GetSiteFrameTitle(
+    const GURL& main_frame_url,
     const url::Origin& main_frame_origin,
     const url::Origin& alerting_frame_origin) {
-  return util::DialogTitle(main_frame_origin, alerting_frame_origin);
+  return util::DialogTitle(main_frame_url, main_frame_origin,
+                           alerting_frame_origin);
 }
 
 void AppModalDialogManager::RunJavaScriptDialog(

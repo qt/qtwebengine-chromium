@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "base/containers/fixed_flat_set.h"
 #include "base/containers/map_util.h"
@@ -19,6 +20,7 @@
 #include "base/version_info/version_info.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/global_features.h"
 #include "chrome/browser/profiles/chrome_version_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_attributes_entry.h"
@@ -30,6 +32,7 @@
 #include "chrome/browser/ui/hats/hats_service_factory.h"
 #include "chrome/browser/ui/hats/survey_config.h"
 #include "chrome/common/channel_info.h"
+#include "components/application_locale_storage/application_locale_storage.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
@@ -130,7 +133,7 @@ bool IsLocaleAllowedForSurvey() {
           "pt",
       });
   return kAllowedSurveyLocales.contains(
-      g_browser_process->GetApplicationLocale());
+      g_browser_process->GetFeatures()->application_locale_storage()->Get());
 }
 
 // Returns true if the survey corresponding to `trigger` should be enabled.
@@ -169,15 +172,17 @@ bool IsSurveyEnabledForHatsTrigger(const std::string& trigger) {
            {kHatsSurveyTriggerIdentitySwitchProfileFromProfilePicker,
             &switches::kChromeIdentitySurveySwitchProfileFromProfilePicker},
            {kHatsSurveyTriggerIdentityFirstRunCompleted,
-            &switches::kBeforeFirstRunDesktopRefreshSurvey}});
+            &switches::kBeforeFirstRunDesktopRefreshSurvey},
+           {kHatsSurveyTriggerIdentityRefreshedFirstRunCompleted,
+            &switches::kFirstRunDesktopRefreshSurvey}});
   // Map of HaTS features that are conflicting with each other. Keys are
-  // features that are suppressed if the corresponding value feature is
+  // features that are suppressed if one of the corresponding value features is
   // enabled.
-  static const base::NoDestructor<
-      absl::flat_hash_map<const base::Feature*, const base::Feature*>>
-      kConflictingFeaturesMap(
-          {{&switches::kChromeIdentitySurveyFirstRunSignin,
-            &switches::kBeforeFirstRunDesktopRefreshSurvey}});
+  static const base::NoDestructor<absl::flat_hash_map<
+      const base::Feature*, std::vector<const base::Feature*>>>
+      kConflictingFeaturesMap({{&switches::kChromeIdentitySurveyFirstRunSignin,
+                                {&switches::kBeforeFirstRunDesktopRefreshSurvey,
+                                 &switches::kFirstRunDesktopRefreshSurvey}}});
 
   const auto* feature = base::FindPtrOrNull(*kHatsTriggerFeatureMap, trigger);
 
@@ -186,10 +191,14 @@ bool IsSurveyEnabledForHatsTrigger(const std::string& trigger) {
     return false;
   }
 
-  if (kConflictingFeaturesMap->contains(feature) &&
-      base::FeatureList::IsEnabled(*kConflictingFeaturesMap->at(feature))) {
-    // If the feature has a conflicting feature, suppress the survey.
-    return false;
+  if (auto it = kConflictingFeaturesMap->find(feature);
+      it != kConflictingFeaturesMap->end()) {
+    // If the feature has conflicting features, check if any of them is enabled.
+    for (const auto* conflicting_feature : it->second) {
+      if (base::FeatureList::IsEnabled(*conflicting_feature)) {
+        return false;
+      }
+    }
   }
 
   auto* feature_list = base::FeatureList::GetInstance();
@@ -220,7 +229,8 @@ void LaunchHatsSurveyForProfileInternal(
     return;
   }
 
-  Browser* browser = chrome::FindLastActiveWithProfile(profile);
+  BrowserWindowInterface* const browser =
+      chrome::FindLastActiveWithProfile(profile);
   if (!browser) {
     // An active browser is needed to launch the survey.
     if (defer_if_no_browser) {

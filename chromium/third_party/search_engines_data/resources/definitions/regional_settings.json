@@ -42,8 +42,8 @@
         "&ecosia",
         "&bing",
         "&yahoo_at",
-        "&privacywall",
-        "&qwant"
+        "&qwant",
+        "&privacywall"
       ]
     },
     "AU": {
@@ -75,8 +75,8 @@
         "&ecosia",
         "&bing",
         "&qwant",
-        "&yahoo_emea",
-        "&privacywall"
+        "&privacywall",
+        "&yahoo_emea"
       ]
     },
     "BG": {
@@ -88,8 +88,8 @@
         "&bing",
         "&yep",
         "&ecosia",
-        "&yahoo_emea",
-        "&qwant"
+        "&qwant",
+        "&yahoo_emea"
       ]
     },
     "BH": {
@@ -223,9 +223,9 @@
         "&brave",
         "&duckduckgo",
         "&bing",
-        "&yahoo_emea",
         "&ecosia",
         "&qwant",
+        "&yahoo_emea",
         "&privacywall"
       ]
     },
@@ -306,8 +306,8 @@
         "&duckduckgo",
         "&bing",
         "&ecosia",
-        "&qwant",
         "&privacywall",
+        "&qwant",
         "&yahoo_emea"
       ]
     },
@@ -326,8 +326,8 @@
       "search_engines": [
         "&google",
         "&brave",
-        "&bing",
         "&duckduckgo",
+        "&bing",
         "&ecosia",
         "&yahoo_es",
         "&privacywall",
@@ -363,11 +363,11 @@
         "&google",
         "&brave",
         "&ecosia",
-        "&bing",
-        "&duckduckgo",
         "&qwant",
+        "&duckduckgo",
+        "&bing",
         "&yahoo_fr",
-        "&lilo"
+        "&privacywall"
       ]
     },
     "GB": {
@@ -389,8 +389,8 @@
         "&bing",
         "&yahoo_emea",
         "&ecosia",
-        "&yep",
-        "&qwant"
+        "&qwant",
+        "&yep"
       ]
     },
     "GT": {
@@ -424,10 +424,10 @@
         "&brave",
         "&duckduckgo",
         "&bing",
-        "&yep",
         "&ecosia",
-        "&yahoo_emea",
-        "&privacywall"
+        "&yep",
+        "&privacywall",
+        "&yahoo_emea"
       ]
     },
     "HU": {
@@ -439,8 +439,8 @@
         "&duckduckgo",
         "&ecosia",
         "&yep",
-        "&yahoo_emea",
-        "&qwant"
+        "&qwant",
+        "&yahoo_emea"
       ]
     },
     "ID": {
@@ -608,9 +608,9 @@
         "&brave",
         "&bing",
         "&ecosia",
+        "&startpage",
         "&qwant",
-        "&privacywall",
-        "&yahoo_emea"
+        "&privacywall"
       ]
     },
     "LT": {
@@ -621,8 +621,8 @@
         "&duckduckgo",
         "&bing",
         "&ecosia",
-        "&yahoo_emea",
         "&qwant",
+        "&yahoo_emea",
         "&yep"
       ]
     },
@@ -648,8 +648,8 @@
         "&bing",
         "&ecosia",
         "&privacywall",
-        "&yahoo_emea",
-        "&qwant"
+        "&qwant",
+        "&yahoo_emea"
       ]
     },
     "LY": {
@@ -720,8 +720,8 @@
         "&bing",
         "&duckduckgo",
         "&ecosia",
-        "&yahoo_emea",
         "&privacywall",
+        "&yahoo_emea",
         "&qwant"
       ]
     },
@@ -848,8 +848,8 @@
         "&brave",
         "&duckduckgo",
         "&bing",
-        "&yahoo_emea",
         "&ecosia",
+        "&yahoo_emea",
         "&privacywall",
         "&qwant"
       ]
@@ -903,10 +903,10 @@
         "&google",
         "&brave",
         "&duckduckgo",
-        "&yahoo_emea",
         "&bing",
-        "&yep",
+        "&yahoo_emea",
         "&ecosia",
+        "&yep",
         "&qwant"
       ]
     },
@@ -982,8 +982,8 @@
         "&bing",
         "&ecosia",
         "&yep",
-        "&yahoo_emea",
-        "&qwant"
+        "&qwant",
+        "&yahoo_emea"
       ]
     },
     "SK": {

@@ -23,6 +23,7 @@ import "ui/gfx/geometry/mojom/geometry.mojom";
 import "ui/gfx/mojom/display_color_spaces.mojom";
 import "ui/gfx/mojom/overlay_transform.mojom";
 import "ui/gfx/mojom/delegated_ink_metadata.mojom";
+import "ui/latency/mojom/latency_info.mojom";
 
 // Describes a request to create or delete a UIResource in the service-side
 // display tree.
@@ -113,13 +114,6 @@ struct LayerTreeUpdate {
   // calling GenerateCompositorFrame() again in viz process.
   bool send_frame_token_to_embedder;
 
-  // The viz::LocalSurfaceId to unthrottle drawing for.
-  // This is from LayerTreeHostImpl.
-  // It is still necessary to send it over to viz because
-  // LayerContextImpl::BeginFrame calls LayerTreeHostImpl::WillBeginImplFrame
-  // which uses the target_local_surface_id_.
-  LocalSurfaceId? target_local_surface_id;
-
   // The background color with which to fill any space not covered by layers
   // within the tree's content rect.
   skia.mojom.SkColor4f background_color;
@@ -133,6 +127,9 @@ struct LayerTreeUpdate {
 
   // The tree's viewport damage rect.
   gfx.mojom.Rect viewport_damage_rect;
+
+  // Damage rect for the root layer.
+  gfx.mojom.Rect root_layer_damage_rect;
 
   // We cache a global bool for full tree damages to avoid walking the entire
   // tree.
@@ -219,7 +216,6 @@ struct LayerTreeUpdate {
   // calculations matches it. This is used to enforce checks in Viz to make
   // sure it is in sync with Renderer's behavior.
   bool frame_has_damage;
-  uint32 damage_reasons_bit_mask;
 
   // True if this compositor frame is related to an animated or precise scroll.
   // This includes during the touch interaction just prior to the initiation of
@@ -235,13 +231,19 @@ struct LayerTreeUpdate {
   // Whether the viewport is mobile optimized.
   bool is_viewport_mobile_optimized;
 
+  // Whether the viewport size should be shrunk by the height of the
+  // URL-bar.
+  bool browser_controls_shrink_blink_size;
+
   // Equivalent to hud_layer() && hud_layer()->IsANimatingHUDContents().
   bool is_animating_hud_contents;
+
+  // Latency info for the current update.
+  array<ui.mojom.LatencyInfo> latency_info;
 };
 
 // Drives updates to a GPU-side LayerTreeHostImpl from its corresponding
 // client-side (e.g. renderer- or browser-side) LayerTreeHost.
-[DirectReceiver]
 interface LayerContext {
   // Globally controls whether the tree contents are visible.
   SetVisible(bool visible);
@@ -251,6 +253,9 @@ interface LayerContext {
 
   // Updates one or more tiles in a specific tiling.
   UpdateDisplayTiling(Tiling tiling);
+
+  // Sets the target LocalSurfaceId to unthrottle drawing for.
+  SetTargetLocalSurfaceId(LocalSurfaceId target_local_surface_id);
 };
 
 // Provides feedback from a GPU-side LayerTreeHostImpl to its corresponding

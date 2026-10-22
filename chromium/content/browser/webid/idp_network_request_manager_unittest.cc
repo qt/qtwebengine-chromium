@@ -706,7 +706,7 @@ TEST_F(IdpNetworkRequestManagerTest, ParsePhoneNumber) {
   EXPECT_EQ("111-111-1111", accounts.accounts[0]->display_name);
 }
 
-TEST_F(IdpNetworkRequestManagerTest, ParseAccountPotentiallyApprovedOrigins) {
+TEST_F(IdpNetworkRequestManagerTest, ParseAccountPotentiallyApprovedSites) {
   base::test::ScopedFeatureList list;
   list.InitAndEnableFeature(features::kFedCmEmbedderInitiatedLogin);
   // given_name and picture fields are optional
@@ -716,12 +716,12 @@ TEST_F(IdpNetworkRequestManagerTest, ParseAccountPotentiallyApprovedOrigins) {
       "id": "1234",
       "email": "ken@idp.test",
       "name": "Ken R. Example",
-      "potentially_approved_origin_hashes": [
-        "622df46ad930842236c692ab72b62ae312b3b0164141f29b7bfdeb8e219b1043"
+      "potentially_approved_site_hashes": [
+        "870f48f3c28efb5dbf46d14881d802a4c34141a36ef9e66d28cec211b1969f7d"
       ]
     }
   ],
-  "origin_salt": "fc432178f9155c4e24762de5b9505f2e"
+  "site_salt": "fc432178f9155c4e24762de5b9505f2e"
   })";
 
   FetchStatus accounts_response;
@@ -731,14 +731,14 @@ TEST_F(IdpNetworkRequestManagerTest, ParseAccountPotentiallyApprovedOrigins) {
 
   EXPECT_EQ(ParseStatus::kSuccess, accounts_response.parse_status);
   EXPECT_EQ(net::HTTP_OK, accounts_response.response_code);
-  EXPECT_EQ("fc432178f9155c4e24762de5b9505f2e", accounts.origin_salt);
+  EXPECT_EQ("fc432178f9155c4e24762de5b9505f2e", accounts.site_salt);
   ASSERT_THAT(
-      accounts.accounts[0]->potentially_approved_origin_hashes,
+      accounts.accounts[0]->potentially_approved_site_hashes,
       ElementsAre(
-          "622df46ad930842236c692ab72b62ae312b3b0164141f29b7bfdeb8e219b1043"));
+          "870f48f3c28efb5dbf46d14881d802a4c34141a36ef9e66d28cec211b1969f7d"));
 
-  const auto& filtered_accounts = accounts.PotentialAccountsForOrigin(
-      url::Origin::Create(GURL("https://www.example.com/")));
+  const auto& filtered_accounts =
+      accounts.PotentialAccountsForSite("example.com");
   EXPECT_EQ(1ul, filtered_accounts.size());
 }
 
@@ -2489,6 +2489,53 @@ TEST_F(IdpNetworkRequestManagerTest, DisconnectRequest) {
   EXPECT_EQ(net::HTTP_OK, disconnect_response.response_code);
   ASSERT_TRUE(disconnect_account_id.has_value());
   EXPECT_EQ(*disconnect_account_id, "accountId");
+}
+
+TEST_F(IdpNetworkRequestManagerTest, DisconnectRequestInjection) {
+  bool called = false;
+  auto interceptor = base::BindLambdaForTesting([&](const network::
+                                                        ResourceRequest&
+                                                            request) {
+    called = true;
+    EXPECT_EQ(GURL(kTestDisconnectEndpoint), request.url);
+
+    // Check that the request body is escaped.
+    ASSERT_NE(request.request_body, nullptr);
+    ASSERT_EQ(1ul, request.request_body->elements()->size());
+    const network::DataElement& elem = request.request_body->elements()->at(0);
+    ASSERT_EQ(network::DataElement::Tag::kBytes, elem.type());
+    const network::DataElementBytes& byte_elem =
+        elem.As<network::DataElementBytes>();
+    // If it's not escaped, it would be
+    // "client_id=client&inject=id&account_hint=hint&inject=account" If it's
+    // escaped, it should be
+    // "client_id=client%26inject%3Did&account_hint=hint%26inject%3Daccount"
+    EXPECT_EQ(
+        "client_id=client%26inject%3Did&account_hint=hint%26inject%3Daccount",
+        byte_elem.AsStringPiece());
+  });
+  test_url_loader_factory().SetInterceptor(interceptor);
+
+  const char test_disconnect_json[] = R"({
+  "account_id" : "accountId"
+  })";
+
+  GURL disconnect_endpoint(kTestDisconnectEndpoint);
+  AddResponse(disconnect_endpoint, net::HTTP_OK, "application/json",
+              test_disconnect_json);
+
+  base::RunLoop run_loop;
+  auto callback = base::BindLambdaForTesting(
+      [&](FetchStatus response, const std::string& account_id) {
+        run_loop.Quit();
+      });
+
+  std::unique_ptr<IdpNetworkRequestManager> manager = CreateTestManager();
+  manager->SendDisconnectRequest(disconnect_endpoint, "hint&inject=account",
+                                 "client&inject=id", std::move(callback));
+  run_loop.Run();
+
+  EXPECT_TRUE(called);
 }
 
 }  // namespace

@@ -18,6 +18,7 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/skills/internal/skills_downloader.h"
 #include "components/skills/proto/skill.pb.h"
+#include "components/skills/public/skills_types.h"
 #include "components/sync/protocol/skill_specifics.pb.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 
@@ -59,27 +60,49 @@ class SkillsService : public KeyedService {
     kReady,
   };
 
-  // Map of id to skill.
-  using SkillsMap = absl::flat_hash_map<std::string, skills::proto::Skill>;
+  // Behavior of the skill display in the UI.
+  enum class DisplayState {
+    // When the skill is temporarily deleted in the UI.
+    kDeleted,
+    // When the skill is reshown in the UI if it was previously deleted from the
+    // UI (e.g. when undo is pressed after a delete)
+    kReshown,
+  };
 
   // Observer for the service notifications.
   class Observer : public base::CheckedObserver {
    public:
     // Called whenever a skill is created, updated or deleted.
+    // `is_position_changed` is true if the skill's position is changed (always
+    // false for deletions and true for creations).
     virtual void OnSkillUpdated(std::string_view skill_id,
-                                UpdateSource update_source) {}
+                                UpdateSource update_source,
+                                bool is_position_changed) {}
+
+    // Called whenever a skill should be removed from the UI or brought back to
+    // the UI via an undo.
+    // NOTE: This will not actually delete the skill from the service, it will
+    // just be hidden from the UI.
+    virtual void OnTemporarySkillDisplay(
+        std::string_view skill_id,
+        SkillsService::DisplayState display_state) {}
 
     // Called when the service status is changed.
     virtual void OnStatusChanged() {}
 
     // Called when the service has completed a download of 1P skills. Receives
-    // new map or nullptr if map has not changed.
+    // new data or nullptr if data has not changed.
     virtual void OnDiscoverySkillsUpdated(
-        const SkillsService::SkillsMap* skills_map) {}
+        const FirstPartySkillData* first_party_skill_data) {}
 
     // Called when the service is shutting down. Observers should remove
     // themselves.
     virtual void OnSkillsServiceShuttingDown() {}
+
+    // Returns true if the observer is active. This helps the skills service
+    // determine if it needs to periodically refresh first party skills by
+    // fetching them from the server.
+    virtual bool Require1PSkillRefresh();
   };
 
   SkillsService();
@@ -137,9 +160,12 @@ class SkillsService : public KeyedService {
   virtual const std::vector<std::unique_ptr<Skill>>& GetSkills() const = 0;
 
   // Returns a const reference to the currently loaded 1p skills. If skills have
-  // not been loaded yet, returns an empty map. The service does not have to be
+  // not been loaded yet, returns an empty list. The service does not have to be
   // in a kReady state since these skills are loaded from a SCS file.
-  virtual const SkillsMap& Get1PSkills() const = 0;
+  virtual const SkillProtoList& Get1PSkills() const = 0;
+
+  // Returns a const reference to the currently loaded 1p topics.
+  virtual const std::vector<std::string>& Get1PTopics() const = 0;
 
   // Registers an observer for the service notifications.
   virtual void AddObserver(Observer* observer) = 0;
@@ -147,14 +173,21 @@ class SkillsService : public KeyedService {
   // Unregisters an observer.
   virtual void RemoveObserver(Observer* observer) = 0;
 
+  // Refreshes the list of discovery skills.
+  // 1st party discovery skills need to be refreshed periodically, to ensure
+  // that any security updates are applied, and that users do not invoke a skill
+  // that has been taken down.
+  virtual void RefreshDiscoverySkills() = 0;
+
   // Calls downloader to fetch 1p skills which will return updated skills to
-  // Handle1pSkillsMap. If there has been no modification since the last fetch
+  // Handle1pSkills. If there has been no modification since the last fetch
   // nullptr will be returned.
   virtual void FetchDiscoverySkills() = 0;
 
   // Called on download complete of 1p skills. If the download fails or the file
-  // has not been modified skills_map is null. Notifies observers.
-  virtual void Handle1pSkillsMap(std::unique_ptr<SkillsMap> skills_map) = 0;
+  // has not been modified first_party_skill_data is null. Notifies observers.
+  virtual void Handle1pSkills(
+      std::unique_ptr<FirstPartySkillData> first_party_skill_data) = 0;
 
   // Returns controller delegate for the sync service.
   virtual base::WeakPtr<syncer::DataTypeControllerDelegate>
@@ -166,6 +199,18 @@ class SkillsService : public KeyedService {
   // Sets the service status for testing purposes. This is useful for testing in
   // browser tests where the sync server is not available.
   virtual void SetServiceStatusForTesting(ServiceStatus status) = 0;
+
+  // Called when a skill should be removed from the UI or brought back to the UI
+  // via an undo.
+  // NOTE: This will not actually delete the skill from the
+  // service, it will just be hidden from the UI.
+  virtual void NotifyTemporarySkillDisplayChanged(
+      std::string_view skill_id,
+      DisplayState display_state) = 0;
+
+  // Notify that a glic panel associated with the skills service is being
+  // opened.
+  virtual void NotifyPanelWillOpen() = 0;
 };
 
 }  // namespace skills

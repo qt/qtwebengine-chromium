@@ -27,11 +27,13 @@
 #include "components/regional_capabilities/regional_capabilities_prefs.h"
 #include "components/regional_capabilities/regional_capabilities_switches.h"
 #include "components/regional_capabilities/regional_capabilities_test_utils.h"
+#include "components/regional_capabilities/regional_capabilities_utils.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "regional_capabilities_country_id.h"
 #include "regional_capabilities_metrics.h"
 #include "regional_capabilities_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/search_engines_data/resources/definitions/prepopulated_engines.h"
 #include "ui/base/device_form_factor.h"
 
 namespace regional_capabilities {
@@ -58,6 +60,9 @@ using ::testing::get;
 #if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
 const ui::DeviceFormFactorSet kPhoneFormFactors{
     ui::DEVICE_FORM_FACTOR_PHONE, ui::DEVICE_FORM_FACTOR_FOLDABLE};
+#endif
+
+#if BUILDFLAG(IS_IOS)
 const ui::DeviceFormFactorSet kNonPhoneFormFactors =
     base::Difference(ui::DeviceFormFactorSet::All(), kPhoneFormFactors);
 #endif
@@ -252,7 +257,7 @@ auto WithCompatibleTaiyakiFeatureState(
     std::vector<ProgramDeterminationTestParam> params_to_combine) {
   return ::testing::Combine(
       ::testing::ValuesIn(params_to_combine),
-#if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_IOS)
       ::testing::Bool()  // All feature states are supported
 #else
       ::testing::Values(
@@ -261,31 +266,17 @@ auto WithCompatibleTaiyakiFeatureState(
   );
 }
 
-#if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
-auto WithTaiyakiFeatureState(
-    std::vector<ProgramDeterminationTestParam> params_for_enabled,
-    std::vector<ProgramDeterminationTestParam> params_for_disabled) {
-  std::vector<TestParamWithTaiyakiFeatureState> output;
-  for (auto& param : params_for_enabled) {
-    output.emplace_back(param, true);
-  }
-  for (auto& param : params_for_disabled) {
-    output.emplace_back(param, false);
-  }
-  return ::testing::ValuesIn(output);
-}
-#endif  // BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
 
 class RegionalCapabilitiesServiceProgramDeterminationTest
     : public RegionalCapabilitiesServiceTest,
       public testing::WithParamInterface<TestParamWithTaiyakiFeatureState> {
  public:
   RegionalCapabilitiesServiceProgramDeterminationTest() {
-#if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
-    scoped_feature_list_.InitWithFeatureState(switches::kTaiyaki,
-                                              GetTaiyakiFeatureEnabled());
+#if BUILDFLAG(IS_IOS)
+    scoped_feature_list_.InitWithFeatureState(
+        switches::kTaiyakiAllSurfaces, GetTaiyakiAllSurfacesFeatureEnabled());
 #else
-    EXPECT_FALSE(GetTaiyakiFeatureEnabled());
+    EXPECT_FALSE(GetTaiyakiAllSurfacesFeatureEnabled());
     scoped_feature_list_.Init();
 #endif
   }
@@ -293,8 +284,9 @@ class RegionalCapabilitiesServiceProgramDeterminationTest
   static std::string GetTestName(
       const testing::TestParamInfo<TestParamWithTaiyakiFeatureState>& info) {
     return base::StrCat(
-        {get<0>(info.param).test_name,
-         get<1>(info.param) ? "_taiyaki_enabled" : "_taiyaki_disabled"});
+        {get<0>(info.param).test_name, get<1>(info.param)
+                                           ? "_taiyaki_all_surfaces_enabled"
+                                           : "_taiyaki_all_surfaces_disabled"});
   }
 
   void SetUp() override {
@@ -306,7 +298,7 @@ class RegionalCapabilitiesServiceProgramDeterminationTest
 
   ProgramDeterminationTestParam GetTestParam() { return get<0>(GetParam()); }
 
-  bool GetTaiyakiFeatureEnabled() { return get<1>(GetParam()); }
+  bool GetTaiyakiAllSurfacesFeatureEnabled() { return get<1>(GetParam()); }
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
@@ -451,103 +443,50 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     FeatureStateSpecific,
     RegionalCapabilitiesServiceProgramDeterminationTest,
-    WithTaiyakiFeatureState(
-        /*params_for_enabled=*/
-        {
+    WithCompatibleTaiyakiFeatureState({
 #if BUILDFLAG(IS_IOS)
-            ProgramDeterminationTestParam{
-                .test_name = "jp_to_taiyaki",
-                .run_only_on = kPhoneFormFactors,
-                .client_fetched_country = CountryId("JP"),
-                .expected_program = Program::kTaiyaki,
-                .expected_is_in_choice_screen_region = true,
-                .expected_ose_list_type = SearchEngineListType::kShuffled,
-                .expected_histograms =
-                    {
-                        {"RegionalCapabilities.LoadedCountrySource",
-                         ExpectHistogramBucket(
-                             LoadedCountrySource::kCurrentOnly)},
-                    },
-            },
-            ProgramDeterminationTestParam{
-                .test_name = "jp_to_default_non_phone",
-                .run_only_on = kNonPhoneFormFactors,
-                .client_fetched_country = CountryId("JP"),
-                .expected_program = Program::kDefault,
-                .expected_is_in_choice_screen_region = false,
-                .expected_ose_list_type = SearchEngineListType::kTopN,
-                .expected_histograms =
-                    {
-                        {"RegionalCapabilities.LoadedCountrySource",
-                         ExpectHistogramBucket(
-                             LoadedCountrySource::kCurrentOnly)},
-                    },
-            },
-#endif  // BUILDFLAG(IS_IOS)
-#if BUILDFLAG(IS_ANDROID)
-            ProgramDeterminationTestParam{
-                .test_name = "jp_to_default",
-                .client_fetched_country = CountryId("JP"),
-                .expected_program = Program::kDefault,
-                .expected_is_in_choice_screen_region = false,
-                .expected_ose_list_type = SearchEngineListType::kTopN,
-                .expected_histograms =
-                    {
-                        {"RegionalCapabilities.LoadedCountrySource",
-                         ExpectHistogramBucket(
-                             LoadedCountrySource::kCurrentOnly)},
-                    },
-            },
-#endif  // BUILDFLAG(IS_ANDROID)
+        ProgramDeterminationTestParam{
+            .test_name = "jp_to_taiyaki",
+            .run_only_on = kPhoneFormFactors,
+            .client_fetched_country = CountryId("JP"),
+            .expected_program = Program::kTaiyaki,
+            .expected_is_in_choice_screen_region = true,
+            .expected_ose_list_type = SearchEngineListType::kShuffled,
+            .expected_histograms =
+                {
+                    {"RegionalCapabilities.LoadedCountrySource",
+                     ExpectHistogramBucket(LoadedCountrySource::kCurrentOnly)},
+                },
         },
-        /*params_for_disabled=*/
-        {
-#if BUILDFLAG(IS_IOS)
-            ProgramDeterminationTestParam{
-                .test_name = "jp_to_taiyaki",
-                .run_only_on = kPhoneFormFactors,
-                .client_fetched_country = CountryId("JP"),
-                .expected_program = Program::kTaiyaki,
-                .expected_is_in_choice_screen_region = false,
-                .expected_ose_list_type = SearchEngineListType::kTopN,
-                .expected_histograms =
-                    {
-                        {"RegionalCapabilities.LoadedCountrySource",
-                         ExpectHistogramBucket(
-                             LoadedCountrySource::kCurrentOnly)},
-                    },
-            },
-            ProgramDeterminationTestParam{
-                .test_name = "jp_to_default_non_phone",
-                .run_only_on = kNonPhoneFormFactors,
-                .client_fetched_country = CountryId("JP"),
-                .expected_program = Program::kDefault,
-                .expected_is_in_choice_screen_region = false,
-                .expected_ose_list_type = SearchEngineListType::kTopN,
-                .expected_histograms =
-                    {
-                        {"RegionalCapabilities.LoadedCountrySource",
-                         ExpectHistogramBucket(
-                             LoadedCountrySource::kCurrentOnly)},
-                    },
-            },
+        ProgramDeterminationTestParam{
+            .test_name = "jp_to_default_non_phone",
+            .run_only_on = kNonPhoneFormFactors,
+            .client_fetched_country = CountryId("JP"),
+            .expected_program = Program::kDefault,
+            .expected_is_in_choice_screen_region = false,
+            .expected_ose_list_type = SearchEngineListType::kTopN,
+            .expected_histograms =
+                {
+                    {"RegionalCapabilities.LoadedCountrySource",
+                     ExpectHistogramBucket(LoadedCountrySource::kCurrentOnly)},
+                },
+        },
 #endif  // BUILDFLAG(IS_IOS)
 #if BUILDFLAG(IS_ANDROID)
-            ProgramDeterminationTestParam{
-                .test_name = "jp_to_default",
-                .client_fetched_country = CountryId("JP"),
-                .expected_program = Program::kDefault,
-                .expected_is_in_choice_screen_region = false,
-                .expected_ose_list_type = SearchEngineListType::kTopN,
-                .expected_histograms =
-                    {
-                        {"RegionalCapabilities.LoadedCountrySource",
-                         ExpectHistogramBucket(
-                             LoadedCountrySource::kCurrentOnly)},
-                    },
-            },
+        ProgramDeterminationTestParam{
+            .test_name = "jp_to_default",
+            .client_fetched_country = CountryId("JP"),
+            .expected_program = Program::kDefault,
+            .expected_is_in_choice_screen_region = false,
+            .expected_ose_list_type = SearchEngineListType::kTopN,
+            .expected_histograms =
+                {
+                    {"RegionalCapabilities.LoadedCountrySource",
+                     ExpectHistogramBucket(LoadedCountrySource::kCurrentOnly)},
+                },
+        },
 #endif  // BUILDFLAG(IS_ANDROID)
-        }),
+    }),
     &RegionalCapabilitiesServiceProgramDeterminationTest::GetTestName);
 #endif  // BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
 
@@ -1132,7 +1071,8 @@ TEST_F(RegionalCapabilitiesServiceTest, IsInSearchEngineChoiceScreenRegion) {
 
 #if BUILDFLAG(IS_IOS)
   {
-    base::test::ScopedFeatureList scoped_feature_list{switches::kTaiyaki};
+    base::test::ScopedFeatureList scoped_feature_list;
+    scoped_feature_list.InitAndEnableFeature(switches::kTaiyakiAllSurfaces);
     EXPECT_EQ(RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(
                   CountryId("JP")),
               kPhoneFormFactors.Has(ui::GetDeviceFormFactor()));
@@ -1140,10 +1080,10 @@ TEST_F(RegionalCapabilitiesServiceTest, IsInSearchEngineChoiceScreenRegion) {
 
   {
     base::test::ScopedFeatureList scoped_feature_list;
-    scoped_feature_list.InitAndDisableFeature(switches::kTaiyaki);
-    EXPECT_FALSE(
-        RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(
-            CountryId("JP")));
+    scoped_feature_list.InitAndDisableFeature(switches::kTaiyakiAllSurfaces);
+    EXPECT_EQ(RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(
+                  CountryId("JP")),
+              kPhoneFormFactors.Has(ui::GetDeviceFormFactor()));
   }
 #else
   EXPECT_FALSE(RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(
@@ -1155,6 +1095,85 @@ TEST_F(RegionalCapabilitiesServiceTest, IsInSearchEngineChoiceScreenRegion) {
   EXPECT_FALSE(RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(
       CountryId()));
 }
+
+TEST_F(RegionalCapabilitiesServiceTest,
+       GetRegionalPrepopulatedEngines_AppliesMigrations) {
+  using ::TemplateURLPrepopulateData::google;
+  using ::TemplateURLPrepopulateData::PrepopulatedEngine;
+
+  const PrepopulatedEngine made_up_engine = {
+      .name = u"Chromium Search",
+      .keyword = u"chromium",
+      .search_url = "https://search.chromium.org?foo=bar&q={searchTerms}",
+      .id = 2424,
+      .migrate_to_id = 4242,
+  };
+
+  const PrepopulatedEngine made_up_engine_next = {
+      .name = made_up_engine.name,
+      .keyword = made_up_engine.keyword,
+      .search_url = made_up_engine.search_url,
+      .id = 4242,
+  };
+
+  auto scoped_override =
+      regional_capabilities::SetPrepopulatedEnginesOverrideForTesting(
+          {&google, &made_up_engine}, {&made_up_engine_next});
+
+  {
+    base::test::ScopedFeatureList feature_list;
+    feature_list.InitAndDisableFeature(switches::kPrepopulatedEnginesMigration);
+
+    std::unique_ptr<RegionalCapabilitiesService> service = InitService();
+    auto actual_prepopulated_engines =
+        service->GetRegionalPrepopulatedEngines();
+
+    ASSERT_EQ(actual_prepopulated_engines.size(), 2u);
+    EXPECT_EQ(actual_prepopulated_engines[1], &made_up_engine);
+  }
+
+  {
+    base::test::ScopedFeatureList feature_list{
+        switches::kPrepopulatedEnginesMigration};
+
+    std::unique_ptr<RegionalCapabilitiesService> service = InitService();
+    auto actual_prepopulated_engines =
+        service->GetRegionalPrepopulatedEngines();
+
+    ASSERT_EQ(actual_prepopulated_engines.size(), 2u);
+    EXPECT_EQ(actual_prepopulated_engines[1], &made_up_engine_next);
+  }
+}
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+TEST(ClientIsInSearchEngineChoiceScreenRegionTest, FetchedCountryInRegion) {
+  AsyncRegionalCapabilitiesServiceClient client;
+  client.SetFetchedCountry(CountryId("FR"));
+  EXPECT_TRUE(
+      RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(client));
+}
+
+TEST(ClientIsInSearchEngineChoiceScreenRegionTest, FetchedCountryNotInRegion) {
+  AsyncRegionalCapabilitiesServiceClient client;
+  client.SetFetchedCountry(CountryId("US"));
+  EXPECT_FALSE(
+      RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(client));
+}
+
+TEST(ClientIsInSearchEngineChoiceScreenRegionTest, FallbackCountryInRegion) {
+  AsyncRegionalCapabilitiesServiceClient client(
+      /*fallback_country_id=*/CountryId("FR"));
+  EXPECT_TRUE(
+      RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(client));
+}
+
+TEST(ClientIsInSearchEngineChoiceScreenRegionTest, FallbackCountryNotInRegion) {
+  AsyncRegionalCapabilitiesServiceClient client(
+      /*fallback_country_id=*/CountryId("US"));
+  EXPECT_FALSE(
+      RegionalCapabilitiesService::IsInSearchEngineChoiceScreenRegion(client));
+}
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 
 }  // namespace
 }  // namespace regional_capabilities

@@ -89,7 +89,8 @@ class PaymentRequestStateTest : public testing::Test,
   void OnPaymentResponseAvailable(mojom::PaymentResponsePtr response) override {
     payment_response_ = std::move(response);
   }
-  void OnPaymentResponseError(const std::string& error_message) override {}
+  void OnPaymentResponseError(mojom::PaymentEventResponseType error,
+                              const std::string& error_message) override {}
   void OnShippingOptionIdSelected(std::string shipping_option_id) override {}
   void OnShippingAddressSelected(mojom::PaymentAddressPtr address) override {
     selected_shipping_address_ = std::move(address);
@@ -478,10 +479,20 @@ TEST_F(PaymentRequestStateTest, JaLatnShippingAddress) {
   // Select an address, nothing should happen until the normalization is
   // completed and the merchant has validated the address.
   autofill::AutofillProfile profile(autofill::AddressCountryCode("JP"));
-  autofill::test::SetProfileInfo(&profile, "Jon", "V.", "Doe",
-                                 "jon.doe@exampl.com", "Example Inc",
-                                 "Roppongi", "6 Chrome-10-1", "Tokyo", "",
-                                 "106-6126", "JP", "+81363849000");
+  autofill::test::SetProfileInfo(&profile,
+                                 autofill::test::SetProfileInfoOptionsBuilder()
+                                     .with_first_name("Jon")
+                                     .with_middle_name("V.")
+                                     .with_last_name("Doe")
+                                     .with_email("jon.doe@exampl.com")
+                                     .with_company("Example Inc")
+                                     .with_address1("Roppongi")
+                                     .with_address2("6 Chrome-10-1")
+                                     .with_city("Tokyo")
+                                     .with_zipcode("106-6126")
+                                     .with_country("JP")
+                                     .with_phone("+81363849000")
+                                     .Build());
 
   state()->SetSelectedShippingProfile(&profile);
   EXPECT_EQ(expected_changes, num_on_selected_information_changed_called());

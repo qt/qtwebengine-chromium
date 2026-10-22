@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::gainmap::GainMap;
 use crate::reformat::*;
 use crate::utils::pixels::Pixels;
 use crate::AvifError;
@@ -45,7 +46,7 @@ impl GifReader {
 }
 
 impl Reader for GifReader {
-    fn read_frame(&mut self, config: &Config) -> AvifResult<(Image, u64)> {
+    fn read_frame(&mut self, config: &Config) -> AvifResult<(Image, u64, Option<GainMap>)> {
         if self.frame.is_none() {
             self.frame = Some(match self.decoder.read_next_frame() {
                 Ok(Some(frame)) => frame.clone(),
@@ -94,7 +95,7 @@ impl Reader for GifReader {
         // GIF delay is in centi-seconds.
         let duration_ms = self.frame.unwrap_ref().delay as u64 * 10;
         self.frame = None;
-        Ok((yuv, duration_ms))
+        Ok((yuv, duration_ms, None))
     }
 
     fn has_more_frames(&mut self) -> bool {

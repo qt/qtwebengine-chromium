@@ -45,7 +45,8 @@ TEST_F(SpirvWriterTest, Function_Empty) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
         %foo = OpFunction %void None %3
           %4 = OpLabel
@@ -81,7 +82,8 @@ TEST_F(SpirvWriterTest, Function_DeduplicateType) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                ; Types, variables and constants
        %void = OpTypeVoid
@@ -113,7 +115,8 @@ TEST_F(SpirvWriterTest, Function_EntryPoint_Compute) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                OpEntryPoint GLCompute %main "main"
                OpExecutionMode %main LocalSize 32 4 1
@@ -142,7 +145,8 @@ TEST_F(SpirvWriterTest, Function_EntryPoint_Fragment) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                OpEntryPoint Fragment %main "main"
                OpExecutionMode %main OriginUpperLeft
@@ -172,7 +176,8 @@ TEST_F(SpirvWriterTest, Function_EntryPoint_Vertex) {
         b.Return(func, b.Zero<vec4<f32>>());
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                OpEntryPoint Vertex %main "main" %main_position_Output %main___point_size_Output
 
@@ -231,7 +236,8 @@ TEST_F(SpirvWriterTest, Function_ReturnValue) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %3 = OpTypeFunction %int
      %int_42 = OpConstant %int 42
@@ -264,7 +270,8 @@ TEST_F(SpirvWriterTest, Function_Parameters) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %5 = OpTypeFunction %int %int %int
        %uint = OpTypeInt 32 0
@@ -312,7 +319,8 @@ TEST_F(SpirvWriterTest, Function_Call) {
         mod.SetName(result, "result");
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpFunctionCall %int %foo %int_2 %int_3");
 }
 
@@ -328,7 +336,8 @@ TEST_F(SpirvWriterTest, Function_Call_Void) {
         b.Return(bar);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%7 = OpFunctionCall %void %foo");
 }
 
@@ -341,7 +350,8 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_VertexPointSize) {
 
     Options options;
     options.emit_vertex_point_size = true;
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(
         R"(OpEntryPoint Vertex %main "main" %main_position_Output %main___point_size_Output)");
     EXPECT_INST(R"(
@@ -377,7 +387,8 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Input_WithCapability) {
 
     Options options;
     options.extensions.use_storage_input_output_16 = true;
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpCapability StorageInputOutput16");
     EXPECT_INST(R"(OpEntryPoint Fragment %main "main" %main_loc1_Input %main_loc2_Output)");
     EXPECT_INST("%main_loc1_Input = OpVariable %_ptr_Input_v4half Input");
@@ -405,7 +416,8 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Input_WithoutCapability) {
 
     Options options;
     options.extensions.use_storage_input_output_16 = false;
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(OpEntryPoint Fragment %main "main" %main_loc1_Input %main_loc2_Output)");
     EXPECT_INST("%main_loc1_Input = OpVariable %_ptr_Input_v4float Input");
     EXPECT_INST("%main_loc2_Output = OpVariable %_ptr_Output_v4float Output");
@@ -433,7 +445,8 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Output_WithCapability) {
 
     Options options;
     options.extensions.use_storage_input_output_16 = true;
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("OpCapability StorageInputOutput16");
     EXPECT_INST(R"(OpEntryPoint Fragment %main "main" %main_loc1_Input %main_loc2_Output)");
     EXPECT_INST("%main_loc1_Input = OpVariable %_ptr_Input_v4float Input");
@@ -461,7 +474,8 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_F16_Output_WithoutCapability) {
 
     Options options;
     options.extensions.use_storage_input_output_16 = false;
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(OpEntryPoint Fragment %main "main" %main_loc1_Input %main_loc2_Output)");
     EXPECT_INST("%main_loc1_Input = OpVariable %_ptr_Input_v4float Input");
     EXPECT_INST("%main_loc2_Output = OpVariable %_ptr_Output_v4float Output");
@@ -502,7 +516,8 @@ TEST_F(SpirvWriterTest, Function_ShaderIO_DualSourceBlend) {
         b.Return(func, b.Construct(outputs, 0.5_f, 0.6_f));
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(
         R"(OpEntryPoint Fragment %main "main" %main_loc0_idx0_Output %main_loc0_idx1_Output)");
     EXPECT_INST(R"(
@@ -560,7 +575,8 @@ TEST_F(SpirvWriterTest, Function_PassMatrixByPointer) {
 
     Options options;
     options.workarounds.pass_matrix_by_pointer = true;
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
 
     EXPECT_INST(R"(
                ; Function target
@@ -608,7 +624,8 @@ TEST_F(SpirvWriterTest, WorkgroupStorageSizeEmpty) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_EQ(0u, workgroup_info.storage_size);
 }
 
@@ -623,7 +640,8 @@ TEST_F(SpirvWriterTest, WorkgroupStorageSizeSimple) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_EQ(32u, workgroup_info.storage_size);
 }
 
@@ -650,7 +668,8 @@ TEST_F(SpirvWriterTest, WorkgroupStorageSizeCompoundTypes) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_EQ(96u, workgroup_info.storage_size);
 }
 
@@ -665,7 +684,8 @@ TEST_F(SpirvWriterTest, WorkgroupStorageSizeAlignmentPadding) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_EQ(16u, workgroup_info.storage_size);
 }
 
@@ -687,7 +707,8 @@ TEST_F(SpirvWriterTest, WorkgroupStorageSizeStructAlignment) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_EQ(1024u, workgroup_info.storage_size);
 }
 

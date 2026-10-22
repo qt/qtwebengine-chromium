@@ -125,10 +125,10 @@ class TaskRunnerImpl : public TaskRunner {
   // This mutex is used for `tasks_` and `delayed_tasks_`, and also for
   // notifying the run loop to wake up when it is waiting for a task to be added
   // to the queue in `run_loop_wakeup_`.
+  // TODO(crbug.com/322734860): implement OSP_GUARDED_BY / better mutex support.
   std::mutex task_mutex_;
-  std::vector<TaskWithMetadata> tasks_;  // ABSL_GUARDED_BY(task_mutex_)
-  std::multimap<Clock::time_point, TaskWithMetadata>
-      delayed_tasks_;  // ABSL_GUARDED_BY(task_mutex_)
+  std::vector<TaskWithMetadata> tasks_;
+  std::multimap<Clock::time_point, TaskWithMetadata> delayed_tasks_;
 
   // When `task_waiter_` is nullptr, `run_loop_wakeup_` is used for sleeping the
   // task runner.  Otherwise, `run_loop_wakeup_` isn't used and `task_waiter_`

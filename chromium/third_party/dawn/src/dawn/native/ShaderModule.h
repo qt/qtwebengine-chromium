@@ -212,8 +212,8 @@ using BindingInfoArray = ityp::array<BindGroupIndex, BindingGroupInfoMap, kMaxBi
 // up dawn::native namespace. These types can be exposed within EntryPointMetadata if needed.
 namespace detail {
 #define SAMPLER_TEXTURE_PAIR_MEMBER(X) \
-    X(BindingSlot, sampler)            \
-    X(BindingSlot, texture)
+    X(WGSLBindPoint, sampler)          \
+    X(WGSLBindPoint, texture)
 DAWN_SERIALIZABLE(struct, SamplerTexturePair, SAMPLER_TEXTURE_PAIR_MEMBER){};
 #undef SAMPLER_TEXTURE_PAIR_MEMBER
 
@@ -315,12 +315,14 @@ using OverridesMap = absl::flat_hash_map<std::string, Override>;
     X(std::vector<PixelLocalMemberType>, pixelLocalMembers)                                       \
     X(bool, usesFragDepth)                                                                        \
     X(bool, usesFragPosition)                                                                     \
-    X(bool, isFragMultiSampled)                                                                   \
+    X(bool, usesSampleInterpolants)                                                               \
     X(bool, usesInstanceIndex)                                                                    \
     X(bool, usesNumWorkgroups)                                                                    \
     X(bool, usesSampleMaskOutput)                                                                 \
     X(bool, usesSampleIndex)                                                                      \
     X(bool, usesVertexIndex)                                                                      \
+    X(bool, usesGlobalInvocationIndex)                                                            \
+    X(bool, usesWorkgroupIndex)                                                                   \
     X(bool, usesTextureLoadWithDepthTexture)                                                      \
     X(bool, usesDepthTextureWithNonComparisonSampler)                                             \
     X(bool, usesSubgroupMatrix)                                                                   \
@@ -333,9 +335,9 @@ using OverridesMap = absl::flat_hash_map<std::string, Override>;
 DAWN_SERIALIZABLE(struct, EntryPointMetadata, ENTRY_POINT_METADATA_MEMBER) {
     using SamplerTexturePair = detail::SamplerTexturePair;
     // TODO(crbug.com/409438000): Remove the hack of sampler placeholders for non-sampler texture.
-    static constexpr const BindingSlot nonSamplerBindingPoint{
-        {BindGroupIndex{std::numeric_limits<uint32_t>::max()},
-         BindingNumber{std::numeric_limits<uint32_t>::max()}}};
+    static constexpr const WGSLBindPoint nonSamplerBindingPoint{
+        BindGroupIndex{std::numeric_limits<uint32_t>::max()},
+        BindingNumber{std::numeric_limits<uint32_t>::max()}};
 
     using TextureMetadataQuery = detail::TextureMetadataQuery;
     using FragmentRenderAttachmentInfo = detail::FragmentRenderAttachmentInfo;

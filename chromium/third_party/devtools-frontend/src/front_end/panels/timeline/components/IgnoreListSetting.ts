@@ -157,7 +157,6 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
             placeholder='/framework\\.js$'
             .value=${live(newRegexValue)}
             .jslogContext=${'timeline.ignore-list-new-regex.text'}>
-          </input>
         </div>
       </div>
     </devtools-button-dialog>
@@ -168,7 +167,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
 export class IgnoreListSetting extends UI.Widget.Widget {
   static createWidgetElement(): UI.Widget.WidgetElement<IgnoreListSetting> {
     const widgetElement = document.createElement('devtools-widget') as UI.Widget.WidgetElement<IgnoreListSetting>;
-    widgetElement.widgetConfig = UI.Widget.widgetConfig(IgnoreListSetting);
+    new IgnoreListSetting(widgetElement);
     return widgetElement;
   }
 
@@ -202,7 +201,7 @@ export class IgnoreListSetting extends UI.Widget.Widget {
 
   #onNewRegexInputFocus(value: string): void {
     // Do not need to trim here because this is a temporary one, we will trim the input when finish editing,
-    this.#editingRegexSetting = {pattern: value, disabled: false, disabledForUrl: undefined};
+    this.#editingRegexSetting = {pattern: value, disabled: false};
     // We need to push the temp regex here to update the flame chart.
     // We are using the "skip-stack-frames-pattern" setting to determine which is rendered on flame chart. And the push
     // here will update the setting's value.

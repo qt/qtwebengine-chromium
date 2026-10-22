@@ -5,6 +5,8 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_HTML_CANVAS_CANVAS_RENDERING_CONTEXT_HOST_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_CANVAS_CANVAS_RENDERING_CONTEXT_HOST_H_
 
+#include <optional>
+
 #include "base/byte_size.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
@@ -16,6 +18,7 @@
 #include "third_party/blink/renderer/core/html/canvas/ukm_parameters.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_external_memory_accounter.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_child_paint_record.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
@@ -65,8 +68,7 @@ class CORE_EXPORT CanvasRenderingContextHost
 
   virtual void PostFinalizeFrame(FlushReason) = 0;
   void NotifyCachesOfSwitchingFrame();
-  virtual bool PushFrame(scoped_refptr<CanvasResource>&& frame,
-                         const SkIRect& damage_rect) = 0;
+  virtual bool PushFrame(scoped_refptr<CanvasResource>&& frame) = 0;
   virtual bool OriginClean() const = 0;
   virtual void SetOriginTainted() = 0;
   virtual CanvasRenderingContext* RenderingContext() const = 0;
@@ -150,6 +152,11 @@ class CORE_EXPORT CanvasRenderingContextHost
   void SetPreferred2DRasterMode(RasterModeHint);
 
   virtual void DiscardResources() = 0;
+
+  virtual std::optional<CanvasChildPaintRecord> GetCanvasChildPaintRecord(
+      DOMNodeId child_id) const {
+    return std::nullopt;
+  }
 
  protected:
   ~CanvasRenderingContextHost() override;

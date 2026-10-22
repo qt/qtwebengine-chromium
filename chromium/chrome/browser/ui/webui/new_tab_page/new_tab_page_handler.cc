@@ -35,6 +35,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/desktop_to_mobile_promos/promos_pref_names.h"
+#include "chrome/browser/desktop_to_mobile_promos/promos_utils.h"
 #include "chrome/browser/enterprise/util/managed_browser_utils.h"
 #include "chrome/browser/new_tab_page/feature_promo_helper/new_tab_page_feature_promo_helper.h"
 #include "chrome/browser/new_tab_page/microsoft_auth/microsoft_auth_service.h"
@@ -46,8 +48,6 @@
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/promos/promos_pref_names.h"
-#include "chrome/browser/promos/promos_utils.h"
 #include "chrome/browser/search/background/ntp_custom_background_service.h"
 #include "chrome/browser/search/background/ntp_custom_background_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -93,6 +93,8 @@
 #include "components/segmentation_platform/public/segmentation_platform_service.h"
 #include "components/sync/service/sync_service.h"
 #include "components/user_education/common/feature_promo/feature_promo_controller.h"
+#include "components/user_education/webui/help_bubble_handler.h"
+#include "components/user_education/webui/tracked_element_help_bubble_webui_anchor.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
@@ -105,6 +107,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/theme_provider.h"
 #include "ui/color/color_provider.h"
+#include "ui/gfx/animation/animation.h"
 #include "ui/gfx/codec/webp_codec.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/color_utils.h"
@@ -635,13 +638,17 @@ void NewTabPageHandler::GetMostVisitedSettings(
 }
 
 void NewTabPageHandler::GetDoodle(GetDoodleCallback callback) {
+  bool enable_animated_logo =
+      base::FeatureList::IsEnabled(ntp_features::kNtpAnimatedDoodles) &&
+      !gfx::Animation::PrefersReducedMotion();
   search_provider_logos::LogoCallbacks callbacks;
   callbacks.on_cached_encoded_logo_available =
       base::BindOnce(&NewTabPageHandler::OnLogoAvailable,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback));
   // This will trigger re-downloading the doodle and caching it. This means a
   // new doodle will be returned on subsequent NTP loads.
-  logo_service_->GetLogo(std::move(callbacks), /*for_webui_ntp=*/true);
+  logo_service_->GetLogo(std::move(callbacks), /*for_webui_ntp=*/true,
+                         enable_animated_logo);
 }
 
 void NewTabPageHandler::UpdatePromoData() {
@@ -1017,9 +1024,6 @@ void NewTabPageHandler::OnDoodleImageClicked(
     case new_tab_page::mojom::DoodleImageType::kAnimation:
       event = NTP_ANIMATED_LOGO_CLICKED;
       break;
-    case new_tab_page::mojom::DoodleImageType::kCta:
-      event = NTP_CTA_LOGO_CLICKED;
-      break;
     case new_tab_page::mojom::DoodleImageType::kStatic:
       event = NTP_STATIC_LOGO_CLICKED;
       break;
@@ -1028,9 +1032,10 @@ void NewTabPageHandler::OnDoodleImageClicked(
   }
   LogEvent(event);
 
-  if (type == new_tab_page::mojom::DoodleImageType::kCta &&
-      log_url.has_value()) {
-    // We just ping the server to indicate a CTA image has been clicked.
+  // We just ping the server to indicate a CTA image has been clicked.
+  // This only happens when the the initial impression log response
+  // contains an `interaction_log_url` field.
+  if (log_url.has_value()) {
     Fetch(*log_url, base::NullCallback());
   }
 }
@@ -1040,13 +1045,19 @@ void NewTabPageHandler::OnDoodleImageRendered(
     double time,
     const GURL& log_url,
     OnDoodleImageRenderedCallback callback) {
-  if (type == new_tab_page::mojom::DoodleImageType::kCta ||
-      type == new_tab_page::mojom::DoodleImageType::kStatic) {
-    logger_.LogEvent(type == new_tab_page::mojom::DoodleImageType::kCta
-                         ? NTP_CTA_LOGO_SHOWN_FROM_CACHE
-                         : NTP_STATIC_LOGO_SHOWN_FROM_CACHE,
-                     base::Time::FromMillisecondsSinceUnixEpoch(time) -
-                         ntp_navigation_start_time_);
+  switch (type) {
+    case new_tab_page::mojom::DoodleImageType::kAnimation:
+      logger_.LogEvent(NTP_ANIMATED_LOGO_SHOWN_FROM_CACHE,
+                       base::Time::FromMillisecondsSinceUnixEpoch(time) -
+                           ntp_navigation_start_time_);
+      break;
+    case new_tab_page::mojom::DoodleImageType::kStatic:
+      logger_.LogEvent(NTP_STATIC_LOGO_SHOWN_FROM_CACHE,
+                       base::Time::FromMillisecondsSinceUnixEpoch(time) -
+                           ntp_navigation_start_time_);
+      break;
+    default:
+      NOTREACHED();
   }
   Fetch(log_url,
         base::BindOnce(&NewTabPageHandler::OnLogFetchResult,
@@ -1199,13 +1210,6 @@ void NewTabPageHandler::OnLogoAvailable(
     }
     image_doodle->share_url = logo->metadata.short_link;
     doodle->image = std::move(image_doodle);
-  } else if (logo->metadata.type ==
-             search_provider_logos::LogoType::INTERACTIVE) {
-    auto interactive_doodle = new_tab_page::mojom::InteractiveDoodle::New();
-    interactive_doodle->url = logo->metadata.full_page_url;
-    interactive_doodle->width = logo->metadata.iframe_width_px;
-    interactive_doodle->height = logo->metadata.iframe_height_px;
-    doodle->interactive = std::move(interactive_doodle);
   } else {
     std::move(callback).Run(nullptr);
     return;
@@ -1242,13 +1246,6 @@ void NewTabPageHandler::OnBrowserWindowInterfaceChanged() {
 void NewTabPageHandler::MaybeTriggerAutomaticCustomizeChromePromo() {
   feature_promo_helper_->MaybeTriggerAutomaticCustomizeChromePromo(
       web_contents_);
-}
-
-void NewTabPageHandler::RecordContextMenuClick() {
-  int current_count =
-      profile_->GetPrefs()->GetInteger(ntp_prefs::kNtpContextMenuClickCount);
-  profile_->GetPrefs()->SetInteger(ntp_prefs::kNtpContextMenuClickCount,
-                                   current_count + 1);
 }
 
 void NewTabPageHandler::LogEvent(NTPLoggingEventType event) {
@@ -1473,7 +1470,14 @@ bool NewTabPageHandler::SyncMicrosoftModulesWithAuth() {
 
 void NewTabPageHandler::TryShowRealboxContextualMenuIPH(
     ui::TrackedElement* element) {
-  if (!element) {
+  if (!element ||
+      !element->IsA<user_education::TrackedElementHelpBubbleWebUIAnchor>()) {
+    return;
+  }
+
+  auto* anchor =
+      element->AsA<user_education::TrackedElementHelpBubbleWebUIAnchor>();
+  if (anchor->handler()->GetWebContents() != web_contents_) {
     return;
   }
 

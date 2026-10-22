@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
@@ -33,17 +34,23 @@
 #include "content/browser/webid/test/mock_permission_delegate.h"
 #include "content/browser/webid/webid_utils.h"
 #include "content/common/content_navigation_policy.h"
+#include "content/public/browser/webid/federated_embedder_login_request.h"
+#include "content/public/browser/webid/identity_credential_source.h"
 #include "content/public/browser/webid/identity_request_dialog_controller.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/back_forward_cache_util.h"
 #include "content/public/test/fake_local_frame.h"
+#include "content/public/test/navigation_simulator.h"
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "metrics.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "mojo/public/cpp/test_support/test_utils.h"
 #include "net/http/http_status_code.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
+#include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
+#include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/webid/login_status_account.h"
 #include "third_party/blink/public/common/webid/login_status_options.h"
@@ -205,6 +212,7 @@ struct MockConfig {
   std::string metrics_endpoint;
   std::string idp_login_url;
   std::string disconnect_endpoint;
+  std::string vc_issuance_endpoint;
   std::optional<SkColor> brand_background_color;
   std::optional<SkColor> brand_text_color;
   std::string requested_label;
@@ -369,6 +377,7 @@ class TestIdpNetworkRequestManager : public MockIdpNetworkRequestManager {
     endpoints.client_metadata = GURL(config.client_metadata_endpoint);
     endpoints.metrics = GURL(config.metrics_endpoint);
     endpoints.disconnect = GURL(config.disconnect_endpoint);
+    endpoints.issuance = GURL(config.vc_issuance_endpoint);
 
     IdentityProviderMetadata idp_metadata;
     idp_metadata.config_url = provider;
@@ -639,6 +648,7 @@ class TestDialogController
       content::RelyingPartyData rp_data,
       const std::vector<IdentityProviderDataPtr>& idp_list,
       const std::vector<IdentityRequestAccountPtr>& accounts,
+      const std::vector<IdentityRequestAccountPtr>& filtered_accounts,
       blink::mojom::RpMode rp_mode,
       IdentityRequestDialogController::AccountSelectionCallback on_selected,
       IdentityRequestDialogController::LoginToIdPCallback on_add_account,
@@ -713,6 +723,8 @@ class TestDialogController
       blink::mojom::RpContext rp_context,
       blink::mojom::RpMode rp_mode,
       const IdentityProviderMetadata& idp_metadata,
+      const std::vector<scoped_refptr<IdentityRequestAccount>>&
+          filtered_accounts,
       IdentityRequestDialogController::DismissCallback dismiss_callback,
       IdentityRequestDialogController::LoginToIdPCallback
           identity_registry_callback) override {
@@ -832,7 +844,7 @@ class TestDialogController
 
   AccountsDialogAction accounts_dialog_action_{AccountsDialogAction::kNone};
 
- private:
+ protected:
   IdpSigninStatusMismatchDialogAction idp_signin_status_mismatch_dialog_action_{
       IdpSigninStatusMismatchDialogAction::kNone};
   ErrorDialogAction error_dialog_action_{ErrorDialogAction::kNone};
@@ -969,7 +981,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
         GURL(),                      // picture
         "(650) 312-3223",            // phone number
         "kenr",                      // username
-        std::vector<std::string>(),  // potentially_approved_origin_hashes
+        std::vector<std::string>(),  // potentially_approved_site_hashes
         std::vector<std::string>(),  // login_hints
         std::vector<std::string>(),  // domain_hints
         std::vector<std::string>()   // labels
@@ -983,6 +995,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
          kMetricsEndpoint,
          kIdpLoginUrl,
          kIdpDisconnectUrl,
+         /*vc_issuance_endpoint=*/"",
          /*brand_background_color=*/std::nullopt,
          /*brand_text_color=*/std::nullopt},
         kDefaultClientMetadata,
@@ -1000,7 +1013,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
         GURL(),                      // picture
         "(650) 312-3223",            // phone number
         "kenr",                      // username
-        std::vector<std::string>(),  // potentially_approved_origin_hashes
+        std::vector<std::string>(),  // potentially_approved_site_hashes
         kLoginHints,                 // login_hints
         std::vector<std::string>(),  // domain_hints
         std::vector<std::string>()   // labels
@@ -1016,7 +1029,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
             GURL(),                      // picture
             "(650) 312-3223",            // phone number
             "kenr",                      // username
-            std::vector<std::string>(),  // potentially_approved_origin_hashes
+            std::vector<std::string>(),  // potentially_approved_site_hashes
             std::vector<std::string>(),  // login_hints
             kDomainHintVector,           // domain_hints
             std::vector<std::string>()   // labels
@@ -1032,7 +1045,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
             GURL(),                      // picture
             "(650) 312-3223",            // phone number
             "npm",                       // username
-            std::vector<std::string>(),  // potentially_approved_origin_hashes
+            std::vector<std::string>(),  // potentially_approved_site_hashes
             std::vector<std::string>(),  // login_hints
             std::vector<std::string>(),  // domain_hints
             std::vector<std::string>(),  // labels
@@ -1048,7 +1061,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
             GURL(),                      // picture
             "(650) 312-3223",            // phone number
             "tanz",                      // username
-            std::vector<std::string>(),  // potentially_approved_origin_hashes
+            std::vector<std::string>(),  // potentially_approved_site_hashes
             std::vector<std::string>(),  // login_hints
             std::vector<std::string>(),  // domain_hints
             std::vector<std::string>(),  // labels
@@ -1065,7 +1078,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
             GURL(),                      // picture
             "(650) 312-3223",            // phone number
             "npm",                       // username
-            std::vector<std::string>(),  // potentially_approved_origin_hashes
+            std::vector<std::string>(),  // potentially_approved_site_hashes
             std::vector<std::string>(),  // login_hints
             std::vector<std::string>(),  // domain_hints
             std::vector<std::string>(),  // labels
@@ -1081,7 +1094,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
             GURL(),                      // picture
             "(650) 312-3223",            // phone number
             "peter",                     // username
-            std::vector<std::string>(),  // potentially_approved_origin_hashes
+            std::vector<std::string>(),  // potentially_approved_site_hashes
             std::vector<std::string>(),  // login_hints
             std::vector<std::string>(),  // domain_hints
             std::vector<std::string>(),  // labels
@@ -1097,7 +1110,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
             GURL(),                      // picture
             "(650) 312-3223",            // phone number
             "zacht",                     // username
-            std::vector<std::string>(),  // potentially_approved_origin_hashes
+            std::vector<std::string>(),  // potentially_approved_site_hashes
             std::vector<std::string>(),  // login_hints
             std::vector<std::string>(),  // domain_hints
             std::vector<std::string>(),  // labels
@@ -1114,7 +1127,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
             GURL(),                      // picture
             "(650) 312-3223",            // phone number
             "npm",                       // username
-            std::vector<std::string>(),  // potentially_approved_origin_hashes
+            std::vector<std::string>(),  // potentially_approved_site_hashes
             kNicolasHints,               // login_hints
             kDomainHintVector,           // domain_hints
             std::vector<std::string>(),  // labels
@@ -1130,7 +1143,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
             GURL(),                      // picture
             "(650) 312-3223",            // phone number
             "peterk",                    // username
-            std::vector<std::string>(),  // potentially_approved_origin_hashes
+            std::vector<std::string>(),  // potentially_approved_site_hashes
             kPeterHints,                 // login_hints
             std::vector<std::string>(),  // domain_hints
             kLabelVector,                // labels
@@ -1146,7 +1159,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
             GURL(),                      // picture
             "(650) 312-3223",            // phone number
             "zacht",                     // username
-            std::vector<std::string>(),  // potentially_approved_origin_hashes
+            std::vector<std::string>(),  // potentially_approved_site_hashes
             kZachHints,                  // login_hints
             kTwoDomainHints,             // domain_hints
             std::vector<std::string>(),  // labels
@@ -1160,6 +1173,7 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
                          "https://idp2.example/metrics",
                          "https://idp2.example/login_url",
                          "https://idp2.example/disconnect",
+                         /*vc_issuance_endpoint=*/"",
                          /*brand_background_color=*/std::nullopt,
                          /*brand_text_color=*/std::nullopt},
                         kDefaultClientMetadata,
@@ -1183,6 +1197,31 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
         IdpSigninStatusMismatchDialogAction::kNone,
         ErrorDialogAction::kClose,
         LoadingDialogAction::kNone};
+  }
+
+  // Navigate with identity-credentials-get PP denied and bind a new
+  // Mojo remote to the resulting RFH.
+  mojo::Remote<blink::mojom::FederatedAuthRequest>
+  NavigateAndBindWithDeniedIdentityCredentialsGetPolicy() {
+    // Setting `feature` with no `allowed_origins` means disabled for all.
+    network::ParsedPermissionsPolicy policy(1);
+    policy[0].feature =
+        network::mojom::PermissionsPolicyFeature::kIdentityCredentialsGet;
+
+    auto simulator = NavigationSimulator::CreateRendererInitiated(
+        GURL(rp_url_), web_contents()->GetPrimaryMainFrame());
+    simulator->SetPermissionsPolicyHeader(std::move(policy));
+    simulator->Commit();
+
+    mojo::Remote<blink::mojom::FederatedAuthRequest> remote;
+    RequestService::CreateForTesting(
+        *static_cast<TestRenderFrameHost*>(
+            simulator->GetFinalRenderFrameHost()),
+        test_api_permission_delegate_.get(),
+        test_auto_reauthn_permission_delegate_.get(),
+        test_permission_delegate_.get(), test_identity_registry_.get(),
+        remote.BindNewPipeAndPassReceiver());
+    return remote;
   }
 
   void SetUp() override {
@@ -1359,8 +1398,8 @@ class RequestServiceTest : public RenderViewHostImplTestHarness {
     // removed. Filter out known deprecation warnings
     std::vector<std::string> filtered_messages;
     for (const auto& message : messages) {
-      if (message.find("Top-level nonce support will be removed") ==
-              std::string::npos &&
+      if (message.find("The \'nonce\' parameter should be passed within the "
+                       "\'params\' object") == std::string::npos &&
           message.find("The FedCM configuration uses client_metadata") ==
               std::string::npos) {
         filtered_messages.push_back(message);
@@ -2099,6 +2138,57 @@ TEST_F(RequestServiceTest, MissingTokenEndpoint) {
   EXPECT_EQ("Provider's FedCM config file is invalid.", messages[1]);
 }
 
+// Test that request fails if config has a cross-origin vc_issuance_endpoint.
+TEST_F(RequestServiceTest, InvalidVcIssuanceEndpoint) {
+  base::test::ScopedFeatureList list;
+  list.InitAndEnableFeature(features::kFedCmDelegation);
+
+  MockConfiguration configuration = kConfigurationValid;
+  configuration.idp_info[kProviderUrlFull].config.vc_issuance_endpoint =
+      "https://cross-origin.idp.example/issuance";
+  RequestExpectations expectations = {
+      RequestTokenStatus::kError,
+      FederatedAuthRequestResult::kConfigInvalidResponse,
+      /*standalone_console_message=*/std::nullopt,
+      /*selected_idp_config_url=*/std::nullopt};
+  RunAuthTest(kDefaultRequestParameters, expectations, configuration);
+  EXPECT_TRUE(DidFetchWellKnownAndConfig());
+  EXPECT_FALSE(DidFetch(FetchedEndpoint::ACCOUNTS));
+
+  std::vector<std::string> messages =
+      RenderFrameHostTester::For(main_rfh())->GetConsoleMessages();
+  ASSERT_EQ(2U, messages.size());
+  EXPECT_EQ(
+      "Config file is missing or has an invalid URL for the following:\n"
+      "\"vc_issuance_endpoint\"\n",
+      messages[0]);
+  EXPECT_EQ("Provider's FedCM config file is invalid.", messages[1]);
+}
+
+// Test that request succeeds if config has a same-origin vc_issuance_endpoint.
+TEST_F(RequestServiceTest, ValidVcIssuanceEndpoint) {
+  base::test::ScopedFeatureList list;
+  list.InitAndEnableFeature(features::kFedCmDelegation);
+
+  MockConfiguration configuration = kConfigurationValid;
+  configuration.idp_info[kProviderUrlFull].config.vc_issuance_endpoint =
+      "https://idp.example/issuance";
+  RunAuthTest(kDefaultRequestParameters, kExpectationSuccess, configuration);
+  EXPECT_TRUE(DidFetchWellKnownAndConfig());
+  EXPECT_TRUE(DidFetch(FetchedEndpoint::ACCOUNTS));
+}
+
+// Test that request succeeds if config has a cross-origin vc_issuance_endpoint,
+// but delegation is disabled.
+TEST_F(RequestServiceTest, CrossOriginVcIssuanceEndpointDisabledDelegation) {
+  MockConfiguration configuration = kConfigurationValid;
+  configuration.idp_info[kProviderUrlFull].config.vc_issuance_endpoint =
+      "https://cross-origin.idp.example/issuance";
+  RunAuthTest(kDefaultRequestParameters, kExpectationSuccess, configuration);
+  EXPECT_TRUE(DidFetchWellKnownAndConfig());
+  EXPECT_TRUE(DidFetch(FetchedEndpoint::ACCOUNTS));
+}
+
 // Test that request fails if config is missing accounts endpoint.
 TEST_F(RequestServiceTest, MissingAccountsEndpoint) {
   MockConfiguration configuration = kConfigurationValid;
@@ -2406,6 +2496,20 @@ TEST_F(RequestServiceTest, LoginStateFailedSignUpNotGrantSharingPermission) {
       /*selected_idp_config_url=*/std::nullopt};
   RunAuthTest(kDefaultRequestParameters, expectations, configuration);
   EXPECT_TRUE(DidFetch(FetchedEndpoint::TOKEN));
+}
+
+TEST_F(RequestServiceTest,
+       EmbedderInitiatedLoginDoesNotGrantSharingPermission) {
+  FederatedEmbedderLoginRequest::Set(web_contents(),
+                                     OriginFromString(kProviderUrlFull),
+                                     kAccountId, base::DoNothing());
+
+  EXPECT_CALL(*test_permission_delegate_, GetLastUsedTimestamp)
+      .WillRepeatedly(Return(std::nullopt));
+  EXPECT_CALL(*test_permission_delegate_, GrantSharingPermission).Times(0);
+
+  RunAuthTest(kDefaultRequestParameters, kExpectationSuccess,
+              kConfigurationValid);
 }
 
 // Test that auto re-authn permission is not embargoed upon explicit sign-in.
@@ -3793,6 +3897,7 @@ class DisableApiWhenDialogShownDialogController : public TestDialogController {
       content::RelyingPartyData rp_data,
       const std::vector<IdentityProviderDataPtr>& idp_list,
       const std::vector<IdentityRequestAccountPtr>& accounts,
+      const std::vector<IdentityRequestAccountPtr>& filtered_accounts,
       blink::mojom::RpMode rp_mode,
       IdentityRequestDialogController::AccountSelectionCallback on_selected,
       IdentityRequestDialogController::LoginToIdPCallback on_add_account,
@@ -3805,9 +3910,9 @@ class DisableApiWhenDialogShownDialogController : public TestDialogController {
 
     // Call parent class method in order to store callback parameters.
     return TestDialogController::ShowAccountsDialog(
-        std::move(rp_data), idp_list, accounts, rp_mode, std::move(on_selected),
-        std::move(on_add_account), std::move(dismiss_callback),
-        std::move(accounts_displayed_callback));
+        std::move(rp_data), idp_list, accounts, filtered_accounts, rp_mode,
+        std::move(on_selected), std::move(on_add_account),
+        std::move(dismiss_callback), std::move(accounts_displayed_callback));
   }
 
  private:
@@ -6304,8 +6409,10 @@ TEST_F(RequestServiceTest, SuccessfulAuthZRequestWithPopUpWindow) {
   auto impl = federated_auth_request_impl_;
   EXPECT_CALL(*weak_dialog_controller, ShowModalDialog)
       .WillOnce(::testing::WithArg<0>([&modal, &impl](const GURL& url) {
-        impl->OnResolve(GURL(kProviderUrlFull), std::nullopt, std::nullopt,
-                        base::Value("an-access-token"));
+        auto params = blink::mojom::ResolveTokenParams::NewToken(
+            base::Value("an-access-token"));
+        impl->OnResolve(GURL(kProviderUrlFull), std::nullopt,
+                        std::move(params));
         return modal.get();
       }));
 
@@ -7740,6 +7847,69 @@ TEST_F(RequestServiceTest, ActiveFlowNotAffectEmbargo) {
       main_test_rfh()->GetLastCommittedOrigin()));
 }
 
+// Test ambient UI is NOT exempt from the cooldown embargo.
+// Because the ambient UI is still not entirely complete (e.g. it can't handle
+// multiple accounts, mismatch UIs, etc), we respect the cooldown embargo.
+TEST_F(RequestServiceTest, AmbientFlowDismissedByEmbargo) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(features::kFedCmAmbientUI);
+
+  test_api_permission_delegate_->RecordDismissAndEmbargo(
+      OriginFromString(kRpUrl));
+
+  RequestExpectations expectations = {
+      RequestTokenStatus::kError,
+      FederatedAuthRequestResult::kDisabledInSettings,
+      /*standalone_console_message=*/std::nullopt,
+      /*selected_idp_config_url=*/std::nullopt};
+
+  RunAuthTest(kDefaultRequestParameters, expectations, kConfigurationValid);
+  ExpectStatusMetrics(TokenStatus::kDisabledEmbargo);
+}
+
+// Test dismissing UI in ambient UI does not trigger embargo.
+// While the ambient UI respects the embargo, it does not trigger / set it,
+// e.g. when the use dismisses it.
+TEST_F(RequestServiceTest, AmbientFlowDoesNotCauseAnEmbargo) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(features::kFedCmAmbientUI);
+
+  RequestExpectations expectations = {
+      RequestTokenStatus::kError,
+      FederatedAuthRequestResult::kUiDismissedNoEmbargo,
+      /*standalone_console_message=*/std::nullopt,
+      /*selected_idp_config_url=*/std::nullopt};
+
+  MockConfiguration configuration = kConfigurationValid;
+  configuration.accounts_dialog_action = AccountsDialogAction::kClose;
+
+  RunAuthTest(kDefaultRequestParameters, expectations, configuration);
+
+  EXPECT_FALSE(test_api_permission_delegate_->embargoed_origins_.count(
+      main_test_rfh()->GetLastCommittedOrigin()));
+}
+
+// Test that non-ambient passive flow still triggers embargo.
+TEST_F(RequestServiceTest, NonAmbientPassiveFlowStillAffectsEmbargo) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(features::kFedCmAmbientUI);
+
+  RequestExpectations expectations = {
+      RequestTokenStatus::kError, FederatedAuthRequestResult::kShouldEmbargo,
+      /*standalone_console_message=*/std::nullopt,
+      /*selected_idp_config_url=*/std::nullopt};
+
+  MockConfiguration configuration = kConfigurationValid;
+  configuration.accounts_dialog_action = AccountsDialogAction::kClose;
+  // Multiple accounts means it's not ambient capable.
+  configuration.idp_info[kProviderUrlFull].accounts = kTwoAccounts;
+
+  RunAuthTest(kDefaultRequestParameters, expectations, configuration);
+
+  EXPECT_TRUE(test_api_permission_delegate_->embargoed_origins_.count(
+      main_test_rfh()->GetLastCommittedOrigin()));
+}
+
 // Tests that when background text is passed but no background color, the
 // background text is ignored.
 TEST_F(RequestServiceTest, BrandingWithTextColorAndNoBackgroundColor) {
@@ -7794,6 +7964,7 @@ TEST_F(FederatedAuthRequestExampleOrgTest, WellKnownSameSite) {
   idp_info.config.metrics_endpoint = "";
   idp_info.config.idp_login_url = "https://idp.example.org/login";
   idp_info.config.disconnect_endpoint = "";
+  idp_info.config.vc_issuance_endpoint = "";
 
   // We make the request from rp.example to idp.example, so it should
   // only succeed despite the well-known failure if the flag is on.
@@ -7827,6 +7998,7 @@ class TestDialogControllerWithImmediateDismiss : public TestDialogController {
       content::RelyingPartyData rp_data,
       const std::vector<IdentityProviderDataPtr>& idp_list,
       const std::vector<IdentityRequestAccountPtr>& accounts,
+      const std::vector<IdentityRequestAccountPtr>& filtered_accounts,
       blink::mojom::RpMode rp_mode,
       IdentityRequestDialogController::AccountSelectionCallback on_selected,
       IdentityRequestDialogController::LoginToIdPCallback on_add_account,
@@ -7843,6 +8015,8 @@ class TestDialogControllerWithImmediateDismiss : public TestDialogController {
       blink::mojom::RpContext rp_context,
       blink::mojom::RpMode rp_mode,
       const IdentityProviderMetadata& idp_metadata,
+      const std::vector<scoped_refptr<IdentityRequestAccount>>&
+          filtered_accounts,
       IdentityRequestDialogController::DismissCallback dismiss_callback,
       IdentityRequestDialogController::LoginToIdPCallback
           identity_registry_callback) override {
@@ -8430,6 +8604,7 @@ TEST_F(RequestServiceTest, HasNonceOutsideParamsOnly_ParamsWithNonce) {
   histogram_tester_.ExpectTotalCount("Blink.FedCm.HasNonceOutsideParamsOnly",
                                      0);
   ExpectUkmValue("HasNonce", true);
+  ExpectNoUKMPresence("HasNonceOutsideParamsOnly");
 }
 
 // Test that Blink.FedCm.HasNonceOutsideParamsOnly is not recorded when a nonce
@@ -8442,6 +8617,7 @@ TEST_F(RequestServiceTest, HasNonceOutsideParamsOnly_NoNonce) {
   histogram_tester_.ExpectTotalCount("Blink.FedCm.HasNonceOutsideParamsOnly",
                                      0);
   ExpectNoUKMPresence("HasNonce");
+  ExpectNoUKMPresence("HasNonceOutsideParamsOnly");
 }
 
 // Test that Blink.FedCm.HasNonceOutsideParamsOnly is not recorded when a nonce
@@ -8455,6 +8631,7 @@ TEST_F(RequestServiceTest, HasNonceOutsideParamsOnly_NonceOnlyInParams) {
   histogram_tester_.ExpectTotalCount("Blink.FedCm.HasNonceOutsideParamsOnly",
                                      0);
   ExpectNoUKMPresence("HasNonce");
+  ExpectNoUKMPresence("HasNonceOutsideParamsOnly");
 }
 
 TEST_F(RequestServiceTest, NonceAbsenceNoRecord) {
@@ -8507,6 +8684,296 @@ TEST_F(RequestServiceTest, SuppressedBySegmentationPlatformButMultipleIdps) {
   EXPECT_TRUE(DidFetch(FetchedEndpoint::ACCOUNTS));
   histogram_tester_.ExpectUniqueSample("Blink.FedCm.DidShowUI", true, 1);
   ExpectUkmValueInEntry("DidShowUI", FedCmEntry::kEntryName, true);
+}
+
+class TestDialogControllerWithIdentityCredentialSource
+    : public TestDialogController {
+ public:
+  enum class SelectionMode {
+    kValid,
+    kInvalidAccountId,
+    kInvalidOrigin,
+  };
+
+  explicit TestDialogControllerWithIdentityCredentialSource(
+      MockConfiguration configuration,
+      WebContents* web_contents,
+      SelectionMode selection_mode = SelectionMode::kValid)
+      : TestDialogController(configuration),
+        web_contents_(web_contents),
+        selection_mode_(selection_mode) {}
+
+  ~TestDialogControllerWithIdentityCredentialSource() override = default;
+
+  TestDialogControllerWithIdentityCredentialSource(
+      const TestDialogControllerWithIdentityCredentialSource&) = delete;
+  TestDialogControllerWithIdentityCredentialSource& operator=(
+      TestDialogControllerWithIdentityCredentialSource&) = delete;
+
+  bool ShowAccountsDialog(
+      content::RelyingPartyData rp_data,
+      const std::vector<IdentityProviderDataPtr>& idp_list,
+      const std::vector<IdentityRequestAccountPtr>& accounts,
+      const std::vector<IdentityRequestAccountPtr>& filtered_accounts,
+      blink::mojom::RpMode rp_mode,
+      IdentityRequestDialogController::AccountSelectionCallback on_selected,
+      IdentityRequestDialogController::LoginToIdPCallback on_add_account,
+      IdentityRequestDialogController::DismissCallback dismiss_callback,
+      IdentityRequestDialogController::AccountsDisplayedCallback
+          accounts_displayed_callback) override {
+    state_->all_accounts_for_display = accounts;
+    IdentityCredentialSource* source =
+        IdentityCredentialSource::FromPage(web_contents_->GetPrimaryPage());
+    // Check that we can get the correct account list, immediately.
+    source->GetIdentityCredentialSuggestions(
+        {GURL(kProviderUrlFull)},
+        base::BindOnce(
+            [](const std::vector<IdentityRequestAccountPtr>& all_accounts,
+               const std::vector<IdentityRequestAccountPtr>& filtered_accounts,
+               const std::optional<
+                   std::vector<scoped_refptr<content::IdentityRequestAccount>>>&
+                   actual_accounts) {
+              ASSERT_TRUE(actual_accounts.has_value());
+              std::vector<IdentityRequestAccountPtr> expected_signin_accounts;
+              for (const auto& account : all_accounts) {
+                if (account->idp_claimed_login_state.value_or(
+                        account->browser_trusted_login_state) ==
+                    LoginState::kSignIn) {
+                  expected_signin_accounts.push_back(account);
+                }
+              }
+
+              EXPECT_EQ(expected_signin_accounts.size(),
+                        actual_accounts->size());
+              for (size_t i = 0; i < expected_signin_accounts.size(); ++i) {
+                EXPECT_EQ(expected_signin_accounts[i]->id,
+                          (*actual_accounts)[i]->id);
+              }
+              // Check that the actual accounts are not from the filtered list.
+              for (const auto& account : *actual_accounts) {
+                ASSERT_TRUE(std::find(filtered_accounts.begin(),
+                                      filtered_accounts.end(),
+                                      account) == filtered_accounts.end());
+              }
+            },
+            accounts, filtered_accounts));
+    // Now, check that selecting the account works. Find the first sign-in
+    // account.
+    std::string signin_account_id;
+    for (const auto& account : accounts) {
+      if (account->idp_claimed_login_state.value_or(
+              account->browser_trusted_login_state) == LoginState::kSignIn) {
+        signin_account_id = account->id;
+        break;
+      }
+    }
+
+    url::Origin origin = url::Origin::Create(GURL(kProviderUrlFull));
+    if (selection_mode_ == SelectionMode::kInvalidAccountId) {
+      signin_account_id = "invalid_account_id";
+    } else if (selection_mode_ == SelectionMode::kInvalidOrigin) {
+      origin = url::Origin::Create(GURL("https://invalid.example"));
+    }
+
+    if (!signin_account_id.empty() &&
+        source->SelectAccount(origin, signin_account_id)) {
+      // No need to call a callback here; SelectAccount took care of that.
+      return false;
+    }
+    // Something went wrong, dismiss dialog.
+    std::move(dismiss_callback).Run(DismissReason::kOther);
+    return false;
+  }
+
+ private:
+  raw_ptr<WebContents> web_contents_;
+  SelectionMode selection_mode_;
+};
+
+TEST_F(
+    RequestServiceTest,
+    IdentityCredentialSourceReturnsReturningAccountsAndResolvesFedCmRequest) {
+  MockConfiguration configuration = kConfigurationValid;
+  configuration.idp_info[kProviderUrlFull].accounts = kMultipleAccounts;
+
+  SetDialogController(
+      std::make_unique<TestDialogControllerWithIdentityCredentialSource>(
+          configuration, web_contents()));
+
+  RunAuthTest(kDefaultRequestParameters, kExpectationSuccess, configuration);
+
+  // Check that GetIdentityCredentialSuggestions did not fetch new accounts.
+  EXPECT_EQ(1u, NumFetched(FetchedEndpoint::ACCOUNTS));
+  EXPECT_EQ(1u, NumFetched(FetchedEndpoint::TOKEN));
+}
+
+TEST_F(RequestServiceTest,
+       IdentityCredentialSourceReturnsFilteredSigninAccounts) {
+  MockConfiguration configuration = kConfigurationValid;
+
+  // Use Nicolas (SignUp), Peter (SignIn), and Zach (SignIn).
+  configuration.idp_info[kProviderUrlFull].accounts = {
+      base::MakeRefCounted<IdentityRequestAccount>(
+          kAccountIdNicolas, kAccountEmailNicolas, "Nicolas P",
+          kAccountEmailNicolas, "Nicolas P", "Nicolas", GURL(),
+          "(650) 312-3223", "npm", std::vector<std::string>(), kNicolasHints,
+          std::vector<std::string>(), std::vector<std::string>(),
+          LoginState::kSignUp, LoginState::kSignUp),
+      base::MakeRefCounted<IdentityRequestAccount>(
+          kAccountIdPeter, kAccountEmailPeter, "Peter K", kAccountEmailPeter,
+          "Peter K", "Peter", GURL(), "(650) 312-3223", "peter",
+          std::vector<std::string>(), kPeterHints, std::vector<std::string>(),
+          std::vector<std::string>(), LoginState::kSignIn, LoginState::kSignIn),
+      base::MakeRefCounted<IdentityRequestAccount>(
+          kAccountIdZach, kAccountEmailZach, "Zachary T", kAccountEmailZach,
+          "Zachary T", "Zach", GURL(), "(650) 312-3223", "zacht",
+          std::vector<std::string>(), kZachHints, std::vector<std::string>(),
+          std::vector<std::string>(), LoginState::kSignIn,
+          LoginState::kSignIn)};
+
+  RequestParameters parameters = kDefaultRequestParameters;
+  // Only Peter matches this hint.
+  parameters.identity_providers[0].login_hint = kAccountIdPeter;
+
+  SetDialogController(
+      std::make_unique<TestDialogControllerWithIdentityCredentialSource>(
+          configuration, web_contents()));
+
+  RunAuthTest(parameters, kExpectationSuccess, configuration);
+
+  // Suggestions should have returned just Peter since Zach was filtered out of
+  // the FedCM dialog by the login hint.
+  EXPECT_EQ(1u, NumFetched(FetchedEndpoint::ACCOUNTS));
+  EXPECT_EQ(1u, NumFetched(FetchedEndpoint::TOKEN));
+}
+
+TEST_F(RequestServiceTest, IdentityCredentialSourceFailsOnInvalidAccountId) {
+  RenderFrameHostTester::For(main_rfh())->ClearConsoleMessages();
+
+  MockConfiguration configuration = kConfigurationValid;
+  configuration.idp_info[kProviderUrlFull].accounts = kMultipleAccounts;
+
+  RequestExpectations expectations = {
+      RequestTokenStatus::kError,
+      FederatedAuthRequestResult::kUiDismissedNoEmbargo,
+      /*standalone_console_message=*/std::nullopt,
+      /*selected_idp_config_url=*/std::nullopt};
+
+  SetDialogController(
+      std::make_unique<TestDialogControllerWithIdentityCredentialSource>(
+          configuration, web_contents(),
+          TestDialogControllerWithIdentityCredentialSource::SelectionMode::
+              kInvalidAccountId));
+
+  RunAuthTest(kDefaultRequestParameters, expectations, configuration);
+}
+
+TEST_F(RequestServiceTest, IdentityCredentialSourceFailsOnInvalidOrigin) {
+  RenderFrameHostTester::For(main_rfh())->ClearConsoleMessages();
+
+  MockConfiguration configuration = kConfigurationValid;
+  configuration.idp_info[kProviderUrlFull].accounts = kMultipleAccounts;
+
+  RequestExpectations expectations = {
+      RequestTokenStatus::kError,
+      FederatedAuthRequestResult::kUiDismissedNoEmbargo,
+      /*standalone_console_message=*/std::nullopt,
+      /*selected_idp_config_url=*/std::nullopt};
+
+  SetDialogController(
+      std::make_unique<TestDialogControllerWithIdentityCredentialSource>(
+          configuration, web_contents(),
+          TestDialogControllerWithIdentityCredentialSource::SelectionMode::
+              kInvalidOrigin));
+
+  RunAuthTest(kDefaultRequestParameters, expectations, configuration);
+}
+
+TEST_F(RequestServiceTest, RequestTokenDeniedByPermissionsPolicy) {
+  auto remote = NavigateAndBindWithDeniedIdentityCredentialsGetPolicy();
+  mojo::test::BadMessageObserver bad_message_observer;
+
+  auto get_params = blink::mojom::IdentityProviderGetParameters::New();
+  get_params->providers.push_back(
+      blink::mojom::IdentityProviderRequestOptions::New());
+  get_params->providers[0]->config =
+      blink::mojom::IdentityProviderConfig::New();
+  get_params->providers[0]->config->config_url = GURL(kProviderUrlFull);
+  get_params->providers[0]->config->client_id = kClientId;
+
+  std::vector<blink::mojom::IdentityProviderGetParametersPtr> params;
+  params.push_back(std::move(get_params));
+
+  remote->RequestToken(
+      std::move(params),
+      password_manager::CredentialMediationRequirement::kOptional,
+      base::DoNothing());
+
+  EXPECT_EQ("identity-credentials-get permissions policy not enabled",
+            bad_message_observer.WaitForBadMessage());
+}
+
+TEST_F(RequestServiceTest, RequestUserInfoDeniedByPermissionsPolicy) {
+  auto remote = NavigateAndBindWithDeniedIdentityCredentialsGetPolicy();
+  mojo::test::BadMessageObserver bad_message_observer;
+
+  auto config = blink::mojom::IdentityProviderConfig::New();
+  config->config_url = GURL(kProviderUrlFull);
+  config->client_id = kClientId;
+
+  remote->RequestUserInfo(std::move(config), base::DoNothing());
+
+  EXPECT_EQ("identity-credentials-get permissions policy not enabled",
+            bad_message_observer.WaitForBadMessage());
+}
+
+TEST_F(RequestServiceTest, DisconnectDeniedByPermissionsPolicy) {
+  auto remote = NavigateAndBindWithDeniedIdentityCredentialsGetPolicy();
+  mojo::test::BadMessageObserver bad_message_observer;
+
+  auto options = blink::mojom::IdentityCredentialDisconnectOptions::New();
+  options->config = blink::mojom::IdentityProviderConfig::New();
+  options->config->config_url = GURL(kProviderUrlFull);
+  options->config->client_id = kClientId;
+  options->account_hint = "hint";
+
+  remote->Disconnect(std::move(options), base::DoNothing());
+
+  EXPECT_EQ("identity-credentials-get permissions policy not enabled",
+            bad_message_observer.WaitForBadMessage());
+}
+
+TEST_F(RequestServiceTest, NotifyAutofillSuggestionAcceptedWithUnknownIdp) {
+  auto dialog_controller =
+      std::make_unique<TestDialogController>(kConfigurationValid);
+
+  dialog_controller->SetState(&dialog_controller_state_);
+  federated_auth_request_impl_->SetDialogControllerForTests(
+      std::move(dialog_controller));
+
+  // Call NotifyAutofillSuggestionAccepted with an IDP that is not in
+  // token_request_get_infos_.
+  GURL unknown_idp("https://unknownidp.example/");
+  std::optional<bool> callback_result;
+  base::RunLoop run_loop;
+  RequestService::OnFederatedTokenReceivedCallback callback = base::BindOnce(
+      [](std::optional<bool>* callback_result, base::OnceClosure quit_closure,
+         bool accepted) {
+        *callback_result = accepted;
+        std::move(quit_closure).Run();
+      },
+      &callback_result, run_loop.QuitClosure());
+
+  // This should return early and not crash.
+  federated_auth_request_impl_->NotifyAutofillSuggestionAccepted(
+      unknown_idp, "account_id", /*show_modal=*/true, std::move(callback));
+
+  run_loop.Run();
+
+  // Verify that the loading dialog was not shown.
+  EXPECT_FALSE(dialog_controller_state_.did_show_loading_dialog);
+  // Verify that the callback was called with false.
+  EXPECT_EQ(callback_result, false);
 }
 
 }  // namespace content::webid

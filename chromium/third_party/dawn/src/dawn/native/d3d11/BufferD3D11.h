@@ -39,6 +39,7 @@
 #include "dawn/native/Buffer.h"
 #include "dawn/native/d3d/d3d_platform.h"
 #include "dawn/native/d3d11/Forward.h"
+#include "dawn/native/d3d11/QueueD3D11.h"
 #include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native::d3d11 {
@@ -185,22 +186,28 @@ class Buffer : public BufferBase {
   private:
     MaybeError Initialize(bool mappedAtCreation,
                           const ScopedCommandRecordingContext* commandContext);
-    MaybeError ClearInitialResource(const ScopedCommandRecordingContext* commandContext);
     MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) override;
     MaybeError FinalizeMapImpl(BufferState newState) override;
     void UnmapImpl(BufferState oldState, BufferState newState) override;
     bool IsCPUWritableAtCreation() const override;
     MaybeError MapAtCreationImpl() override;
     void* GetMappedPointerImpl() override;
+    std::optional<DeviceGuard> UseDeviceGuardForDestroy() override;
 
     MaybeError InitializeToZero(const ScopedCommandRecordingContext* commandContext);
+    MaybeError EnsurePaddingInitialized(const ScopedCommandRecordingContext* commandContext);
 
     // Internal usage indicating the native buffer supports mapping for read and/or write or not.
     const wgpu::BufferUsage mInternalMappableFlags;
     const wgpu::MapMode mAutoMapMode;
-    ExecutionSerial mMapReadySerial = kMaxExecutionSerial;
+    // Track whether padding bytes have been cleared to zero.
+    bool mPaddingCleared = false;
     // Temporary storage for MapAtCreation when the lock cannot be acquired.
     std::unique_ptr<uint8_t[]> mMapAtCreationData;
+
+    // A buffer can only have one scheduled map request at a time, so we embed the request object
+    // here to avoid heap allocations.
+    Queue::BufferMapRequest mMapRequest{this, wgpu::MapMode::None};
 };
 
 // Buffer that can be used by GPU. It manages several copies of the buffer, each with its own
@@ -293,8 +300,9 @@ class GPUUsableBuffer final : public Buffer {
     // - Since D3D11 constant buffer cannot be bound for other purposes (e.g. vertex, storage, etc),
     //   we also need a separate storage for constant buffer and one storage for non-constant buffer
     //   purpose. Note: constant buffer's only supported GPU writing operation is CopyDst.
-    // - Lastly, we need a separate storage for MapRead because only D3D11 staging buffer can be
-    //   read by CPU.
+    // - Lastly, we usually need a separate staging storage for CPU reads.
+    // - When MapOnDefaultBuffers is supported and the usage is compatible, mappable and GPU
+    //   writable paths can alias a single D3D11 default-buffer storage.
     //
     // One example of a buffer being created with MapWrite | Uniform | Storage and being used:
     // - Map + CPU write: `CPUWritableConstantBuffer` gets updated.
@@ -320,6 +328,8 @@ class GPUUsableBuffer final : public Buffer {
         GPUWritableNonConstantBuffer,
         // Storage for staging usage,
         Staging,
+        // Storage shared by mappable and GPU writable paths when MapOnDefaultBuffers is used.
+        MappableAndGPUWritable,
 
         Count,
     };
@@ -344,8 +354,9 @@ class GPUUsableBuffer final : public Buffer {
 
     // The storage contains most up-to-date content.
     raw_ptr<Storage> mLastUpdatedStorage;
-    // This points to either CPU writable constant buffer or CPU writable non-constant buffer or a
-    // staging buffer. We don't need multiple CPU writable buffers to exist.
+    // This points to either CPU writable constant buffer, CPU writable non-constant buffer,
+    // staging buffer, or the shared MappableAndGPUWritable storage. We don't need multiple CPU
+    // writable buffers to exist.
     raw_ptr<Storage> mMappableStorage;
 
     // TODO(dawn:381045722): Use LRU to limit number of cached entries.

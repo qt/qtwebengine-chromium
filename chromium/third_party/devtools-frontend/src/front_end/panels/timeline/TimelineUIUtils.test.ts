@@ -658,7 +658,7 @@ describeWithMockConnection('TimelineUIUtils', function() {
           // The "Recalculation forced" Stack trace
           title: undefined,
           value:
-              'testFuncs.changeAttributeAndDisplay @ chromedevtools.github.io/performance-stories/style-invalidations/app.js:47:40\n(anonymous) @ chromedevtools.github.io/performance-stories/style-invalidations/app.js:64:36',
+              'testFuncs.changeAttributeAndDisplay @ chromedevtools.githu…ations/app.js:47:40\n(anonymous) @ chromedevtools.githu…ations/app.js:64:36',
         },
         {
           title: 'Initiated by',
@@ -1010,8 +1010,8 @@ describeWithMockConnection('TimelineUIUtils', function() {
       assert.deepEqual(
           markerStackTraceData,
           [
-            `${function3.callFrame.functionName} @ unknown`,
-            `${function1.callFrame.functionName} @ unknown`,
+            `${function3.callFrame.functionName} @ (unknown)`,
+            `${function1.callFrame.functionName} @ (unknown)`,
           ],
       );
 
@@ -1038,8 +1038,8 @@ describeWithMockConnection('TimelineUIUtils', function() {
       const trackEntryStackTraceData = getStackTraceForDetailsElement(trackEntryDetails);
       assert.exists(trackEntryStackTraceData);
       assert.deepEqual(trackEntryStackTraceData, [
-        `${function2.callFrame.functionName} @ unknown`,
-        `${function1.callFrame.functionName} @ unknown`,
+        `${function2.callFrame.functionName} @ (unknown)`,
+        `${function1.callFrame.functionName} @ (unknown)`,
       ]);
     });
     it('renders the stack trace of user timings properly', async function() {
@@ -1064,8 +1064,8 @@ describeWithMockConnection('TimelineUIUtils', function() {
       assert.deepEqual(
           markerStackTraceData,
           [
-            `${function3.callFrame.functionName} @ unknown`,
-            `${function1.callFrame.functionName} @ unknown`,
+            `${function3.callFrame.functionName} @ (unknown)`,
+            `${function1.callFrame.functionName} @ (unknown)`,
           ],
       );
 
@@ -1079,8 +1079,8 @@ describeWithMockConnection('TimelineUIUtils', function() {
       const trackEntryStackTraceData = getStackTraceForDetailsElement(trackEntryDetails);
       assert.exists(trackEntryStackTraceData);
       assert.deepEqual(trackEntryStackTraceData, [
-        `${function2.callFrame.functionName} @ unknown`,
-        `${function1.callFrame.functionName} @ unknown`,
+        `${function2.callFrame.functionName} @ (unknown)`,
+        `${function1.callFrame.functionName} @ (unknown)`,
       ]);
     });
     it('renders the warning for a trace event in its details', async function() {
@@ -1377,12 +1377,12 @@ describeWithMockConnection('TimelineUIUtils', function() {
       assert.deepEqual(
           testData,
           [
-            {description: '', stackFrames: ['\tbaz\t@\tunknown']},
-            {description: '\trequestIdleCallback\t\t', stackFrames: ['\tbar\t@\tunknown']},
-            {description: '\tsetTimeout\t\t', stackFrames: ['\tfoo\t@\tunknown']},
+            {description: '', stackFrames: ['\tbaz\t@\t(unknown)']},
+            {description: '\trequestIdleCallback\t\t', stackFrames: ['\tbar\t@\t(unknown)']},
+            {description: '\tsetTimeout\t\t', stackFrames: ['\tfoo\t@\t(unknown)']},
             {
               description: '\trequestAnimationFrame\t\t',
-              stackFrames: ['\tstartExample\t@\tunknown', '\t(anonymous)\t@\tunknown'],
+              stackFrames: ['\tstartExample\t@\t(unknown)', '\t(anonymous)\t@\t(unknown)'],
             },
           ],
       );
@@ -1517,153 +1517,6 @@ describeWithMockConnection('TimelineUIUtils', function() {
       const style = Timeline.TimelineUIUtils.TimelineUIUtils.eventStyle(profileCalls[0]);
       assert.strictEqual(style.category.name, 'scripting');
       assert.strictEqual(style.category.cssVariable, '--app-color-scripting');
-    });
-  });
-
-  describe('statsForTimeRange', () => {
-    it('correctly aggregates up stats', async () => {
-      const mainThread = Trace.Types.Events.ThreadID(1);
-      const pid = Trace.Types.Events.ProcessID(100);
-      function microsec(x: number): Trace.Types.Timing.Micro {
-        return Trace.Types.Timing.Micro(x);
-      }
-
-      const events: Trace.Types.Events.Event[] = [
-        {
-          cat: 'disabled-by-default-devtools.timeline',
-          name: 'TracingStartedInBrowser',
-          ph: Trace.Types.Events.Phase.INSTANT,
-          pid,
-          tid: mainThread,
-          ts: microsec(100),
-          args: {
-            data: {
-              frames: [
-                {frame: 'frame1', url: 'frameurl', name: 'frame-name'},
-              ],
-            },
-          },
-        } as Trace.Types.Events.TracingStartedInBrowser,
-        {
-          cat: 'disabled-by-default-devtools.timeline',
-          name: 'SetLayerTreeId',
-          ph: Trace.Types.Events.Phase.INSTANT,
-          pid,
-          tid: mainThread,
-          ts: microsec(101),
-          args: {data: {frame: 'frame1', layerTreeId: 17}},
-        } as Trace.Types.Events.SetLayerTreeId,
-        {
-          cat: 'toplevel',
-          name: 'Program',
-          ph: Trace.Types.Events.Phase.COMPLETE,
-          ts: microsec(100000),
-          dur: microsec(3000),
-          tid: mainThread,
-          pid,
-          args: {},
-        },
-        {
-          cat: 'disabled-by-default-devtools.timeline',
-          name: 'FunctionCall',
-          ph: Trace.Types.Events.Phase.COMPLETE,
-          ts: microsec(100500),
-          dur: microsec(1500),
-          tid: mainThread,
-          pid,
-          args: {},
-        },
-        {
-          cat: 'disabled-by-default-devtools.timeline',
-          name: 'Layout',
-          ph: Trace.Types.Events.Phase.COMPLETE,
-          ts: microsec(101000),
-          dur: microsec(1000),
-          tid: mainThread,
-          pid,
-          args: {
-            beginData: {
-              frame: 'FAKE_FRAME_ID',
-              dirtyObjects: 0,
-              partialLayout: false,
-              totalObjects: 1,
-            },
-            endData: {layoutRoots: []},
-          },
-        } as Trace.Types.Events.Layout,
-
-        {
-          cat: 'toplevel',
-          name: 'Program',
-          ph: Trace.Types.Events.Phase.COMPLETE,
-          ts: microsec(104000),
-          dur: microsec(4000),
-          tid: mainThread,
-          pid,
-          args: {},
-        },
-        {
-          cat: 'disabled-by-default-devtools.timeline',
-          name: 'FunctionCall',
-          ph: Trace.Types.Events.Phase.COMPLETE,
-          ts: microsec(104000),
-          dur: microsec(1000),
-          tid: mainThread,
-          pid,
-          args: {},
-        },
-        {
-          cat: 'disabled-by-default-devtools.timeline',
-          name: 'CommitLoad',
-          ph: Trace.Types.Events.Phase.COMPLETE,
-          ts: microsec(105000),
-          dur: microsec(1000),
-          tid: mainThread,
-          pid,
-          args: {},
-        },
-        {
-          cat: 'disabled-by-default-devtools.timeline',
-          name: 'Layout',
-          ph: Trace.Types.Events.Phase.COMPLETE,
-          ts: microsec(107000),
-          dur: microsec(1000),
-          tid: mainThread,
-          pid,
-          args: {
-            beginData: {
-              frame: 'FAKE_FRAME_ID',
-              dirtyObjects: 0,
-              partialLayout: false,
-              totalObjects: 1,
-            },
-            endData: {layoutRoots: []},
-          },
-        } as Trace.Types.Events.Layout,
-      ];
-
-      const rangeStats101To103 = Timeline.TimelineUIUtils.TimelineUIUtils.statsForTimeRange(
-          events,
-          Trace.Types.Timing.Milli(101),
-          Trace.Types.Timing.Milli(103),
-      );
-      assert.deepEqual(rangeStats101To103, {
-        other: 1,
-        rendering: 1,
-        scripting: 0,
-        idle: 0,
-      });
-      const rangeStats104To109 = Timeline.TimelineUIUtils.TimelineUIUtils.statsForTimeRange(
-          events,
-          Trace.Types.Timing.Milli(104),
-          Trace.Types.Timing.Milli(109),
-      );
-      assert.deepEqual(rangeStats104To109, {
-        other: 2,
-        rendering: 1,
-        scripting: 1,
-        idle: 1,
-      });
     });
   });
 
@@ -1839,7 +1692,7 @@ describeWithMockConnection('TimelineUIUtils', function() {
       container.appendChild(fragment);
       assert.strictEqual(
           container.innerHTML,
-          'Check out: <button class="devtools-link text-button link-style" title="https://example.com" jslog="Link; context: url; track: click" role="link" tabindex="-1"></button>.');
+          'Check out: <button role="link" class=" devtools-link text-button link-style " title="https://example.com" jslog="Link; context: url; track: click" tabindex="-1"></button>.');
     });
 
     it('should handle URLs anywhere within the string', () => {
@@ -1850,9 +1703,7 @@ describeWithMockConnection('TimelineUIUtils', function() {
       container.appendChild(fragment);
       assert.strictEqual(
           container.innerHTML,
-          `<button class="devtools-link text-button link-style" title="http://example.com" jslog="Link; context: url; track: click" role="link" tabindex="-1"></button>
-at the beginning. <button class="devtools-link text-button link-style" title="http://example.com" jslog="Link; context: url; track: click" role="link" tabindex="-1"></button>
-in the middle or at the end: <button class="devtools-link text-button link-style" title="http://example.com" jslog="Link; context: url; track: click" role="link" tabindex="-1"></button>`
+          `<button role="link" class=" devtools-link text-button link-style " title="http://example.com" jslog="Link; context: url; track: click" tabindex="-1"></button> at the beginning. <button role="link" class=" devtools-link text-button link-style " title="http://example.com" jslog="Link; context: url; track: click" tabindex="-1"></button> in the middle or at the end: <button role="link" class=" devtools-link text-button link-style " title="http://example.com" jslog="Link; context: url; track: click" tabindex="-1"></button>`
               .replace(/\n/g, ' '));
     });
 
@@ -1863,7 +1714,7 @@ in the middle or at the end: <button class="devtools-link text-button link-style
       container.appendChild(fragment);
       assert.strictEqual(
           container.innerHTML,
-          'Node: <button class="devtools-link text-button link-style" jslog="Link; context: url; track: click" role="link" tabindex="-1">ext://node/123</button>   Root Cause: <button class="devtools-link text-button link-style" jslog="Link; context: url; track: click" role="link" tabindex="-1">ext://node/13566</button>');
+          'Node: <button role="link" class=" devtools-link text-button link-style " jslog="Link; context: url; track: click" tabindex="-1">ext://node/123</button>   Root Cause: <button role="link" class=" devtools-link text-button link-style " jslog="Link; context: url; track: click" tabindex="-1">ext://node/13566</button>');
     });
 
     it('does not linkify data URI or www. prefixed text handle a data URI', () => {

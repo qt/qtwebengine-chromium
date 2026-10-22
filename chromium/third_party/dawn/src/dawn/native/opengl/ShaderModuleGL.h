@@ -87,14 +87,13 @@ class ShaderModule final : public ShaderModuleBase {
     ResultOrError<GLuint> CompileShader(const OpenGLFunctions& gl,
                                         const ProgrammableStage& programmableStage,
                                         SingleShaderStage stage,
-                                        bool usesVertexIndex,
-                                        bool usesInstanceIndex,
-                                        bool usesFragDepth,
+                                        const ImmediateConstantMask& pipelineImmediateMask,
                                         VertexAttributeMask bgraSwizzleAttributes,
                                         std::vector<CombinedSampler>* combinedSamplers,
                                         const PipelineLayout* layout,
                                         EmulatedTextureBuiltinRegistrar* emulatedTextureBuiltings,
-                                        bool* needsSSBOLengthUniformBuffer);
+                                        bool* needsSSBOLengthUniformBuffer,
+                                        Extent3D* workgroupSize);
 
   private:
     ShaderModule(Device* device,

@@ -6,6 +6,7 @@ module actor.mojom;
 
 import "mojo/public/mojom/base/time.mojom";
 import "third_party/blink/public/mojom/content_extraction/ai_page_content.mojom";
+import "third_party/blink/public/mojom/content_extraction/script_tools.mojom";
 import "ui/gfx/geometry/mojom/geometry.mojom";
 
 // This interface is meant to largely mirror the
@@ -19,6 +20,10 @@ union ToolTarget {
   // An x,y pair representing a location relative to the origin at the top-left
   // corner of the local root frame (i.e. the blink::WebWidget/RenderWidget). In
   // DIP.
+  //
+  // Note: Renderer-side hit testing uses BlinkSpace (device pixels). This
+  // coordinate is converted via WebFrameWidget::DIPsToBlinkSpace() before
+  // performing a hit test.
   gfx.mojom.Point coordinate_dip;
 };
 
@@ -48,14 +53,12 @@ struct ClickAction {
 // Information specific to a mouse move action.
 // Has no members because the target, included in ToolInvocation, is the only
 // needed parameter.
-struct MouseMoveAction {
-};
+struct MouseMoveAction {};
 
 // Information specific to a scroll-to action.
 // Has no members because the target, included in ToolInvocation, is the only
 // needed parameter.
-struct ScrollToAction {
-};
+struct ScrollToAction {};
 
 // Information specific to the type (keyboard input) action.  Note: TypeAction
 // may be implemented in multiple steps (e.g.  individual key events). In some
@@ -133,8 +136,6 @@ union ToolAction {
   ScriptToolAction script_tool;
   ScrollToAction scroll_to;
 };
-
-
 
 // LINT.IfChange(ActionResultCode)
 
@@ -219,7 +220,7 @@ enum ActionResultCode {
 
   // The target element from hit test observed page content cannot be found in
   // the live DOM.
-  kObservedTargetElementDestroyed  = 30,
+  kObservedTargetElementDestroyed = 30,
 
   // The target element from hit test observed page content is different from
   // hit test on the live DOM.
@@ -263,6 +264,24 @@ enum ActionResultCode {
 
   // The remaining actions were cancelled.
   kActionsCancelled = 43,
+
+  // Navigating to the URL and actions targeting elements for this URL are
+  // blocked due to the potential risk of interacting with the specific site.
+  kActionsBlockedForSiteRisk = 44,
+
+  // Actions may not be performed as Safe Browsing is currently disabled in the
+  // user's settings. Having Safe Browsing enabled is required.
+  kActionsBlockedSafeBrowsingDisabled = 45,
+
+  // The user's administrator has configured the browser to not allow acting on
+  // the page.
+  kActionsBlockedByEnterprisePolicy = 46,
+
+  // Only web pages served over HTTP(S) may be acted on.
+  kActionsBlockedForScheme = 47,
+
+  // Actions may not be taken when the browser is showing an error page.
+  kActionsBlockedOnErrorPage = 48,
 
   // Please see the comment above about adding new values.
 
@@ -444,6 +463,36 @@ enum ActionResultCode {
   // Multiple login requests were made at the same time.
   kLoginTooManyRequests = 909,
 
+  // Federated login requires continuation on a separate popup/window.
+  kLoginFederatedContinuation = 910,
+
+  // The user is not logged into the Identity Provider.
+  kLoginFederatedAccountNotLoggedIn = 911,
+
+  // The user does not have an account on the RP and would need to sign up.
+  kLoginFederatedAccountIsSignUp = 912,
+
+  // The account is not available for federated login.
+  kLoginFederatedAccountNotAvailable = 913,
+
+  // The Identity Provider returned an error during the federated login.
+  kLoginFederatedIdpReturnedError = 914,
+
+  // A network error occurred when communicating with the Identity Provider.
+  kLoginFederatedIdpNetworkError = 915,
+
+  // The federated login token request was aborted.
+  kLoginFederatedTokenRequestAborted = 916,
+
+  // The frame where the federated login was attempted is no longer active.
+  kLoginFederatedFrameNotActive = 917,
+
+  // The expected account for federated login was not present.
+  kLoginFederatedExpectedAccountNotPresent = 918,
+
+  // The federated login request timed out.
+  kLoginFederatedTimeout = 919,
+
   // Please see the comment above about adding new values.
 
   ///////////////////////////////////////////////////////////////////////
@@ -509,6 +558,16 @@ enum ActionResultCode {
   // Tool was cancelled.
   kScriptToolCancelled = 1206,
 
+  // Tool resulted in a navigation that failed to commit.
+  kScriptToolNavigationDidNotCommit = 1207,
+
+  // Tool resulted in a navigation that committed an error page.
+  kScriptToolNavigationCommittedErrorPage = 1208,
+
+  // Tool resulted in a navigation that committed successfully but failed to
+  // load.
+  kScriptToolNavigationFailedLoad = 1209,
+
   // Please see the comment above about adding new values.
 
   ///////////////////////////////////////////////////////////////////////
@@ -545,9 +604,11 @@ struct ToolInvocation {
 };
 
 struct ScriptToolResponse {
-  // The name and input arguments provided in the script tool action.
-  string name;
+  // The input arguments provided to the script tool action.
   string input_arguments;
+
+  // The corresponding tool declaration.
+  blink.mojom.ScriptTool tool;
 
   // The result of executing the action. If not provided, the action resulted in
   // a navigation and the result will be on the next Document.

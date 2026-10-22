@@ -721,10 +721,9 @@ bool CanEagerlySimplify(const CSSMathExpressionOperation::Operands& operands) {
   return true;
 }
 
-bool IsNoneKeywordLiteral(const CSSMathExpressionNode* exp_node) {
-  return exp_node->IsKeywordLiteral() &&
-         DynamicTo<CSSMathExpressionKeywordLiteral>(exp_node)->GetValue() ==
-             CSSValueID::kNone;
+bool IsNoneKeywordLiteral(const CSSMathExpressionNode& exp_node) {
+  auto* keyword_literal = DynamicTo<CSSMathExpressionKeywordLiteral>(exp_node);
+  return keyword_literal && keyword_literal->GetValue() == CSSValueID::kNone;
 }
 
 std::optional<CSSMathExpressionNode*> MaybeSimplifyComparisonFunction(
@@ -734,20 +733,20 @@ std::optional<CSSMathExpressionNode*> MaybeSimplifyComparisonFunction(
   const CSSMathExpressionNode* val = operands[1];
   const CSSMathExpressionNode* max = operands[2];
   // clamp(MIN, none, MAX) is not allowed
-  if (IsNoneKeywordLiteral(val)) {
+  if (IsNoneKeywordLiteral(*val)) {
     return nullptr;
   }
   // clamp(none, VAL, none) is equivalent to just calc(VAL)
-  if (IsNoneKeywordLiteral(min) && IsNoneKeywordLiteral(max)) {
+  if (IsNoneKeywordLiteral(*min) && IsNoneKeywordLiteral(*max)) {
     return val->Copy();
   }
   // clamp(none, VAL, MAX) is equivalent to min(VAL, MAX)
-  if (IsNoneKeywordLiteral(min)) {
+  if (IsNoneKeywordLiteral(*min)) {
     return CSSMathExpressionOperation::CreateComparisonFunction(
         {val->Copy(), max->Copy()}, CSSMathOperator::kMin);
   }
   // clamp(MIN, VAL, none) is equivalent to max(MIN, VAL)
-  if (IsNoneKeywordLiteral(max)) {
+  if (IsNoneKeywordLiteral(*max)) {
     return CSSMathExpressionOperation::CreateComparisonFunction(
         {min->Copy(), val->Copy()}, CSSMathOperator::kMax);
   }
@@ -1021,14 +1020,14 @@ UnitsVector CollectSumOrProductInOrder(const CSSMathExpressionOperation* root) {
   // to ret.
   if (auto it = numeric_children.find(CSSPrimitiveValue::UnitType::kNumber);
       it != numeric_children.end()) {
-    ret.AppendVector(*it->value);
+    ret.append_range(*it->value);
     numeric_children.erase(it);
   }
   // From spec: If nodes contains a percentage, remove it from nodes and append
   // it to ret.
   if (auto it = numeric_children.find(CSSPrimitiveValue::UnitType::kPercentage);
       it != numeric_children.end()) {
-    ret.AppendVector(*it->value);
+    ret.append_range(*it->value);
     numeric_children.erase(it);
   }
   // Now, sort the rest numeric values alphabatically.
@@ -1049,10 +1048,10 @@ UnitsVector CollectSumOrProductInOrder(const CSSMathExpressionOperation* root) {
   std::sort(keys.begin(), keys.end(), comp);
   // Now, add those numeric nodes in the sorted order.
   for (const auto& unit_type : keys) {
-    ret.AppendVector(*numeric_children.at(unit_type));
+    ret.append_range(*numeric_children.at(unit_type));
   }
   // Now, add all the complex (non-numerics with double value) values.
-  ret.AppendVector(complex_children);
+  ret.append_range(complex_children);
   return ret;
 }
 
@@ -1302,9 +1301,20 @@ CSSMathExpressionNumericLiteral::ToPixelsAndPercent(
 const CalculationExpressionNode*
 CSSMathExpressionNumericLiteral::ToCalculationExpression(
     const CSSLengthResolver& length_resolver) const {
-  if (Category() == kCalcNumber) {
-    return MakeGarbageCollected<CalculationExpressionNumberNode>(
-        value_->DoubleValue());
+  switch (Category()) {
+    case kCalcNumber:
+      return MakeGarbageCollected<CalculationExpressionNumberNode>(
+          value_->DoubleValue());
+    case kCalcTime:
+    case kCalcFrequency:
+    case kCalcResolution: {
+      std::optional<double> canonical_value = ComputeValueInCanonicalUnit();
+      DCHECK(canonical_value.has_value());
+      return MakeGarbageCollected<CalculationExpressionNumberNode>(
+          canonical_value.value());
+    }
+    default:
+      break;
   }
   return MakeGarbageCollected<CalculationExpressionPixelsAndPercentNode>(
       *ToPixelsAndPercent(length_resolver));
@@ -2248,9 +2258,9 @@ inline bool CanArithmeticOperationBeSimplified(
          !DetermineType(*left_side, *right_side, op).IsIntermediateResult();
 }
 
-bool IsClampKeywordLiteral(const CSSMathExpressionNode* exp_node) {
+bool IsClampKeywordLiteral(const CSSMathExpressionNode& exp_node) {
   return IsNoneKeywordLiteral(exp_node) &&
-         DynamicTo<CSSMathExpressionKeywordLiteral>(exp_node)->GetContext() ==
+         To<CSSMathExpressionKeywordLiteral>(exp_node).GetContext() ==
              CSSMathExpressionKeywordLiteral::Context::kClamp;
 }
 
@@ -2268,7 +2278,7 @@ CSSMathExpressionOperation::CreateArithmeticOperationSimplified(
   // 'none' keyword for clamp() upper and lower bounds is only allowed
   // as a single top level keyword, cannot be combined with other
   // <calc-sum>.
-  if (IsClampKeywordLiteral(left_side) || IsClampKeywordLiteral(right_side)) {
+  if (IsClampKeywordLiteral(*left_side) || IsClampKeywordLiteral(*right_side)) {
     return nullptr;
   }
 
@@ -2667,6 +2677,10 @@ CSSMathExpressionOperation::CSSMathExpressionOperation(
   if (!left_side->IsScopedValue() || !right_side->IsScopedValue()) {
     value_feature_flags_ |= kNeedsTreeScopePopulation;
   }
+  if (left_side->HasUnresolvablePercentages() ||
+      right_side->HasUnresolvablePercentages()) {
+    value_feature_flags_ |= kHasUnresolvablePercentages;
+  }
   has_nested_intermediate_result_ = type_.IsIntermediateResult();
   has_nested_intermediate_result_ |= NodeHasNestedIntermediateResult(left_side);
   has_nested_intermediate_result_ |=
@@ -2739,6 +2753,16 @@ static bool AnyOperandHasRandom(
   return false;
 }
 
+static bool AnyOperandHasUnresolvablePercentages(
+    CSSMathExpressionOperation::Operands& operands) {
+  for (const CSSMathExpressionNode* operand : operands) {
+    if (operand->HasUnresolvablePercentages()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static bool AnyOperandNeedsTreeScopePopulation(
     CSSMathExpressionOperation::Operands& operands) {
   for (const CSSMathExpressionNode* operand : operands) {
@@ -2770,6 +2794,9 @@ CSSMathExpressionOperation::CSSMathExpressionOperation(
   }
   if (AnyOperandNeedsTreeScopePopulation(operands_)) {
     value_feature_flags_ |= kNeedsTreeScopePopulation;
+  }
+  if (AnyOperandHasUnresolvablePercentages(operands_)) {
+    value_feature_flags_ |= kHasUnresolvablePercentages;
   }
   has_nested_intermediate_result_ = type_.IsIntermediateResult();
   if (IsArithmeticOperation()) {
@@ -2952,11 +2979,104 @@ CalculationOperator ConvertOperator(CSSMathOperator op) {
   }
 }
 
+struct ArithmeticTreeConstraints {
+  bool is_pure_arithmetic = true;
+  bool contains_typed_literal = false;
+};
+
+ArithmeticTreeConstraints CheckArithmeticTreeConstraints(
+    const CSSMathExpressionNode* node) {
+  // 1. Check restrictions that break pure arithmetic
+  if (node->IsIdentifierLiteral() || node->IsKeywordLiteral() ||
+      node->IsContainerFeature() || node->IsAnchorQuery() ||
+      node->IsRandomFunction()) {
+    return {.is_pure_arithmetic = false};
+  }
+
+  // 2. Check for typed literals that need collapse
+  if (node->IsNumericLiteral()) {
+    switch (node->Category()) {
+      case kCalcAngle:
+      case kCalcTime:
+      case kCalcFrequency:
+      case kCalcResolution:
+        return {.contains_typed_literal = true};
+      default:
+        return {};
+    }
+  }
+
+  // 3. If it's an operation, ensure it's arithmetic and check its children
+  const auto* operation = DynamicTo<CSSMathExpressionOperation>(node);
+  if (!operation) {
+    return {};
+  }
+  if (!operation->IsArithmeticOperation()) {
+    return {.is_pure_arithmetic = false};
+  }
+
+  ArithmeticTreeConstraints constraints;
+  for (const CSSMathExpressionNode* operand : operation->GetOperands()) {
+    ArithmeticTreeConstraints child_constraints =
+        CheckArithmeticTreeConstraints(operand);
+    if (!child_constraints.is_pure_arithmetic) {
+      return {.is_pure_arithmetic = false};
+    }
+    constraints.contains_typed_literal |=
+        child_constraints.contains_typed_literal;
+  }
+  return constraints;
+}
+
 }  // namespace
 
 const CalculationExpressionNode*
 CSSMathExpressionOperation::ToCalculationExpression(
     const CSSLengthResolver& length_resolver) const {
+  // Collapse pure arithmetic expressions with a canonical
+  // number/length/percent result before lowering children when they contain
+  // typed-arithmetic literal categories that the normal length-lowering path
+  // cannot descend into safely, such as 1s * (1 / 1s).
+  ArithmeticTreeConstraints arithmetic_tree_constraints =
+      CheckArithmeticTreeConstraints(this);
+  if (arithmetic_tree_constraints.is_pure_arithmetic &&
+      arithmetic_tree_constraints.contains_typed_literal &&
+      !HasUnresolvablePercentages()) {
+    switch (Category()) {
+      case kCalcNumber:
+        if (std::optional<double> value =
+                ComputeValueInCanonicalUnit(length_resolver)) {
+          return MakeGarbageCollected<CalculationExpressionNumberNode>(
+              ClampTo<float>(*value));
+        }
+        break;
+      case kCalcLength:
+        if (!HasPercentage()) {
+          if (std::optional<double> value =
+                  ComputeValueInCanonicalUnit(length_resolver)) {
+            return MakeGarbageCollected<
+                CalculationExpressionPixelsAndPercentNode>(
+                PixelsAndPercent(ClampTo<float>(*value), 0.0f,
+                                 /*has_explicit_pixels=*/true,
+                                 /*has_explicit_percent=*/false));
+          }
+        }
+        break;
+      case kCalcPercent:
+        if (std::optional<double> value =
+                ComputeValueInCanonicalUnit(length_resolver)) {
+          return MakeGarbageCollected<
+              CalculationExpressionPixelsAndPercentNode>(
+              PixelsAndPercent(0.0f, ClampTo<float>(*value),
+                               /*has_explicit_pixels=*/false,
+                               /*has_explicit_percent=*/true));
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
   CalculationOperator op = ConvertOperator(operator_);
   HeapVector<Member<const CalculationExpressionNode>> operands;
   operands.reserve(operands_.size());
@@ -3179,8 +3299,8 @@ bool CSSMathExpressionOperation::MayHaveRelativeUnit() const {
 static void SerializeTopLevelNode(const CSSMathExpressionNode* node,
                                   StringBuilder& result) {
   String text = node->CustomCSSText();
-  if (text.StartsWith('(')) {
-    DCHECK(text.EndsWith(')'));
+  if (text.starts_with('(')) {
+    DCHECK(text.ends_with(')'));
     result.Append(StringView(text, 1, text.length() - 2));
   } else {
     result.Append(text);
@@ -4715,11 +4835,15 @@ class CSSMathExpressionNodeParser {
         DCHECK(RuntimeEnabledFeatures::CSSRandomFunctionEnabled());
         DCHECK_GE(nodes.size(), 2u);
         DCHECK_LE(nodes.size(), 3u);
+        if (!context_.InElementContext()) {
+          return nullptr;
+        }
         local_context_.IncrementRandomValueCount();
         const auto& random_value_sharing =
             std::get<const RandomValueSharing*>(non_expr_argument);
-        return CSSMathExpressionRandomFunction::Create(random_value_sharing,
-                                                       std::move(nodes));
+        return CSSMathExpressionRandomFunction::Create(
+            random_value_sharing, std::move(nodes),
+            local_context_.PercentagesDependOnUsedValue());
       }
       // TODO(crbug.com/1284199): Support other math functions.
       default:
@@ -4844,7 +4968,7 @@ class CSSMathExpressionNodeParser {
         result = ParseValueExpression(stream, state);
         // 'none' keyword for clamp() upper and lower bounds is only allowed
         // as a single top level keyword, not inside parenthesis.
-        if (!result || !stream.AtEnd() || IsClampKeywordLiteral(result)) {
+        if (!result || !stream.AtEnd() || IsClampKeywordLiteral(*result)) {
           return nullptr;
         }
         result->SetIsNestedCalc();
@@ -5275,14 +5399,15 @@ CSSMathExpressionNode* CSSMathExpressionNode::Create(
       DCHECK_LE(children.size(), 4u);
       const RandomValueSharing* random_value_sharing =
           RandomValueSharing::Fixed(
-              DynamicTo<CalculationExpressionNumberNode>(*children[0])
-                  ->Value());
+              To<CalculationExpressionNumberNode>(*children[0]).Value());
       CSSMathExpressionOperation::Operands operands;
       for (wtf_size_t i = 1; i < children.size(); ++i) {
         operands.push_back(Create(*children[i]));
+        DCHECK_NE(operands.back()->Category(), kCalcLengthFunction);
       }
-      return CSSMathExpressionRandomFunction::Create(random_value_sharing,
-                                                     std::move(operands));
+      // We shouldn't have unresolvable percentages by this point.
+      return CSSMathExpressionRandomFunction::Create(
+          random_value_sharing, std::move(operands), false);
     }
   }
 }
@@ -5384,7 +5509,7 @@ const CSSPrimitiveValue* RandomValueSharing::GetFixed() const {
 }
 bool RandomValueSharing::IsAuto() const {
   return !std::holds_alternative<NameAndElementShared>(value_) ||
-         !std::get<NameAndElementShared>(value_).name.StartsWith("--");
+         !std::get<NameAndElementShared>(value_).name.starts_with("--");
 }
 const AtomicString& RandomValueSharing::Name() const {
   if (!std::holds_alternative<NameAndElementShared>(value_)) {
@@ -5524,30 +5649,24 @@ CSSMathExpressionRandomFunction::CSSMathExpressionRandomFunction(
     const RandomValueSharing* random_value_sharing,
     const CSSMathExpressionNode* min,
     const CSSMathExpressionNode* max,
-    const CSSMathExpressionNode* step)
+    const CSSMathExpressionNode* step,
+    bool percentages_depend_on_used_value)
     : CSSMathExpressionNode(category),
       random_value_sharing_(random_value_sharing),
       min_(min),
       max_(max),
       step_(step) {
   value_feature_flags_ = kHasRandomFunctions;
+  if (category == kCalcPercent && percentages_depend_on_used_value) {
+    value_feature_flags_ |= kHasUnresolvablePercentages;
+  }
 }
 
 CSSMathExpressionRandomFunction* CSSMathExpressionRandomFunction::Create(
     const RandomValueSharing* random_value_sharing,
-    HeapVector<Member<const CSSMathExpressionNode>>&& nodes) {
+    HeapVector<Member<const CSSMathExpressionNode>>&& nodes,
+    bool percentages_depend_on_used_value) {
   CalculationResultCategory category = DetermineComparisonCategory(nodes);
-  // Currently the computed value for calc() expressions with category
-  // `kCalcPercent`, i.e. calc() with only percentages: min(10%, 30%)
-  // would be simplified to 10%. This is not correct, since percentages
-  // here can represent negative values. Same issue will happen with
-  // random() if `min`, `max` (and optionally `step`) parameters have only
-  // percentages values. To avoid that we will use `category
-  // `kCalcLengthPercent` for these expressions for now.
-  // TODO(crbug.com/463635948): Remove the following if check.
-  if (category == kCalcPercent) {
-    category = kCalcLengthFunction;
-  }
   if (category == CalculationResultCategory::kCalcOther) {
     return nullptr;
   }
@@ -5555,13 +5674,14 @@ CSSMathExpressionRandomFunction* CSSMathExpressionRandomFunction::Create(
   return MakeGarbageCollected<CSSMathExpressionRandomFunction>(
       base::PassKey<CSSMathExpressionRandomFunction>(), category,
       random_value_sharing,
-      /* min= */ nodes[0], /* max= */ nodes[1], /* step= */ step);
+      /* min= */ nodes[0], /* max= */ nodes[1], /* step= */ step,
+      percentages_depend_on_used_value);
 }
 
 CSSMathExpressionNode* CSSMathExpressionRandomFunction::Copy() const {
   return MakeGarbageCollected<CSSMathExpressionRandomFunction>(
       base::PassKey<CSSMathExpressionRandomFunction>(), category_,
-      random_value_sharing_, min_, max_, step_);
+      random_value_sharing_, min_, max_, step_, HasUnresolvablePercentages());
 }
 
 bool CSSMathExpressionRandomFunction::IsComputationallyIndependent() const {
@@ -5571,7 +5691,7 @@ bool CSSMathExpressionRandomFunction::IsComputationallyIndependent() const {
 }
 
 bool CSSMathExpressionRandomFunction::IsElementDependent() const {
-  return !random_value_sharing_->IsElementShared();
+  return true;
 }
 
 bool CSSMathExpressionRandomFunction::HasInvalidAnchorFunctions(

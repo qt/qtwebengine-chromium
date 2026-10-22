@@ -94,13 +94,7 @@ using std::false_type;
 using std::true_type;
 
 template <bool Condition>
-struct bool_constant;
-
-template <>
-struct bool_constant<true> : true_type {};
-
-template <>
-struct bool_constant<false> : false_type {};
+using bool_constant = std::integral_constant<bool, Condition>;
 
 // Third-party libraries rely on these.
 using std::conditional;
@@ -136,77 +130,24 @@ struct remove_all<T*> {
 template <typename T>
 using remove_all_t = typename remove_all<T>::type;
 
+// Eigen's is_arithmetic is similar to std::is_arithmetic but can be specialized
+// for SIMD packet types and other Eigen-specific types. The primary template
+// delegates to std::is_arithmetic for fundamental types.
 template <typename T>
 struct is_arithmetic {
-  enum { value = false };
-};
-template <>
-struct is_arithmetic<float> {
-  enum { value = true };
-};
-template <>
-struct is_arithmetic<double> {
-  enum { value = true };
+  enum { value = std::is_arithmetic<T>::value };
 };
 // GPU devices treat `long double` as `double`.
-#ifndef EIGEN_GPU_COMPILE_PHASE
+#ifdef EIGEN_GPU_COMPILE_PHASE
 template <>
 struct is_arithmetic<long double> {
-  enum { value = true };
+  enum { value = false };
 };
 #endif
-template <>
-struct is_arithmetic<bool> {
-  enum { value = true };
-};
-template <>
-struct is_arithmetic<char> {
-  enum { value = true };
-};
-template <>
-struct is_arithmetic<signed char> {
-  enum { value = true };
-};
-template <>
-struct is_arithmetic<unsigned char> {
-  enum { value = true };
-};
-template <>
-struct is_arithmetic<signed short> {
-  enum { value = true };
-};
-template <>
-struct is_arithmetic<unsigned short> {
-  enum { value = true };
-};
-template <>
-struct is_arithmetic<signed int> {
-  enum { value = true };
-};
-template <>
-struct is_arithmetic<unsigned int> {
-  enum { value = true };
-};
-template <>
-struct is_arithmetic<signed long> {
-  enum { value = true };
-};
-template <>
-struct is_arithmetic<unsigned long> {
-  enum { value = true };
-};
 
-template <typename T, typename U>
-struct is_same {
-  enum { value = 0 };
-};
-template <typename T>
-struct is_same<T, T> {
-  enum { value = 1 };
-};
+using std::is_same;
 
-template <class T>
-struct is_void : is_same<void, std::remove_const_t<T>> {};
+using std::is_void;
 
 /** \internal
  * Implementation of std::void_t for SFINAE.
@@ -223,26 +164,11 @@ template <typename...>
 using void_t = void;
 #endif
 
-template <>
-struct is_arithmetic<signed long long> {
-  enum { value = true };
-};
-template <>
-struct is_arithmetic<unsigned long long> {
-  enum { value = true };
-};
 using std::is_integral;
 
 using std::make_unsigned;
 
-template <typename T>
-struct is_const {
-  enum { value = 0 };
-};
-template <typename T>
-struct is_const<T const> {
-  enum { value = 1 };
-};
+using std::is_const;
 
 template <typename T>
 struct add_const_on_value_type {
@@ -499,12 +425,6 @@ struct scalar_product_traits {
   enum { Defined = 0 };
 };
 
-// FIXME quick workaround around current limitation of result_of
-// template<typename Scalar, typename ArgType0, typename ArgType1>
-// struct result_of<scalar_product_op<Scalar>(ArgType0,ArgType1)> {
-// typedef typename scalar_product_traits<remove_all_t<ArgType0>, remove_all_t<ArgType1>>::ReturnType type;
-// };
-
 /** \internal Obtains a POD type suitable to use as storage for an object of a size
  * of at most Len bytes, aligned as specified by \c Align.
  */
@@ -524,14 +444,14 @@ namespace numext {
 
 #if defined(EIGEN_GPU_COMPILE_PHASE)
 template <typename T>
-EIGEN_DEVICE_FUNC void swap(T& a, T& b) {
+EIGEN_DEVICE_FUNC constexpr void swap(T& a, T& b) {
   T tmp = b;
   b = a;
   a = tmp;
 }
 #else
 template <typename T>
-EIGEN_STRONG_INLINE void swap(T& a, T& b) {
+constexpr EIGEN_STRONG_INLINE void swap(T& a, T& b) {
   std::swap(a, b);
 }
 #endif
@@ -542,7 +462,7 @@ using std::numeric_limits;
 template <typename X, typename Y, bool XIsInteger = NumTraits<X>::IsInteger, bool XIsSigned = NumTraits<X>::IsSigned,
           bool YIsInteger = NumTraits<Y>::IsInteger, bool YIsSigned = NumTraits<Y>::IsSigned>
 struct equal_strict_impl {
-  static EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool run(const X& x, const Y& y) { return x == y; }
+  static constexpr EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool run(const X& x, const Y& y) { return x == y; }
 };
 template <typename X, typename Y>
 struct equal_strict_impl<X, Y, true, false, true, true> {
@@ -550,7 +470,7 @@ struct equal_strict_impl<X, Y, true, false, true, true> {
   // Y is a signed integer
   // if Y is non-negative, it may be represented exactly as its unsigned counterpart.
   using UnsignedY = typename internal::make_unsigned<Y>::type;
-  static EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool run(const X& x, const Y& y) {
+  static constexpr EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool run(const X& x, const Y& y) {
     return y < Y(0) ? false : (x == static_cast<UnsignedY>(y));
   }
 };
@@ -558,7 +478,7 @@ template <typename X, typename Y>
 struct equal_strict_impl<X, Y, true, true, true, false> {
   // X is a signed integer
   // Y is an unsigned integer
-  static EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool run(const X& x, const Y& y) {
+  static constexpr EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool run(const X& x, const Y& y) {
     return equal_strict_impl<Y, X>::run(y, x);
   }
 };
@@ -566,18 +486,18 @@ struct equal_strict_impl<X, Y, true, true, true, false> {
 // The aim of the following functions is to bypass -Wfloat-equal warnings
 // when we really want a strict equality comparison on floating points.
 template <typename X, typename Y>
-EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool equal_strict(const X& x, const Y& y) {
+constexpr EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool equal_strict(const X& x, const Y& y) {
   return equal_strict_impl<X, Y>::run(x, y);
 }
 
 #if !defined(EIGEN_GPU_COMPILE_PHASE) || (!defined(EIGEN_CUDA_ARCH) && defined(EIGEN_CONSTEXPR_ARE_DEVICE_FUNC))
 template <>
-EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool equal_strict(const float& x, const float& y) {
+constexpr EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool equal_strict(const float& x, const float& y) {
   return std::equal_to<float>()(x, y);
 }
 
 template <>
-EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool equal_strict(const double& x, const double& y) {
+constexpr EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool equal_strict(const double& x, const double& y) {
   return std::equal_to<double>()(x, y);
 }
 #endif
@@ -587,7 +507,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool equal_strict(const double& x, const d
  * Use this to to bypass -Wfloat-equal warnings when exact zero is what needs to be tested.
  */
 template <typename X>
-EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool is_exactly_zero(const X& x) {
+constexpr EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool is_exactly_zero(const X& x) {
   return equal_strict(x, typename NumTraits<X>::Literal{0});
 }
 
@@ -596,23 +516,23 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool is_exactly_zero(const X& x) {
  * Use this to to bypass -Wfloat-equal warnings when exact one is what needs to be tested.
  */
 template <typename X>
-EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool is_exactly_one(const X& x) {
+constexpr EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool is_exactly_one(const X& x) {
   return equal_strict(x, typename NumTraits<X>::Literal{1});
 }
 
 template <typename X, typename Y>
-EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool not_equal_strict(const X& x, const Y& y) {
+constexpr EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool not_equal_strict(const X& x, const Y& y) {
   return !equal_strict_impl<X, Y>::run(x, y);
 }
 
 #if !defined(EIGEN_GPU_COMPILE_PHASE) || (!defined(EIGEN_CUDA_ARCH) && defined(EIGEN_CONSTEXPR_ARE_DEVICE_FUNC))
 template <>
-EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool not_equal_strict(const float& x, const float& y) {
+constexpr EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool not_equal_strict(const float& x, const float& y) {
   return std::not_equal_to<float>()(x, y);
 }
 
 template <>
-EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool not_equal_strict(const double& x, const double& y) {
+constexpr EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool not_equal_strict(const double& x, const double& y) {
   return std::not_equal_to<double>()(x, y);
 }
 #endif
@@ -623,11 +543,11 @@ namespace internal {
 
 template <typename Scalar>
 struct is_identically_zero_impl {
-  static inline bool run(const Scalar& s) { return numext::is_exactly_zero(s); }
+  static constexpr bool run(const Scalar& s) { return numext::is_exactly_zero(s); }
 };
 
 template <typename Scalar>
-EIGEN_STRONG_INLINE bool is_identically_zero(const Scalar& s) {
+constexpr EIGEN_STRONG_INLINE bool is_identically_zero(const Scalar& s) {
   return is_identically_zero_impl<Scalar>::run(s);
 }
 

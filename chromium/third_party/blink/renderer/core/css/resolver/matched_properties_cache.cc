@@ -73,15 +73,13 @@ CachedMatchedProperties::CachedMatchedProperties(
     const ComputedStyle* originating_element_style,
     const MatchedPropertiesVector& properties,
     unsigned clock)
-    : entries({Entry{style, parent_style, originating_element_style, clock}}) {
-  matched_properties.ReserveInitialCapacity(properties.size());
-  for (const auto& new_matched_properties : properties) {
-    matched_properties.emplace_back(
-        new_matched_properties.properties,
-        new_matched_properties.mixin_parameter_bindings,
-        new_matched_properties.data_);
-  }
-}
+    : matched_properties(properties,
+                         [](const MatchedProperties& property) {
+                           return Key{property.properties,
+                                      property.mixin_parameter_bindings,
+                                      property.data_};
+                         }),
+      entries({Entry{style, parent_style, originating_element_style, clock}}) {}
 
 void CachedMatchedProperties::Clear() {
   matched_properties.clear();
@@ -131,6 +129,19 @@ const CachedMatchedProperties::Entry* MatchedPropertiesCache::Find(
   for (auto it2 = cache_item->entries.rbegin();
        it2 != cache_item->entries.rend(); ++it2) {
     CachedMatchedProperties::Entry& entry = *it2;
+
+    // Highlight pseudo resolutions store a non-null
+    // originating_element_computed_style; non-highlight resolutions store
+    // nullptr. If the two resolve to the same hash (e.g., both have an empty
+    // matched-properties list), they must not share cache entries, because
+    // the highlight branch below dereferences
+    // originating_element_computed_style unconditionally.  Allowing mixed
+    // entries would not only crash but also produce the wrong computed
+    // result.
+    if (style_resolver_state.IsForHighlight() !=
+        (entry.originating_element_computed_style != nullptr)) {
+      continue;
+    }
 
     if (style_resolver_state.IsForHighlight()) {
       // For highlight pseudos, inherited _and_ non-inherited data

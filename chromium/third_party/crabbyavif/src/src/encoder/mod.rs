@@ -136,6 +136,15 @@ pub enum Recipe {
     // (ignoring the hidden image item), leading to a valid image but with
     // precision loss (16-bit samples truncated to the 8 most significant bits).
     BitDepthExtension8b8b,
+    // Encode the 12 most significant bits of each input image sample losslessly
+    // into a base image. The remaining 4 least significant bits are encoded in
+    // a separate hidden image item. The two are combined at decoding into one
+    // image with the same bit depth as the original image. It is backward
+    // compatible in the sense that it is possible to decode only the base image
+    // (ignoring the hidden image item), leading to a valid image but with
+    // precision loss (16-bit samples truncated to the 12 most significant
+    // bits).
+    BitDepthExtension12b4b,
 }
 
 impl CodecChoice {
@@ -385,10 +394,10 @@ impl Encoder {
         Ok(())
     }
 
-    fn copy_alt_image_metadata(&mut self, gainmap: &GainMap, grid: &Grid) {
+    fn copy_alt_image_metadata(&mut self, gainmap: &GainMap, grid: &Grid) -> AvifResult<()> {
         self.alt_image_metadata.width = grid.width;
         self.alt_image_metadata.height = grid.height;
-        self.alt_image_metadata.icc = gainmap.alt_icc.clone();
+        self.alt_image_metadata.icc = gainmap.alt_icc.try_clone()?;
         self.alt_image_metadata.color_primaries = gainmap.alt_color_primaries;
         self.alt_image_metadata.transfer_characteristics = gainmap.alt_transfer_characteristics;
         self.alt_image_metadata.matrix_coefficients = gainmap.alt_matrix_coefficients;
@@ -404,6 +413,7 @@ impl Encoder {
             PixelFormat::Yuv444
         };
         self.alt_image_metadata.clli = Some(gainmap.alt_clli);
+        Ok(())
     }
 
     fn validate_image_grid(grid: &Grid, images: &[&Image], recipe: Recipe) -> AvifResult<()> {
@@ -412,7 +422,9 @@ impl Encoder {
         for (index, image) in images.iter().enumerate() {
             if !matches!(
                 (image.depth, recipe),
-                (8 | 10 | 12, Recipe::None) | (16, Recipe::BitDepthExtension8b8b)
+                (8 | 10 | 12, Recipe::None)
+                    | (16, Recipe::BitDepthExtension8b8b)
+                    | (16, Recipe::BitDepthExtension12b4b)
             ) {
                 return AvifError::invalid_argument();
             }
@@ -516,9 +528,12 @@ impl Encoder {
             };
             Self::validate_image_grid(&grid, cell_images, final_recipe)?;
             self.image_metadata = first_image.shallow_clone();
+            self.image_metadata.exif = first_image.exif.try_clone()?;
+            self.image_metadata.xmp = first_image.xmp.try_clone()?;
+            self.image_metadata.icc = first_image.icc.try_clone()?;
             if let Some(gainmaps) = gainmaps {
                 self.gainmap_image_metadata = gainmaps[0].image.shallow_clone();
-                self.copy_alt_image_metadata(gainmaps[0], &grid);
+                self.copy_alt_image_metadata(gainmaps[0], &grid)?;
             }
             let color_item_id = self.add_items(&grid, Category::Color, /*hidden=*/ false)?;
             self.primary_item_id = color_item_id;
@@ -575,7 +590,7 @@ impl Encoder {
             match final_recipe {
                 Recipe::Auto => unreachable!(),
                 Recipe::None => {}
-                Recipe::BitDepthExtension8b8b => {
+                Recipe::BitDepthExtension8b8b | Recipe::BitDepthExtension12b4b => {
                     if first_image.depth != 16 {
                         return AvifError::invalid_argument();
                     }
@@ -652,7 +667,22 @@ impl Encoder {
                         quality = 100.0;
                     }
                     bit_depth_extension_image =
-                        Self::create_bit_depth_extension_image(image, item)?;
+                        Self::create_bit_depth_extension_8b8b_image(image, item)?;
+                    image = &bit_depth_extension_image;
+                }
+                Recipe::BitDepthExtension12b4b => {
+                    if !item.is_sato_least_significant_input {
+                        // Encoding the least significant bits of a sample does not
+                        // make any sense if the other bits are lossily compressed.
+                        // Encode the most significant bits losslessly.
+                        quality = 100.0;
+                    }
+                    let item_will_be_encoded_losslessly = quality == 100.0;
+                    bit_depth_extension_image = Self::create_bit_depth_extension_12b4b_image(
+                        image,
+                        item,
+                        item_will_be_encoded_losslessly,
+                    )?;
                     image = &bit_depth_extension_image;
                 }
             }

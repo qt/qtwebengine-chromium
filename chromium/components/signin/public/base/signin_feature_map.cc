@@ -27,12 +27,12 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &switches::kForceHistoryOptInScreen,
     &switches::kSkipCheckForAccountManagementOnSignin,
     &switches::kSyncEnableBookmarksInTransportMode,
+    &switches::kMakeIdentityManagerSourceOfAccounts,
     &switches::kMigrateAccountManagerDelegate,
     &switches::kFullscreenSignInPromoUseDate,
     &switches::kSmartEmailLineBreaking,
     &switches::kSupportWebSigninAddSession,
     &switches::kSkipRefreshTokenCheckInIdentityManager,
-    &switches::kFRESignInAlternativeSecondaryButtonText,
     &switches::kChromeAndroidIdentitySurveyFirstRun,
     &switches::kChromeAndroidIdentitySurveyWeb,
     &switches::kChromeAndroidIdentitySurveyNtpSigninButton,
@@ -41,6 +41,7 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &switches::kChromeAndroidIdentitySurveyBookmarkPromo,
     &switches::kSigninLevelUpButton,
     &switches::kSigninManagerSeedingFix,
+    &switches::kSupportForcedSigninPolicy,
 };
 
 // static

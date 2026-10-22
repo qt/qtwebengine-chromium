@@ -1335,7 +1335,7 @@ bool GenerateSquareAP(CPDF_Document* doc, CPDF_Dictionary* annot_dict) {
     rect.Deflate(border_width / 2, border_width / 2);
   }
 
-  const bool is_fill_rect = interior_color && (interior_color->size() > 0);
+  const bool is_fill_rect = interior_color && !interior_color->IsEmpty();
   app_stream << rect.left << " " << rect.bottom << " " << rect.Width() << " "
              << rect.Height() << " re "
              << GetPaintOperatorString(is_stroke_rect, is_fill_rect) << "\n";

@@ -663,6 +663,7 @@ class CDM_CLASS_API FileIOClient {
 // Metrics that will be reported from the CDM through the ReportMetrics()
 // function. To add a new metric, please add it to the end of this enum list
 // without changing any existing enum values.
+// Metric names that use generic naming like `Time1` are key system specific.
 // Note: For forward compatibility, Host implementations must gracefully handle
 // unexpected (new) enum values, e.g. no-op.
 enum MetricName : uint32_t {
@@ -672,6 +673,10 @@ enum MetricName : uint32_t {
   kDecoderCheck1SuccessCount,
   kDecoderCheck1WarningCount,
   kDecoderCheck1ErrorCount,
+  kKeySystemDataTime1,
+  kKeySystemDataTime2,
+  kKeySystemDataTime3,
+  kKeySystemDataBool1,
 };
 CHECK_TYPE(MetricName, 4, 4);
 

@@ -104,7 +104,8 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
   // that are not selected. This is needed when the user opens the system
   // dialog from the link in Print Preview on Windows and then sets a selection
   // of pages, because all PDF pages will be converted, but only the user's
-  // selected pages should be sent to the printer. See https://crbug.com/823876.
+  // selected pages should be sent to the printer. See
+  // https://crbug.com/41377725.
   void ResetPageMapping();
 
   // Called when `page` is done printing.
@@ -165,7 +166,11 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
   // Returns the ID of the source.
   const std::string& source_id() const;
 
-  const base::ObserverList<Observer>& GetObserversForTesting() {
+  const base::ObserverList<
+      Observer,
+      /*check_empty=*/false,
+      base::ObserverListReentrancyPolicy::kAllowReentrancyUntriaged>&
+  GetObserversForTesting() {
     return observers_;
   }
 #endif  // BUILDFLAG(IS_CHROMEOS)
@@ -251,7 +256,12 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
       uint32_t total_page_count);
 #endif  // BUILDFLAG(IS_WIN)
 
-  base::ObserverList<Observer> observers_;
+  // TODO(crbug.com/484371187): Investigate if reentrancy can be removed.
+  base::ObserverList<
+      Observer,
+      /*check_empty=*/false,
+      base::ObserverListReentrancyPolicy::kAllowReentrancyUntriaged>
+      observers_;
 
   // All the UI is done in a worker thread because many Win32 print functions
   // are blocking and enters a message loop without your consent. There is one

@@ -118,7 +118,8 @@ wgpu::PipelineLayout MakeBasicPipelineLayout(const wgpu::Device& device,
                                              uint32_t immediateDataByteSize = 0);
 
 wgpu::PipelineLayout MakePipelineLayout(const wgpu::Device& device,
-                                        std::vector<wgpu::BindGroupLayout> bgls);
+                                        std::vector<wgpu::BindGroupLayout> bgls,
+                                        uint32_t immediateSize = 0);
 
 extern wgpu::ExternalTextureBindingLayout kExternalTextureBindingLayout;
 
@@ -214,14 +215,13 @@ wgpu::BindGroup MakeBindGroup(
     const wgpu::BindGroupLayout& layout,
     std::initializer_list<BindingInitializationHelper> entriesInitializer);
 
-struct ColorSpaceConversionInfo {
-    std::array<float, 12> yuvToRgbConversionMatrix;
-    std::array<float, 9> gamutConversionMatrix;
-    std::array<float, 7> srcTransferFunctionParameters;
-    std::array<float, 7> dstTransferFunctionParameters;
-};
-ColorSpaceConversionInfo GetYUVBT709ToRGBSRGBColorSpaceConversionInfo();
-ColorSpaceConversionInfo GetNoopRGBColorSpaceConversionInfo();
+#ifndef __EMSCRIPTEN__
+// Make an external texture from one or two planes that doesn't perform any color-space conversion
+// or YUV to RGB conversion. The planes are given as textures so that we can reflect their size.
+wgpu::ExternalTexture MakePassthroughExternalTexture(const wgpu::Device& device,
+                                                     const wgpu::Texture& plane0,
+                                                     const wgpu::Texture& plane1 = {});
+#endif  // __EMSCRIPTEN__
 
 bool BackendRequiresCompat(wgpu::BackendType backend);
 

@@ -227,11 +227,15 @@ void PixelLocalStoragePlane::deinitialize(Context *context)
         mMemoryless     = false;
         mTextureID      = TextureID();
         mTextureObserver.reset();
+        mTextureImageIndex = ImageIndex();
+        mUsage             = 0;
     }
     ASSERT(isDeinitialized());
 }
 
-void PixelLocalStoragePlane::setMemoryless(Context *context, GLenum internalformat)
+void PixelLocalStoragePlane::setMemoryless(Context *context,
+                                           GLenum internalformat,
+                                           GLbitfield usage)
 {
     deinitialize(context);
     mInternalformat = internalformat;
@@ -239,9 +243,14 @@ void PixelLocalStoragePlane::setMemoryless(Context *context, GLenum internalform
     // The backing texture will get allocated lazily, once we know what dimensions it should be.
     ASSERT(mTextureID.value == 0);
     mTextureImageIndex = ImageIndex::MakeFromType(TextureType::_2D, 0, 0);
+    mUsage             = usage;
 }
 
-void PixelLocalStoragePlane::setTextureBacked(Context *context, Texture *tex, int level, int layer)
+void PixelLocalStoragePlane::setTextureBacked(Context *context,
+                                              Texture *tex,
+                                              int level,
+                                              int layer,
+                                              GLbitfield usage)
 {
     deinitialize(context);
     ASSERT(tex->getImmutableFormat());
@@ -250,6 +259,7 @@ void PixelLocalStoragePlane::setTextureBacked(Context *context, Texture *tex, in
     mTextureID      = tex->id();
     mTextureObserver.bind(tex);
     mTextureImageIndex = ImageIndex::MakeFromType(tex->getType(), level, layer);
+    mUsage             = usage;
 }
 
 void PixelLocalStoragePlane::onSubjectStateChange(angle::SubjectIndex index,
@@ -280,27 +290,6 @@ bool PixelLocalStoragePlane::isDeinitialized() const
         return true;
     }
     return false;
-}
-
-GLint PixelLocalStoragePlane::getIntegeri(GLenum target) const
-{
-    if (!isDeinitialized())
-    {
-        switch (target)
-        {
-            case GL_PIXEL_LOCAL_FORMAT_ANGLE:
-                return mInternalformat;
-            case GL_PIXEL_LOCAL_TEXTURE_NAME_ANGLE:
-                return isMemoryless() ? 0 : mTextureID.value;
-            case GL_PIXEL_LOCAL_TEXTURE_LEVEL_ANGLE:
-                return isMemoryless() ? 0 : mTextureImageIndex.getLevelIndex();
-            case GL_PIXEL_LOCAL_TEXTURE_LAYER_ANGLE:
-                return isMemoryless() ? 0 : mTextureImageIndex.getLayerIndex();
-        }
-    }
-    // Since GL_NONE == 0, PLS queries all return 0 when the plane is deinitialized.
-    static_assert(GL_NONE == 0, "Expecting GL_NONE to be zero.");
-    return 0;
 }
 
 bool PixelLocalStoragePlane::getTextureImageExtents(const Context *context, Extents *extents) const
@@ -344,7 +333,7 @@ void PixelLocalStoragePlane::ensureBackingTextureIfMemoryless(Context *context, 
         static_cast<GLsizei>(tex->getHeight(TextureTarget::_2D, 0)) != plsExtents.height)
     {
         // Call setMemoryless() to release our current data, if any.
-        setMemoryless(context, mInternalformat);
+        setMemoryless(context, mInternalformat, mUsage);
         ASSERT(mTextureID.value == 0);
 
         // Create a new texture that backs the memoryless plane.
@@ -564,6 +553,9 @@ void PixelLocalStorage::deleteContextObjects(Context *context)
 
 void PixelLocalStorage::begin(Context *context, GLsizei n, const GLenum loadops[])
 {
+    ASSERT(mPLSOptions.type == ShPixelLocalStorageType::ImageLoadStore ||
+           mPLSOptions.type == ShPixelLocalStorageType::FramebufferFetch);
+
     // Find the pixel local storage rendering dimensions.
     Extents plsExtents;
     bool hasPLSExtents = false;
@@ -586,11 +578,7 @@ void PixelLocalStorage::begin(Context *context, GLsizei n, const GLenum loadops[
     for (GLsizei i = 0; i < n; ++i)
     {
         PixelLocalStoragePlane &plane = mPlanes[i];
-        if (mPLSOptions.type == ShPixelLocalStorageType::ImageLoadStore ||
-            mPLSOptions.type == ShPixelLocalStorageType::FramebufferFetch)
-        {
-            plane.ensureBackingTextureIfMemoryless(context, plsExtents);
-        }
+        plane.ensureBackingTextureIfMemoryless(context, plsExtents);
         plane.markActive(true);
     }
 

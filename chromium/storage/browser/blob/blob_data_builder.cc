@@ -12,6 +12,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/files/file.h"
+#include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/numerics/safe_math.h"
@@ -40,7 +41,7 @@ bool BlobDataBuilder::FutureData::Populate(base::span<const uint8_t> data,
   if (!target.data())
     return false;
   DCHECK_EQ(target.size(), data.size());
-  UNSAFE_TODO(std::memcpy(target.data(), data.data(), data.size()));
+  target.copy_from(data);
   return true;
 }
 

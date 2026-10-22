@@ -37,14 +37,15 @@
  * - fftw (http://www.fftw.org) : faster, GPL -- incompatible with Eigen in LGPL form, bigger code size.
  * - MKL (https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl-download.html) : fastest, free -- may be
  * incompatible with Eigen in GPL form.
- * - PocketFFT/DUCC (https://gitlab.mpcdf.mpg.de/mtr/pocketfft, https://gitlab.mpcdf.mpg.de/mtr/ducc) : faster than kissfft, BSD 3-clause.
- *   It is a heavily modified implementation of FFTPack, with the following advantages:
- *   1.strictly C++11 compliant
- *   2.more accurate twiddle factor computation
- *   3.very fast plan generation
- *   4.worst case complexity for transform sizes with large prime factors is N*log(N), because Bluestein's algorithm is
+ * - PocketFFT/DUCC (https://gitlab.mpcdf.mpg.de/mtr/pocketfft, https://gitlab.mpcdf.mpg.de/mtr/ducc) : faster than
+ *   kissfft, BSD 3-clause. A heavily modified implementation of FFTPack with the following advantages:
+ *   -# strictly C++11 compliant
+ *   -# more accurate twiddle factor computation
+ *   -# very fast plan generation
+ *   -# worst case complexity for transform sizes with large prime factors is N*log(N),
+ *      because Bluestein's algorithm is used for these cases.
+ *   .
  *   According to the author, DUCC contains the "evolution" of pocketfft, though the interface is very similar.
- * used for these cases
  *
  * \section FFTDesign Design
  *
@@ -88,7 +89,6 @@
 #include <fftw3.h>
 #include "src/FFT/fftw_impl.h"
 namespace Eigen {
-// template <typename T> typedef struct internal::fftw_impl  default_fft_impl; this does not work
 template <typename T>
 struct default_fft_impl : public internal::fftw_impl<T> {};
 }  // namespace Eigen
@@ -110,7 +110,6 @@ struct default_fft_impl : public internal::pocketfft_impl<T> {};
 #elif defined EIGEN_DUCCFFT_DEFAULT
 #include <ducc0/fft/fft.h>
 #include <ducc0/infra/string_utils.h>
-#include <ducc0/fft/fft.h>
 #include <ducc0/fft/fftnd_impl.h>
 #include "src/FFT/duccfft_impl.h"
 namespace Eigen {
@@ -149,7 +148,7 @@ struct traits<fft_inv_proxy<T_SrcMat, T_FftIfc> > {
 
 template <typename T_SrcMat, typename T_FftIfc>
 struct fft_fwd_proxy : public ReturnByValue<fft_fwd_proxy<T_SrcMat, T_FftIfc> > {
-  typedef DenseIndex Index;
+  typedef Eigen::Index Index;
 
   fft_fwd_proxy(const T_SrcMat& src, T_FftIfc& fft, Index nfft) : m_src(src), m_ifc(fft), m_nfft(nfft) {}
 
@@ -167,7 +166,7 @@ struct fft_fwd_proxy : public ReturnByValue<fft_fwd_proxy<T_SrcMat, T_FftIfc> > 
 
 template <typename T_SrcMat, typename T_FftIfc>
 struct fft_inv_proxy : public ReturnByValue<fft_inv_proxy<T_SrcMat, T_FftIfc> > {
-  typedef DenseIndex Index;
+  typedef Eigen::Index Index;
 
   fft_inv_proxy(const T_SrcMat& src, T_FftIfc& fft, Index nfft) : m_src(src), m_ifc(fft), m_nfft(nfft) {}
 
@@ -187,7 +186,7 @@ template <typename T_Scalar, typename T_Impl = default_fft_impl<T_Scalar> >
 class FFT {
  public:
   typedef T_Impl impl_type;
-  typedef DenseIndex Index;
+  typedef Eigen::Index Index;
   typedef typename impl_type::Scalar Scalar;
   typedef typename impl_type::Complex Complex;
 
@@ -382,7 +381,7 @@ class FFT {
     defined EIGEN_MKL_DEFAULT
   inline void inv2(Complex* dst, const Complex* src, int n0, int n1) {
     m_impl.inv2(dst, src, n0, n1);
-    if (HasFlag(Unscaled) == false) scale(dst, 1. / (n0 * n1), n0 * n1);
+    if (HasFlag(Unscaled) == false) scale(dst, Scalar(1) / (n0 * n1), n0 * n1);
   }
 #endif
 
@@ -391,14 +390,7 @@ class FFT {
  private:
   template <typename T_Data>
   inline void scale(T_Data* x, Scalar s, Index nx) {
-#if 1
     for (int k = 0; k < nx; ++k) *x++ *= s;
-#else
-    if (((ptrdiff_t)x) & 15)
-      Matrix<T_Data, Dynamic, 1>::Map(x, nx) *= s;
-    else
-      Matrix<T_Data, Dynamic, 1>::MapAligned(x, nx) *= s;
-#endif
   }
 
   inline void ReflectSpectrum(Complex* freq, Index nfft) {
@@ -427,4 +419,4 @@ inline void fft_inv_proxy<T_SrcMat, T_FftIfc>::evalTo(T_DestMat& dst) const {
 
 #include "../../Eigen/src/Core/util/ReenableStupidWarnings.h"
 
-#endif
+#endif  // EIGEN_FFT_MODULE_H

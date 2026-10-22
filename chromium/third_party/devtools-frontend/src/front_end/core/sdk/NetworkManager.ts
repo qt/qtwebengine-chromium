@@ -129,13 +129,15 @@ const CONNECTION_TYPES = new Map([
  * to in multiple places, and this ensures we don't have accidental typos which
  * mean extra settings get mistakenly created.
  */
-export function customUserNetworkConditionsSetting(): Common.Settings.Setting<Conditions[]> {
-  return Common.Settings.Settings.instance().moduleSetting<Conditions[]>('custom-network-conditions');
+export function customUserNetworkConditionsSetting(
+    settings: Common.Settings.Settings = Common.Settings.Settings.instance()): Common.Settings.Setting<Conditions[]> {
+  return settings.moduleSetting<Conditions[]>('custom-network-conditions');
 }
 
-export function activeNetworkThrottlingKeySetting(): Common.Settings.Setting<ThrottlingConditionKey> {
-  return Common.Settings.Settings.instance().createSetting(
-      'active-network-condition-key', PredefinedThrottlingConditionKey.NO_THROTTLING);
+export function activeNetworkThrottlingKeySetting(
+    settings: Common.Settings.Settings =
+        Common.Settings.Settings.instance()): Common.Settings.Setting<ThrottlingConditionKey> {
+  return settings.createSetting('active-network-condition-key', PredefinedThrottlingConditionKey.NO_THROTTLING);
 }
 
 export class NetworkManager extends SDKModel<EventTypes> {
@@ -144,8 +146,7 @@ export class NetworkManager extends SDKModel<EventTypes> {
   readonly #networkAgent: ProtocolProxyApi.NetworkApi;
   readonly #bypassServiceWorkerSetting: Common.Settings.Setting<boolean>;
 
-  readonly activeNetworkThrottlingKey: Common.Settings.Setting<ThrottlingConditionKey> =
-      activeNetworkThrottlingKeySetting();
+  readonly activeNetworkThrottlingKey: Common.Settings.Setting<ThrottlingConditionKey>;
 
   constructor(target: Target) {
     super(target);
@@ -154,7 +155,11 @@ export class NetworkManager extends SDKModel<EventTypes> {
     this.#networkAgent = target.networkAgent();
     target.registerNetworkDispatcher(this.dispatcher);
     target.registerFetchDispatcher(this.fetchDispatcher);
-    if (Common.Settings.Settings.instance().moduleSetting('cache-disabled').get()) {
+
+    const settings = this.target().targetManager().settings;
+    this.activeNetworkThrottlingKey = activeNetworkThrottlingKeySetting(settings);
+
+    if (settings.moduleSetting('cache-disabled').get()) {
       void this.#networkAgent.invoke_setCacheDisabled({cacheDisabled: true});
     }
 
@@ -166,16 +171,13 @@ export class NetworkManager extends SDKModel<EventTypes> {
     });
     void this.#networkAgent.invoke_setAttachDebugStack({enabled: true});
 
-    this.#bypassServiceWorkerSetting =
-        Common.Settings.Settings.instance().createSetting('bypass-service-worker', false);
+    this.#bypassServiceWorkerSetting = settings.createSetting('bypass-service-worker', false);
     if (this.#bypassServiceWorkerSetting.get()) {
       this.bypassServiceWorkerChanged();
     }
     this.#bypassServiceWorkerSetting.addChangeListener(this.bypassServiceWorkerChanged, this);
 
-    Common.Settings.Settings.instance()
-        .moduleSetting('cache-disabled')
-        .addChangeListener(this.cacheDisabledSettingChanged, this);
+    settings.moduleSetting('cache-disabled').addChangeListener(this.cacheDisabledSettingChanged, this);
   }
 
   static forRequest(request: NetworkRequest): NetworkManager|null {
@@ -277,11 +279,54 @@ export class NetworkManager extends SDKModel<EventTypes> {
       return null;
     }
     try {
-      const {postData} = await manager.#networkAgent.invoke_getRequestPostData({requestId});
+      const {postData, base64Encoded} = await manager.#networkAgent.invoke_getRequestPostData({requestId});
+      if (base64Encoded && postData) {
+        // Decode base64 to get raw bytes as an ArrayBuffer.
+        const binaryString = window.atob(postData);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        // Extract charset from request Content-Type header, defaulting to utf-8.
+        const requestContentType = request.requestContentType();
+        const charset =
+            requestContentType ? Platform.MimeType.parseContentType(requestContentType).charset ?? 'utf-8' : 'utf-8';
+
+        // If the request body is compressed, attempt to decompress it.
+        const contentEncoding = request.requestContentEncoding()?.toLowerCase();
+        if (contentEncoding) {
+          const decompressed = await NetworkManager.#tryDecompressBody(bytes.buffer, contentEncoding, charset);
+          if (decompressed !== null) {
+            return decompressed;
+          }
+        }
+
+        // Not compressed or decompression not applicable -- decode as text.
+        return new TextDecoder(charset).decode(bytes);
+      }
       return postData;
     } catch (e) {
       return e.message;
     }
+  }
+
+  /**
+   * Attempts to decompress a compressed request body.
+   * Returns the decompressed string, or null if decompression is not applicable.
+   */
+  static async #tryDecompressBody(buffer: ArrayBuffer, encoding: string, charset: string): Promise<string|null> {
+    try {
+      if (encoding.includes('gzip') && Common.Gzip.isGzip(buffer)) {
+        return await Common.Gzip.decompress(buffer, charset);
+      }
+      if (encoding.includes('deflate')) {
+        return await Common.Gzip.decompressDeflate(buffer, charset);
+      }
+    } catch (e) {
+      console.warn('Failed to decompress request body:', e);
+    }
+    return null;
   }
 
   static connectionType(conditions: Conditions): Protocol.Network.ConnectionType {
@@ -329,9 +374,8 @@ export class NetworkManager extends SDKModel<EventTypes> {
   }
 
   override dispose(): void {
-    Common.Settings.Settings.instance()
-        .moduleSetting('cache-disabled')
-        .removeChangeListener(this.cacheDisabledSettingChanged, this);
+    const settings = this.target().targetManager().settings;
+    settings.moduleSetting('cache-disabled').removeChangeListener(this.cacheDisabledSettingChanged, this);
   }
 
   private bypassServiceWorkerChanged(): void {
@@ -567,7 +611,11 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
   private updateNetworkRequestWithRequest(networkRequest: NetworkRequest, request: Protocol.Network.Request): void {
     networkRequest.requestMethod = request.method;
     networkRequest.setRequestHeaders(this.headersMapToHeadersArray(request.headers));
-    networkRequest.setRequestFormData(Boolean(request.hasPostData), request.postData || null);
+    // If the request body is compressed, discard the inline postData which is
+    // garbled (binary-as-text). The getRequestPostData command will provide
+    // properly base64-encoded data that we can decompress.
+    const isCompressed = Boolean(networkRequest.requestContentEncoding());
+    networkRequest.setRequestFormData(Boolean(request.hasPostData), isCompressed ? null : (request.postData || null));
     networkRequest.setInitialPriority(request.initialPriority);
     networkRequest.mixedContentType = request.mixedContentType || Protocol.Security.MixedContentType.None;
     networkRequest.setReferrerPolicy(request.referrerPolicy);
@@ -1165,7 +1213,8 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     this.#manager.dispatchEventToListeners(Events.RequestFinished, networkRequest);
     MultitargetNetworkManager.instance().inflightMainResourceRequests.delete(networkRequest.requestId());
 
-    if (Common.Settings.Settings.instance().moduleSetting('monitoring-xhr-enabled').get() &&
+    const settings = this.#manager.target().targetManager().settings;
+    if (settings.moduleSetting('monitoring-xhr-enabled').get() &&
         networkRequest.resourceType().category() === Common.ResourceType.resourceCategories.XHR) {
       let message;
       const failedToLoad = networkRequest.failed || networkRequest.hasErrorStatusCode();
@@ -1630,7 +1679,9 @@ export class RequestCondition extends Common.ObjectWrapper.ObjectWrapper<Request
   #conditions: ThrottlingConditions;
   #ruleIds = new Set<string>();
 
-  static createFromSetting(setting: RequestConditionsSetting): RequestCondition {
+  static createFromSetting(
+      setting: RequestConditionsSetting,
+      settings: Common.Settings.Settings = Common.Settings.Settings.instance()): RequestCondition {
     if ('urlPattern' in setting) {
       const pattern = RequestURLPattern.create(setting.urlPattern) ?? {
         wildcardURL: setting.urlPattern,
@@ -1638,7 +1689,7 @@ export class RequestCondition extends Common.ObjectWrapper.ObjectWrapper<Request
       };
 
       const conditions = getPredefinedOrBlockingCondition(setting.conditions) ??
-          customUserNetworkConditionsSetting().get().find(condition => condition.key === setting.conditions) ??
+          customUserNetworkConditionsSetting(settings).get().find(condition => condition.key === setting.conditions) ??
           NoThrottlingConditions;
 
       return new this(pattern, setting.enabled, conditions);
@@ -1687,19 +1738,8 @@ export class RequestCondition extends Common.ObjectWrapper.ObjectWrapper<Request
         (this.#pattern.upgradedPattern?.constructorString ?? this.#pattern.wildcardURL);
   }
 
-  set pattern(pattern: RequestURLPattern|string) {
-    if (typeof pattern === 'string') {
-      // TODO(pfaffe) Remove once the feature flag is no longer required
-      if (Root.Runtime.hostConfig.devToolsIndividualRequestThrottling?.enabled) {
-        throw new Error('Should not use wildcard urls');
-      }
-      this.#pattern = {
-        wildcardURL: pattern,
-        upgradedPattern: RequestURLPattern.upgradeFromWildcard(pattern) ?? undefined
-      };
-    } else {
-      this.#pattern = pattern;
-    }
+  set pattern(pattern: RequestURLPattern) {
+    this.#pattern = pattern;
     this.dispatchEventToListeners(RequestCondition.Events.REQUEST_CONDITION_CHANGED);
   }
 
@@ -1749,10 +1789,8 @@ export namespace RequestCondition {
 }
 
 export class RequestConditions extends Common.ObjectWrapper.ObjectWrapper<RequestConditions.EventTypes> {
-  readonly #setting =
-      Common.Settings.Settings.instance().createSetting<RequestConditionsSetting[]>('network-blocked-patterns', []);
-  readonly #conditionsEnabledSetting =
-      Common.Settings.Settings.instance().moduleSetting<boolean>('request-blocking-enabled');
+  readonly #setting: Common.Settings.Setting<RequestConditionsSetting[]>;
+  readonly #conditionsEnabledSetting: Common.Settings.Setting<boolean>;
   readonly #conditions: RequestCondition[] = [];
   readonly #requestConditionsById = new Map<string, {
     conditions: Conditions,
@@ -1760,11 +1798,13 @@ export class RequestConditions extends Common.ObjectWrapper.ObjectWrapper<Reques
   }>();
   #conditionsAppliedForTestPromise: Promise<unknown> = Promise.resolve();
 
-  constructor() {
+  constructor(settings: Common.Settings.Settings) {
     super();
+    this.#setting = settings.createSetting<RequestConditionsSetting[]>('network-blocked-patterns', []);
+    this.#conditionsEnabledSetting = settings.moduleSetting<boolean>('request-blocking-enabled');
     for (const condition of this.#setting.get()) {
       try {
-        this.#conditions.push(RequestCondition.createFromSetting(condition));
+        this.#conditions.push(RequestCondition.createFromSetting(condition, settings));
       } catch (e) {
         console.error('Error loading throttling settings: ', e);
       }
@@ -1792,10 +1832,7 @@ export class RequestConditions extends Common.ObjectWrapper.ObjectWrapper<Reques
   }
 
   findCondition(pattern: string): RequestCondition|undefined {
-    if (Root.Runtime.hostConfig.devToolsIndividualRequestThrottling?.enabled) {
-      return this.#conditions.find(condition => condition.constructorString === pattern);
-    }
-    return this.#conditions.find(condition => condition.wildcardURL === pattern);
+    return this.#conditions.find(condition => condition.constructorString === pattern);
   }
 
   has(url: string): boolean {
@@ -1862,84 +1899,72 @@ export class RequestConditions extends Common.ObjectWrapper.ObjectWrapper<Reques
     function isNonBlockingCondition(condition: ThrottlingConditions): condition is Conditions {
       return !('block' in condition);
     }
-    if (Root.Runtime.hostConfig.devToolsIndividualRequestThrottling?.enabled) {
-      const urlPatterns: Protocol.Network.BlockPattern[] = [];
-      // We store all this info out-of-band to prevent races with changing conditions while the promise is still pending
-      const matchedNetworkConditions: Array<{conditions: Conditions, ruleIds?: Set<string>, urlPattern?: string}> = [];
-      if (this.conditionsEnabled) {
-        for (const condition of this.#conditions) {
-          const urlPattern = condition.constructorString;
-          const conditions = condition.conditions;
-          if (!condition.enabled || !urlPattern || conditions === NoThrottlingConditions) {
-            continue;
-          }
-          const block = !isNonBlockingCondition(conditions);
-          urlPatterns.push({urlPattern, block});
-          if (!block) {
-            const {ruleIds} = condition;
-            matchedNetworkConditions.push({ruleIds, urlPattern, conditions});
-          }
+    const urlPatterns: Protocol.Network.BlockPattern[] = [];
+    // We store all this info out-of-band to prevent races with changing conditions while the promise is still pending
+    const matchedNetworkConditions: Array<{conditions: Conditions, ruleIds?: Set<string>, urlPattern?: string}> = [];
+    if (this.conditionsEnabled) {
+      for (const condition of this.#conditions) {
+        const urlPattern = condition.constructorString;
+        const conditions = condition.conditions;
+        if (!condition.enabled || !urlPattern || conditions === NoThrottlingConditions) {
+          continue;
+        }
+        const block = !isNonBlockingCondition(conditions);
+        urlPatterns.push({urlPattern, block});
+        if (!block) {
+          const {ruleIds} = condition;
+          matchedNetworkConditions.push({ruleIds, urlPattern, conditions});
         }
       }
-
-      if (globalConditions) {
-        matchedNetworkConditions.push({conditions: globalConditions});
-      }
-
-      const promises: Array<Promise<unknown>> = [];
-
-      for (const agent of agents) {
-        promises.push(agent.invoke_setBlockedURLs({urlPatterns}));
-        promises.push(agent
-                          .invoke_emulateNetworkConditionsByRule({
-                            offline,
-                            matchedNetworkConditions: matchedNetworkConditions.map(
-                                ({urlPattern, conditions}) => ({
-                                  urlPattern: urlPattern ?? '',
-                                  latency: conditions.latency,
-                                  downloadThroughput: conditions.download < 0 ? 0 : conditions.download,
-                                  uploadThroughput: conditions.upload < 0 ? 0 : conditions.upload,
-                                  packetLoss: (conditions.packetLoss ?? 0) < 0 ? 0 : conditions.packetLoss,
-                                  packetQueueLength: conditions.packetQueueLength,
-                                  packetReordering: conditions.packetReordering,
-                                  connectionType: NetworkManager.connectionType(conditions),
-                                }))
-                          })
-                          .then(response => {
-                            if (!response.getError()) {
-                              for (let i = 0; i < response.ruleIds.length; ++i) {
-                                const ruleId = response.ruleIds[i];
-                                const {ruleIds, conditions, urlPattern} = matchedNetworkConditions[i];
-                                if (ruleIds) {
-                                  this.#requestConditionsById.set(ruleId, {urlPattern, conditions});
-                                  matchedNetworkConditions[i].ruleIds?.add(ruleId);
-                                }
-                              }
-                            }
-                          }));
-        promises.push(agent.invoke_overrideNetworkState({
-          offline,
-          latency: globalConditions?.latency ?? 0,
-          downloadThroughput: globalConditions?.download ?? -1,
-          uploadThroughput: globalConditions?.upload ?? -1,
-          connectionType: globalConditions ? NetworkManager.connectionType(globalConditions) :
-                                             Protocol.Network.ConnectionType.None,
-        }));
-      }
-
-      this.#conditionsAppliedForTestPromise = this.#conditionsAppliedForTestPromise.then(() => Promise.all(promises));
-      return urlPatterns.length > 0;
     }
 
-    const urls = this.conditionsEnabled ?
-        this.#conditions.filter(condition => condition.enabled && condition.wildcardURL)
-            .map(condition => condition.wildcardURL as string) :
-        [];
+    if (globalConditions) {
+      matchedNetworkConditions.push({conditions: globalConditions});
+    }
+
+    const promises: Array<Promise<unknown>> = [];
 
     for (const agent of agents) {
-      void agent.invoke_setBlockedURLs({urls});
+      promises.push(agent.invoke_setBlockedURLs({urlPatterns}));
+      promises.push(agent
+                        .invoke_emulateNetworkConditionsByRule({
+                          offline,
+                          matchedNetworkConditions: matchedNetworkConditions.map(
+                              ({urlPattern, conditions}) => ({
+                                urlPattern: urlPattern ?? '',
+                                latency: conditions.latency,
+                                downloadThroughput: conditions.download < 0 ? 0 : conditions.download,
+                                uploadThroughput: conditions.upload < 0 ? 0 : conditions.upload,
+                                packetLoss: (conditions.packetLoss ?? 0) < 0 ? 0 : conditions.packetLoss,
+                                packetQueueLength: conditions.packetQueueLength,
+                                packetReordering: conditions.packetReordering,
+                                connectionType: NetworkManager.connectionType(conditions),
+                              }))
+                        })
+                        .then(response => {
+                          if (!response.getError()) {
+                            for (let i = 0; i < response.ruleIds.length; ++i) {
+                              const ruleId = response.ruleIds[i];
+                              const {ruleIds, conditions, urlPattern} = matchedNetworkConditions[i];
+                              if (ruleIds) {
+                                this.#requestConditionsById.set(ruleId, {urlPattern, conditions});
+                                matchedNetworkConditions[i].ruleIds?.add(ruleId);
+                              }
+                            }
+                          }
+                        }));
+      promises.push(agent.invoke_overrideNetworkState({
+        offline,
+        latency: globalConditions?.latency ?? 0,
+        downloadThroughput: globalConditions?.download ?? -1,
+        uploadThroughput: globalConditions?.upload ?? -1,
+        connectionType: globalConditions ? NetworkManager.connectionType(globalConditions) :
+                                           Protocol.Network.ConnectionType.None,
+      }));
     }
-    return urls.length > 0;
+
+    this.#conditionsAppliedForTestPromise = this.#conditionsAppliedForTestPromise.then(() => Promise.all(promises));
+    return urlPatterns.length > 0;
   }
 
   conditionsAppliedForTest(): Promise<unknown> {
@@ -1982,7 +2007,7 @@ export class MultitargetNetworkManager extends Common.ObjectWrapper.ObjectWrappe
   readonly inflightMainResourceRequests = new Map<string, NetworkRequest>();
   #networkConditions: Conditions = NoThrottlingConditions;
   #updatingInterceptionPatternsPromise: Promise<void>|null = null;
-  readonly #requestConditions = new RequestConditions();
+  readonly #requestConditions: RequestConditions;
   readonly #urlsForRequestInterceptor:
       Platform.MapUtilities.Multimap<(arg0: InterceptedRequest) => Promise<void>, InterceptionPattern> =
       new Platform.MapUtilities.Multimap();
@@ -1993,6 +2018,8 @@ export class MultitargetNetworkManager extends Common.ObjectWrapper.ObjectWrappe
   constructor(targetManager: TargetManager) {
     super();
     this.#targetManager = targetManager;
+    const settings = targetManager.settings;
+    this.#requestConditions = new RequestConditions(settings);
 
     // TODO(allada) Remove these and merge it with request interception.
     const blockedPatternChanged: () => void = () => {
@@ -2082,9 +2109,6 @@ export class MultitargetNetworkManager extends Common.ObjectWrapper.ObjectWrappe
     }
     this.#networkAgents.add(networkAgent);
     this.#fetchAgents.add(fetchAgent);
-    if (this.isThrottling() && !Root.Runtime.hostConfig.devToolsIndividualRequestThrottling?.enabled) {
-      this.updateNetworkConditions(networkAgent);
-    }
   }
 
   modelRemoved(networkManager: NetworkManager): void {
@@ -2110,14 +2134,8 @@ export class MultitargetNetworkManager extends Common.ObjectWrapper.ObjectWrappe
 
   setNetworkConditions(conditions: Conditions): void {
     this.#networkConditions = conditions;
-    if (Root.Runtime.hostConfig.devToolsIndividualRequestThrottling?.enabled) {
-      this.#requestConditions.applyConditions(
-          this.isOffline(), this.isThrottling() ? this.#networkConditions : null, ...this.#networkAgents);
-    } else {
-      for (const agent of this.#networkAgents) {
-        this.updateNetworkConditions(agent);
-      }
-    }
+    this.#requestConditions.applyConditions(
+        this.isOffline(), this.isThrottling() ? this.#networkConditions : null, ...this.#networkAgents);
     this.dispatchEventToListeners(MultitargetNetworkManager.Events.CONDITIONS_CHANGED);
   }
 
@@ -2224,23 +2242,6 @@ export class MultitargetNetworkManager extends Common.ObjectWrapper.ObjectWrappe
     return this.#isBlocking && this.requestConditions.conditionsEnabled;
   }
 
-  /**
-   * @deprecated Kept for layout tests
-   * TODO(pfaffe) remove
-   */
-  private setBlockingEnabled(enabled: boolean): void {
-    this.requestConditions.conditionsEnabled = enabled;
-  }
-
-  /**
-   * @deprecated Kept for layout tests
-   * TODO(pfaffe) remove
-   */
-  private setBlockedPatterns(patterns: Array<{url: string, enabled: boolean}>): void {
-    this.requestConditions.clear();
-    this.requestConditions.add(...patterns.map(pattern => RequestCondition.createFromSetting(pattern)));
-  }
-
   private updateBlockedPatterns(): void {
     this.#isBlocking = this.#requestConditions.applyConditions(
         this.isOffline(), this.isThrottling() ? this.#networkConditions : null, ...this.#networkAgents);
@@ -2269,8 +2270,9 @@ export class MultitargetNetworkManager extends Common.ObjectWrapper.ObjectWrappe
   }
 
   private async updateInterceptionPatterns(): Promise<void> {
-    if (!Common.Settings.Settings.instance().moduleSetting('cache-disabled').get()) {
-      Common.Settings.Settings.instance().moduleSetting('cache-disabled').set(true);
+    const settings = this.#targetManager.settings;
+    if (!settings.moduleSetting('cache-disabled').get()) {
+      settings.moduleSetting('cache-disabled').set(true);
     }
     this.#updatingInterceptionPatternsPromise = null;
     const promises = ([] as Array<Promise<unknown>>);

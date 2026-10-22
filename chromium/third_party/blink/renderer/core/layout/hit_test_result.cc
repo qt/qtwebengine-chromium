@@ -221,14 +221,30 @@ PositionWithAffinity HitTestResult::GetPosition() const {
   if (layout_object->ChildPaintBlockedByDisplayLock())
     return PositionWithAffinity(Position(*node, 0), TextAffinity::kDefault);
 
-  if (node->IsPseudoElement() && node->GetPseudoId() == kPseudoIdBefore) {
-    return PositionWithAffinity(
-        MostForwardCaretPosition(Position::FirstPositionInNode(*inner_node_)));
-  }
-
-  if (node->IsPseudoElement() && node->GetPseudoId() == kPseudoIdCheckMark) {
-    return PositionWithAffinity(
-        MostForwardCaretPosition(Position::FirstPositionInNode(*inner_node_)));
+  if (node->IsPseudoElement()) {
+    // Pseudo-elements can't serve as caret anchors.
+    switch (node->GetPseudoId()) {
+      case kPseudoIdBefore:
+      case kPseudoIdMarker: {
+        // Map to the beginning of the originating element.
+        const Node* originating =
+            &To<PseudoElement>(node)->UltimateOriginatingElement();
+        return PositionWithAffinity(MostForwardCaretPosition(
+            Position::FirstPositionInNode(*originating)));
+      }
+      case kPseudoIdAfter: {
+        // Map to the end of the originating element.
+        const Node* originating =
+            &To<PseudoElement>(node)->UltimateOriginatingElement();
+        return PositionWithAffinity(MostBackwardCaretPosition(
+            Position::LastPositionInNode(*originating)));
+      }
+      case kPseudoIdCheckMark:
+        return PositionWithAffinity(MostForwardCaretPosition(
+            Position::FirstPositionInNode(*inner_node_)));
+      default:
+        break;
+    }
   }
 
   return layout_object->PositionForPoint(LocalPoint());
@@ -328,6 +344,13 @@ void HitTestResult::SetInnerNode(Node* n) {
   }
 
   inner_possibly_pseudo_node_ = n;
+  // InnerNodeForHitTesting() always resolves to the originating DOM element for
+  // any pseudo-element (including activation-behavior pseudos like
+  // ::scroll-marker). inner_node_ is therefore always a non-pseudo Element,
+  // which is required for editing/selection (IsEditable, CanStartSelection,
+  // GetPosition).
+  // The raw pseudo is kept in inner_possibly_pseudo_node_ and exposed via
+  // InnerPossiblyPseudoElement() for hover/active state and event dispatch.
   if (auto* pseudo_element = DynamicTo<PseudoElement>(n))
     n = pseudo_element->InnerNodeForHitTesting();
   inner_node_ = n;
@@ -339,6 +362,15 @@ void HitTestResult::SetInnerNode(Node* n) {
     inner_element_ = element;
   else
     inner_element_ = FlatTreeTraversal::ParentElement(*inner_node_);
+}
+
+Element* HitTestResult::InnerPossiblyPseudoElement() const {
+  if (auto* pseudo =
+          DynamicTo<PseudoElement>(inner_possibly_pseudo_node_.Get());
+      pseudo && pseudo->SupportsHitTesting()) {
+    return pseudo;
+  }
+  return inner_element_.Get();
 }
 
 void HitTestResult::SetURLElement(Element* n) {
@@ -410,21 +442,7 @@ Image* HitTestResult::GetImage() const {
 }
 
 Image* HitTestResult::GetImage(const Node* node) {
-  if (!node) {
-    return nullptr;
-  }
-  const LayoutObject* layout_object = node->GetLayoutObject();
-  if (!layout_object) {
-    return nullptr;
-  }
-  const LayoutImageResource* layout_image_resource = nullptr;
-  if (layout_object->IsImage()) {
-    layout_image_resource = To<LayoutImage>(layout_object)->ImageResource();
-  } else if (auto* svg_image = DynamicTo<LayoutSVGImage>(layout_object)) {
-    layout_image_resource = svg_image->ImageResource();
-  }
-  const ImageResourceContent* image_content =
-      layout_image_resource ? layout_image_resource->CachedImage() : nullptr;
+  const ImageResourceContent* image_content = GetImageContent(node);
   if (image_content && !image_content->ErrorOccurred() &&
       image_content->HasImage()) {
     return image_content->GetImage();
@@ -445,6 +463,11 @@ KURL HitTestResult::AbsoluteImageURL(const Node* node) {
   if (!node || !HasImageSourceURL(*node)) {
     return KURL();
   }
+  const ImageResourceContent* image_content = GetImageContent(node);
+  if (image_content && image_content->IsAutomaticUpgrade()) {
+    return image_content->Url();
+  }
+
   AtomicString url_string = To<Element>(*node).ImageSourceURL();
   if (url_string.empty()) {
     return KURL();
@@ -560,6 +583,25 @@ HitTestResult::AddNodeToListBasedTestResultInternal(
 
   // The second argument will be ignored.
   return std::make_tuple(true, kContinueHitTesting);
+}
+
+const ImageResourceContent* HitTestResult::GetImageContent(const Node* node) {
+  if (!node) {
+    return nullptr;
+  }
+  const LayoutObject* layout_object = node->GetLayoutObject();
+  if (!layout_object) {
+    return nullptr;
+  }
+  const LayoutImageResource* layout_image_resource = nullptr;
+  if (const auto* layout_image = DynamicTo<LayoutImage>(layout_object)) {
+    layout_image_resource = layout_image->ImageResource();
+  } else if (const auto* svg_image = DynamicTo<LayoutSVGImage>(layout_object)) {
+    layout_image_resource = svg_image->ImageResource();
+  }
+  const ImageResourceContent* image_content =
+      layout_image_resource ? layout_image_resource->CachedImage() : nullptr;
+  return image_content;
 }
 
 ListBasedHitTestBehavior HitTestResult::AddNodeToListBasedTestResult(

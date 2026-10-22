@@ -21,7 +21,6 @@
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/numerics/checked_math.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -426,7 +425,8 @@ blink::mojom::FetchAPIRequestPtr CreateRequest(
           ? net::AppendOrReplaceRef(request_url, metadata.request().fragment())
           : request_url;
   request->method = metadata.request().method();
-  request->is_reload = false;
+  request->is_reload = metadata.request().is_reload_navigation();
+  request->is_history_navigation = metadata.request().is_history_navigation();
   request->referrer = blink::mojom::Referrer::New();
   request->headers = {};
 
@@ -1871,6 +1871,9 @@ void CacheStorageCache::PutDidCreateEntry(
   request_metadata->set_method(put_context->request->method);
   if (put_context->request->url.has_ref())
     request_metadata->set_fragment(put_context->request->url.GetRef());
+  request_metadata->set_is_reload_navigation(put_context->request->is_reload);
+  request_metadata->set_is_history_navigation(
+      put_context->request->is_history_navigation);
 
   for (const auto& header : put_context->request->headers) {
     DCHECK_EQ(std::string::npos, header.first.find('\0'));

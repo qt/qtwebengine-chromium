@@ -4,6 +4,7 @@
 
 import * as BaseInsightComponent from './BaseInsightComponent.js';
 import * as Cache from './Cache.js';
+import * as CharacterSet from './CharacterSet.js';
 import * as Checklist from './Checklist.js';
 import * as CLSCulprits from './CLSCulprits.js';
 import * as DocumentLatency from './DocumentLatency.js';
@@ -15,7 +16,6 @@ import * as ForcedReflow from './ForcedReflow.js';
 import * as Helpers from './Helpers.js';
 import * as ImageDelivery from './ImageDelivery.js';
 import * as INPBreakdown from './INPBreakdown.js';
-import * as InsightRenderer from './InsightRenderer.js';
 import * as LCPBreakdown from './LCPBreakdown.js';
 import * as LCPDiscovery from './LCPDiscovery.js';
 import * as LegacyJavaScript from './LegacyJavaScript.js';
@@ -33,6 +33,7 @@ import * as Viewport from './Viewport.js';
 export {
   BaseInsightComponent,
   Cache,
+  CharacterSet,
   Checklist,
   CLSCulprits,
   DocumentLatency,
@@ -44,7 +45,6 @@ export {
   Helpers,
   ImageDelivery,
   INPBreakdown,
-  InsightRenderer,
   LCPBreakdown,
   LCPDiscovery,
   LegacyJavaScript,

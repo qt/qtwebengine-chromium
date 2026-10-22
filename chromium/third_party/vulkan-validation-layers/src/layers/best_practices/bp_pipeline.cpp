@@ -498,14 +498,12 @@ bool BestPractices::ValidateShaderStage(const ShaderStageState& stage_state, con
                                         const Location& loc) const {
     bool skip = false;
 
-    if ((pipeline && pipeline->uses_shader_module_id) || !stage_state.spirv_state) {
+    if ((pipeline && pipeline->uses_shader_module_id) || !stage_state.HasSpirv()) {
         return skip;  // these edge cases should be validated already
     }
 
     const spirv::Module& module_state = *stage_state.spirv_state.get();
     if (!module_state.valid_spirv) {
-        return skip;  // checked elsewhere
-    } else if (!stage_state.entrypoint) {
         return skip;  // checked elsewhere
     }
 
@@ -545,8 +543,8 @@ bool BestPractices::ValidateShaderStage(const ShaderStageState& stage_state, con
         if (invocations > preferred_size) {
             skip |= LogPerformanceWarning(
                 "BestPractices-Mesh-MaxPreferredWorkGroupInvocations", module_state.handle(), loc,
-                "SPIR-V (%s) total invocation size of %" PRIu64 " (%s) is more than %s (%" PRIu32 ").",
-                string_SpvExecutionModel(entrypoint.execution_model), invocations, local_size.ToString().c_str(),
+                "shader %s has a total invocation size of %" PRIu64 " (%s) is more than %s (%" PRIu32 ").",
+                entrypoint.Describe().c_str(), invocations, local_size.ToString().c_str(),
                 is_task ? "maxPreferredTaskWorkGroupInvocations" : "maxPreferredMeshWorkGroupInvocations", preferred_size);
         }
     }

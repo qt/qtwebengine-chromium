@@ -200,6 +200,7 @@ MutableCSSPropertyValueSet::SetResult CSSParser::ParseValue(
   const CSSValue* value =
       CSSParserFastPaths::MaybeParseValue(resolved_property, string, context);
   if (value) {
+    context->Count(unresolved_property);
     return declaration->SetLonghandProperty(CSSPropertyValue(
         CSSPropertyName(resolved_property), *value, important));
   }
@@ -216,9 +217,10 @@ MutableCSSPropertyValueSet::SetResult CSSParser::ParseValue(
   if (parser_mode == kHTMLStandardMode && property.IsProperty() &&
       !property.IsShorthand()) {
     CSSParserTokenStream stream(string);
-    value =
-        CSSPropertyParser::ParseSingleValue(resolved_property, stream, context);
+    value = CSSPropertyParser::ParseSingleValue(unresolved_property, stream,
+                                                context);
     if (value != nullptr) {
+      context->Count(unresolved_property);
       return declaration->SetLonghandProperty(CSSPropertyValue(
           CSSPropertyName(resolved_property), *value, important));
     }
@@ -317,19 +319,20 @@ MutableCSSPropertyValueSet::SetResult CSSParser::ParseValue(
                                    important, context);
 }
 
-const CSSValue* CSSParser::ParseSingleValue(CSSPropertyID property_id,
+const CSSValue* CSSParser::ParseSingleValue(CSSPropertyID unresolved_property,
                                             const String& string,
                                             const CSSParserContext* context) {
   DCHECK(ThreadState::Current()->IsAllocationAllowed());
   if (string.empty()) {
     return nullptr;
   }
-  if (CSSValue* value =
-          CSSParserFastPaths::MaybeParseValue(property_id, string, context)) {
+  if (CSSValue* value = CSSParserFastPaths::MaybeParseValue(unresolved_property,
+                                                            string, context)) {
     return value;
   }
   CSSParserTokenStream stream(string);
-  return CSSPropertyParser::ParseSingleValue(property_id, stream, context);
+  return CSSPropertyParser::ParseSingleValue(unresolved_property, stream,
+                                             context);
 }
 
 ImmutableCSSPropertyValueSet* CSSParser::ParseInlineStyleDeclaration(

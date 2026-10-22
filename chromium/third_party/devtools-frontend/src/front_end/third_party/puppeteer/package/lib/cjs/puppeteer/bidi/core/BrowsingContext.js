@@ -599,7 +599,7 @@ let BrowsingContext = (() => {
                 return;
             }
             this.#clientHintsAreSet = true;
-            await this.#session.send('emulation.setClientHintsOverride', {
+            await this.#session.send('userAgentClientHints.setClientHintsOverride', {
                 clientHints,
                 contexts: [this.id],
             });

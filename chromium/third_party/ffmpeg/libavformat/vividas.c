@@ -417,7 +417,7 @@ static int track_header(VividasDemuxContext *viv, AVFormatContext *s,
             }
 
             for (j = 0; j < num_data; j++) {
-                int ret = avio_read(pb, &p[offset], data_len[j]);
+                ret = avio_read(pb, &p[offset], data_len[j]);
                 if (ret < data_len[j]) {
                     st->codecpar->extradata_size = 0;
                     av_freep(&st->codecpar->extradata);
@@ -723,8 +723,10 @@ static int viv_read_packet(AVFormatContext *s,
         }
         last_start =
         viv->audio_subpackets[viv->n_audio_subpackets].start = (int)(off - avio_tell(pb));
-        if (last_start < last)
+        if (last_start < last) {
+            viv->n_audio_subpackets = 0;
             return AVERROR_INVALIDDATA;
+        }
         viv->current_audio_subpacket = 0;
 
     } else {

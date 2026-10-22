@@ -48,6 +48,8 @@ enum WGSLLanguageFeatureName {
     "buffer_view",
     "filtering_parameters",
     "swizzle_assignment",
+    "linear_indexing",
+    "texture_formats_tier1",
 };
 
 // ============================================================================

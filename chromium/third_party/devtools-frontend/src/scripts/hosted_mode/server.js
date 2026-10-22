@@ -89,6 +89,27 @@ async function requestHandler(request, response) {
     return;
   }
 
+  if (filePath === '/v1/records:queryRecord') {
+    try {
+      const body = JSON.parse(await readRequestBody(request));
+      const {origin, url} = body;
+      const basename = parseURL(origin || url).hostname;
+      const absoluteFilePath = path.join(devtoolsFolder, `test/e2e/resources/performance/${basename}.rawresponse`);
+      try {
+        const responseContents = await readFile(absoluteFilePath, 'utf8');
+        const {statusCode, data, headers} = parseRawResponse(responseContents);
+        sendResponse(statusCode || 200, data, 'utf8', headers);
+      } catch (err) {
+        console.error(`Unable to read local file ${absoluteFilePath}:`, err);
+        sendResponse(500, '500 - Internal Server Error', 'utf8');
+      }
+    } catch (err) {
+      console.error(`Unable to handle request to ${filePath}:`, err);
+      sendResponse(500, '500 - Internal Server Error', 'utf8');
+    }
+    return;
+  }
+
   const absoluteFilePath = path.join(devtoolsFolder, filePath);
   if (!path.resolve(absoluteFilePath).startsWith(path.join(devtoolsFolder, '..'))) {
     console.log(`File requested (${absoluteFilePath}) is outside of devtools folder: ${devtoolsFolder}`);
@@ -131,6 +152,15 @@ async function requestHandler(request, response) {
   } catch (err) {
     console.log(`Unable to read local file ${absoluteFilePath}:`, err);
     sendResponse(500, '500 - Internal Server Error', 'utf8');
+  }
+
+  function readRequestBody(request) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      request.on('data', chunk => chunks.push(chunk));
+      request.on('end', () => resolve(Buffer.concat(chunks).toString()));
+      request.on('error', reject);
+    });
   }
 
   function inferContentType(url) {

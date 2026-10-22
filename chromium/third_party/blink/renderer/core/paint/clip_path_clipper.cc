@@ -135,7 +135,21 @@ void SetCompositeClipPathStatus(Node* node, CompositedPaintStatus status) {
   ElementAnimations* element_animations = element->GetElementAnimations();
   DCHECK(element_animations || status == CompositedPaintStatus::kNotComposited);
   if (element_animations) {
-    element_animations->SetCompositedClipPathStatus(status);
+    CompositedPaintStatus prev_status =
+        element_animations->CompositedClipPathStatus();
+
+    if (element_animations->SetCompositedClipPathStatus(status)) {
+      // In very rare cases, this is not done, leaving a stale paint worklet.
+      // This can happen if a descendant composited transform animation
+      // invalidates this animation, but its first keyframe happens to not
+      // actually mutate the transform yet. Most of the time this has no effect.
+      if (prev_status == CompositedPaintStatus::kComposited &&
+          status == CompositedPaintStatus::kNotComposited) {
+        element->GetLayoutObject()
+            ->SetShouldDoFullPaintInvalidationWithoutLayoutChange(
+                PaintInvalidationReason::kStyle);
+      }
+    }
   }
 }
 
@@ -193,16 +207,7 @@ void PaintWorkletBasedClip(GraphicsContext& context,
 
 // TODO(crbug.com/454365238): Fallback point for cc clip-path animations, should
 // be annotated with a histogram.
-bool ClipPathAnimationShouldFallback(const LayoutObject& layout_object,
-                                     bool is_in_block_fragmentation) {
-  // If not all the fragments of this layout object have been populated yet, it
-  // will be impossible to tell if a composited clip path animation is possible
-  // or not based only on the layout object. Exclude the possibility if we're
-  // fragmented.
-  if (is_in_block_fragmentation) {
-    return true;
-  }
-
+bool ClipPathAnimationShouldFallback(const LayoutObject& layout_object) {
   // We also shouldn't composite in the case of will-change: contents.
   if (layout_object.StyleRef().SubtreeWillChangeContents()) {
     return true;
@@ -218,12 +223,6 @@ bool ClipPathAnimationShouldFallback(const LayoutObject& layout_object,
   // Reference clip paths are not supported.
   if (layout_object.StyleRef().HasClipPath() &&
       IsA<ReferenceClipPathOperation>(layout_object.StyleRef().ClipPath())) {
-    return true;
-  }
-
-  // TODO(crbug.com/449152897): Backdrop-filter and clip path paint worklet
-  // images are not rasterized correctly.
-  if (!layout_object.StyleRef().BackdropFilter().IsEmpty()) {
     return true;
   }
 
@@ -347,7 +346,7 @@ bool ClipPathClipper::ClipPathStatusResolved(
 }
 void ClipPathClipper::FallbackClipPathAnimationIfNecessary(
     const LayoutObject& layout_object,
-    bool is_in_block_fragmentation) {
+    bool should_force_fallback) {
   if (!RuntimeEnabledFeatures::CompositeClipPathAnimationEnabled()) {
     return;
   }
@@ -359,8 +358,7 @@ void ClipPathClipper::FallbackClipPathAnimationIfNecessary(
     base::debug::DumpWithoutCrashing();
   }
 
-  if (ClipPathAnimationShouldFallback(layout_object,
-                                      is_in_block_fragmentation)) {
+  if (should_force_fallback || ClipPathAnimationShouldFallback(layout_object)) {
     SetCompositeClipPathStatus(layout_object.GetNode(),
                                CompositedPaintStatus::kNotComposited);
   }
@@ -667,7 +665,8 @@ void ClipPathClipper::PaintClipPathAsMaskImage(
   // prevent unbounded mask images and limit perf degradation in this case, we
   // clip by the cull rect here. Visually, this should be a NOP.
   if (has_cc_clip_path_anim &&
-      clip_area_size.size() == InfiniteIntRect().size()) {
+      (clip_area_size.width() >= InfiniteIntRect().width() ||
+       clip_area_size.height() >= InfiniteIntRect().height())) {
     clip_area_size = gfx::ToEnclosingRect(
         gfx::RectF(layout_object.FirstFragment().GetContentsCullRect().Rect()));
   }

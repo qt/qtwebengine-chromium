@@ -13,6 +13,10 @@
 #include <setupapi.h>
 #include <stddef.h>
 
+// LogSeverity is both a macro in setupapi.h and an enum in absl, which is used
+// indirectly via //base.
+#undef LogSeverity
+
 #include <utility>
 
 #include "base/command_line.h"
@@ -59,7 +63,11 @@ constexpr int kMaxOutputStreams = 50;
 
 // Up to 8 channels can be passed to the driver.  This should work, given the
 // right drivers, but graceful error handling is needed.
-constexpr int kWinMaxChannels = 8;
+// Note that this variable is explicitly separate from `kMaxConcurrentChannels`.
+// This is to ensure that we preserve the legacy behavior for WaveOut output
+// streams. Also, it is possible that this can be fully removed due to extremely
+// low usage according to crbug.com/40196320.
+constexpr int kWinMaxWaveOutChannels = 8;
 
 // Buffer size to use for input and output stream when a proper size can't be
 // determined from the system
@@ -119,7 +127,7 @@ void AudioManagerWin::ShutdownOnAudioThread() {
   // TODO(crbug.com/40066532): Remove this call when kAudioServiceOutOfProcess
   // is removed on Windows; `weak_factory_on_audio_thread_` will be guaranteed
   // to be destroyed/invalidated on the right thread then.
-  weak_factory_on_audio_thread_.InvalidateWeakPtrs();
+  weak_factory_on_audio_thread_.InvalidateWeakPtrsAndDoom();
 
   AudioManagerBase::ShutdownOnAudioThread();
 
@@ -168,9 +176,9 @@ void AudioManagerWin::GetAudioDeviceNamesImpl(bool input,
   DCHECK(device_names->empty());
   // Enumerate all active audio-endpoint capture devices.
   if (input)
-    GetInputDeviceNamesWin(device_names);
+    GetInputDeviceNamesWin(device_names, GetEnumerationLogCallback());
   else
-    GetOutputDeviceNamesWin(device_names);
+    GetOutputDeviceNamesWin(device_names, GetEnumerationLogCallback());
 
   if (!device_names->empty()) {
     device_names->push_front(AudioDeviceName::CreateCommunications());
@@ -231,8 +239,9 @@ AudioOutputStream* AudioManagerWin::MakeLinearOutputStream(
     const AudioParameters& params,
     const LogCallback& log_callback) {
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LINEAR, params.format());
-  if (params.channels() > kWinMaxChannels)
+  if (params.channels() > kWinMaxWaveOutChannels) {
     return nullptr;
+  }
 
   return new PCMWaveOutAudioOutputStream(this, params, NumberOfWaveOutBuffers(),
                                          WAVE_MAPPER);
@@ -262,8 +271,9 @@ AudioOutputStream* AudioManagerWin::MakeLowLatencyOutputStream(
     const LogCallback& log_callback) {
   DCHECK_EQ(params.format(), AudioParameters::AUDIO_PCM_LOW_LATENCY);
 
-  if (params.channels() > kWinMaxChannels)
+  if (params.channels() > GetConcurrentMaxChannels()) {
     return nullptr;
+  }
 
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kForceWaveAudio)) {

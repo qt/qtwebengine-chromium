@@ -215,8 +215,7 @@ TEST(PresentationMessagesTest, EncodePresentationConnectionCloseEvent) {
       .connection_id = 1,
       .reason =
           msgs::PresentationConnectionCloseEvent_reason::kCloseMethodCalled,
-      .connection_count = 1,
-      .has_error_message = false};
+      .connection_count = 1};
   int64_t bytes_out =
       EncodePresentationConnectionCloseEvent(event, buffer, sizeof(buffer));
   ASSERT_LE(bytes_out, static_cast<int64_t>(sizeof(buffer)));
@@ -234,7 +233,6 @@ TEST(PresentationMessagesTest, EncodePresentationConnectionCloseEvent) {
       .reason =
           msgs::PresentationConnectionCloseEvent_reason::kCloseMethodCalled,
       .connection_count = 2,
-      .has_error_message = true,
       .error_message = "test message"};
   bytes_out = EncodePresentationConnectionCloseEvent(event_with_message, buffer,
                                                      sizeof(buffer));

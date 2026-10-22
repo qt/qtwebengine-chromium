@@ -34,6 +34,14 @@ describe('AiCodeGenerationParser', () => {
       assert.strictEqual(result?.text, 'Spaced comment');
     });
 
+    it('extracts text from multiple single-line comments', () => {
+      const code = `// Spaced comment
+// Spaced comment`;
+      const editor = createEditor(code);
+      const result = AiCodeGenerationParser.AiCodeGenerationParser.extractCommentNodeInfo(editor.state, code.length);
+      assert.strictEqual(result?.text, 'Spaced comment\nSpaced comment');
+    });
+
     it('extracts text from a block comment', () => {
       const code = '/* Simple block */';
       const editor = createEditor(code);

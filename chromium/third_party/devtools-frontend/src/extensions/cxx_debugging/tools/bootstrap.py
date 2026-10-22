@@ -72,8 +72,10 @@ def stage1(sysroot_dir, source_dir, OPTIONS):
         *CMAKE_DEFAULTS,
         '-DBUILD_SHARED_LIBS={build_shared}'.format(**cmake_settings),
         '-DCMAKE_BUILD_TYPE=Release',
-        '-DCMAKE_CXX_FLAGS=-stdlib=libc++ -pthread -I{libcxx_dir}/include/c++/v1'.format(**cmake_settings),
-        '-DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++ -L{libcxx_dir}'.format(**cmake_settings),
+        '-DCMAKE_CXX_FLAGS=-stdlib=libc++ -pthread -I{libcxx_dir}/include/c++/v1'
+        .format(**cmake_settings),
+        '-DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++ -L{libcxx_dir} -fuse-ld=lld'.
+        format(**cmake_settings),
     ]
     if not OPTIONS.no_sysroot:
         cmake_args.extend(('-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY',

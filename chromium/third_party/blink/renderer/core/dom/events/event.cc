@@ -22,6 +22,7 @@
 
 #include "third_party/blink/renderer/core/dom/events/event.h"
 
+#include "third_party/blink/renderer/core/dom/css_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/events/event_dispatcher.h"
 #include "third_party/blink/renderer/core/dom/events/event_path.h"
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
@@ -197,10 +198,6 @@ bool Event::IsWheelEvent() const {
 }
 
 bool Event::IsPointerEvent() const {
-  return false;
-}
-
-bool Event::IsHighlightPointerEvent() const {
   return false;
 }
 
@@ -418,6 +415,13 @@ DispatchEventResult Event::DispatchEvent(EventDispatcher& dispatcher) {
   return dispatcher.Dispatch();
 }
 
+void Event::SetPseudoElementTarget(PseudoElement* pseudo_element_target) {
+  if (!RuntimeEnabledFeatures::CSSPseudoElementInterfaceEnabled()) {
+    return;
+  }
+  pseudo_element_target_ = CSSPseudoElement::From(pseudo_element_target);
+}
+
 void Event::Trace(Visitor* visitor) const {
   visitor->Trace(current_target_);
   visitor->Trace(target_);
@@ -431,8 +435,7 @@ CSSPseudoElement* Event::pseudoTarget() const {
   if (!RuntimeEnabledFeatures::CSSPseudoElementInterfaceEnabled()) {
     return nullptr;
   }
-  PseudoElement* pseudo_element_target = PseudoElementTarget();
-  if (!pseudo_element_target) {
+  if (!pseudo_element_target_) {
     return nullptr;
   }
 
@@ -452,9 +455,7 @@ CSSPseudoElement* Event::pseudoTarget() const {
     }
   }
 
-  Element& target_element = *To<Element>(target()->ToNode());
-  return target_element.EnsureCSSPseudoElement(
-      pseudo_element_target->GetPseudoId());
+  return pseudo_element_target_.Get();
 }
 
 }  // namespace blink

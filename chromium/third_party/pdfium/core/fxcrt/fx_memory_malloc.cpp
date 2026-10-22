@@ -69,7 +69,3 @@ void StringDealloc(void* ptr) {
 
 }  // namespace internal
 }  // namespace pdfium
-
-void FX_InitializeMemoryAllocators() {}
-
-void FX_DestroyMemoryAllocators() {}

@@ -22,7 +22,7 @@ import * as ApplicationComponents from './components/components.js';
 
 const {styleMap, classMap, ref} = Directives;
 const {linkifyURL} = Components.Linkifier.Linkifier;
-const {widgetConfig} = UI.Widget;
+const {widget} = UI.Widget;
 
 const UIStrings = {
   /**
@@ -719,7 +719,7 @@ function renderProtocolHandlers(data: ProtocolHandlersSectionData, output: ViewO
   // clang-format off
   return html`${renderSectionHeader(i18nString(UIStrings.protocolHandlers), output)}
     <div class="report-row">
-      <devtools-widget .widgetConfig=${widgetConfig(
+      <devtools-widget ${widget(
         ApplicationComponents.ProtocolHandlersView.ProtocolHandlersView,
         {protocolHandlers: data.protocolHandlers, manifestLink: data.manifestLink})}
         ${ref(setFocusOnSection(i18nString(UIStrings.protocolHandlers), output))}>
@@ -1095,20 +1095,19 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
   render(html`
     <style>${appManifestViewStyles}</style>
     <style>${UI.inspectorCommonStyles}</style>
-    ${isEmpty ? html`
-    <devtools-widget .widgetConfig=${widgetConfig(UI.EmptyWidget.EmptyWidget, {
+    ${isEmpty ? widget(UI.EmptyWidget.EmptyWidget, {
       header: i18nString(UIStrings.noManifestDetected),
       text: i18nString(UIStrings.manifestDescription),
       link: 'https://web.dev/add-manifest/' as Platform.DevToolsPath.UrlString
-    })}></devtools-widget>` : html`
+    }) : html`
     <devtools-report .data=${{reportTitle: i18nString(UIStrings.appManifest), reportUrl: url}}>
       ${renderErrors(warnings, errors, imageErrors, output)}
       ${installabilityErrors?.length ? renderInstallability(installabilityErrors) : nothing}
       ${identityData && onCopyId ? renderIdentity(identityData, onCopyId, output) : nothing}
       ${presentationData ? renderPresentation(presentationData, output) : nothing}
       ${protocolHandlersData ? renderProtocolHandlers(protocolHandlersData, output) : nothing}
-      ${iconsData && onToggleIconMasked && maskedIcons ?
-          renderIcons(iconsData, maskedIcons, onToggleIconMasked, output) : nothing}
+      ${iconsData && onToggleIconMasked ?
+          renderIcons(iconsData, Boolean(maskedIcons), onToggleIconMasked, output) : nothing}
       ${windowControlsData && output ? renderWindowControlsSection(
           windowControlsData, selectedPlatform, onSelectOs, onToggleWcoToolbar, output) : nothing}
       ${shortcutsData ? renderShortcuts(shortcutsData) : nothing}
@@ -1355,13 +1354,19 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
     if (!frameId) {
       throw new Error('no main frame found');
     }
-    const {content} = await SDK.PageResourceLoader.PageResourceLoader.instance().loadResource(
-        url, {
-          target: this.target,
-          frameId,
-          initiatorUrl: this.target.inspectedURL(),
-        },
-        /* isBinary=*/ true);
+    let content;
+    try {
+      const response = await SDK.PageResourceLoader.PageResourceLoader.instance().loadResource(
+          url, {
+            target: this.target,
+            frameId,
+            initiatorUrl: this.target.inspectedURL(),
+          },
+          /* isBinary=*/ true);
+      content = response.content;
+    } catch {
+      return null;
+    }
     // Just loading the image, not building UI.
     /* eslint-disable @devtools/no-imperative-dom-api */
     const image = document.createElement('img');

@@ -168,7 +168,7 @@ TEST_F(FPDFThumbnailEmbedderTest, GetThumbnailAsBitmapFromPage) {
     ScopedFPDFBitmap thumb_bitmap(FPDFPage_GetThumbnailAsBitmap(page.get()));
 
     EXPECT_EQ(FPDFBitmap_BGR, FPDFBitmap_GetFormat(thumb_bitmap.get()));
-    CompareBitmapToPng(thumb_bitmap.get(), "simple_thumbnail0");
+    CompareBitmap(thumb_bitmap.get(), "simple_thumbnail0");
   }
 
   {
@@ -178,7 +178,7 @@ TEST_F(FPDFThumbnailEmbedderTest, GetThumbnailAsBitmapFromPage) {
     ScopedFPDFBitmap thumb_bitmap(FPDFPage_GetThumbnailAsBitmap(page.get()));
 
     EXPECT_EQ(FPDFBitmap_BGR, FPDFBitmap_GetFormat(thumb_bitmap.get()));
-    CompareBitmapToPng(thumb_bitmap.get(), "simple_thumbnail1");
+    CompareBitmap(thumb_bitmap.get(), "simple_thumbnail1");
   }
 }
 
@@ -214,7 +214,7 @@ TEST_F(FPDFThumbnailEmbedderTest,
   ScopedFPDFBitmap thumb_bitmap(FPDFPage_GetThumbnailAsBitmap(page.get()));
 
   EXPECT_EQ(FPDFBitmap_BGR, FPDFBitmap_GetFormat(thumb_bitmap.get()));
-  CompareBitmapToPng(thumb_bitmap.get(), "thumbnail_with_no_filters");
+  CompareBitmap(thumb_bitmap.get(), "thumbnail_with_no_filters");
 }
 
 TEST_F(FPDFThumbnailEmbedderTest, GetThumbnailDoesNotAlterPage) {
@@ -238,7 +238,7 @@ TEST_F(FPDFThumbnailEmbedderTest, GetThumbnailDoesNotAlterPage) {
   ScopedFPDFBitmap thumb_bitmap(FPDFPage_GetThumbnailAsBitmap(page.get()));
 
   EXPECT_EQ(FPDFBitmap_BGR, FPDFBitmap_GetFormat(thumb_bitmap.get()));
-  CompareBitmapToPng(thumb_bitmap.get(), "simple_thumbnail0");
+  CompareBitmap(thumb_bitmap.get(), "simple_thumbnail0");
 
   // Get the raw data again
   unsigned long new_raw_size =

@@ -209,12 +209,7 @@ MaybeError ValidateSampledTextureBinding(DeviceBase* device,
 
     Aspect aspect = view->GetAspects();
     SampleTypeBit supportedTypes = texture->GetFormat().GetAspectInfo(aspect).supportedSampleTypes;
-    if (supportedTypes == SampleTypeBit::External) {
-        DAWN_ASSERT(texture->GetSharedResourceMemoryContents());
-        supportedTypes =
-            static_cast<SharedTextureMemoryContents*>(texture->GetSharedResourceMemoryContents())
-                ->GetExternalFormatSupportedSampleTypes();
-    }
+
     DAWN_TRY(ValidateCanUseAs(view, wgpu::TextureUsage::TextureBinding, mode));
 
     DAWN_INVALID_IF(texture->IsMultisampledTexture() != layout.multisampled,
@@ -436,24 +431,39 @@ MaybeError ValidateStaticSamplersWithSampledTextures(
 
     // Gather the indices of YCbCr textures sampled by a static sampler.
     ityp::bitset<uint32_t, kMaxBindingsPerPipelineLayout> sampledYcbcrTextures;
-    for (BindingIndex index{0}; index < layout->GetBindingCount(); ++index) {
-        const BindingInfo& bindingInfo = layout->GetBindingInfo(index);
-        auto* staticSamplerLayout =
-            std::get_if<StaticSamplerBindingInfo>(&bindingInfo.bindingLayout);
-        if (!staticSamplerLayout || !staticSamplerLayout->isUsedForSingleTexture) {
+    for (BindingIndex samplerIndex : layout->GetStaticSamplerIndices()) {
+        const BindingInfo& bindingInfo = layout->GetBindingInfo(samplerIndex);
+        const auto& staticSamplerLayout =
+            std::get<StaticSamplerBindingInfo>(bindingInfo.bindingLayout);
+        if (staticSamplerLayout.use != StaticSamplerUse::SingleTextureYCbCr) {
             continue;
         }
 
-        const SamplerBase* sampler = staticSamplerLayout->sampler.Get();
         uint32_t textureEntryIndex =
-            textureIndexToEntryIndex.at(staticSamplerLayout->sampledTextureIndex);
+            textureIndexToEntryIndex.at(staticSamplerLayout.sampledTextureIndex);
+
+        const SamplerBase* sampler = staticSamplerLayout.sampler.Get();
         const TextureViewBase* textureView = descriptor->entries[textureEntryIndex].textureView;
 
         // Compare static sampler and sampled textures to make sure they are compatible.
         if (sampler->IsYCbCr()) {
             DAWN_INVALID_IF(!textureView->IsYCbCr(),
-                            "YCbCr static sampler at binding (%u) samples a non-YCbCr texture.",
-                            bindingInfo.binding);
+                            "YCbCr static sampler %s at binding (%u) samples a non-YCbCr %s.",
+                            sampler, bindingInfo.binding, textureView);
+
+            // YCbCr views can be created without a YCbCrDescriptor but that means they can only be
+            // used with ExternalTextures.
+            DAWN_INVALID_IF(!textureView->HasYCbCrDescriptor(),
+                            "YCbCr static sampler %s at binding (%u) samples a YCbCr %s with "
+                            "implicit YCbCr info.",
+                            sampler, bindingInfo.binding, textureView);
+
+            // Filterability of YCbCr textures is per-object so we don't check with the sampleType
+            // but instead check against the static sampler it will be used with.
+            DAWN_INVALID_IF(sampler->IsFiltering() && !textureView->IsYCbCrFilterable(),
+                            "YCbCr static sampler %s at binding (%u) is filtering but samples an "
+                            "unfilterable YCbCr %s.",
+                            sampler, bindingInfo.binding, textureView);
 
             sampledYcbcrTextures.set(textureEntryIndex);
         } else {
@@ -567,10 +577,7 @@ ResultOrError<UnpackedPtr<BindGroupDescriptor>> ValidateBindGroupDescriptor(
     }
 
     // Check that we have all the required entries.
-    // NOTE: Static sampler layout bindings should not have bind group entries, as the sampler is
-    // specified in the layout itself.
-    const auto expectedEntryCount =
-        layout->GetUnexpandedBindingCount() - layout->GetStaticSamplerCount();
+    const uint32_t expectedEntryCount = layout->GetBindingCountForBindGroupCreation();
 
     DAWN_INVALID_IF(
         descriptor->entryCount != expectedEntryCount,
@@ -787,7 +794,7 @@ const ityp::span<uint32_t, uint64_t>& BindGroupBase::GetUnverifiedBufferSizes() 
     return mBindingData.unverifiedBufferSizes;
 }
 
-BufferBase* BindGroupBase::GetBindingAsBuffer(BindingIndex bindingIndex) {
+BufferBase* BindGroupBase::GetBindingAsBuffer(BindingIndex bindingIndex) const {
     DAWN_ASSERT(!IsError());
     const BindGroupLayoutInternalBase* layout = GetLayout();
     DAWN_ASSERT(bindingIndex < layout->GetBindingCount());
@@ -805,7 +812,7 @@ SamplerBase* BindGroupBase::GetBindingAsSampler(BindingIndex bindingIndex) const
     return static_cast<SamplerBase*>(mBindingData.bindings[bindingIndex].Get());
 }
 
-TextureViewBase* BindGroupBase::GetBindingAsTextureView(BindingIndex bindingIndex) {
+TextureViewBase* BindGroupBase::GetBindingAsTextureView(BindingIndex bindingIndex) const {
     DAWN_ASSERT(!IsError());
     const BindGroupLayoutInternalBase* layout = GetLayout();
     DAWN_ASSERT(bindingIndex < layout->GetBindingCount());
@@ -818,13 +825,13 @@ TextureViewBase* BindGroupBase::GetBindingAsTextureView(BindingIndex bindingInde
     return static_cast<TextureViewBase*>(mBindingData.bindings[bindingIndex].Get());
 }
 
-BufferBinding BindGroupBase::GetBindingAsBufferBinding(BindingIndex bindingIndex) {
+BufferBinding BindGroupBase::GetBindingAsBufferBinding(BindingIndex bindingIndex) const {
     DAWN_ASSERT(!IsError());
     return {GetBindingAsBuffer(bindingIndex), mBindingData.bufferData[bindingIndex].offset,
             mBindingData.bufferData[bindingIndex].size};
 }
 
-TexelBufferViewBase* BindGroupBase::GetBindingAsTexelBufferView(BindingIndex bindingIndex) {
+TexelBufferViewBase* BindGroupBase::GetBindingAsTexelBufferView(BindingIndex bindingIndex) const {
     DAWN_ASSERT(!IsError());
     const BindGroupLayoutInternalBase* layout = GetLayout();
     DAWN_ASSERT(bindingIndex < layout->GetBindingCount());

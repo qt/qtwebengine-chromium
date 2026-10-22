@@ -26,8 +26,8 @@ enum class ContextualTaskContextSource {
   kFallbackTitle,
   kFaviconService,
   kHistoryService,
-  kTabStrip,
-  kPendingContextDecorator,
+  kUploadedContextDecorator,
+  kSubmittedContextDecorator,
 };
 
 class ContextualTask;
@@ -61,14 +61,8 @@ struct UrlAttachmentDecoratorData {
   };
   HistoryData history_data;
 
-  // Filled in by ContextualTaskContextSource::kTabStrip.
-  struct TabStripData {
-    std::u16string title;
-    bool is_open_in_tab_strip = false;
-  };
-  TabStripData tab_strip_data;
-
-  // Filled in by ContextualTaskContextSource::kPendingContextDecorator.
+  // Filled in by ContextualTaskContextSource::kUploadedContextDecorator and
+  // ContextualTaskContextSource::kSubmittedContextDecorator.
   struct ContextualSearchContextData {
     std::u16string title;
     // From SessionTabHelper.
@@ -93,7 +87,6 @@ struct UrlAttachment {
   GURL GetURL() const;
   std::u16string GetTitle() const;
   gfx::Image GetFavicon() const;
-  bool IsOpen() const;
   // The tab SessionID of the tab that was the source of this attachment.
   SessionID GetTabSessionId() const;
   // The type of resource.

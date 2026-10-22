@@ -65,7 +65,7 @@ template <typename Scalar_, int _BlockAtCompileTime, int Options_, typename Inde
 struct traits<BlockSparseMatrix<Scalar_, _BlockAtCompileTime, Options_, Index_> > {
   typedef Scalar_ Scalar;
   typedef Index_ Index;
-  typedef Sparse StorageKind;  // FIXME Where is it used ??
+  typedef Sparse StorageKind;  // FIXME: determine where StorageKind is used.
   typedef MatrixXpr XprKind;
   enum {
     RowsAtCompileTime = Dynamic,
@@ -315,7 +315,7 @@ class BlockSparseMatrix
         m_nonzeros(other.m_nonzeros),
         m_blockPtr(0),
         m_blockSize(other.m_blockSize) {
-    // should we allow copying between variable-size blocks and fixed-size blocks ??
+    // TODO: decide whether to allow copying between variable-size and fixed-size blocks.
     eigen_assert(m_blockSize == BlockSize && " CAN NOT COPY BETWEEN FIXED-SIZE AND VARIABLE-SIZE BLOCKS");
 
     std::copy(other.m_innerOffset, other.m_innerOffset + m_innerBSize + 1, m_innerOffset);
@@ -486,7 +486,7 @@ class BlockSparseMatrix
         m_indices[offset] = nzBlockIdx[idx];
         if (m_blockSize == Dynamic)
           m_blockPtr[offset] = m_blockPtr[offset - 1] + blockInnerSize(nzBlockIdx[idx]) * blockOuterSize(bj);
-        // There is no blockPtr for fixed-size blocks... not needed !???
+        // There is no blockPtr for fixed-size blocks; not needed.
       }
       // Save the pointer to the next outer block
       m_outerIndex[bj + 1] = m_outerIndex[bj] + nzBlockIdx.size();
@@ -551,7 +551,7 @@ class BlockSparseMatrix
     eigen_assert((m_innerBSize != 0 && m_outerBSize != 0) &&
                  "TRYING TO RESERVE ZERO-SIZE MATRICES, CALL resize() first");
 
-    // FIXME Should free if already allocated
+    // FIXME: Should free if already allocated.
     m_outerIndex = new StorageIndex[m_outerBSize + 1];
 
     m_nonzerosblocks = nonzerosblocks;
@@ -574,14 +574,14 @@ class BlockSparseMatrix
    *
    * \note For fixed-size blocks, call setBlockSize() before this function.
    *
-   * FIXME Do not accept duplicates
+   * FIXME: Do not accept duplicates.
    */
   template <typename InputIterator>
   void setFromTriplets(const InputIterator& begin, const InputIterator& end) {
     eigen_assert((m_innerBSize != 0 && m_outerBSize != 0) && "ZERO BLOCKS, PLEASE CALL resize() before");
 
     /* First, sort the triplet list
-     * FIXME This can be unnecessarily expensive since only the inner indices have to be sorted
+     * FIXME: This can be unnecessarily expensive since only the inner indices have to be sorted.
      * The best approach is like in SparseMatrix::setFromTriplets()
      */
     internal::TripletComp<InputIterator, IsColMajor> tripletcomp;
@@ -646,49 +646,17 @@ class BlockSparseMatrix
       }
       block_id(outer)++;
     }
-
-    // An alternative when the outer indices are sorted...no need to use an array of markers
-    //      for(Index bcol = 0; bcol < m_outerBSize; ++bcol)
-    //      {
-    //      Index id = 0, id_nz = 0, id_nzblock = 0;
-    //      for(InputIterator it(begin); it!=end; ++it)
-    //      {
-    //        while (id<bcol) // one pass should do the job unless there are empty columns
-    //        {
-    //          id++;
-    //          m_outerIndex[id+1]=m_outerIndex[id];
-    //        }
-    //        m_outerIndex[id+1] += 1;
-    //        m_indices[id_nzblock]=brow;
-    //        Index block_size = it->value().rows()*it->value().cols();
-    //        m_blockPtr[id_nzblock+1] = m_blockPtr[id_nzblock] + block_size;
-    //        id_nzblock++;
-    //        memcpy(&(m_values[id_nz]),it->value().data(), block_size*sizeof(Scalar));
-    //        id_nz += block_size;
-    //      }
-    //      while(id < m_outerBSize-1) // Empty columns at the end
-    //      {
-    //        id++;
-    //        m_outerIndex[id+1]=m_outerIndex[id];
-    //      }
-    //      }
   }
 
   /**
    * \returns the number of rows
    */
-  inline Index rows() const {
-    //      return blockRows();
-    return (IsColMajor ? innerSize() : outerSize());
-  }
+  inline Index rows() const { return (IsColMajor ? innerSize() : outerSize()); }
 
   /**
    * \returns the number of cols
    */
-  inline Index cols() const {
-    //      return blockCols();
-    return (IsColMajor ? outerSize() : innerSize());
-  }
+  inline Index cols() const { return (IsColMajor ? outerSize() : innerSize()); }
 
   inline Index innerSize() const {
     if (m_blockSize == Dynamic)
@@ -748,7 +716,7 @@ class BlockSparseMatrix
     if (m_indices[offset] == inner) {
       return Map<BlockScalar>(&(m_values[blockPtr(offset)]), rsize, csize);
     } else {
-      // FIXME the block does not exist, Insert it !!!!!!!!!
+      // FIXME: The block does not exist; insert it.
       eigen_assert("DYNAMIC INSERTION IS NOT YET SUPPORTED");
     }
   }
@@ -769,7 +737,6 @@ class BlockSparseMatrix
     if (m_indices[offset] == inner) {
       return Map<const BlockScalar>(&(m_values[blockPtr(offset)]), rsize, csize);
     } else
-      //        return BlockScalar::Zero(rsize, csize);
       eigen_assert("NOT YET SUPPORTED");
   }
 
@@ -810,7 +777,7 @@ class BlockSparseMatrix
     return (m_blockSize == Dynamic) ? m_innerOffset[bi] : (bi * m_blockSize);
   }
 
-  // Not needed ???
+  // Not needed.
   inline Index blockInnerSize(Index bi) const {
     return (m_blockSize == Dynamic) ? (m_innerOffset[bi + 1] - m_innerOffset[bi]) : m_blockSize;
   }
@@ -848,19 +815,9 @@ class BlockSparseMatrix
       return m_blockPtr[id];
     else
       return id * m_blockSize * m_blockSize;
-    // return blockDynIdx(id, std::conditional_t<(BlockSize==Dynamic), internal::true_type, internal::false_type>());
   }
 
  protected:
-  //    inline Index blockDynIdx(Index id, internal::true_type) const
-  //    {
-  //      return m_blockPtr[id];
-  //    }
-  //    inline Index blockDynIdx(Index id, internal::false_type) const
-  //    {
-  //      return id * BlockSize * BlockSize;
-  //    }
-
   // To be implemented
   // Insert a block at a particular location... need to make a room for that
   Map<BlockScalar> insert(Index brow, Index bcol);
@@ -905,7 +862,7 @@ class BlockSparseMatrix<Scalar_, _BlockAtCompileTime, Options_, StorageIndex_>::
   inline Index row() const { return index(); }
   // block column index
   inline Index col() const { return outer(); }
-  // FIXME Number of rows in the current block
+  // FIXME: Number of rows in the current block.
   inline Index rows() const {
     return (m_mat.m_blockSize == Dynamic) ? (m_mat.m_innerOffset[index() + 1] - m_mat.m_innerOffset[index()])
                                           : m_mat.m_blockSize;

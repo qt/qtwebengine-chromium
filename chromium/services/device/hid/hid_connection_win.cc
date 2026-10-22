@@ -12,8 +12,10 @@
 #include "base/feature_list.h"
 #include "base/files/file.h"
 #include "base/functional/bind.h"
+#include "base/memory/advanced_memory_safety_checks.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/win/object_watcher.h"
 #include "components/device_event_log/device_event_log.h"
 #include "services/device/public/cpp/device_features.h"
@@ -50,6 +52,9 @@ HidConnectionWin::HidDeviceEntry::HidDeviceEntry(
 HidConnectionWin::HidDeviceEntry::~HidDeviceEntry() = default;
 
 class PendingHidTransfer : public base::win::ObjectWatcher::Delegate {
+  // TODO(https://crbug.com/495999127): Remove this macro.
+  ADVANCED_MEMORY_SAFETY_CHECKS();
+
  public:
   typedef base::OnceCallback<void(PendingHidTransfer*, bool)> Callback;
 
@@ -60,6 +65,20 @@ class PendingHidTransfer : public base::win::ObjectWatcher::Delegate {
   ~PendingHidTransfer() override;
 
   void TakeResultFromWindowsAPI(BOOL result);
+
+  void Abort() {
+    if (base::FeatureList::IsEnabled(features::kSafeHidConnectionWinClose)) {
+      is_aborted_ = true;
+    } else {
+      watcher_.StopWatching();
+    }
+
+    if (callback_) {
+      std::move(callback_).Run(this, false);
+    }
+  }
+
+  bool is_aborted() const { return is_aborted_; }
 
   OVERLAPPED* GetOverlapped() { return &overlapped_; }
 
@@ -74,6 +93,7 @@ class PendingHidTransfer : public base::win::ObjectWatcher::Delegate {
   OVERLAPPED overlapped_;
   base::win::ScopedHandle event_;
   base::win::ObjectWatcher watcher_;
+  bool is_aborted_ = false;
 };
 
 PendingHidTransfer::PendingHidTransfer(
@@ -103,6 +123,19 @@ void PendingHidTransfer::TakeResultFromWindowsAPI(BOOL result) {
 }
 
 void PendingHidTransfer::OnObjectSignaled(HANDLE event_handle) {
+  if (is_aborted_) {
+    // `this` owns itself and will self-destruct now that the OS has signaled
+    // the event. This releases the buffer and OVERLAPPED structure held by
+    // this PendingHidTransfer.
+    base::SequencedTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE, this);
+    return;
+  }
+
+  // PendingHidTransfer holds a reference to the buffer to ensure the kernel has
+  // a valid memory location during the overlapped operation. In the
+  // non-aborted case, we release this reference before running the callback
+  // so that the callback can have exclusive ownership of the buffer.
+  buffer_.reset();
   std::move(callback_).Run(this, true);
 }
 
@@ -140,7 +173,13 @@ void HidConnectionWin::PlatformClose() {
     entry->file_handle.Close();
   }
   file_handles_.clear();
-  transfers_.clear();
+
+  // Abort() triggers the completion callback (e.g., OnReadInputReport),
+  // which calls UnlinkTransfer() and removes the entry from |transfers_|.
+  // We use a while loop to safely empty the list as entries are removed.
+  while (!transfers_.empty()) {
+    transfers_.front()->Abort();
+  }
 }
 
 void HidConnectionWin::PlatformWrite(
@@ -239,12 +278,18 @@ void HidConnectionWin::OnReadInputReport(
     scoped_refptr<base::RefCountedBytes> buffer,
     PendingHidTransfer* transfer_raw,
     bool signaled) {
+  std::unique_ptr<PendingHidTransfer> transfer = UnlinkTransfer(transfer_raw);
+  if (transfer->is_aborted()) {
+    // `transfer` owns itself and will self-destruct when signaled by the OS.
+    transfer.release();
+    return;
+  }
+
   if (!signaled) {
     HID_LOG(DEBUG) << "HID read failed.";
     return;
   }
 
-  auto transfer = UnlinkTransfer(transfer_raw);
   DWORD bytes_transferred;
   if (!GetOverlappedResult(file_handle, transfer->GetOverlapped(),
                            &bytes_transferred, FALSE)) {
@@ -274,13 +319,22 @@ void HidConnectionWin::OnReadFeatureComplete(
     ReadCallback callback,
     PendingHidTransfer* transfer_raw,
     bool signaled) {
+  std::unique_ptr<PendingHidTransfer> transfer = UnlinkTransfer(transfer_raw);
+  if (transfer->is_aborted()) {
+    // `transfer` owns itself and will self-destruct when signaled by the OS.
+    transfer.release();
+    // Handle the aborted case by signaling failure.
+    std::move(callback).Run(false, nullptr, 0);
+    return;
+  }
+
+  // Handle other erroneous cases.
   if (!signaled) {
     HID_LOG(DEBUG) << "HID read failed.";
     std::move(callback).Run(false, nullptr, 0);
     return;
   }
 
-  auto transfer = UnlinkTransfer(transfer_raw);
   DWORD bytes_transferred;
   if (!GetOverlappedResult(file_handle, transfer->GetOverlapped(),
                            &bytes_transferred, FALSE)) {
@@ -306,13 +360,22 @@ void HidConnectionWin::OnWriteComplete(HANDLE file_handle,
                                        WriteCallback callback,
                                        PendingHidTransfer* transfer_raw,
                                        bool signaled) {
+  std::unique_ptr<PendingHidTransfer> transfer = UnlinkTransfer(transfer_raw);
+  if (transfer->is_aborted()) {
+    // `transfer` owns itself and will self-destruct when signaled by the OS.
+    transfer.release();
+    // Handle the aborted case by signaling failure.
+    std::move(callback).Run(false);
+    return;
+  }
+
+  // Handle other erroneous cases.
   if (!signaled) {
     HID_LOG(DEBUG) << "HID write failed.";
     std::move(callback).Run(false);
     return;
   }
 
-  auto transfer = UnlinkTransfer(transfer_raw);
   DWORD bytes_transferred;
   if (!GetOverlappedResult(file_handle, transfer->GetOverlapped(),
                            &bytes_transferred, FALSE)) {

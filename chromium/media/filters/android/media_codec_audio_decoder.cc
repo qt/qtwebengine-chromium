@@ -71,6 +71,7 @@ void MediaCodecAudioDecoder::Initialize(const AudioDecoderConfig& config,
   // decode.
   DCHECK(input_queue_.empty());
   ClearInputQueue(DecoderStatus::Codes::kAborted);
+  codec_loop_.reset();
 
   if (state_ == STATE_ERROR) {
     DVLOG(1) << "Decoder is in error state.";
@@ -197,6 +198,8 @@ bool MediaCodecAudioDecoder::CreateMediaCodecLoop() {
 
 void MediaCodecAudioDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
                                     DecodeCB decode_cb) {
+  CHECK(codec_loop_);
+
   DecodeCB bound_decode_cb =
       base::BindPostTaskToCurrentDefault(std::move(decode_cb));
 
@@ -222,8 +225,6 @@ void MediaCodecAudioDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
     return;
   }
 
-  DCHECK(codec_loop_);
-
   DVLOG(3) << __func__ << " " << buffer->AsHumanReadableString();
 
   DCHECK_EQ(state_, STATE_READY) << " unexpected state " << AsString(state_);
@@ -240,6 +241,7 @@ void MediaCodecAudioDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
 
 void MediaCodecAudioDecoder::Reset(base::OnceClosure closure) {
   DVLOG(2) << __func__;
+  CHECK(codec_loop_);
 
   ClearInputQueue(DecoderStatus::Codes::kAborted);
 
@@ -543,12 +545,8 @@ bool MediaCodecAudioDecoder::OnOutputFormatChanged() {
 }
 
 void MediaCodecAudioDecoder::SetInitialConfiguration() {
-  // Guess the channel count from |config_| in case OnOutputFormatChanged
-  // that delivers the true count is not called before the first data arrives.
-  // It seems upon certain input errors a codec may substitute silence and
-  // not call OnOutputFormatChanged in this case.
   channel_layout_ = config_.channel_layout();
-  channel_count_ = ChannelLayoutToChannelCount(channel_layout_);
+  channel_count_ = config_.channels();
 
   sample_rate_ = config_.samples_per_second();
   timestamp_helper_ = std::make_unique<AudioTimestampHelper>(sample_rate_);

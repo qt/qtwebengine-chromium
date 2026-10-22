@@ -99,6 +99,34 @@ cq_group = luci.cq_group(
     name = "main-cq",
     watch = cq.refset(REPO_URL, refs = ["refs/heads/.+"]),
     retry_config = cq.RETRY_ALL_FAILURES,
+    post_actions = [
+      # Vote +1 on Presubmit-BoringSSL-Verified for successful dry runs.
+      cq.post_action_gerrit_label_votes(
+        name = "presubmit-verification-success",
+        conditions = [
+          cq.post_action_triggering_condition(
+            mode = cq.MODE_DRY_RUN,
+            statuses = [cq.STATUS_SUCCEEDED],
+          )
+        ],
+        labels = {
+          "Presubmit-BoringSSL-Verified": 1,
+        },
+      ),
+      # Vote -1 on Presubmit-BoringSSL-Verified for failed dry runs.
+      cq.post_action_gerrit_label_votes(
+        name = "presubmit-verification-failure",
+        conditions = [
+          cq.post_action_triggering_condition(
+            mode = cq.MODE_DRY_RUN,
+            statuses = [cq.STATUS_FAILED],
+          )
+        ],
+        labels = {
+          "Presubmit-BoringSSL-Verified": -1,
+        },
+      ),
+    ],
 )
 
 poller = luci.gitiles_poller(
@@ -121,9 +149,7 @@ notifier = luci.notifier(
 
 DEFAULT_TIMEOUT = 30 * time.minute
 
-def get_category(name, host, recipe, properties):
-    if recipe == "boringssl_docs":
-        return None
+def get_category(name, host, properties):
     cmake_args = properties.get("cmake_args", {})
 
     # Android and iOS are always cross compiles.
@@ -160,12 +186,12 @@ def get_category(name, host, recipe, properties):
         else:
             arch = "thumb"
     elif cmake_args.get("ANDROID_ABI") == "arm64-v8a":
-        arch = "armv8"
+        arch = "arm64"
     elif cmake_args.get("ANDROID_ABI") == "riscv64":
         arch = "riscv64"
     # macOS: arch comes from CMAKE_OSX_ARCHITECTURES.
     elif cmake_args.get("CMAKE_OSX_ARCHITECTURES") == "arm64":
-        arch = "armv8"
+        arch = "arm64"
     # Linux: arch comes from CMAKE_SYSTEM_PROCESSOR, or current running.
     elif cmake_args.get("CMAKE_SYSTEM_PROCESSOR") == "x86":
         arch = "x86"
@@ -173,10 +199,10 @@ def get_category(name, host, recipe, properties):
     elif properties.get("msvc_target") == "x86":
         arch = "x86"
     elif properties.get("msvc_target") == "arm64":
-        arch = "armv8"
+        arch = "arm64"
     # Otherwise: same as host.
     elif host["dimensions"]["cpu"] == "arm64":
-        arch = "armv8"
+        arch = "arm64"
     else:
         arch = host["dimensions"]["cpu"]
 
@@ -188,17 +214,10 @@ def get_category(name, host, recipe, properties):
 
     return category
 
-def get_short_name(name, host, recipe, properties):
-    if recipe == "boringssl_docs":
-        return "doc"
+def get_short_name(name, host, properties):
     cmake_args = properties.get("cmake_args", {})
     tags = []
     untags = []  # Redundant tags to not include.
-
-    # Build system.
-    if recipe == "boringssl_bazel":
-        tags.append("bzl")
-        untags.append("dbg")
 
     # Library type.
     if cmake_args.get("BUILD_SHARED_LIBS") == "1":
@@ -269,6 +288,8 @@ def ci_builder(
         host,
         *,
         recipe = "boringssl",
+        category = None,
+        short_name = None,
         execution_timeout = None,
         properties = {}):
     """Defines a CI builder.
@@ -277,11 +298,17 @@ def ci_builder(
       name: The name to use for the builder.
       host: The host to run on.
       recipe: The recipe to run.
+      category: If set, an override for the category in which to display the
+        builder in the console view.
+      short_name: If set, an override for the short name for the builder in the
+        console view.
       execution_timeout: Overrides the default timeout.
       properties: Properties to pass to the recipe.
     """
-    category = get_category(name, host, recipe, properties)
-    short_name = get_short_name(name, host, recipe, properties)
+    if category == None:
+        category = get_category(name, host, properties)
+    if short_name == None:
+        short_name = get_short_name(name, host, properties)
     combined = (category if category else "") + "|" + short_name
     if combined in ci_catnames_seen:
         fail(name + ": same category " + category + " and short name " + short_name + " as build " + ci_catnames_seen[combined])
@@ -430,6 +457,8 @@ def both_builders(
         host,
         *,
         recipe = "boringssl",
+        category = None,
+        short_name = None,
         cq_enabled = True,
         cq_compile_only = None,
         execution_timeout = None,
@@ -440,6 +469,10 @@ def both_builders(
       name: The name to use for both builders.
       host: The host to run on.
       recipe: The recipe to run.
+      category: If set, an override for the category in which to display the
+        builder in the console view.
+      short_name: If set, an override for the short name for the builder in the
+        console view.
       cq_enabled: Whether the try builder is enabled by default. (If false,
         the builder is includable_only.)
       cq_compile_only: If cq_compile_only is specified, we generate both a
@@ -454,6 +487,8 @@ def both_builders(
         name,
         host,
         recipe = recipe,
+        category = category,
+        short_name = short_name,
         execution_timeout = execution_timeout,
         properties = properties,
     )
@@ -746,7 +781,12 @@ both_builders(
     }),
 )
 
-both_builders("docs", LINUX_HOST, recipe = "boringssl_docs")
+both_builders(
+    "docs", LINUX_HOST,
+    recipe = "boringssl_docs",
+    category = "doc",
+    short_name = "doc",
+)
 
 # For now, we use x86_64 Macs to build iOS because there are far more of them
 # in luci.flex.ci and luci.flex.try pools. When this changes, switch to
@@ -1122,6 +1162,7 @@ both_builders(
     "linux_bazel",
     LINUX_HOST,
     recipe = "boringssl_bazel",
+    short_name = "bzl",
 )
 both_builders(
     "mac",
@@ -1185,6 +1226,7 @@ both_builders(
     "mac_arm64_bazel",
     MAC_ARM64_HOST,
     recipe = "boringssl_bazel",
+    short_name = "bzl",
 )
 both_builders(
     "win32",
@@ -1226,10 +1268,9 @@ both_builders(
         "prefixed_symbols": True,
     }),
 )
-cq_builders(
+both_builders(
     "win32_shared",
     WIN_HOST,
-    cq_enabled = False,
     cq_compile_only = WIN_HOST,  # Reduce CQ cycle times.
     properties = {
         "msvc_target": "x86",
@@ -1238,10 +1279,9 @@ cq_builders(
         },
     },
 )
-cq_builders(
+both_builders(
     "win32_shared_prefixed",
     WIN_HOST,
-    cq_enabled = False,
     cq_compile_only = WIN_HOST,  # Reduce CQ cycle times.
     properties = {
         "msvc_target": "x86",
@@ -1348,10 +1388,9 @@ both_builders(
         "prefixed_symbols": True,
     }),
 )
-cq_builders(
+both_builders(
     "win64_shared",
     WIN_HOST,
-    cq_enabled = False,
     cq_compile_only = WIN_HOST,  # Reduce CQ cycle times.
     properties = {
         "msvc_target": "x64",
@@ -1360,10 +1399,9 @@ cq_builders(
         },
     },
 )
-cq_builders(
+both_builders(
     "win64_shared_prefixed",
     WIN_HOST,
-    cq_enabled = False,
     cq_compile_only = WIN_HOST,  # Reduce CQ cycle times.
     properties = {
         "msvc_target": "x64",

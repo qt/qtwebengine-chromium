@@ -44,7 +44,6 @@ import * as Annotations from '../../models/annotations/annotations.js';
 import * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import * as PanelCommon from '../../panels/common/common.js';
 import type * as Adorners from '../../ui/components/adorners/adorners.js';
-import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as TreeOutline from '../../ui/components/tree_outline/tree_outline.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -59,6 +58,7 @@ import {DOMTreeWidget, type ElementsTreeOutline} from './ElementsTreeOutline.js'
 import {LayoutPane} from './LayoutPane.js';
 import type {MarkerDecorator} from './MarkerDecorator.js';
 import {MetricsSidebarPane} from './MetricsSidebarPane.js';
+import {PlatformFontsWidget} from './PlatformFontsWidget.js';
 import {
   Events as StylesSidebarPaneEvents,
   StylesSidebarPane,
@@ -71,16 +71,6 @@ const UIStrings = {
    * selectors.
    */
   findByStringSelectorOrXpath: 'Find by string, selector, or `XPath`',
-  /**
-   * @description Button text for a button that takes the user to the Accessibility Tree View from the
-   * DOM tree view, in the Elements panel.
-   */
-  switchToAccessibilityTreeView: 'Switch to Accessibility Tree view',
-  /**
-   * @description Button text for a button that takes the user to the DOM tree view from the
-   * Accessibility Tree View, in the Elements panel.
-   */
-  switchToDomTreeView: 'Switch to DOM Tree view',
   /**
    * @description Tooltip for the the Computed Styles sidebar toggle in the Styles pane. Command to
    * open/show the sidebar.
@@ -178,25 +168,6 @@ type RevealAndSelectNodeOpts = RevealAndSelectNodeOptsSelectionAndFocus&{
   highlightInOverlay?: boolean,
 };
 
-const createAccessibilityTreeToggleButton = (isActive: boolean): HTMLElement => {
-  const button = new Buttons.Button.Button();
-  const title =
-      isActive ? i18nString(UIStrings.switchToDomTreeView) : i18nString(UIStrings.switchToAccessibilityTreeView);
-  button.data = {
-    active: isActive,
-    variant: Buttons.Button.Variant.TOOLBAR,
-    iconName: 'person',
-    title,
-    jslogContext: 'toggle-accessibility-tree',
-  };
-  button.tabIndex = 0;
-  button.classList.add('axtree-button');
-  if (isActive) {
-    button.classList.add('active');
-  }
-  return button;
-};
-
 let elementsPanelInstance: ElementsPanel;
 
 export const DEFAULT_COMPUTED_STYLES_DEBOUNCE_MS = 100;
@@ -212,7 +183,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   private readonly accessibilityTreeView: AccessibilityTreeView|undefined;
   private breadcrumbs: ElementsComponents.ElementsBreadcrumbs.ElementsBreadcrumbs;
   stylesWidget: StylesSidebarPane;
-  private readonly computedStyleWidget: ComputedStyleWidget;
+  readonly #computedStyleWidget: ComputedStyleWidget;
   private readonly metricsWidget: MetricsSidebarPane;
   private searchResults!: Array<{
     domModel: SDK.DOMModel.DOMModel,
@@ -227,6 +198,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   domTreeButton?: HTMLElement;
   private selectedNodeOnReset?: SDK.DOMModel.DOMNode;
   private hasNonDefaultSelectedNode?: boolean;
+  #restorationGeneration = 0;
   private searchConfig?: UI.SearchableView.SearchConfig;
   private omitDefaultSelection?: boolean;
   private notFirstInspectElement?: boolean;
@@ -266,9 +238,6 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.mainContainer = document.createElement('div');
     this.domTreeContainer = document.createElement('div');
     const crumbsContainer = document.createElement('div');
-    if (Root.Runtime.experiments.isEnabled(Root.ExperimentNames.ExperimentName.FULL_ACCESSIBILITY_TREE)) {
-      this.initializeFullAccessibilityTreeView();
-    }
     this.mainContainer.appendChild(this.domTreeContainer);
     stackElement.appendChild(this.mainContainer);
     stackElement.appendChild(crumbsContainer);
@@ -291,10 +260,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
         .addChangeListener(this.domWordWrapSettingChanged.bind(this));
 
     crumbsContainer.id = 'elements-crumbs';
-    if (this.domTreeButton) {
-      this.accessibilityTreeView =
-          new AccessibilityTreeView(this.domTreeButton, new TreeOutline.TreeOutline.TreeOutline<AXTreeNodeData>());
-    }
+    this.accessibilityTreeView = new AccessibilityTreeView(new TreeOutline.TreeOutline.TreeOutline<AXTreeNodeData>());
     this.breadcrumbs = new ElementsComponents.ElementsBreadcrumbs.ElementsBreadcrumbs();
     this.breadcrumbs.addEventListener('breadcrumbsnodeselected', event => {
       this.crumbNodeSelected(event);
@@ -311,11 +277,14 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     UI.Context.Context.instance().addFlavorChangeListener(
         StylesSidebarPane, this.evaluateTrackingComputedStyleUpdatesForNode, this);
-    UI.Context.Context.instance().addFlavorChangeListener(
-        ComputedStyleWidget, this.evaluateTrackingComputedStyleUpdatesForNode, this);
 
     this.stylesWidget = new StylesSidebarPane(this.#computedStyleModel);
-    this.computedStyleWidget = new ComputedStyleWidget(this.#computedStyleModel);
+    this.#computedStyleWidget = new ComputedStyleWidget();
+    this.#computedStyleModel.addEventListener(
+        ComputedStyle.ComputedStyleModel.Events.COMPUTED_STYLE_CHANGED, this.#updateComputedStyles, this);
+    this.#computedStyleModel.addEventListener(
+        ComputedStyle.ComputedStyleModel.Events.CSS_MODEL_CHANGED, this.#updateComputedStyles, this);
+
     this.metricsWidget = new MetricsSidebarPane(this.#computedStyleModel);
 
     Common.Settings.Settings.instance()
@@ -365,7 +334,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       return;
     }
 
-    const isComputedStyleWidgetVisible = Boolean(UI.Context.Context.instance().flavor(ComputedStyleWidget));
+    const isComputedStyleWidgetVisible = this.#computedStyleWidget.isShowing();
     const isStylesTabVisible = Boolean(UI.Context.Context.instance().flavor(StylesSidebarPane));
     const shouldTrackComputedStyleUpdates = isComputedStyleWidgetVisible ||
         (isStylesTabVisible && Root.Runtime.hostConfig.devToolsAnimationStylesInStylesTab?.enabled);
@@ -373,6 +342,16 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     void selectedNode.domModel()?.cssModel()?.trackComputedStyleUpdatesForNode(
         shouldTrackComputedStyleUpdates ? selectedNode.id : undefined);
   }, 100);
+
+  async #updateComputedStyles(): Promise<void> {
+    const computedStyle = await this.#computedStyleModel.fetchComputedStyle();
+    const matchedCascade = await this.#computedStyleModel.fetchMatchedCascade();
+    this.#computedStyleWidget.nodeStyle = computedStyle;
+    this.#computedStyleWidget.matchedStyles = matchedCascade;
+    if (matchedCascade) {
+      this.#computedStyleWidget.propertyTraces = this.#computedStyleModel.computePropertyTraces(matchedCascade);
+    }
+  }
 
   private handleElementExpanded(): void {
     if (Annotations.AnnotationRepository.annotationsEnabled()) {
@@ -386,24 +365,22 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
   }
 
-  private initializeFullAccessibilityTreeView(): void {
-    this.accessibilityTreeButton = createAccessibilityTreeToggleButton(false);
-    this.accessibilityTreeButton.addEventListener('click', this.showAccessibilityTree.bind(this));
-
-    this.domTreeButton = createAccessibilityTreeToggleButton(true);
-    this.domTreeButton.addEventListener('click', this.showDOMTree.bind(this));
-
-    this.mainContainer.appendChild(this.accessibilityTreeButton);
-  }
-
   private showAccessibilityTree(): void {
     if (this.accessibilityTreeView) {
       this.splitWidget.setMainWidget(this.accessibilityTreeView);
+      const toggleAction = UI.ActionRegistry.ActionRegistry.instance().getAction('elements.toggle-a11y-tree');
+      if (toggleAction) {
+        toggleAction.setToggled(true);
+      }
     }
   }
 
   private showDOMTree(): void {
     this.splitWidget.setMainWidget(this.#searchableView);
+    const toggleAction = UI.ActionRegistry.ActionRegistry.instance().getAction('elements.toggle-a11y-tree');
+    if (toggleAction) {
+      toggleAction.setToggled(false);
+    }
     const selectedNode = this.selectedDOMNode();
     if (!selectedNode) {
       return;
@@ -412,9 +389,6 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   }
 
   toggleAccessibilityTree(): void {
-    if (!this.domTreeButton) {
-      return;
-    }
     if (this.splitWidget.mainWidget() === this.accessibilityTreeView) {
       this.showDOMTree();
     } else {
@@ -536,6 +510,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     super.wasShown();
     UI.Context.Context.instance().setFlavor(ElementsPanel, this);
     this.#domTreeWidget.show(this.domTreeContainer);
+    this.evaluateTrackingComputedStyleUpdatesForNode();
 
     if (Annotations.AnnotationRepository.annotationsEnabled()) {
       void PanelCommon.AnnotationManager.instance().resolveAnnotationsOfType(Annotations.AnnotationType.ELEMENT_NODE);
@@ -544,6 +519,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
   override willHide(): void {
     SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    this.evaluateTrackingComputedStyleUpdatesForNode();
     this.#domTreeWidget.detach();
     super.willHide();
     UI.Context.Context.instance().setFlavor(ElementsPanel, null);
@@ -596,6 +572,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     if (focus) {
       this.selectedNodeOnReset = selectedNode;
       this.hasNonDefaultSelectedNode = true;
+      this.#restorationGeneration++;
     }
 
     const executionContexts = selectedNode.domModel().runtimeModel().executionContexts();
@@ -632,30 +609,126 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
 
     const savedSelectedNodeOnReset = this.selectedNodeOnReset;
-    void restoreNode.call(this, domModel, this.selectedNodeOnReset || null);
+    void this.restoreSelectedNodeAfterUpdate(domModel, this.selectedNodeOnReset || null, savedSelectedNodeOnReset);
+  }
 
-    async function restoreNode(
-        this: ElementsPanel, domModel: SDK.DOMModel.DOMModel, staleNode: SDK.DOMModel.DOMNode|null): Promise<void> {
-      const nodePath = staleNode ? staleNode.path() : null;
-      const restoredNodeId = nodePath ? await domModel.pushNodeByPathToFrontend(nodePath) : null;
+  /**
+   * Best-effort restoration of the previously focused node after a reload.
+   *
+   * The CDP path-based mechanism works well for stable DOMs, but can be
+   * unreliable for pages that render asynchronously after the initial
+   * document update. To improve reliability we retry a few times, and also
+   * fall back to evaluating a JS path (document.querySelector(...)) when
+   * possible.
+   *
+   * Node resolution (computation) is separated from view state updates:
+   * resolveNode returns a DOMNode|null, and this method handles selection.
+   */
+  private async restoreSelectedNodeAfterUpdate(
+      domModel: SDK.DOMModel.DOMModel, staleNode: SDK.DOMModel.DOMNode|null,
+      savedSelectedNodeOnReset: SDK.DOMModel.DOMNode|undefined): Promise<void> {
+    // Fast path: no previous node to restore -- just select the fallback
+    // synchronously so callers that check selection immediately still work.
+    if (!staleNode) {
+      this.trySetFallbackSelection(domModel);
+      return;
+    }
+
+    const nodePath = staleNode.path();
+
+    // Keep the panel usable quickly by selecting a reasonable default node as
+    // soon as we can, but continue trying to restore the stale node.
+    let didSetFallbackSelection = false;
+
+    // Retry with exponential-ish backoff, capping total wait at ~3s.
+    // Most async-rendered pages settle well within this window.
+    const attemptDelaysMs = [0, 250, 500, 1000, 1500];
+
+    // Capture the restoration generation so any user interaction (node
+    // selection, style editing, node reveal, etc.) cancels pending retries.
+    const restorationGeneration = this.#restorationGeneration;
+
+    for (let attempt = 0; attempt < attemptDelaysMs.length; ++attempt) {
+      if (savedSelectedNodeOnReset !== this.selectedNodeOnReset) {
+        return;
+      }
+      if (this.hasNonDefaultSelectedNode || this.pendingNodeReveal ||
+          restorationGeneration !== this.#restorationGeneration) {
+        return;
+      }
+
+      if (attemptDelaysMs[attempt]) {
+        await new Promise<void>(resolve => window.setTimeout(resolve, attemptDelaysMs[attempt]));
+      }
 
       if (savedSelectedNodeOnReset !== this.selectedNodeOnReset) {
         return;
       }
-      let node = domModel.nodeForId(restoredNodeId);
-      if (!node) {
-        const inspectedDocument = domModel.existingDocument();
-        node = inspectedDocument ? inspectedDocument.body || inspectedDocument.documentElement : null;
+      if (this.hasNonDefaultSelectedNode || this.pendingNodeReveal ||
+          restorationGeneration !== this.#restorationGeneration) {
+        return;
       }
-      // If `node` is null here, the document hasn't been transmitted from the backend yet
-      // and isn't in a valid state to have a default-selected node. Another document update
-      // should be forthcoming. In the meantime, don't set the default-selected node or notify
-      // the test that it's ready, because it isn't.
-      if (node) {
-        this.setDefaultSelectedNode(node);
+
+      // Computation: resolve the node without touching view state.
+      const restoredNode = await this.resolveNodeForRestoration(domModel, nodePath);
+
+      if (restoredNode) {
+        this.setDefaultSelectedNode(restoredNode);
         this.lastSelectedNodeSelectedForTest();
+        return;
+      }
+
+      if (!didSetFallbackSelection) {
+        // If we cannot compute a fallback selection yet, the document likely
+        // has not been transmitted from the backend and isn't in a valid state
+        // to have a default-selected node. Another document update should be
+        // forthcoming. In the meantime, don't notify tests that selection is
+        // ready, because it isn't.
+        if (!this.trySetFallbackSelection(domModel)) {
+          return;
+        }
+        didSetFallbackSelection = true;
       }
     }
+  }
+
+  /**
+   * Attempts to resolve a DOM node by its CDP path.
+   * Pure computation -- does not modify view state.
+   */
+  private async resolveNodeForRestoration(domModel: SDK.DOMModel.DOMModel, nodePath: string|null):
+      Promise<SDK.DOMModel.DOMNode|null> {
+    try {
+      if (nodePath) {
+        const restoredNodeId = await domModel.pushNodeByPathToFrontend(nodePath);
+        const restoredNode = domModel.nodeForId(restoredNodeId);
+        if (restoredNode) {
+          return restoredNode;
+        }
+      }
+    } catch {
+      // CDP calls (pushNodeByPathToFrontend) can reject when the target or
+      // session is closed, e.g. if the page navigates again while we are
+      // retrying. Safe to swallow: we either retry on the next iteration or
+      // fall through to the fallback node.
+    }
+    return null;
+  }
+
+  private trySetFallbackSelection(domModel: SDK.DOMModel.DOMModel): boolean {
+    const inspectedDocument = domModel.existingDocument();
+    const fallbackNode = inspectedDocument ? inspectedDocument.body || inspectedDocument.documentElement : null;
+    if (!fallbackNode) {
+      return false;
+    }
+
+    this.setDefaultSelectedNode(fallbackNode);
+    this.lastSelectedNodeSelectedForTest();
+    return true;
+  }
+
+  cancelPendingRestoration(): void {
+    this.#restorationGeneration++;
   }
 
   private lastSelectedNodeSelectedForTest(): void {
@@ -918,7 +991,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
 
     if (showPanel) {
-      await UI.ViewManager.ViewManager.instance().showView('elements', false, !focus);
+      await UI.ViewManager.ViewManager.instance().showView('elements', false, !focusNode);
     }
     this.selectDOMNode(node, focusNode);
     delete this.omitDefaultSelection;
@@ -936,7 +1009,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.omitDefaultSelection = true;
 
     if (showPanel) {
-      await UI.ViewManager.ViewManager.instance().showView('elements', false, !focus);
+      await UI.ViewManager.ViewManager.instance().showView('elements', false, !focusNode);
     }
     this.selectDOMNode(nodeToReveal, focusNode);
     delete this.omitDefaultSelection;
@@ -1005,9 +1078,15 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.setupTextSelectionHack(matchedStylePanesWrapper.element);
 
     const computedStylePanesWrapper = new UI.Widget.VBox();
-    computedStylePanesWrapper.element.classList.add('style-panes-wrapper');
+    computedStylePanesWrapper.element.classList.add('style-panes-wrapper', 'computed-styles-pane-wrapper');
     computedStylePanesWrapper.element.setAttribute('jslog', `${VisualLogging.pane('computed').track({resize: true})}`);
-    this.computedStyleWidget.show(computedStylePanesWrapper.element);
+    this.#computedStyleWidget.element.classList.add('computed-styles-wrapper');
+    this.#computedStyleWidget.show(computedStylePanesWrapper.element);
+
+    const platformFontsWidget = new PlatformFontsWidget();
+    platformFontsWidget.element.classList.add('platform-fonts-wrapper');
+    platformFontsWidget.sharedModel = this.#computedStyleModel;
+    platformFontsWidget.show(computedStylePanesWrapper.element);
 
     const stylesSplitWidget = new UI.SplitWidget.SplitWidget(
         true /* isVertical */, true /* secondIsSidebar */, 'elements.styles.sidebar.width', 100);
@@ -1024,7 +1103,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     });
 
     const showMetricsWidgetInComputedPane = (): void => {
-      this.metricsWidget.show(computedStylePanesWrapper.element, this.computedStyleWidget.element);
+      this.metricsWidget.show(computedStylePanesWrapper.element, this.#computedStyleWidget.element);
       this.stylesWidget.removeEventListener(StylesSidebarPaneEvents.STYLES_UPDATE_COMPLETED, toggleMetricsWidget);
     };
 
@@ -1051,6 +1130,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     const tabSelected = (event: Common.EventTarget.EventTargetEvent<UI.TabbedPane.EventData>): void => {
       const {tabId} = event.data;
+      this.evaluateTrackingComputedStyleUpdatesForNode();
       if (tabId === SidebarPaneTabId.COMPUTED) {
         computedStylePanesWrapper.show(computedView.element);
         showMetricsWidgetInComputedPane();
@@ -1105,6 +1185,10 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.splitWidget.setSidebarWidget(this.sidebarPaneView.tabbedPane());
   }
 
+  revealComputedStylesPane(): void {
+    this.sidebarPaneView?.tabbedPane().selectTab(SidebarPaneTabId.COMPUTED);
+  }
+
   private updateSidebarPosition(): void {
     if (this.sidebarPaneView?.tabbedPane().shouldHideOnDetach()) {
       return;
@@ -1147,7 +1231,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   }
 
   getComputedStyleWidget(): ComputedStyleWidget {
-    return this.computedStyleWidget;
+    return this.#computedStyleWidget;
   }
 
   private setupStyleTracking(cssModel: SDK.CSSModel.CSSModel): void {
@@ -1352,14 +1436,27 @@ export class ContextMenuProvider implements
   }
 }
 
-export class DOMNodeRevealer implements Common.Revealer.Revealer<
-    SDK.DOMModel.DOMNode|SDK.DOMModel.DeferredDOMNode|SDK.RemoteObject.RemoteObject|SDK.DOMModel.AdoptedStyleSheet> {
+/**
+ * Wraps around the Node so we can pass it into the DOMNodeRevealer but
+ * distinguish that we want to reveal the computed styles panel.
+ */
+export class NodeComputedStyles {
+  readonly node: SDK.DOMModel.DOMNode;
+  constructor(node: SDK.DOMModel.DOMNode) {
+    this.node = node;
+  }
+}
+
+export class DOMNodeRevealer implements
+    Common.Revealer.Revealer<SDK.DOMModel.DOMNode|SDK.DOMModel.DeferredDOMNode|SDK.RemoteObject.RemoteObject|
+                             SDK.DOMModel.AdoptedStyleSheet|NodeComputedStyles> {
   reveal(
       node: SDK.DOMModel.DOMNode|SDK.DOMModel.DeferredDOMNode|SDK.RemoteObject.RemoteObject|
-      SDK.DOMModel.AdoptedStyleSheet,
+      SDK.DOMModel.AdoptedStyleSheet|NodeComputedStyles,
       omitFocus?: boolean): Promise<void> {
     const panel = ElementsPanel.instance();
     panel.pendingNodeReveal = true;
+    panel.cancelPendingRestoration();
 
     return (new Promise<void>(revealPromise)).catch((reason: Error) => {
       let message: string;
@@ -1381,6 +1478,10 @@ export class DOMNodeRevealer implements Common.Revealer.Revealer<
         onNodeResolved((node));
       } else if (node instanceof SDK.DOMModel.DeferredDOMNode) {
         (node).resolve(checkDeferredDOMNodeThenReveal);
+      } else if (node instanceof NodeComputedStyles) {
+        const elements = ElementsPanel.instance();
+        elements.revealComputedStylesPane();
+        onNodeResolved(node.node);
       } else {
         const domModel = node.runtimeModel().target().model(SDK.DOMModel.DOMModel);
         if (domModel) {
@@ -1413,7 +1514,7 @@ export class DOMNodeRevealer implements Common.Revealer.Revealer<
         }
 
         if (resolvedNode) {
-          const opts: RevealAndSelectNodeOpts = {showPanel: true, focusNode: !omitFocus};
+          const opts: RevealAndSelectNodeOpts = omitFocus ? {showPanel: false} : {showPanel: true, focusNode: true};
           const promise = resolvedNode instanceof SDK.DOMModel.AdoptedStyleSheet ?
               panel.revealAndSelectAdoptedStyleSheet(resolvedNode, opts) :
               panel.revealAndSelectNode(resolvedNode, opts);

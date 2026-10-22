@@ -98,7 +98,7 @@ void AutoSpeculationRulesConfig::ParseUrlMatchPatternConfig(
         continue;
       }
 
-      if (!entry.first.ContainsOnlyASCIIOrEmpty()) {
+      if (!entry.first.ContainsOnlyAsciiOrEmpty()) {
         LOG(ERROR) << "Non-ASCII key " << entry.first << " inside "
                    << json_key_name;
         continue;
@@ -115,7 +115,7 @@ const AutoSpeculationRulesConfig& AutoSpeculationRulesConfig::GetInstance() {
 
   DEFINE_STATIC_LOCAL(
       AutoSpeculationRulesConfig, instance,
-      (String::FromUTF8(base::GetFieldTrialParamByFeatureAsString(
+      (String::FromUtf8(base::GetFieldTrialParamByFeatureAsString(
           features::kAutoSpeculationRules, "config", "{}"))));
 
   if (g_override) {

@@ -18,6 +18,11 @@ fn expand_coeffs(y: f32, v: f32) -> [f32; 3] {
     [y, 1.0 - y - v, v]
 }
 
+#[cfg(feature = "png")]
+fn matches_f32(a: f32, b: f32) -> bool {
+    (a - b).abs() <= 0.001
+}
+
 impl ColorPrimaries {
     pub(crate) fn y_coeffs(&self) -> [f32; 3] {
         // These values come from computations in Section 8 of
@@ -35,6 +40,70 @@ impl ColorPrimaries {
             ColorPrimaries::Smpte431 => expand_coeffs(0.2095, 0.0689),
             ColorPrimaries::Smpte432 => expand_coeffs(0.229, 0.0793),
             ColorPrimaries::Ebu3213 => expand_coeffs(0.2318, 0.096),
+        }
+    }
+
+    #[cfg(feature = "png")]
+    pub(crate) fn values(&self) -> Option<[f32; 8]> {
+        // return values in this order: rX, rY, gX, gY, bX, bY, wX, wY
+        match self {
+            Self::Srgb => Some([0.64, 0.33, 0.3, 0.6, 0.15, 0.06, 0.3127, 0.329]),
+            Self::Bt470m => Some([0.67, 0.33, 0.21, 0.71, 0.14, 0.08, 0.310, 0.316]),
+            Self::Bt470bg => Some([0.64, 0.33, 0.29, 0.60, 0.15, 0.06, 0.3127, 0.3290]),
+            Self::Bt601 => Some([0.630, 0.340, 0.310, 0.595, 0.155, 0.070, 0.3127, 0.3290]),
+            Self::Smpte240 => Some([0.630, 0.340, 0.310, 0.595, 0.155, 0.070, 0.3127, 0.3290]),
+            Self::GenericFilm => Some([0.681, 0.319, 0.243, 0.692, 0.145, 0.049, 0.310, 0.316]),
+            Self::Bt2020 => Some([0.708, 0.292, 0.170, 0.797, 0.131, 0.046, 0.3127, 0.3290]),
+            Self::Xyz => Some([1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.3333, 0.3333]),
+            Self::Smpte431 => Some([0.680, 0.320, 0.265, 0.690, 0.150, 0.060, 0.314, 0.351]),
+            Self::Smpte432 => Some([0.680, 0.320, 0.265, 0.690, 0.150, 0.060, 0.3127, 0.3290]),
+            Self::Ebu3213 => Some([0.630, 0.340, 0.295, 0.605, 0.155, 0.077, 0.3127, 0.3290]),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "png")]
+    pub(crate) fn find(primaries: &[f32; 8]) -> Self {
+        for i in 0u16..22 {
+            let color_primary: Self = i.into();
+            match color_primary.values() {
+                Some(values) => {
+                    if values
+                        .iter()
+                        .zip(primaries.iter())
+                        .all(|(a, b)| matches_f32(*a, *b))
+                    {
+                        return color_primary;
+                    }
+                }
+                None => continue,
+            }
+        }
+        Self::Unknown
+    }
+}
+
+impl TransferCharacteristics {
+    #[cfg(feature = "png")]
+    pub(crate) fn gamma(&self) -> Option<f32> {
+        match self {
+            Self::Bt470m => Some(2.2),
+            Self::Bt470bg => Some(2.8),
+            Self::Linear => Some(1.0),
+            _ => None, // Not representable as a single gamma value.
+        }
+    }
+
+    #[cfg(feature = "png")]
+    pub(crate) fn from_gamma(gamma: f32) -> Self {
+        if matches_f32(gamma, 2.2) {
+            Self::Bt470m
+        } else if matches_f32(gamma, 2.8) {
+            Self::Bt470bg
+        } else if matches_f32(gamma, 1.0) {
+            Self::Linear
+        } else {
+            Self::Unknown
         }
     }
 }

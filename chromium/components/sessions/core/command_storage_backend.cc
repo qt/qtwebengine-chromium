@@ -19,7 +19,9 @@
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/functional/bind.h"
 #include "base/logging.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/numerics/byte_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -31,35 +33,26 @@
 #include "build/build_config.h"
 #include "components/sessions/core/session_constants.h"
 #include "components/sessions/core/session_service_commands.h"
-#include "crypto/aead.h"
+#include "third_party/abseil-cpp/absl/strings/str_format.h"
 
 namespace sessions {
 
-using SessionType = CommandStorageManager::SessionType;
-
 namespace {
 
-// File version number.
-// TODO(sky): remove these in ~1 year. They are no longer written as of
-// ~5/2021.
-constexpr int32_t kFileVersion1 = 1;
-constexpr int32_t kEncryptedFileVersion = 2;
-// The versions that are used if `use_marker` is true.
+using SessionType = CommandStorageManager::SessionType;
+
+// File version numbers:
+// kFileVersion1 = 1; No longer supported. Used in production prior to commit
+//   223e5cd on 2021-05-25.
+// kEncryptedFileVersion = 2; No longer supported. Never used in production, but
+//   possible prior to commit 223e5cd on 2021-05-25.
 constexpr int32_t kFileVersionWithMarker = 3;
-constexpr int32_t kEncryptedFileVersionWithMarker = 4;
+// kEncryptedFileVersionWithMarker = 4; Never used in production, but possible
+//   from early 2021 through early 2026.
+// NEXT_VERSION = 5
 
 // The signature at the beginning of the file = SSNS (Sessions).
 constexpr int32_t kFileSignature = 0x53534E53;
-
-// Length (in bytes) of the nonce (used when encrypting).
-constexpr int kNonceLength = 12;
-
-// Kill switch for the change to stop calling `File::Flush()` when appending
-// commands to a file. This can be removed if the change rolls out without
-// causing issues.
-BASE_FEATURE(kFlushAfterAppending,
-             "SessionStorageFlushAfterAppendingCommands",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // The file header is the first bytes written to the file,
 // and is used to identify the file as one written by us.
@@ -71,6 +64,64 @@ struct FileHeader {
 // See CommandStorageBackend for details.
 const SessionCommand::id_type kInitialStateMarkerCommandId = 255;
 
+base::FilePath::StringType TimestampToString(const base::Time time) {
+#if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
+  return base::NumberToString(time.ToDeltaSinceWindowsEpoch().InMicroseconds());
+#elif BUILDFLAG(IS_WIN)
+  return base::NumberToWString(
+      time.ToDeltaSinceWindowsEpoch().InMicroseconds());
+#endif
+}
+
+base::FilePath::StringType GetSessionBaseName(SessionType type) {
+  switch (type) {
+    case SessionType::kAppRestore:
+      return kAppSessionFileNamePrefix;
+    case SessionType::kTabRestore:
+      return kTabSessionFileNamePrefix;
+    case SessionType::kSessionRestore:
+      return kSessionFileNamePrefix;
+  }
+}
+
+base::FilePath::StringType GetSessionFilename(
+    SessionType type,
+    const base::FilePath::StringType& timestamp_str) {
+  return base::JoinString({GetSessionBaseName(type), timestamp_str},
+                          kTimestampSeparator);
+}
+
+// Helper for UMA metrics.
+std::string GetHistogramName(SessionType type,
+                             bool encrypted,
+                             std::string_view operation,
+                             std::string_view slice,
+                             std::string_view metric) {
+  std::string_view session_type_str;
+  switch (type) {
+    case SessionType::kAppRestore:
+      session_type_str = "AppRestore";
+      break;
+    case SessionType::kSessionRestore:
+      session_type_str = "SessionRestore";
+      break;
+    case SessionType::kTabRestore:
+      session_type_str = "TabRestore";
+      break;
+  }
+  std::string_view encrypted_str = encrypted ? "Encrypted" : "Cleartext";
+  std::vector<std::string_view> histogram_parts = {
+      "Session", "CommandStorageBackend", session_type_str, encrypted_str,
+      operation};
+  if (!slice.empty()) {
+    histogram_parts.push_back(slice);
+  }
+  histogram_parts.push_back(metric);
+  return base::JoinString(histogram_parts, ".");
+}
+
+}  // namespace
+
 // SessionFileReader ----------------------------------------------------------
 
 // SessionFileReader is responsible for reading the set of SessionCommands that
@@ -81,15 +132,15 @@ class SessionFileReader {
  public:
   typedef sessions::SessionCommand::id_type id_type;
   typedef sessions::SessionCommand::size_type size_type;
+  using ReadStatus = CommandStorageBackend::ReadStatus;
 
   SessionFileReader(const SessionFileReader&) = delete;
   SessionFileReader& operator=(const SessionFileReader&) = delete;
 
   // Returns true if the header is valid. If false, the file does not contain
   // a valid sessions file.
-  static bool IsHeaderValid(const base::FilePath& path,
-                            const std::vector<uint8_t>& crypto_key) {
-    SessionFileReader reader(path, crypto_key);
+  static bool IsHeaderValidForTest(const base::FilePath& path) {
+    SessionFileReader reader(path);
     return reader.IsHeaderValid();
   }
 
@@ -104,68 +155,58 @@ class SessionFileReader {
     bool has_marker = false;
   };
 
-  static MarkerStatus GetMarkerStatus(const base::FilePath& path,
-                                      const std::vector<uint8_t>& crypto_key) {
-    SessionFileReader reader(path, crypto_key);
+  static MarkerStatus GetMarkerStatus(const base::FilePath& path) {
+    SessionFileReader reader(path);
     MarkerStatus status;
     status.supports_marker = reader.SupportsMarker();
-    if (status.supports_marker)
+    if (status.supports_marker) {
       status.has_marker = reader.ReadToMarker();
+    }
     return status;
   }
 
+  struct ReadResult {
+    // This struct is different from CommandStorageBackend::ReadCommandsResult
+    // in that it also contains an indication of what type of error occurred.
+    // This is useful for reporting and debugging.
+    std::vector<std::unique_ptr<sessions::SessionCommand>> commands;
+    CommandStorageBackend::ReadStatus status = ReadStatus::kUnknown;
+  };
+
   // Reads the state of commands from the specified file.
-  static CommandStorageBackend::ReadCommandsResult Read(
-      const base::FilePath& path,
-      const std::vector<uint8_t>& crypto_key) {
-    SessionFileReader reader(path, crypto_key);
+  static ReadResult Read(const base::FilePath& path) {
+    SessionFileReader reader(path);
     return reader.Read();
   }
 
  private:
-  struct ReadResult {
-    std::unique_ptr<sessions::SessionCommand> command;
-    bool error_reading = false;
-  };
-
-  SessionFileReader(const base::FilePath& path,
-                    const std::vector<uint8_t>& crypto_key)
-      : buffer_(CommandStorageBackend::kFileReadBufferSize, 0),
-        crypto_key_(crypto_key) {
-    if (!crypto_key.empty()) {
-      aead_ = std::make_unique<crypto::Aead>(crypto::Aead::AES_256_GCM);
-      aead_->Init(base::span(crypto_key_));
-    }
+  explicit SessionFileReader(const base::FilePath& path)
+      : buffer_(CommandStorageBackend::kFileReadBufferSize, 0) {
     file_ = std::make_unique<base::File>(
         path, base::File::FLAG_OPEN | base::File::FLAG_READ);
-    is_header_valid_ = ReadHeader();
+    read_status_ = ReadHeader();
+    DCHECK_NE(read_status_, ReadStatus::kUnknown);
   }
 
   // Returns true if the file has a valid header.
-  bool IsHeaderValid() const { return is_header_valid_; }
+  bool IsHeaderValid() const { return read_status_ == ReadStatus::kSuccess; }
 
   // Reads the contents of the file specified in the constructor.
-  CommandStorageBackend::ReadCommandsResult Read();
+  ReadResult Read();
 
   bool SupportsMarker() const {
-    return IsHeaderValid() && (version_ == kFileVersionWithMarker ||
-                               version_ == kEncryptedFileVersionWithMarker);
+    return IsHeaderValid() && (version_ == kFileVersionWithMarker);
   }
 
   // Parses the header.
-  bool ReadHeader();
+  ReadStatus ReadHeader();
 
   // Reads commands until the marker is found, or no more commands.
   bool ReadToMarker();
 
-  // Reads a single command. If the command returned in the structure is null,
+  // Reads a single command. If the command returned in the structure is empty,
   // there are no more commands.
   ReadResult ReadCommand();
-
-  // Decrypts a previously encrypted command. Returns the new command on
-  // success.
-  std::unique_ptr<sessions::SessionCommand> CreateCommandFromEncrypted(
-      base::span<const uint8_t> data);
 
   // Creates a command from the previously written value.
   std::unique_ptr<sessions::SessionCommand> CreateCommand(
@@ -190,14 +231,10 @@ class SessionFileReader {
     return data;
   }
 
-  bool is_header_valid_ = false;
+  ReadStatus read_status_ = ReadStatus::kUnknown;
 
   // As we read from the file, data goes here.
   std::vector<uint8_t> buffer_;
-
-  const std::vector<uint8_t> crypto_key_;
-
-  std::unique_ptr<crypto::Aead> aead_;
 
   // The file.
   std::unique_ptr<base::File> file_;
@@ -211,9 +248,6 @@ class SessionFileReader {
   // Number of available bytes; relative to buffer_position_.
   size_t available_count_ = 0;
 
-  // Count of the number of commands encountered.
-  int command_counter_ = 0;
-
   bool did_check_header_ = false;
 
   // The version the file was written with. Should only be used if
@@ -221,36 +255,40 @@ class SessionFileReader {
   int32_t version_ = 0;
 };
 
-CommandStorageBackend::ReadCommandsResult SessionFileReader::Read() {
-  if (!IsHeaderValid())
-    return {};
-
-  CommandStorageBackend::ReadCommandsResult commands_result;
-  // Even if there was an error the commands are returned. The hope is at least
-  // some portion of the previous session is restored.
-  ReadResult result = ReadCommand();
-  for (; result.command; result = ReadCommand()) {
-    if (result.command->id() != kInitialStateMarkerCommandId)
-      commands_result.commands.push_back(std::move(result.command));
+SessionFileReader::ReadResult SessionFileReader::Read() {
+  if (!IsHeaderValid()) {
+    DCHECK_NE(read_status_, ReadStatus::kUnknown);
+    return {{}, read_status_};
   }
 
-  LOG_IF(ERROR, result.error_reading)
+  ReadResult full_result;  // All commands that were successfully read.
+  ReadResult next_result = ReadCommand();
+  for (; !next_result.commands.empty(); next_result = ReadCommand()) {
+    if (next_result.commands.front()->id() != kInitialStateMarkerCommandId) {
+      full_result.commands.push_back(std::move(next_result.commands.front()));
+    }
+  }
+
+  LOG_IF(ERROR, CommandStorageBackend::IsError(next_result.status))
       << "Commands successfully read before error: "
-      << commands_result.commands.size()
+      << full_result.commands.size()
       << ", bytes successfully read from file before error: " << bytes_read_;
 
-  // `error_reading` is only set if `command` is null.
-  commands_result.error_reading = result.error_reading;
-  return commands_result;
+  full_result.status = next_result.status;
+  DCHECK_NE(full_result.status, ReadStatus::kUnknown);
+  return full_result;
 }
 
-bool SessionFileReader::ReadHeader() {
+CommandStorageBackend::ReadStatus SessionFileReader::ReadHeader() {
   // This function advances |file| and should only be called once.
   DCHECK(!did_check_header_);
   did_check_header_ = true;
 
-  if (!file_->IsValid())
-    return false;
+  if (!file_->IsValid()) {
+    // It's unclear how this would occur - a bug in FindLastSessionFile or
+    // GetSessionFilesSortedByReverseTimestamp?
+    return ReadStatus::kFileInvalid;
+  }
   FileHeader header;
   CHECK_EQ(0, bytes_read_);
   std::optional<size_t> read_count =
@@ -261,121 +299,85 @@ bool SessionFileReader::ReadHeader() {
             << sizeof(header)
             << " bytes into buffer but encountered file read error: "
             << base::File::ErrorToString(base::File::GetLastFileError());
-    return false;
+    return ReadStatus::kFileInvalid;
+  }
+  if (*read_count == 0) {
+    return ReadStatus::kFileEmpty;
   }
   if (*read_count != sizeof(header) || header.signature != kFileSignature) {
     VLOG(1) << "SessionFileReader::ReadHeader, failed to read header. "
                "Attempted to read "
             << sizeof(header) << " bytes into buffer but got " << *read_count
             << " bytes instead.";
-    return false;
+    return ReadStatus::kInvalidHeader;
   }
   bytes_read_ += *read_count;
   version_ = header.version;
-  const bool encrypt = aead_.get() != nullptr;
-  return (encrypt && (version_ == kEncryptedFileVersion ||
-                      version_ == kEncryptedFileVersionWithMarker)) ||
-         (!encrypt &&
-          (version_ == kFileVersion1 || version_ == kFileVersionWithMarker));
+  // Other versions are no longer supported - see the comments above the
+  // `kFileVersionWithMarker` constant for details.
+  return (version_ == kFileVersionWithMarker) ? ReadStatus::kSuccess
+                                              : ReadStatus::kInvalidHeader;
 }
 
 bool SessionFileReader::ReadToMarker() {
   // It's expected this is only called if the marker is supported.
   DCHECK(IsHeaderValid() && SupportsMarker());
-  for (ReadResult result = ReadCommand(); result.command;
+  for (ReadResult result = ReadCommand(); !result.commands.empty();
        result = ReadCommand()) {
-    if (result.command->id() == kInitialStateMarkerCommandId)
+    if (result.commands.front()->id() == kInitialStateMarkerCommandId) {
       return true;
+    }
   }
   return false;
 }
 
 SessionFileReader::ReadResult SessionFileReader::ReadCommand() {
   SessionFileReader::ReadResult result;
+
+  std::optional<size_t> total_size =
+      SessionCommand::GetSerializedSize(GetBufferedData());
+
   // Make sure there is enough in the buffer for the size of the next command.
-  if (available_count_ < sizeof(size_type)) {
-    if (!FillBuffer())
+  if (!total_size) {
+    if (!FillBuffer()) {
+      if (available_count_ == 0) {
+        result.status = ReadStatus::kSuccess;
+      } else {
+        result.status = ReadStatus::kInvalidCommand;
+      }
       return result;
-    if (available_count_ < sizeof(size_type)) {
+    }
+    total_size = SessionCommand::GetSerializedSize(GetBufferedData());
+    if (!total_size) {
       VLOG(1) << "SessionFileReader::ReadCommand, file incomplete";
       // Still couldn't read a valid size for the command, assume write was
       // incomplete and return null.
-      result.error_reading = true;
+      result.status = ReadStatus::kInvalidCommand;
       return result;
     }
-  }
-  // Get the size of the command.
-  static_assert(std::is_same_v<size_type, uint16_t>);
-  const size_type command_size =
-      base::U16FromNativeEndian(ConsumeBufferedData(2).first<2>());
-
-  if (command_size == 0) {
-    VLOG(1) << "SessionFileReader::ReadCommand, empty command";
-    // Empty command. Shouldn't happen if write was successful, fail.
-    result.error_reading = true;
-    return result;
   }
 
   // Make sure buffer has the complete contents of the command.
-  if (command_size > available_count_) {
-    if (command_size > buffer_.size())
-      buffer_.resize((command_size / 1024 + 1) * 1024, 0);
-    if (!FillBuffer() || command_size > available_count_) {
+  if (*total_size > available_count_) {
+    if (*total_size > buffer_.size()) {
+      buffer_.resize((*total_size / 1024 + 1) * 1024, 0);
+    }
+    if (!FillBuffer() || *total_size > available_count_) {
       // Again, assume the file was ok, and just the last chunk was lost.
       VLOG(1) << "SessionFileReader::ReadCommand, last chunk lost";
-      result.error_reading = true;
+      result.status = ReadStatus::kInvalidCommand;
       return result;
     }
   }
-  if (aead_) {
-    result.command =
-        CreateCommandFromEncrypted(ConsumeBufferedData(command_size));
-  } else {
-    result.command = CreateCommand(ConsumeBufferedData(command_size));
+  std::unique_ptr<SessionCommand> command =
+      SessionCommand::Deserialize(ConsumeBufferedData(*total_size));
+  if (!command) {
+    result.status = ReadStatus::kInvalidCommand;
+    return result;
   }
-  ++command_counter_;
+  result.commands.push_back(std::move(command));
+  result.status = ReadStatus::kSuccess;
   return result;
-}
-
-std::unique_ptr<sessions::SessionCommand>
-SessionFileReader::CreateCommandFromEncrypted(base::span<const uint8_t> data) {
-  // This means the nonce overflowed and we're reusing a nonce.
-  // CommandStorageBackend should never write enough commands to trigger this,
-  // so assume we should stop.
-  if (command_counter_ < 0)
-    return nullptr;
-
-  uint8_t nonce[kNonceLength] = {};
-  base::span(nonce).first<sizeof(command_counter_)>().copy_from(
-      base::byte_span_from_ref(command_counter_));
-  std::string plain_text;
-  if (!aead_->Open(base::as_string_view(data), base::as_string_view(nonce), {},
-                   &plain_text)) {
-    DVLOG(1) << "SessionFileReader::ReadCommand, decryption failed";
-    return nullptr;
-  }
-  if (plain_text.size() < sizeof(id_type)) {
-    DVLOG(1) << "SessionFileReader::ReadCommand, size too small";
-    return nullptr;
-  }
-  return CreateCommand(base::as_byte_span(plain_text));
-}
-
-std::unique_ptr<sessions::SessionCommand> SessionFileReader::CreateCommand(
-    base::span<const uint8_t> data) {
-  // Callers should have checked the size.
-  DCHECK_GE(data.size(), sizeof(id_type));
-  const id_type command_id = data[0];
-  // NOTE: |length| includes the size of the id, which is not part of the
-  // contents of the SessionCommand.
-  const size_t payload_size = data.size() - sizeof(id_type);
-  std::unique_ptr<sessions::SessionCommand> command =
-      std::make_unique<sessions::SessionCommand>(
-          command_id, static_cast<size_type>(payload_size));
-  if (payload_size > 0) {
-    command->contents().copy_from(data.subspan(sizeof(id_type)));
-  }
-  return command;
 }
 
 bool SessionFileReader::FillBuffer() {
@@ -408,66 +410,6 @@ bool SessionFileReader::FillBuffer() {
   return true;
 }
 
-base::FilePath::StringType TimestampToString(const base::Time time) {
-#if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
-  return base::NumberToString(time.ToDeltaSinceWindowsEpoch().InMicroseconds());
-#elif BUILDFLAG(IS_WIN)
-  return base::NumberToWString(
-      time.ToDeltaSinceWindowsEpoch().InMicroseconds());
-#endif
-}
-
-// Returns the directory the files are stored in.
-base::FilePath GetSessionDirName(CommandStorageManager::SessionType type,
-                                 const base::FilePath& supplied_path) {
-  if (type == CommandStorageManager::kOther)
-    return supplied_path.DirName();
-  return supplied_path.Append(kSessionsDirectory);
-}
-
-base::FilePath::StringType GetSessionBaseName(
-    CommandStorageManager::SessionType type,
-    const base::FilePath& supplied_path) {
-  switch (type) {
-    case CommandStorageManager::kAppRestore:
-      return kAppSessionFileNamePrefix;
-    case CommandStorageManager::kTabRestore:
-      return kTabSessionFileNamePrefix;
-    case CommandStorageManager::kSessionRestore:
-      return kSessionFileNamePrefix;
-    case CommandStorageManager::kOther:
-      return supplied_path.BaseName().value();
-  }
-}
-
-base::FilePath::StringType GetSessionFilename(
-    CommandStorageManager::SessionType type,
-    const base::FilePath& supplied_path,
-    const base::FilePath::StringType& timestamp_str) {
-  return base::JoinString(
-      {GetSessionBaseName(type, supplied_path), timestamp_str},
-      kTimestampSeparator);
-}
-
-base::FilePath GetLegacySessionPath(CommandStorageManager::SessionType type,
-                                    const base::FilePath& base_path,
-                                    bool current) {
-  switch (type) {
-    case CommandStorageManager::kAppRestore:
-      return base_path;
-    case CommandStorageManager::kTabRestore:
-      return base_path.Append(current ? kLegacyCurrentTabSessionFileName
-                                      : kLegacyLastTabSessionFileName);
-    case CommandStorageManager::kSessionRestore:
-      return base_path.Append(current ? kLegacyCurrentSessionFileName
-                                      : kLegacyLastSessionFileName);
-    case CommandStorageManager::kOther:
-      return base_path;
-  }
-}
-
-}  // namespace
-
 CommandStorageBackend::ReadCommandsResult::ReadCommandsResult() = default;
 CommandStorageBackend::ReadCommandsResult::ReadCommandsResult(
     CommandStorageBackend::ReadCommandsResult&& other) = default;
@@ -485,41 +427,39 @@ CommandStorageBackend::OpenFile::~OpenFile() = default;
 // static
 const int CommandStorageBackend::kFileReadBufferSize = 1024;
 
-// static
-const SessionCommand::size_type
-    CommandStorageBackend::kEncryptionOverheadInBytes = 16;
-
 CommandStorageBackend::CommandStorageBackend(
     scoped_refptr<base::SequencedTaskRunner> owning_task_runner,
     const base::FilePath& path,
     SessionType type,
-    const std::vector<uint8_t>& decryption_key,
+    std::optional<os_crypt_async::Encryptor> encryptor,
     base::Clock* clock)
     : RefCountedDeleteOnSequence(owning_task_runner),
       type_(type),
       supplied_path_(path),
-      initial_decryption_key_(decryption_key),
       callback_task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()),
-      clock_(clock ? clock : base::DefaultClock::GetInstance()) {
+      clock_(clock ? clock : base::DefaultClock::GetInstance()),
+      encryptor_(std::move(encryptor)) {
   // This is invoked on the main thread, don't do file access here.
+  // TODO(crbug.com/479420496): Use encryptor_ to encrypt the session file.
 }
 
 // static
-bool CommandStorageBackend::IsValidFile(const base::FilePath& path) {
-  return SessionFileReader::IsHeaderValid(path, {});
+bool CommandStorageBackend::IsValidFileForTest(const base::FilePath& path) {
+  return SessionFileReader::IsHeaderValidForTest(path);
 }
 
 void CommandStorageBackend::AppendCommands(
     std::vector<std::unique_ptr<SessionCommand>> commands,
     bool truncate,
-    base::OnceClosure error_callback,
-    const std::vector<uint8_t>& crypto_key) {
+    base::OnceClosure error_callback) {
+  const base::TimeTicks start_time = base::TimeTicks::Now();
   InitIfNecessary();
 
   // `kInitialStateMarkerCommandId` is reserved for use by this class.
 #if DCHECK_IS_ON()
-  for (const auto& command : commands)
+  for (const auto& command : commands) {
     DCHECK_NE(kInitialStateMarkerCommandId, command->id());
+  }
 #endif
 
   // The consumer must call this with `truncate` set to true to indicate the
@@ -532,19 +472,8 @@ void CommandStorageBackend::AppendCommands(
 
   if (truncate) {
     CloseFile();
-    const bool encrypt = !crypto_key.empty();
-    if (encrypt) {
-      aead_ = std::make_unique<crypto::Aead>(crypto::Aead::AES_256_GCM);
-      crypto_key_ = crypto_key;
-      aead_->Init(base::span(crypto_key_));
-    } else {
-      aead_.reset();
-    }
     commands.push_back(
         std::make_unique<SessionCommand>(kInitialStateMarkerCommandId, 0));
-  } else {
-    // |crypto_key| is only used when |truncate| is true.
-    DCHECK(crypto_key.empty());
   }
 
   // Make sure and check `open_file_`, if opening the file failed `open_file_`
@@ -554,8 +483,12 @@ void CommandStorageBackend::AppendCommands(
   }
 
   // Check `open_file_` again as TruncateOrOpenFile() may fail.
-  if (open_file_ && !AppendCommandsToFile(open_file_->file.get(), commands)) {
-    CloseFile();
+  WriteStatus status = WriteStatus::kUnknown;
+  if (open_file_) {
+    status = AppendCommandsToFile(open_file_->file.get(), commands);
+    if (IsError(status)) {
+      CloseFile();
+    }
   }
 
   if (truncate && open_file_) {
@@ -576,8 +509,25 @@ void CommandStorageBackend::AppendCommands(
     last_or_current_path_with_valid_marker_ = open_file_->path;
   }
 
-  // If `open_file_` is null, there was an error in writing.
-  if (!open_file_ && error_callback) {
+  if (!open_file_ && !IsError(status)) {
+    status = WriteStatus::kFileNotOpened;
+  }
+  DCHECK_NE(status, WriteStatus::kUnknown);
+
+  std::string_view slice = truncate ? "Truncate" : "Append";
+  base::UmaHistogramEnumeration(
+      GetHistogramName("AppendCommands", slice, "Status"), status);
+  base::UmaHistogramTimes(GetHistogramName("AppendCommands", slice, "Duration"),
+                          base::TimeTicks::Now() - start_time);
+  if (open_file_) {
+    int64_t file_size = open_file_->file->GetLength();
+    if (file_size >= 0) {
+      base::UmaHistogramCounts10M(
+          GetHistogramName("AppendCommands", slice, "FileSize"), file_size);
+    }
+  }
+
+  if (IsError(status) && error_callback) {
     callback_task_runner_->PostTask(FROM_HERE, std::move(error_callback));
   }
 }
@@ -588,40 +538,46 @@ bool CommandStorageBackend::TimestampFromPath(const base::FilePath& path,
   auto parts =
       base::SplitString(path.BaseName().value(), kTimestampSeparator,
                         base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-  if (parts.size() != 2u)
+  if (parts.size() != 2u) {
     return false;
+  }
 
   int64_t result = 0u;
-  if (!base::StringToInt64(parts[1], &result))
+  if (!base::StringToInt64(parts[1], &result)) {
     return false;
+  }
 
   timestamp_result =
       base::Time::FromDeltaSinceWindowsEpoch(base::Microseconds(result));
   return true;
 }
 
-// static
-std::set<base::FilePath> CommandStorageBackend::GetSessionFilePaths(
-    const base::FilePath& path,
-    CommandStorageManager::SessionType type) {
-  std::set<base::FilePath> result;
-  for (const auto& info : GetSessionFilesSortedByReverseTimestamp(path, type))
-    result.insert(info.path);
-  return result;
-}
-
 CommandStorageBackend::ReadCommandsResult
 CommandStorageBackend::ReadLastSessionCommands() {
+  const base::TimeTicks start_time = base::TimeTicks::Now();
   InitIfNecessary();
 
+  SessionFileReader::ReadResult read_result;
   if (last_session_info_) {
-    VLOG(1) << "CommandStorageBackend::ReadLastSessionCommands, reading "
-               "commands from: "
-            << last_session_info_->path;
-    return ReadCommandsFromFile(last_session_info_->path,
-                                initial_decryption_key_);
+    VLOG(1) << "CommandStorageBackend::ReadLastSessionCommands, reading from: "
+            << last_session_info_->path << " encrypted: " << is_encrypted();
+    read_result = SessionFileReader::Read(last_session_info_->path);
+  } else {
+    // Not an error, but useful for tracking in histograms.
+    read_result.status = ReadStatus::kNoFile;
   }
-  return {};
+
+  base::UmaHistogramEnumeration(
+      GetHistogramName("ReadLastSessionCommands", "", "Status"),
+      read_result.status);
+  base::UmaHistogramTimes(
+      GetHistogramName("ReadLastSessionCommands", "", "Duration"),
+      base::TimeTicks::Now() - start_time);
+
+  CommandStorageBackend::ReadCommandsResult result;
+  result.commands = std::move(read_result.commands);
+  result.error_reading = IsError(read_result.status);
+  return result;
 }
 
 void CommandStorageBackend::DeleteLastSession() {
@@ -636,9 +592,6 @@ void CommandStorageBackend::DeleteLastSession() {
 }
 
 void CommandStorageBackend::MoveCurrentSessionToLastSession() {
-  // TODO(sky): make this work for kOther.
-  DCHECK_NE(CommandStorageManager::SessionType::kOther, type_);
-
   InitIfNecessary();
   CloseFile();
   DeleteLastSession();
@@ -658,42 +611,46 @@ void CommandStorageBackend::MoveCurrentSessionToLastSession() {
   TruncateOrOpenFile();
 }
 
-// static
 void CommandStorageBackend::ForceAppendCommandsToFailForTesting() {
-  force_append_commands_to_fail_for_testing_ = true;
+  force_write_status_for_testing_ = WriteStatus::kFileWriteError;
 }
 
-bool CommandStorageBackend::AppendCommandsToFile(
+void CommandStorageBackend::ForceAppendCommandsToFailForTesting(
+    WriteStatus status) {
+  force_write_status_for_testing_ = status;
+}
+
+CommandStorageBackend::WriteStatus CommandStorageBackend::AppendCommandsToFile(
     base::File* file,
     const std::vector<std::unique_ptr<sessions::SessionCommand>>& commands) {
-  if (force_append_commands_to_fail_for_testing_) {
-    force_append_commands_to_fail_for_testing_ = false;
-    return false;
+  using WriteStatus = CommandStorageBackend::WriteStatus;
+  if (force_write_status_for_testing_ != WriteStatus::kUnknown) {
+    WriteStatus status = force_write_status_for_testing_;
+    force_write_status_for_testing_ = WriteStatus::kUnknown;
+    return status;
   }
 
   for (auto& command : commands) {
-    if (IsEncrypted()) {
-      if (!AppendEncryptedCommandToFile(file, *(command.get())))
-        return false;
-    } else if (!AppendCommandToFile(file, *(command.get()))) {
-      return false;
+    WriteStatus status = AppendCommandToFile(file, *(command.get()));
+    DCHECK_NE(status, WriteStatus::kUnknown);
+    if (IsError(status)) {
+      return status;
     }
     commands_written_++;
   }
-  if (base::FeatureList::IsEnabled(kFlushAfterAppending)) {
-    file->Flush();
-  }
-  return true;
+  return WriteStatus::kSuccess;
 }
 
 CommandStorageBackend::~CommandStorageBackend() = default;
 
 void CommandStorageBackend::InitIfNecessary() {
-  if (inited_)
+  if (inited_) {
     return;
+  }
 
   inited_ = true;
-  base::CreateDirectory(GetSessionDirName(type_, supplied_path_));
+  base::CreateDirectory(supplied_path_.Append(
+      is_encrypted() ? kEncryptedSessionsDirectory : kSessionsDirectory));
 
   // TODO(sky): this is expensive. See if it can be delayed.
   last_session_info_ = FindLastSessionFile();
@@ -703,20 +660,13 @@ void CommandStorageBackend::InitIfNecessary() {
 }
 
 // static
-base::FilePath CommandStorageBackend::FilePathFromTime(
-    const SessionType type,
-    const base::FilePath& path,
-    base::Time time) {
-  return GetSessionDirName(type, path)
-      .Append(GetSessionFilename(type, path, TimestampToString(time)));
-}
-
-// static
-CommandStorageBackend::ReadCommandsResult
-CommandStorageBackend::ReadCommandsFromFile(
-    const base::FilePath& path,
-    const std::vector<uint8_t>& crypto_key) {
-  return SessionFileReader::Read(path, crypto_key);
+base::FilePath CommandStorageBackend::GetFilePath(const SessionType type,
+                                                  const base::FilePath& path,
+                                                  base::Time time,
+                                                  bool encrypted) {
+  return path
+      .Append(encrypted ? kEncryptedSessionsDirectory : kSessionsDirectory)
+      .Append(GetSessionFilename(type, TimestampToString(time)));
 }
 
 void CommandStorageBackend::CloseFile() {
@@ -756,7 +706,8 @@ void CommandStorageBackend::TruncateOrOpenFile() {
   }
   timestamp_ = new_timestamp;
   std::unique_ptr<OpenFile> open_file = std::make_unique<OpenFile>();
-  open_file->path = FilePathFromTime(type_, supplied_path_, timestamp_);
+  open_file->path =
+      GetFilePath(type_, supplied_path_, timestamp_, is_encrypted());
   open_file->file = OpenAndWriteHeader(open_file->path);
   if (open_file->file) {
     open_file_ = std::move(open_file);
@@ -771,85 +722,31 @@ std::unique_ptr<base::File> CommandStorageBackend::OpenAndWriteHeader(
       path, base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE |
                 base::File::FLAG_WIN_EXCLUSIVE_WRITE |
                 base::File::FLAG_WIN_EXCLUSIVE_READ);
-  if (!file->IsValid())
+  if (!file->IsValid()) {
     return nullptr;
+  }
   FileHeader header;
   header.signature = kFileSignature;
-  header.version =
-      IsEncrypted() ? kEncryptedFileVersionWithMarker : kFileVersionWithMarker;
+  header.version = kFileVersionWithMarker;
   if (!file->WriteAtCurrentPosAndCheck(base::byte_span_from_ref(header))) {
     return nullptr;
   }
   return file;
 }
 
-bool CommandStorageBackend::AppendCommandToFile(
+CommandStorageBackend::WriteStatus CommandStorageBackend::AppendCommandToFile(
     base::File* file,
     const sessions::SessionCommand& command) {
-  const size_type total_size = command.GetSerializedSize();
-  if (!file->WriteAtCurrentPosAndCheck(base::byte_span_from_ref(total_size))) {
+  using WriteStatus = CommandStorageBackend::WriteStatus;
+  const std::vector<uint8_t> serialized = command.Serialize();
+  if (serialized.empty()) {
+    return WriteStatus::kSerializationError;
+  }
+  if (!file->WriteAtCurrentPosAndCheck(serialized)) {
     DVLOG(1) << "error writing";
-    return false;
+    return WriteStatus::kFileWriteError;
   }
-  id_type command_id = command.id();
-  if (!file->WriteAtCurrentPosAndCheck(base::byte_span_from_ref(command_id))) {
-    DVLOG(1) << "error writing";
-    return false;
-  }
-  const size_type content_size = total_size - sizeof(id_type);
-  if (content_size == 0) {
-    return true;
-  }
-  if (!file->WriteAtCurrentPos(command.contents().first(content_size))) {
-    DVLOG(1) << "error writing";
-    return false;
-  }
-  return true;
-}
-
-bool CommandStorageBackend::AppendEncryptedCommandToFile(
-    base::File* file,
-    const sessions::SessionCommand& command) {
-  // This means the nonce overflowed and we're reusing a nonce. This class
-  // should never write enough commands to trigger this, so assume we should
-  // stop.
-  if (commands_written_ < 0) {
-    return false;
-  }
-  DCHECK(IsEncrypted());
-  uint8_t nonce[kNonceLength] = {};
-  base::span(nonce).first<sizeof(commands_written_)>().copy_from(
-      base::byte_span_from_ref(commands_written_));
-
-  // Encryption adds overhead, resulting in a slight reduction in the available
-  // space for each command. Chop any contents beyond the available size.
-  const size_type command_size = std::min(
-      command.size(),
-      static_cast<size_type>(std::numeric_limits<size_type>::max() -
-                             sizeof(id_type) - kEncryptionOverheadInBytes));
-  std::vector<uint8_t> command_and_id(command_size + sizeof(id_type));
-  const id_type command_id = command.id();
-  auto [id_span, payload_span] =
-      base::span(command_and_id).split_at(sizeof(id_type));
-  id_span.copy_from(base::byte_span_from_ref(command_id));
-  payload_span.copy_from(command.contents().first(command_size));
-
-  std::vector<uint8_t> cipher_text =
-      aead_->Seal(command_and_id, nonce, base::span<const uint8_t>());
-  DCHECK_LE(cipher_text.size(), std::numeric_limits<size_type>::max());
-  const size_type command_and_id_size =
-      static_cast<size_type>(cipher_text.size());
-
-  if (!file->WriteAtCurrentPosAndCheck(
-          base::byte_span_from_ref(command_and_id_size))) {
-    DVLOG(1) << "error writing";
-    return false;
-  }
-  if (!file->WriteAtCurrentPosAndCheck(base::as_byte_span(cipher_text))) {
-    DVLOG(1) << "error writing";
-    return false;
-  }
-  return true;
+  return WriteStatus::kSuccess;
 }
 
 std::optional<CommandStorageBackend::SessionInfo>
@@ -858,17 +755,10 @@ CommandStorageBackend::FindLastSessionFile() const {
   // at startup, before a file has been opened for writing.
   DCHECK(!open_file_);
   for (const SessionInfo& session : GetSessionFilesSortedByReverseTimestamp()) {
-    if (CanUseFileForLastSession(session.path))
+    if (CanUseFileForLastSession(session.path)) {
       return session;
+    }
   }
-
-  // If no last session was found, use the legacy session if present.
-  // The legacy session is considered to have a timestamp of 0, before any
-  // new session.
-  base::FilePath legacy_session =
-      GetLegacySessionPath(type_, supplied_path_, true);
-  if (base::PathExists(legacy_session))
-    return SessionInfo{legacy_session, base::Time()};
   return std::nullopt;
 }
 
@@ -877,25 +767,9 @@ void CommandStorageBackend::DeleteLastSessionFiles() const {
   // is called at startup, before a file has been opened for writing.
   DCHECK(!open_file_);
   for (const SessionInfo& session : GetSessionFilesSortedByReverseTimestamp()) {
-    if (!last_session_info_ || session.path != last_session_info_->path)
+    if (!last_session_info_ || session.path != last_session_info_->path) {
       base::DeleteFile(session.path);
-  }
-
-  // Delete legacy session files, unless they are being used.
-  const base::FilePath legacy_current_session_path =
-      GetLegacySessionPath(type_, supplied_path_, true);
-  if (last_session_info_ &&
-      legacy_current_session_path != last_session_info_->path &&
-      base::PathExists(legacy_current_session_path)) {
-    base::DeleteFile(legacy_current_session_path);
-  }
-
-  // `kOther` does not differentiate between last and current.
-  if (type_ != CommandStorageManager::kOther) {
-    const base::FilePath legacy_last_session_path =
-        GetLegacySessionPath(type_, supplied_path_, false);
-    if (base::PathExists(legacy_last_session_path))
-      base::DeleteFile(legacy_last_session_path);
+    }
   }
 }
 
@@ -903,16 +777,19 @@ void CommandStorageBackend::DeleteLastSessionFiles() const {
 std::vector<CommandStorageBackend::SessionInfo>
 CommandStorageBackend::GetSessionFilesSortedByReverseTimestamp(
     const base::FilePath& path,
-    CommandStorageManager::SessionType type) {
+    SessionType type,
+    bool encrypted) {
   std::vector<SessionInfo> sessions;
   base::FileEnumerator file_enum(
-      GetSessionDirName(type, path), false, base::FileEnumerator::FILES,
-      GetSessionFilename(type, path, FILE_PATH_LITERAL("*")));
+      path.Append(encrypted ? kEncryptedSessionsDirectory : kSessionsDirectory),
+      false, base::FileEnumerator::FILES,
+      GetSessionFilename(type, FILE_PATH_LITERAL("*")));
   for (base::FilePath name = file_enum.Next(); !name.empty();
        name = file_enum.Next()) {
     base::Time file_time;
-    if (TimestampFromPath(name, file_time))
+    if (TimestampFromPath(name, file_time)) {
       sessions.push_back(SessionInfo{name, file_time});
+    }
   }
   std::sort(sessions.begin(), sessions.end(), CompareSessionInfoTimestamps);
   return sessions;
@@ -921,8 +798,25 @@ CommandStorageBackend::GetSessionFilesSortedByReverseTimestamp(
 bool CommandStorageBackend::CanUseFileForLastSession(
     const base::FilePath& path) const {
   const SessionFileReader::MarkerStatus status =
-      SessionFileReader::GetMarkerStatus(path, initial_decryption_key_);
+      SessionFileReader::GetMarkerStatus(path);
   return !status.supports_marker || status.has_marker;
+}
+
+std::string CommandStorageBackend::GetHistogramNameForTesting(
+    CommandStorageManager::SessionType type,
+    bool encrypted,
+    std::string_view operation,
+    std::string_view slice,
+    std::string_view metric) {
+  return sessions::GetHistogramName(type, encrypted, operation, slice, metric);
+}
+
+std::string CommandStorageBackend::GetHistogramName(
+    std::string_view operation,
+    std::string_view slice,
+    std::string_view metric) const {
+  return sessions::GetHistogramName(type_, is_encrypted(), operation, slice,
+                                    metric);
 }
 
 }  // namespace sessions

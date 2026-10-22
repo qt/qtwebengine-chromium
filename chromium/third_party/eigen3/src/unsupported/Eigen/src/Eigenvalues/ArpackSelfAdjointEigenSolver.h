@@ -27,8 +27,6 @@ struct OP;
 template <typename MatrixType, typename MatrixSolver = SimplicialLLT<MatrixType>, bool BisSPD = false>
 class ArpackGeneralizedSelfAdjointEigenSolver {
  public:
-  // typedef typename MatrixSolver::MatrixType MatrixType;
-
   /** \brief Scalar type for matrices of type \p MatrixType. */
   typedef typename MatrixType::Scalar Scalar;
   typedef typename MatrixType::Index Index;
@@ -423,15 +421,6 @@ ArpackGeneralizedSelfAdjointEigenSolver<MatrixType, MatrixSolver, BisSPD>::compu
   int info = 0;
 
   Scalar scale = 1.0;
-  // if (!isBempty)
-  //{
-  // Scalar scale = B.norm() / std::sqrt(n);
-  // scale = std::pow(2, std::floor(std::log(scale+1)));
-  ////M /= scale;
-  // for (size_t i=0; i<(size_t)B.outerSize(); i++)
-  //     for (typename MatrixType::InnerIterator it(B, i); it; ++it)
-  //         it.valueRef() /= scale;
-  // }
 
   MatrixSolver OP;
   if (mode == 1 || mode == 2) {

@@ -82,7 +82,7 @@ export class ChildTargetManager extends SDKModel<EventTypes> implements Protocol
 
   override dispose(): void {
     for (const sessionId of this.#childTargetsBySessionId.keys()) {
-      this.detachedFromTarget({sessionId, targetId: undefined});
+      this.detachedFromTarget({sessionId});
     }
   }
 

@@ -3,12 +3,11 @@
 # found in the LICENSE file.
 """Model objects for histograms.xml contents."""
 
-import os
 import re
-import sys
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
-import models
+import setup_modules  # pylint: disable=unused-import
+
+import chromium_src.tools.metrics.common.models as models
 
 _OWNER_TYPE = models.TextNodeType('owner', single_line=True)
 # If present, it's intentional that the histogram is currently expired and
@@ -46,7 +45,7 @@ _INT_TYPE = models.ObjectNodeType(
         ('label', str, None),
     ],
     required_attributes=['value'],
-    text_attribute=True,
+    keep_inner_text=True,
     single_line=True,
 )
 
@@ -101,7 +100,7 @@ _IMPROVEMENT_TYPE = models.ObjectNodeType(
         ),
     ],
     required_attributes=['direction'],
-    text_attribute=False,
+    keep_inner_text=False,
     single_line=True,
 )
 

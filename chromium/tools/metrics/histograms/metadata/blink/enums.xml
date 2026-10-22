@@ -4847,7 +4847,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4376" label="EligibleForImageLoadingPrioritizationFix"/>
   <int value="4377" label="ExecutedNonTrivialJavaScriptURL"/>
   <int value="4378" label="StorageBucketsOpen"/>
-  <int value="4379" label="PerformanceEntryBufferSwaps"/>
+  <int value="4379" label="OBSOLETE_PerformanceEntryBufferSwaps"/>
   <int value="4380" label="ClearPerformanceEntries"/>
   <int value="4381"
       label="ViewportDependentLazyLoadedImageWithoutSizesAttribute"/>
@@ -5814,11 +5814,11 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5219" label="SrcSetUsedHigherDensityImageFromCache"/>
   <int value="5220" label="HTMLElementWritingSuggestions"/>
   <int value="5221" label="CSSPseudoOpen"/>
-  <int value="5222" label="AdScriptInStackOnGeoLocation"/>
-  <int value="5223" label="AdScriptInStackOnClipboardRead"/>
-  <int value="5224" label="AdScriptInStackOnBluetooth"/>
-  <int value="5225" label="AdScriptInStackOnMicrophoneRead"/>
-  <int value="5226" label="AdScriptInStackOnCameraRead"/>
+  <int value="5222" label="OBSOLETE_AdScriptInStackOnGeoLocation"/>
+  <int value="5223" label="OBSOLETE_AdScriptInStackOnClipboardRead"/>
+  <int value="5224" label="OBSOLETE_AdScriptInStackOnBluetooth"/>
+  <int value="5225" label="OBSOLETE_AdScriptInStackOnMicrophoneRead"/>
+  <int value="5226" label="OBSOLETE_AdScriptInStackOnCameraRead"/>
   <int value="5227" label="ClipboardCustomFormatRead"/>
   <int value="5228" label="ClipboardCustomFormatWrite"/>
   <int value="5229" label="ClipboardSvgRead"/>
@@ -5935,8 +5935,9 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5323" label="ScrollButtonPseudoElement"/>
   <int value="5324" label="ScrollMarkerPseudoElement"/>
   <int value="5325" label="OBSOLETE_V8AITranslatorFactory_Availability_Method"/>
-  <int value="5326" label="GeolocationWouldSucceedWhenAdScriptInStack"/>
-  <int value="5327" label="AdScriptInStackOnWatchGeoLocation"/>
+  <int value="5326"
+      label="OBSOLETE_GeolocationWouldSucceedWhenAdScriptInStack"/>
+  <int value="5327" label="OBSOLETE_AdScriptInStackOnWatchGeoLocation"/>
   <int value="5328" label="DeviceBoundSessionRegistered"/>
   <int value="5329"
       label="OBSOLETE_V8AILanguageDetectorFactory_Availability_Method"/>
@@ -5991,7 +5992,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5377" label="DOMWindowOpenPopup"/>
   <int value="5378" label="FencedFrameDisableUntrustedNetwork"/>
   <int value="5379" label="FencedFrameNotifyEvent"/>
-  <int value="5380" label="SharedStorageGetInFencedFrame"/>
+  <int value="5380" label="OBSOLETE_SharedStorageGetInFencedFrame"/>
   <int value="5381" label="OBSOLETE_Translator_MeasureInputUsage_Method"/>
   <int value="5382" label="OBSOLETE_Translator_InputQuota_AttributeGetter"/>
   <int value="5383" label="AriaNotify"/>
@@ -6167,18 +6168,18 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5546" label="InputParsedParentSelect"/>
   <int value="5547" label="InputParsedAncestorSelect"/>
   <int value="5548" label="CSSSelectorPseudoHasSlotted"/>
-  <int value="5549" label="SelectMultipleShowPopup"/>
+  <int value="5549" label="OBSOLETE_SelectMultipleShowPopup"/>
   <int value="5550" label="SharedWorkerExtendedLifetimeFeatureEnabled"/>
   <int value="5551" label="SharedWorkerExtendedLifetimeIsTrue"/>
-  <int value="5552" label="EditContextTextFormatUpdateAddListener"/>
-  <int value="5553" label="EditContextTextFormatUpdateFireEvent"/>
+  <int value="5552" label="OBSOLETE_EditContextTextFormatUpdateAddListener"/>
+  <int value="5553" label="OBSOLETE_EditContextTextFormatUpdateFireEvent"/>
   <int value="5554"
-      label="EditContextTextFormatUpdateTextFormatThicknessOrStyleNotNone"/>
+      label="OBSOLETE_EditContextTextFormatUpdateTextFormatThicknessOrStyleNotNone"/>
   <int value="5555" label="C2PAManifest"/>
   <int value="5556" label="LanguageModel_Append"/>
   <int value="5557" label="IntegrityPolicyInServiceWorkerResponse"/>
-  <int value="5558" label="EditContextTextFormatUnderlineStyle"/>
-  <int value="5559" label="EditContextTextFormatUnderlineThickness"/>
+  <int value="5558" label="OBSOLETE_EditContextTextFormatUnderlineStyle"/>
+  <int value="5559" label="OBSOLETE_EditContextTextFormatUnderlineThickness"/>
   <int value="5560" label="Proofreader_IncludeCorrectionTypes"/>
   <int value="5561" label="Proofreader_IncludeCorrectionExplanations"/>
   <int value="5562" label="Proofreader_ExpectedInputLanguages"/>
@@ -6243,10 +6244,10 @@ Called by update_use_counter_feature_enum.py.-->
       label="LocalNetworkAccessNonSecureContextAllowedDeprecationTrial"/>
   <int value="5618" label="CSPUrlHashes"/>
   <int value="5619" label="CSPEvalHashes"/>
-  <int value="5620" label="WebAppManifestNameLocalized"/>
-  <int value="5621" label="WebAppManifestShortNameLocalized"/>
-  <int value="5622" label="WebAppManifestDescriptionLocalized"/>
-  <int value="5623" label="WebAppManifestIconsLocalized"/>
+  <int value="5620" label="OBSOLETE_WebAppManifestNameLocalized"/>
+  <int value="5621" label="OBSOLETE_WebAppManifestShortNameLocalized"/>
+  <int value="5622" label="OBSOLETE_WebAppManifestDescriptionLocalized"/>
+  <int value="5623" label="OBSOLETE_WebAppManifestIconsLocalized"/>
   <int value="5624" label="HTMLControlledFrameElement"/>
   <int value="5625" label="SlowDeserialization"/>
   <int value="5626" label="SharedWorkerStartOnAndroid"/>
@@ -6282,7 +6283,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5656" label="MulticastControllerJoinGroupFunction"/>
   <int value="5657" label="MulticastControllerLeaveGroupFunction"/>
   <int value="5658" label="MulticastControllerJoinedGroupsAttribute"/>
-  <int value="5659" label="ContainerNameQueryFailedTreeScope"/>
+  <int value="5659" label="OBSOLETE_ContainerNameQueryFailedTreeScope"/>
   <int value="5660" label="LocalNetworkAccessWebSocketResourceNotKnownPrivate"/>
   <int value="5661" label="CSSPseudoElementUsesImplicitAnchor"/>
   <int value="5662" label="LineClampByLinesOverflows"/>
@@ -6357,7 +6358,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5727" label="V8Origin_FromURL_Method"/>
   <int value="5728" label="V8Origin_Parse_Method"/>
   <int value="5729" label="ExtendedTextMetrics"/>
-  <int value="5730" label="UseCssSizingProperties"/>
+  <int value="5730" label="OBSOLETE_UseCssSizingProperties"/>
   <int value="5731" label="SharedStorageAPIAll"/>
   <int value="5732" label="GamepadRawInputChangeEventListener"/>
   <int value="5733" label="LetterSpacingWithMargin"/>
@@ -6423,6 +6424,91 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5786" label="PrerenderActivationByFormSubmission"/>
   <int value="5787" label="LinkRelModulePreloadStyle"/>
   <int value="5788" label="AudioContextPlaybackStats"/>
+  <int value="5789" label="ParseFromStringXML"/>
+  <int value="5790" label="NonParentOriginInitiatedNavigationOfSubframe"/>
+  <int value="5791" label="ModelContextRegisterTool"/>
+  <int value="5792" label="ModelContextRegisterDeclarativeTool"/>
+  <int value="5793" label="LanguageModel_ContextUsage"/>
+  <int value="5794" label="LanguageModel_ContextWindow"/>
+  <int value="5795" label="LanguageModel_MeasureContextUsage"/>
+  <int value="5796" label="V8WindowClient_Navigate_Method"/>
+  <int value="5797" label="LanguageModel_OnQuotaOverflow"/>
+  <int value="5798" label="LanguageModel_OnContextOverflow"/>
+  <int value="5799" label="ModelContextExecuteTool"/>
+  <int value="5800" label="ModelContextExecuteDeclarativeTool"/>
+  <int value="5801" label="ModelContextExecuteDeclarativeAutosubmit"/>
+  <int value="5802" label="Prerender2CrossOriginIframes"/>
+  <int value="5803" label="HTMLGeolocationElement"/>
+  <int value="5804" label="HTMLInstallElement"/>
+  <int value="5805" label="HTMLUserMediaElement"/>
+  <int value="5806" label="AutofillEvent"/>
+  <int value="5807" label="WebAppManifestMigrateFrom"/>
+  <int value="5808" label="WebAppManifestMigrateTo"/>
+  <int value="5809" label="LongAnimationFrameTimingStyleDuration"/>
+  <int value="5810" label="LongAnimationFrameTimingLayoutDuration"/>
+  <int value="5811" label="PerformanceScriptTimingForcedStyleDuration"/>
+  <int value="5812" label="PerformanceScriptTimingForcedLayoutDuration"/>
+  <int value="5813"
+      label="PaymentRequestGetSecurePaymentConfirmationCapabilities"/>
+  <int value="5814" label="OpaqueRange"/>
+  <int value="5815" label="HTMLButtonElementTypeChangedWhileConnected"/>
+  <int value="5816" label="HTMLInputElementTypeChangedWhileConnected"/>
+  <int value="5817" label="HTMLButtonElementTypeChangedWhileDisconnected"/>
+  <int value="5818" label="HTMLInputElementTypeChangedWhileDisconnected"/>
+  <int value="5819" label="SynthesizedMiddleClickAnchor"/>
+  <int value="5820" label="SynthesizedMiddleClickArea"/>
+  <int value="5821" label="SynthesizedMiddleClickSVGAnchor"/>
+  <int value="5822" label="WebAuthenticationCspDisallowsRpId"/>
+  <int value="5823" label="HistoryGoBackWouldSkipAd"/>
+  <int value="5824" label="HistoryGoForwardWouldSkipAd"/>
+  <int value="5825"
+      label="HistoryGoBackWouldNotSkipAdDueToSameOriginExclusion"/>
+  <int value="5826"
+      label="HistoryGoForwardWouldNotSkipAdDueToSameOriginExclusion"/>
+  <int value="5827" label="SvgFilterPaintedOnLocalFrame"/>
+  <int value="5828" label="SvgFilterPaintedOnRemoteFrame"/>
+  <int value="5829" label="SvgFilterPaintedOnWebPlugin"/>
+  <int value="5830" label="SubtleCryptoEncapsulateKey"/>
+  <int value="5831" label="SubtleCryptoEncapsulateBits"/>
+  <int value="5832" label="SubtleCryptoDecapsulateKey"/>
+  <int value="5833" label="SubtleCryptoDecapsulateBits"/>
+  <int value="5834" label="CSSDiscardedVarWithValidArgumentGrammar"/>
+  <int value="5835" label="CSSDiscardedAttrWithValidArgumentGrammar"/>
+  <int value="5836" label="CSSDiscardedEnvWithValidArgumentGrammar"/>
+  <int value="5837" label="CSSDiscardedIfWithValidArgumentGrammar"/>
+  <int value="5838" label="HttpOnlyCookieShadowedByNonHttpOnlyPartitioned"/>
+  <int value="5839" label="XRMeshDetection"/>
+  <int value="5840" label="XRFrameDetectedMeshes"/>
+  <int value="5841" label="CSSLightDarkImage"/>
+  <int value="5842" label="CSSTimelineLookupFoundNothing"/>
+  <int value="5843" label="CSSTimelineScopeAttachedMultiple"/>
+  <int value="5844" label="SVGForeignObjectInImage"/>
+  <int value="5845" label="SVGForeignObjectDrawnIntoCanvas"/>
+  <int value="5846" label="HTMLPatching"/>
+  <int value="5847" label="HTMLStreaming"/>
+  <int value="5848" label="HTMLPositionalSetters"/>
+  <int value="5849" label="LazyLoadVideoLoadingAttributeLazy"/>
+  <int value="5850" label="LazyLoadVideoLoadingAttributeEager"/>
+  <int value="5851" label="LazyLoadAudioLoadingAttributeLazy"/>
+  <int value="5852" label="LazyLoadAudioLoadingAttributeEager"/>
+  <int value="5853" label="ResourceTimingWorkerMatchedSourceType"/>
+  <int value="5854" label="ResourceTimingWorkerFinalSourceType"/>
+  <int value="5855" label="NoVarySearchWithBooleanParams"/>
+  <int value="5856" label="DataUrlWorkerBroadcastChannel"/>
+  <int value="5857" label="NoscriptMarkupWithScriptingDisabledTemplate"/>
+  <int value="5858" label="NoscriptMarkupWithScriptingDisabledIframeSandbox"/>
+  <int value="5859" label="NoscriptMarkupWithScriptingDisabledXHR"/>
+  <int value="5860" label="NoscriptMarkupWithScriptingDisabledDOMParser"/>
+  <int value="5861"
+      label="NoscriptMarkupWithScriptingDisabledNoBrowsingContext"/>
+  <int value="5862" label="SingleAxisScroller"/>
+  <int value="5863" label="V8HoleyArrayReadthrough"/>
+  <int value="5864" label="LanguageModel_Create_Temperature"/>
+  <int value="5865" label="LanguageModel_Create_TopK"/>
+  <int value="5866" label="HTMLInCanvas"/>
+  <int value="5867" label="ConnectionAllowlist"/>
+  <int value="5868" label="StyleTypeModule"/>
+  <int value="5869" label="ShadowRootAdoptedStyleSheets"/>
 </enum>
 
 <!-- LINT.ThenChange(//third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom:WebFeature) -->
@@ -6619,6 +6705,32 @@ Called by update_permissions_policy_enum.py.-->
 </enum>
 
 <!-- LINT.ThenChange(//content/browser/webid/idp_network_request_manager.h:AccountsResponseInvalidReason) -->
+
+<!-- LINT.IfChange(FedCmAmbientClick) -->
+
+<enum name="FedCmAmbientClick">
+  <int value="0" label="SignIn Chip"/>
+  <int value="1" label="SignUp Chip"/>
+  <int value="2" label="SignIn Anchored message"/>
+  <int value="3" label="SignUp Anchored message"/>
+  <int value="4" label="SignIn Icon"/>
+  <int value="5" label="SignUp Icon"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/ui/webid/identity_ui_utils.h:AmbientClick) -->
+
+<!-- LINT.IfChange(FedCmAmbientImpression) -->
+
+<enum name="FedCmAmbientImpression">
+  <int value="0" label="SignIn Chip"/>
+  <int value="1" label="SignUp Chip"/>
+  <int value="2" label="SignIn Anchored message"/>
+  <int value="3" label="SignUp Anchored message"/>
+  <int value="4" label="SignIn Icon"/>
+  <int value="5" label="SignUp Icon"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/ui/webid/identity_ui_utils.h:AmbientImpression) -->
 
 <!-- LINT.IfChange(FedCmCancelReason) -->
 
@@ -6954,18 +7066,18 @@ Called by update_permissions_policy_enum.py.-->
   <int value="6" label="ManifestHttpNotFound"/>
   <int value="7" label="ManifestNoResponse"/>
   <int value="8" label="ManifestInvalidResponse"/>
-  <int value="9" label="ClientMetadataHttpNotFound"/>
-  <int value="10" label="ClientMetadataNoResponse"/>
-  <int value="11" label="ClientMetadataInvalidResponse"/>
+  <int value="9" label="(Obsolete) ClientMetadataHttpNotFound"/>
+  <int value="10" label="(Obsolete) ClientMetadataNoResponse"/>
+  <int value="11" label="(Obsolete) ClientMetadataInvalidResponse"/>
   <int value="12" label="AccountsHttpNotFound"/>
   <int value="13" label="AccountsNoResponse"/>
   <int value="14" label="AccountsInvalidResponse"/>
   <int value="15" label="IdTokenHttpNotFound"/>
   <int value="16" label="IdTokenNoResponse"/>
   <int value="17" label="IdTokenInvalidResponse"/>
-  <int value="18" label="IdTokenInvalidRequest"/>
-  <int value="19" label="ClientMetadataMissingPrivacyPolicyUrl"/>
-  <int value="20" label="ThirdPartyCookiesBlocked"/>
+  <int value="18" label="(Obsolete) IdTokenInvalidRequest"/>
+  <int value="19" label="(Obsolete) ClientMetadataMissingPrivacyPolicyUrl"/>
+  <int value="20" label="(Obsolete) ThirdPartyCookiesBlocked"/>
   <int value="21" label="DisabledInSettings"/>
   <int value="22" label="DisabledInFlags"/>
   <int value="23" label="ManifestListHttpNotFound"/>
@@ -6974,7 +7086,7 @@ Called by update_permissions_policy_enum.py.-->
   <int value="26" label="ManifestNotInManifestList"/>
   <int value="27" label="ManifestListTooBig"/>
   <int value="28" label="DisabledEmbargo"/>
-  <int value="29" label="UserInterfaceTimedOut"/>
+  <int value="29" label="(Obsolete) UserInterfaceTimedOut"/>
   <int value="30" label="RpPageNotVisible"/>
   <int value="31" label="ShouldEmbargo"/>
   <int value="32" label="NotSignedInWithIdp"/>
@@ -6993,7 +7105,7 @@ Called by update_permissions_policy_enum.py.-->
   <int value="45" label="ContinuationPopupClosedByUser"/>
   <int value="46" label="SuccessUsingIdentityProviderResolve"/>
   <int value="47" label="ContinuationPopupClosedByIdentityProviderClose"/>
-  <int value="48" label="InvalidFieldsSpecified"/>
+  <int value="48" label="(Obsolete) InvalidFieldsSpecified"/>
   <int value="49" label="RpOriginIsOpaque"/>
   <int value="50" label="ConfigNotMatchingType"/>
   <int value="51" label="LoginPopupClosedWithoutSignin"/>
@@ -7247,6 +7359,17 @@ Called by update_permissions_policy_enum.py.-->
              was not retrieved."/>
 </enum>
 
+<!-- LINT.IfChange(InlineScriptCacheFetchResult) -->
+
+<enum name="InlineScriptCacheFetchResult">
+  <int value="0" label="Fetch succeeded with non-empty cache"/>
+  <int value="1" label="Fetch succeeded with empty cache"/>
+  <int value="2" label="Fetch timed out"/>
+  <int value="3" label="Fetch skipped because script is too small"/>
+</enum>
+
+<!-- LINT.ThenChange(//third_party/blink/renderer/platform/loader/fetch/code_cache_host.cc:InlineScriptCacheFetchResult) -->
+
 <enum name="InnerHTMLFastPathParserParseResult">
   <int value="0" label="Content was successfully parsed"/>
   <int value="1" label="Could not use fast path because tracing is enabled"/>
@@ -7282,11 +7405,15 @@ Called by update_permissions_policy_enum.py.-->
       label="(Obsolete) Could not use fast path because
              Document::IsDirAttributeDirty() is true"/>
   <int value="24" label="Failed because an attribute name starts with 'on'."/>
-  <int value="25" label="Failed because a deep hierarchy was encountered."/>
-  <int value="26" label="Failed because a long text string was encountered."/>
-  <int value="27"
-      label="Could not use fast path because Document::IsDirAttributeDirty()
-             is true and css-pseudo-dir is enabled."/>
+  <int value="25"
+      label="(Obsolete due to erroneous use with two different errors.)"/>
+  <int value="26"
+      label="(Obsolete) Could not use fast path because
+             Document::IsDirAttributeDirty() is true and css-pseudo-dir is
+             enabled."/>
+  <int value="27" label="(Deliberately skipped due to C++/enums.xml mismatch)"/>
+  <int value="28" label="Failed because a deep hierarchy was encountered."/>
+  <int value="29" label="Failed because a long text string was encountered."/>
 </enum>
 
 <enum name="InnerHTMLFastPathParserUnsupportedTagType">
@@ -8268,6 +8395,13 @@ Called by update_use_counter_css.py.-->
   <int value="931" label="timeline-trigger-activation-range-end"/>
   <int value="932" label="timeline-trigger-activation-range"/>
   <int value="933" label="rule-overlap"/>
+  <int value="934" label="column-rule-inset-start"/>
+  <int value="935" label="column-rule-inset-end"/>
+  <int value="936" label="row-rule-inset-start"/>
+  <int value="937" label="row-rule-inset-end"/>
+  <int value="938" label="rule-inset-start"/>
+  <int value="939" label="rule-inset-end"/>
+  <int value="940" label="path-length"/>
 </enum>
 
 <!-- LINT.ThenChange(//third_party/blink/public/mojom/use_counter/metrics/css_property_id.mojom:CSSSampleId) -->
@@ -8294,7 +8428,7 @@ Called by update_use_counter_css.py.-->
   <int value="5" label="Invalid display property"/>
 </enum>
 
-<!-- LINT.ThenChange(//third_party/blink/renderer/core/html/html_permission_element.h:InvalidStyleReason) -->
+<!-- LINT.ThenChange(//third_party/blink/renderer/core/html/html_capability_element_base.h:InvalidStyleReason) -->
 
 <!-- LINT.IfChange(PermissionElementUserInteractionDeniedReason) -->
 
@@ -8311,9 +8445,10 @@ Called by update_use_counter_css.py.-->
   <int value="7" label="Intersection visiblity out of viewport or clipped"/>
   <int value="8" label="Intersection visiblity occluded or distorted"/>
   <int value="9" label="An attribute changed"/>
+  <int value="10" label="Web app installation data error"/>
 </enum>
 
-<!-- LINT.ThenChange(//third_party/blink/renderer/core/html/html_permission_element.h:UserInteractionDeniedReason) -->
+<!-- LINT.ThenChange(//third_party/blink/renderer/core/html/html_capability_element_base.h:UserInteractionDeniedReason) -->
 
 <enum name="RaceTaskPriority">
   <int value="0" label="LowerPriority"/>
@@ -8359,21 +8494,6 @@ Called by update_use_counter_css.py.-->
 </enum>
 
 <!-- LINT.ThenChange(//third_party/blink/renderer/core/loader/shared_dictionary_hint_type.h:SharedDictionaryHintType) -->
-
-<!-- LINT.IfChange(SharedStorageGetInFencedFrameOutcome) -->
-
-<enum name="SharedStorageGetInFencedFrameOutcome">
-  <int value="0" label="Success"/>
-  <int value="1" label="Called from an insecure context"/>
-  <int value="2" label="Fenced storage read is disabled"/>
-  <int value="3" label="Untrusted network not disabled"/>
-  <int value="4" label="Shared Storage key not found"/>
-  <int value="5" label="Error calling get()"/>
-  <int value="6" label="Unpartitioned data access feature disabled"/>
-  <int value="7" label="Unpartitioned data access permission disabled"/>
-</enum>
-
-<!-- LINT.ThenChange(//third_party/blink/public/common/fenced_frame/fenced_frame_utils.h:SharedStorageGetInFencedFrameOutcome) -->
 
 <enum name="SmsParsingStatus">
   <int value="0" label="Parsed"/>
@@ -8602,11 +8722,11 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="198" label="DynamicRange"/>
   <int value="199" label="DisplayMode"/>
   <int value="200" label="Canvas"/>
-  <int value="201" label="Canvas2D"/>
-  <int value="202" label="Canvas2DAlpha"/>
-  <int value="203" label="Canvas2DColorManagement"/>
-  <int value="204" label="Canvas2DDesynchronized"/>
-  <int value="205" label="Canvas2DWillreadfrequently"/>
+  <int value="201" label="Canvas_2d"/>
+  <int value="202" label="Canvas_2dAlpha"/>
+  <int value="203" label="Canvas_2dColorManagement"/>
+  <int value="204" label="Canvas_2dDesynchronized"/>
+  <int value="205" label="Canvas_2dWillreadfrequently"/>
   <int value="206" label="Ch"/>
   <int value="207" label="Rch"/>
   <int value="208" label="RubyAlign"/>
@@ -8699,7 +8819,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="295" label="ScrollMarkers"/>
   <int value="296" label="PopoverHint"/>
   <int value="297" label="RegexpEscape"/>
-  <int value="298" label="Float16Array"/>
+  <int value="298" label="Float16array"/>
   <int value="299" label="AppFileHandlers"/>
   <int value="300" label="AppProtocolHandlers"/>
   <int value="301" label="Badging"/>
@@ -8735,7 +8855,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="331" label="TextUnderlineOffset"/>
   <int value="332" label="WindowManagement"/>
   <int value="333" label="Requestclose"/>
-  <int value="334" label="Uint8ArrayBase64Hex"/>
+  <int value="334" label="Uint8arrayBase64Hex"/>
   <int value="335" label="LineBreak"/>
   <int value="336" label="OverflowClip"/>
   <int value="337" label="LightDark"/>
@@ -8814,18 +8934,28 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="410" label="Reporting"/>
   <int value="411" label="FontLanguageOverride"/>
   <int value="412" label="Webnn"/>
-  <int value="413" label="TextDetect"/>
+  <int value="413" label="TextDetection"/>
   <int value="414" label="TextJustify"/>
   <int value="415" label="Summarizer"/>
-  <int value="416" label="TranslationApi"/>
-  <int value="417" label="DRAFT_MetaTextScale"/>
+  <int value="416" label="OBSOLETE_TranslationApi"/>
+  <int value="417" label="MetaTextScale"/>
   <int value="418" label="Jpegxl"/>
   <int value="419" label="PartitionedCookies"/>
-  <int value="420" label="Prompt"/>
+  <int value="420" label="LanguageModel"/>
   <int value="421" label="Proofreader"/>
   <int value="422" label="Rewriter"/>
   <int value="423" label="Writer"/>
   <int value="424" label="DRAFT_InstallElement"/>
+  <int value="425" label="LanguageDetector"/>
+  <int value="426" label="Translator"/>
+  <int value="427" label="NavigatorModelcontext"/>
+  <int value="428" label="LoadingLazyMedia"/>
+  <int value="429" label="ManifestLocalization"/>
+  <int value="430" label="ContrastColor"/>
+  <int value="431" label="DRAFT_WebAppMigration"/>
+  <int value="432" label="DeclarativeWebmcp"/>
+  <int value="433" label="Webgl"/>
+  <int value="434" label="Webgl2"/>
 </enum>
 
 <!-- LINT.ThenChange(//third_party/blink/public/mojom/use_counter/metrics/webdx_feature.mojom:WebDXFeature) -->
@@ -8839,6 +8969,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="5" label="Success Sbix color font"/>
   <int value="6" label="Success COLR/CPAL color font"/>
   <int value="7" label="Success COLRv1 color font"/>
+  <int value="8" label="Success Avar2 font"/>
 </enum>
 
 <enum name="WebGLANGLEImplementation">

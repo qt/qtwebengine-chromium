@@ -4,7 +4,7 @@
  *
  *   TrueType GX Font Variation loader
  *
- * Copyright (C) 2004-2025 by
+ * Copyright (C) 2004-2026 by
  * David Turner, Robert Wilhelm, Werner Lemberg, and George Williams.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -628,7 +628,6 @@
       FT_UShort  word_delta_count;
       FT_UInt    region_idx_count;
       FT_UInt    per_region_size;
-      FT_UInt    delta_set_size;
 
 
       if ( FT_STREAM_SEEK( offset + dataOffsetArray[i] ) )
@@ -698,23 +697,9 @@
       if ( long_words )
         per_region_size *= 2;
 
-      /* Check for overflow (we actually test whether the     */
-      /* multiplication of two unsigned values wraps around). */
-      delta_set_size = per_region_size * item_count;
-      if ( per_region_size                                &&
-           delta_set_size / per_region_size != item_count )
-      {
-        FT_TRACE2(( "tt_var_load_item_variation_store:"
-                    " bad delta set array size\n" ));
-        error = FT_THROW( Array_Too_Large );
+      if ( FT_QALLOC_MULT( varData->deltaSet, item_count, per_region_size ) )
         goto Exit;
-      }
-
-      if ( FT_NEW_ARRAY( varData->deltaSet, delta_set_size ) )
-        goto Exit;
-      if ( FT_Stream_Read( stream,
-                           varData->deltaSet,
-                           per_region_size * item_count ) )
+      if ( FT_STREAM_READ( varData->deltaSet, item_count * per_region_size ) )
       {
         FT_TRACE2(( "deltaSet read failed." ));
         error = FT_THROW( Invalid_Table );
@@ -4040,13 +4025,13 @@
   /* modeled after `af_iup_shift' */
 
   static void
-  tt_delta_shift( int         p1,
-                  int         p2,
-                  int         ref,
+  tt_delta_shift( FT_UInt     p1,
+                  FT_UInt     p2,
+                  FT_UInt     ref,
                   FT_Vector*  in_points,
                   FT_Vector*  out_points )
   {
-    int        p;
+    FT_UInt    p;
     FT_Vector  delta;
 
 
@@ -4077,14 +4062,14 @@
   /* modeled after `af_iup_interp', `_iup_worker_interpolate', and   */
   /* `Ins_IUP' with spec differences in handling ill-defined cases.  */
   static void
-  tt_delta_interpolate( int         p1,
-                        int         p2,
-                        int         ref1,
-                        int         ref2,
+  tt_delta_interpolate( FT_UInt     p1,
+                        FT_UInt     p2,
+                        FT_UInt     ref1,
+                        FT_UInt     ref2,
                         FT_Vector*  in_points,
                         FT_Vector*  out_points )
   {
-    int  p, i;
+    FT_UInt  p, i;
 
     FT_Pos  out, in1, in2, out1, out2, d1, d2;
 
@@ -4150,24 +4135,18 @@
                          FT_Vector*   in_points,
                          FT_Bool*     has_delta )
   {
-    FT_Int  first_point;
-    FT_Int  end_point;
+    FT_UInt  first_point;
+    FT_UInt  end_point;
 
-    FT_Int  first_delta;
-    FT_Int  cur_delta;
+    FT_UInt  first_delta;
+    FT_UInt  cur_delta;
 
-    FT_Int    point;
-    FT_Short  contour;
+    FT_UInt  point;
+    FT_UInt  contour;
 
 
-    /* ignore empty outlines */
-    if ( !outline->n_contours )
-      return;
-
-    contour = 0;
-    point   = 0;
-
-    do
+    for ( point = 0, contour = 0;
+          contour < outline->n_contours; contour++ )
     {
       end_point   = outline->contours[contour];
       first_point = point;
@@ -4228,9 +4207,7 @@
                                   out_points );
         }
       }
-      contour++;
-
-    } while ( contour < outline->n_contours );
+    }
   }
 
 

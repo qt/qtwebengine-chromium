@@ -26,14 +26,15 @@ export function getHtml(this: CrTooltipDemoElement) {
       .offset="${this.tooltipOffset_}">
     <span>Tooltip text</span>
   </cr-tooltip>
-  <button @click="${this.showAtTarget1_}">Show at Target 1</button>
-  <button @click="${this.showAtTarget2_}">Show at Target 2</button>
-  <button @click="${this.hide_}">Hide</button>
+  <button @click="${this.onShowAtTarget1Click_}">Show at Target 1</button>
+  <button @click="${this.onShowAtTarget2Click_}">Show at Target 2</button>
+  <button @click="${this.onHideClick_}">Hide</button>
 </div>
 
 <h1>Customize tooltips</h1>
 <div class="demos">
-  <cr-input type="number" min="0" max="24" .value="${this.tooltipOffset_}"
+  <cr-input type="number" min="0" max="24"
+      .value="${this.tooltipOffset_.toString()}"
       @input="${this.onTooltipOffsetInput_}" label="Tooltip offset (px)">
   </cr-input>
   <label>Tooltip position</label>

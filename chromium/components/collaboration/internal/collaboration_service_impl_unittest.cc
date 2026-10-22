@@ -317,8 +317,7 @@ TEST_F(CollaborationServiceImplTest, SyncStatusChanges) {
   EXPECT_EQ(service_->GetServiceStatus().sync_status,
             SyncStatus::kSyncWithoutTabGroup);
 
-  if (base::FeatureList::IsEnabled(
-          syncer::kReplaceSyncPromosWithSignInPromos)) {
+  if (syncer::IsReplaceSyncPromosWithSignInPromosEnabled()) {
     // If sync-the-feature is not required, kNotSyncing is never happening.
     test_sync_service_->SetSignedOut();
     test_sync_service_->FireStateChanged();
@@ -502,7 +501,7 @@ TEST_F(CollaborationServiceImplTest,
   // Prepare a kNoChange event.
   PrimaryAccountChangeEvent::State state;
   PrimaryAccountChangeEvent event_details(
-      state, state, signin_metrics::AccessPoint::kUnknown);
+      state, state, signin_metrics::AccessPoint::kStartPage);
 
   // Process the event.
   service_->OnPrimaryAccountChanged(event_details);
@@ -521,7 +520,7 @@ TEST_F(CollaborationServiceImplTest,
   // Prepare a kNoChange event.
   PrimaryAccountChangeEvent::State state;
   PrimaryAccountChangeEvent event_details(
-      state, state, signin_metrics::AccessPoint::kUnknown);
+      state, state, signin_metrics::AccessPoint::kStartPage);
 
   // Process the event.
   service_->OnPrimaryAccountChanged(event_details);
@@ -546,7 +545,7 @@ TEST_F(CollaborationServiceImplTest,
   PrimaryAccountChangeEvent::State current_state(account_info,
                                                  signin::ConsentLevel::kSignin);
   PrimaryAccountChangeEvent event_details(
-      previous_state, current_state, signin_metrics::AccessPoint::kUnknown);
+      previous_state, current_state, signin_metrics::AccessPoint::kStartPage);
 
   // Process the event.
   service_->OnPrimaryAccountChanged(event_details);
@@ -571,7 +570,7 @@ TEST_F(CollaborationServiceImplTest,
   PrimaryAccountChangeEvent::State current_state(account_info,
                                                  signin::ConsentLevel::kSignin);
   PrimaryAccountChangeEvent event_details(
-      previous_state, current_state, signin_metrics::AccessPoint::kUnknown);
+      previous_state, current_state, signin_metrics::AccessPoint::kStartPage);
 
   // Process the event.
   service_->OnPrimaryAccountChanged(event_details);
@@ -608,7 +607,7 @@ TEST_F(CollaborationServiceImplTest,
   PrimaryAccountChangeEvent::State current_state(account_info_2,
                                                  signin::ConsentLevel::kSignin);
   PrimaryAccountChangeEvent event_details(
-      previous_state, current_state, signin_metrics::AccessPoint::kUnknown);
+      previous_state, current_state, signin_metrics::AccessPoint::kStartPage);
 
   // Process the event.
   service_->OnPrimaryAccountChanged(event_details);
@@ -647,7 +646,7 @@ TEST_F(CollaborationServiceImplTest,
   PrimaryAccountChangeEvent::State current_state(account_info_2,
                                                  signin::ConsentLevel::kSignin);
   PrimaryAccountChangeEvent event_details(
-      previous_state, current_state, signin_metrics::AccessPoint::kUnknown);
+      previous_state, current_state, signin_metrics::AccessPoint::kStartPage);
 
   // Process the event.
   service_->OnPrimaryAccountChanged(event_details);

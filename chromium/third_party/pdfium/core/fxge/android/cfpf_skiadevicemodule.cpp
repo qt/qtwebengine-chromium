@@ -17,26 +17,24 @@ CFPF_SkiaDeviceModule* gs_pPFModule = nullptr;
 
 }  // namespace
 
-CFPF_SkiaDeviceModule* CFPF_GetSkiaDeviceModule() {
+// static
+CFPF_SkiaDeviceModule* CFPF_SkiaDeviceModule::GetOrCreate() {
   if (!gs_pPFModule) {
-    gs_pPFModule = new CFPF_SkiaDeviceModule;
+    gs_pPFModule = new CFPF_SkiaDeviceModule();
   }
   return gs_pPFModule;
 }
 
-CFPF_SkiaDeviceModule::CFPF_SkiaDeviceModule() = default;
+CFPF_SkiaDeviceModule::CFPF_SkiaDeviceModule()
+    : font_mgr_(std::make_unique<CFPF_SkiaFontMgr>()) {}
 
 CFPF_SkiaDeviceModule::~CFPF_SkiaDeviceModule() = default;
+
+CFPF_SkiaFontMgr* CFPF_SkiaDeviceModule::GetFontMgr() {
+  return font_mgr_.get();
+}
 
 void CFPF_SkiaDeviceModule::Destroy() {
   delete gs_pPFModule;
   gs_pPFModule = nullptr;
-}
-
-CFPF_SkiaFontMgr* CFPF_SkiaDeviceModule::GetFontMgr() {
-  if (!font_mgr_) {
-    font_mgr_ =
-        std::make_unique<CFPF_SkiaFontMgr>(CFX_GEModule::Get()->GetFontMgr());
-  }
-  return font_mgr_.get();
 }

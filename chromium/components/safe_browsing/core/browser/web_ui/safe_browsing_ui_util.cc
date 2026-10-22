@@ -23,7 +23,7 @@
 #include "components/enterprise/common/proto/upload_request_response.to_value.h"  // nogncheck crbug.com/1125897
 #endif
 
-#if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION) && !BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
 #include "components/enterprise/common/proto/connectors.pb.h"
 #include "components/enterprise/common/proto/connectors.to_value.h"
 #endif
@@ -32,11 +32,13 @@ using sync_pb::GaiaPasswordReuse;
 
 namespace safe_browsing::web_ui {
 
-#if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION) && !BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
 DeepScanDebugData::DeepScanDebugData() = default;
 DeepScanDebugData::DeepScanDebugData(const DeepScanDebugData&) = default;
 DeepScanDebugData::~DeepScanDebugData() = default;
+#endif  //  BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
 
+#if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION) && !BUILDFLAG(IS_ANDROID)
 TailoredVerdictOverrideData::TailoredVerdictOverrideData() = default;
 TailoredVerdictOverrideData::~TailoredVerdictOverrideData() = default;
 
@@ -56,7 +58,8 @@ void TailoredVerdictOverrideData::Clear() {
   override_value.reset();
   source = 0u;
 }
-#endif
+#endif  // BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION) &&
+        // !BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(SAFE_BROWSING_DB_LOCAL)
 
@@ -468,7 +471,16 @@ base::DictValue SerializeUploadEventsRequest(
   return wrapper;
 }
 
-#if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION) && !BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
+std::string SerializeRequestHeaders(const net::HttpRequestHeaders& headers) {
+  std::ostringstream string_stream;
+  for (net::HttpRequestHeaders::Iterator it(headers); it.GetNext();) {
+    string_stream << it.name() << ": " << it.value() << "\r\n";
+  }
+
+  return string_stream.str();
+}
+
 std::string SerializeContentAnalysisRequest(
     bool per_profile_request,
     const std::string& access_token_truncated,
@@ -499,6 +511,10 @@ base::DictValue SerializeDeepScanDebugData(const std::string& token,
               data.request_time.InMillisecondsFSinceUnixEpoch());
   }
 
+  if (!data.request_headers.IsEmpty()) {
+    value.Set("http_headers", SerializeRequestHeaders(data.request_headers));
+  }
+
   if (data.request.has_value()) {
     value.Set("request",
               SerializeContentAnalysisRequest(
@@ -522,7 +538,6 @@ base::DictValue SerializeDeepScanDebugData(const std::string& token,
 
   return value;
 }
-#endif  // BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION) &&
-        // !BUILDFLAG(IS_ANDROID)
+#endif  // BUILDFLAG(SAFE_BROWSING_DOWNLOAD_PROTECTION)
 
 }  // namespace safe_browsing::web_ui

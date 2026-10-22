@@ -1375,44 +1375,16 @@ TEST_F(FPDFFormFillEmbedderTest, Bug1477093) {
 #endif  // PDF_ENABLE_V8
 
 TEST_F(FPDFFormFillEmbedderTest, FormText) {
-  const char* focused_text_form_with_abc_checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_WIN)
-      return "8b743c7a6186360862ca6f6db8f55c8f";
-#elif BUILDFLAG(IS_APPLE)
-      return "d8cf4e7ef7e1c287441bf350006e66d6";
-#else
-      return "b9fb2245a98ac48146da84237a37f8cc";
-#endif
-    }
-#if BUILDFLAG(IS_APPLE)
-    return "9fb14198d75ca0a107060c60ca21b0c7";
-#else
-    return "6e6f790bb14c4fc6107faf8c17d23dbd";
-#endif
-  }();
-  const char* unfocused_text_form_with_abc_checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_WIN)
-      return "2dff30f82a761e1b23f0817be98158e9";
-#elif BUILDFLAG(IS_APPLE)
-      return "a20d421cf82d11671b8f11b4987b89c2";
-#else
-      return "6e41c0abffd4135e5e085d893eccb47d";
-#endif
-    }
-#if BUILDFLAG(IS_APPLE)
-    return "3c3209357e0c057a0620afa7d83eb784";
-#else
-    return "94b7e10ac8c662b73e33628ca2f5e63b";
-#endif
-  }();
+  static constexpr char kFocusedTextFormWithAbcPng[] =
+      "focused_text_form_with_abc";
+  static constexpr char kUnfocusedTextFormWithAbcPng[] =
+      "unfocused_text_form_with_abc";
   {
     ASSERT_TRUE(OpenDocument("text_form.pdf"));
     ScopedPage page = LoadScopedPage(0);
     ASSERT_TRUE(page);
     ScopedFPDFBitmap bitmap1 = RenderLoadedPage(page.get());
-    CompareBitmapToPngWithExpectationSuffix(bitmap1.get(), kTextFormPng);
+    CompareBitmapWithExpectationSuffix(bitmap1.get(), kTextFormPng);
 
     // Click on the textfield
     EXPECT_EQ(
@@ -1429,94 +1401,66 @@ TEST_F(FPDFFormFillEmbedderTest, FormText) {
     FORM_OnChar(form_handle(), page.get(), 'B', 0);
     FORM_OnChar(form_handle(), page.get(), 'C', 0);
     ScopedFPDFBitmap bitmap2 = RenderLoadedPage(page.get());
-    CompareBitmap(bitmap2.get(), 300, 300, focused_text_form_with_abc_checksum);
+    CompareBitmapWithExpectationSuffix(bitmap2.get(),
+                                       kFocusedTextFormWithAbcPng);
 
     // Focus remains despite right clicking out of the textfield
     FORM_OnMouseMove(form_handle(), page.get(), 0, 15.0, 15.0);
     FORM_OnRButtonDown(form_handle(), page.get(), 0, 15.0, 15.0);
     FORM_OnRButtonUp(form_handle(), page.get(), 0, 15.0, 15.0);
     ScopedFPDFBitmap bitmap3 = RenderLoadedPage(page.get());
-    CompareBitmap(bitmap3.get(), 300, 300, focused_text_form_with_abc_checksum);
+    CompareBitmapWithExpectationSuffix(bitmap3.get(),
+                                       kFocusedTextFormWithAbcPng);
 
     // Take out focus by clicking out of the textfield
     FORM_OnMouseMove(form_handle(), page.get(), 0, 15.0, 15.0);
     FORM_OnLButtonDown(form_handle(), page.get(), 0, 15.0, 15.0);
     FORM_OnLButtonUp(form_handle(), page.get(), 0, 15.0, 15.0);
     ScopedFPDFBitmap bitmap4 = RenderLoadedPage(page.get());
-    CompareBitmap(bitmap4.get(), 300, 300,
-                  unfocused_text_form_with_abc_checksum);
+    CompareBitmapWithExpectationSuffix(bitmap4.get(),
+                                       kUnfocusedTextFormWithAbcPng);
 
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   }
   // Check saved document
-  VerifySavedDocument(300, 300, unfocused_text_form_with_abc_checksum);
+  VerifySavedDocumentWithExpectationSuffix(kUnfocusedTextFormWithAbcPng);
 }
 
 // Tests using FPDF_REVERSE_BYTE_ORDER with FPDF_FFLDraw(). The two rendered
 // bitmaps should be different.
 TEST_F(FPDFFormFillEmbedderTest, Bug1281) {
-  const char* reverse_byte_order_checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_APPLE) && defined(ARCH_CPU_ARM64)
-      return "982dc4898d0ff78920be831538763d65";
-#else
-      return "8077970bbd10333f18186a9bb459bbe6";
-#endif
-    }
-    return "24fff03d1e663b7ece5f6e69ad837124";
-  }();
-
   ASSERT_TRUE(OpenDocument("bug_890322.pdf"));
   ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
 
   ScopedFPDFBitmap bitmap_normal = RenderLoadedPage(page.get());
-  CompareBitmapToPngWithExpectationSuffix(bitmap_normal.get(),
-                                          pdfium::kBug890322Png);
+  CompareBitmapWithExpectationSuffix(bitmap_normal.get(),
+                                     pdfium::kBug890322Png);
 
   ScopedFPDFBitmap bitmap_reverse_byte_order =
       RenderLoadedPageWithFlags(page.get(), FPDF_REVERSE_BYTE_ORDER);
-  CompareBitmap(bitmap_reverse_byte_order.get(), 200, 200,
-                reverse_byte_order_checksum);
+  CompareBitmapWithFuzzyExpectationSuffix(bitmap_reverse_byte_order.get(),
+                                          "bug_890322_reverse");
 }
 
 TEST_F(FPDFFormFillEmbedderTest, Bug1302455RenderOnly) {
-  const char* checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-      return "520c4415c9977f40d6b4af5a0a94d764";
-    }
-    return "bbee92af1daec2340c81f482878744d8";
-  }();
+  static constexpr char kBug1302455ReadOnlyPng[] = "bug_1302455_read_only";
   {
     ASSERT_TRUE(OpenDocument("bug_1302455.pdf"));
     ScopedPage page = LoadScopedPage(0);
     ASSERT_TRUE(page);
 
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-    CompareBitmap(bitmap.get(), 300, 300, checksum);
+    CompareBitmapWithExpectationSuffix(bitmap.get(), kBug1302455ReadOnlyPng);
 
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   }
-  VerifySavedDocument(300, 300, checksum);
+  VerifySavedDocumentWithExpectationSuffix(kBug1302455ReadOnlyPng);
 }
 
 TEST_F(FPDFFormFillEmbedderTest, Bug1302455EditFirstForm) {
-  const char* checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_WIN)
-      return "4a183167329d24b562844e5eac9ea6ce";
-#elif BUILDFLAG(IS_APPLE)
-      return "bc4569b20448cfff74586c5666409195";
-#else
-      return "1d80f95766098d9477fd6d51f088c9f5";
-#endif
-    }
-#if BUILDFLAG(IS_APPLE)
-    return "bf5423874f188427d2500a2bc4abebbe";
-#else
-    return "6a4ac9a15d2c34589616c8f2b05fbedd";
-#endif
-  }();
+  static constexpr char kBug1302455EditFirstFormPng[] =
+      "bug_1302455_edit_first_form";
   {
     ASSERT_TRUE(OpenDocument("bug_1302455.pdf"));
     ScopedPage page = LoadScopedPage(0);
@@ -1532,30 +1476,17 @@ TEST_F(FPDFFormFillEmbedderTest, Bug1302455EditFirstForm) {
 
     FORM_ForceToKillFocus(form_handle());
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-    CompareBitmap(bitmap.get(), 300, 300, checksum);
+    CompareBitmapWithExpectationSuffix(bitmap.get(),
+                                       kBug1302455EditFirstFormPng);
 
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   }
-  VerifySavedDocument(300, 300, checksum);
+  VerifySavedDocumentWithExpectationSuffix(kBug1302455EditFirstFormPng);
 }
 
 TEST_F(FPDFFormFillEmbedderTest, Bug1302455EditSecondForm) {
-  const char* checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_WIN)
-      return "6b2f88c6bc03483f477d6fca2605262f";
-#elif BUILDFLAG(IS_APPLE)
-      return "fc94a26ce269a8f144d7da51e9d857d4";
-#else
-      return "08c529736566c5a0bd8c46eace55f3b7";
-#endif
-    }
-#if BUILDFLAG(IS_APPLE)
-    return "8a0fd8772dba6e1e952e49d159cc64b5";
-#else
-    return "45a7694933c2ba3c5dc8f6cc18b79175";
-#endif
-  }();
+  static constexpr char kBug1302455EditSecondFormPng[] =
+      "bug_1302455_edit_second_form";
   {
     ASSERT_TRUE(OpenDocument("bug_1302455.pdf"));
     ScopedPage page = LoadScopedPage(0);
@@ -1571,30 +1502,17 @@ TEST_F(FPDFFormFillEmbedderTest, Bug1302455EditSecondForm) {
 
     FORM_ForceToKillFocus(form_handle());
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-    CompareBitmap(bitmap.get(), 300, 300, checksum);
+    CompareBitmapWithExpectationSuffix(bitmap.get(),
+                                       kBug1302455EditSecondFormPng);
 
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   }
-  VerifySavedDocument(300, 300, checksum);
+  VerifySavedDocumentWithExpectationSuffix(kBug1302455EditSecondFormPng);
 }
 
 TEST_F(FPDFFormFillEmbedderTest, Bug1302455EditBothForms) {
-  const char* checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_WIN)
-      return "f9f719735c47b17a66ccec9fa98ff381";
-#elif BUILDFLAG(IS_APPLE)
-      return "e7a12c0ea15f96f3afa8291493f58da9";
-#else
-      return "3b72d54e9b1cedd5f14b08cec69913da";
-#endif
-    }
-#if BUILDFLAG(IS_APPLE)
-    return "1f422ee1c520ad74b1a993b64bd4dc4a";
-#else
-    return "13984969b1e141079ab5f4aa80185463";
-#endif
-  }();
+  static constexpr char kBug1302455EditBothFormsPng[] =
+      "bug_1302455_edit_both_forms";
   {
     ASSERT_TRUE(OpenDocument("bug_1302455.pdf"));
     ScopedPage page = LoadScopedPage(0);
@@ -1618,46 +1536,30 @@ TEST_F(FPDFFormFillEmbedderTest, Bug1302455EditBothForms) {
 
     FORM_ForceToKillFocus(form_handle());
     ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-    CompareBitmap(bitmap.get(), 300, 300, checksum);
+    CompareBitmapWithExpectationSuffix(bitmap.get(),
+                                       kBug1302455EditBothFormsPng);
 
     EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   }
-  VerifySavedDocument(300, 300, checksum);
+  VerifySavedDocumentWithExpectationSuffix(kBug1302455EditBothFormsPng);
 }
 
 TEST_F(FPDFFormFillEmbedderTest, RemoveFormFieldHighlight) {
-  const char* no_highlight_checksum = []() {
-    if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
-#if BUILDFLAG(IS_WIN)
-      return "2235e2ba8349552de0c818ae53257949";
-#elif BUILDFLAG(IS_APPLE)
-      return "e0ad5b4fe007e2e2c27cf6c6fb5b6529";
-#else
-      return "3bfddb2529085021ad283b7e65f71525";
-#endif
-    }
-#if BUILDFLAG(IS_APPLE)
-    return "5c82aa43e3b478aa1e4c94bb9ef1f11f";
-#else
-    return "a6268304f7eedfa9ee98fac3caaf2efb";
-#endif
-  }();
-
   ASSERT_TRUE(OpenDocument("text_form.pdf"));
   ScopedPage page = LoadScopedPage(0);
   ASSERT_TRUE(page);
   ScopedFPDFBitmap bitmap1 = RenderLoadedPage(page.get());
-  CompareBitmapToPngWithExpectationSuffix(bitmap1.get(), kTextFormPng);
+  CompareBitmapWithExpectationSuffix(bitmap1.get(), kTextFormPng);
 
   // Removing the highlight changes the rendering.
   FPDF_RemoveFormFieldHighlight(form_handle());
   ScopedFPDFBitmap bitmap2 = RenderLoadedPage(page.get());
-  CompareBitmap(bitmap2.get(), 300, 300, no_highlight_checksum);
+  CompareBitmapWithExpectationSuffix(bitmap2.get(), "text_form_no_highlight");
 
   // Restoring it gives the original rendering.
   SetInitialFormFieldHighlight(form_handle());
   ScopedFPDFBitmap bitmap3 = RenderLoadedPage(page.get());
-  CompareBitmapToPngWithExpectationSuffix(bitmap3.get(), kTextFormPng);
+  CompareBitmapWithExpectationSuffix(bitmap3.get(), kTextFormPng);
 }
 
 TEST_F(FPDFFormFillEmbedderTest, HasFormInfoNone) {

@@ -234,7 +234,7 @@ function convertMojoTimeToJS(mojoTime: Time) {
  * @param targetElement The element to which source link should be created.
  */
 function createChromiumSourceLink(
-    sourceFile: string, sourceLine: number, targetElement: Element) {
+    sourceFile: string, sourceLine: bigint, targetElement: Element) {
   // Valid source file starts with ../../
   if (!sourceFile.startsWith('../../')) {
     targetElement.textContent = `${sourceFile}(${sourceLine})`;
@@ -371,9 +371,9 @@ async function onMqlsLogsPageOpen() {
     const mqlsLogs = response.mqlsLogs;
     for (const {feature, proto, status} of mqlsLogs) {
       const row = mqlsLogsContainer.insertRow();
-      const featureStr = feature.toString();
-      const protoStr = proto.toString();
-      const statusStr = status.toString();
+      const featureStr = feature;
+      const protoStr = proto;
+      const statusStr = status;
       appendTD(row, featureStr, 'mqls-logs-feature');
       appendTD(row, protoStr, 'mqls-logs-proto');
       appendTD(row, statusStr, 'mqls-logs-status');
@@ -428,7 +428,7 @@ function initialize() {
 
   getProxy().getCallbackRouter().onLogMessageAdded.addListener(
       (eventTime: Time, logSource: number, sourceFile: string,
-       sourceLine: number, message: string) => {
+       sourceLine: bigint, message: string) => {
         const eventTimeStr = convertMojoTimeToJS(eventTime).toISOString();
         const logSourceStr = getLogSource(logSource);
         logMessages.push({

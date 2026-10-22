@@ -11,6 +11,7 @@
 #include <string_view>
 
 #include "content/browser/service_worker/service_worker_version.h"
+#include "content/browser/storage_partition_impl.h"
 #include "content/common/content_export.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
@@ -95,22 +96,25 @@ const base::flat_set<std::string> FetchHandlerBypassedHashStrings();
 // Check if `client_url` is eligible for Synsthtic Response.
 // Exposes one method which accepts `allowed_url` for testing.
 bool IsEligibleForSyntheticResponse(BrowserContext* browser_context,
+                                    StoragePartitionImpl* storage_partition,
                                     const GURL& client_url);
 CONTENT_EXPORT bool IsEligibleForSyntheticResponseForTesting(  // IN-TEST
     BrowserContext* browser_context,
+    StoragePartitionImpl* storage_partition,
     const GURL& client_url,
     const std::string& allowed_url,
     const std::string& denied_url_params);
 bool IsEligibleForSyntheticResponseInternal(
     BrowserContext* browser_context,
+    StoragePartitionImpl* storage_partition,
     const GURL& client_url,
     const std::string& allowed_url,
     const base::flat_set<std::string>& denied_url_params);
 bool IsSyntheticResponseDryRunModeEnabled();
 
-storage::mojom::ServiceWorkerFindRegistrationResultPtr
-CreateSyntheticRegistration(const GURL& client_url,
-                            const blink::StorageKey& key);
+CONTENT_EXPORT storage::mojom::ServiceWorkerFindRegistrationResultPtr
+GetOrCreateSyntheticRegistration(const GURL& client_url,
+                                 const blink::StorageKey& key);
 }  // namespace service_worker_loader_helpers
 
 }  // namespace content

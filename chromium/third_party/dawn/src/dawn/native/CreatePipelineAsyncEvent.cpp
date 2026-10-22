@@ -136,7 +136,8 @@ template <typename PipelineType, typename CreatePipelineAsyncCallbackInfo>
 void CreatePipelineAsyncEvent<PipelineType, CreatePipelineAsyncCallbackInfo>::InitializeImpl(
     bool isAsync) {
     DeviceBase* device = mPipeline->GetDevice();
-    const char* eventLabel = utils::GetLabelForTrace(mPipeline->GetLabel());
+    const std::string& label = mPipeline->GetLabel();
+    const char* eventLabel = utils::GetLabelForTrace(label);
     if (isAsync) {
         TRACE_EVENT_FLOW_END1(device->GetPlatform(), General,
                               "CreatePipelineAsyncEvent::InitializeAsync", this, "label",
@@ -169,7 +170,8 @@ void CreatePipelineAsyncEvent<PipelineType, CreatePipelineAsyncCallbackInfo>::In
 template <typename PipelineType, typename CreatePipelineAsyncCallbackInfo>
 void CreatePipelineAsyncEvent<PipelineType, CreatePipelineAsyncCallbackInfo>::InitializeAsync() {
     DeviceBase* device = mPipeline->GetDevice();
-    const char* eventLabel = utils::GetLabelForTrace(mPipeline->GetLabel());
+    const std::string& label = mPipeline->GetLabel();
+    const char* eventLabel = utils::GetLabelForTrace(label);
     TRACE_EVENT_FLOW_BEGIN1(device->GetPlatform(), General,
                             "CreatePipelineAsyncEvent::InitializeAsync", this, "label", eventLabel);
 
@@ -208,7 +210,8 @@ void CreatePipelineAsyncEvent<PipelineType, CreatePipelineAsyncCallbackInfo>::Co
         if (device->IsLost()) {
             // Invalid async creation should "succeed" if the device is already lost.
             if (!mPipeline->IsError()) {
-                mPipeline = PipelineType::MakeError(device.Get(), mPipeline->GetLabel().c_str());
+                const std::string& label = mPipeline->GetLabel();
+                mPipeline = PipelineType::MakeError(device.Get(), label.c_str());
             }
             pipeline = std::move(mPipeline);
         } else if (mError != nullptr) {

@@ -270,6 +270,9 @@ static inline void tput64(PutByteContext *pb, const int le, const uint64_t value
 
 static int exif_read_values(void *logctx, GetByteContext *gb, int le, AVExifEntry *entry)
 {
+    if (exif_sizes[entry->type] * entry->count > bytestream2_get_bytes_left(gb))
+        return AVERROR_INVALIDDATA;
+
     switch (entry->type) {
         case AV_TIFF_SHORT:
         case AV_TIFF_LONG:
@@ -493,6 +496,11 @@ static int exif_decode_tag(void *logctx, GetByteContext *gb, int le,
 
     av_log(logctx, AV_LOG_DEBUG, "TIFF Tag: id: 0x%04x, type: %d, count: %u, offset: %d, "
                                  "payload: %" PRIu32 "\n", entry->id, type, count, tell, payload);
+
+    if (!type) {
+        av_log(logctx, AV_LOG_DEBUG, "Skipping invalid TIFF tag 0\n");
+        goto end;
+    }
 
     /* AV_TIFF_IFD is the largest, numerically */
     if (type > AV_TIFF_IFD || count >= INT_MAX/8U)

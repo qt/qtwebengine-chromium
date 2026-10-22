@@ -18,7 +18,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -28,6 +27,7 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "media/base/agtm.h"
 #include "media/base/data_source.h"
 #include "media/base/decrypt_config.h"
 #include "media/base/demuxer.h"
@@ -270,12 +270,13 @@ FFmpegDemuxerStream::FFmpegDemuxerStream(
     : demuxer_(demuxer),
       task_runner_(base::SequencedTaskRunner::GetCurrentDefault()),
       stream_(stream),
+      stream_time_base_(stream->time_base),
       stream_start_time_(
-          ConvertStreamTimestamp(stream->time_base, stream->start_time)),
+          ConvertStreamTimestamp(stream_time_base_, stream->start_time)),
       audio_config_(audio_config.release()),
       video_config_(video_config.release()),
       media_log_(media_log),
-      duration_(ConvertStreamTimestamp(stream->time_base, stream->duration)),
+      duration_(ConvertStreamTimestamp(stream_time_base_, stream->duration)),
       last_packet_pos_(AV_NOPTS_VALUE),
       last_packet_dts_(AV_NOPTS_VALUE) {
   DCHECK(demuxer_);
@@ -446,9 +447,9 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
                                              nullptr)) {
       LIMITED_MEDIA_LOG(INFO, media_log_, num_discarded_packet_warnings_, 5)
           << "Discarding invalid MP3 packet, ts: "
-          << ConvertStreamTimestamp(stream_->time_base, packet->pts)
+          << ConvertStreamTimestamp(stream_time_base_, packet->pts)
           << ", duration: "
-          << ConvertStreamTimestamp(stream_->time_base, packet->duration);
+          << ConvertStreamTimestamp(stream_time_base_, packet->duration);
       return;
     }
   }
@@ -467,8 +468,9 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
       buffer->WritableSideData().alpha_data =
           base::HeapArray<uint8_t>::CopiedFrom(side_data.subspan(8u));
     } else if (side_data_id == 4) {
-      buffer->WritableSideData().itu_t35_data =
-          base::HeapArray<uint8_t>::CopiedFrom(side_data.subspan(8u));
+      if (auto agtm = GetAgtmFromT35(side_data.subspan(8u))) {
+        buffer->WritableSideData().hdr_metadata.SetSerializedAgtm(*agtm);
+      }
     }
   }
 
@@ -480,12 +482,12 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
   // pipeline will then use the timestamps to estimate duration. Incorrect
   // duration information can lead to stuttering effects during seeking. See
   // https://crbug.com/397343886.
-  auto d = ConvertStreamTimestamp(stream_->time_base, packet->duration);
+  auto d = ConvertStreamTimestamp(stream_time_base_, packet->duration);
   buffer->set_duration(d <= base::Milliseconds(1) ? kNoTimestamp : d);
 
   // Note: If pts is kNoFFmpegTimestamp, stream_timestamp will be kNoTimestamp.
   const base::TimeDelta stream_timestamp =
-      ConvertStreamTimestamp(stream_->time_base, packet->pts);
+      ConvertStreamTimestamp(stream_time_base_, packet->pts);
 
   if (stream_timestamp == kNoTimestamp ||
       stream_timestamp == kInfiniteDuration) {
@@ -975,8 +977,8 @@ void FFmpegDemuxer::Stop() {
   // thread. We don't need to wait for any outstanding tasks since they will all
   // fail to return after invalidating WeakPtrs.
   stopped_ = true;
-  weak_factory_.InvalidateWeakPtrs();
-  cancel_pending_seek_factory_.InvalidateWeakPtrs();
+  weak_factory_.InvalidateWeakPtrsAndDoom();
+  cancel_pending_seek_factory_.InvalidateWeakPtrsAndDoom();
 }
 
 void FFmpegDemuxer::StartWaitingForSeek(base::TimeDelta seek_time) {}
@@ -1079,9 +1081,9 @@ void FFmpegDemuxer::SeekInternal(base::TimeDelta time,
 
   blocking_task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(&AVSeekFrame, glue_->format_context(),
-                     seeking_stream->index,
-                     ConvertToTimeBase(seeking_stream->time_base, seek_time)),
+      base::BindOnce(
+          &AVSeekFrame, glue_->format_context(), seeking_stream->index,
+          ConvertToTimeBase(demux_stream->stream_time_base(), seek_time)),
       std::move(seek_cb));
 }
 

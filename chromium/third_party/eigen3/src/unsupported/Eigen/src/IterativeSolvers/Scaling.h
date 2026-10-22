@@ -67,7 +67,7 @@ class IterScaling {
   /**
    * Compute the left and right diagonal matrices to scale the input matrix @p mat
    *
-   * FIXME This algorithm will be modified such that the diagonal elements are permuted on the diagonal.
+   * FIXME: This algorithm will be modified such that the diagonal elements are permuted on the diagonal.
    *
    * \sa LeftScaling() RightScaling()
    */
@@ -164,7 +164,7 @@ class IterScaling {
   mutable ComputationInfo m_info;
   bool m_isInitialized;
   VectorXd m_left;   // Left scaling vector
-  VectorXd m_right;  // m_right scaling vector
+  VectorXd m_right;  // Right scaling vector
   double m_tol;
   int m_maxits;  // Maximum number of iterations allowed
 };

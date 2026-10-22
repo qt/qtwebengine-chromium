@@ -65,8 +65,8 @@ TEST_F(ForLoopStatementTest, Creation_Null_InitCondCont) {
 }
 
 TEST_F(ForLoopStatementTest, Creation_WithAttributes) {
-    auto* attr1 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "foo");
-    auto* attr2 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, "bar");
+    auto* attr1 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, DiagnosticRuleName("foo"));
+    auto* attr2 = DiagnosticAttribute(wgsl::DiagnosticSeverity::kOff, DiagnosticRuleName("bar"));
     auto* body = Block(Return());
     auto* l = For(nullptr, nullptr, nullptr, body, tint::Vector{attr1, attr2});
 

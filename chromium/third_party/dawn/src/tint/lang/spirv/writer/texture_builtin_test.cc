@@ -244,7 +244,8 @@ class TextureBuiltinTest : public SpirvWriterTestWithParam<TextureBuiltinTestCas
 
         Options options;
         options.extensions.disable_image_robustness = true;
-        ASSERT_TRUE(Generate(options)) << Error() << output_;
+        auto result = Generate(options);
+        ASSERT_EQ(result, Success) << result.Failure() << output_;
         for (auto& inst : params.instructions) {
             EXPECT_INST(inst);
         }
@@ -1982,7 +1983,8 @@ TEST_F(SpirvWriterTest, TextureSampleBaseClampToEdge_2d_f32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%22 = OpConstantComposite %v2float %float_0_5 %float_0_5");
     EXPECT_INST("%25 = OpConstantComposite %v2float %float_1 %float_1");
     EXPECT_INST(R"(
@@ -2027,7 +2029,8 @@ TEST_F(SpirvWriterTest, Bgra8Unorm_textureStore) {
 
     Options options;
     options.extensions.disable_image_robustness = true;
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %15 = OpVectorShuffle %v4float %value %value 2 1 0 3
                OpImageWrite %texture %coords %15 None
@@ -2061,7 +2064,8 @@ TEST_F(SpirvWriterTest, TextureDimensions_WithRobustness) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %13 = OpImageQueryLevels %uint %texture
          %14 = OpISub %uint %13 %uint_1
@@ -2095,7 +2099,8 @@ TEST_F(SpirvWriterTest, TextureLoad_WithRobustness) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %15 = OpImageQueryLevels %uint %texture
          %16 = OpISub %uint %15 %uint_1

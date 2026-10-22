@@ -44,6 +44,8 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
         self.builtInList = []
         self.dimList = []
         self.cooperativeMatrixList = []
+        self.rayFlagsList = []
+        self.fpEncodingList = []
         self.hasType = []
         self.hasResult = []
         self.provisionalList = []
@@ -108,6 +110,8 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
                 self.addToStringList(operandKind, 'BuiltIn', self.builtInList)
                 self.addToStringList(operandKind, 'Dim', self.dimList)
                 self.addToStringList(operandKind, 'CooperativeMatrixOperands', self.cooperativeMatrixList, ['NoneKHR'])
+                self.addToStringList(operandKind, 'RayFlags', self.rayFlagsList, ['NoneKHR'])
+                self.addToStringList(operandKind, 'FPEncoding', self.fpEncodingList)
 
                 if 'enumerants' in operandKind:
                     for enum in operandKind['enumerants']:
@@ -289,6 +293,8 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
             const char* string_SpvBuiltIn(spv::BuiltIn built_in);
             const char* string_SpvDim(uint32_t dim);
             std::string string_SpvCooperativeMatrixOperands(uint32_t mask);
+            std::string string_SpvRayFlagsMask(uint32_t mask);
+            const char* string_SpvFPEncoding(spv::FPEncoding value);
             ''')
 
         hasTypeCase = "\n".join([f"        case spv::{f}:" for f in self.hasType if f not in self.provisionalList])
@@ -633,16 +639,57 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
             }}
 
             std::string string_SpvCooperativeMatrixOperands(uint32_t mask) {{
-                std::string ret;
-                while(mask) {{
-                    if (mask & 1) {{
-                        if(!ret.empty()) ret.append("|");
-                        ret.append(string_SpvCooperativeMatrixOperandsMask(static_cast<spv::CooperativeMatrixOperandsMask>(1U << mask)));
-                    }}
-                    mask >>= 1;
+                if (mask == 0) {{
+                    return "CooperativeMatrixOperandsMask(0)";
                 }}
-                if (ret.empty()) ret.append("CooperativeMatrixOperandsMask(0)");
+                std::string ret;
+                for (uint32_t bit = 1; mask != 0; bit <<= 1, mask >>= 1) {{
+                    if (mask & 1) {{
+                        if (!ret.empty()) {{
+                            ret.append("|");
+                        }}
+                        ret.append(string_SpvCooperativeMatrixOperandsMask(static_cast<spv::CooperativeMatrixOperandsMask>(bit)));
+                    }}
+                }}
                 return ret;
+            }}
+
+            static const char* string_SpvRayFlagsBit(spv::RayFlagsMask mask) {{
+                switch(mask) {{
+                    case spv::RayFlagsMaskNone:
+                        return "None";
+            {"".join([f"""        case spv::RayFlags{x}Mask:
+                        return "{x}";
+            """ for x in self.rayFlagsList if x not in self.provisionalList])}
+                    default:
+                        return "Unknown RayFlagsMask";
+                }}
+            }}
+
+            std::string string_SpvRayFlagsMask(uint32_t mask) {{
+                if (mask == 0) {{
+                    return "RayFlagsMask(0)";
+                }}
+                std::string ret;
+                for (uint32_t bit = 1; mask != 0; bit <<= 1, mask >>= 1) {{
+                    if (mask & 1) {{
+                        if (!ret.empty()) {{
+                            ret.append("|");
+                        }}
+                        ret.append(string_SpvRayFlagsBit(static_cast<spv::RayFlagsMask>(bit)));
+                    }}
+                }}
+                return ret;
+            }}
+
+            const char* string_SpvFPEncoding(spv::FPEncoding value) {{
+                switch(value) {{
+            {"".join([f"""        case spv::FPEncoding{x}:
+                        return "{x}";
+            """ for x in self.fpEncodingList if x not in self.provisionalList])}
+                    default:
+                        return "IEEE-754";  // default for 16-bit
+                }}
             }}
             ''')
 

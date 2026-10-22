@@ -7,6 +7,7 @@ use bytemuck_derive::{Pod, Zeroable};
 
 use crate::{bytes::to_hex_string, tokenv::parse_numeric_token, SimpleVob};
 
+/// Numeric identifier for a single token in a tokenizer's vocabulary.
 pub type TokenId = u32;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Zeroable, Pod)]
@@ -57,6 +58,13 @@ impl TokRxInfo {
     }
 }
 
+/// Byte-level constraint interface used for trie-based token filtering.
+///
+/// Implementations maintain a stack of states. The trie walker pushes bytes
+/// onto the stack as it descends, queries [`Recognizer::byte_allowed`] or
+/// [`Recognizer::try_push_byte`] to test transitions, and pops bytes when
+/// backtracking. This lets [`TokTrie`] efficiently compute the set of
+/// tokens that satisfy the constraint.
 pub trait Recognizer {
     /// for _ in 0..num { stack.pop() }
     fn pop_bytes(&mut self, num: usize);
@@ -94,6 +102,12 @@ struct TokDesc {
     off: u32,
 }
 
+/// A prefix tree (trie) of every token in a tokenizer's vocabulary.
+///
+/// The trie maps byte sequences to [`TokenId`]s and supports efficient
+/// constrained-decoding queries: given a [`Recognizer`] that accepts or
+/// rejects byte sequences, [`TokTrie::add_bias`] walks the trie and
+/// returns the set of tokens whose byte representations are accepted.
 #[derive(Clone)]
 pub struct TokTrie {
     info: TokRxInfo,
@@ -101,6 +115,7 @@ pub struct TokTrie {
     token_data: Vec<u8>,
     nodes: Vec<TrieNode>,
     max_token_len: usize,
+    eos_tokens: Vec<TokenId>,
 }
 
 #[derive(Clone, Copy, Zeroable, Pod)]
@@ -194,6 +209,7 @@ impl TokTrie {
             token_data,
             nodes,
             max_token_len,
+            eos_tokens: vec![info.tok_eos],
         };
         r.validate();
         r
@@ -209,19 +225,34 @@ impl TokTrie {
             };
             words.push(b.to_vec());
         }
-        Self::from(self.info(), &words)
+        let mut r = Self::from(self.info(), &words);
+        r.eos_tokens = self.eos_tokens.clone();
+        r
     }
 
     pub fn with_eos_token(&self, eos_token: TokenId) -> Self {
-        self.with_info(TokRxInfo {
-            tok_eos: eos_token,
-            ..self.info
-        })
+        self.with_eos_tokens(&[eos_token])
+    }
+
+    pub fn with_eos_tokens(&self, eos_tokens: &[TokenId]) -> Self {
+        assert!(!eos_tokens.is_empty(), "eos_tokens must not be empty");
+        let vocab = self.vocab_size() as u32;
+        for &tok in eos_tokens {
+            assert!(
+                tok < vocab,
+                "EOS token ID {tok} is out of range (vocab_size={vocab})"
+            );
+        }
+        let mut r = self.clone();
+        r.info.tok_eos = eos_tokens[0];
+        r.eos_tokens = eos_tokens.to_vec();
+        r
     }
 
     pub fn with_info(&self, info: TokRxInfo) -> Self {
         let mut r = self.clone();
         r.info = info;
+        r.eos_tokens = vec![info.tok_eos];
         r
     }
 
@@ -248,6 +279,10 @@ impl TokTrie {
         self.info.tok_eos
     }
 
+    pub fn eos_tokens(&self) -> &[TokenId] {
+        &self.eos_tokens
+    }
+
     pub fn vocab_size(&self) -> usize {
         self.info.vocab_size as usize
     }
@@ -259,6 +294,18 @@ impl TokTrie {
     pub fn singleton_token_set(&self, tok: TokenId) -> SimpleVob {
         let mut r = self.alloc_token_set();
         r.allow_token(tok);
+        r
+    }
+
+    /// Returns a token set containing all EOS tokens.
+    pub fn eos_token_set(&self) -> SimpleVob {
+        let mut r = self.alloc_token_set();
+        let vocab = self.vocab_size() as u32;
+        for &eos in self.eos_tokens() {
+            if eos != INVALID_TOKEN && eos < vocab {
+                r.allow_token(eos);
+            }
+        }
         r
     }
 
@@ -855,7 +902,10 @@ impl TokTrie {
         }
         r.trie_finished();
         r.save_stats(nodes_walked);
-        // revert the fake token
+        // Clean up the fake token set by add_bias_inner for nodes without token_id.
+        // Note: If add_bias_inner panics, this cleanup won't run, leaving the fake token set.
+        // This is acceptable since panics indicate unrecoverable errors and the program state
+        // is likely already corrupted.
         let defl_tok = self.vocab_size() as u32;
         toks.disallow_token(defl_tok);
     }
@@ -867,19 +917,39 @@ impl TokTrie {
         toks: &mut SimpleVob,
         n: &TrieNode,
     ) -> (usize, usize) {
+        // Use a fake token at vocab_size to avoid branching in the hot loop.
+        // This is safe because alloc_token_set() allocates capacity for vocab_size + 1 tokens.
+        // The fake token is cleaned up in add_bias() after the walk completes.
         let defl_tok = self.vocab_size() as u32;
         let off = self.node_offset(n);
         let total_nodes = n.subtree_size();
         let mut p = off + 1;
         let endp = off + total_nodes;
+        let nodes = &self.nodes[..endp];
         let mut next_pop = 0;
         let mut num_skip = 0;
         while p < endp {
             r.pop_bytes(next_pop);
-            let n = &self.nodes[p];
+            let n = unsafe {
+                debug_assert!(
+                    p < nodes.len(),
+                    "node index {} out of bounds (len: {})",
+                    p,
+                    nodes.len()
+                );
+                nodes.get_unchecked(p)
+            };
             let b = n.byte();
             if r.try_push_byte(b) {
-                toks.allow_token(n.token_id().unwrap_or(defl_tok));
+                // Avoid branching: always set a token (either real or fake at defl_tok)
+                let tok = n.token_id().unwrap_or(defl_tok);
+                debug_assert!(
+                    tok <= self.vocab_size() as u32,
+                    "token {} out of valid range (vocab_size: {})",
+                    tok,
+                    self.vocab_size()
+                );
+                unsafe { toks.allow_token_unchecked(tok) };
                 next_pop = if n.subtree_size() == 1 {
                     n.num_parents()
                 } else {
@@ -1164,5 +1234,84 @@ impl Recognizer for AnythingGoes {
     fn pop_bytes(&mut self, _num: usize) {}
     fn try_push_byte(&mut self, _byte: u8) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_trie(eos: TokenId) -> TokTrie {
+        let info = TokRxInfo::new(4, eos);
+        let words = vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec(), b"d".to_vec()];
+        TokTrie::from(&info, &words)
+    }
+
+    #[test]
+    fn test_default_single_eos() {
+        let trie = make_test_trie(2);
+        assert_eq!(trie.eos_token(), 2);
+        assert_eq!(trie.eos_tokens(), &[2]);
+    }
+
+    #[test]
+    fn test_with_eos_tokens_multiple() {
+        let trie = make_test_trie(0).with_eos_tokens(&[1, 3]);
+        assert_eq!(trie.eos_token(), 1);
+        assert_eq!(trie.eos_tokens(), &[1, 3]);
+        assert_eq!(trie.info().tok_eos, 1);
+    }
+
+    #[test]
+    fn test_with_eos_token_backwards_compat() {
+        let trie = make_test_trie(0).with_eos_token(2);
+        assert_eq!(trie.eos_token(), 2);
+        assert_eq!(trie.eos_tokens(), &[2]);
+    }
+
+    #[test]
+    fn test_with_info_resets_eos_tokens() {
+        let trie = make_test_trie(0).with_eos_tokens(&[1, 2]);
+        let trie2 = trie.with_info(TokRxInfo::new(4, 3));
+        assert_eq!(trie2.eos_token(), 3);
+        assert_eq!(trie2.eos_tokens(), &[3]);
+    }
+
+    #[test]
+    fn test_filter_preserves_eos_tokens() {
+        let trie = make_test_trie(0).with_eos_tokens(&[1, 2]);
+        let mut filter = trie.alloc_token_set();
+        for i in 0..4 {
+            filter.allow_token(i);
+        }
+        let filtered = trie.filter(&filter);
+        assert_eq!(filtered.eos_tokens(), &[1, 2]);
+    }
+
+    #[test]
+    #[should_panic(expected = "eos_tokens must not be empty")]
+    fn test_with_eos_tokens_empty_panics() {
+        make_test_trie(0).with_eos_tokens(&[]);
+    }
+
+    #[test]
+    fn test_eos_token_set_single() {
+        let trie = make_test_trie(2);
+        let set = trie.eos_token_set();
+        assert!(set.is_allowed(2));
+        assert!(!set.is_allowed(0));
+        assert!(!set.is_allowed(1));
+        assert_eq!(set.num_set(), 1);
+    }
+
+    #[test]
+    fn test_eos_token_set_multiple() {
+        let trie = make_test_trie(0).with_eos_tokens(&[1, 3]);
+        let set = trie.eos_token_set();
+        assert!(set.is_allowed(1));
+        assert!(set.is_allowed(3));
+        assert!(!set.is_allowed(0));
+        assert!(!set.is_allowed(2));
+        assert_eq!(set.num_set(), 2);
     }
 }

@@ -1043,7 +1043,7 @@ static int valueFromValueList(
     Mem sMem;     /* Raw content of current row */
     memset(&sMem, 0, sizeof(sMem));
     sz = sqlite3BtreePayloadSize(pRhs->pCsr);
-    rc = sqlite3VdbeMemFromBtreeZeroOffset(pRhs->pCsr,(int)sz,&sMem);
+    rc = sqlite3VdbeMemFromBtreeZeroOffset(pRhs->pCsr,sz,&sMem);
     if( rc==SQLITE_OK ){
       u8 *zBuf = (u8*)sMem.z;
       u32 iSerial;
@@ -1693,8 +1693,12 @@ static int bindText(
     if( zData!=0 ){
       pVar = &p->aVar[i-1];
       rc = sqlite3VdbeMemSetStr(pVar, zData, nData, encoding, xDel);
-      if( rc==SQLITE_OK && encoding!=0 ){
-        rc = sqlite3VdbeChangeEncoding(pVar, ENC(p->db));
+      if( rc==SQLITE_OK ){
+        if( encoding==0 ){
+          pVar->enc = ENC(p->db);
+        }else{
+          rc = sqlite3VdbeChangeEncoding(pVar, ENC(p->db));
+        }
       }
       if( rc ){
         sqlite3Error(p->db, rc);
@@ -2163,7 +2167,7 @@ static UnpackedRecord *vdbeUnpackRecord(
   pRet = sqlite3VdbeAllocUnpackedRecord(pKeyInfo);
   if( pRet ){
     memset(pRet->aMem, 0, sizeof(Mem)*(pKeyInfo->nKeyField+1));
-    sqlite3VdbeRecordUnpack(pKeyInfo, nKey, pKey, pRet);
+    sqlite3VdbeRecordUnpack(nKey, pKey, pRet);
   }
   return pRet;
 }
@@ -2192,6 +2196,9 @@ int sqlite3_preupdate_old(sqlite3 *db, int iIdx, sqlite3_value **ppValue){
   }
   if( p->pPk ){
     iStore = sqlite3TableColumnToIndex(p->pPk, iIdx);
+  }else if( iIdx >= p->pTab->nCol ){
+    rc = SQLITE_MISUSE_BKPT;
+    goto preupdate_old_out;
   }else{
     iStore = sqlite3TableColumnToStorage(p->pTab, iIdx);
   }
@@ -2347,6 +2354,8 @@ int sqlite3_preupdate_new(sqlite3 *db, int iIdx, sqlite3_value **ppValue){
   }
   if( p->pPk && p->op!=SQLITE_UPDATE ){
     iStore = sqlite3TableColumnToIndex(p->pPk, iIdx);
+  }else if( iIdx >= p->pTab->nCol ){
+    return SQLITE_MISUSE_BKPT;
   }else{
     iStore = sqlite3TableColumnToStorage(p->pTab, iIdx);
   }

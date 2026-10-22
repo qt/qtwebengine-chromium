@@ -30,6 +30,6 @@
     },
     "receiverRtcpEventLog": [0, 1],
     "receiverRtcpDscp": [1, 3],
-    "rtpExtensions": ["adaptive_playout_delay"]
+    "rtpExtensions": [["adaptive_playout_delay", "input_events"], ["adaptive_playout_delay"]]
   }
 }

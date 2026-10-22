@@ -88,6 +88,9 @@ class Module {
     void AddDecoration(uint32_t target_id, spv::Decoration decoration, const std::vector<uint32_t>& operands);
     void AddMemberDecoration(uint32_t target_id, uint32_t index, spv::Decoration decoration, const std::vector<uint32_t>& operands);
 
+    // Finds (and creates if needed) decoration and returns the OpVariable it points to
+    const Variable& GetBuiltInVariable(uint32_t built_in);
+
     // Global settings we would know at vkCreateDevice
     const DeviceSettings& settings_;
     // Per-pipeline/shaderObject information
@@ -120,6 +123,20 @@ class Module {
     // Used when UseErrorPayloadVariable is set. Needs to be same for all passes.
     // Will be set in the LogErrorPass
     uint32_t error_payload_variable_id_ = 0;
+
+    // Used by SharedMemoryDataRacePass, linked by Module::LinkFunctions
+    uint32_t shared_memory_shadow_variable_id_ = 0;
+
+  private:
+    // This is here to emulate the
+    //  spirv-opt --set-spec-const-default-value <values> --freeze-spec-const --fold-spec-const-op-composite
+    // Normally done, but by doing it internally, we can both be faster (not re-prasing the SPIR-V) and most importantly, preserve
+    // the |position_offset| value to know the index of the instructions from the original operation
+    void SetSpecConstantValue(Instruction* inst, const Type& type, vvl::unordered_map<uint32_t, uint32_t>& id_to_spec_id);
+    bool ConstantFold(Instruction* inst, const Type& type);
+    bool ConstantFoldVectorShuffle(Instruction* inst, const Type& type);
+    bool ConstantFoldCompositeExtract(Instruction* inst, const Type& type);
+    bool ConstantFoldCompositeInsert(Instruction* inst, const Type& type);
 };
 
 }  // namespace spirv

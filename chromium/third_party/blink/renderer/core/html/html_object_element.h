@@ -48,6 +48,10 @@ class CORE_EXPORT HTMLObjectElement final : public HTMLPlugInElement,
   ~HTMLObjectElement() override = default;
   void Trace(Visitor*) const override;
 
+  ElementType GetElementType() const final {
+    return ElementType::kHTMLObjectElement;
+  }
+
   // Returns attributes that should be checked against Trusted Types
   const AttrNameToTrustedType& GetCheckedAttributeTypes() const override;
 
@@ -95,9 +99,9 @@ class CORE_EXPORT HTMLObjectElement final : public HTMLPlugInElement,
   };
   void RenderFallbackContent(ErrorEventPolicy should_dispatch_error_event);
 
-  V8UnionTrustedScriptURLOrUSVString* data();
+  String data();
   void setData(const V8UnionTrustedScriptURLOrUSVString*, ExceptionState&);
-  V8UnionTrustedScriptURLOrUSVString* codeBase();
+  String codeBase();
   void setCodeBase(const V8UnionTrustedScriptURLOrUSVString*, ExceptionState&);
 
  private:

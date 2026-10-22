@@ -5,7 +5,7 @@
         "prefix": "vvl",
         "type": "GLOBAL",
         "library_path": "@JSON_LIBRARY_PATH@",
-        "api_version": "1.4.343",
+        "api_version": "1.4.347",
         "implementation_version": "1",
         "description": "Khronos Validation Layer",
         "introduction": "The main, comprehensive Khronos validation layer.\n\nVulkan is an Explicit API, enabling direct control over how GPUs actually work. By design, minimal error checking is done inside a Vulkan driver. Applications have full control and responsibility for correct operation. Any errors in how Vulkan is used can result in a crash. \n\nThe Khronos Validation Layer can be enabled to assist development by enabling developers to verify their applications correctly use the Vulkan API.",
@@ -86,6 +86,7 @@
                         { "key": "thread_safety", "value": false },
                         { "key": "validate_sync", "value": false },
                         { "key": "printf_enable", "value": false },
+                        { "key": "debug_descriptor", "value": false },
                         { "key": "gpuav_enable", "value": false },
                         { "key": "validate_best_practices", "value": false },
                         { "key": "report_flags", "value": [ "error", "warn" ] },
@@ -113,6 +114,7 @@
                         { "key": "thread_safety", "value": false },
                         { "key": "validate_sync", "value": false },
                         { "key": "printf_enable", "value": false },
+                        { "key": "debug_descriptor", "value": false },
                         { "key": "gpuav_enable", "value": false },
                         { "key": "validate_best_practices", "value": false },
                         { "key": "report_flags", "value": [ "error" ] },
@@ -140,6 +142,7 @@
                         { "key": "thread_safety", "value": false },
                         { "key": "validate_sync", "value": false },
                         { "key": "printf_enable", "value": false },
+                        { "key": "debug_descriptor", "value": false },
                         { "key": "gpuav_enable", "value": false },
                         { "key": "validate_best_practices", "value": true },
                         { "key": "report_flags", "value": [ "error", "warn", "perf" ] },
@@ -167,6 +170,7 @@
                         { "key": "thread_safety", "value": true },
                         { "key": "validate_sync", "value": true },
                         { "key": "printf_enable", "value": false },
+                        { "key": "debug_descriptor", "value": false },
                         { "key": "gpuav_enable", "value": false },
                         { "key": "validate_best_practices", "value": false },
                         { "key": "report_flags", "value": [ "error" ] },
@@ -194,6 +198,7 @@
                         { "key": "thread_safety", "value": false },
                         { "key": "validate_sync", "value": false },
                         { "key": "printf_enable", "value": false },
+                        { "key": "debug_descriptor", "value": false },
                         { "key": "gpuav_enable", "value": true },
                         { "key": "gpuav_shader_instrumentation", "value": true },
                         { "key": "gpuav_select_instrumented_shaders", "value": false },
@@ -225,6 +230,7 @@
                         { "key": "validate_sync", "value": false },
                         { "key": "gpuav_enable", "value": false },
                         { "key": "printf_enable", "value": true },
+                        { "key": "debug_descriptor", "value": false },
                         { "key": "validate_best_practices", "value": false },
                         { "key": "report_flags",  "value": [ "error", "warn", "info" ] },
                         { "key": "debug_action",  "value": [] },
@@ -252,6 +258,7 @@
                         { "key": "validate_sync", "value": false },
                         { "key": "gpuav_enable", "value": false },
                         { "key": "printf_enable", "value": false },
+                        { "key": "debug_descriptor", "value": false },
                         { "key": "validate_best_practices", "value": false },
                         { "key": "report_flags",  "value": [ "warn" ] },
                         { "key": "debug_action",  "value": [ "VK_DBG_LAYER_ACTION_LOG_MSG", "VK_DBG_LAYER_ACTION_DEBUG_OUTPUT" ] },
@@ -632,6 +639,79 @@
                             ]
                         },
                         {
+                            "key": "debug_descriptor",
+                            "label": "Debug Descriptor",
+                            "description": "[Used for VK_EXT_descriptor_buffer and VK_EXT_descriptor_heap] Enable DebugDescriptor and will print anything that uses NonSemantic.DebugDescriptor in their SPIR-V",
+                            "view": "DEBUG",
+                            "type": "BOOL",
+                            "default": false,
+                            "platforms": [ "WINDOWS", "LINUX" ],
+                            "settings": [
+                                {
+                                    "key": "debug_descriptor_to_stdout",
+                                    "label": "Redirect DebugDescriptor messages to stdout",
+                                    "description": "Enable redirection of Debug Descriptor messages from the debug callback to stdout",
+                                    "view": "DEBUG",
+                                    "type": "BOOL",
+                                    "default": true,
+                                    "dependence": {
+                                        "mode": "ALL",
+                                        "settings": [
+                                            { "key": "debug_descriptor", "value": true }
+                                        ]
+                                    },
+                                    "messages": [
+                                        {
+                                            "key": "debug_descriptor_msg3",
+                                            "title": "Debug Descriptor without 'info' level message severity flag",
+                                            "version": 1,
+                                            "description": "Enabling Debug Descriptor output redirection to the debug callback, but 'info' level message severity is disabled, so messages won't be shown.",
+                                            "informative": "Adding 'info' level to 'Message Severity'",
+                                            "severity": "INFORMATION",
+                                            "conditions": [
+                                                { "setting": { "key": "debug_descriptor", "value": true }},
+                                                { "setting": { "key": "debug_descriptor_to_stdout", "value": false }},
+                                                { "setting": { "key": "report_flags", "value": ["info"]}, "operator": "NOT" }
+                                            ],
+                                            "actions": {
+                                                "default": "BUTTON0",
+                                                "BUTTON0": {
+                                                    "type": "OK",
+                                                    "changes": [
+                                                        { "setting": { "key": "report_flags", "value": ["info"]}, "operator": "APPEND" }
+                                                    ]
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            ],
+                            "messages": [
+                                {
+                                    "key": "debug_descriptor_msg1",
+                                    "title": "Warning: Debug Descriptor without info level message severity flag",
+                                    "version": 1,
+                                    "description": "Enabling Debug Descriptor, with output directed to the debug callback, but info level message severity is disabled, so messages won't be shown.",
+                                    "informative": "Adding 'info' level to 'Message Severity'",
+                                    "severity": "INFORMATION",
+                                    "conditions": [
+                                        { "setting": { "key": "debug_descriptor", "value": true }},
+                                        { "setting": { "key": "debug_descriptor_to_stdout", "value": false }},
+                                        { "setting": { "key": "report_flags", "value": ["info"]}, "operator": "NOT" }
+                                    ],
+                                    "actions": {
+                                        "default": "BUTTON0",
+                                        "BUTTON0": {
+                                            "type": "OK",
+                                            "changes": [
+                                                { "setting": { "key": "report_flags", "value": ["info"] }, "operator": "APPEND" }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        {
                             "key": "gpuav_enable",
                             "label": "GPU Assisted Validation",
                             "description": "Enable validation that cannot be done the CPU and needs hooks into the GPU execution",
@@ -794,6 +874,21 @@
                                             }
                                         },
                                         {
+                                            "key": "gpuav_validate_trace_ray",
+                                            "label": "TraceRay SPIR-V instructions",
+                                            "description": "Enable shader instrumentation on OpTraceRayKHR, OpHitObject*",
+                                            "type": "BOOL",
+                                            "view": "DEBUG",
+                                            "default": true,
+                                            "dependence": {
+                                                "mode": "ALL",
+                                                "settings": [
+                                                    { "key": "gpuav_enable", "value": true },
+                                                    { "key": "gpuav_shader_instrumentation", "value": true }
+                                                ]
+                                            }
+                                        },
+                                        {
                                             "key": "gpuav_vertex_attribute_fetch_oob",
                                             "label": "Out of bounds vertex attribute fetching",
                                             "description": "Validate that no vertex attribute fetching is out of bonds",
@@ -812,6 +907,21 @@
                                             "key": "gpuav_shader_sanitizer",
                                             "label": "Shader Sanitizer",
                                             "description": "Things invalid to do in SPIR-V but don't have a dedicated check (example: dividing an int by zero, reaching OpUnreachable, invalid casting, overflow/undeflow). When in safe mode, will modify the invalid usage.",
+                                            "type": "BOOL",
+                                            "view": "DEBUG",
+                                            "default": true,
+                                            "dependence": {
+                                                "mode": "ALL",
+                                                "settings": [
+                                                    { "key": "gpuav_enable", "value": true },
+                                                    { "key": "gpuav_shader_instrumentation", "value": true }
+                                                ]
+                                            }
+                                        },
+                                        {
+                                            "key": "gpuav_shared_memory_data_race",
+                                            "label": "Shared Memory Data Race Detection",
+                                            "description": "Detects data races on shared memory (Compute shaders only). Limitations: This does not handle mixing atomics and non-atomics on the same locations without a barrier in between, this could lead to false positives. This assumes barrier() is used for all shared memory synchronization.",
                                             "type": "BOOL",
                                             "view": "DEBUG",
                                             "default": true,
@@ -956,6 +1066,20 @@
                                             }
                                         }
                                     ]
+                                },
+                                {
+                                    "key": "gpuav_ray_tracing_buffers_consistency",
+                                    "label": "Ray tracing buffers consistency",
+                                    "type": "BOOL",
+                                    "default": false,
+                                    "description": "Validate that between a BLAS build and its update, triangle geometries using index buffer keep its content identical (VUID 03768), and that active/inactive primitives do not change this status (VUIDs 03663 and 03664). Warning: a record of vertex/index buffers will be maintained in device local memory, so validation can be GPU memory heavy.",
+                                    "dependence": {
+                                        "mode": "ALL",
+                                        "settings": [
+                                            { "key": "gpuav_enable", "value": true },
+                                            { "key": "gpuav_buffers_validation", "value": true }
+                                        ]
+                                    }
                                 },
                                 {
                                     "key": "gpuav_debug_settings",
@@ -1140,6 +1264,33 @@
                                     }
                                 }
                             ]
+                        }
+                    ]
+                },
+                {
+                    "key": "gpu_dump",
+                    "label": "GPU Dump",
+                    "view": "DEBUG",
+                    "description": "Similar to API Dump, but using all the state tracking information, print out information about GPU centric API usages.",
+                    "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ],
+                    "type": "GROUP",
+                    "expanded": true,
+                    "settings": [
+                        {
+                            "key": "gpu_dump_descriptors",
+                            "label": "Dump Descriptors",
+                            "view": "DEBUG",
+                            "description": "Dump VK_EXT_descriptor_buffer/VK_EXT_descriptor_heap descriptor information for draw/dispatch/traceRays",
+                            "type": "BOOL",
+                            "default": false
+                        },
+                        {
+                            "key": "gpu_dump_to_stdout",
+                            "label": "Redirect all GPU Dump to stdout",
+                            "view": "DEBUG",
+                            "description": "Instead of using the debug callback with information severity, redirect to stdout instead.",
+                            "type": "BOOL",
+                            "default": false
                         }
                     ]
                 },

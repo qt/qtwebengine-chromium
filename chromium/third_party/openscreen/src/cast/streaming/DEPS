@@ -9,3 +9,9 @@ include_rules = [
   '+openssl',
   '+json',
 ]
+
+specific_include_rules = {
+  'protobuf_messenger.h': [
+    '+google/protobuf/message_lite.h',
+  ],
+}

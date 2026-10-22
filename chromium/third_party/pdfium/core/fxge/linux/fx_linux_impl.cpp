@@ -175,6 +175,7 @@ class CLinuxPlatform : public CFX_GEModule::PlatformIface {
   ~CLinuxPlatform() override = default;
 
   void Init() override {}
+  void Terminate() override {}
 
   std::unique_ptr<SystemFontInfoIface> CreateDefaultSystemFontInfo() override {
     auto pInfo = std::make_unique<CFX_LinuxFontInfo>();

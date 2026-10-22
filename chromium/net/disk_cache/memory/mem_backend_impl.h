@@ -15,9 +15,9 @@
 #include "base/compiler_specific.h"
 #include "base/containers/linked_list.h"
 #include "base/functional/callback_forward.h"
-#include "base/memory/memory_pressure_listener.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/memory_coordinator/async_memory_consumer_registration.h"
 #include "base/strings/string_split.h"
 #include "base/time/time.h"
 #include "base/types/expected.h"
@@ -38,9 +38,8 @@ namespace disk_cache {
 
 // This class implements the Backend interface. An object of this class handles
 // the operations of the cache without writing to disk.
-class NET_EXPORT_PRIVATE MemBackendImpl final
-    : public Backend,
-      public base::MemoryPressureListener {
+class NET_EXPORT_PRIVATE MemBackendImpl final : public Backend,
+                                                public base::MemoryConsumer {
  public:
   explicit MemBackendImpl(net::NetLog* net_log);
 
@@ -56,9 +55,6 @@ class NET_EXPORT_PRIVATE MemBackendImpl final
   // pointer can be NULL if a fatal error is found.
   static std::unique_ptr<MemBackendImpl> CreateBackend(int64_t max_bytes,
                                                        net::NetLog* net_log);
-
-  // Performs general initialization for this current instance of the cache.
-  bool Init();
 
   // Returns the maximum size for a file to reside on the cache.
   int64_t MaxFileSize() const override;
@@ -133,8 +129,8 @@ class NET_EXPORT_PRIVATE MemBackendImpl final
   using EntryMap =
       std::unordered_map<std::string, raw_ptr<MemEntryImpl, CtnExperimental>>;
 
-  // Sets the maximum size for the total amount of data stored by this instance.
-  bool SetMaxSize(int64_t max_bytes);
+  // Performs general initialization for this current instance of the cache.
+  void Init(int32_t max_bytes);
 
   // Deletes entries from the cache until the current size is below the limit.
   void EvictIfNeeded();
@@ -142,9 +138,11 @@ class NET_EXPORT_PRIVATE MemBackendImpl final
   // Deletes entries until the current size is below |goal|.
   void EvictTill(int target_size);
 
-  // Called when we get low on memory.
-  void OnMemoryPressure(
-      base::MemoryPressureLevel memory_pressure_level) override;
+  int32_t CalculateTargetMemoryLimit() const;
+
+  // base::MemoryConsumer.
+  void OnUpdateMemoryLimit() override;
+  void OnReleaseMemory() override;
 
   raw_ptr<base::Clock> custom_clock_for_testing_ = nullptr;  // usually nullptr.
 
@@ -154,14 +152,18 @@ class NET_EXPORT_PRIVATE MemBackendImpl final
   // most recently used.
   base::LinkedList<MemEntryImpl> lru_list_;
 
-  int32_t max_size_ = 0;  // Maximum data size for this instance.
+  // Maximum data size for this instance, assuming no memory pressure.
+  int32_t max_size_ = 0;
+
+  // Current maximum data size for this instance, based on memory pressure.
+  int32_t current_max_size_ = 0;
+
   int32_t current_size_ = 0;
 
   raw_ptr<net::NetLog> net_log_;
   base::OnceClosure post_cleanup_callback_;
 
-  base::AsyncMemoryPressureListenerRegistration
-      memory_pressure_listener_registration_;
+  base::AsyncMemoryConsumerRegistration memory_consumer_registration_;
 
   base::WeakPtrFactory<MemBackendImpl> weak_factory_{this};
 };

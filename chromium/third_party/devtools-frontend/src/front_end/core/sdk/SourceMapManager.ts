@@ -93,7 +93,6 @@ export class SourceMapManager<T extends FrameAssociated> extends Common.ObjectWr
     let clientData: ClientData|null = {
       relativeSourceURL,
       relativeSourceMapURL,
-      sourceMap: undefined,
       sourceMapPromise: Promise.resolve(undefined),
     };
     if (this.#isEnabled) {
@@ -225,7 +224,7 @@ interface ClientData {
   // Stores the raw sourceMappingURL as provided by V8. These are not guaranteed to
   // be valid URLs and will be checked and resolved once `attachSourceMap` is called.
   relativeSourceMapURL: string;
-  sourceMap: SourceMap|undefined;
+  sourceMap?: SourceMap;
   sourceMapPromise: Promise<SourceMap|undefined>;
 }
 

@@ -59,8 +59,13 @@ VK_OBJECT_TYPE_GETTER(VkSampler, VK_OBJECT_TYPE_SAMPLER)
 VK_OBJECT_TYPE_GETTER(VkShaderModule, VK_OBJECT_TYPE_SHADER_MODULE)
 VK_OBJECT_TYPE_GETTER(VkImage, VK_OBJECT_TYPE_IMAGE)
 VK_OBJECT_TYPE_GETTER(VkImageView, VK_OBJECT_TYPE_IMAGE_VIEW)
+VK_OBJECT_TYPE_GETTER(VkBufferView, VK_OBJECT_TYPE_BUFFER_VIEW)
 
 #undef VK_OBJECT_TYPE_GETTER
+
+uint32_t ToPushConstantBytes(const ImmediateConstantMask& immediates) {
+    return static_cast<uint32_t>(immediates.count()) * kImmediateConstantElementByteSize;
+}
 
 VkCompareOp ToVulkanCompareOp(wgpu::CompareFunction op) {
     switch (op) {
@@ -401,13 +406,12 @@ ResultOrError<VkDrmFormatModifierPropertiesEXT> GetFormatModifierProps(
     return DAWN_VALIDATION_ERROR("DRM format modifier %u not supported.", modifier);
 }
 
-ResultOrError<VkSamplerYcbcrConversion> CreateSamplerYCbCrConversionCreateInfo(
-    YCbCrVkDescriptor yCbCrDescriptor,
-    Device* device) {
+ResultOrError<VkSamplerYcbcrConversion> CreateSamplerYCbCrConversion(
+    const Device* device,
+    const YCbCrVkDescriptor& yCbCrDescriptor) {
     uint64_t externalFormat = yCbCrDescriptor.externalFormat;
     VkFormat vulkanFormat = static_cast<VkFormat>(yCbCrDescriptor.vkFormat);
-    DAWN_INVALID_IF((externalFormat == 0 && vulkanFormat == VK_FORMAT_UNDEFINED),
-                    "Both VkFormat and VkExternalFormatANDROID are undefined.");
+    DAWN_ASSERT(externalFormat != 0 || vulkanFormat != VK_FORMAT_UNDEFINED);
 
     VkComponentMapping vulkanComponent;
     vulkanComponent.r = static_cast<VkComponentSwizzle>(yCbCrDescriptor.vkComponentSwizzleRed);

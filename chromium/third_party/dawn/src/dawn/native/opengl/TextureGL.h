@@ -29,7 +29,6 @@
 #define SRC_DAWN_NATIVE_OPENGL_TEXTUREGL_H_
 
 #include "dawn/native/Texture.h"
-
 #include "dawn/native/opengl/opengl_platform.h"
 
 namespace dawn::native::opengl {
@@ -93,10 +92,7 @@ class TextureView final : public TextureViewBase {
                                  GLuint depthLayer = 0);
 
   private:
-    TextureView(TextureBase* texture,
-                const UnpackedPtr<TextureViewDescriptor>& descriptor,
-                GLuint handle,
-                OwnsHandle ownsHandle);
+    TextureView(TextureBase* texture, const UnpackedPtr<TextureViewDescriptor>& descriptor);
 
     ~TextureView() override;
     void DestroyImpl(DestroyReason reason) override;

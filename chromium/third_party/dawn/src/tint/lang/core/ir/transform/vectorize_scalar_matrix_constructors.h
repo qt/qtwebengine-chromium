@@ -46,6 +46,7 @@ const core::ir::Capabilities kVectorizeScalarMatrixConstructorsCapabilities{
     core::ir::Capability::kAllowDuplicateBindings,
     core::ir::Capability::kAllowNonCoreTypes,
     core::ir::Capability::kAllow8BitIntegers,
+    core::ir::Capability::kAllow16BitIntegers,
 };
 
 /// VectorizeScalarMatrixConstructors is a transform that replaces construct instructions that

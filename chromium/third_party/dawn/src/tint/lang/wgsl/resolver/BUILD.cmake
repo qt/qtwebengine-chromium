@@ -84,9 +84,11 @@ tint_target_add_external_dependencies(tint_lang_wgsl_resolver lib
   "src_utils"
 )
 
+if(TINT_BUILD_WGSL_READER)
 ################################################################################
 # Target:    tint_lang_wgsl_resolver_test
 # Kind:      test
+# Condition: TINT_BUILD_WGSL_READER
 ################################################################################
 tint_add_target(tint_lang_wgsl_resolver_test test
   lang/wgsl/resolver/address_space_layout_validation_test.cc
@@ -94,6 +96,7 @@ tint_add_target(tint_lang_wgsl_resolver_test test
   lang/wgsl/resolver/alias_analysis_test.cc
   lang/wgsl/resolver/array_accessor_test.cc
   lang/wgsl/resolver/assignment_validation_test.cc
+  lang/wgsl/resolver/atomic_vec2u_min_max_extension_test.cc
   lang/wgsl/resolver/atomics_test.cc
   lang/wgsl/resolver/atomics_validation_test.cc
   lang/wgsl/resolver/attribute_validation_test.cc
@@ -157,6 +160,7 @@ tint_add_target(tint_lang_wgsl_resolver_test test
   lang/wgsl/resolver/subgroup_matrix_test.cc
   lang/wgsl/resolver/subgroup_size_control_extension_test.cc
   lang/wgsl/resolver/subgroups_extension_test.cc
+  lang/wgsl/resolver/swizzle_assignment_test.cc
   lang/wgsl/resolver/texel_buffer_test.cc
   lang/wgsl/resolver/texture_and_sampler_let_extension_test.cc
   lang/wgsl/resolver/type_validation_test.cc
@@ -208,4 +212,6 @@ if(TINT_BUILD_WGSL_READER)
   tint_target_add_dependencies(tint_lang_wgsl_resolver_test test
     tint_lang_wgsl_reader
   )
+endif(TINT_BUILD_WGSL_READER)
+
 endif(TINT_BUILD_WGSL_READER)

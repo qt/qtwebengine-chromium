@@ -33,7 +33,7 @@ namespace blink {
 static bool IsIntegrityCharacter(UChar c) {
   // Check if it's a base64 encoded value. We're pretty loose here, as there's
   // not much risk in it, and it'll make it simpler for developers.
-  return IsASCIIAlphanumeric(c) || c == '_' || c == '-' || c == '+' ||
+  return IsAsciiAlphanumeric(c) || c == '_' || c == '-' || c == '+' ||
          c == '/' || c == '=';
 }
 
@@ -295,7 +295,7 @@ bool SubresourceIntegrity::CheckHashesImpl(
 
     // And finally decode the metadata's digest for comparison.
     DigestValue expected_value;
-    expected_value.AppendSpan(base::as_byte_span(metadata.value));
+    expected_value.append_range(metadata.value);
 
     // 5.4. If actualValue is a case-sensitive match for expectedValue, return
     // true set hash-match to true and break.

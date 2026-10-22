@@ -29,7 +29,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/field_trial.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
@@ -39,18 +38,16 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/types/pass_key.h"
-#include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_ai_form_rationalization.h"
 #include "components/autofill/core/browser/autofill_field.h"
+#include "components/autofill/core/browser/autofill_format_string.h"
 #include "components/autofill/core/browser/autofill_server_prediction.h"
 #include "components/autofill/core/browser/autofill_type.h"
-#include "components/autofill/core/browser/crowdsourcing/server_prediction_overrides.h"
 #include "components/autofill/core/browser/data_quality/autofill_data_util.h"
 #include "components/autofill/core/browser/data_quality/validation.h"
 #include "components/autofill/core/browser/field_type_utils.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_parsing/autofill_parsing_utils.h"
-#include "components/autofill/core/browser/form_parsing/buildflags.h"
 #include "components/autofill/core/browser/form_parsing/form_field_parser.h"
 #include "components/autofill/core/browser/form_processing/autofill_ai/determine_attribute_types.h"
 #include "components/autofill/core/browser/form_processing/label_processing_util.h"
@@ -97,7 +94,7 @@ std::string ServerTypesToString(const AutofillField& field) {
   std::vector<std::string_view> server_types =
       base::ToVector(field.server_predictions(), [](const auto& prediction) {
         return FieldTypeToStringView(
-            ToSafeFieldType(prediction.type(), NO_SERVER_DATA));
+            ToSafeFieldType(prediction.type()).value_or(NO_SERVER_DATA));
       });
 
   if (server_types.empty()) {
@@ -431,15 +428,18 @@ void FormStructure::UpdateFormData(const FormData& form_data) {
           // from it and add it to the list.
           return std::make_unique<AutofillField>(field_data);
         }
-        const bool old_is_autofilled = autofill_field->is_autofilled();
+        const bool old_is_autofilled_according_to_renderer =
+            autofill_field->is_autofilled_deprecated(/*pass_key=*/{});
 
         // The field existed in the cache previously, update the cached members
         // of `FormFieldData` in `autofill_field` provided by `field_data`.
         autofill_field->UpdateFieldData(field_data, /*pass_key=*/{});
 
-        // TODO(crbug.com/393114125): Remove the special handling of
-        // `FormFieldData::is_autofilled_` below after fixing its semantics.
-        autofill_field->set_is_autofilled(old_is_autofilled);
+        if (!base::FeatureList::IsEnabled(features::kAutofillFixIsAutofilled)) {
+          autofill_field->set_is_autofilled_deprecated(
+              old_is_autofilled_according_to_renderer,
+              base::PassKey<FormStructure>());
+        }
         return autofill_field;
       });
 
@@ -537,13 +537,25 @@ void FormStructure::RetrieveFromCache(const FormStructure& cached_form,
     }
     if (reason == RetrieveFromCacheReason::kFormCacheUpdateWithoutParsing ||
         reason == RetrieveFromCacheReason::kFormCacheUpdateAfterParsing) {
-      field->set_is_autofilled(cached_field->is_autofilled());
+      if (!base::FeatureList::IsEnabled(features::kAutofillFixIsAutofilled)) {
+        field->set_is_autofilled_deprecated(
+            cached_field->is_autofilled_deprecated(/*pass_key=*/{}),
+            base::PassKey<FormStructure>());
+      }
     }
     field->set_autofill_source_profile_guid(
         cached_field->autofill_source_profile_guid());
     field->set_autofilled_type(cached_field->autofilled_type());
     field->set_filling_product(cached_field->filling_product());
-    field->set_previously_autofilled(cached_field->previously_autofilled());
+    if (!base::FeatureList::IsEnabled(features::kAutofillFixIsAutofilled)) {
+      field->set_is_user_edited_deprecated(
+          cached_field->is_user_edited_deprecated());
+      field->set_previously_autofilled_deprecated(
+          cached_field->previously_autofilled_deprecated());
+    }
+    field->set_field_modifiers(
+        cached_field->field_modifiers(base::PassKey<FormStructure>()),
+        base::PassKey<FormStructure>());
     field->set_did_trigger_suggestions(cached_field->did_trigger_suggestions());
     field->set_was_focused(cached_field->was_focused());
     if (base::optional_ref<const AutofillFormatString> format_string =
@@ -695,12 +707,8 @@ FormData FormStructure::ToFormData() const {
   data.set_host_frame(host_frame_);
   data.set_version(version_);
   data.set_child_frames(child_frames_);
-  std::vector<FormFieldData> fields;
-  fields.reserve(fields_.size());
-  for (const auto& field : fields_) {
-    fields.push_back(*field);
-  }
-  data.set_fields(std::move(fields));
+  data.set_fields(base::ToVector(
+      fields_, [](const auto& field) -> FormFieldData { return *field; }));
   return data;
 }
 

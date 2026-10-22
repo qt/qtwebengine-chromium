@@ -9,7 +9,7 @@ This can be useful in a variety of contexts, particularly when "importing" vecto
 
 \section TutorialMapIntroduction Introduction
 
-Occasionally you may have a pre-defined array of numbers that you want to use within %Eigen as a vector or matrix. While one option is to make a copy of the data, most commonly you probably want to re-use this memory as an %Eigen type. Fortunately, this is very easy with the Map class.
+Occasionally you may have a pre-defined array of numbers that you want to use within %Eigen as a vector or matrix. While one option is to make a copy of the data, most commonly you probably want to reuse this memory as an %Eigen type. Fortunately, this is very easy with the Map class.
 
 \section TutorialMapTypes Map types and declaring Map variables
 

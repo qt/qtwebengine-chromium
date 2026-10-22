@@ -15,6 +15,10 @@
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "chrome/common/read_anything/read_anything_util.h"
+#if !BUILDFLAG(IS_CHROMEOS)
+#include "chrome/common/webui_url_constants.h"
+#include "content/public/common/url_constants.h"
+#endif
 #include "chrome/renderer/accessibility/read_anything/read_aloud_traversal_utils.h"
 #include "chrome/renderer/accessibility/read_anything/read_anything_node_utils.h"
 #include "content/public/renderer/render_thread.h"
@@ -134,7 +138,8 @@ void ReadAnythingAppModel::OnSettingsRestoredFromPrefs(
     bool links_enabled,
     bool images_enabled,
     read_anything::mojom::Colors color,
-    read_anything::mojom::LineFocus line_focus) {
+    read_anything::mojom::LineFocus last_non_disabled_line_focus,
+    bool line_focus_enabled) {
   line_spacing_ = line_spacing;
   letter_spacing_ = letter_spacing;
   font_name_ = std::move(font_name);
@@ -142,13 +147,14 @@ void ReadAnythingAppModel::OnSettingsRestoredFromPrefs(
   links_enabled_ = links_enabled;
   images_enabled_ = images_enabled;
   color_theme_ = color;
-  line_focus_ = line_focus;
+  last_non_disabled_line_focus_ = last_non_disabled_line_focus;
+  line_focus_enabled_ = line_focus_enabled;
 }
 
 void ReadAnythingAppModel::Reset(std::vector<ui::AXNodeID> content_node_ids) {
   content_node_ids_ = std::move(content_node_ids);
   display_node_ids_.clear();
-  distillation_in_progress_ = false;
+  screen2x_distiller_running_ = false;
   requires_post_process_selection_ = false;
   selections_from_reading_mode_ = 0;
   ResetSelection();
@@ -450,14 +456,19 @@ void ReadAnythingAppModel::SetTreeInfoUrlInformation(
   // A Google Docs URL is in the form of "https://docs.google.com/document*" or
   // "https://docs.sandbox.google.com/document*".
   const GURL url(root->GetStringAttribute(ax::mojom::StringAttribute::kUrl));
-  tree_info.is_reload =
-      !previous_tree_url_.empty() && (previous_tree_url_ == url.GetContent());
+  tree_info.is_reload = !previous_tree_url_.empty() &&
+                        (previous_tree_url_ == url.GetContentPiece());
 
   tree_info.is_docs = url.SchemeIsHTTPOrHTTPS() &&
                       (url.DomainIs("docs.google.com") ||
                        url.DomainIs("docs.sandbox.google.com")) &&
                       url.GetPath().starts_with("/document") &&
                       !url.ExtractFileName().empty();
+
+#if !BUILDFLAG(IS_CHROMEOS)
+  tree_info.is_whats_new = url.SchemeIs(content::kChromeUIScheme) &&
+                           url.host() == chrome::kChromeUIWhatsNewHost;
+#endif
 
   tree_info.is_url_information_set = true;
   previous_tree_url_ = url.GetContent();
@@ -484,6 +495,14 @@ bool ReadAnythingAppModel::IsReload() const {
   }
 
   return tree_infos_.at(active_tree_id_)->is_reload;
+}
+
+bool ReadAnythingAppModel::IsWhatsNew() const {
+  if (!tree_infos_.contains(root_tree_id_)) {
+    return false;
+  }
+
+  return tree_infos_.at(root_tree_id_)->is_whats_new;
 }
 
 void ReadAnythingAppModel::AddPendingUpdates(const ui::AXTreeID& tree_id,
@@ -554,7 +573,14 @@ void ReadAnythingAppModel::UnserializeUpdates(const Updates& updates,
       VLOG(1) << "Unserializing an update with a known tree ID: "
               << update.tree_data.tree_id;
     }
-    tree->Unserialize(update);
+    // If tree->Unserialize returns false, there is invalid state and the tree
+    // should be destroyed.
+    const bool unserialized = tree->Unserialize(update);
+    DUMP_WILL_BE_CHECK(unserialized);
+    if (!unserialized) {
+      OnAXTreeDestroyed(tree_id);
+      return;
+    }
   }
 
   // Set URL info if it hasn't already been set.
@@ -781,6 +807,15 @@ ui::AXNode* ReadAnythingAppModel::GetAXNode(
   return tree->GetFromId(ax_node_id);
 }
 
+ui::AXNode* ReadAnythingAppModel::GetAXNodeFromRoot(
+    const ui::AXNodeID& ax_node_id) const {
+  ui::AXSerializableTree* tree = GetTreeFromId(root_tree_id_);
+  if (!tree) {
+    return nullptr;
+  }
+  return tree->GetFromId(ax_node_id);
+}
+
 bool ReadAnythingAppModel::NodeIsContentNode(ui::AXNodeID ax_node_id) const {
   return std::ranges::contains(content_node_ids_, ax_node_id);
 }
@@ -794,7 +829,8 @@ void ReadAnythingAppModel::ResetTextSize() {
 }
 
 void ReadAnythingAppModel::SetDefaultDistillationMethod() {
-  if (features::IsReadAnythingWithReadabilityEnabled()) {
+  if (features::IsReadAnythingWithReadabilityEnabled() &&
+      !features::IsReadAnythingReadAloudPhraseHighlightingEnabled()) {
     next_distillation_method_ = DistillationMethod::kReadability;
     current_content_distillation_method_ = DistillationMethod::kReadability;
   } else {
@@ -805,6 +841,12 @@ void ReadAnythingAppModel::SetDefaultDistillationMethod() {
 
 void ReadAnythingAppModel::OnScroll(bool on_selection,
                                     bool from_reading_mode) const {
+  // Scroll events shouldn't be logged when reading mode is inactive.
+  if (features::IsImmersiveReadAnythingEnabled() &&
+      active_presentation_state_ ==
+          read_anything::mojom::ReadAnythingPresentationState::kInactive) {
+    return;
+  }
   // Enum for logging how a scroll occurs.
   // These values are persisted to logs. Entries should not be renumbered and
   // numeric values should never be reused.
@@ -903,19 +945,22 @@ void ReadAnythingAppModel::ProcessNonGeneratedEvents(
       case ax::mojom::Event::kLocationChanged:
         delay_screen2x_training_data_collection_ = true;
         break;
+      case ax::mojom::Event::kCheckedStateChanged:
+        if (IsWhatsNew()) {
+          requires_distillation_ = true;
+        }
+        break;
 
       case ax::mojom::Event::kBlur:
         // Closing ads sometimes sends this event but we also get this when
         // keyboard focus changes. Only try to redistill if we have no content
         // right now.
-        if (features::IsReadAnythingReadAloudEnabled() &&
-            content_node_ids_.size() == 0) {
+        if (content_node_ids_.size() == 0) {
           requires_distillation_ = true;
         }
         break;
       // Audit these events e.g. to require distillation.
       case ax::mojom::Event::kActiveDescendantChanged:
-      case ax::mojom::Event::kCheckedStateChanged:
       case ax::mojom::Event::kChildrenChanged:
       case ax::mojom::Event::kDocumentSelectionChanged:
       case ax::mojom::Event::kDocumentTitleChanged:
@@ -1029,8 +1074,7 @@ void ReadAnythingAppModel::ProcessGeneratedEvents(
         requires_post_process_selection_ = true;
         break;
       case ui::AXEventGenerator::Event::DOCUMENT_TITLE_CHANGED:
-        if (!features::IsReadAnythingReadAloudEnabled() ||
-            event.event_params->event_from == ax::mojom::EventFrom::kUser) {
+        if (event.event_params->event_from == ax::mojom::EventFrom::kUser) {
           requires_distillation_ = true;
         }
         break;
@@ -1059,20 +1103,16 @@ void ReadAnythingAppModel::ProcessGeneratedEvents(
         }
         break;
       case ui::AXEventGenerator::Event::COLLAPSED:
-        if (features::IsReadAnythingReadAloudEnabled()) {
           ResetSelection();
           requires_post_process_selection_ = false;
           redraw_required_ = true;
-        }
         break;
       case ui::AXEventGenerator::Event::EXPANDED:
-        if (features::IsReadAnythingReadAloudEnabled()) {
           if (std::ranges::contains(content_node_ids_, event.node_id)) {
             redraw_required_ = true;
           } else {
             requires_distillation_ = true;
           }
-        }
         break;
       // Audit these events e.g. to trigger distillation.
       case ui::AXEventGenerator::Event::EDITABLE_TEXT_CHANGED:
@@ -1099,8 +1139,10 @@ void ReadAnythingAppModel::ProcessGeneratedEvents(
       case ui::AXEventGenerator::Event::FOCUS_CHANGED:
       case ui::AXEventGenerator::Event::FLOW_FROM_CHANGED:
       case ui::AXEventGenerator::Event::FLOW_TO_CHANGED:
+      case ui::AXEventGenerator::Event::GRAMMAR_MARKER_CHANGED:
       case ui::AXEventGenerator::Event::HASPOPUP_CHANGED:
       case ui::AXEventGenerator::Event::HIERARCHICAL_LEVEL_CHANGED:
+      case ui::AXEventGenerator::Event::HIGHLIGHT_MARKER_CHANGED:
       case ui::AXEventGenerator::Event::IGNORED_CHANGED:
       case ui::AXEventGenerator::Event::IMAGE_ANNOTATION_CHANGED:
       case ui::AXEventGenerator::Event::INVALID_STATUS_CHANGED:
@@ -1118,16 +1160,7 @@ void ReadAnythingAppModel::ProcessGeneratedEvents(
       case ui::AXEventGenerator::Event::MENU_POPUP_START:
       case ui::AXEventGenerator::Event::MULTILINE_STATE_CHANGED:
       case ui::AXEventGenerator::Event::MULTISELECTABLE_STATE_CHANGED:
-        break;
       case ui::AXEventGenerator::Event::NAME_CHANGED:
-        if (!features::IsReadAnythingReadAloudEnabled() &&
-            last_expanded_node_id_ == event.node_id) {
-          ResetSelection();
-          requires_post_process_selection_ = false;
-          reset_last_expanded_node_id();
-          redraw_required_ = true;
-        }
-        break;
       case ui::AXEventGenerator::Event::OBJECT_ATTRIBUTE_CHANGED:
       case ui::AXEventGenerator::Event::ORIENTATION_CHANGED:
       case ui::AXEventGenerator::Event::PARENT_CHANGED:
@@ -1148,6 +1181,7 @@ void ReadAnythingAppModel::ProcessGeneratedEvents(
       case ui::AXEventGenerator::Event::SELECTED_VALUE_CHANGED:
       case ui::AXEventGenerator::Event::SET_SIZE_CHANGED:
       case ui::AXEventGenerator::Event::SORT_CHANGED:
+      case ui::AXEventGenerator::Event::SPELLING_MARKER_CHANGED:
       case ui::AXEventGenerator::Event::STATE_CHANGED:
       case ui::AXEventGenerator::Event::TEXT_ATTRIBUTE_CHANGED:
       case ui::AXEventGenerator::Event::TEXT_SELECTION_CHANGED:
@@ -1225,8 +1259,9 @@ void ReadAnythingAppModel::SetFontSize(double font_size, int increment) {
 
 const std::set<ui::AXNodeID>* ReadAnythingAppModel::GetCurrentlyVisibleNodes()
     const {
-  return selection_node_ids_.empty() ? &display_node_ids()
-                                     : &selection_node_ids_;
+  return (selection_node_ids_.empty() || !has_selection())
+             ? &display_node_ids()
+             : &selection_node_ids_;
 }
 
 void ReadAnythingAppModel::AllowChildTreeForActiveTree(bool use_child_tree) {

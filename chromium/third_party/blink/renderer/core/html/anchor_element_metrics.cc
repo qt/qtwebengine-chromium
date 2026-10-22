@@ -101,27 +101,27 @@ bool IsStringIncrementedByOne(const String& source, const String& target) {
 
   // There is no difference, or the difference is not a digit.
   if (left == source.length() || left == target.length() ||
-      !IsASCIIDigit(source[left]) || !IsASCIIDigit(target[left])) {
+      !IsAsciiDigit(source[left]) || !IsAsciiDigit(target[left])) {
     return false;
   }
 
   // Expand towards right to extract the numbers.
   unsigned int source_right = left + 1;
-  while (source_right < source.length() && IsASCIIDigit(source[source_right])) {
+  while (source_right < source.length() && IsAsciiDigit(source[source_right])) {
     source_right++;
   }
 
   unsigned int target_right = left + 1;
-  while (target_right < target.length() && IsASCIIDigit(target[target_right])) {
+  while (target_right < target.length() && IsAsciiDigit(target[target_right])) {
     target_right++;
   }
 
   int source_number =
-      CharactersToInt(StringView(source, left, source_right - left),
-                      NumberParsingOptions(), /*ok=*/nullptr);
+      StringToInt(StringView(source, left, source_right - left), {})
+          .value_or(0);
   int target_number =
-      CharactersToInt(StringView(target, left, target_right - left),
-                      NumberParsingOptions(), /*ok=*/nullptr);
+      StringToInt(StringView(target, left, target_right - left), {})
+          .value_or(0);
 
   // The second number should increment by one and the rest of the strings
   // should be the same.
@@ -193,7 +193,7 @@ uint32_t AnchorElementId(const HTMLAnchorElementBase& element) {
 mojom::blink::AnchorElementMetricsPtr CreateAnchorElementMetrics(
     const HTMLAnchorElementBase& anchor_element) {
   const KURL anchor_href = anchor_element.Href();
-  if (!anchor_href.ProtocolIsInHTTPFamily()) {
+  if (!anchor_href.ProtocolIsInHttpFamily()) {
     return nullptr;
   }
 

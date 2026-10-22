@@ -9,6 +9,8 @@ source_set("model") {
     "gemini_settings_action.h",
     "gemini_settings_action.mm",
     "gemini_settings_action_type.h",
+    "gemini_settings_constants.h",
+    "gemini_settings_constants.mm",
     "gemini_settings_context.h",
     "gemini_settings_metadata.h",
     "gemini_settings_metadata.mm",
@@ -17,5 +19,14 @@ source_set("model") {
   deps = [
     "//ios/chrome/browser/shared/ui/table_view/cells",
     "//ui/base",
+  ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+  sources = [ "gemini_settings_action_unittest.mm" ]
+  deps = [
+    ":model",
+    "//testing/gtest",
   ]
 }

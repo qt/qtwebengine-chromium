@@ -202,7 +202,12 @@ struct packet_traits<float> : default_packet_traits {
     HasASin = 1,
     HasATan = 1,
     HasATanh = 1,
+    HasSinh = 1,
+    HasCosh = 1,
+    HasASinh = 1,
+    HasACosh = 1,
     HasLog = 1,
+    HasLog10 = 1,
     HasExp = 1,
     HasLog1p = 1,
     HasExpm1 = 1,
@@ -2496,38 +2501,60 @@ template <>
 EIGEN_STRONG_INLINE Packet4f ploadquad<Packet4f>(const float* from) {
   return vld1q_dup_f32(from);
 }
+
+// WORKAROUND: Apple Clang 17.0.0 (and Homebrew Clang 21.1.8) at -O0 optimization
+// generate incorrect code for vld1_dup_[su]8, ignoring the pointer offset.
+// We use vdup_n_s8(*from) to force a safe scalar load before broadcast.
+EIGEN_ALWAYS_INLINE int8x8_t eigen_vld1_dup_s8(const int8_t* ptr) {
+#if EIGEN_COMP_CLANGAPPLE && EIGEN_ARCH_ARM64
+  return vdup_n_s8(*ptr);
+#else
+  return vld1_dup_s8(ptr);
+#endif
+}
+
+EIGEN_ALWAYS_INLINE uint8x8_t eigen_vld1_dup_u8(const uint8_t* ptr) {
+#if EIGEN_COMP_CLANGAPPLE && EIGEN_ARCH_ARM64
+  return vdup_n_u8(*ptr);
+#else
+  return vld1_dup_u8(ptr);
+#endif
+}
+
 template <>
 EIGEN_STRONG_INLINE Packet4c ploadquad<Packet4c>(const int8_t* from) {
-  return vget_lane_s32(vreinterpret_s32_s8(vld1_dup_s8(from)), 0);
+  return vget_lane_s32(vreinterpret_s32_s8(eigen_vld1_dup_s8(from)), 0);
 }
 template <>
 EIGEN_STRONG_INLINE Packet8c ploadquad<Packet8c>(const int8_t* from) {
   return vreinterpret_s8_u32(
-      vzip_u32(vreinterpret_u32_s8(vld1_dup_s8(from)), vreinterpret_u32_s8(vld1_dup_s8(from + 1))).val[0]);
+      vzip_u32(vreinterpret_u32_s8(eigen_vld1_dup_s8(from)), vreinterpret_u32_s8(eigen_vld1_dup_s8(from + 1))).val[0]);
 }
 template <>
 EIGEN_STRONG_INLINE Packet16c ploadquad<Packet16c>(const int8_t* from) {
   const int8x8_t a = vreinterpret_s8_u32(
-      vzip_u32(vreinterpret_u32_s8(vld1_dup_s8(from)), vreinterpret_u32_s8(vld1_dup_s8(from + 1))).val[0]);
+      vzip_u32(vreinterpret_u32_s8(eigen_vld1_dup_s8(from)), vreinterpret_u32_s8(eigen_vld1_dup_s8(from + 1))).val[0]);
   const int8x8_t b = vreinterpret_s8_u32(
-      vzip_u32(vreinterpret_u32_s8(vld1_dup_s8(from + 2)), vreinterpret_u32_s8(vld1_dup_s8(from + 3))).val[0]);
+      vzip_u32(vreinterpret_u32_s8(eigen_vld1_dup_s8(from + 2)), vreinterpret_u32_s8(eigen_vld1_dup_s8(from + 3)))
+          .val[0]);
   return vcombine_s8(a, b);
 }
 template <>
 EIGEN_STRONG_INLINE Packet4uc ploadquad<Packet4uc>(const uint8_t* from) {
-  return vget_lane_u32(vreinterpret_u32_u8(vld1_dup_u8(from)), 0);
+  return vget_lane_u32(vreinterpret_u32_u8(eigen_vld1_dup_u8(from)), 0);
 }
 template <>
 EIGEN_STRONG_INLINE Packet8uc ploadquad<Packet8uc>(const uint8_t* from) {
   return vreinterpret_u8_u32(
-      vzip_u32(vreinterpret_u32_u8(vld1_dup_u8(from)), vreinterpret_u32_u8(vld1_dup_u8(from + 1))).val[0]);
+      vzip_u32(vreinterpret_u32_u8(eigen_vld1_dup_u8(from)), vreinterpret_u32_u8(eigen_vld1_dup_u8(from + 1))).val[0]);
 }
 template <>
 EIGEN_STRONG_INLINE Packet16uc ploadquad<Packet16uc>(const uint8_t* from) {
   const uint8x8_t a = vreinterpret_u8_u32(
-      vzip_u32(vreinterpret_u32_u8(vld1_dup_u8(from)), vreinterpret_u32_u8(vld1_dup_u8(from + 1))).val[0]);
+      vzip_u32(vreinterpret_u32_u8(eigen_vld1_dup_u8(from)), vreinterpret_u32_u8(eigen_vld1_dup_u8(from + 1))).val[0]);
   const uint8x8_t b = vreinterpret_u8_u32(
-      vzip_u32(vreinterpret_u32_u8(vld1_dup_u8(from + 2)), vreinterpret_u32_u8(vld1_dup_u8(from + 3))).val[0]);
+      vzip_u32(vreinterpret_u32_u8(eigen_vld1_dup_u8(from + 2)), vreinterpret_u32_u8(eigen_vld1_dup_u8(from + 3)))
+          .val[0]);
   return vcombine_u8(a, b);
 }
 template <>
@@ -3966,8 +3993,16 @@ EIGEN_STRONG_INLINE uint64_t predux_max<Packet2ul>(const Packet2ul& a) {
 
 template <>
 EIGEN_STRONG_INLINE bool predux_any(const Packet4f& x) {
-  uint32x2_t tmp = vorr_u32(vget_low_u32(vreinterpretq_u32_f32(x)), vget_high_u32(vreinterpretq_u32_f32(x)));
-  return vget_lane_u32(vpmax_u32(tmp, tmp), 0);
+  uint32x4_t u = vreinterpretq_u32_f32(x);
+#if EIGEN_ARCH_ARM64
+  return vget_lane_u64(vreinterpret_u64_u16(vmovn_u32(u)), 0);
+#else
+  uint32x2_t tmp = vorr_u32(vget_low_u32(u), vget_high_u32(u));
+  uint32_t a, b;
+  // GCC and Clang refuse to emit this instruction.
+  asm("vmov %0, %1, %P2" : "=r"(a), "=r"(b) : "w"(tmp));
+  return a | b;
+#endif
 }
 
 // Helpers for ptranspose.
@@ -5010,11 +5045,16 @@ struct packet_traits<double> : default_packet_traits {
 #if EIGEN_ARCH_ARM64 && !EIGEN_APPLE_DOUBLE_NEON_BUG
     HasExp = 1,
     HasLog = 1,
+    HasLog10 = 1,
     HasLog1p = 1,
     HasExpm1 = 1,
     HasPow = 1,
     HasATan = 1,
     HasATanh = 1,
+    HasSinh = 1,
+    HasCosh = 1,
+    HasASinh = 1,
+    HasACosh = 1,
 #endif
     HasSin = EIGEN_FAST_MATH,
     HasCos = EIGEN_FAST_MATH,

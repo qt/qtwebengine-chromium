@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
-import * as Host from '../../core/host/host.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as AIAssistance from '../../models/ai_assistance/ai_assistance.js';
@@ -11,10 +10,8 @@ import * as Bindings from '../../models/bindings/bindings.js';
 import type * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Trace from '../../models/trace/trace.js';
 import * as Workspace from '../../models/workspace/workspace.js';
-import {mockAidaClient} from '../../testing/AiAssistanceHelpers.js';
 import {dispatchClickEvent, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {
-  createTarget,
   describeWithEnvironment,
   registerNoopActions,
 } from '../../testing/EnvironmentHelpers.js';
@@ -22,6 +19,7 @@ import {type StubbedFileManager, stubFileManager} from '../../testing/FileManage
 import {TraceLoader} from '../../testing/TraceLoader.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
+import * as TimelineComponents from './components/components.js';
 import * as Timeline from './timeline.js';
 
 async function contentDataToFile(contentData: TextUtils.ContentData.ContentData): Promise<Trace.Types.File.TraceFile> {
@@ -37,6 +35,7 @@ async function contentDataToFile(contentData: TextUtils.ContentData.ContentData)
 describeWithEnvironment('TimelinePanel', function() {
   let timeline: Timeline.TimelinePanel.TimelinePanel;
   let traceModel: Trace.TraceModel.Model;
+  let resourceLoader: SDK.PageResourceLoader.PageResourceLoader;
   beforeEach(() => {
     registerNoopActions(
         ['timeline.toggle-recording', 'timeline.record-reload', 'timeline.show-history', 'components.collect-garbage']);
@@ -54,7 +53,7 @@ describeWithEnvironment('TimelinePanel', function() {
     });
     Timeline.ModificationsManager.ModificationsManager.reset();
     traceModel = Trace.TraceModel.Model.createWithAllHandlers();
-    const resourceLoader = {loadResource: sinon.stub()};
+    resourceLoader = {loadResource: sinon.stub()} as unknown as SDK.PageResourceLoader.PageResourceLoader;
     timeline = Timeline.TimelinePanel.TimelinePanel.instance({forceNew: true, resourceLoader, traceModel});
     renderElementIntoDOM(timeline);
   });
@@ -235,68 +234,34 @@ describeWithEnvironment('TimelinePanel', function() {
     }
   });
 
-  describe('handleExternalRecordRequest', () => {
-    it('returns information on the insights found in the recording', async function() {
-      const uiView = UI.ViewManager.ViewManager.instance({forceNew: true});
-      sinon.stub(uiView, 'showView');
+  describe('auto-toggling the sidebar', () => {
+    function setupStubs(config: {
+      sidebarHasBeenOpened: boolean,
+      sidebarIsShowing: boolean,
+    }): void {
+      sinon.stub(TimelineComponents.Sidebar.SidebarWidget.prototype, 'sidebarHasBeenOpened')
+          .returns(config.sidebarHasBeenOpened);
+      sinon.stub(UI.SplitWidget.SplitWidget.prototype, 'sidebarIsShowing').returns(config.sidebarIsShowing);
+    }
 
-      const events = await TraceLoader.rawEvents(this, 'web-dev-with-commit.json.gz') as Trace.Types.Events.Event[];
+    it('opens the sidebar once a trace is imported if the user has not seen it before', async function() {
+      setupStubs({sidebarHasBeenOpened: false, sidebarIsShowing: false});
+      const timeline = Timeline.TimelinePanel.TimelinePanel.instance({forceNew: true, resourceLoader, traceModel});
+      const showBothStub = sinon.stub(timeline.splitWidget(), 'showBoth').callsFake(() => {});
+      const events = await TraceLoader.rawEvents(this, 'web-dev.json.gz') as Trace.Types.Events.Event[];
       await timeline.loadingComplete(events, null, null);
 
-      sinon.stub(timeline, 'recordReload').callsFake(() => {
-        timeline.dispatchEventToListeners(Timeline.TimelinePanel.Events.RECORDING_COMPLETED, {traceIndex: 0});
-      });
-
-      const generator = Timeline.TimelinePanel.TimelinePanel.handleExternalRecordRequest();
-      let externalRequestResponse = await generator.next();
-      while (!externalRequestResponse.done) {
-        externalRequestResponse = await generator.next();
-      }
-      const {message} = externalRequestResponse.value;
-      assert.include(message, '# Trace recording results');
-      const EXPECTED_INSIGHT_TITLES = [
-        'LCP breakdown',
-        'LCP request discovery',
-        'Render blocking requests',
-        'Document request latency',
-      ];
-      for (const title of EXPECTED_INSIGHT_TITLES) {
-        assert.include(message, `### Insight Title: ${title}`);
-      }
-
-      assert.include(message, `- Time to first byte: 8\xA0ms (6.1% of total LCP time)
-- Resource load delay: 33\xA0ms (25.7% of total LCP time)
-- Resource load duration: 15\xA0ms (11.4% of total LCP time)
-- Element render delay: 73\xA0ms (56.8% of total LCP time)`);
+      sinon.assert.calledOnce(showBothStub);
     });
 
-    it('includes information on passing insights under a separate heading', async function() {
-      const uiView = UI.ViewManager.ViewManager.instance({forceNew: true});
-      sinon.stub(uiView, 'showView');
-
-      const events = await TraceLoader.rawEvents(this, 'web-dev-with-commit.json.gz') as Trace.Types.Events.Event[];
+    it('does not open the sidebar if the user has seen it already', async function() {
+      setupStubs({sidebarHasBeenOpened: true, sidebarIsShowing: false});
+      const timeline = Timeline.TimelinePanel.TimelinePanel.instance({forceNew: true, resourceLoader, traceModel});
+      const showBothStub = sinon.stub(timeline.splitWidget(), 'showBoth').callsFake(() => {});
+      const events = await TraceLoader.rawEvents(this, 'web-dev.json.gz') as Trace.Types.Events.Event[];
       await timeline.loadingComplete(events, null, null);
 
-      sinon.stub(timeline, 'recordReload').callsFake(() => {
-        timeline.dispatchEventToListeners(Timeline.TimelinePanel.Events.RECORDING_COMPLETED, {traceIndex: 0});
-      });
-
-      const generator = Timeline.TimelinePanel.TimelinePanel.handleExternalRecordRequest();
-      let externalRequestResponse = await generator.next();
-      while (!externalRequestResponse.done) {
-        externalRequestResponse = await generator.next();
-      }
-      const {message} = externalRequestResponse.value;
-      assert.include(message, '# Trace recording results');
-
-      assert.include(message, '## Non-passing insights:');
-      const EXPECTED_INSIGHT_TITLES = [
-        'INP breakdown',
-        'Layout shift culprits',
-      ];
-      for (const title of EXPECTED_INSIGHT_TITLES) {
-        assert.include(message, `### Insight Title: ${title}`);
-      }
+      sinon.assert.notCalled(showBothStub);
     });
   });
 
@@ -312,39 +277,6 @@ describeWithEnvironment('TimelinePanel', function() {
 
       await Timeline.TimelinePanel.TimelinePanel.executeRecordAndReload();
       sinon.assert.calledWith(showViewStub, 'timeline');
-    });
-  });
-
-  describe('handleExternalRequest', function() {
-    beforeEach(async () => {
-      AIAssistance.ConversationHandler.ConversationHandler.removeInstance();
-      Common.Settings.moduleSetting('ai-assistance-enabled').set(true);
-      createTarget();
-    });
-
-    it('handles performance requests', async function() {
-      const explanation = 'I need more information';
-      const conversationHandler = AIAssistance.ConversationHandler.ConversationHandler.instance({
-        aidaClient: mockAidaClient([[{explanation}]]),
-        aidaAvailability: Host.AidaClient.AidaAccessPreconditions.AVAILABLE,
-      });
-
-      // Create a timeline panel that has a trace imported with insights.
-      const events = await TraceLoader.rawEvents(this, 'web-dev-with-commit.json.gz');
-      const traceModel = Trace.TraceModel.Model.createWithAllHandlers();
-      await traceModel.parse(events);
-      const resourceLoader = {loadResource: sinon.stub()};
-      Timeline.TimelinePanel.TimelinePanel.instance({forceNew: true, resourceLoader, traceModel});
-
-      const generator = await conversationHandler.handleExternalRequest({
-        prompt: 'Please help me debug this problem',
-        conversationType: AIAssistance.AiHistoryStorage.ConversationType.PERFORMANCE,
-        data: Timeline.TimelinePanel.TimelinePanel.instance().getOrCreateExternalAIConversationData(),
-      });
-      let response = await generator.next();
-      assert.strictEqual(response.value.message, 'Analyzing trace');
-      response = await generator.next();
-      assert.strictEqual(response.value.message, explanation);
     });
   });
 

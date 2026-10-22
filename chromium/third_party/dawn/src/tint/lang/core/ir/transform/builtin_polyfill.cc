@@ -100,6 +100,12 @@ struct State {
                             worklist.Push(builtin);
                         }
                         break;
+                    case core::BuiltinFn::kDistance:
+                        if (config.distance_scalar_float &&
+                            builtin->Args()[0]->Type()->IsFloatScalar()) {
+                            worklist.Push(builtin);
+                        }
+                        break;
                     case core::BuiltinFn::kSmoothstep:
                         worklist.Push(builtin);
                         break;
@@ -125,6 +131,12 @@ struct State {
                         break;
                     case core::BuiltinFn::kInsertBits:
                         if (config.insert_bits != BuiltinPolyfillLevel::kNone) {
+                            worklist.Push(builtin);
+                        }
+                        break;
+                    case core::BuiltinFn::kLength:
+                        if (config.length_scalar_float &&
+                            builtin->Args()[0]->Type()->IsFloatScalar()) {
                             worklist.Push(builtin);
                         }
                         break;
@@ -224,6 +236,9 @@ struct State {
                 case core::BuiltinFn::kDegrees:
                     Degrees(builtin);
                     break;
+                case core::BuiltinFn::kDistance:
+                    DistanceScalarFloat(builtin);
+                    break;
                 case core::BuiltinFn::kSmoothstep:
                     SmoothStep(builtin);
                     break;
@@ -241,6 +256,9 @@ struct State {
                     break;
                 case core::BuiltinFn::kInsertBits:
                     InsertBits(builtin);
+                    break;
+                case core::BuiltinFn::kLength:
+                    LengthScalarFloat(builtin);
                     break;
                 case core::BuiltinFn::kRadians:
                     Radians(builtin);
@@ -559,6 +577,17 @@ struct State {
         call->Destroy();
     }
 
+    /// Polyfill a `distance()` builtin call for scalar f32 and f16.
+    /// @param call the builtin call instruction
+    void DistanceScalarFloat(ir::CoreBuiltinCall* call) {
+        // distance(x, y) -> abs(x - y)
+        b.InsertBefore(call, [&] {
+            auto* sub = b.Subtract(call->Args()[0], call->Args()[1]);
+            b.CallWithResult(call->DetachResult(), core::BuiltinFn::kAbs, sub);
+        });
+        call->Destroy();
+    }
+
     /// Polyfill an `smoothStep()` builtin call.
     /// @param call the builtin call instruction
     void SmoothStep(ir::CoreBuiltinCall* call) {
@@ -863,6 +892,16 @@ struct State {
         }
     }
 
+    /// Polyfill a `length()` builtin call for scalar f32 and f16.
+    /// @param call the builtin call instruction
+    void LengthScalarFloat(ir::CoreBuiltinCall* call) {
+        // length(x) -> abs(x)
+        b.InsertBefore(call, [&] {
+            b.CallWithResult(call->DetachResult(), core::BuiltinFn::kAbs, call->Args()[0]);
+        });
+        call->Destroy();
+    }
+
     /// Polyfill an `radians()` builtin call.
     /// @param call the builtin call instruction
     void Radians(ir::CoreBuiltinCall* call) {
@@ -927,9 +966,9 @@ struct State {
             one = b.MatchWidth(1_h, type);
         }
 
-        // Intel mesa incorrectly performs saturate on vec f16 loads from uniforms.
+        // Intel Mesa incorrectly performs saturate on vec f16 loads from uniforms.
         // Note: to avoid compiler pattern matching, we do the min then the max which is
-        // functionally different than doing the max then the min for high/low swapped (this doesnt
+        // functionally different than doing the max then the min for high/low swapped (this doesn't
         // matter in the case with saturate). See crbug.com/448873316
         if (config.saturate_as_min_max && is_vec_f16) {
             b.InsertBefore(call, [&] {
@@ -1243,8 +1282,7 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BuiltinPolyfill(Module& ir, const BuiltinPolyfillConfig& config) {
-    TINT_CHECK_RESULT(
-        ValidateAndDumpIfNeeded(ir, "core.BuiltinPolyfill", kBuiltinPolyfillCapabilities));
+    core::ir::AssertValid(ir, kBuiltinPolyfillCapabilities, "before core.BuiltinPolyfill");
 
     State{config, ir}.Process();
 

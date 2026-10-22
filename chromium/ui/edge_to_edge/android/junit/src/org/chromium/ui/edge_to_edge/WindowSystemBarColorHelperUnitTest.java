@@ -64,7 +64,7 @@ public class WindowSystemBarColorHelperUnitTest {
     }
 
     @Test
-    @Config(sdk = 29)
+    @Config(sdk = BaseRobolectricTestRunner.MIN_SDK)
     public void testInitialValue() {
         mWindowStatusBarColor = Color.RED;
         mWindowNavBarColor = Color.YELLOW;
@@ -88,7 +88,7 @@ public class WindowSystemBarColorHelperUnitTest {
     }
 
     @Test
-    @Config(sdk = 29)
+    @Config(sdk = BaseRobolectricTestRunner.MIN_SDK)
     public void testInitialValue_LowerSdk() {
         mWindowStatusBarColor = Color.RED;
         mWindowNavBarColor = Color.YELLOW;
@@ -111,15 +111,14 @@ public class WindowSystemBarColorHelperUnitTest {
         WindowSystemBarColorHelper helper = new WindowSystemBarColorHelper(mWindow);
         assertEquals("getStatusBarColor is wrong.", Color.TRANSPARENT, helper.getStatusBarColor());
 
-        int mWindowStatusBarColor = Color.RED;
-        helper.setStatusBarColor(mWindowStatusBarColor);
-        verify(mWindow, times(1)).setStatusBarColor(mWindowStatusBarColor);
-        assertEquals(
-                "getStatusBarColor is wrong.", mWindowStatusBarColor, helper.getStatusBarColor());
+        int statusBarColor = Color.RED;
+        helper.setStatusBarColor(statusBarColor);
+        verify(mWindow, times(1)).setStatusBarColor(statusBarColor);
+        assertEquals("getStatusBarColor is wrong.", statusBarColor, helper.getStatusBarColor());
 
         // Setting the same color will be ignored.
-        helper.setStatusBarColor(mWindowStatusBarColor);
-        verify(mWindow, times(1)).setStatusBarColor(mWindowStatusBarColor);
+        helper.setStatusBarColor(statusBarColor);
+        verify(mWindow, times(1)).setStatusBarColor(statusBarColor);
     }
 
     @Test
@@ -139,7 +138,7 @@ public class WindowSystemBarColorHelperUnitTest {
     }
 
     @Test
-    @Config(sdk = 29)
+    @Config(sdk = BaseRobolectricTestRunner.MIN_SDK)
     @SuppressLint("NewApi") // Ignore warning for setNavigationBarDividerColor
     public void testSetNavigationBarDividerColor() {
         WindowSystemBarColorHelper helper = new WindowSystemBarColorHelper(mWindow);
@@ -161,7 +160,7 @@ public class WindowSystemBarColorHelperUnitTest {
     }
 
     @Test
-    @Config(sdk = 29)
+    @Config(sdk = BaseRobolectricTestRunner.MIN_SDK)
     @SuppressLint("NewApi") // Ignore warning for setNavigationBarContrastEnforced.
     public void testSetNavigationBarContrastEnforced() {
         WindowSystemBarColorHelper helper = new WindowSystemBarColorHelper(mWindow);

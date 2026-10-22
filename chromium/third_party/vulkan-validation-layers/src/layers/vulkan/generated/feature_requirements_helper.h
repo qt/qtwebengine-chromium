@@ -238,6 +238,8 @@ enum class Feature {
     descriptorPoolOverallocation,
     // VkPhysicalDeviceDescriptorSetHostMappingFeaturesVALVE
     descriptorSetHostMapping,
+    // VkPhysicalDeviceDeviceAddressCommandsFeaturesKHR
+    deviceAddressCommands,
     // VkPhysicalDeviceDeviceGeneratedCommandsComputeFeaturesNV
     deviceGeneratedCompute,
     // VkPhysicalDeviceDeviceGeneratedCommandsComputeFeaturesNV
@@ -340,10 +342,14 @@ enum class Feature {
     externalMemoryRDMA,
     // VkPhysicalDeviceExternalMemoryScreenBufferFeaturesQNX
     screenBufferImport,
-    // VkPhysicalDeviceFaultFeaturesEXT
+    // VkPhysicalDeviceFaultFeaturesEXT, VkPhysicalDeviceFaultFeaturesKHR
     deviceFault,
-    // VkPhysicalDeviceFaultFeaturesEXT
+    // VkPhysicalDeviceFaultFeaturesEXT, VkPhysicalDeviceFaultFeaturesKHR
     deviceFaultVendorBinary,
+    // VkPhysicalDeviceFaultFeaturesKHR
+    deviceFaultDeviceLostOnMasked,
+    // VkPhysicalDeviceFaultFeaturesKHR
+    deviceFaultReportMasked,
     // VkPhysicalDeviceFeatures
     alphaToOne,
     // VkPhysicalDeviceFeatures
@@ -786,6 +792,8 @@ enum class Feature {
     separateDepthStencilLayouts,
     // VkPhysicalDeviceShader64BitIndexingFeaturesEXT
     shader64BitIndexing,
+    // VkPhysicalDeviceShaderAbortFeaturesKHR
+    shaderAbort,
     // VkPhysicalDeviceShaderAtomicFloat16VectorFeaturesNV
     shaderFloat16VectorAtomics,
     // VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT
@@ -850,6 +858,8 @@ enum class Feature {
     shaderDeviceClock,
     // VkPhysicalDeviceShaderClockFeaturesKHR
     shaderSubgroupClock,
+    // VkPhysicalDeviceShaderConstantDataFeaturesKHR
+    shaderConstantData,
     // VkPhysicalDeviceShaderCoreBuiltinsFeaturesARM
     shaderCoreBuiltins,
     // VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures, VkPhysicalDeviceVulkan13Features
@@ -886,6 +896,8 @@ enum class Feature {
     sparseImageInt64Atomics,
     // VkPhysicalDeviceShaderImageFootprintFeaturesNV
     imageFootprint,
+    // VkPhysicalDeviceShaderInstrumentationFeaturesARM
+    shaderInstrumentation,
     // VkPhysicalDeviceShaderIntegerDotProductFeatures, VkPhysicalDeviceVulkan13Features
     shaderIntegerDotProduct,
     // VkPhysicalDeviceShaderIntegerFunctions2FeaturesINTEL
@@ -894,6 +906,14 @@ enum class Feature {
     longVector,
     // VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR
     shaderMaximalReconvergence,
+    // VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE
+    shaderMixedFloatDotProductBFloat16Acc,
+    // VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE
+    shaderMixedFloatDotProductFloat16AccFloat16,
+    // VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE
+    shaderMixedFloatDotProductFloat16AccFloat32,
+    // VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE
+    shaderMixedFloatDotProductFloat8AccFloat32,
     // VkPhysicalDeviceShaderModuleIdentifierFeaturesEXT
     shaderModuleIdentifier,
     // VkPhysicalDeviceShaderObjectFeaturesEXT
@@ -1075,13 +1095,13 @@ enum class Feature {
 };
 
 struct FeatureAndName {
-    VkBool32 *feature;
-    const char *name;
+    VkBool32* feature;
+    const char* name;
 };
 
 // Find or add the correct VkPhysicalDeviceFeature struct in `pnext_chain` based on `feature`,
 // a vkt::Feature enum value, and set feature to VK_TRUE
-FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **inout_pnext_chain);
+FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void** inout_pnext_chain);
 
 }  // namespace vkt
 

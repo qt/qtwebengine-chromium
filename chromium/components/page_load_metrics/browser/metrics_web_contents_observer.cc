@@ -12,7 +12,6 @@
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/read_only_shared_memory_region.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
@@ -202,7 +201,6 @@ void MetricsWebContentsObserver::WebContentsDestroyed() {
   // access the current WebContents.
   primary_page_ = nullptr;
   active_pages_.clear();
-  ukm_dropped_frames_data_.clear();
   provisional_loads_.clear();
   aborted_provisional_loads_.clear();
 }
@@ -262,7 +260,6 @@ void MetricsWebContentsObserver::RenderFrameDeleted(
   }
   active_pages_.erase(rfh);
   inactive_pages_.erase(rfh);
-  ukm_dropped_frames_data_.erase(rfh);
 }
 
 void MetricsWebContentsObserver::MediaStartedPlaying(
@@ -820,20 +817,6 @@ void MetricsWebContentsObserver::HandleCommittedNavigationForTrackedLoad(
   for (auto& observer : lifecycle_observers_) {
     observer.OnCommit(raw_tracker);
   }
-
-  auto* render_frame_host = navigation_handle->GetRenderFrameHost();
-  const bool is_main_frame =
-      render_frame_host && render_frame_host->GetParent() == nullptr;
-  if (is_main_frame) {
-    auto ukm_it = ukm_dropped_frames_data_.find(render_frame_host);
-    if (ukm_it != ukm_dropped_frames_data_.end()) {
-      raw_tracker->metrics_update_dispatcher()
-          ->SetUpSharedMemoryForDroppedFrames(render_frame_host,
-                                              std::move(ukm_it->second));
-      ukm_dropped_frames_data_.erase(ukm_it);
-    }
-  }
-
 }
 
 void MetricsWebContentsObserver::MaybeStorePageLoadTrackerForBackForwardCache(
@@ -1179,13 +1162,18 @@ void MetricsWebContentsObserver::OnTimingUpdated(
     std::vector<mojom::EventTimingPtr> event_timings,
     const std::optional<blink::SubresourceLoadMetrics>&
         subresource_load_metrics,
-    mojom::SoftNavigationMetricsPtr soft_navigation_metrics) {
+    std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
+    std::vector<mojom::LargestContentfulPaintTimingPtr>
+        soft_largest_contentful_paint,
+    std::vector<mojom::CustomUserTimingMarkPtr> user_timings) {
   if (PageLoadTracker* tracker = GetPageLoadTrackerIfValid(render_frame_host)) {
     tracker->UpdateMetrics(
         render_frame_host, std::move(timing), std::move(metadata),
         std::move(new_features), resources, std::move(render_data),
         std::move(cpu_timing), std::move(event_timings),
-        subresource_load_metrics, std::move(soft_navigation_metrics));
+        subresource_load_metrics, std::move(soft_navigation_metrics),
+        std::move(soft_largest_contentful_paint));
+    tracker->AddCustomUserTimings(std::move(user_timings));
   }
 }
 
@@ -1227,13 +1215,18 @@ void MetricsWebContentsObserver::UpdateTiming(
     std::vector<mojom::EventTimingPtr> event_timings,
     const std::optional<blink::SubresourceLoadMetrics>&
         subresource_load_metrics,
-    mojom::SoftNavigationMetricsPtr soft_navigation_metrics) {
+    std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics,
+    std::vector<mojom::LargestContentfulPaintTimingPtr>
+        soft_largest_contentful_paint,
+    std::vector<mojom::CustomUserTimingMarkPtr> user_timings) {
   content::RenderFrameHost* render_frame_host =
       page_load_metrics_receivers_.GetCurrentTargetFrame();
   OnTimingUpdated(render_frame_host, std::move(timing), std::move(metadata),
                   new_features, resources, std::move(render_data),
                   std::move(cpu_timing), std::move(event_timings),
-                  subresource_load_metrics, std::move(soft_navigation_metrics));
+                  subresource_load_metrics, std::move(soft_navigation_metrics),
+                  std::move(soft_largest_contentful_paint),
+                  std::move(user_timings));
 }
 
 void MetricsWebContentsObserver::AddCustomUserTiming(
@@ -1241,25 +1234,6 @@ void MetricsWebContentsObserver::AddCustomUserTiming(
   content::RenderFrameHost* render_frame_host =
       page_load_metrics_receivers_.GetCurrentTargetFrame();
   OnCustomUserTimingUpdated(render_frame_host, std::move(custom_timing));
-}
-
-void MetricsWebContentsObserver::SetUpSharedMemoryForDroppedFrames(
-    base::ReadOnlySharedMemoryRegion dropped_frames_memory) {
-  content::RenderFrameHost* render_frame_host =
-      page_load_metrics_receivers_.GetCurrentTargetFrame();
-  const bool is_outermost_main_frame =
-      render_frame_host->GetParentOrOuterDocument() == nullptr;
-  if (!is_outermost_main_frame) {
-    return;
-  }
-
-  if (PageLoadTracker* tracker = GetPageLoadTracker(render_frame_host)) {
-    tracker->metrics_update_dispatcher()->SetUpSharedMemoryForDroppedFrames(
-        render_frame_host, std::move(dropped_frames_memory));
-  } else {
-    ukm_dropped_frames_data_.emplace(render_frame_host,
-                                     std::move(dropped_frames_memory));
-  }
 }
 
 bool MetricsWebContentsObserver::ShouldTrackMainFrameNavigation(

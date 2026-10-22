@@ -219,18 +219,18 @@ async function getReadableFromProtocolStream(client, handle) {
         },
     });
 }
+const VALID_DIALOG_TYPES = new Set([
+    'alert',
+    'confirm',
+    'prompt',
+    'beforeunload',
+]);
 /**
  * @internal
  */
 function validateDialogType(type) {
     let dialogType = null;
-    const validDialogTypes = new Set([
-        'alert',
-        'confirm',
-        'prompt',
-        'beforeunload',
-    ]);
-    if (validDialogTypes.has(type)) {
+    if (VALID_DIALOG_TYPES.has(type)) {
         dialogType = type;
     }
     (0, assert_js_1.assert)(dialogType, `Unknown javascript dialog type: ${type}`);

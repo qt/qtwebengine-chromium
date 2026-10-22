@@ -34,6 +34,7 @@
 #include "dawn/common/Assert.h"
 #include "dawn/common/MatchVariant.h"
 #include "dawn/native/Pipeline.h"
+#include "dawn/native/ResourceTableDefaultResources.h"
 #include "dawn/native/TintUtils.h"
 #include "dawn/native/d3d/D3DCompilationRequest.h"
 #include "dawn/native/d3d/D3DError.h"
@@ -47,7 +48,6 @@
 #include "dawn/platform/DawnPlatform.h"
 #include "dawn/platform/metrics/HistogramMacros.h"
 #include "dawn/platform/tracing/TraceEvent.h"
-
 #include "tint/tint.h"
 
 namespace dawn::native::d3d12 {
@@ -167,14 +167,30 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
     arrayOffsetFromUniform.ubo_binding = {layout->GetDynamicStorageBufferOffsetsRegisterSpace(),
                                           layout->GetDynamicStorageBufferOffsetsShaderRegister()};
 
-    tint::Bindings bindings =
-        GenerateBindingRemapping(layout, stage, [&](BindGroupIndex group, BindingIndex index) {
-            const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
-            return tint::BindingPoint{
-                .group = uint32_t(group),
-                .binding = bgl->GetShaderRegister(index),
-            };
-        });
+    std::optional<tint::ResourceTableConfig> resourceTableConfig = std::nullopt;
+    if (layout->UsesResourceTable()) {
+        auto bindingTypeOrder = ResourceTableDefaultResources::GetOrder();
+        uint32_t baseGroup = layout->GetBaseResourceTableRegisterSpace();
+        resourceTableConfig = tint::ResourceTableConfig{
+            // For HLSL, Tint emits multiple unbounded arrays per type, each in its own group
+            // (stage)
+            // starting at baseGroup + 1, and monotonically increasing.
+            // Note that all tables and metadata buffer are in binding (register) 0, since
+            // they are in the same descriptor table.
+            .resource_table_binding = tint::BindingPoint(baseGroup + 1, 0),
+            .storage_buffer_binding = tint::BindingPoint(baseGroup, 0),
+            .default_binding_type_order = {bindingTypeOrder.begin(), bindingTypeOrder.end()},
+        };
+    }
+
+    auto ToHLSLBindPoint = [&](BindGroupIndex group, BindingIndex index) {
+        const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
+        return tint::BindingPoint{
+            .group = uint32_t(group),
+            .binding = bgl->GetShaderRegister(index),
+        };
+    };
+    tint::Bindings bindings = GenerateBindingRemapping(layout, stage, ToHLSLBindPoint);
 
     std::vector<tint::BindingPoint> ignored_by_robustness;
     for (BindGroupIndex group : layout->GetBindGroupLayoutsMask()) {
@@ -216,8 +232,9 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
             if ((bufferInfo.type == wgpu::BufferBindingType::Storage ||
                  bufferInfo.type == wgpu::BufferBindingType::ReadOnlyStorage) &&
                 !bufferInfo.hasDynamicOffset) {
-                ignored_by_robustness.emplace_back(tint::BindingPoint{
-                    .group = uint32_t(group), .binding = uint32_t(bindingInfo.binding)});
+                BindingIndex bindingIndex =
+                    bgl->AsBindingIndex(bgl->GetAPIBindingIndex(bindingInfo.binding));
+                ignored_by_robustness.emplace_back(ToHLSLBindPoint(group, bindingIndex));
             }
         }
 
@@ -260,6 +277,7 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         !device->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
 
     req.hlsl.tintOptions.bindings = std::move(bindings);
+    req.hlsl.tintOptions.resource_table = std::move(resourceTableConfig);
     req.hlsl.tintOptions.ignored_by_robustness_transform = std::move(ignored_by_robustness);
 
     req.hlsl.tintOptions.compiler = req.bytecode.compiler == d3d::Compiler::FXC
@@ -305,6 +323,8 @@ ResultOrError<d3d::CompiledShader> ShaderModule::Compile(
         device->IsToggleEnabled(Toggle::D3D12PolyfillReflectVec2F32);
     req.hlsl.tintOptions.workarounds.polyfill_subgroup_broadcast_f16 =
         device->IsToggleEnabled(Toggle::EnableSubgroupsIntelGen9);
+    req.hlsl.tintOptions.workarounds.collapse_subgroup_min_max =
+        device->IsToggleEnabled(Toggle::CollapseSubgroupMinMax);
 
     req.hlsl.tintOptions.extensions.polyfill_dot_4x8_packed =
         device->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);

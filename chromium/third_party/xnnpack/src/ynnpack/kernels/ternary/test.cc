@@ -53,12 +53,10 @@ std::string to_string(const Shape& shape) {
 struct KernelInfo {
   uint64_t arch_flags = 0;
   ternary_kernel_fn kernel;
-  init_ternary_params_fn init_params;
 
   // Constructor for a kernel function.
-  KernelInfo(uint64_t arch_flags, ternary_kernel_fn kernel,
-             init_ternary_params_fn init_params)
-      : arch_flags(arch_flags), kernel(kernel), init_params(init_params) {}
+  KernelInfo(uint64_t arch_flags, ternary_kernel_fn kernel)
+      : arch_flags(arch_flags), kernel(kernel) {}
 };
 
 template <typename A, typename B, typename C, typename X, typename OpInfo>
@@ -71,7 +69,6 @@ void TestImpl(const KernelInfo& kernel_info, const OpInfo& op_info, size_t m,
   ReplicableRandomDevice rng;
 
   ternary_kernel_fn kernel = kernel_info.kernel;
-  init_ternary_params_fn init_params = kernel_info.init_params;
 
   size_t n = std::max(std::max(a_n, b_n), c_n);
 
@@ -79,10 +76,6 @@ void TestImpl(const KernelInfo& kernel_info, const OpInfo& op_info, size_t m,
   Tensor<B> b({m, b_n + shape.padding_b});
   Tensor<C> c({m, c_n + shape.padding_c});
   Tensor<X> x({m, n + shape.padding_x});
-  a = a.crop_padding({0, 0}, {0, shape.padding_a});
-  b = b.crop_padding({0, 0}, {0, shape.padding_b});
-  c = c.crop_padding({0, 0}, {0, shape.padding_c});
-  x = x.crop_padding({0, 0}, {0, shape.padding_x});
 
   quantization_params a_quantization = random_quantization(A(), rng);
   quantization_params b_quantization = random_quantization(B(), rng);
@@ -90,29 +83,23 @@ void TestImpl(const KernelInfo& kernel_info, const OpInfo& op_info, size_t m,
   quantization_params x_quantization = random_quantization(X(), rng);
   // These kernels are mostly variations of multiply and multiply-add, so
   // testing extreme values is not required, and integer overflow is an issue.
-  TypeGenerator<A> a_gen(-255, 255, a_quantization);
-  TypeGenerator<B> b_gen(-255, 255, b_quantization);
-  TypeGenerator<C> c_gen(-255, 255, c_quantization);
-  a.generate([&]() { return a_gen(rng); });
-  b.generate([&]() { return b_gen(rng); });
-  c.generate([&]() { return c_gen(rng); });
+  fill_random(a.data(), a.size(), rng, -255, 255, a_quantization);
+  fill_random(b.data(), b.size(), rng, -255, 255, b_quantization);
+  fill_random(c.data(), c.size(), rng, -255, 255, c_quantization);
+
+  a = a.crop_padding({0, 0}, {0, shape.padding_a});
+  b = b.crop_padding({0, 0}, {0, shape.padding_b});
+  c = c.crop_padding({0, 0}, {0, shape.padding_c});
+  x = x.crop_padding({0, 0}, {0, shape.padding_x});
 
   broadcast_extent_1(a);
   broadcast_extent_1(b);
   broadcast_extent_1(c);
 
-  ternary_params params;
-  if (init_params) {
-    init_params(a_quantization.scale, a_quantization.zero_point,
-                b_quantization.scale, b_quantization.zero_point,
-                c_quantization.scale, c_quantization.zero_point,
-                x_quantization.scale, x_quantization.zero_point, params);
-  }
-
   kernel(m, n, a.stride(0) * sizeof(A), a.stride(1) * sizeof(A), a.base(),
          b.stride(0) * sizeof(B), b.stride(1) * sizeof(B), b.base(),
          c.stride(0) * sizeof(C), c.stride(1) * sizeof(C), c.base(),
-         x.stride(0) * sizeof(X), x.base(), &params);
+         x.stride(0) * sizeof(X), x.base());
 
   check_results(op_info, a, b, c, x, a_quantization, b_quantization,
                 c_quantization, x_quantization);
@@ -166,30 +153,30 @@ const std::vector<Shape> all_shapes = []() {
   return shapes;
 }();
 
-#define YNN_ELEMENTWISE_KERNEL(arch_flags, kernel, op, init_params_fn, type_a, \
-                               type_b, type_c, type_x)                         \
+#define YNN_ELEMENTWISE_KERNEL(arch_flags, kernel, op, type_a, type_b, type_c, \
+                               type_x)                                         \
   class OpsTest_##kernel : public testing::TestWithParam<Shape> {};            \
                                                                                \
   TEST_P(OpsTest_##kernel, op) {                                               \
-    const KernelInfo kernel_info(arch_flags, kernel, init_params_fn);          \
-    const op op_info;                                                          \
+    const KernelInfo kernel_info(arch_flags, kernel);                          \
+    const struct op op_info;                                                   \
     TestOp<type_a, type_b, type_c, type_x>(kernel_info, op_info, GetParam());  \
   }                                                                            \
   TEST_P(OpsTest_##kernel, op_broadcast_a) {                                   \
-    const KernelInfo kernel_info(arch_flags, kernel, init_params_fn);          \
-    const op op_info;                                                          \
+    const KernelInfo kernel_info(arch_flags, kernel);                          \
+    const struct op op_info;                                                   \
     TestOpBroadcastA<type_a, type_b, type_c, type_x>(kernel_info, op_info,     \
                                                      GetParam());              \
   }                                                                            \
   TEST_P(OpsTest_##kernel, op_broadcast_b) {                                   \
-    const KernelInfo kernel_info(arch_flags, kernel, init_params_fn);          \
-    const op op_info;                                                          \
+    const KernelInfo kernel_info(arch_flags, kernel);                          \
+    const struct op op_info;                                                   \
     TestOpBroadcastB<type_a, type_b, type_c, type_x>(kernel_info, op_info,     \
                                                      GetParam());              \
   }                                                                            \
   TEST_P(OpsTest_##kernel, op_broadcast_c) {                                   \
-    const KernelInfo kernel_info(arch_flags, kernel, init_params_fn);          \
-    const op op_info;                                                          \
+    const KernelInfo kernel_info(arch_flags, kernel);                          \
+    const struct op op_info;                                                   \
     TestOpBroadcastC<type_a, type_b, type_c, type_x>(kernel_info, op_info,     \
                                                      GetParam());              \
   }                                                                            \

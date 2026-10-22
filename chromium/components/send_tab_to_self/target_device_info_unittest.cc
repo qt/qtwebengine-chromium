@@ -1,199 +1,173 @@
-// Copyright 2019 The Chromium Authors
+// Copyright 2026 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "components/send_tab_to_self/target_device_info.h"
 
+#include "base/feature_list.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/task_environment.h"
+#include "base/time/time.h"
 #include "components/send_tab_to_self/features.h"
-#include "components/sync/protocol/device_info_specifics.pb.h"
-#include "components/sync/protocol/sync_enums.pb.h"
-#include "components/sync/test/test_sync_service.h"
+#include "components/strings/grit/components_strings.h"
 #include "components/sync_device_info/device_info.h"
-#include "components/sync_device_info/device_info_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace send_tab_to_self {
-
 namespace {
 
-class TargetDeviceInfoTest : public testing::Test {
+class TargetDeviceInfoWithImprovedLabelsTest : public testing::Test {
  public:
-  TargetDeviceInfoTest() = default;
+  TargetDeviceInfoWithImprovedLabelsTest() {
+    feature_list_.InitAndEnableFeature(kSendTabToSelfImprovedLastActiveLabels);
+  }
 
  protected:
-  base::test::ScopedFeatureList scoped_feature_list_;
-  syncer::TestSyncService test_sync_service_;
+  base::test::TaskEnvironment task_environment_{
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
 };
 
-static std::unique_ptr<syncer::DeviceInfo> CreateFakeDeviceInfo(
-    const std::string& id,
-    const std::string& name,
-    sync_pb::SyncEnums_DeviceType device_type,
-    syncer::DeviceInfo::OsType os_type,
-    syncer::DeviceInfo::FormFactor form_factor,
-    const std::string& manufacturer_name,
-    const std::string& model_name) {
-  return std::make_unique<syncer::DeviceInfo>(
-      id, name, "chrome_version", "user_agent", device_type, os_type,
-      form_factor, "device_id", manufacturer_name, model_name,
-      /*full_hardware_class=*/std::string(),
-      /*last_updated_timestamp=*/base::Time::Now(),
-      syncer::DeviceInfoUtil::GetPulseInterval(),
-      /*send_tab_to_self_receiving_enabled=*/
-      false,
-      /*send_tab_to_self_receiving_type=*/
-      sync_pb::
-          SyncEnums_SendTabReceivingType_SEND_TAB_RECEIVING_TYPE_CHROME_OR_UNSPECIFIED,
-      syncer::DeviceInfo::SharingInfo(
-          {"sender_id_fcm_token", "sender_id_p256dh", "sender_id_auth_secret"},
-          "chime_representative_target_id",
-          std::set<sync_pb::SharingSpecificFields::EnabledFeatures>{
-              sync_pb::SharingSpecificFields::CLICK_TO_CALL_V2}),
-      /*paask_info=*/std::nullopt,
-      /*fcm_registration_token=*/std::string(),
-      /*interested_data_types=*/syncer::DataTypeSet(),
-      /*auto_sign_out_last_signin_timestamp=*/std::nullopt,
-      /*desktop_to_ios_promo_receiving_enabled=*/false);
+class TargetDeviceInfoWithImprovedLabelsDisabledTest : public testing::Test {
+ public:
+  TargetDeviceInfoWithImprovedLabelsDisabledTest() {
+    feature_list_.InitAndDisableFeature(kSendTabToSelfImprovedLastActiveLabels);
+  }
+
+ protected:
+  base::test::TaskEnvironment task_environment_{
+      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+TEST_F(TargetDeviceInfoWithImprovedLabelsTest, ActiveNow) {
+  base::Time last_updated = base::Time::Now() - base::Seconds(30);
+  TargetDeviceInfo device_info(
+      "device", "guid", syncer::DeviceInfo::FormFactor::kDesktop, last_updated,
+      /*has_high_precision_timestamp=*/true);
+
+  EXPECT_EQ(l10n_util::GetStringUTF16(IDS_SEND_TAB_TO_SELF_DEVICE_ACTIVE_NOW),
+            device_info.GetLastActiveTimeForDisplay());
+}
+
+TEST_F(TargetDeviceInfoWithImprovedLabelsTest, ActiveMinutes) {
+  base::Time last_updated = base::Time::Now() - base::Minutes(5);
+  TargetDeviceInfo device_info(
+      "device", "guid", syncer::DeviceInfo::FormFactor::kDesktop, last_updated,
+      /*has_high_precision_timestamp=*/true);
+
+  EXPECT_EQ(l10n_util::GetPluralStringFUTF16(
+                IDS_SEND_TAB_TO_SELF_DEVICE_ACTIVE_MINUTES, 5),
+            device_info.GetLastActiveTimeForDisplay());
+}
+
+TEST_F(TargetDeviceInfoWithImprovedLabelsTest, ActiveHours) {
+  base::Time last_updated = base::Time::Now() - base::Hours(5);
+  TargetDeviceInfo device_info(
+      "device", "guid", syncer::DeviceInfo::FormFactor::kDesktop, last_updated,
+      /*has_high_precision_timestamp=*/true);
+
+  EXPECT_EQ(l10n_util::GetPluralStringFUTF16(
+                IDS_SEND_TAB_TO_SELF_DEVICE_ACTIVE_HOURS, 5),
+            device_info.GetLastActiveTimeForDisplay());
+}
+
+TEST_F(TargetDeviceInfoWithImprovedLabelsTest, ActiveOneMinute) {
+  base::Time last_updated = base::Time::Now() - base::Minutes(1);
+  TargetDeviceInfo device_info(
+      "device", "guid", syncer::DeviceInfo::FormFactor::kDesktop, last_updated,
+      /*has_high_precision_timestamp=*/true);
+
+  EXPECT_EQ(l10n_util::GetPluralStringFUTF16(
+                IDS_SEND_TAB_TO_SELF_DEVICE_ACTIVE_MINUTES, 1),
+            device_info.GetLastActiveTimeForDisplay());
+}
+
+TEST_F(TargetDeviceInfoWithImprovedLabelsTest, ActiveFiftyNineMinutes) {
+  base::Time last_updated = base::Time::Now() - base::Minutes(59);
+  TargetDeviceInfo device_info(
+      "device", "guid", syncer::DeviceInfo::FormFactor::kDesktop, last_updated,
+      /*has_high_precision_timestamp=*/true);
+
+  EXPECT_EQ(l10n_util::GetPluralStringFUTF16(
+                IDS_SEND_TAB_TO_SELF_DEVICE_ACTIVE_MINUTES, 59),
+            device_info.GetLastActiveTimeForDisplay());
+}
+
+TEST_F(TargetDeviceInfoWithImprovedLabelsTest, ActiveOneHour) {
+  base::Time last_updated = base::Time::Now() - base::Hours(1);
+  TargetDeviceInfo device_info(
+      "device", "guid", syncer::DeviceInfo::FormFactor::kDesktop, last_updated,
+      /*has_high_precision_timestamp=*/true);
+
+  EXPECT_EQ(l10n_util::GetPluralStringFUTF16(
+                IDS_SEND_TAB_TO_SELF_DEVICE_ACTIVE_HOURS, 1),
+            device_info.GetLastActiveTimeForDisplay());
+}
+
+TEST_F(TargetDeviceInfoWithImprovedLabelsTest, ActiveTwentyThreeHours) {
+  base::Time last_updated = base::Time::Now() - base::Hours(23);
+  TargetDeviceInfo device_info(
+      "device", "guid", syncer::DeviceInfo::FormFactor::kDesktop, last_updated,
+      /*has_high_precision_timestamp=*/true);
+
+  EXPECT_EQ(l10n_util::GetPluralStringFUTF16(
+                IDS_SEND_TAB_TO_SELF_DEVICE_ACTIVE_HOURS, 23),
+            device_info.GetLastActiveTimeForDisplay());
+}
+
+TEST_F(TargetDeviceInfoWithImprovedLabelsTest, ActiveTodayWhenNoHighPrecision) {
+  base::Time last_updated = base::Time::Now() - base::Minutes(5);
+  TargetDeviceInfo device_info(
+      "device", "guid", syncer::DeviceInfo::FormFactor::kDesktop, last_updated,
+      /*has_high_precision_timestamp=*/false);
+
+  EXPECT_EQ(l10n_util::GetPluralStringFUTF16(
+                IDS_SEND_TAB_TO_SELF_DEVICE_LAST_UPDATE_DAYS, 0),
+            device_info.GetLastActiveTimeForDisplay());
+}
+
+TEST_F(TargetDeviceInfoWithImprovedLabelsDisabledTest,
+       ActiveTodayWhenFlagDisabled) {
+  base::Time last_updated = base::Time::Now() - base::Minutes(5);
+  TargetDeviceInfo device_info(
+      "device", "guid", syncer::DeviceInfo::FormFactor::kDesktop, last_updated,
+      /*has_high_precision_timestamp=*/true);
+
+  EXPECT_EQ(l10n_util::GetPluralStringFUTF16(
+                IDS_SEND_TAB_TO_SELF_DEVICE_LAST_UPDATE_DAYS, 0),
+            device_info.GetLastActiveTimeForDisplay());
+}
+
+TEST_F(TargetDeviceInfoWithImprovedLabelsDisabledTest, OneDayAgoFallback) {
+  base::Time last_updated = base::Time::Now() - base::Days(1) - base::Hours(1);
+  TargetDeviceInfo device_info(
+      "device", "guid", syncer::DeviceInfo::FormFactor::kDesktop, last_updated,
+      /*has_high_precision_timestamp=*/true);
+
+  EXPECT_EQ(l10n_util::GetPluralStringFUTF16(
+                IDS_SEND_TAB_TO_SELF_DEVICE_LAST_UPDATE_DAYS, 1),
+            device_info.GetLastActiveTimeForDisplay());
+}
+
+TEST_F(TargetDeviceInfoWithImprovedLabelsDisabledTest,
+       MultipleDaysAgoFallback) {
+  base::Time last_updated = base::Time::Now() - base::Days(3) - base::Hours(1);
+  TargetDeviceInfo device_info(
+      "device", "guid", syncer::DeviceInfo::FormFactor::kDesktop, last_updated,
+      /*has_high_precision_timestamp=*/false);
+
+  EXPECT_EQ(l10n_util::GetPluralStringFUTF16(
+                IDS_SEND_TAB_TO_SELF_DEVICE_LAST_UPDATE_DAYS, 3),
+            device_info.GetLastActiveTimeForDisplay());
 }
 
 }  // namespace
-
-TEST_F(TargetDeviceInfoTest, GetSharingDeviceNames_AppleDevices_SigninOnly) {
-  std::unique_ptr<syncer::DeviceInfo> device = CreateFakeDeviceInfo(
-      "guid", "MacbookPro1,1", sync_pb::SyncEnums_DeviceType_TYPE_MAC,
-      syncer::DeviceInfo::OsType::kMac,
-      syncer::DeviceInfo::FormFactor::kDesktop, "Apple Inc.", "MacbookPro1,1");
-  SharingDeviceNames names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("MacbookPro1,1", names.full_name);
-  EXPECT_EQ("MacbookPro", names.short_name);
-}
-
-TEST_F(TargetDeviceInfoTest, GetSharingDeviceNames_AppleDevices_FullySynced) {
-  std::unique_ptr<syncer::DeviceInfo> device = CreateFakeDeviceInfo(
-      "guid", "Bobs-iMac", sync_pb::SyncEnums_DeviceType_TYPE_MAC,
-      syncer::DeviceInfo::OsType::kMac,
-      syncer::DeviceInfo::FormFactor::kDesktop, "Apple Inc.", "MacbookPro1,1");
-  SharingDeviceNames names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("Bobs-iMac", names.full_name);
-  EXPECT_EQ("Bobs-iMac", names.short_name);
-}
-
-TEST_F(TargetDeviceInfoTest, GetSharingDeviceNames_ChromeOSDevices) {
-  std::unique_ptr<syncer::DeviceInfo> device = CreateFakeDeviceInfo(
-      "guid", "Chromebook", sync_pb::SyncEnums_DeviceType_TYPE_CROS,
-      syncer::DeviceInfo::OsType::kChromeOsAsh,
-      syncer::DeviceInfo::FormFactor::kDesktop, "Google", "Chromebook");
-  SharingDeviceNames names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("Google Chromebook", names.full_name);
-  EXPECT_EQ("Google Chromebook", names.short_name);
-}
-
-TEST_F(TargetDeviceInfoTest, GetSharingDeviceNames_AndroidPhones) {
-  std::unique_ptr<syncer::DeviceInfo> device = CreateFakeDeviceInfo(
-      "guid", "Pixel 2", sync_pb::SyncEnums_DeviceType_TYPE_PHONE,
-      syncer::DeviceInfo::OsType::kAndroid,
-      syncer::DeviceInfo::FormFactor::kPhone, "Google", "Pixel 2");
-  SharingDeviceNames names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("Google Phone Pixel 2", names.full_name);
-  EXPECT_EQ("Google Phone", names.short_name);
-}
-
-TEST_F(TargetDeviceInfoTest, GetSharingDeviceNames_AndroidTablets) {
-  std::unique_ptr<syncer::DeviceInfo> device = CreateFakeDeviceInfo(
-      "guid", "Pixel C", sync_pb::SyncEnums_DeviceType_TYPE_TABLET,
-      syncer::DeviceInfo::OsType::kAndroid,
-      syncer::DeviceInfo::FormFactor::kTablet, "Google", "Pixel C");
-  SharingDeviceNames names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("Google Tablet Pixel C", names.full_name);
-  EXPECT_EQ("Google Tablet", names.short_name);
-}
-
-TEST_F(TargetDeviceInfoTest, GetSharingDeviceNames_Windows_SigninOnly) {
-  std::unique_ptr<syncer::DeviceInfo> device = CreateFakeDeviceInfo(
-      "guid", "BX123", sync_pb::SyncEnums_DeviceType_TYPE_WIN,
-      syncer::DeviceInfo::OsType::kWindows,
-      syncer::DeviceInfo::FormFactor::kDesktop, "Dell", "BX123");
-  SharingDeviceNames names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("Dell Computer BX123", names.full_name);
-  EXPECT_EQ("Dell Computer", names.short_name);
-}
-
-TEST_F(TargetDeviceInfoTest, GetSharingDeviceNames_Windows_FullySynced) {
-  std::unique_ptr<syncer::DeviceInfo> device = CreateFakeDeviceInfo(
-      "guid", "BOBS-WINDOWS-1", sync_pb::SyncEnums_DeviceType_TYPE_WIN,
-      syncer::DeviceInfo::OsType::kWindows,
-      syncer::DeviceInfo::FormFactor::kDesktop, "Dell", "BX123");
-  SharingDeviceNames names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("BOBS-WINDOWS-1", names.full_name);
-  EXPECT_EQ("BOBS-WINDOWS-1", names.short_name);
-}
-
-TEST_F(TargetDeviceInfoTest, GetSharingDeviceNames_Linux_SigninOnly) {
-  std::unique_ptr<syncer::DeviceInfo> device = CreateFakeDeviceInfo(
-      "guid", "30BDS0RA0G", sync_pb::SyncEnums_DeviceType_TYPE_LINUX,
-      syncer::DeviceInfo::OsType::kLinux,
-      syncer::DeviceInfo::FormFactor::kDesktop, "LENOVO", "30BDS0RA0G");
-  SharingDeviceNames names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("LENOVO Computer 30BDS0RA0G", names.full_name);
-  EXPECT_EQ("LENOVO Computer", names.short_name);
-}
-
-TEST_F(TargetDeviceInfoTest, GetSharingDeviceNames_Linux_FullySynced) {
-  std::unique_ptr<syncer::DeviceInfo> device = CreateFakeDeviceInfo(
-      "guid", "bob.chromium.org", sync_pb::SyncEnums_DeviceType_TYPE_LINUX,
-      syncer::DeviceInfo::OsType::kLinux,
-      syncer::DeviceInfo::FormFactor::kDesktop, "LENOVO", "30BDS0RA0G");
-  SharingDeviceNames names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("bob.chromium.org", names.full_name);
-  EXPECT_EQ("bob.chromium.org", names.short_name);
-}
-
-TEST_F(TargetDeviceInfoTest, CheckManufacturerNameCapitalization) {
-  std::unique_ptr<syncer::DeviceInfo> device = CreateFakeDeviceInfo(
-      "guid", "model", sync_pb::SyncEnums_DeviceType_TYPE_WIN,
-      syncer::DeviceInfo::OsType::kWindows,
-      syncer::DeviceInfo::FormFactor::kDesktop, "foo bar", "model");
-  SharingDeviceNames names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("Foo Bar Computer model", names.full_name);
-  EXPECT_EQ("Foo Bar Computer", names.short_name);
-
-  device = CreateFakeDeviceInfo(
-      "guid", "model", sync_pb::SyncEnums_DeviceType_TYPE_WIN,
-      syncer::DeviceInfo::OsType::kWindows,
-      syncer::DeviceInfo::FormFactor::kDesktop, "foo1bar", "model");
-  names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("Foo1Bar Computer model", names.full_name);
-  EXPECT_EQ("Foo1Bar Computer", names.short_name);
-
-  device = CreateFakeDeviceInfo(
-      "guid", "model", sync_pb::SyncEnums_DeviceType_TYPE_WIN,
-      syncer::DeviceInfo::OsType::kWindows,
-      syncer::DeviceInfo::FormFactor::kDesktop, "foo_bar-FOO", "model");
-  names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("Foo_Bar-FOO Computer model", names.full_name);
-  EXPECT_EQ("Foo_Bar-FOO Computer", names.short_name);
-
-  device = CreateFakeDeviceInfo(
-      "guid", "model", sync_pb::SyncEnums_DeviceType_TYPE_WIN,
-      syncer::DeviceInfo::OsType::kWindows,
-      syncer::DeviceInfo::FormFactor::kDesktop, "foo&bar foo", "model");
-  names = GetSharingDeviceNames(device.get());
-
-  EXPECT_EQ("Foo&Bar Foo Computer model", names.full_name);
-  EXPECT_EQ("Foo&Bar Foo Computer", names.short_name);
-}
-
 }  // namespace send_tab_to_self

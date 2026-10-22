@@ -20,17 +20,15 @@ const DEFAULT_FOLLOW_UP_QUERY = 'Fix the issue using JavaScript code execution.'
  * @returns True if the element reaches the height, false otherwise.
  */
 export async function waitForElementToHaveHeight(
-    elem: ElementHandle<HTMLElement>, height: number, tries = 5): Promise<boolean> {
-  const h = await elem.evaluate(e => e.clientHeight);
-  if (h > height) {
-    return true;
+    elem: ElementHandle<HTMLElement>, height: number, maxTries = 10): Promise<boolean> {
+  for (let i = 0; i < maxTries; i++) {
+    const h = await elem.evaluate(e => e.clientHeight);
+    if (h > height) {
+      return true;
+    }
+    await new Promise(r => setTimeout(r, 100));
   }
-  if (tries > 10) {
-    return false;
-  }
-  return await new Promise(r => {
-    setTimeout(() => r(waitForElementToHaveHeight(elem, height, tries + 1)), 100);
-  });
+  return false;
 }
 
 /**

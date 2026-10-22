@@ -9,6 +9,7 @@
 
 #include "base/check.h"
 #include "base/compiler_specific.h"
+#include "base/containers/adapters.h"
 #include "base/functional/bind.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
@@ -47,9 +48,8 @@ Vector<SkBitmap> DecodeImageData(const std::string& data,
   } else {
     std::vector<SkBitmap> original_bitmaps =
         blink::WebImage::FramesFromData(buffer);
-    bitmaps.AppendRange(std::make_move_iterator(original_bitmaps.begin()),
-                        std::make_move_iterator(original_bitmaps.end()));
-    bitmaps.Reverse();
+    bitmaps.append_range(
+        base::Reversed(base::RangeAsRvalues(std::move(original_bitmaps))));
   }
   return bitmaps;
 }
@@ -325,11 +325,17 @@ void ImageDownloaderImpl::Trace(Visitor* visitor) const {
 }
 
 void ImageDownloaderImpl::ContextDestroyed() {
-  for (const auto& fetcher : image_fetchers_) {
+  // Calling `Dispose()` will end up calling back synchronously into
+  // DidFetchImage(). To avoid `image_fetchers_` being mutated while it's being
+  // iterated over, move its contents to a temporary var before doing the
+  // iteration.
+  auto fetchers = std::move(image_fetchers_);
+  image_fetchers_.clear();
+
+  for (const auto& fetcher : fetchers) {
     // Will run callbacks with an empty image vector.
     fetcher->Dispose();
   }
-  image_fetchers_.clear();
 }
 
 }  // namespace blink

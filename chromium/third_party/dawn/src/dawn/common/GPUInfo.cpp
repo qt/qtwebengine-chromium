@@ -31,7 +31,6 @@
 #endif
 
 #include "dawn/common/GPUInfo.h"
-#include "dawn/common/GPUInfo_autogen.h"
 
 #include <algorithm>
 #include <array>
@@ -39,6 +38,7 @@
 #include <sstream>
 
 #include "dawn/common/Assert.h"
+#include "dawn/common/GPUInfo_autogen.h"
 
 namespace dawn::gpu_info {
 namespace {
@@ -47,6 +47,9 @@ namespace {
 // https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/include/pci_ids/iris_pci_ids.h
 // gen9
 const std::array<PCIDeviceID, 2> IrisPlus655 = {{0x3EA5, 0x3EA8}};
+
+// ARM
+const PCIDeviceID kMaliG68 = 0x92041010;
 
 }  // anonymous namespace
 
@@ -148,6 +151,11 @@ QualcommACPIGen GetQualcommACPIGen(PCIVendorID venderId, PCIDeviceID deviceId) {
     } else {
         return QualcommACPIGen::Unknown;
     }
+}
+
+// ARM GPUs
+bool IsMaliG68(PCIDeviceID deviceId) {
+    return deviceId == kMaliG68;
 }
 
 }  // namespace dawn::gpu_info

@@ -8,14 +8,28 @@
 #include <vector>
 
 #include "base/metrics/field_trial_params.h"
+#include "base/no_destructor.h"
 #include "base/rand_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "build/buildflag.h"
+
+namespace {
+// Allow runtime override of the forced embedded page host.
+std::string& GetForcedEmbeddedPageHostOverrideString() {
+  static base::NoDestructor<std::string> override_string;
+  return *override_string;
+}
+}  // namespace
 
 namespace contextual_tasks {
 
 // Enables the contextual tasks side panel while browsing.
 BASE_FEATURE(kContextualTasks, base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Enables the pin button in the toolbar for contextual tasks.
+BASE_FEATURE(kEnableContextualTasksPinButtonInToolbar,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables the use of the kSearchResultsOAuth2Scope instead of the
 // kChromeSyncOAuth2Scope.
@@ -55,16 +69,69 @@ BASE_FEATURE(kContextualTasksRemoveTasksWithoutThreadsOrTabAssociations,
 BASE_FEATURE(kEnableNotifyZeroStateRenderedCapability,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kContextualTasksExpandButton, base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kContextualTasksSendFullVersionListEnabled,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kContextualTasksUrlRedirectToAimUrl,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kContextualTasksUseStratusDarkModeColors,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // If enabled, animates the caret.
 BASE_FEATURE(kContextualTasksAnimatedCaret, base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enables energy effect in Nextbox. This works as a killswitch for the feature.
+BASE_FEATURE(kEnergyEffectInNextbox, base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kContextualTasksEnableFileHint, base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kContextualTasksComposeboxJumpFix,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enables the use of a rounded clip-path for the composebox.
+BASE_FEATURE(kContextualTasksRoundedClipPath, base::FEATURE_ENABLED_BY_DEFAULT);
+
+// On android the menu still needs to be shown in all cases. Enable the feature
+// everywhere else.
+#if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kContextualTasksHideMenuOnAiPage,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kContextualTasksHideMenuOnAiPage,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_ANDROID)
+
+BASE_FEATURE(kContextualTasksUpdateModelOnNavigation,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kContextualTasksVideoCitations, base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kContextualTasksPdfCitations, base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enables lazy fetching of cluster info for multimodal queries.
+BASE_FEATURE(kContextualTasksLazyFetchClusterInfo,
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enables custom UI for NLM.
+BASE_FEATURE(kContextualTasksCustomNlmUi, base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enables the use of APC comparison for webpages in the recontextualization
+// flow.
+BASE_FEATURE(kContextualTasksWebpageApcComparison,
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+bool GetIsContextualTasksUpdateModeOnNavigationEnabled() {
+  return base::FeatureList::IsEnabled(kContextualTasksUpdateModelOnNavigation);
+}
+
+bool GetIsContextualTasksPdfCitationsEnabled() {
+  return base::FeatureList::IsEnabled(kContextualTasksPdfCitations);
+}
+
+bool GetIsContextualTasksLazyFetchClusterInfoEnabled() {
+  return base::FeatureList::IsEnabled(kContextualTasksLazyFetchClusterInfo);
+}
 
 const base::FeatureParam<bool> kContextualTasksLockAndUnlockInputCapability(
     &kContextualTasks,
@@ -86,6 +153,11 @@ const base::FeatureParam<bool> kContextualTasksEnableCookieSync(
     "ContextualTasksEnableCookieSync",
     true);
 
+const base::FeatureParam<bool> kContextualTasksEnableCookiePrefetch(
+    &kContextualTasks,
+    "ContextualTasksEnableCookiePrefetch",
+    false);
+
 const base::FeatureParam<bool> kOnlyUseTitlesForSimilarity(
     &kContextualTasksContext,
     "ContextualTasksContextOnlyUseTitles",
@@ -99,18 +171,42 @@ const base::FeatureParam<double> kContentVisibilityThreshold{
     &kContextualTasksContext,
     "ContextualTasksContextContentVisibilityThreshold", 0.7};
 
+const base::FeatureParam<std::string> kQueryEmbeddingTask{
+    &kContextualTasksContext, "ContextualTasksContextQueryEmbeddingTask", ""};
+
+const base::FeatureParam<bool> kContextualTasksContextSmartTabSharing(
+    &kContextualTasksContext,
+    "ContextualTasksContextSmartTabSharing",
+    false);
+
+const base::FeatureParam<base::TimeDelta> kSmartTabSharingTabSelectionTimeout(
+    &kContextualTasksContext,
+    "ContextualTasksContextSmartTabSharingTabSelectionTimeout",
+    base::Milliseconds(300));
+
+const base::FeatureParam<double> kSmartTabSharingPromoScoreThreshold(
+    &kContextualTasksContext,
+    "ContextualTasksContextSmartTabSharingPromoScoreThreshold",
+    0.9);
+
 const base::FeatureParam<double> kContextualTasksContextLoggingSampleRate{
     &kContextualTasksContextLogging, "ContextualTasksContextLoggingSampleRate",
     1.0};
 
 // Enables tab auto-chip for contextual tasks.
 const base::FeatureParam<bool> kContextualTasksTabAutoSuggestionChipEnabled(
-    &kContextualTasks, "ContextualTasksTabAutoSuggestionChipEnabled", true);
+    &kContextualTasks,
+    "ContextualTasksTabAutoSuggestionChipEnabled",
+    true);
 
 // The base URL for the AI page.
 const base::FeatureParam<std::string> kContextualTasksAiPageUrl{
     &kContextualTasks, "contextual-tasks-ai-page-url",
-    "https://www.google.com/search?udm=50&sourceid=chrome"};
+    "https://www.google.com/search?udm=50&sourceid=chrome&ccb=1"};
+
+const base::FeatureParam<std::string> kContextualTasksGeminiBaseUrl{
+    &kContextualTasks, "contextual-tasks-gemini-base-url",
+    "https://gemini.google.com/app/"};
 
 // The host that any URL loaded in the embedded WebUi page will be routed to.
 const base::FeatureParam<std::string> kContextualTasksForcedEmbeddedPageHost{
@@ -119,18 +215,19 @@ const base::FeatureParam<std::string> kContextualTasksForcedEmbeddedPageHost{
 // The base domains for the sign in page.
 const base::FeatureParam<std::string> kContextualTasksSignInDomains{
     &kContextualTasks, "contextual-tasks-sign-in-domains",
-    "accounts.google.com,login.corp.google.com"};
+    "login.corp.google.com"};
 
 constexpr base::FeatureParam<EntryPointOption>::Option kEntryPointOptions[] = {
     {EntryPointOption::kNoEntryPoint, "no-entry-point"},
     {EntryPointOption::kPageActionRevisit, "page-action-revisit"},
     {EntryPointOption::kToolbarRevisit, "toolbar-revisit"},
-    {EntryPointOption::kToolbarPermanent, "toolbar-permanent"}};
+    {EntryPointOption::kToolbarPermanent, "toolbar-permanent"},
+    {EntryPointOption::kToolbarEphemeralBranded, "toolbar-ephemeral-branded"}};
 
 const base::FeatureParam<EntryPointOption> kShowEntryPoint(
     &kContextualTasks,
     "ContextualTasksEntryPoint",
-    EntryPointOption::kToolbarRevisit,
+    EntryPointOption::kNoEntryPoint,
     &kEntryPointOptions);
 
 constexpr base::FeatureParam<ExpandButtonOption>::Option kExpandButtonOption[] =
@@ -142,16 +239,6 @@ const base::FeatureParam<ExpandButtonOption> kExpandButtonOptions(
     "ContextualTasksExpandButtonOptions",
     ExpandButtonOption::kToolbarCloseButton,
     &kExpandButtonOption);
-
-const base::FeatureParam<bool> kTaskScopedSidePanel(
-    &kContextualTasks,
-    "ContextualTasksTaskScopedSidePanel",
-    true);
-
-const base::FeatureParam<bool> kOpenSidePanelOnLinkClicked(
-    &kContextualTasks,
-    "ContextualTasksOpenSidePanelOnLinkClicked",
-    true);
 
 const base::FeatureParam<bool> kEnableLensInContextualTasks(
     &kContextualTasks,
@@ -169,25 +256,12 @@ const base::FeatureParam<bool> kForceGscInTabMode(
 // Version 1.2: Client is capable of composebox camouflage.
 // Version 1.3: Bug fix for privacy notice on composebox camouflage.
 // Version 2.0: M146 respin launch candidate.
+// Version 2.1: Enables stratus dark mode colors.
+// Version 2.2: Added UI fixes for NLM.
+// Version 2.3: UI fixes for transitions from search results.
+// Version 2.4: Adds ability to hideInput/restoreInput
 const base::FeatureParam<std::string> kContextualTasksUserAgentSuffix{
-    &kContextualTasks, "contextual-tasks-user-agent-suffix", "Cobrowsing/2.0"};
-
-const base::FeatureParam<bool> kEnableSteadyComposeboxVoiceSearch(
-    &kContextualTasks,
-    "ContextualTasksEnableSteadyComposeboxVoiceSearch",
-    true);
-
-const base::FeatureParam<bool> kEnableExpandedComposeboxVoiceSearch(
-    &kContextualTasks,
-    "ContextualTasksEnableExpandedComposeboxVoiceSearch",
-    true);
-
-// TODO(b/481079194): Remove `kAutoSubmitVoiceSearchQuery` and the code that
-// respects its disabled state.
-const base::FeatureParam<bool> kAutoSubmitVoiceSearchQuery(
-    &kContextualTasks,
-    "ContextualTasksAutoSubmitVoiceSearchQuery",
-    true);
+    &kContextualTasks, "contextual-tasks-user-agent-suffix", "Cobrowsing/2.4"};
 
 const base::FeatureParam<std::string> kContextualTasksHelpUrl(
     &kContextualTasks,
@@ -240,6 +314,10 @@ const base::FeatureParam<bool> kContextualTasksEnableNativeZeroStateSuggestions(
     "ContextualTasksEnableNativeZeroStateSuggestions",
     true);
 
+// The URL parameter name to check for NLM mode.
+const base::FeatureParam<std::string> kContextualTasksNlmUrlParam{
+    &kContextualTasksCustomNlmUi, "ContextualTasksNlmUrlParam", "ajid"};
+
 const base::FeatureParam<std::string> kContextualTasksDisplayUrlScheme(
     &kContextualTasks,
     "ContextualTasksDisplayUrlScheme",
@@ -258,7 +336,7 @@ const base::FeatureParam<std::string> kContextualTasksDisplayUrlPath(
 const base::FeatureParam<bool> kContextualTasksShowExpandedSecurityChip(
     &kContextualTasks,
     "ContextualTasksShowExpandedSecurityChip",
-    true);
+    false);
 
 const base::FeatureParam<bool>
     kContextualTasksForceBasicModeIfOpeningThreadHistory(
@@ -291,16 +369,8 @@ int ContextualTasksInactiveSidePanelKeepInCacheMinutes() {
   return kContextualTasksInactiveSidePanelKeepInCacheMinutes.Get();
 }
 
-bool GetIsExpandedComposeboxVoiceSearchEnabled() {
-  return kEnableExpandedComposeboxVoiceSearch.Get();
-}
-
-bool GetIsSteadyComposeboxVoiceSearchEnabled() {
-  return kEnableSteadyComposeboxVoiceSearch.Get();
-}
-
-bool GetAutoSubmitVoiceSearchQuery() {
-  return kAutoSubmitVoiceSearchQuery.Get();
+bool IsContextualTasksPinButtonInToolbarEnabled() {
+  return base::FeatureList::IsEnabled(kEnableContextualTasksPinButtonInToolbar);
 }
 
 bool GetIsProtectedPageErrorEnabled() {
@@ -327,6 +397,10 @@ std::string GetContextualTasksAiPageUrl() {
   return kContextualTasksAiPageUrl.Get();
 }
 
+std::string GetContextualTasksGeminiBaseUrl() {
+  return kContextualTasksGeminiBaseUrl.Get();
+}
+
 std::string GetContextualTasksDisplayUrlScheme() {
   return kContextualTasksDisplayUrlScheme.Get();
 }
@@ -344,16 +418,24 @@ bool ShouldShowExpandedSecurityChip() {
 }
 
 std::string GetForcedEmbeddedPageHost() {
-  std::string host = kContextualTasksForcedEmbeddedPageHost.Get();
+  std::string host = !GetForcedEmbeddedPageHostOverrideString().empty()
+                         ? GetForcedEmbeddedPageHostOverrideString()
+                         : kContextualTasksForcedEmbeddedPageHost.Get();
 
   // If there's a non-empty host, ensure that it is only ever going to a
   // google.com domain. If not, return the default empty string.
+  // LINT.IfChange(AllowedHosts)
   if (!host.empty() && !(base::EndsWith(host, ".google.com") ||
                          base::EndsWith(host, ".googlers.com"))) {
     return kContextualTasksForcedEmbeddedPageHost.default_value;
   }
+  // LINT.ThenChange(//depot/chromium/chrome/browser/resources/contextual_tasks/app.ts:AllowedHosts)
 
   return host;
+}
+
+void SetForcedEmbeddedPageHostOverride(const std::string& host) {
+  GetForcedEmbeddedPageHostOverrideString() = host;
 }
 
 std::vector<std::string> GetContextualTasksSignInDomains() {
@@ -379,11 +461,28 @@ const base::FeatureParam<int> kContextualTasksNextboxMaxFileSize{
     &kContextualTasksContextMenu, "ContextualTasksNextboxMaxFileSize",
     20 * 1024 * 1024};
 
-const base::FeatureParam<int> kContextualTasksNextboxMaxFileCount{
-    &kContextualTasksContextMenu, "ContextualTasksNextboxMaxFileCount", 10};
-
 bool GetIsContextualTasksSuggestionsEnabled() {
   return base::FeatureList::IsEnabled(kContextualTasksSuggestionsEnabled);
+}
+
+bool GetIsSmartTabSharingEnabled() {
+  return base::FeatureList::IsEnabled(kContextualTasksContext) &&
+         kContextualTasksContextSmartTabSharing.Get();
+}
+
+base::TimeDelta GetSmartTabSharingTabSelectionTimeout() {
+  if (kSmartTabSharingTabSelectionTimeout.Get().is_positive()) {
+    return kSmartTabSharingTabSelectionTimeout.Get();
+  }
+  return base::Milliseconds(300);
+}
+
+double GetSmartTabSharingPromoScoreThreshold() {
+  if (kSmartTabSharingPromoScoreThreshold.Get() > 0.0 &&
+      kSmartTabSharingPromoScoreThreshold.Get() <= 1.0) {
+    return kSmartTabSharingPromoScoreThreshold.Get();
+  }
+  return 0.9;
 }
 
 bool GetIsTabAutoSuggestionChipEnabled() {
@@ -423,6 +522,14 @@ bool GetEnableNativeZeroStateSuggestions() {
   return kContextualTasksEnableNativeZeroStateSuggestions.Get();
 }
 
+std::string GetContextualTasksNlmUrlParam() {
+  return kContextualTasksNlmUrlParam.Get();
+}
+
+bool IsCustomNlmUiEnabled() {
+  return base::FeatureList::IsEnabled(kContextualTasksCustomNlmUi);
+}
+
 bool ShouldUseSearchResultsScope() {
   return base::FeatureList::IsEnabled(kContextualTasksScopeChange);
 }
@@ -439,13 +546,37 @@ bool ShouldEnableCookieSync() {
   return kContextualTasksEnableCookieSync.Get();
 }
 
+bool ShouldEnableCookiePrefetch() {
+  return kContextualTasksEnableCookiePrefetch.Get();
+}
+
 bool ShouldEnableLockAndUnlockInputCapability() {
   return base::FeatureList::IsEnabled(kContextualTasks) &&
          kContextualTasksLockAndUnlockInputCapability.Get();
 }
 
+bool ShouldUseStratusDarkModeColors() {
+  return base::FeatureList::IsEnabled(kContextualTasksUseStratusDarkModeColors);
+}
+
+bool GetEnableFileHint() {
+  return base::FeatureList::IsEnabled(kContextualTasksEnableFileHint);
+}
+
+bool GetEnableComposeboxJumpFix() {
+  return base::FeatureList::IsEnabled(kContextualTasksComposeboxJumpFix);
+}
+
 ExpandButtonOption GetExpandButtonOption() {
   return kExpandButtonOptions.Get();
+}
+
+bool IsRoundedClipPathEnabled() {
+  return base::FeatureList::IsEnabled(kContextualTasksRoundedClipPath);
+}
+
+bool GetIsWebpageApcComparisonEnabled() {
+  return base::FeatureList::IsEnabled(kContextualTasksWebpageApcComparison);
 }
 
 namespace flag_descriptions {
@@ -462,12 +593,6 @@ const char kContextualTasksContextLibraryName[] =
     "Contextual Tasks Context Library";
 const char kContextualTasksContextLibraryDescription[] =
     "Enables integration with the server side context library.";
-
-const char kContextualTasksExpandButtonName[] =
-    "Contextual Tasks Expand Button";
-const char kContextualTasksExpandButtonDescription[] =
-    "Replace the overflow menu in the side panel with a button to move the "
-    "thread to a new tab.";
 
 const char kContextualTasksSuggestionsEnabledName[] =
     "Contextual Tasks Suggestions Enabled";

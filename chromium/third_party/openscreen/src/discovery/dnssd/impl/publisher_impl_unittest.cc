@@ -5,6 +5,7 @@
 #include "discovery/dnssd/impl/publisher_impl.h"
 
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "discovery/common/testing/mock_reporting_client.h"
@@ -104,13 +105,12 @@ TEST_F(PublisherImplTest, TestRegistrationAndDegrestration) {
       .WillRepeatedly([&seen, &address,
                        &domain2](const MdnsRecord& record) mutable -> Error {
         if (record.dns_type() == DnsType::kA) {
-          const ARecordRdata& data = absl::get<ARecordRdata>(record.rdata());
+          const ARecordRdata& data = std::get<ARecordRdata>(record.rdata());
           if (data.ipv4_address() == address) {
             seen++;
           }
         } else if (record.dns_type() == DnsType::kSRV) {
-          const SrvRecordRdata& data =
-              absl::get<SrvRecordRdata>(record.rdata());
+          const SrvRecordRdata& data = std::get<SrvRecordRdata>(record.rdata());
           if (data.port() == 80) {
             seen++;
           }
@@ -137,13 +137,12 @@ TEST_F(PublisherImplTest, TestRegistrationAndDegrestration) {
       .WillRepeatedly([&seen,
                        &address](const MdnsRecord& record) mutable -> Error {
         if (record.dns_type() == DnsType::kA) {
-          const ARecordRdata& data = absl::get<ARecordRdata>(record.rdata());
+          const ARecordRdata& data = std::get<ARecordRdata>(record.rdata());
           if (data.ipv4_address() == address) {
             seen++;
           }
         } else if (record.dns_type() == DnsType::kSRV) {
-          const SrvRecordRdata& data =
-              absl::get<SrvRecordRdata>(record.rdata());
+          const SrvRecordRdata& data = std::get<SrvRecordRdata>(record.rdata());
           if (data.port() == 80) {
             seen++;
           }

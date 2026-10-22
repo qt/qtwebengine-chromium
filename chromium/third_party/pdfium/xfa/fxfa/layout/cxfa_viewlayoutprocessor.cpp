@@ -559,16 +559,23 @@ void CXFA_ViewLayoutProcessor::RemoveLayoutRecord(
   }
 }
 
-void CXFA_ViewLayoutProcessor::SubmitContentItem(
+bool CXFA_ViewLayoutProcessor::SubmitContentItem(
     CXFA_ContentLayoutItem* pContentLayoutItem,
     CXFA_ContentLayoutProcessor::Result eStatus) {
   if (pContentLayoutItem) {
-    CXFA_ViewRecord* pViewRecord = GetCurrentViewRecord();
-    if (!pViewRecord) {
-      return;
+    CXFA_ViewRecord* view_record = GetCurrentViewRecord();
+    if (!view_record) {
+      // If no view record exists, there is no active container to update.
+      // Return true to skip submission but allow the processor to continue.
+      return true;
+    }
+    if (!view_record->pCurContentArea) {
+      // Missing content area within an active record is a structural failure.
+      // Return false to signal the parent processor to abort layout.
+      return false;
     }
 
-    pViewRecord->pCurContentArea->AppendLastChild(pContentLayoutItem);
+    view_record->pCurContentArea->AppendLastChild(pContentLayoutItem);
     create_over_flow_page_ = false;
   }
   if (eStatus != CXFA_ContentLayoutProcessor::Result::kDone) {
@@ -579,6 +586,7 @@ void CXFA_ViewLayoutProcessor::SubmitContentItem(
     current_view_record_iter_ = GetTailPosition();
     cur_page_area_ = GetCurrentViewRecord()->pCurPageArea->GetFormNode();
   }
+  return true;
 }
 
 float CXFA_ViewLayoutProcessor::GetAvailHeight() {
@@ -1628,25 +1636,29 @@ void CXFA_ViewLayoutProcessor::ProcessLastPageSet() {
 }
 
 bool CXFA_ViewLayoutProcessor::GetNextAvailContentHeight(float fChildHeight) {
-  CXFA_ViewRecord* pViewRecord = GetCurrentViewRecord();
-  if (!pViewRecord) {
+  CXFA_ViewRecord* view_record = GetCurrentViewRecord();
+  if (!view_record) {
+    return false;
+  }
+  if (!view_record->pCurContentArea) {
+    return false;
+  }
+  CXFA_Node* current_content_node = view_record->pCurContentArea->GetFormNode();
+  if (!current_content_node) {
     return false;
   }
 
-  CXFA_Node* pCurContentNode = pViewRecord->pCurContentArea->GetFormNode();
-  if (!pCurContentNode) {
-    return false;
-  }
-
-  pCurContentNode = pCurContentNode->GetNextSameClassSibling<CXFA_ContentArea>(
-      XFA_Element::ContentArea);
-  if (pCurContentNode) {
-    float fNextContentHeight = pCurContentNode->JSObject()->GetMeasureInUnit(
-        XFA_Attribute::H, XFA_Unit::Pt);
+  current_content_node =
+      current_content_node->GetNextSameClassSibling<CXFA_ContentArea>(
+          XFA_Element::ContentArea);
+  if (current_content_node) {
+    float fNextContentHeight =
+        current_content_node->JSObject()->GetMeasureInUnit(XFA_Attribute::H,
+                                                           XFA_Unit::Pt);
     return fNextContentHeight > fChildHeight;
   }
 
-  CXFA_Node* pPageNode = GetCurrentViewRecord()->pCurPageArea->GetFormNode();
+  CXFA_Node* pPageNode = view_record->pCurPageArea->GetFormNode();
   CXFA_Node* pOccurNode =
       pPageNode->GetFirstChildByClass<CXFA_Occur>(XFA_Element::Occur);
   int32_t iMax = 0;

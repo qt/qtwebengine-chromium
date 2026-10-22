@@ -79,7 +79,8 @@ void AudioNode::Dispose() {
   // the handler still needs to be added in case the context is resumed.
   DCHECK(context());
   if (context()->IsPullingAudioGraph() ||
-      context()->ContextState() == V8AudioContextState::Enum::kSuspended) {
+      context()->ContextState() == V8AudioContextState::Enum::kSuspended ||
+      context()->ContextState() == V8AudioContextState::Enum::kInterrupted) {
     context()->GetDeferredTaskHandler().AddRenderingOrphanHandler(
         std::move(handler_));
   }
@@ -211,11 +212,6 @@ AudioNode* AudioNode::connect(AudioNode* destination,
                     destination->Handler().NodeTypeName().Utf8().c_str(),
                     reinterpret_cast<uintptr_t>(&destination->Handler())));
 
-  // Once the destination node is connected, the source node (e.g.,
-  // MediaElementAudioSourceNode) can eventually disable the MediaElement's
-  // audio output to the device.
-  ConnectToDestinationReady();
-
   AudioNodeWiring::Connect(Handler().Output(output_index),
                            destination->Handler().Input(input_index));
   if (!connected_nodes_[output_index]) {
@@ -261,11 +257,6 @@ void AudioNode::connect(AudioParam* param,
         "belonging to a different audio context.");
     return;
   }
-
-  // Once the destination node is connected, the source node (e.g.,
-  // MediaElementAudioSourceNode) can eventually disable the MediaElement's
-  // audio output to the device.
-  ConnectToDestinationReady();
 
   AudioNodeWiring::Connect(Handler().Output(output_index), param->Handler());
   if (!connected_params_[output_index]) {
@@ -621,10 +612,10 @@ void AudioNode::DidAddOutput(unsigned number_of_outputs) {
   DCHECK_EQ(number_of_outputs, connected_params_.size());
 }
 
-void AudioNode::SendLogMessage(const char* const function_name,
+void AudioNode::SendLogMessage(const String& function_name,
                                const String& message) {
-  WebRtcLogMessage(UNSAFE_TODO(String::Format("[WA]AN::%s %s", function_name,
-                                              message.Utf8().c_str()))
+  WebRtcLogMessage(String::Format("[WA]AN::%s %s", function_name.Utf8().c_str(),
+                                  message.Utf8().c_str())
                        .Utf8());
 }
 

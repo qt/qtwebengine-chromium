@@ -14,11 +14,6 @@
 #include "base/observer_list.h"
 #include "components/sync_device_info/device_info_tracker.h"
 
-namespace sync_pb {
-enum SharingSpecificFields_EnabledFeatures : int;
-enum SyncEnums_DeviceType : int;
-}  // namespace sync_pb
-
 namespace syncer {
 
 class DeviceInfo;
@@ -69,6 +64,10 @@ class FakeDeviceInfoTracker : public DeviceInfoTracker {
   void OverrideActiveDeviceCount(
       const absl::flat_hash_map<DeviceInfo::FormFactor, int>& counts);
 
+  // Overrides the result of `IsSyncing()`. Pass `std::nullopt` to reset
+  // to the default behavior (returning `true` if devices are present).
+  void SetIsSyncingOverride(std::optional<bool> override_value);
+
   // Marks an existing DeviceInfo entry as being on the local device.
   void SetLocalCacheGuid(const std::string& cache_guid);
 
@@ -80,6 +79,8 @@ class FakeDeviceInfoTracker : public DeviceInfoTracker {
   std::string local_device_cache_guid_;
   std::optional<absl::flat_hash_map<DeviceInfo::FormFactor, int>>
       device_count_per_type_override_;
+  // Optional override for the `IsSyncing()` state.
+  std::optional<bool> is_syncing_override_;
   // Registered observers, not owned.
   base::ObserverList<Observer, true>::Unchecked observers_;
 };

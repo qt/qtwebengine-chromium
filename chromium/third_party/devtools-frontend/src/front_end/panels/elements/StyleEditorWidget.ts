@@ -9,7 +9,7 @@ import * as UI from '../../ui/legacy/legacy.js';
 import type * as ElementsComponents from './components/components.js';
 import type {StylePropertiesSection} from './StylePropertiesSection.js';
 import {StylePropertyTreeElement} from './StylePropertyTreeElement.js';
-import type {StylesSidebarPane} from './StylesSidebarPane.js';
+import type {StylesContainer} from './StylesContainer.js';
 
 type PropertySelectedEvent = ElementsComponents.StylePropertyEditor.PropertySelectedEvent;
 type PropertyDeselectedEvent = ElementsComponents.StylePropertyEditor.PropertyDeselectedEvent;
@@ -29,7 +29,7 @@ interface Editor extends HTMLElement {
  */
 export class StyleEditorWidget extends UI.Widget.VBox {
   private editor?: Editor;
-  private pane?: StylesSidebarPane;
+  private stylesContainer?: StylesContainer;
   private section?: StylePropertiesSection;
   private editorContainer: HTMLElement;
 
@@ -57,7 +57,7 @@ export class StyleEditorWidget extends UI.Widget.VBox {
     target.property.value = event.data.value;
     target.updateTitle();
     await target.applyStyleText(target.renderedPropertyText(), false);
-    await this.render();
+    this.requestUpdate();
   }
 
   async onPropertyDeselected(event: PropertyDeselectedEvent): Promise<void> {
@@ -66,11 +66,11 @@ export class StyleEditorWidget extends UI.Widget.VBox {
     }
     const target = ensureTreeElementForProperty(this.section, event.data.name);
     await target.applyStyleText('', false);
-    await this.render();
+    this.requestUpdate();
   }
 
-  bindContext(pane: StylesSidebarPane, section: StylePropertiesSection): void {
-    this.pane = pane;
+  bindContext(stylesContainer: StylesContainer, section: StylePropertiesSection): void {
+    this.stylesContainer = stylesContainer;
     this.section = section;
     this.editor?.addEventListener('propertyselected', this.onPropertySelected);
     this.editor?.addEventListener('propertydeselected', this.onPropertyDeselected);
@@ -85,7 +85,7 @@ export class StyleEditorWidget extends UI.Widget.VBox {
   }
 
   unbindContext(): void {
-    this.pane = undefined;
+    this.stylesContainer = undefined;
     this.section = undefined;
     this.editor?.removeEventListener('propertyselected', this.onPropertySelected);
     this.editor?.removeEventListener('propertydeselected', this.onPropertyDeselected);
@@ -98,8 +98,13 @@ export class StyleEditorWidget extends UI.Widget.VBox {
     this.editor.data = {
       authoredProperties: this.section ? getAuthoredStyles(this.section, this.editor.getEditableProperties()) :
                                          new Map(),
-      computedProperties: this.pane ? await fetchComputedStyles(this.pane) : new Map(),
+      computedProperties: this.stylesContainer ? await fetchComputedStyles(this.stylesContainer) : new Map(),
     };
+  }
+
+  override async performUpdate(): Promise<void> {
+    await super.performUpdate();
+    await this.render();
   }
 
   static instance(): StyleEditorWidget {
@@ -118,19 +123,19 @@ export class StyleEditorWidget extends UI.Widget.VBox {
   }
 
   static createTriggerButton(
-      pane: StylesSidebarPane, section: StylePropertiesSection, editorClass: {new(): Editor}, buttonTitle: string,
-      triggerKey: string): HTMLElement {
+      stylesContainer: StylesContainer, section: StylePropertiesSection, editorClass: {new(): Editor},
+      buttonTitle: string, triggerKey: string): HTMLElement {
     const triggerButton = createIcon('flex-wrap', 'styles-pane-button');
     triggerButton.title = buttonTitle;
     triggerButton.role = 'button';
 
     triggerButton.onclick = async event => {
       event.stopPropagation();
-      const popoverHelper = pane.swatchPopoverHelper();
+      const popoverHelper = stylesContainer.swatchPopoverHelper();
       const widget = StyleEditorWidget.instance();
       widget.element.classList.toggle('with-padding', true);
       widget.setEditor(editorClass);
-      widget.bindContext(pane, section);
+      widget.bindContext(stylesContainer, section);
       widget.setTriggerKey(triggerKey);
       await widget.render();
       widget.focus();
@@ -138,11 +143,14 @@ export class StyleEditorWidget extends UI.Widget.VBox {
       const onScroll = (): void => {
         popoverHelper.hide(true);
       };
+      const onStylesUpdateCompleted = widget.requestUpdate.bind(widget);
+      stylesContainer.addStyleUpdateListener(onStylesUpdateCompleted);
       popoverHelper.show(widget, triggerButton, () => {
         widget.unbindContext();
         if (scrollerElement) {
           scrollerElement.removeEventListener('scroll', onScroll);
         }
+        stylesContainer.removeStyleUpdateListener(onStylesUpdateCompleted);
       });
       if (scrollerElement) {
         scrollerElement.addEventListener('scroll', onScroll);
@@ -168,8 +176,8 @@ function ensureTreeElementForProperty(section: StylePropertiesSection, propertyN
   return newTarget;
 }
 
-async function fetchComputedStyles(pane: StylesSidebarPane): Promise<Map<string, string>> {
-  const computedStyleModel = pane.computedStyleModel();
+async function fetchComputedStyles(stylesContainer: StylesContainer): Promise<Map<string, string>> {
+  const computedStyleModel = stylesContainer.computedStyleModel();
   const style = await computedStyleModel.fetchComputedStyle();
   return style ? style.computedStyle : new Map();
 }

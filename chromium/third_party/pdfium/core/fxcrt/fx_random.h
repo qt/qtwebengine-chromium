@@ -7,14 +7,35 @@
 #ifndef CORE_FXCRT_FX_RANDOM_H_
 #define CORE_FXCRT_FX_RANDOM_H_
 
+#include <stddef.h>
 #include <stdint.h>
+
+#include <array>
 
 #include "core/fxcrt/span.h"
 
-void* FX_Random_MT_Start(uint32_t dwSeed);
-void FX_Random_MT_Close(void* context);
-uint32_t FX_Random_MT_Generate(void* context);
+// A Mersenne Twister (MT) pseudo-random number generator.
+class FX_Random {
+ public:
+  static constexpr size_t kStateSize = 848;
 
-void FX_Random_GenerateMT(pdfium::span<uint32_t> pBuffer);
+  explicit FX_Random(uint32_t seed);
+
+  FX_Random(const FX_Random&) = delete;
+  FX_Random& operator=(const FX_Random&) = delete;
+
+  ~FX_Random();
+
+  // Using a temporary MT generator, fills `buffer` with random 32-bit unsigned
+  // integers.
+  static void Fill(pdfium::span<uint32_t> buffer);
+
+  // Returns a single random 32-bit unsigned integer.
+  uint32_t Generate();
+
+ private:
+  uint32_t next_index_;
+  std::array<uint32_t, kStateSize> state_;
+};
 
 #endif  // CORE_FXCRT_FX_RANDOM_H_

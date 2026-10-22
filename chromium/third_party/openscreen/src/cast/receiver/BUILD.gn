@@ -25,7 +25,6 @@ openscreen_source_set("channel") {
 
   public_deps = [
     "../../platform",
-    "../../third_party/abseil",
     "../../third_party/boringssl",
     "../common:channel",
     "../common/channel/proto:channel_proto",

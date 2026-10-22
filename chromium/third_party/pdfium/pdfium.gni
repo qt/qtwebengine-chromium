@@ -44,9 +44,12 @@ declare_args() {
   # malloc is controlled by args in build_overrides/partition_alloc.gni.
   pdf_use_partition_alloc = pdf_use_partition_alloc_override
 
+  # Build PDFium to use AGG (fully supported).
+  pdf_use_agg = true
+
   # Build PDFium to use Skia (experimental) for all PDFium graphics.
-  # If enabled, coexists in build with AGG graphics and the default
-  # renderer is selectable at runtime.
+  # If `pdf_use_agg` is enabled as well, coexists in build with AGG graphics
+  # and the default renderer is selectable at runtime.
   pdf_use_skia = pdf_use_skia_override
 
   # When building PDFium with Skia enabled, use a custom font manager if there
@@ -95,6 +98,9 @@ declare_args() {
 
 assert(!pdf_is_complete_lib || !is_component_build,
        "pdf_is_complete_lib=true requires is_component_build=false")
+
+assert(pdf_use_agg || pdf_use_skia,
+       "At least one of pdf_use_agg or pdf_use_skia must be true")
 
 assert(
     !pdf_enable_fontations || (enable_rust && enable_rust_cxx && pdf_use_skia),

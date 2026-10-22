@@ -75,7 +75,7 @@ TEST(FrameCollectorTest, CollectsFrameWithOnlyOnePart) {
 
     // Examine the assembled frame, and confirm its metadata and payload match
     // what was put into the collector via the packet above.
-    const auto& frame = collector.PeekAtAssembledFrame();
+    const auto& frame = collector.PeekFrameMetadata();
     if (i == 0) {
       EXPECT_EQ(EncodedFrame::Dependency::kKeyFrame, frame.dependency);
       EXPECT_EQ(std::chrono::milliseconds(), frame.new_playout_delay);
@@ -86,8 +86,12 @@ TEST(FrameCollectorTest, CollectsFrameWithOnlyOnePart) {
     EXPECT_EQ(part.frame_id, frame.frame_id);
     EXPECT_EQ(kSomeFrameId, frame.referenced_frame_id);
     EXPECT_EQ(part.rtp_timestamp, frame.rtp_timestamp);
+
+    auto chunks = collector.GetPayloadChunks();
+    ASSERT_EQ(1u, chunks.size());
+    ByteView chunk_data = chunks[0];
     for (int j = 0; j < 255; ++j) {
-      EXPECT_EQ(static_cast<uint8_t>(j), frame.data[j]);
+      EXPECT_EQ(static_cast<uint8_t>(j), chunk_data[j]);
     }
 
     collector.Reset();
@@ -151,20 +155,19 @@ TEST(FrameCollectorTest, CollectsFrameWithMultiplePartsArrivingOutOfOrder) {
   // Examine the assembled frame, and confirm its metadata and payload match
   // what was put into the collector via the packets above, and that the payload
   // bytes are in-order.
-  const auto& frame = collector.PeekAtAssembledFrame();
+  const auto& frame = collector.PeekFrameMetadata();
   EXPECT_EQ(EncodedFrame::Dependency::kKeyFrame, frame.dependency);
   EXPECT_EQ(kSomeFrameId, frame.frame_id);
   EXPECT_EQ(kSomeFrameId, frame.referenced_frame_id);
   EXPECT_EQ(kSomeRtpTimestamp, frame.rtp_timestamp);
-  ByteView remaining_data = frame.data;
+
+  auto chunks = collector.GetPayloadChunks();
+  ASSERT_EQ(6u, chunks.size());
   for (int i = 0; i < 6; ++i) {
-    ASSERT_LE(kPayloadSizes[i], static_cast<int>(remaining_data.size()));
-    EXPECT_THAT(remaining_data.subspan(0, kPayloadSizes[i]),
-                ElementsAreArray(payloads[i]))
-        << "i=" << i;
-    remaining_data = remaining_data.subspan(kPayloadSizes[i]);
+    ByteView chunk_data = chunks[i];
+    ASSERT_EQ(kPayloadSizes[i], static_cast<int>(chunk_data.size()));
+    EXPECT_THAT(chunk_data, ElementsAreArray(payloads[i])) << "i=" << i;
   }
-  ASSERT_TRUE(remaining_data.empty());
 }
 
 TEST(FrameCollectorTest, RejectsInvalidParts) {

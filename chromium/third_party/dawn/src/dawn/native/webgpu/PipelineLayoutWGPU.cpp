@@ -28,6 +28,7 @@
 #include "dawn/native/webgpu/PipelineLayoutWGPU.h"
 
 #include <array>
+#include <string>
 #include <vector>
 
 #include "dawn/common/Constants.h"
@@ -49,10 +50,11 @@ PipelineLayout::PipelineLayout(Device* device,
                                const UnpackedPtr<PipelineLayoutDescriptor>& descriptor)
     : PipelineLayoutBase(device, descriptor),
       RecordableObject(schema::ObjectType::PipelineLayout),
-      ObjectWGPU(device->wgpu.pipelineLayoutRelease) {
+      ObjectWGPU(device->wgpu->pipelineLayoutRelease) {
+    std::string label = GetLabel();
     WGPUPipelineLayoutDescriptor desc;
     desc.nextInChain = nullptr;
-    desc.label = ToOutputStringView(GetLabel());
+    desc.label = ToOutputStringView(label);
 
     std::array<WGPUBindGroupLayout, kMaxBindGroups> bindGroupLayouts;
     bindGroupLayouts.fill(nullptr);
@@ -68,7 +70,7 @@ PipelineLayout::PipelineLayout(Device* device,
     desc.bindGroupLayoutCount = bindGroupLayoutCount;
     desc.immediateSize = GetImmediateDataRangeByteSize();
 
-    mInnerHandle = device->wgpu.deviceCreatePipelineLayout(device->GetInnerHandle(), &desc);
+    mInnerHandle = device->wgpu->deviceCreatePipelineLayout(device->GetInnerHandle(), &desc);
     DAWN_ASSERT(mInnerHandle);
 }
 

@@ -159,6 +159,11 @@ typedef struct aom_sb_parameters {
 typedef struct aom_rc_encodeframe_decision {
   int q_index; /**< Required: Quantizer step index [0..255]*/
   int rdmult;  /**< Required: Frame level Lagrangian multiplier*/
+  // Whether per-superblock delta Q should be used.
+  // The rate control model should set the value pointed to by this member
+  // to 1 if per-superblock delta-Q is used for this frame, or 0 otherwise.
+  // This is a pointer to the flag in cpi->ext_ratectrl.
+  int *use_delta_q;
   /*!
    * Optional: Superblock quantization parameters
    * It is zero initialized by default. It will be set for key and ARF frames
@@ -398,6 +403,7 @@ typedef struct aom_rc_config {
   int min_base_q_index;      /**< for VBR mode only */
   int max_base_q_index;      /**< for VBR mode only */
   int base_qp;               /**< base QP for leaf frames, 0-255 */
+  int superblock_size;       /**< 64 or 128 */
 } aom_rc_config_t;
 
 /*!\brief Control what ref frame to use and its index.

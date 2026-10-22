@@ -19,8 +19,7 @@ use crate::encoder::Sample;
 use crate::encoder::ScalingMode;
 use crate::image::Image;
 use crate::image::YuvRange;
-#[cfg(test)]
-use crate::internal_utils::are_images_equal;
+use crate::internal_utils::*;
 use crate::parser::obu::Av2SequenceHeader;
 #[cfg(test)]
 use crate::reformat::rgb::Format;
@@ -773,10 +772,9 @@ impl Decoder for Avm {
                     image.planes[plane] = Some(Pixels::from_raw_pointer(
                         avm_image.planes[plane],
                         image.depth.into(),
-                        image.height,
+                        u32_from_usize(image.height(plane.into()))?,
                         image.row_bytes[plane],
                     )?);
-                    image.image_owns_planes[plane] = false;
                 }
             }
         } else {
@@ -850,7 +848,6 @@ impl Decoder for Avm {
                     image.height,
                     image.row_bytes[0],
                 )?);
-                image.image_owns_planes[Plane::A.as_usize()] = false;
             }
         }
 

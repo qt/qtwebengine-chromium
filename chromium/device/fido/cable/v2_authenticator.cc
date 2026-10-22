@@ -379,9 +379,9 @@ class TunnelTransport : public Transport {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
     network_context_factory_.Run()->CreateWebSocket(
-        target_, {device::kCableWebSocketProtocol}, net::SiteForCookies(),
+        target_, {device::kCableWebSocketProtocol},
         net::StorageAccessApiStatus::kNone, net::IsolationInfo(),
-        /*additional_headers=*/{}, network::OriginatingProcess::browser(),
+        /*additional_headers=*/{}, network::OriginatingProcessId::browser(),
         url::Origin::Create(target_),
         network::mojom::ClientSecurityState::New(),
         network::mojom::kWebSocketOptionBlockAllCookies,
@@ -390,7 +390,8 @@ class TunnelTransport : public Transport {
         /*url_loader_network_observer=*/mojo::NullRemote(),
         /*auth_handler=*/mojo::NullRemote(),
         /*header_client=*/mojo::NullRemote(),
-        /*throttling_profile_id=*/std::nullopt);
+        /*throttling_profile_id=*/std::nullopt,
+        /*network_restrictions_id=*/std::nullopt);
     FIDO_LOG(DEBUG) << "Creating WebSocket to " << target_.spec();
   }
 

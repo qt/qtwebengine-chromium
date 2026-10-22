@@ -27,20 +27,22 @@ import {getCss} from './app.css.js';
 import {getHtml} from './app.html.js';
 import {FullscreenContext, PageHandlerFactory, SecurityIcon} from './browser.mojom-webui.js';
 import {BrowserProxy} from './browser_proxy.js';
-import type {ContentRegion} from './content_region.js';
-import type {SidePanel} from './side_panel.js';
+import type {ContentRegionElement} from './content_region.js';
+import type {SidePanelElement} from './side_panel.js';
 import type {TabActivated, TabAdded, TabClosed, TabUpdated} from './tab_strip/events.js';
-import {TabStrip} from './tab_strip/tab_strip.js';
+import {TabStripElement} from './tab_strip/tab_strip.js';
 
 export interface WebuiBrowserAppElement {
   $: {
     address: SearchboxElement,
     appMenuButton: HTMLElement,
     avatarButton: HTMLElement,
+    backButton: HTMLElement,
+    forwardButton: HTMLElement,
     locationIconButton: HTMLElement,
-    contentRegion: ContentRegion,
-    sidePanel: SidePanel,
-    tabstrip: TabStrip,
+    contentRegion: ContentRegionElement,
+    sidePanel: SidePanelElement,
+    tabstrip: TabStripElement,
   };
 }
 
@@ -72,6 +74,7 @@ export class WebuiBrowserAppElement extends CrLitElement {
   }
 
   private trackedElementManager_: TrackedElementManager;
+  private longPressTimer_: number = 0;
   protected accessor backButtonDisabled_: boolean = true;
   protected accessor forwardButtonDisabled_: boolean = true;
   protected accessor fullscreenMode_: string = '';
@@ -105,9 +108,15 @@ export class WebuiBrowserAppElement extends CrLitElement {
     this.trackedElementManager_.startTracking(
         this.$.avatarButton, 'kToolbarAvatarButtonElementId');
     this.trackedElementManager_.startTracking(
+        this.$.backButton, 'kToolbarBackButtonElementId');
+    this.trackedElementManager_.startTracking(
+        this.$.forwardButton, 'kToolbarForwardButtonElementId');
+    this.trackedElementManager_.startTracking(
         this.$.locationIconButton, 'kLocationIconElementId');
     this.trackedElementManager_.startTracking(
         this.$.contentRegion, 'kContentsContainerViewElementId');
+    this.setUpLongPress_(this.$.backButton, /*isBack=*/ true);
+    this.setUpLongPress_(this.$.forwardButton, /*isBack=*/ false);
     const {width} = await PageHandlerFactory.getRemote().getTabStripInset();
     this.tabStripInset_ = width;
   }
@@ -164,10 +173,41 @@ export class WebuiBrowserAppElement extends CrLitElement {
     }
   }
 
+  protected onBackContextmenu_(e: Event) {
+    e.preventDefault();
+    BrowserProxy.getPageHandler().showBackForwardMenu(/*isBack=*/ true);
+  }
+
   protected onForwardClick_(_: Event) {
     if (this.$.contentRegion.activeWebview) {
       this.$.contentRegion.activeWebview.goForward();
     }
+  }
+
+  protected onForwardContextmenu_(e: Event) {
+    e.preventDefault();
+    BrowserProxy.getPageHandler().showBackForwardMenu(/*isBack=*/ false);
+  }
+
+  // Long-press on back/forward buttons shows the navigation history menu,
+  // matching the 500ms delay used by ToolbarButton in Views.
+  private setUpLongPress_(button: HTMLElement, isBack: boolean) {
+    const clearTimer = () => {
+      window.clearTimeout(this.longPressTimer_);
+      this.longPressTimer_ = 0;
+    };
+    button.addEventListener('pointerdown', (e: PointerEvent) => {
+      // Ignore non-left mouse button down.
+      if (e.button !== 0) {
+        return;
+      }
+      this.longPressTimer_ = window.setTimeout(() => {
+        clearTimer();
+        BrowserProxy.getPageHandler().showBackForwardMenu(isBack);
+      }, 500);
+    });
+    button.addEventListener('pointerup', clearTimer);
+    button.addEventListener('pointerleave', clearTimer);
   }
 
   protected onReloadOrStopClick_(_: Event) {
@@ -267,8 +307,8 @@ export class WebuiBrowserAppElement extends CrLitElement {
         this.setReloadStopState.bind(this));
   }
 
-  protected onTabDragMouseDown_(e: MouseEvent) {
-    if (e.target instanceof TabStrip) {
+  protected onTabDragMousedown_(e: MouseEvent) {
+    if (e.target instanceof TabStripElement) {
       this.$.tabstrip.dragMouseDown(e);
       this.addEventListener('mouseup', this.onTabDragMouseUp_);
       this.addEventListener('mousemove', this.onTabDragMouseMove_);
@@ -301,6 +341,7 @@ export class WebuiBrowserAppElement extends CrLitElement {
 
   protected setReloadStopState(isLoading: boolean) {
     this.reloadOrStopIcon_ = isLoading ? 'icon-clear' : 'icon-refresh';
+    this.updateToolbarButtons_();
   }
 
 
@@ -321,13 +362,13 @@ export class WebuiBrowserAppElement extends CrLitElement {
   }
 
   protected onFullscreenModeChanged_(
-      isFullscreen: boolean, context?: FullscreenContext) {
+      isFullscreen: boolean, context: FullscreenContext|null) {
     if (!isFullscreen) {
       this.fullscreenMode_ = '';
     } else {
       // When fullscreen is true, we should always have a context
       assert(
-          context !== undefined,
+          context !== null,
           'Context must be provided when isFullscreen is true');
 
       switch (context) {

@@ -475,7 +475,7 @@ export class TreeOutline<TreeNodeDataType> extends HTMLElement {
         aria-level=${depth + 1}
         aria-posinset=${positionInSet + 1}
         class=${listItemClasses}
-        jslog=${VisualLogging.treeItem(node.jslogContext).track({click: true, keydown: 'ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Enter|Space|Home|End'})}
+        jslog=${VisualLogging.treeItem(node.jslogContext).track({click: true, resize: true, keydown: 'ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Enter|Space|Home|End'})}
         @click=${this.#onNodeClick}
         track-dom-node-to-tree-node=${trackDOMNodeToTreeNode(this.#domNodeToTreeNodeMap, node)}
         ${Lit.Directives.ref(domNode => {
@@ -523,7 +523,11 @@ export class TreeOutline<TreeNodeDataType> extends HTMLElement {
 
     this.#scheduledRender = true;
 
-    await RenderCoordinator.write('TreeOutline render', () => {
+    const hasChildrenInTree = this.#treeData.some(topLevelNode => isExpandableNode(topLevelNode));
+
+    const ulClasses = Lit.Directives.classMap({hasNoChildren: !hasChildrenInTree});
+
+    await RenderCoordinator.write(() => {
       // Disabled until https://crbug.com/1079231 is fixed.
       // clang-format off
       // Unfortunately the TreeOutline web component adds the
@@ -539,7 +543,7 @@ export class TreeOutline<TreeNodeDataType> extends HTMLElement {
       <style>${treeOutlineStyles}</style>
       <style>${CodeHighlighter.codeHighlighterStyles}</style>
       <div class="wrapping-container">
-        <ul role="tree" @keydown=${this.#onTreeKeyDown}>
+        <ul role="tree" @keydown=${this.#onTreeKeyDown} class=${ulClasses}>
           ${this.#treeData.map((topLevelNode, index) => {
             return this.#renderNode(topLevelNode, {
               depth: 0,

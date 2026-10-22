@@ -20,16 +20,17 @@
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/notreached.h"
 #include "core/fxcrt/numerics/safe_conversions.h"
-#include "core/fxge/agg/cfx_agg_devicedriver.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_path.h"
 #include "core/fxge/dib/cfx_dibbase.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
-#include "core/fxge/render_defines.h"
 #include "core/fxge/win32/cwin32_platform.h"
+
+#if defined(PDF_USE_AGG)
 #include "third_party/agg23/agg_clip_liang_barsky.h"
+#endif
 
 namespace {
 
@@ -336,15 +337,19 @@ unsigned LineClip(float w,
                   float* x,
                   float* y) {
 #if defined(PDF_USE_SKIA)
-  if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+  if (CFX_GEModule::Get()->UseSkiaRenderer()) {
     // TODO(caryclark) temporary replacement of antigrain in line function to
     // permit removing antigrain altogether
     rect_base rect = {0.0f, 0.0f, w, h};
     return clip_liang_barsky(x1, y1, x2, y2, rect, x, y);
   }
 #endif
+#if defined(PDF_USE_AGG)
   pdfium::agg::rect_base<float> rect(0.0f, 0.0f, w, h);
   return pdfium::agg::clip_liang_barsky<float>(x1, y1, x2, y2, rect, x, y);
+#else
+  return 0u;
+#endif
 }
 
 }  // namespace
@@ -369,11 +374,8 @@ CGdiDeviceDriver::CGdiDeviceDriver(HDC hDC, DeviceType device_type)
     width_ = ::GetDeviceCaps(dc_handle_, HORZRES);
     height_ = ::GetDeviceCaps(dc_handle_, VERTRES);
   }
-  if (device_type_ == DeviceType::kDisplay) {
-    render_caps_ = FXRC_GET_BITS;
-  } else {
-    render_caps_ = 0;
-  }
+  render_cap_get_bits_ = device_type_ == DeviceType::kDisplay;
+  render_cap_alpha_path_ = false;
 }
 
 CGdiDeviceDriver::~CGdiDeviceDriver() = default;
@@ -382,19 +384,28 @@ DeviceType CGdiDeviceDriver::GetDeviceType() const {
   return device_type_;
 }
 
-int CGdiDeviceDriver::GetDeviceCaps(int caps_id) const {
-  switch (caps_id) {
-    case FXDC_PIXEL_WIDTH:
-      return width_;
-    case FXDC_PIXEL_HEIGHT:
-      return height_;
-    case FXDC_BITS_PIXEL:
-      return bits_per_pixel_;
-    case FXDC_RENDER_CAPS:
-      return render_caps_;
-    default:
-      NOTREACHED();
-  }
+bool CGdiDeviceDriver::RenderCapGetBits() const {
+  return render_cap_get_bits_;
+}
+
+bool CGdiDeviceDriver::RenderCapAlphaPath() const {
+  return render_cap_alpha_path_;
+}
+
+bool CGdiDeviceDriver::RenderCapAlphaImage() const {
+  return render_cap_alpha_image_;
+}
+
+int CGdiDeviceDriver::GetPixelWidth() const {
+  return width_;
+}
+
+int CGdiDeviceDriver::GetPixelHeight() const {
+  return height_;
+}
+
+int CGdiDeviceDriver::GetBitsPerPixel() const {
+  return bits_per_pixel_;
 }
 
 void CGdiDeviceDriver::SaveState() {

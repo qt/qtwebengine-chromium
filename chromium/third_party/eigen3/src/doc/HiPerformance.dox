@@ -81,7 +81,7 @@ m1 += temp.adjoint(); \endcode</td>
 m1.noalias() += m3.adjoint()
 *              * m2.adjoint(); \endcode</td>
 <td>This is because the product expression has the EvalBeforeNesting bit which
-    enforces the evaluation of the product by the Tranpose expression.</td>
+    enforces the evaluation of the product by the Transpose expression.</td>
 </tr>
 <tr class="alt">
 <td>\code

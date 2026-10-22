@@ -16,8 +16,8 @@
 #include "quiche/quic/moqt/test_tools/moqt_framer_utils.h"
 #include "quiche/common/platform/api/quiche_test.h"
 #include "quiche/common/quiche_mem_slice.h"
-#include "quiche/common/quiche_stream.h"
 #include "quiche/web_transport/test_tools/mock_web_transport.h"
+#include "quiche/web_transport/web_transport.h"
 
 using ::testing::_;
 using ::testing::Return;
@@ -99,7 +99,7 @@ TEST_F(MoqtBidiStreamTest, AllMessagesRejected) {
   EXPECT_CALL(error_callback_,
               Call(MoqtError::kProtocolViolation,
                    "Message not allowed for this stream type"));
-  stream_->OnSubscribeUpdateMessage(MoqtSubscribeUpdate{});
+  stream_->OnRequestUpdateMessage(MoqtRequestUpdate{});
   stream_ = std::make_unique<MoqtBidiStreamBase>(
       &framer_, deleted_callback_.AsStdFunction(),
       error_callback_.AsStdFunction());
@@ -142,13 +142,6 @@ TEST_F(MoqtBidiStreamTest, AllMessagesRejected) {
               Call(MoqtError::kProtocolViolation,
                    "Message not allowed for this stream type"));
   stream_->OnSubscribeNamespaceMessage(MoqtSubscribeNamespace{});
-  stream_ = std::make_unique<MoqtBidiStreamBase>(
-      &framer_, deleted_callback_.AsStdFunction(),
-      error_callback_.AsStdFunction());
-  EXPECT_CALL(error_callback_,
-              Call(MoqtError::kProtocolViolation,
-                   "Message not allowed for this stream type"));
-  stream_->OnUnsubscribeNamespaceMessage(MoqtUnsubscribeNamespace{});
   stream_ = std::make_unique<MoqtBidiStreamBase>(
       &framer_, deleted_callback_.AsStdFunction(),
       error_callback_.AsStdFunction());
@@ -227,7 +220,7 @@ TEST_F(MoqtBidiStreamTest, MessageBufferedThenSent) {
     EXPECT_CALL(mock_stream_,
                 Writev(ControlMessageOfType(MoqtMessageType::kRequestError), _))
         .WillOnce([](absl::Span<quiche::QuicheMemSlice>,
-                     const quiche::StreamWriteOptions& options) {
+                     const webtransport::StreamWriteOptions& options) {
           EXPECT_TRUE(options.send_fin());
           return absl::OkStatus();
         });
@@ -239,7 +232,7 @@ TEST_F(MoqtBidiStreamTest, FinSentWhenDrained) {
   stream_->set_stream(&mock_stream_);
   EXPECT_CALL(mock_stream_, Writev)
       .WillOnce([](absl::Span<quiche::QuicheMemSlice>,
-                   const quiche::StreamWriteOptions& options) {
+                   const webtransport::StreamWriteOptions& options) {
         EXPECT_TRUE(options.send_fin());
         return absl::OkStatus();
       });
@@ -263,12 +256,12 @@ TEST_F(MoqtBidiStreamTest, PendingQueueFull) {
   for (int i = 0; i < 100; ++i) {  // kMaxPendingMessages = 100.
     EXPECT_FALSE(stream_->QueueIsFull());
     stream_->SendOrBufferMessage(
-        framer_.SerializeSubscribeUpdate(MoqtSubscribeUpdate{}));
+        framer_.SerializeRequestUpdate(MoqtRequestUpdate{}));
   }
   EXPECT_TRUE(stream_->QueueIsFull());
   EXPECT_CALL(error_callback_, Call(MoqtError::kInternalError, _));
   stream_->SendOrBufferMessage(
-      framer_.SerializeSubscribeUpdate(MoqtSubscribeUpdate{}));
+      framer_.SerializeRequestUpdate(MoqtRequestUpdate{}));
   EXPECT_TRUE(stream_->QueueIsFull());
 }
 

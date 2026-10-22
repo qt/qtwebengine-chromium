@@ -26,6 +26,7 @@
 #include "third_party/blink/public/common/shared_storage/module_script_downloader.h"
 #include "third_party/blink/public/common/shared_storage/shared_storage_utils.h"
 #include "third_party/blink/public/mojom/interest_group/interest_group_types.mojom-blink.h"
+#include "third_party/blink/public/mojom/loader/code_cache.mojom-blink.h"
 #include "third_party/blink/public/mojom/private_aggregation/private_aggregation_host.mojom-blink.h"
 #include "third_party/blink/public/mojom/shared_storage/shared_storage_worklet_service.mojom-blink.h"
 #include "third_party/blink/public/mojom/tokens/tokens.mojom-blink.h"
@@ -35,6 +36,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_function.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/unpacked_serialized_script_value.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_microtasks_scope.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_no_argument_constructor.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_throw_dom_exception.h"
 #include "third_party/blink/renderer/bindings/core/v8/worker_or_worklet_script_controller.h"
@@ -1074,8 +1076,8 @@ SharedStorageWorkletGlobalScope::interestGroups(
                         resolver->GetScriptState(),
                         String(gin::V8ToString(isolate, v8_metadata_string)));
 
-                    v8::MicrotasksScope microtasks(
-                        context, v8::MicrotasksScope::kDoNotRunMicrotasks);
+                    V8DoNotRunMicrotasksScope microtasks(
+                        resolver->GetScriptState());
 
                     std::ignore = ad_dict->Set(
                         context, V8AtomicString(isolate, "metadata"),
@@ -1211,7 +1213,7 @@ void SharedStorageWorkletGlobalScope::OnModuleScriptDownloaded(
   // schemes.
   ScriptCachedMetadataHandler* cached_metadata_handler = nullptr;
 
-  if (script_source_url.ProtocolIsInHTTPFamily()) {
+  if (script_source_url.ProtocolIsInHttpFamily()) {
     std::unique_ptr<CachedMetadataSender> sender = CachedMetadataSender::Create(
         resource_response, mojom::blink::CodeCacheType::kJavascript,
         GetSecurityOrigin());
@@ -1232,7 +1234,7 @@ void SharedStorageWorkletGlobalScope::OnModuleScriptDownloaded(
   ClassicScript* worker_script = ClassicScript::Create(
       String(*response_body),
       /*source_url=*/script_source_url,
-      /*base_url=*/KURL(), ScriptFetchOptions(),
+      /*base_url=*/NullUrl(), ScriptFetchOptions(),
       ScriptSourceLocationType::kUnknown, SanitizeScriptErrors::kSanitize,
       cached_metadata_handler);
 

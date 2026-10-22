@@ -106,8 +106,9 @@ void LayoutSVGShape::StyleDidChange(
     // are significant enough to require invalidating the cache.
     if (!diff.NeedsFullLayout() && stroke_path_cache_) {
       if (old_style->StrokeDashOffset() != style.StrokeDashOffset() ||
-          base::ValuesEquivalent(old_style->StrokeDashArray(),
-                                 style.StrokeDashArray())) {
+          old_style->PathLength() != style.PathLength() ||
+          !base::ValuesEquivalent(old_style->StrokeDashArray(),
+                                  style.StrokeDashArray())) {
         stroke_path_cache_.reset();
       }
     }
@@ -477,12 +478,8 @@ void LayoutSVGShape::UpdateNonScalingStrokeData() {
   NOT_DESTROYED();
   DCHECK(HasNonScalingStroke());
 
-  const NonScalingStrokeTransformMode mode =
-      RuntimeEnabledFeatures::SvgNonScalingStrokePrecisionFixEnabled()
-          ? NonScalingStrokeTransformMode::kPreserveTranslation
-          : NonScalingStrokeTransformMode::kClearTranslation;
-
-  const AffineTransform transform = ComputeNonScalingStrokeTransform(mode);
+  const AffineTransform transform = ComputeNonScalingStrokeTransform(
+      NonScalingStrokeTransformMode::kPreserveTranslation);
   auto& rare_data = EnsureRareData();
   if (rare_data.non_scaling_stroke_transform_ != transform) {
     SetShouldDoFullPaintInvalidation();

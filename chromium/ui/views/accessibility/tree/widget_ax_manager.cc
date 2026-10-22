@@ -14,10 +14,9 @@
 #include "ui/accessibility/platform/browser_accessibility_manager.h"
 #include "ui/views/accessibility/tree/widget_view_ax_cache.h"
 #include "ui/views/accessibility/view_accessibility.h"
+#include "ui/views/widget/widget.h"
 
 #if BUILDFLAG(IS_WIN)
-#include <oleacc.h>
-
 #include "ui/views/win/hwnd_util.h"
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -32,10 +31,17 @@ bool ShouldSerializeEvent(Event event_type) {
   // Events that are serialized and forwarded to BrowserAccessibilityManager.
   switch (event_type) {
     // TODO(crbug.com/40672441): Add events that must be serialized directly.
+    case Event::kAlert:
+    case Event::kControlsChanged:
     case Event::kEndOfTest:
     // TODO(crbug.com/40672441): kFocus is only needed here for tests while
     // are migrating to ViewsAX.
     case Event::kFocus:
+    case Event::kTooltipClosed:
+    case Event::kTooltipOpened:
+    case Event::kWindowActivated:
+    case Event::kWindowDeactivated:
+    case Event::kWindowVisibilityChanged:
       return true;
     default:
       break;
@@ -46,7 +52,9 @@ bool ShouldSerializeEvent(Event event_type) {
   switch (event_type) {
     // TODO(crbug.com/40672441): Add events here as needed.
     case Event::kActiveDescendantChanged:
+    case Event::kCheckedStateChanged:
     case Event::kChildrenChanged:
+    case Event::kLiveRegionChanged:
       return false;
     default:
       break;
@@ -60,7 +68,10 @@ bool ShouldSerializeEvent(Event event_type) {
   switch (event_type) {
     // TODO(crbug.com/40672441): Add events here as needed.
     case Event::kLocationChanged:
+    case Event::kScrollPositionChanged:
     case Event::kTreeChanged:
+    case Event::kRowCollapsed:
+    case Event::kRowExpanded:
       return false;
     default:
       break;
@@ -69,30 +80,19 @@ bool ShouldSerializeEvent(Event event_type) {
   // Events fired by views on some platforms but not yet handled. These are
   // being addressed incrementally, one event at a time.
   switch (event_type) {
-    case Event::kAlert:
-    case Event::kCheckedStateChanged:
-    case Event::kControlsChanged:
     case Event::kExpandedChanged:
     case Event::kFocusAfterMenuClose:
     case Event::kFocusContext:
-    case Event::kLiveRegionChanged:
     case Event::kMenuEnd:
     case Event::kMenuPopupEnd:
     case Event::kMenuPopupStart:
     case Event::kMenuStart:
-    case Event::kRowCollapsed:
-    case Event::kRowExpanded:
     case Event::kSelection:
     case Event::kSelectedChildrenChanged:
     case Event::kStateChanged:
     case Event::kTextChanged:
     case Event::kTextSelectionChanged:
-    case Event::kTooltipClosed:
-    case Event::kTooltipOpened:
     case Event::kValueChanged:
-    case Event::kWindowActivated:
-    case Event::kWindowDeactivated:
-    case Event::kWindowVisibilityChanged:
       return false;
     default:
       break;
@@ -124,7 +124,8 @@ WidgetAXManager::~WidgetAXManager() {
 
 void WidgetAXManager::Init() {
   CHECK(widget_->GetRootView());
-  if (ui::AXPlatform::GetInstance().GetMode() == ui::AXMode::kNativeAPIs) {
+  if (ui::AXPlatform::GetInstance().GetMode().has_mode(
+          ui::AXMode::kNativeAPIs)) {
     Enable();
   } else {
     if (widget_->is_top_level()) {
@@ -142,7 +143,24 @@ void WidgetAXManager::OnEvent(ViewAccessibility& view_ax,
   pending_events_.push_back({view_ax.GetUniqueId(), event_type});
   pending_data_updates_.insert(view_ax.GetUniqueId());
 
-  SchedulePendingUpdate();
+  // kTooltipClosed fires just before the tooltip widget is destroyed (see
+  // TooltipAura::Hide).  Since SchedulePendingUpdate uses PostTask with a weak
+  // pointer, the callback would be invalidated when the widget is destroyed,
+  // silently dropping the event.  Flush synchronously to ensure the event
+  // reaches BrowserAccessibilityManager before the widget is torn down.
+  //
+  // kTooltipOpened is also flushed synchronously.  The tooltip widget's views
+  // are already in place when Show() fires kTooltipOpened (`widget_->Show()`
+  // precedes the event in TooltipAura::Show), so the tree is ready for
+  // serialization.  Flushing synchronously ensures platform events
+  // (EVENT_OBJECT_SHOW / UIA_ToolTipOpenedEventId) fire before callers that
+  // check for them (e.g. event recorders in tests) run their next step.
+  if (event_type == ax::mojom::Event::kTooltipClosed ||
+      event_type == ax::mojom::Event::kTooltipOpened) {
+    SendPendingUpdate();
+  } else {
+    SchedulePendingUpdate();
+  }
 }
 
 void WidgetAXManager::OnDataChanged(ViewAccessibility& view_ax) {
@@ -290,21 +308,12 @@ WidgetAXManager::AccessibilityGetNativeViewAccessible() {
           static_cast<NativeWidgetMac*>(widget_->native_widget())) {
     return native_widget->GetNativeViewAccessibleForNSView();
   }
-#elif BUILDFLAG(IS_WIN)
-  // Hold a reference to the parent in this instance to ensure that it lives
-  // long enough for the caller to take its own reference, if needed.
-  if (!parent_accessible_) {
-    HWND hwnd = HWNDForView(widget_->GetRootView());
-    if (!hwnd) {
-      return nullptr;
-    }
-    if (SUCCEEDED(::AccessibleObjectFromWindow(
-            hwnd, OBJID_WINDOW, IID_PPV_ARGS(&parent_accessible_)))) {
-      return parent_accessible_.Get();
-    }
-  }
-#endif
   return gfx::NativeViewAccessible();
+#elif BUILDFLAG(IS_WIN)
+  return HWNDNativeViewAccessibleForWidget(widget_);
+#else
+  return gfx::NativeViewAccessible();
+#endif
 }
 
 gfx::NativeViewAccessible
@@ -350,7 +359,14 @@ gfx::NativeWindow WidgetAXManager::GetTopLevelNativeWindow() {
 }
 
 bool WidgetAXManager::CanFireAccessibilityEvents() const {
-  return widget_ ? widget_->IsActive() : false;
+  // Use IsVisible() rather than IsActive().  Tooltip, menu, and other non-
+  // activatable widgets are visible to the user and must fire accessibility
+  // events for assistive technology to track them.  IsActive() is always false
+  // for TYPE_TOOLTIP widgets, which would silently drop all events.
+  // Also check IsNativeWidgetInitialized() because this method can be called
+  // during Widget::Init() before the native widget's window has a layer.
+  return widget_ && widget_->IsNativeWidgetInitialized() &&
+         widget_->IsVisible();
 }
 
 bool WidgetAXManager::AccessibilityIsRootFrame() const {

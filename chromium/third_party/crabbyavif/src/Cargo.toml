@@ -1,9 +1,9 @@
 workspace = { members = [
   "sys/aom-sys",
   "sys/dav1d-sys",
+  "sys/libpng-sys",
   "sys/libsharpyuv-sys",
   "sys/libyuv-sys",
-  "sys/libgav1-sys",
   "sys/ndk-sys",
 ] }
 
@@ -16,7 +16,7 @@ edition = "2021"     # Rust version
 crate-type = ["rlib", "cdylib", "staticlib"]
 
 [dependencies]
-libc = { version = "0.2.152", optional = true }
+libc = { version = "0.2.152" }
 
 # The dependencies below are also workspace members in order to include their
 # custom wrappers (lib.rs) in this project. However, even if their respective
@@ -34,9 +34,7 @@ ndk-sys = { version = "0.1.0", path = "sys/ndk-sys", features = [
 dav1d-sys = { version = "0.1.0", path = "sys/dav1d-sys", features = [
   "dav1d",
 ], optional = true }
-libgav1-sys = { version = "0.1.0", path = "sys/libgav1-sys", features = [
-  "libgav1",
-], optional = true }
+
 libyuv-sys = { version = "0.1.0", path = "sys/libyuv-sys", features = [
   "libyuv",
 ], optional = true }
@@ -52,19 +50,24 @@ avm-sys = { version = "0.1.0", path = "sys/avm-sys", features = [
 libjxl-sys = { version = "0.1.0", path = "sys/libjxl-sys", features = [
   "libjxl",
 ], optional = true }
+libpng-sys = { version = "0.1.0", path = "sys/libpng-sys", features = [
+  "png",
+], optional = true }
 
-png = { version = "0.17.16", optional = true }
+clap = { version = "4.5.28", features = ["derive"], optional = true }
+clap_derive = { version = "4.5.28", optional = true }
 image = { version = "0.25.6", features = ["jpeg"], optional = true }
 gif = { version = "0.13.1", optional = true }
 gif-dispose = { version = "5.0.1", optional = true }
+md-5 = { version = "0.10.6", optional = true }
+xml-rs = { version = "1.0.0", optional = true }
+zune-jpeg = { version = "0.5.14", optional = true }
 
 [dev-dependencies]
 test-case = "3.3.1"
 seq-macro = "0.3.5"
 tempfile = "3.8.1"
 rand = "0.8.5"
-clap = { version = "4.5.28", features = ["derive"] }
-clap_derive = { version = "4.5.28" }
 
 [build-dependencies]
 bindgen = "0.69.1"
@@ -72,9 +75,9 @@ cbindgen = "0.26.0"
 
 [features]
 default = ["dav1d", "libyuv", "png", "jpeg", "gif", "sharpyuv"]
+cli = ["dep:clap", "dep:clap_derive"]
 capi = []
-dav1d = ["dep:libc", "dep:dav1d-sys"]
-libgav1 = ["dep:libgav1-sys"]
+dav1d = ["dep:dav1d-sys"]
 libyuv = ["dep:libyuv-sys"]
 android_mediacodec = ["dep:ndk-sys"]
 heic = []
@@ -82,8 +85,8 @@ disable_cfi = []
 aom = ["dep:aom-sys", "encoder"]
 encoder = []
 avm = ["dep:avm-sys"]
-png = ["dep:png"]
-jpeg = ["dep:image"]
+png = ["dep:libpng-sys", "dep:md-5"]
+jpeg = ["dep:image", "dep:xml-rs", "dep:zune-jpeg"]
 gif = ["dep:gif", "dep:gif-dispose"]
 sharpyuv = ["dep:libsharpyuv-sys"]
 jpegxl = ["dep:libjxl-sys"]
@@ -97,3 +100,12 @@ unexpected_cfgs = { level = "warn", check-cfg = [
   'cfg(google3)',
   'cfg(android_soong)',
 ] }
+
+# As of Feb 2026, there is no way to enable dependencies only with cargo --bin
+# and with cargo run. To avoid the dependencies used only for the crabbyavif
+# binary to be built even when generating only the library, rely on the
+# required-features mechanism which will print an error asking for
+# --features=cli to be passed when running cargo --bin and cargo run.
+[[bin]]
+name = "crabbyavif"
+required-features = ["cli"]

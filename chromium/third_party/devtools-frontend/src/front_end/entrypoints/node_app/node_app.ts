@@ -9,6 +9,7 @@ import '../../panels/network/network-meta.js';
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
+import type * as Resources from '../../panels/application/application.js';
 import type * as Sources from '../../panels/sources/sources.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Main from '../main/main.js';
@@ -39,6 +40,14 @@ const UIStrings = {
    * @description Command for showing the 'Node' tool in the Network Navigator View, which is part of the Sources tool
    */
   showNode: 'Show Node',
+  /**
+   * @description Text in Application Panel Sidebar of the Application panel
+   */
+  application: 'Application',
+  /**
+   * @description Command for showing the 'Application' tool
+   */
+  showApplication: 'Show Application',
 } as const;
 
 const str_ = i18n.i18n.registerUIStrings('entrypoints/node_app/node_app.ts', UIStrings);
@@ -76,6 +85,31 @@ UI.ViewManager.registerViewExtension({
     const Sources = await loadSourcesModule();
     return Sources.SourcesNavigator.NetworkNavigatorView.instance();
   },
+});
+
+let loadedResourcesModule: (typeof Resources|undefined);
+
+async function loadResourcesModule(): Promise<typeof Resources> {
+  if (!loadedResourcesModule) {
+    loadedResourcesModule = await import('../../panels/application/application.js');
+  }
+  return loadedResourcesModule;
+}
+
+UI.ViewManager.registerViewExtension({
+  location: UI.ViewManager.ViewLocationValues.PANEL,
+  id: 'resources',
+  title: i18nLazyString(UIStrings.application),
+  commandPrompt: i18nLazyString(UIStrings.showApplication),
+  order: 70,
+  async loadView() {
+    const Resources = await loadResourcesModule();
+    return Resources.ResourcesPanel.ResourcesPanel.instance({
+      forceNew: true,
+      mode: 'node',
+    });
+  },
+  tags: [],
 });
 
 // @ts-expect-error Exposed for legacy layout tests

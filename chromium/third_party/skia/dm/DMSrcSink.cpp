@@ -1155,7 +1155,9 @@ Name ColorCodecSrc::name() const {
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 static DEFINE_int(skpViewportSize, 1000,
-                  "Width & height of the viewport used to crop skp rendering.");
+                  "Width & height of the viewport used to crop skp rendering.\n"
+                  "Special options:\n"
+                  "0: Rendered in original SKP dimensions without cropping.");
 
 SKPSrc::SKPSrc(Path path) : fPath(path) { }
 
@@ -1202,7 +1204,9 @@ Result SKPSrc::draw(SkCanvas* canvas, GraphiteTestContext*) const {
         return Result::Fatal("Couldn't parse file %s.", fPath.c_str());
     }
     stream = nullptr;  // Might as well drop this when we're done with it.
-    canvas->clipRect(SkRect::MakeWH(FLAGS_skpViewportSize, FLAGS_skpViewportSize));
+    if (FLAGS_skpViewportSize != 0) {
+        canvas->clipRect(SkRect::MakeWH(FLAGS_skpViewportSize, FLAGS_skpViewportSize));
+    }
     canvas->drawPicture(pic);
     return Result::Ok();
 }
@@ -1222,7 +1226,8 @@ static SkRect get_cull_rect_for_skp(const char* path) {
 
 SkISize SKPSrc::size() const {
     SkRect viewport = get_cull_rect_for_skp(fPath.c_str());
-    if (!viewport.intersect((SkRect::MakeWH(FLAGS_skpViewportSize, FLAGS_skpViewportSize)))) {
+    if (!viewport.intersect((SkRect::MakeWH(FLAGS_skpViewportSize, FLAGS_skpViewportSize))) &&
+        (FLAGS_skpViewportSize != 0)) {
         return {0, 0};
     }
     return viewport.roundOut().size();
@@ -1479,7 +1484,8 @@ Result MSKPSrc::draw(int i, SkCanvas* canvas, GraphiteTestContext*) const {
         if (!stream) {
             return Result::Fatal("Unable to open file: %s", fPath.c_str());
         }
-        if (!SkMultiPictureDocument::Read(stream.get(), &fPages[0], fPages.size())) {
+        SkDeserialProcs dprocs = ToolUtils::get_default_skp_deserial_procs();
+        if (!SkMultiPictureDocument::Read(stream.get(), &fPages[0], fPages.size(), &dprocs)) {
             return Result::Fatal("SkMultiPictureDocument reader failed on page %d: %s", i,
                                  fPath.c_str());
         }
@@ -2210,11 +2216,6 @@ Result GraphiteSink::draw(const Src& src,
                           SkWStream* dstStream,
                           SkString* log) const {
     skiatest::graphite::TestOptions options = fOptions;
-    // If we've copied context options from an external source we can't trust that the
-    // priv pointer is still in scope, so assume it should be NULL and set our own up.
-    SkASSERT(!options.fContextOptions.fOptionsPriv);
-    skgpu::graphite::ContextOptionsPriv optionsPriv;
-    options.fContextOptions.fOptionsPriv = &optionsPriv;
 
     // We don't expect the src to mess with the more esoteric options
     SkDEBUGCODE(auto cache = options.fContextOptions.fPersistentPipelineStorage);
@@ -2533,11 +2534,6 @@ Result GraphitePrecompileTestingSink::draw(const Src& src,
 
     {
         TestOptions options = fOptions;
-        // If we've copied context options from an external source we can't trust that the
-        // priv pointer is still in scope, so assume it should be NULL and set our own up.
-        SkASSERT(!options.fContextOptions.fOptionsPriv);
-        ContextOptionsPriv optionsPriv;
-        options.fContextOptions.fOptionsPriv = &optionsPriv;
 
         // We don't expect the src to mess with the more esoteric options
         SkDEBUGCODE(auto cache = options.fContextOptions.fPersistentPipelineStorage);

@@ -5,7 +5,9 @@
 #include "cast/streaming/public/session_messenger.h"
 
 #include <memory>
+#include <variant>
 
+#include "cast/streaming/impl/message_constants.h"
 #include "cast/streaming/testing/message_pipe.h"
 #include "cast/streaming/testing/simple_message_port.h"
 #include "gtest/gtest.h"
@@ -35,7 +37,9 @@ Offer kExampleOffer{
                         {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
                         false,
                         std::nullopt,
-                        48000},
+                        48000,
+                        "",
+                        {kInputEventsRtpExtension}},
                  AudioCodec::kOpus, 1400}},
     {VideoStream{Stream{1,
                         Stream::Type::kVideoSource,
@@ -47,7 +51,9 @@ Offer kExampleOffer{
                         {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
                         false,
                         std::nullopt,
-                        90000},
+                        90000,
+                        "",
+                        {kInputEventsRtpExtension}},
                  VideoCodec::kVp8,
                  SimpleFraction{30, 1},
                  3000000,
@@ -145,13 +151,13 @@ TEST_F(SessionMessengerTest, RpcMessaging) {
   EXPECT_EQ(SenderMessage::Type::kRpc,
             message_store_.sender_messages[0].second.type);
   ASSERT_TRUE(message_store_.sender_messages[0].second.valid);
-  EXPECT_EQ(kSenderMessage, absl::get<std::vector<uint8_t>>(
+  EXPECT_EQ(kSenderMessage, std::get<std::vector<uint8_t>>(
                                 message_store_.sender_messages[0].second.body));
   EXPECT_EQ(SenderMessage::Type::kRpc,
             message_store_.sender_messages[1].second.type);
   ASSERT_TRUE(message_store_.sender_messages[1].second.valid);
   EXPECT_EQ(kSenderMessageTwo,
-            absl::get<std::vector<uint8_t>>(
+            std::get<std::vector<uint8_t>>(
                 message_store_.sender_messages[1].second.body));
 
   message_store_.sender_messages.clear();
@@ -168,7 +174,48 @@ TEST_F(SessionMessengerTest, RpcMessaging) {
             message_store_.receiver_messages[0].value().type);
   EXPECT_TRUE(message_store_.receiver_messages[0].value().valid);
   EXPECT_EQ(kReceiverResponse,
-            absl::get<std::vector<uint8_t>>(
+            std::get<std::vector<uint8_t>>(
+                message_store_.receiver_messages[0].value().body));
+}
+
+TEST_F(SessionMessengerTest, InputMessaging) {
+  static const std::vector<uint8_t> kSenderMessage = {1, 2, 3, 4, 5};
+  static const std::vector<uint8_t> kSenderMessageTwo = {11, 12, 13};
+  static const std::vector<uint8_t> kReceiverResponse = {6, 7, 8, 9};
+
+  sender_messenger_->SetHandler(ReceiverMessage::Type::kInput,
+                                message_store_.GetReplyCallback());
+  receiver_messenger_->SetHandler(SenderMessage::Type::kInput,
+                                  message_store_.GetRequestCallback());
+
+  ASSERT_TRUE(sender_messenger_->SendInputMessage(kSenderMessage).ok());
+  ASSERT_TRUE(sender_messenger_->SendInputMessage(kSenderMessageTwo).ok());
+
+  ASSERT_EQ(2u, message_store_.sender_messages.size());
+  ASSERT_TRUE(message_store_.receiver_messages.empty());
+  EXPECT_EQ(SenderMessage::Type::kInput,
+            message_store_.sender_messages[0].second.type);
+  ASSERT_TRUE(message_store_.sender_messages[0].second.valid);
+  EXPECT_EQ(kSenderMessage, std::get<std::vector<uint8_t>>(
+                                message_store_.sender_messages[0].second.body));
+  EXPECT_EQ(SenderMessage::Type::kInput,
+            message_store_.sender_messages[1].second.type);
+  ASSERT_TRUE(message_store_.sender_messages[1].second.valid);
+  EXPECT_EQ(kSenderMessageTwo,
+            std::get<std::vector<uint8_t>>(
+                message_store_.sender_messages[1].second.body));
+
+  message_store_.sender_messages.clear();
+  ASSERT_TRUE(
+      receiver_messenger_->SendInputMessage(kSenderId, kReceiverResponse).ok());
+
+  ASSERT_TRUE(message_store_.sender_messages.empty());
+  ASSERT_EQ(1u, message_store_.receiver_messages.size());
+  EXPECT_EQ(ReceiverMessage::Type::kInput,
+            message_store_.receiver_messages[0].value().type);
+  EXPECT_TRUE(message_store_.receiver_messages[0].value().valid);
+  EXPECT_EQ(kReceiverResponse,
+            std::get<std::vector<uint8_t>>(
                 message_store_.receiver_messages[0].value().body));
 }
 
@@ -205,7 +252,7 @@ TEST_F(SessionMessengerTest, CapabilitiesMessaging) {
             message_store_.receiver_messages[0].value().type);
   EXPECT_TRUE(message_store_.receiver_messages[0].value().valid);
 
-  const auto& capability = absl::get<ReceiverCapability>(
+  const auto& capability = std::get<ReceiverCapability>(
       message_store_.receiver_messages[0].value().body);
   EXPECT_EQ(47, capability.remoting_version);
   EXPECT_THAT(capability.media_capabilities,
@@ -252,7 +299,7 @@ TEST_F(SessionMessengerTest, OfferAnswerMessaging) {
   EXPECT_TRUE(message_store_.receiver_messages[0].value().valid);
 
   const auto& answer =
-      absl::get<Answer>(message_store_.receiver_messages[0].value().body);
+      std::get<Answer>(message_store_.receiver_messages[0].value().body);
   EXPECT_EQ(1234, answer.udp_port);
 
   EXPECT_THAT(answer.send_indexes, ElementsAre(0, 1));
@@ -289,8 +336,8 @@ TEST_F(SessionMessengerTest, OfferAndReceiverError) {
             message_store_.receiver_messages[0].value().type);
   EXPECT_FALSE(message_store_.receiver_messages[0].value().valid);
 
-  const auto& error = absl::get<ReceiverError>(
-      message_store_.receiver_messages[0].value().body);
+  const auto& error =
+      std::get<ReceiverError>(message_store_.receiver_messages[0].value().body);
   EXPECT_EQ(123, error.code);
   EXPECT_EQ("Something real bad happened", error.description);
 }

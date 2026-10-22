@@ -35,15 +35,17 @@ namespace blink {
 ReverbInputBuffer::ReverbInputBuffer(size_t length)
     : buffer_(length), write_index_(0) {}
 
-void ReverbInputBuffer::Write(const float* source_p, size_t number_of_frames) {
+void ReverbInputBuffer::Write(base::span<const float> source,
+                              size_t number_of_frames) {
   size_t buffer_length = buffer_.size();
   size_t index = WriteIndex();
   size_t new_index = index + number_of_frames;
 
   CHECK_LE(new_index, buffer_length);
 
-  UNSAFE_TODO(memcpy(buffer_.Data() + index, source_p,
-                     sizeof(float) * number_of_frames));
+  buffer_.as_span()
+      .subspan(index, number_of_frames)
+      .copy_from(source.first(number_of_frames));
 
   if (new_index >= buffer_length) {
     new_index = 0;
@@ -52,19 +54,20 @@ void ReverbInputBuffer::Write(const float* source_p, size_t number_of_frames) {
   SetWriteIndex(new_index);
 }
 
-float* ReverbInputBuffer::DirectReadFrom(size_t* read_index,
-                                         size_t number_of_frames) {
+base::span<const float> ReverbInputBuffer::DirectReadFrom(
+    size_t* read_index,
+    size_t number_of_frames) {
   uint32_t buffer_length = buffer_.size();
   DCHECK(read_index);
   DCHECK_LE(*read_index + number_of_frames, buffer_length);
 
-  float* source_p = buffer_.Data();
-  float* p = UNSAFE_TODO(source_p + *read_index);
+  base::span<const float> result =
+      buffer_.as_span().subspan(*read_index, number_of_frames);
 
   // Update readIndex
   *read_index = (*read_index + number_of_frames) % buffer_length;
 
-  return p;
+  return result;
 }
 
 void ReverbInputBuffer::Reset() {

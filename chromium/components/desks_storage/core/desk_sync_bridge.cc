@@ -180,7 +180,8 @@ std::optional<syncer::ModelError> DeskSyncBridge::ApplyIncrementalSyncChanges(
     syncer::EntityChangeList entity_changes) {
   std::vector<raw_ptr<const DeskTemplate, VectorExperimental>> added_or_updated;
   std::vector<base::Uuid> removed;
-  std::unique_ptr<DataTypeStore::WriteBatch> batch = store_->CreateWriteBatch();
+  std::unique_ptr<DataTypeStore::WriteBatch> batch =
+      store_->CreateWriteBatch(std::move(metadata_change_list));
 
   for (const std::unique_ptr<syncer::EntityChange>& change : entity_changes) {
     const base::Uuid uuid =
@@ -224,8 +225,6 @@ std::optional<syncer::ModelError> DeskSyncBridge::ApplyIncrementalSyncChanges(
       }
     }
   }
-
-  batch->TakeMetadataChangesFrom(std::move(metadata_change_list));
   Commit(std::move(batch));
 
   NotifyRemoteDeskTemplateAddedOrUpdated(added_or_updated);
@@ -272,6 +271,14 @@ std::string DeskSyncBridge::GetClientTag(
 std::string DeskSyncBridge::GetStorageKey(
     const syncer::EntityData& entity_data) const {
   return entity_data.specifics.workspace_desk().uuid();
+}
+
+sync_pb::EntitySpecifics
+DeskSyncBridge::TrimAllSupportedFieldsFromRemoteSpecifics(
+    const sync_pb::EntitySpecifics& entity_specifics) const {
+  // Clears all fields by default to avoid the memory and I/O overhead of an
+  // additional copy of the data.
+  return sync_pb::EntitySpecifics();
 }
 
 bool DeskSyncBridge::IsEntityDataValid(
@@ -469,8 +476,8 @@ size_t DeskSyncBridge::GetSaveAndRecallDeskEntryCount() const {
 }
 
 size_t DeskSyncBridge::GetDeskTemplateEntryCount() const {
-  size_t template_count = std::count_if(
-      desk_template_entries_.begin(), desk_template_entries_.end(),
+  size_t template_count = std::ranges::count_if(
+      desk_template_entries_,
       [](const std::pair<base::Uuid, std::unique_ptr<ash::DeskTemplate>>&
              entry) {
         return entry.second->type() == ash::DeskTemplateType::kTemplate;

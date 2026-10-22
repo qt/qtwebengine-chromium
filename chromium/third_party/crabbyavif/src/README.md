@@ -1,12 +1,14 @@
 # Crabby Avif 🦀
 
-Avif parser/decoder implementation in Rust.
+Avif parser/decoder/encoder implementation in Rust.
 
 Feel free to file an issue for any question, suggestion or bug report.
 Contributions are also welcome, see [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Features
- * Supports dav1d, libgav1 or android mediacodec as the underlying AV1 decoder.
+
+ * Supports aom as the underlying AV1 encoder.
+ * Supports dav1d or android mediacodec as the underlying AV1 decoder.
  * C API compatible with [libavif](https://github.com/aomediacodec/libavif)
  * ..and more
 
@@ -22,6 +24,34 @@ cd ../libyuv-sys
 ./libyuv.cmd
 cd ../..
 cargo build
+```
+
+For encoder support:
+
+```sh
+# If aom system library can be found with pkg-config, this step can be skipped.
+cd sys/aom-sys
+./aom.cmd
+cd ../..
+cargo build --features aom
+```
+
+## Binary
+
+The library and package is named "crabby_avif". The name of the binary tool is
+"crabbyavif".
+
+```sh
+cargo run --features aom,cli -- --help
+
+# Example encode
+cargo run --features aom,cli -- input.png -q 60 output.avif
+
+# Example decode
+cargo run --features cli -- input.avif output.png
+
+# Example inspection
+cargo run --no-default-features --features cli -- --info input.avif
 ```
 
 ## Tests

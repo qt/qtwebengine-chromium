@@ -1,8 +1,11 @@
 [
-    RuntimeEnabled=MulticastInDirectSockets,
-    Exposed=(Window, DedicatedWorker, SharedWorker, ServiceWorker),
-    SecureContext,
-    IsolatedContext
+    Exposed(
+      Window DirectSockets,
+      DedicatedWorker DirectSockets,
+      SharedWorker DirectSocketsInSharedWorkers,
+      ServiceWorker DirectSocketsInServiceWorkers
+    ),
+    SecureContext
 ]
 interface MulticastController {
   [CallWith=ScriptState, RaisesException, MeasureAs=MulticastControllerJoinGroupFunction]

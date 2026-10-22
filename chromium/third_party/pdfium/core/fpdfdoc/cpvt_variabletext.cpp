@@ -52,7 +52,7 @@ int CPVT_VariableText::Provider::GetCharWidth(int32_t nFontIndex,
     return 0;
   }
 
-  return pPDFFont->GetCharWidthF(charcode);
+  return pPDFFont->GetCharWidth(charcode);
 }
 
 int32_t CPVT_VariableText::Provider::GetTypeAscent(int32_t nFontIndex) {

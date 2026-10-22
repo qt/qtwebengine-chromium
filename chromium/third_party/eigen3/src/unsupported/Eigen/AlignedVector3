@@ -35,7 +35,7 @@ namespace Eigen {
  * This class makes this process simpler.
  *
  */
-// TODO specialize Cwise
+// TODO: Specialize Cwise.
 template <typename Scalar_>
 class AlignedVector3;
 

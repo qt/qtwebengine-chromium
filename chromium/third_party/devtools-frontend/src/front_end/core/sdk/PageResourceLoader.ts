@@ -278,8 +278,13 @@ export class PageResourceLoader extends Common.ObjectWrapper.ObjectWrapper<Event
       throw new Error('Invalid initiator');
     }
     const key = PageResourceLoader.makeKey(url, initiator);
-    const pageResource:
-        PageResource = {success: null, size: null, duration: null, errorMessage: undefined, url, initiator};
+    const pageResource: PageResource = {
+      success: null,
+      size: null,
+      duration: null,
+      url,
+      initiator,
+    };
     this.#pageResources.set(key, pageResource);
     this.dispatchEventToListeners(Events.UPDATE);
     const startTime = performance.now();
@@ -329,6 +334,27 @@ export class PageResourceLoader extends Common.ObjectWrapper.ObjectWrapper<Event
         initiator.target;
     Host.userMetrics.developerResourceScheme(this.getDeveloperResourceScheme(parsedURL));
     if (eligibleForLoadFromTarget) {
+      let mustEnforceCSP = false;
+      const isHttp = parsedURL.scheme === 'http' || parsedURL.scheme === 'https';
+      if (isHttp && initiator.target) {
+        const networkManager = initiator.target.model(NetworkManager);
+        if (networkManager) {
+          let status = await networkManager.getSecurityIsolationStatus(initiator.frameId);
+          if (!status && initiator.frameId) {
+            status = await networkManager.getSecurityIsolationStatus(null);
+          }
+          if (status?.csp) {
+            for (const csp of status.csp) {
+              const directives = csp.effectiveDirectives;
+              if (directives.includes('connect-src') || directives.includes('default-src')) {
+                mustEnforceCSP = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+
       try {
         Host.userMetrics.developerResourceLoaded(Host.UserMetrics.DeveloperResourceLoaded.LOAD_THROUGH_PAGE_VIA_TARGET);
         const result = await this.loadFromTarget(initiator.target, initiator.frameId, url, isBinary);
@@ -336,12 +362,14 @@ export class PageResourceLoader extends Common.ObjectWrapper.ObjectWrapper<Event
       } catch (e) {
         if (e instanceof Error) {
           Host.userMetrics.developerResourceLoaded(Host.UserMetrics.DeveloperResourceLoaded.LOAD_THROUGH_PAGE_FAILURE);
-          if (e.message.includes('CSP violation')) {
+          if (mustEnforceCSP || e.message.includes('CSP violation')) {
             return {
               success: false,
               content: '',
-              errorDescription:
-                  {statusCode: 0, netError: undefined, netErrorName: undefined, message: e.message, urlValid: undefined}
+              errorDescription: {
+                statusCode: 0,
+                message: e.message,
+              }
             };
           }
         }
@@ -399,7 +427,6 @@ export class PageResourceLoader extends Common.ObjectWrapper.ObjectWrapper<Event
       netError: number|undefined,
       netErrorName: string|undefined,
       message: string,
-      urlValid: undefined,
     },
   }> {
     const networkManager = (target.model(NetworkManager) as NetworkManager);
@@ -420,7 +447,6 @@ export class PageResourceLoader extends Common.ObjectWrapper.ObjectWrapper<Event
           message: Host.ResourceLoader.netErrorToMessage(
                        resource.netError, resource.httpStatusCode, resource.netErrorName) ||
               '',
-          urlValid: undefined,
         },
       };
     } finally {

@@ -10,7 +10,6 @@
 
 #include "base/barrier_callback.h"
 #include "base/check_op.h"
-#include "base/containers/enum_set.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/metrics/histogram_functions.h"
@@ -202,11 +201,6 @@ uint32_t QueryScheduler::GetQueryCountForTesting(
       return memory_query_count_;
   }
   NOTREACHED();
-}
-
-void QueryScheduler::RecordMemoryMetrics() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  cpu_monitor_.RecordMemoryMetrics();
 }
 
 void QueryScheduler::AddCPUQuery() {

@@ -19,6 +19,9 @@
 #include <vulkan/vk_enum_string_helper.h>
 #include <vulkan/vulkan_core.h>
 #include <spirv/unified1/spirv.hpp>
+#include <sstream>
+#include <string>
+#include "containers/custom_containers.h"
 #include "core_validation.h"
 #include "drawdispatch/drawdispatch_vuids.h"
 #include "error_message/error_strings.h"
@@ -322,7 +325,9 @@ bool CoreChecks::ValidateIndirectExecutionSetPipelineInfo(const VkIndirectExecut
         return skip;
     }
     for (uint32_t i = 0; i < pipeline_layout->set_layouts.list.size(); i++) {
-        if (pipeline_layout->set_layouts.list[i] == nullptr) continue;
+        if (pipeline_layout->set_layouts.list[i] == nullptr) {
+            continue;
+        }
         const auto& bindings = pipeline_layout->set_layouts.list[i]->GetBindings();
         for (uint32_t j = 0; j < bindings.size(); j++) {
             if (bindings[j].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
@@ -390,6 +395,30 @@ bool CoreChecks::ValidateIndirectExecutionSetShaderInfo(const VkIndirectExecutio
                              string_VkShaderCreateFlagsEXT(descriptor_flag).c_str());
             descriptor_flag_same = false;
         }
+
+        if (shader_info.pSetLayoutInfos) {
+            const VkIndirectExecutionSetShaderLayoutInfoEXT& ies_shader_layout_info = shader_info.pSetLayoutInfos[i];
+            for (uint32_t layout_i = 0; layout_i < ies_shader_layout_info.setLayoutCount; layout_i++) {
+                const auto ies_dsl = Get<vvl::DescriptorSetLayout>(ies_shader_layout_info.pSetLayouts[layout_i]);
+                if (!ies_dsl) {
+                    assert(shader_object->descriptor_heap_mode);
+                    continue;
+                }
+                const auto& bindings = ies_dsl->GetBindings();
+                for (uint32_t k = 0; k < bindings.size(); k++) {
+                    if (bindings[k].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC ||
+                        bindings[k].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
+                        const LogObjectList objlist(shader_handle, ies_dsl->Handle());
+                        skip |=
+                            LogError("VUID-VkIndirectExecutionSetShaderLayoutInfoEXT-pSetLayouts-11024", objlist,
+                                     shader_info_loc.dot(Field::pSetLayoutInfos).dot(Field::pSetLayouts, layout_i),
+                                     "was created with binding %" PRIu32
+                                     " having a VkDescriptorType of %s in VkDescriptorSetLayoutCreateInfo::pBindings[%" PRIu32 "].",
+                                     bindings[k].binding, string_VkDescriptorType(bindings[k].descriptorType), k);
+                    }
+                }
+            }
+        }
     }
 
     if (descriptor_flag_same && descriptor_flag != 0 && shader_info.pSetLayoutInfos) {
@@ -433,6 +462,35 @@ bool CoreChecks::PreCallValidateDestroyIndirectExecutionSetEXT(VkDevice device, 
     return skip;
 }
 
+bool CoreChecks::ValidateGeneratedCommandsShaderInfo(const LogObjectList objlist,
+                                                     const VkGeneratedCommandsShaderInfoEXT& command_shader_info,
+                                                     const Location& loc) const {
+    bool skip = false;
+    if (command_shader_info.shaderCount < 2) {
+        return skip;
+    }
+
+    // < stage, index into pShaders[] >
+    vvl::unordered_map<VkShaderStageFlagBits, uint32_t> seen_stages;
+    for (uint32_t i = 0; i < command_shader_info.shaderCount; i++) {
+        const auto shader_object = Get<vvl::ShaderObject>(command_shader_info.pShaders[i]);
+        ASSERT_AND_CONTINUE(shader_object);
+        const VkShaderStageFlagBits current_stage = shader_object->create_info.stage;
+        const auto it = seen_stages.find(current_stage);
+        if (it != seen_stages.end()) {
+            const auto previous_shader_object = Get<vvl::ShaderObject>(command_shader_info.pShaders[it->second]);
+            skip |= LogError("VUID-VkGeneratedCommandsShaderInfoEXT-pShaders-11127", objlist,
+                             loc.pNext(Struct::VkGeneratedCommandsShaderInfoEXT, Field::pShaders, i),
+                             "(%s) was created with stage %s which is the same as pShaders[%" PRIu32 "] (%s)",
+                             FormatHandle(shader_object->Handle()).c_str(), string_VkShaderStageFlagBits(current_stage), it->second,
+                             FormatHandle(previous_shader_object->Handle()).c_str());
+            break;
+        }
+        seen_stages.emplace(current_stage, i);
+    }
+    return skip;
+}
+
 bool CoreChecks::ValidateGeneratedCommandsInfo(const vvl::CommandBuffer& cb_state,
                                                const vvl::IndirectCommandsLayout& indirect_commands_layout,
                                                const VkGeneratedCommandsInfoEXT& generated_commands_info, bool preprocessed,
@@ -460,6 +518,49 @@ bool CoreChecks::ValidateGeneratedCommandsInfo(const vvl::CommandBuffer& cb_stat
                 "VUID-VkGeneratedCommandsInfoEXT-maxDrawCount-11078", cb_state.Handle(), info_loc.dot(Field::maxDrawCount),
                 "(%" PRIu32 ") time maxSequenceCount (%" PRIu32 ") is %" PRIu64 " which is over the limit of 2^24 (16777216)",
                 generated_commands_info.maxDrawCount, generated_commands_info.maxSequenceCount, count);
+        }
+    }
+
+    if (indirect_commands_layout.has_execution_set_token) {
+        const auto* pipeline_layout_ci =
+            vku::FindStructInPNextChain<VkPipelineLayoutCreateInfo>(indirect_commands_layout.create_info.pNext);
+        auto indirect_execution_set = Get<vvl::IndirectExecutionSet>(generated_commands_info.indirectExecutionSet);
+        if (indirect_execution_set && indirect_execution_set->is_pipeline) {
+            if (indirect_commands_layout.create_info.pipelineLayout == VK_NULL_HANDLE && !pipeline_layout_ci) {
+                if ((indirect_execution_set->initial_pipeline->create_flags & VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT) == 0) {
+                    skip |= LogError(
+                        "VUID-VkGeneratedCommandsInfoEXT-indirectCommandsLayout-11328", cb_state.Handle(),
+                        info_loc.dot(Field::indirectCommandsLayout),
+                        "contains an execution set token, but a VkPipelineLayout was not provided.\nHint: This is only allowed "
+                        "if the VkPipeline was created with VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT.");
+                }
+            } else {
+                if ((indirect_execution_set->initial_pipeline->create_flags & VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT) != 0) {
+                    skip |= LogError("VUID-VkGeneratedCommandsInfoEXT-indirectCommandsLayout-11329", cb_state.Handle(),
+                                     info_loc.dot(Field::indirectCommandsLayout),
+                                     "contains an execution set token and a VkPipelineLayout was provided, but pipeline was "
+                                     "created with VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT.");
+                }
+            }
+        } else if (indirect_execution_set && indirect_execution_set->is_shader_objects) {
+            if (indirect_commands_layout.create_info.pipelineLayout == VK_NULL_HANDLE && !pipeline_layout_ci) {
+                if ((indirect_execution_set->initial_shader_object->create_info.flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) ==
+                    0) {
+                    skip |= LogError(
+                        "VUID-VkGeneratedCommandsInfoEXT-indirectCommandsLayout-11330", cb_state.Handle(),
+                        info_loc.dot(Field::indirectCommandsLayout),
+                        "contains an execution set token, but a VkPipelineLayout was not provided.\nHint: This is only allowed "
+                        "if the shader object was created with VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT.");
+                }
+            } else {
+                if ((indirect_execution_set->initial_shader_object->create_info.flags & VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT) !=
+                    0) {
+                    skip |= LogError("VUID-VkGeneratedCommandsInfoEXT-indirectCommandsLayout-11331", cb_state.Handle(),
+                                     info_loc.dot(Field::indirectCommandsLayout),
+                                     "contains an execution set token and a VkPipelineLayout was provided, but shader object was "
+                                     "created with VK_SHADER_CREATE_DESCRIPTOR_HEAP_BIT_EXT.");
+                }
+            }
         }
     }
 
@@ -502,6 +603,10 @@ bool CoreChecks::ValidateGeneratedCommandsInfo(const vvl::CommandBuffer& cb_stat
                 valid_dispatch = false;
             }
         }
+    }
+
+    if (shader_info) {
+        skip |= ValidateGeneratedCommandsShaderInfo(cb_state.Handle(), *shader_info, info_loc);
     }
 
     // Only dispatch if we know this is valid
@@ -814,6 +919,10 @@ bool CoreChecks::PreCallValidateGetGeneratedCommandsMemoryRequirementsEXT(VkDevi
                 "is VK_NULL_HANDLE but the pNext chain does not contain an instance of VkGeneratedCommandsPipelineInfoEXT or "
                 "VkGeneratedCommandsShaderInfoEXT.");
         }
+
+        if (shader_info) {
+            skip |= ValidateGeneratedCommandsShaderInfo(device, *shader_info, info_loc);
+        }
     } else {
         if (!indirect_commands_layout->has_execution_set_token) {
             skip |= LogError("VUID-VkGeneratedCommandsMemoryRequirementsInfoEXT-indirectCommandsLayout-11011",
@@ -924,13 +1033,31 @@ bool CoreChecks::PreCallValidateUpdateIndirectExecutionSetPipelineEXT(
                              DynamicStatesToString(update_pipeline->dynamic_state).c_str());
             }
 
-            if (initial_pipeline->fragmentShader_writable_output_location_list !=
-                update_pipeline->fragmentShader_writable_output_location_list) {
+            if (initial_pipeline->fs_writable_output_location_list != update_pipeline->fs_writable_output_location_list) {
                 LogObjectList objlist(initial_pipeline->Handle(), update_pipeline->Handle());
+                std::stringstream ss;
+                ss << "was created with a fragment shader output interface using Locations [";
+                bool first = true;
+                for (const uint32_t& locations : update_pipeline->fs_writable_output_location_list) {
+                    if (!first) {
+                        ss << ", ";
+                    }
+                    ss << locations;
+                    first = false;
+                }
+                ss << "], but it doesn't match the initial Fragment shader in initialPipeline which statically wrote to output "
+                      "Locations [";
+                first = true;
+                for (const uint32_t& locations : initial_pipeline->fs_writable_output_location_list) {
+                    if (!first) {
+                        ss << ", ";
+                    }
+                    ss << locations;
+                    first = false;
+                }
+                ss << ']';
                 skip |= LogError("VUID-vkUpdateIndirectExecutionSetPipelineEXT-initialPipeline-11147", objlist,
-                                 set_write_loc.dot(Field::pipeline),
-                                 "was created with a fragment shader interface different from the one specified in "
-                                 "initialPipeline. The fragment shaders statically write to different locations.");
+                                 set_write_loc.dot(Field::pipeline), "%s", ss.str().c_str());
             }
 
             // Default to false incase there is not fragment shader
@@ -1083,18 +1210,19 @@ bool CoreChecks::PreCallValidateUpdateIndirectExecutionSetShaderEXT(VkDevice dev
 
         const auto initial_fragment_shader_object = indirect_execution_set->initial_fragment_shader_object;
         if (initial_fragment_shader_object && update_shader_object->create_info.stage == VK_SHADER_STAGE_FRAGMENT_BIT) {
-            if (update_shader_object->entrypoint && initial_fragment_shader_object->entrypoint) {
-                vvl::unordered_set<uint32_t> update_shader_output_locations;
-                vvl::unordered_set<uint32_t> initial_shader_output_locations;
+            if (update_shader_object->stage.entrypoint && initial_fragment_shader_object->stage.entrypoint) {
+                // Ordered to provide a faster comparison and better error message, these should be small sets.
+                std::set<uint32_t> update_shader_output_locations;
+                std::set<uint32_t> initial_shader_output_locations;
 
                 // From GetFSOutputLocations()
-                for (const auto* variable : update_shader_object->entrypoint->user_defined_interface_variables) {
+                for (const auto* variable : update_shader_object->stage.entrypoint->user_defined_interface_variables) {
                     if ((variable->storage_class != spv::StorageClassOutput) || variable->interface_slots.empty()) {
                         continue;  // not an output interface
                     }
                     update_shader_output_locations.insert(variable->interface_slots[0].Location());
                 }
-                for (const auto* variable : initial_fragment_shader_object->entrypoint->user_defined_interface_variables) {
+                for (const auto* variable : initial_fragment_shader_object->stage.entrypoint->user_defined_interface_variables) {
                     if ((variable->storage_class != spv::StorageClassOutput) || variable->interface_slots.empty()) {
                         continue;  // not an output interface
                     }
@@ -1103,24 +1231,43 @@ bool CoreChecks::PreCallValidateUpdateIndirectExecutionSetShaderEXT(VkDevice dev
 
                 if (update_shader_output_locations != initial_shader_output_locations) {
                     LogObjectList objlist(initial_fragment_shader_object->Handle(), update_shader_object->Handle());
-                    skip |=
-                        LogError("VUID-vkUpdateIndirectExecutionSetShaderEXT-None-11148", objlist, set_write_loc.dot(Field::shader),
-                                 "was created with a fragment shader interface different from the initial Fragment VkShaderEXT. "
-                                 "The fragment shaders statically write to different locations.");
+                    std::stringstream ss;
+                    ss << "was created with a fragment shader output interface using Locations [";
+                    bool first = true;
+                    for (const uint32_t& locations : update_shader_output_locations) {
+                        if (!first) {
+                            ss << ", ";
+                        }
+                        ss << locations;
+                        first = false;
+                    }
+                    ss << "], but it doesn't match the initial Fragment VkShaderEXT statically wrote to output Locations [";
+                    first = true;
+                    for (const uint32_t& locations : initial_shader_output_locations) {
+                        if (!first) {
+                            ss << ", ";
+                        }
+                        ss << locations;
+                        first = false;
+                    }
+                    ss << ']';
+                    skip |= LogError("VUID-vkUpdateIndirectExecutionSetShaderEXT-None-11148", objlist,
+                                     set_write_loc.dot(Field::shader), "%s", ss.str().c_str());
                 }
 
                 const bool initial_shader_frag_depth =
-                    initial_fragment_shader_object->entrypoint->HasBuiltIn(spv::BuiltInFragDepth);
+                    initial_fragment_shader_object->stage.entrypoint->HasBuiltIn(spv::BuiltInFragDepth);
                 const bool initial_shader_sample_mask =
-                    initial_fragment_shader_object->entrypoint->HasBuiltIn(spv::BuiltInSampleMask);
+                    initial_fragment_shader_object->stage.entrypoint->HasBuiltIn(spv::BuiltInSampleMask);
                 const bool initial_shader_stencil_export =
-                    initial_fragment_shader_object->spirv &&
-                    initial_fragment_shader_object->spirv->HasCapability(spv::CapabilityStencilExportEXT);
+                    initial_fragment_shader_object->stage.spirv_state &&
+                    initial_fragment_shader_object->stage.spirv_state->HasCapability(spv::CapabilityStencilExportEXT);
 
-                const bool ies_shader_frag_depth = update_shader_object->entrypoint->HasBuiltIn(spv::BuiltInFragDepth);
-                const bool ies_shader_sample_mask = update_shader_object->entrypoint->HasBuiltIn(spv::BuiltInSampleMask);
+                const bool ies_shader_frag_depth = update_shader_object->stage.entrypoint->HasBuiltIn(spv::BuiltInFragDepth);
+                const bool ies_shader_sample_mask = update_shader_object->stage.entrypoint->HasBuiltIn(spv::BuiltInSampleMask);
                 const bool ies_shader_stencil_export =
-                    update_shader_object->spirv && update_shader_object->spirv->HasCapability(spv::CapabilityStencilExportEXT);
+                    update_shader_object->stage.spirv_state &&
+                    update_shader_object->stage.spirv_state->HasCapability(spv::CapabilityStencilExportEXT);
 
                 if (initial_shader_frag_depth != ies_shader_frag_depth) {
                     LogObjectList objlist(initial_fragment_shader_object->Handle(), update_shader_object->Handle());

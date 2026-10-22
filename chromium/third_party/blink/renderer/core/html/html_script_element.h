@@ -33,6 +33,7 @@
 #include "third_party/blink/renderer/core/script/script_element_base.h"
 #include "third_party/blink/renderer/core/script/script_loader.h"
 #include "third_party/blink/renderer/platform/bindings/parkable_string.h"
+#include "third_party/blink/renderer/platform/bindings/union_base.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 
 namespace blink {
@@ -48,6 +49,10 @@ class CORE_EXPORT HTMLScriptElement final : public HTMLElement,
 
   HTMLScriptElement(Document&, const CreateElementFlags);
 
+  ElementType GetElementType() const final {
+    return ElementType::kHTMLScriptElement;
+  }
+
   // Returns attributes that should be checked against Trusted Types
   const AttrNameToTrustedType& GetCheckedAttributeTypes() const override;
 
@@ -61,21 +66,21 @@ class CORE_EXPORT HTMLScriptElement final : public HTMLElement,
   void setSrc(
       const V8UnionTrustedScriptURLOrUSVString* string_or_trusted_script_url,
       ExceptionState& exception_state);
-  V8UnionTrustedScriptURLOrUSVString* src();
+  String src();
 
   void setText(V8UnionStringOrTrustedScript*, ExceptionState&);
-  V8UnionStringOrTrustedScript* text();
+  bindings::OptimizedReturnProxy<V8UnionStringOrTrustedScript> text(
+      ScriptState*);
   void setTextWithoutTrustedTypes(const String&);
 
   void setScriptTextContentForBinding(const V8UnionStringOrTrustedScript*,
                                       ExceptionState&);
-  V8UnionStringOrTrustedScript* scriptTextContentForBinding();
+  String scriptTextContentForBinding();
   void setScriptInnerTextForBinding(
       const V8UnionStringLegacyNullToEmptyStringOrTrustedScript*
           string_or_trusted_script,
       ExceptionState& exception_state);
-  V8UnionStringLegacyNullToEmptyStringOrTrustedScript*
-  scriptInnerTextForBinding();
+  String scriptInnerTextForBinding();
 
   void setAsync(bool);
   bool async() const;

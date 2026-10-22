@@ -125,6 +125,7 @@ config("skia_config") {
     "SK_DISABLE_LEGACY_INIT_DECODERS",
     "SK_DISABLE_LEGACY_PNG_WRITEBUFFER",
     "SK_DISABLE_LEGACY_XPS_FACTORIES",
+    "SK_ENABLE_LEGACY_SHADERCONTEXT",
   ]
 
   if (is_win) {
@@ -161,7 +162,7 @@ config("skia_config") {
     defines += [ "GR_GL_FUNCTION_TYPE=__stdcall" ]
   }
 
-  if (pdf_enable_fontations) {
+  if (pdf_enable_fontations || pdf_enable_rust_png) {
     include_dirs += [ "$root_gen_dir/third_party/skia" ]
   }
 
@@ -267,7 +268,6 @@ component("skia") {
 
   sources += skia_ports_sources
   sources += [
-    "//third_party/skia/src/ports/SkImageGenerator_none.cpp",
     "//third_party/skia/src/sfnt/SkOTTable_name.cpp",
     "//third_party/skia/src/sfnt/SkOTUtils.cpp",
 
@@ -299,15 +299,6 @@ component("skia") {
 
   if (is_win) {
     libs = [ "fontsub.lib" ]
-  }
-
-  # need separate win section to handle chromes auto gn filter
-  # (build/config/BUILDCONFIG.gn)
-  if (is_win) {
-    sources -= [
-      #windows
-      "//third_party/skia/src/utils/win/SkWGL_win.cpp",
-    ]
   }
 
   # Select Skia ports.
@@ -351,6 +342,14 @@ component("skia") {
     sources += skia_ports_fontmgr_android_sources
   }
 
+  if (is_win) {
+    sources += [ "//third_party/skia/src/ports/SkLog_win.cpp" ]
+  } else if (is_android) {
+    sources += [ "//third_party/skia/src/ports/SkLog_android.cpp" ]
+  } else {
+    sources += [ "//third_party/skia/src/ports/SkLog_stdio.cpp" ]
+  }
+
   if (is_win || (is_apple && use_blink)) {
     # Add the FreeType custom font manager as a fallback backend for variable fonts.
     sources += skia_ports_fontmgr_custom_sources
@@ -359,6 +358,7 @@ component("skia") {
 
   if (pdf_enable_fontations) {
     sources += skia_ports_typeface_fontations_sources
+    sources += skia_ports_fontmgr_fontations_sources
 
     # Fontations Rust/C++ bridge interfaces.
     deps += [

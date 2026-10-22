@@ -35,7 +35,6 @@ namespace Eigen {
 template <typename ValueType, typename JacobianType>
 class AutoDiffVector {
  public:
-  // typedef typename internal::traits<ValueType>::Scalar Scalar;
   typedef typename internal::traits<ValueType>::Scalar BaseScalar;
   typedef AutoDiffScalar<Matrix<BaseScalar, JacobianType::RowsAtCompileTime, 1> > ActiveScalar;
   typedef ActiveScalar Scalar;
@@ -57,10 +56,8 @@ class AutoDiffVector {
 
   Index size() const { return m_values.size(); }
 
-  // FIXME here we could return an expression of the sum
-  Scalar sum() const { /*std::cerr << "sum \n\n";*/ /*std::cerr << m_jacobian.rowwise().sum() << "\n\n";*/
-    return Scalar(m_values.sum(), m_jacobian.rowwise().sum());
-  }
+  // FIXME: Here we could return an expression of the sum.
+  Scalar sum() const { return Scalar(m_values.sum(), m_jacobian.rowwise().sum()); }
 
   inline AutoDiffVector(const ValueType& values, const JacobianType& jac) : m_values(values), m_jacobian(jac) {}
 
@@ -149,23 +146,6 @@ class AutoDiffVector {
                           typename MakeCwiseUnaryOp<internal::scalar_multiple_op<Scalar>, JacobianType>::Type>(
         v.values() * other, v.jacobian() * other);
   }
-
-  //     template<typename OtherValueType,typename OtherJacobianType>
-  //     inline const AutoDiffVector<
-  //       CwiseBinaryOp<internal::scalar_multiple_op<Scalar>, ValueType, OtherValueType>
-  //       CwiseBinaryOp<internal::scalar_sum_op<Scalar>,
-  //         CwiseUnaryOp<internal::scalar_multiple_op<Scalar>, JacobianType>,
-  //         CwiseUnaryOp<internal::scalar_multiple_op<Scalar>, OtherJacobianType> > >
-  //     operator*(const AutoDiffVector<OtherValueType,OtherJacobianType>& other) const
-  //     {
-  //       return AutoDiffVector<
-  //         CwiseBinaryOp<internal::scalar_multiple_op<Scalar>, ValueType, OtherValueType>
-  //         CwiseBinaryOp<internal::scalar_sum_op<Scalar>,
-  //           CwiseUnaryOp<internal::scalar_multiple_op<Scalar>, JacobianType>,
-  //           CwiseUnaryOp<internal::scalar_multiple_op<Scalar>, OtherJacobianType> > >(
-  //             m_values.cwise() * other.values(),
-  //             (m_jacobian * other.values()) + (m_values * other.jacobian()));
-  //     }
 
   inline AutoDiffVector& operator*=(const Scalar& other) {
     m_values *= other;

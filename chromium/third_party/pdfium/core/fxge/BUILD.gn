@@ -8,16 +8,10 @@ import("../../testing/test.gni")
 
 source_set("fxge") {
   sources = [
-    "agg/cfx_agg_bitmapcomposer.cpp",
-    "agg/cfx_agg_bitmapcomposer.h",
-    "agg/cfx_agg_cliprgn.cpp",
-    "agg/cfx_agg_cliprgn.h",
-    "agg/cfx_agg_devicedriver.cpp",
-    "agg/cfx_agg_devicedriver.h",
-    "agg/cfx_agg_imagerenderer.cpp",
-    "agg/cfx_agg_imagerenderer.h",
     "calculate_pitch.cpp",
     "calculate_pitch.h",
+    "cfx_charmap_resolver.cpp",
+    "cfx_charmap_resolver.h",
     "cfx_color.cpp",
     "cfx_color.h",
     "cfx_defaultrenderdevice.cpp",
@@ -52,8 +46,6 @@ source_set("fxge") {
     "cfx_substfont.cpp",
     "cfx_substfont.h",
     "cfx_textrenderoptions.h",
-    "cfx_unicodeencoding.cpp",
-    "cfx_unicodeencoding.h",
     "dib/blend.cpp",
     "dib/blend.h",
     "dib/cfx_bitmapstorer.cpp",
@@ -97,7 +89,6 @@ source_set("fxge") {
     "fx_font.cpp",
     "fx_font.h",
     "fx_fontencoding.h",
-    "render_defines.h",
     "renderdevicedriver_iface.cpp",
     "renderdevicedriver_iface.h",
     "systemfontinfo_iface.h",
@@ -112,10 +103,7 @@ source_set("fxge") {
     "../../:pdfium_noshorten_config",
   ]
 
-  deps = [
-    "../../third_party:fx_agg",
-    "../fxcrt",
-  ]
+  deps = [ "../fxcrt" ]
 
   public_deps = []
   defines = []
@@ -126,11 +114,18 @@ source_set("fxge") {
     defines += [ "DEFINE_PS_TABLES_DATA" ]
   }
 
-  if (pdf_enable_xfa) {
+  if (pdf_use_agg) {
     sources += [
-      "cfx_unicodeencodingex.cpp",
-      "cfx_unicodeencodingex.h",
+      "agg/cfx_agg_bitmapcomposer.cpp",
+      "agg/cfx_agg_bitmapcomposer.h",
+      "agg/cfx_agg_cliprgn.cpp",
+      "agg/cfx_agg_cliprgn.h",
+      "agg/cfx_agg_devicedriver.cpp",
+      "agg/cfx_agg_devicedriver.h",
+      "agg/cfx_agg_imagerenderer.cpp",
+      "agg/cfx_agg_imagerenderer.h",
     ]
+    deps += [ "../../third_party:fx_agg" ]
   }
 
   if (pdf_use_skia) {

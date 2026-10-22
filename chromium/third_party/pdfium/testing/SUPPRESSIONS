@@ -683,7 +683,7 @@ bug_40860237.in mac * * agg
 bug_1442723.in win * * *
 
 # TODO(crbug.com/42270459): Remove after associated bug is fixed
-bug_42270459.in * * * *
+bug_42270459_2.in * * * *
 
 # TODO(crbug.com/42270524): Remove after associated bug is fixed
 bug_42270524.in * * * *

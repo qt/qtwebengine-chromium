@@ -38,8 +38,7 @@ export default createRule({
       invalidArgument:
           'Calling i18nString/i18nLazyString requires a UIStrings member as the first argument (e.g., UIStrings.someString).',
     },
-    schema: [],          // no options
-    fixable: undefined,  // Rule is not automatically fixable
+    schema: [],
   },
   defaultOptions: [],
   create: function(context) {

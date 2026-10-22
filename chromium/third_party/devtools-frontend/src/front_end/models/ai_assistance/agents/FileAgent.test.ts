@@ -139,14 +139,7 @@ describeWithMockConnection('FileAgent', () => {
 
         assert.deepEqual(responses, [
           {
-            type: AiAgent.ResponseType.USER_QUERY,
-            query: 'test',
-            imageInput: undefined,
-            imageId: undefined,
-          },
-          {
             type: AiAgent.ResponseType.CONTEXT,
-            title: 'Analyzing file',
             details: [
               {
                 title: 'Selected file',

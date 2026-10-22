@@ -26,6 +26,7 @@
 #include "content/browser/xr/webxr_internals/mojom/webxr_internals.mojom.h"
 #include "content/browser/xr/webxr_internals/webxr_internals_handler_impl.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/permission_controller.h"
 #include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/permission_request_description.h"
@@ -34,6 +35,7 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/child_process_id_util.h"
 #include "content/public/common/origin_util.h"
 #include "device/vr/buildflags/buildflags.h"
 #include "device/vr/public/cpp/features.h"
@@ -594,13 +596,6 @@ void VRServiceImpl::GetPermissionStatus(SessionRequestData request,
   DCHECK(runtime);
   DCHECK_EQ(runtime->GetId(), request.runtime_id);
 
-#if BUILDFLAG(ENABLE_OPENXR)
-  if (request.options->mode == device::mojom::XRSessionMode::kImmersiveAr &&
-      runtime->GetId() == device::mojom::XRDeviceId::OPENXR_DEVICE_ID) {
-    DCHECK(device::features::IsOpenXrArEnabled());
-  }
-#endif
-
   // Need to calculate the permissions before the call below, as otherwise
   // std::move nulls options out before `GetRequiredPermissions()` runs.
   const std::vector<blink::PermissionType> permissions_for_mode =
@@ -733,8 +728,9 @@ void VRServiceImpl::EnsureRuntimeInstalled(SessionRequestData request,
   }
 
   runtime->EnsureInstalled(
-      render_frame_host_->GetProcess()->GetDeprecatedID(),
-      render_frame_host_->GetRoutingID(),
+      content::GlobalRenderFrameHostId(
+          render_frame_host_->GetProcess()->GetID(),
+          render_frame_host_->GetRoutingID()),
       base::BindOnce(&VRServiceImpl::OnInstallResult,
                      weak_ptr_factory_.GetWeakPtr(), std::move(request)));
 }
@@ -808,9 +804,10 @@ void VRServiceImpl::DoRequestSession(SessionRequestData request) {
         request.runtime_id == device::mojom::XRDeviceId::OPENXR_DEVICE_ID;
 #endif
     if (send_renderer_information) {
-      runtime_options->render_process_id =
-          render_frame_host_->GetProcess()->GetDeprecatedID();
-      runtime_options->render_frame_id = render_frame_host_->GetRoutingID();
+      runtime_options->renderer_information =
+          device::mojom::RendererInformation::New(
+              ToRendererProcessId(render_frame_host_->GetProcess()->GetID()),
+              render_frame_host_->GetRoutingID());
     }
   }
 

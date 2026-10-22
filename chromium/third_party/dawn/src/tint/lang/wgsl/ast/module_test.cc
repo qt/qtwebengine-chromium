@@ -80,9 +80,11 @@ TEST_F(ModuleDeathTest, Assert_Null_Function) {
 
 TEST_F(ModuleTest, Directives) {
     auto* enable_1 = Enable(wgsl::Extension::kF16);
-    auto* diagnostic_1 = DiagnosticDirective(wgsl::DiagnosticSeverity::kWarning, "foo");
+    auto* diagnostic_1 =
+        DiagnosticDirective(wgsl::DiagnosticSeverity::kWarning, DiagnosticRuleName("foo"));
     auto* enable_2 = Enable(wgsl::Extension::kChromiumExperimentalPixelLocal);
-    auto* diagnostic_2 = DiagnosticDirective(wgsl::DiagnosticSeverity::kOff, "bar");
+    auto* diagnostic_2 =
+        DiagnosticDirective(wgsl::DiagnosticSeverity::kOff, DiagnosticRuleName("bar"));
 
     Program program(std::move(*this));
     EXPECT_THAT(program.AST().GlobalDeclarations(), ::testing::ContainerEq(tint::Vector{

@@ -1286,8 +1286,8 @@ static int ebml_parse(MatroskaDemuxContext *matroska,
     MatroskaLevel *level = matroska->num_levels ? &matroska->levels[matroska->num_levels - 1] : NULL;
 
     if (!matroska->current_id) {
-        uint64_t id;
-        res = ebml_read_num(matroska, pb, 4, &id, 0);
+        uint64_t id64;
+        res = ebml_read_num(matroska, pb, 4, &id64, 0);
         if (res < 0) {
             if (pb->eof_reached && res == AVERROR_EOF) {
                 if (matroska->is_live)
@@ -1306,7 +1306,7 @@ static int ebml_parse(MatroskaDemuxContext *matroska,
             }
             return res;
         }
-        matroska->current_id = id | 1 << 7 * res;
+        matroska->current_id = id64 | 1 << 7 * res;
         pos_alt = pos + res;
     } else {
         pos_alt = pos;
@@ -2877,6 +2877,10 @@ static int mka_parse_audio(MatroskaTrack *track, AVStream *st,
                                             (AVRational){1, 1000000000},
                                             (AVRational){1, par->codec_id == AV_CODEC_ID_OPUS ?
                                                             48000 : par->sample_rate});
+#if 0 // Chromium (https://crbug.com/484006074)
+      // TL;DR: this should be re-enabled once Chromium can deal with it.
+        sti->skip_samples = par->initial_padding;
+#endif
     }
     if (track->seek_preroll > 0) {
         par->seek_preroll = av_rescale_q(track->seek_preroll,
@@ -3062,7 +3066,7 @@ static int mkv_parse_video(MatroskaTrack *track, AVStream *st,
     if (track->video.stereo_mode < MATROSKA_VIDEO_STEREOMODE_TYPE_NB &&
         track->video.stereo_mode != MATROSKA_VIDEO_STEREOMODE_TYPE_ANAGLYPH_CYAN_RED &&
         track->video.stereo_mode != MATROSKA_VIDEO_STEREOMODE_TYPE_ANAGLYPH_GREEN_MAG) {
-        int ret = mkv_stereo3d_conv(st, track->video.stereo_mode);
+        ret = mkv_stereo3d_conv(st, track->video.stereo_mode);
         if (ret < 0)
             return ret;
     }
@@ -4484,6 +4488,10 @@ static CueDesc get_cue_desc(AVFormatContext *s, int64_t ts, int64_t cues_start) 
         // Clusters.
         cue_desc.end_offset = cues_start - matroska->segment_start;
     }
+
+    if (cue_desc.end_time_ns < cue_desc.start_time_ns)
+        return (CueDesc) {-1, -1, -1, -1};
+
     return cue_desc;
 }
 
@@ -4784,8 +4792,8 @@ static int webm_dash_manifest_cues(AVFormatContext *s, int64_t init_range)
     // Store cue point timestamps as a comma separated list
     // for checking subsegment alignment in the muxer.
     av_bprint_init(&bprint, 0, AV_BPRINT_SIZE_UNLIMITED);
-    for (int i = 0; i < sti->nb_index_entries; i++)
-        av_bprintf(&bprint, "%" PRId64",", sti->index_entries[i].timestamp);
+    for (int j = 0; j < sti->nb_index_entries; j++)
+        av_bprintf(&bprint, "%" PRId64",", sti->index_entries[j].timestamp);
     if (!av_bprint_is_complete(&bprint)) {
         av_bprint_finalize(&bprint, NULL);
         return AVERROR(ENOMEM);

@@ -31,9 +31,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "dawn/native/PassResourceUsage.h"
-
 #include "absl/container/flat_hash_set.h"
+#include "dawn/native/PassResourceUsage.h"
 #include "dawn/native/dawn_platform.h"
 
 namespace dawn::native {
@@ -72,6 +71,8 @@ class SyncScopeUsageTracker {
     // Walks the bind groups and tracks all its resources.
     void AddBindGroup(BindGroupBase* group);
 
+    void AddResourceTableUsage(ResourceTableBase* table);
+
     // Returns the per-pass usage for use by backends for APIs with explicit barriers.
     SyncScopeResourceUsage AcquireSyncScopeUsage();
 
@@ -81,6 +82,7 @@ class SyncScopeUsageTracker {
     absl::flat_hash_map<BufferBase*, BufferSyncInfo> mBufferSyncInfos;
     absl::flat_hash_map<TextureBase*, TextureSubresourceSyncInfo> mTextureSyncInfos;
     absl::flat_hash_set<ExternalTextureBase*> mExternalTextureUsages;
+    absl::flat_hash_set<ResourceTableBase*> mUsedResourceTables;
 };
 
 // Helper class to build ComputePassResourceUsages
@@ -92,6 +94,7 @@ class ComputePassResourceUsageTracker {
     void AddDispatch(SyncScopeResourceUsage scope);
     void AddReferencedBuffer(BufferBase* buffer);
     void AddResourcesReferencedByBindGroup(BindGroupBase* group);
+    void AddReferencedResourceTable(ResourceTableBase* table);
 
     ComputePassResourceUsage AcquireResourceUsage();
 

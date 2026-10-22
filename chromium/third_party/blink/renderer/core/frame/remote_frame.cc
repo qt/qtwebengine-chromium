@@ -263,7 +263,7 @@ void RemoteFrame::Navigate(FrameLoadRequest& frame_request,
   auto params = mojom::blink::OpenURLParams::New();
   params->url = url;
   params->initiator_origin = request.RequestorOrigin();
-  if ((url.IsAboutBlankURL() || url.IsAboutSrcdocURL()) &&
+  if ((url.IsAboutBlankUrl() || url.IsAboutSrcdocUrl()) &&
       !frame_request.GetRequestorBaseURL().IsEmpty()) {
     params->initiator_base_url = frame_request.GetRequestorBaseURL();
   }
@@ -274,7 +274,7 @@ void RemoteFrame::Navigate(FrameLoadRequest& frame_request,
   params->extra_headers =
       blink::GetWebURLRequestHeadersAsString(WrappedResourceRequest(request));
   params->referrer = mojom::blink::Referrer::New(
-      KURL(NullURL(), request.ReferrerString()), request.GetReferrerPolicy());
+      KURL(NullUrl(), request.ReferrerString()), request.GetReferrerPolicy());
   params->is_form_submission = !!frame_request.Form();
   params->disposition = ui::mojom::blink::WindowOpenDisposition::CURRENT_TAB;
   params->should_replace_current_entry =
@@ -617,14 +617,21 @@ bool RemoteFrame::IsAdFrame() const {
 
 void RemoteFrame::SetReplicatedIsAdFrame(bool is_ad_frame) {
   TRACE_EVENT("navigation", "RemoteFrame::SetReplicatedIsAdFrame");
+
+  // Currently, a frame cannot be untagged.
+  DCHECK_LE(is_ad_frame_, is_ad_frame);
+
   is_ad_frame_ = is_ad_frame;
 
-  FrameOwner* owner = Owner();
-  HTMLFrameOwnerElement* owner_element =
-      DynamicTo<HTMLFrameOwnerElement>(owner);
-
-  if (owner_element) {
-    owner_element->DidSetAdStatus();
+  if (auto* owner_element = DynamicTo<HTMLFrameOwnerElement>(Owner())) {
+    if (is_ad_frame) {
+      // If an ad script created this frame, the provenance was likely already
+      // set via LocalFrame::SetAdEvidence() on the initial empty LocalFrame
+      // prior to swapping, making this call a no-op. The provenance data is
+      // currently unavailable if the frame was tagged due to a filter list
+      // match or an ad context without provenance (crbug.com/421202278).
+      owner_element->SetIsAdRelated(NoProvenance{});
+    }
   }
 }
 

@@ -38,7 +38,6 @@
 #include "dawn/native/PipelineLayout.h"
 #include "dawn/native/ShaderModule.h"
 #include "dawn/native/stream/Stream.h"
-
 #include "tint/tint.h"
 
 namespace dawn::native {
@@ -80,12 +79,12 @@ class Stream<T> {
 };
 }  // namespace stream
 
-constexpr tint::BindingPoint ToTint(const BindingSlot& slot) {
-    return {static_cast<uint32_t>(slot.group), static_cast<uint32_t>(slot.binding)};
+constexpr tint::BindingPoint ToTint(const WGSLBindPoint& b) {
+    return {static_cast<uint32_t>(b.group), static_cast<uint32_t>(b.binding)};
 }
 
-constexpr BindingSlot FromTint(const tint::BindingPoint& tintBindingPoint) {
-    return {{BindGroupIndex(tintBindingPoint.group), BindingNumber(tintBindingPoint.binding)}};
+constexpr WGSLBindPoint FromTint(const tint::BindingPoint& tintBindingPoint) {
+    return {BindGroupIndex(tintBindingPoint.group), BindingNumber(tintBindingPoint.binding)};
 }
 
 // Helper function to generate the binding remapping information for Tint compilation. Each backend
@@ -160,14 +159,26 @@ tint::Bindings GenerateBindingRemapping(const PipelineLayoutBase* layout,
                         srcBindingPoint,
                         BindingPointFor(group, bgl->AsBindingIndex(apiBindingIndex)));
                 },
-                [](const TexelBufferBindingInfo& bindingInfo) {
-                    // TODO(crbug/382544164): Prototype texel buffer feature
-                    DAWN_UNREACHABLE();
+                [&](const TexelBufferBindingInfo&) {
+                    // TODO(crbug.com/382544164): Inject through storage_texture as a workaround
+                    // until tint::Bindings gains a dedicated texel_buffer sub-map. The
+                    // BindingRemapper transform is type-agnostic and will correctly remap any
+                    // variable whose binding_point appears in the map, regardless of descriptor
+                    // type. Without this remapping, texel buffers keep their original WGSL
+                    // @binding numbers in SPIR-V, which diverges from their BindingIndex in the
+                    // VkDescriptorSetLayout whenever a binding type that sorts before TexelBuffer
+                    // (e.g. StorageTexture) occupies an earlier BindingIndex.
+                    bindings.storage_texture.emplace(
+                        srcBindingPoint,
+                        BindingPointFor(group, bgl->AsBindingIndex(apiBindingIndex)));
                 },
                 [&](const ExternalTextureBindingInfo& bindingInfo) {
+                    // TODO(491363837): Add YCBCR texture information as tint::ExternalYCBCRTexture
+                    // data
+
                     bindings.external_texture.emplace(
                         srcBindingPoint,
-                        tint::ExternalTexture{
+                        tint::ExternalMultiplanarTexture{
                             .metadata = BindingPointFor(group, bindingInfo.metadata),
                             .plane0 = BindingPointFor(group, bindingInfo.plane0),
                             .plane1 = BindingPointFor(group, bindingInfo.plane1)});

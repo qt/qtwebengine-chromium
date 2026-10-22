@@ -13,7 +13,6 @@
 #include "base/containers/span.h"
 #include "base/notreached.h"
 #include "base/types/optional_ref.h"
-#include "base/types/pass_key.h"
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type_names.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -27,7 +26,7 @@ namespace autofill {
 // "name", "country", "issue date", "expiry date", etc.
 //
 // A specific passport is an entity instance, which has attribute instances with
-// values such "John Doe", "USA", "05/2019", "04/2029", etc.
+// values such as "John Doe", "USA", "05/2019", "04/2029", etc.
 //
 // Entity types are generated at compile time from the schema definition in
 // entity_schema.json.
@@ -54,6 +53,12 @@ class AttributeType final {
     kMaxValue = kString,
   };
 
+  class EntityTablePassKey {
+    friend class EntityTable;
+    friend class AttributeTypeTestApi;
+    EntityTablePassKey() = default;
+  };
+
   // Comparator that ranks types by their priority for disambiguating different
   // instances of the same entity type, as specified in the schema.
   // `DisambiguationOrder(x, y) == true` means `x` has higher priority than `y`.
@@ -78,18 +83,40 @@ class AttributeType final {
 
   constexpr DataType data_type() const;
 
+  // An AttributeType that is supposed to be filled in fields on the web must
+  // have an associated FieldType. Some attributes are metadata and only used,
+  // for example, during suggestion generation; they do not need a FieldType.
+  //
   // There are three kinds of AttributeType / FieldType associations:
-  // - `field_type()` is the one that best describes the full attribute.
-  //   Except for name types, the `field_type()` uniquely identifies the
-  //   AttributeType.
-  // - `field_subtypes()` additionally include more fine-granular ones.
-  //   Except for name types, `field_subtypes() == {field_type}`.
-  //   For name types, `field_subtypes()` includes `NAME_FIRST` etc.
-  // - `storable_field_types()` are the ones that may be physically stored in
-  //   the database.
-  constexpr FieldType field_type() const;
+  // - field_type() is the FieldType, if any, that best describes the full
+  //   attribute:
+  //   - For most AttributeTypes, there is a 1:1 relationship with a
+  //     FieldType (e.g., kPassportNumber and PASSPORT_NUMBER).
+  //   - For name and ZIP code AttributeTypes, the relationship is n:1 (e.g.,
+  //     kPassportName and kDriversLicenseName both map to NAME_FULL). That is
+  //     because such FieldType predictions are dynamically assigned to
+  //     entities; see DetermineAttributeTypes() for details.
+  //   - For metadata AttributeTypes, there is no corresponding FieldType
+  //     (e.g., kFlightReservationDepartureAirport).
+  // - field_subtypes() may contain, in addition to field_type(), more
+  //   fine-grained FieldTypes (for example, NAME_FIRST).
+  // - storable_field_types() contains the FieldTypes that may be physically
+  //   stored in the database.
+  //
+  // The contract for the three functions is as follows:
+  // - field_type() uniquely identifies the AttributeType except if it is
+  //   NAME_FULL or std::nullopt.
+  // - If field_type() is not std::nullopt:
+  //   - field_subtypes() contains field_type().
+  //   - storable_field_types() contains field_type().
+  //   - storable_field_types() is a subset of field_subtypes().
+  // - If field_type() is std::nullopt:
+  //   - field_subtypes() is empty.
+  //   - storable_field_types() is {UNKNOWN_TYPE} so that data can be persisted
+  //     in the database under this type.
+  constexpr std::optional<FieldType> field_type() const;
   constexpr FieldTypeSet field_subtypes() const;
-  FieldTypeSet storable_field_types(base::PassKey<EntityTable> pass_key) const;
+  FieldTypeSet storable_field_types(EntityTablePassKey pass_key) const;
 
   // Returns whether the attribute should be obfuscated in preview and
   // suggestion labels.
@@ -122,6 +149,8 @@ class AttributeType final {
   }
 
  private:
+  friend class AttributeTypeTestApi;
+
   AttributeTypeName name_{};
 };
 
@@ -144,8 +173,10 @@ constexpr AttributeType::DataType AttributeType::data_type() const {
     case AttributeTypeName::kKnownTravelerNumberExpirationDate:
     case AttributeTypeName::kNationalIdCardIssueDate:
     case AttributeTypeName::kNationalIdCardExpirationDate:
+    case AttributeTypeName::kOrderDate:
     case AttributeTypeName::kPassportExpirationDate:
     case AttributeTypeName::kPassportIssueDate:
+    case AttributeTypeName::kShipmentEstimatedDeliveryDate:
       return DataType::kDate;
     case AttributeTypeName::kDriversLicenseState:
     case AttributeTypeName::kVehiclePlateState:
@@ -157,9 +188,22 @@ constexpr AttributeType::DataType AttributeType::data_type() const {
     case AttributeTypeName::kFlightReservationDepartureAirport:
     case AttributeTypeName::kFlightReservationArrivalAirport:
     case AttributeTypeName::kKnownTravelerNumberNumber:
+    case AttributeTypeName::kOrderAccount:
+    case AttributeTypeName::kOrderId:
+    case AttributeTypeName::kOrderMerchantDomain:
+    case AttributeTypeName::kOrderMerchantName:
+    case AttributeTypeName::kOrderProductNames:
     case AttributeTypeName::kNationalIdCardNumber:
     case AttributeTypeName::kPassportNumber:
     case AttributeTypeName::kRedressNumberNumber:
+    case AttributeTypeName::kShipmentCarrierName:
+    case AttributeTypeName::kShipmentCarrierDomain:
+    case AttributeTypeName::kShipmentTrackingNumber:
+    case AttributeTypeName::kShipmentDeliveryZipCode:
+    case AttributeTypeName::kShipmentOrderIds:
+    case AttributeTypeName::kShipmentOrderDates:
+    case AttributeTypeName::kShipmentMerchantName:
+    case AttributeTypeName::kShipmentProductNames:
     case AttributeTypeName::kVehiclePlateNumber:
     case AttributeTypeName::kVehicleVin:
     case AttributeTypeName::kVehicleMake:
@@ -170,7 +214,7 @@ constexpr AttributeType::DataType AttributeType::data_type() const {
   NOTREACHED();
 }
 
-constexpr FieldType AttributeType::field_type() const {
+constexpr std::optional<FieldType> AttributeType::field_type() const {
   switch (name_) {
     case AttributeTypeName::kDriversLicenseName:
       return NAME_FULL;
@@ -192,9 +236,9 @@ constexpr FieldType AttributeType::field_type() const {
     case AttributeTypeName::kFlightReservationConfirmationCode:
       return FLIGHT_RESERVATION_CONFIRMATION_CODE;
     case AttributeTypeName::kFlightReservationDepartureAirport:
-      return FLIGHT_RESERVATION_DEPARTURE_AIRPORT;
+      return std::nullopt;
     case AttributeTypeName::kFlightReservationArrivalAirport:
-      return FLIGHT_RESERVATION_ARRIVAL_AIRPORT;
+      return std::nullopt;
     case AttributeTypeName::kFlightReservationDepartureDate:
       return FLIGHT_RESERVATION_DEPARTURE_DATE;
 
@@ -216,6 +260,19 @@ constexpr FieldType AttributeType::field_type() const {
     case AttributeTypeName::kNationalIdCardExpirationDate:
       return NATIONAL_ID_CARD_EXPIRATION_DATE;
 
+    case AttributeTypeName::kOrderAccount:
+      return std::nullopt;
+    case AttributeTypeName::kOrderDate:
+      return ORDER_DATE;
+    case AttributeTypeName::kOrderId:
+      return ORDER_ID;
+    case AttributeTypeName::kOrderMerchantDomain:
+      return std::nullopt;
+    case AttributeTypeName::kOrderMerchantName:
+      return ORDER_MERCHANT_NAME;
+    case AttributeTypeName::kOrderProductNames:
+      return std::nullopt;
+
     case AttributeTypeName::kPassportName:
       return NAME_FULL;
     case AttributeTypeName::kPassportNumber:
@@ -231,6 +288,21 @@ constexpr FieldType AttributeType::field_type() const {
       return REDRESS_NUMBER;
     case AttributeTypeName::kRedressNumberName:
       return NAME_FULL;
+
+    case AttributeTypeName::kShipmentCarrierName:
+      return std::nullopt;
+    case AttributeTypeName::kShipmentCarrierDomain:
+      return std::nullopt;
+    case AttributeTypeName::kShipmentTrackingNumber:
+      return SHIPMENT_TRACKING_NUMBER;
+    case AttributeTypeName::kShipmentDeliveryZipCode:
+      return ADDRESS_HOME_ZIP;
+    case AttributeTypeName::kShipmentEstimatedDeliveryDate:
+    case AttributeTypeName::kShipmentOrderIds:
+    case AttributeTypeName::kShipmentOrderDates:
+    case AttributeTypeName::kShipmentMerchantName:
+    case AttributeTypeName::kShipmentProductNames:
+      return std::nullopt;
 
     case AttributeTypeName::kVehicleOwner:
       return NAME_FULL;
@@ -254,7 +326,10 @@ constexpr FieldTypeSet AttributeType::field_subtypes() const {
   if (data_type() == DataType::kName) {
     return FieldTypesOfGroup(FieldTypeGroup::kName);
   }
-  return {field_type()};
+  if (field_type()) {
+    return {*field_type()};
+  }
+  return {};
 }
 
 template <>
@@ -295,6 +370,10 @@ class EntityType final {
   // submission.
   // `ImportOrder(x, y) == true` means `x` has higher priority than `y`.
   static bool ImportOrder(const EntityType& lhs, const EntityType& rhs);
+
+  // Comparator that ranks types by their priority for display.
+  // `ListOrder(x, y) == true` means `x` has higher priority than `y`.
+  static bool ListOrder(const EntityType& lhs, const EntityType& rhs);
 
   constexpr EntityTypeName name() const { return name_; }
 

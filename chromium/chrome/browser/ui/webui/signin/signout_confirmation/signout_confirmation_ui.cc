@@ -10,6 +10,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/webui/plural_string_handler.h"
 #include "chrome/browser/ui/webui/signin/signout_confirmation/signout_confirmation_handler.h"
 #include "chrome/common/webui_url_constants.h"
@@ -51,7 +52,11 @@ SignoutConfirmationUI::SignoutConfirmationUI(content::WebUI* web_ui)
   web_ui->AddMessageHandler(std::move(plural_string_handler));
 }
 
-SignoutConfirmationUI::~SignoutConfirmationUI() = default;
+SignoutConfirmationUI::~SignoutConfirmationUI() {
+  for (Observer& observer : observers_) {
+    observer.OnSignoutConfirmationUIDestroying(this);
+  }
+}
 
 WEB_UI_CONTROLLER_TYPE_IMPL(SignoutConfirmationUI)
 
@@ -90,6 +95,11 @@ void SignoutConfirmationUI::CancelDialogForTesting() {
   handler_->Cancel(/*uninstall_account_extensions=*/false);
 }
 
+void SignoutConfirmationUI::CancelDialogAndReauthForTesting() {
+  CHECK(handler_);
+  handler_->PerformReauth();
+}
+
 void SignoutConfirmationUI::CreateSignoutConfirmationHandler(
     mojo::PendingRemote<signout_confirmation::mojom::Page> page,
     mojo::PendingReceiver<signout_confirmation::mojom::PageHandler> receiver) {
@@ -98,8 +108,9 @@ void SignoutConfirmationUI::CreateSignoutConfirmationHandler(
   // handler with sample data.
   if (!initialize_handler_callback_) {
     CHECK_IS_TEST();
-    Browser* browser = chrome::FindLastActive();
-    Initialize(browser, ChromeSignoutConfirmationPromptVariant::kNoUnsyncedData,
+    BrowserWindowInterface* browser = chrome::FindLastActive();
+    Initialize(browser->GetBrowserForMigrationOnly(),
+               ChromeSignoutConfirmationPromptVariant::kNoUnsyncedData,
                /*unsynced_data_count=*/0, base::DoNothing());
   }
 

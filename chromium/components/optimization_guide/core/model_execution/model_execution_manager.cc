@@ -104,6 +104,11 @@ size_t GetMaxParallelFeatureExecutions(ModelBasedCapabilityKey feature) {
     case ModelBasedCapabilityKey::kSkills:
     case ModelBasedCapabilityKey::kScamDetection:
     case ModelBasedCapabilityKey::kGeminiAntiscamProtection:
+    case ModelBasedCapabilityKey::kContentAnnotation:
+    case ModelBasedCapabilityKey::kFinds:
+    case ModelBasedCapabilityKey::kAnnotationReducerOnePResolver:
+    case ModelBasedCapabilityKey::kAnnotationReducerQueryClassifier:
+    case ModelBasedCapabilityKey::kContextualCueing:
       return 1;
     case ModelBasedCapabilityKey::kFormsClassifications:
       // Since there can be multiple forms on a single page, multiple parallel
@@ -126,10 +131,7 @@ ModelExecutionManager::ModelExecutionManager(
         model_quality_uploader_service)
     : model_quality_uploader_service_(model_quality_uploader_service),
       optimization_guide_logger_(optimization_guide_logger),
-      model_execution_service_url_(net::AppendOrReplaceQueryParameter(
-          switches::GetModelExecutionServiceURL(),
-          "key",
-          features::GetOptimizationGuideServiceAPIKey())),
+      model_execution_service_url_(switches::GetModelExecutionServiceURL()),
       delegate_(std::move(delegate)),
       url_loader_factory_(url_loader_factory),
       identity_manager_(identity_manager) {}
@@ -180,7 +182,7 @@ void ModelExecutionManager::ExecuteModel(
         std::string tabs = "";
         for (const auto& tab : tab_request->tabs()) {
           tabs += base::StringPrintf("%s\"%s\"", tabs.empty() ? "" : ",",
-                                     tab.title().c_str());
+                                     tab.title());
         }
         OPTIMIZATION_GUIDE_LOGGER(
             optimization_guide_common::mojom::LogSource::MODEL_EXECUTION,
@@ -191,7 +193,7 @@ void ModelExecutionManager::ExecuteModel(
                    optimization_guide::proto::
                        TabOrganizationRequest_TabOrganizationModelStrategy_Name(
                            tab_request->model_strategy()),
-                   tabs.c_str());
+                   tabs);
 
         break;
       }
@@ -214,14 +216,16 @@ void ModelExecutionManager::ExecuteModel(
     fetchers_for_feature.erase(fetchers_for_feature.begin());
   }
   FetcherId fetcher_id = next_model_execution_fetcher_id++;
-  // Currently only ZSS is supported by legion. Update or remove this CHECK when
-  // other features are supported too.
-  CHECK(service_type != ModelExecutionServiceType::kLegion ||
+  // Currently only ZSS is supported by PrivateAI. Update or remove this CHECK
+  // when other features are supported too.
+  CHECK(service_type != ModelExecutionServiceType::kPrivateAi ||
         feature == ModelBasedCapabilityKey::kZeroStateSuggestions)
       << feature;
   base::TimeTicks start_time = base::TimeTicks::Now();
-  auto fetcher_it = fetchers_for_feature.emplace(
-      fetcher_id, CreateModelExecutionFetcher(service_type));
+  auto fetcher = CreateModelExecutionFetcher(service_type);
+  CHECK(fetcher);
+  auto fetcher_it =
+      fetchers_for_feature.emplace(fetcher_id, std::move(fetcher));
   fetcher_it.first->second->ExecuteModel(
       feature, identity_manager_, request_metadata, timeout,
       base::BindOnce(&ModelExecutionManager::OnModelExecuteResponse,
@@ -238,9 +242,9 @@ ModelExecutionManager::CreateModelExecutionFetcher(
       return std::make_unique<ModelExecutionFetcherImpl>(
           url_loader_factory_, model_execution_service_url_,
           optimization_guide_logger_);
-    case ModelExecutionServiceType::kLegion:
+    case ModelExecutionServiceType::kPrivateAi:
       CHECK(delegate_);
-      return delegate_->CreateLegionFetcher();
+      return delegate_->CreatePrivateAiFetcher();
   }
 }
 
@@ -349,16 +353,14 @@ void ModelExecutionManager::OnModelExecuteResponse(
         for (const auto& tab_group : tab_response->tab_groups()) {
           std::string tab_titles = "";
           for (const auto& tab : tab_group.tabs()) {
-            tab_titles +=
-                base::StringPrintf("%s\" %s \"", tab_titles.empty() ? "" : ",",
-                                   tab.title().c_str());
+            tab_titles += base::StringPrintf(
+                "%s\" %s \"", tab_titles.empty() ? "" : ",", tab.title());
           }
           message += base::StringPrintf(
               "%s{"
               "\"label\": \"%s\", "
               "\"tabs\": [%s] }",
-              group_cnt > 0 ? "," : "", tab_group.label().c_str(),
-              tab_titles.c_str());
+              group_cnt > 0 ? "," : "", tab_group.label(), tab_titles);
           group_cnt += 1;
         }
         message += "]";

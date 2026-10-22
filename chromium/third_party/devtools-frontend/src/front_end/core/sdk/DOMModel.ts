@@ -111,6 +111,7 @@ export const ARIA_ATTRIBUTES = new Set<string>([
 export enum DOMNodeEvents {
   TOP_LAYER_INDEX_CHANGED = 'TopLayerIndexChanged',
   SCROLLABLE_FLAG_UPDATED = 'ScrollableFlagUpdated',
+  AD_RELATED_STATE_UPDATED = 'AdRelatedStateUpdated',
   GRID_OVERLAY_STATE_CHANGED = 'GridOverlayStateChanged',
   FLEX_CONTAINER_OVERLAY_STATE_CHANGED = 'FlexContainerOverlayStateChanged',
   SCROLL_SNAP_OVERLAY_STATE_CHANGED = 'ScrollSnapOverlayStateChanged',
@@ -120,6 +121,7 @@ export enum DOMNodeEvents {
 export interface DOMNodeEventTypes {
   [DOMNodeEvents.TOP_LAYER_INDEX_CHANGED]: void;
   [DOMNodeEvents.SCROLLABLE_FLAG_UPDATED]: void;
+  [DOMNodeEvents.AD_RELATED_STATE_UPDATED]: void;
   [DOMNodeEvents.GRID_OVERLAY_STATE_CHANGED]: {enabled: boolean};
   [DOMNodeEvents.FLEX_CONTAINER_OVERLAY_STATE_CHANGED]: {enabled: boolean};
   [DOMNodeEvents.SCROLL_SNAP_OVERLAY_STATE_CHANGED]: {enabled: boolean};
@@ -185,6 +187,10 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
    * for non-backdrop nodes.
    */
   #topLayerIndex = -1;
+  /**
+   * Set if a DOMNode is ad related.
+   */
+  #adProvenance?: Protocol.Network.AdProvenance;
 
   constructor(domModel: DOMModel) {
     super();
@@ -285,6 +291,10 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
 
     this.setPseudoElements(payload.pseudoElements);
 
+    if (payload.adProvenance) {
+      this.#adProvenance = payload.adProvenance;
+    }
+
     if (this.#nodeType === Node.ELEMENT_NODE) {
       // HTML and BODY from internal iframes should not overwrite top-level ones.
       if (this.ownerDocument && !this.ownerDocument.documentElement && this.#nodeName === 'HTML') {
@@ -321,15 +331,24 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
     return this.#topLayerIndex;
   }
 
-  isAdFrameNode(): boolean {
-    if (this.isIframe() && this.#frameOwnerFrameId) {
-      const frame = FrameManager.instance().getFrame(this.#frameOwnerFrameId);
-      if (!frame) {
-        return false;
-      }
-      return frame.adFrameType() !== Protocol.Page.AdFrameType.None;
+  adProvenance(): Protocol.Network.AdProvenance|undefined {
+    if (this.#adProvenance !== undefined) {
+      return this.#adProvenance;
     }
-    return false;
+
+    // AdProvenance can be unavailable for deeply nested OOPIF ad iframes
+    // (crbug.com/421202278). We rely on `AdFrameType` as a fallback.
+    if (!this.isIframe() || !this.#frameOwnerFrameId) {
+      return undefined;
+    }
+
+    const frame = FrameManager.instance().getFrame(this.#frameOwnerFrameId);
+    if (frame && frame.adFrameType() !== Protocol.Page.AdFrameType.None) {
+      // The frame is ad-related, but provenance information is unavailable.
+      return {};
+    }
+
+    return undefined;
   }
 
   isRootNode(): boolean {
@@ -407,6 +426,11 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
       // We show the scroll badge of the document on the <html> element.
       this.ownerDocument?.documentElement?.setIsScrollable(isScrollable);
     }
+  }
+
+  setIsAdRelated(adProvenance?: Protocol.Network.AdProvenance): void {
+    this.#adProvenance = adProvenance;
+    this.dispatchEventToListeners(DOMNodeEvents.AD_RELATED_STATE_UPDATED);
   }
 
   setAffectedByStartingStyles(affectedByStartingStyles: boolean): void {
@@ -1054,17 +1078,20 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
   }
 
   highlight(mode?: string): void {
-    this.#domModel.overlayModel().highlightInOverlay({node: this, selectorList: undefined}, mode);
+    this.#domModel.overlayModel().highlightInOverlay({node: this}, mode);
   }
 
   highlightForTwoSeconds(): void {
-    this.#domModel.overlayModel().highlightInOverlayForTwoSeconds({node: this, selectorList: undefined});
+    this.#domModel.overlayModel().highlightInOverlayForTwoSeconds({node: this});
   }
 
   async resolveToObject(objectGroup?: string, executionContextId?: Protocol.Runtime.ExecutionContextId):
       Promise<RemoteObject|null> {
-    const {object} = await this.#agent.invoke_resolveNode(
-        {nodeId: this.id, backendNodeId: undefined, executionContextId, objectGroup});
+    const {object} = await this.#agent.invoke_resolveNode({
+      nodeId: this.id,
+      executionContextId,
+      objectGroup,
+    });
     return object && this.#domModel.runtimeModelInternal.createRemoteObject(object) || null;
   }
 
@@ -1197,6 +1224,122 @@ export class DOMNode extends Common.ObjectWrapper.ObjectWrapper<DOMNodeEventType
     }
 
     return this.domModel().nodeForId(response.nodeId);
+  }
+
+  async takeSnapshot(ownerDocumentSnapshot?: DOMDocument): Promise<DOMNode> {
+    const snapshot = (this instanceof DOMDocument) ? new DOMDocumentSnapshot(this.domModel(), {
+      nodeId: this.id,
+      backendNodeId: this.backendNodeId(),
+      nodeType: this.nodeType(),
+      nodeName: this.nodeName(),
+      localName: this.localName(),
+      nodeValue: this.nodeValueInternal,
+    } as Protocol.DOM.Node) :
+                                                     new DOMNodeSnapshot(this.domModel());
+    snapshot.id = this.id;
+    snapshot.#backendNodeId = this.#backendNodeId;
+    snapshot.#frameOwnerFrameId = this.#frameOwnerFrameId;
+    snapshot.#nodeType = this.#nodeType;
+    snapshot.#nodeName = this.#nodeName;
+    snapshot.#localName = this.#localName;
+    snapshot.nodeValueInternal = this.nodeValueInternal;
+    snapshot.#pseudoType = this.#pseudoType;
+    snapshot.#pseudoIdentifier = this.#pseudoIdentifier;
+    snapshot.#shadowRootType = this.#shadowRootType;
+    snapshot.#xmlVersion = this.#xmlVersion;
+    snapshot.#isSVGNode = this.#isSVGNode;
+    snapshot.#isScrollable = this.#isScrollable;
+    snapshot.#affectedByStartingStyles = this.#affectedByStartingStyles;
+    snapshot.ownerDocument =
+        ownerDocumentSnapshot || ((snapshot instanceof DOMDocument) ? snapshot : this.ownerDocument);
+    snapshot.#isInShadowTree = this.#isInShadowTree;
+    snapshot.childNodeCountInternal = this.childNodeCountInternal;
+
+    if (snapshot instanceof DOMDocument && this instanceof DOMDocument) {
+      snapshot.documentURL = this.documentURL;
+      snapshot.baseURL = this.baseURL;
+    }
+
+    if (!this.childrenInternal && this.childNodeCountInternal > 0) {
+      await this.getSubtree(1, false);
+    }
+
+    for (const [name, attr] of this.#attributes) {
+      snapshot.#attributes.set(name, {name: attr.name, value: attr.value, _node: snapshot});
+    }
+
+    if (this.childrenInternal) {
+      snapshot.childrenInternal = [];
+      for (const child of this.childrenInternal) {
+        const childSnapshot = await child.takeSnapshot(snapshot.ownerDocument || undefined);
+        childSnapshot.parentNode = snapshot;
+        childSnapshot.ownerDocument = (snapshot instanceof DOMDocument) ? snapshot : snapshot.ownerDocument;
+        snapshot.childrenInternal.push(childSnapshot);
+        if (childSnapshot.ownerDocument instanceof DOMDocument) {
+          if (childSnapshot.nodeName() === 'HTML' && !childSnapshot.ownerDocument.documentElement) {
+            childSnapshot.ownerDocument.documentElement = childSnapshot;
+          }
+          if (childSnapshot.nodeName() === 'BODY' && !childSnapshot.ownerDocument.body) {
+            childSnapshot.ownerDocument.body = childSnapshot;
+          }
+        }
+      }
+    }
+
+    for (const root of this.shadowRootsInternal) {
+      const rootSnapshot = await root.takeSnapshot(snapshot.ownerDocument || undefined);
+      rootSnapshot.parentNode = snapshot;
+      rootSnapshot.ownerDocument = snapshot.ownerDocument;
+      snapshot.shadowRootsInternal.push(rootSnapshot);
+    }
+
+    if (this.templateContentInternal) {
+      const templateSnapshot = await this.templateContentInternal.takeSnapshot(snapshot.ownerDocument || undefined);
+      templateSnapshot.parentNode = snapshot;
+      templateSnapshot.ownerDocument = snapshot.ownerDocument;
+      snapshot.templateContentInternal = templateSnapshot;
+    }
+
+    if (this.contentDocumentInternal) {
+      const contentDocSnapshot = await this.contentDocumentInternal.takeSnapshot();
+      contentDocSnapshot.parentNode = snapshot;
+      snapshot.contentDocumentInternal = contentDocSnapshot as DOMDocumentSnapshot;
+    }
+
+    if (this.#importedDocument) {
+      const importedDocSnapshot = await this.#importedDocument.takeSnapshot(snapshot.ownerDocument || undefined);
+      importedDocSnapshot.parentNode = snapshot;
+      importedDocSnapshot.ownerDocument = snapshot.ownerDocument;
+      snapshot.#importedDocument = importedDocSnapshot;
+    }
+
+    for (const [pseudoType, nodes] of this.#pseudoElements) {
+      const snapshots = [];
+      for (const node of nodes) {
+        const pseudoSnapshot = await node.takeSnapshot(snapshot.ownerDocument || undefined);
+        pseudoSnapshot.parentNode = snapshot;
+        pseudoSnapshot.ownerDocument = snapshot.ownerDocument;
+        snapshots.push(pseudoSnapshot);
+      }
+      snapshot.#pseudoElements.set(pseudoType, snapshots);
+    }
+
+    // We intentionally preserve references to live nodes for assignedSlot and distributedNodes.
+    // This allows slot adorners in the Elements panel to remain functional within the snapshot,
+    // enabling users to resolve and jump to the actual nodes in the live DOM tree.
+    if (this.#distributedNodes) {
+      snapshot.#distributedNodes = [...this.#distributedNodes];
+    }
+
+    snapshot.assignedSlot = this.assignedSlot;
+
+    snapshot.#retainedNodes = this.#retainedNodes;
+
+    if (this.#adoptedStyleSheets.length) {
+      snapshot.setAdoptedStyleSheets(this.#adoptedStyleSheets.map(sheet => sheet.id));
+    }
+
+    return snapshot;
   }
 
   classNames(): string[] {
@@ -1336,8 +1479,8 @@ export class DOMModel extends SDKModel<EventTypes> {
     return this.target().model(OverlayModel) as OverlayModel;
   }
 
-  static cancelSearch(): void {
-    for (const domModel of TargetManager.instance().models(DOMModel)) {
+  static cancelSearch(targetManager: TargetManager = TargetManager.instance()): void {
+    for (const domModel of targetManager.models(DOMModel)) {
       domModel.cancelSearch();
     }
   }
@@ -1689,6 +1832,14 @@ export class DOMModel extends SDKModel<EventTypes> {
       return;
     }
     node.setIsScrollable(isScrollable);
+  }
+
+  adRelatedStateUpdated(nodeId: Protocol.DOM.NodeId, adProvenance?: Protocol.Network.AdProvenance): void {
+    const node = this.nodeForId(nodeId);
+    if (!node) {
+      return;
+    }
+    node.setIsAdRelated(adProvenance);
   }
 
   affectedByStartingStylesFlagUpdated(nodeId: Protocol.DOM.NodeId, affectedByStartingStyles: boolean): void {
@@ -2054,6 +2205,10 @@ class DOMDispatcher implements ProtocolProxyApi.DOMDispatcher {
                                           Protocol.DOM.AffectedByStartingStylesFlagUpdatedEvent): void {
     this.#domModel.affectedByStartingStylesFlagUpdated(nodeId, affectedByStartingStyles);
   }
+
+  adRelatedStateUpdated({nodeId, adProvenance}: Protocol.DOM.AdRelatedStateUpdatedEvent): void {
+    this.#domModel.adRelatedStateUpdated(nodeId, adProvenance);
+  }
 }
 
 let domModelUndoStackInstance: DOMModelUndoStack|null = null;
@@ -2140,6 +2295,96 @@ export class DOMModelUndoStack {
 }
 
 SDKModel.register(DOMModel, {capabilities: Capability.DOM, autostart: true});
+export class DOMNodeSnapshot extends DOMNode {
+  override init(
+      _doc: DOMDocument|null, _isInShadowTree: boolean, _payload: Protocol.DOM.Node,
+      _retainedNodes?: Set<Protocol.DOM.BackendNodeId>|undefined): void {
+  }
+
+  override setNodeName(_name: string, _callback?: ((arg0: string|null, arg1: DOMNode|null) => void)|undefined): void {
+  }
+
+  override setNodeValue(_value: string, _callback?: ((arg0: string|null) => void)|undefined): void {
+  }
+
+  override setAttribute(_name: string, _text: string, _callback?: ((arg0: string|null) => void)|undefined): void {
+  }
+
+  override setAttributeValue(_name: string, _value: string, _callback?: ((arg0: string|null) => void)|undefined): void {
+  }
+
+  override removeAttribute(_name: string): Promise<void> {
+    return Promise.resolve();
+  }
+
+  override setOuterHTML(_html: string, _callback?: ((arg0: string|null) => void)|undefined): void {
+  }
+
+  override removeNode(_callback?: ((arg0: string|null, arg1?: Protocol.DOM.NodeId|undefined) => void)|undefined):
+      Promise<void> {
+    return Promise.resolve();
+  }
+
+  override copyTo(
+      _targetNode: DOMNode, _anchorNode: DOMNode|null,
+      _callback?: ((arg0: string|null, arg1: DOMNode|null) => void)|undefined): void {
+  }
+
+  override moveTo(
+      _targetNode: DOMNode, _anchorNode: DOMNode|null,
+      _callback?: ((arg0: string|null, arg1: DOMNode|null) => void)|undefined): void {
+  }
+
+  override setAsInspectedNode(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+export class DOMDocumentSnapshot extends DOMDocument {
+  override init(
+      _doc: DOMDocument|null, _isInShadowTree: boolean, _payload: Protocol.DOM.Node,
+      _retainedNodes?: Set<Protocol.DOM.BackendNodeId>|undefined): void {
+  }
+
+  override setNodeName(_name: string, _callback?: ((arg0: string|null, arg1: DOMNode|null) => void)|undefined): void {
+  }
+
+  override setNodeValue(_value: string, _callback?: ((arg0: string|null) => void)|undefined): void {
+  }
+
+  override setAttribute(_name: string, _text: string, _callback?: ((arg0: string|null) => void)|undefined): void {
+  }
+
+  override setAttributeValue(_name: string, _value: string, _callback?: ((arg0: string|null) => void)|undefined): void {
+  }
+
+  override removeAttribute(_name: string): Promise<void> {
+    return Promise.resolve();
+  }
+
+  override setOuterHTML(_html: string, _callback?: ((arg0: string|null) => void)|undefined): void {
+  }
+
+  override removeNode(_callback?: ((arg0: string|null, arg1?: Protocol.DOM.NodeId|undefined) => void)|undefined):
+      Promise<void> {
+    return Promise.resolve();
+  }
+
+  override copyTo(
+      _targetNode: DOMNode, _anchorNode: DOMNode|null,
+      _callback?: ((arg0: string|null, arg1: DOMNode|null) => void)|undefined): void {
+  }
+
+  override moveTo(
+      _targetNode: DOMNode, _anchorNode: DOMNode|null,
+      _callback?: ((arg0: string|null, arg1: DOMNode|null) => void)|undefined): void {
+  }
+
+  override setAsInspectedNode(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
 export interface Attribute {
   name: string;
   value: string;

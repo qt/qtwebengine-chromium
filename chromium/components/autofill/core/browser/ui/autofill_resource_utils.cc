@@ -48,14 +48,10 @@ constexpr auto kOldDataResources = base::MakeFixedFlatMap<Suggestion::Icon,
     {Suggestion::Icon::kCardVisa, IDR_AUTOFILL_METADATA_CC_VISA_OLD},
     {Suggestion::Icon::kIban, IDR_AUTOFILL_IBAN_OLD},
     {Suggestion::Icon::kBnplGeneric, IDR_AUTOFILL_METADATA_BNPL_GENERIC_OLD},
-    {Suggestion::Icon::kBnplAffirmUnlinked,
-     IDR_AUTOFILL_METADATA_AFFIRM_UNLINKED},
-    {Suggestion::Icon::kBnplAffirmLinked, IDR_AUTOFILL_METADATA_AFFIRM_LINKED},
-    {Suggestion::Icon::kBnplZipUnlinked, IDR_AUTOFILL_METADATA_ZIP_UNLINKED},
-    {Suggestion::Icon::kBnplZipLinked, IDR_AUTOFILL_METADATA_ZIP_LINKED},
-    {Suggestion::Icon::kBnplKlarnaUnlinked,
-     IDR_AUTOFILL_METADATA_KLARNA_UNLINKED},
-    {Suggestion::Icon::kBnplKlarnaLinked, IDR_AUTOFILL_METADATA_KLARNA_LINKED},
+    {Suggestion::Icon::kBnplAffirm, IDR_AUTOFILL_METADATA_AFFIRM},
+    {Suggestion::Icon::kBnplAfterpay, IDR_AUTOFILL_METADATA_AFTERPAY},
+    {Suggestion::Icon::kBnplKlarna, IDR_AUTOFILL_METADATA_KLARNA},
+    {Suggestion::Icon::kBnplZip, IDR_AUTOFILL_METADATA_ZIP},
 #if BUILDFLAG(IS_ANDROID)
     {Suggestion::Icon::kHome, IDR_ANDROID_AUTOFILL_HOME},
     {Suggestion::Icon::kScanCreditCard, IDR_ANDROID_AUTOFILL_CC_SCAN_NEW},
@@ -68,6 +64,7 @@ constexpr auto kOldDataResources = base::MakeFixedFlatMap<Suggestion::Icon,
     {Suggestion::Icon::kFlight, IDR_ANDROID_AUTOFILL_FLIGHT},
     {Suggestion::Icon::kPersonCheck, IDR_ANDROID_AUTOFILL_PERSON_CHECK},
     {Suggestion::Icon::kVehicle, IDR_ANDROID_AUTOFILL_VEHICLE},
+    {Suggestion::Icon::kPassport, IDR_ANDROID_AUTOFILL_PASSPORT},
 #endif  // BUILDFLAG(IS_ANDROID)
 });
 
@@ -86,14 +83,10 @@ constexpr auto kDataResources = base::MakeFixedFlatMap<Suggestion::Icon, int>({
     {Suggestion::Icon::kCardVisa, IDR_AUTOFILL_METADATA_CC_VISA},
     {Suggestion::Icon::kIban, IDR_AUTOFILL_IBAN},
     {Suggestion::Icon::kBnplGeneric, IDR_AUTOFILL_METADATA_BNPL_GENERIC},
-    {Suggestion::Icon::kBnplAffirmUnlinked,
-     IDR_AUTOFILL_METADATA_AFFIRM_UNLINKED},
-    {Suggestion::Icon::kBnplAffirmLinked, IDR_AUTOFILL_METADATA_AFFIRM_LINKED},
-    {Suggestion::Icon::kBnplZipUnlinked, IDR_AUTOFILL_METADATA_ZIP_UNLINKED},
-    {Suggestion::Icon::kBnplZipLinked, IDR_AUTOFILL_METADATA_ZIP_LINKED},
-    {Suggestion::Icon::kBnplKlarnaUnlinked,
-     IDR_AUTOFILL_METADATA_KLARNA_UNLINKED},
-    {Suggestion::Icon::kBnplKlarnaLinked, IDR_AUTOFILL_METADATA_KLARNA_LINKED},
+    {Suggestion::Icon::kBnplAffirm, IDR_AUTOFILL_METADATA_AFFIRM},
+    {Suggestion::Icon::kBnplAfterpay, IDR_AUTOFILL_METADATA_AFTERPAY},
+    {Suggestion::Icon::kBnplKlarna, IDR_AUTOFILL_METADATA_KLARNA},
+    {Suggestion::Icon::kBnplZip, IDR_AUTOFILL_METADATA_ZIP},
 #if BUILDFLAG(IS_ANDROID)
     {Suggestion::Icon::kHome, IDR_ANDROID_AUTOFILL_HOME},
     {Suggestion::Icon::kScanCreditCard, IDR_ANDROID_AUTOFILL_CC_SCAN_NEW},
@@ -106,12 +99,19 @@ constexpr auto kDataResources = base::MakeFixedFlatMap<Suggestion::Icon, int>({
     {Suggestion::Icon::kFlight, IDR_ANDROID_AUTOFILL_FLIGHT},
     {Suggestion::Icon::kPersonCheck, IDR_ANDROID_AUTOFILL_PERSON_CHECK},
     {Suggestion::Icon::kVehicle, IDR_ANDROID_AUTOFILL_VEHICLE},
+    {Suggestion::Icon::kPassport, IDR_ANDROID_AUTOFILL_PASSPORT},
 #endif  // BUILDFLAG(IS_ANDROID)
 });
 
 }  // namespace
 
 int GetIconResourceID(Suggestion::Icon resource_name) {
+  if ((resource_name == Suggestion::Icon::kCardAmericanExpress) &&
+      base::FeatureList::IsEnabled(
+          features::kAutofillEnableNewAmexNetworkArt)) {
+    return IDR_AUTOFILL_METADATA_CC_AMEX_NEW;
+  }
+
   if (ShouldUseNewFopDisplay()) {
     auto it = kDataResources.find(resource_name);
     return it == kDataResources.end() ? kResourceNotFoundId : it->second;

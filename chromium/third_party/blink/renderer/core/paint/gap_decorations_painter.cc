@@ -6,9 +6,9 @@
 
 #include "third_party/blink/renderer/core/css/css_gap_decoration_property_utils.h"
 #include "third_party/blink/renderer/core/layout/gap/gap_geometry.h"
+#include "third_party/blink/renderer/core/layout/gap/gap_intersection.h"
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
 #include "third_party/blink/renderer/core/paint/box_border_painter.h"
-#include "third_party/blink/renderer/core/paint/box_fragment_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_auto_dark_mode.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
@@ -17,33 +17,6 @@
 namespace blink {
 
 namespace {
-
-// Determines if the segment at `secondary_index` within the gap at `gap_index`
-// is visible based on `rule_visibility`.
-bool IsRuleSegmentVisible(const GridTrackSizingDirection track_direction,
-                          wtf_size_t gap_index,
-                          wtf_size_t secondary_index,
-                          const RuleVisibilityItems rule_visibility,
-                          const GapGeometry& gap_geometry) {
-  GapSegmentState gap_state = gap_geometry.GetIntersectionGapSegmentState(
-      track_direction, gap_index, secondary_index);
-
-  switch (rule_visibility) {
-    case RuleVisibilityItems::kAll:
-      return true;
-    case RuleVisibilityItems::kAround:
-      // Paint if either side of the segment is occupied (i.e. not empty on both
-      // sides).
-      return !gap_state.IsEmpty();
-    case RuleVisibilityItems::kBetween:
-      // Paint only when both sides of the segment are occupied (i.e. gap
-      // segment state is none as it represents a segment occupied on both
-      // sides).
-      return gap_state.status_ == GapSegmentState::kNone;
-  }
-
-  NOTREACHED();
-}
 
 // Determines if the `start_index` should advance when determining pairs for gap
 // decorations.
@@ -56,9 +29,28 @@ bool ShouldMoveIntersectionStartForward(
     const RuleBreak rule_break,
     const RuleVisibilityItems rule_visibility,
     const GapGeometry& gap_geometry,
-    const Vector<LayoutUnit>& intersections) {
+    const Vector<GapIntersection>& intersections) {
+  const bool is_rule_segment_visible =
+      CSSGapDecorationUtils::IsRuleSegmentVisible(track_direction, gap_index,
+                                                  start_index, rule_visibility,
+                                                  gap_geometry);
+
+  // For flex containers, `start_index` cannot land on an open overlap state
+  // i.e. the beginning of an overlap window, because that would start the
+  // segment inside the overlapping region within the gap. It can land on a
+  // close overlap state i.e. the end of an overlap window, because the overlap
+  // has ended and it's a valid starting point for a new segment.
+  if (gap_geometry.GetContainerType() == GapGeometry::ContainerType::kFlex) {
+    if (intersections[start_index].IsOverlapWindowOpen()) {
+      return true;
+    } else if (intersections[start_index].IsOverlapWindowClose()) {
+      return false;
+    }
+  }
   if (rule_break == RuleBreak::kNone) {
-    return false;
+    // Even with no breaks at intersections, skip segments that are not visible
+    // based on `rule-visibility-items`.
+    return !is_rule_segment_visible;
   }
 
   const BlockedStatus blocked_status =
@@ -66,8 +58,7 @@ bool ShouldMoveIntersectionStartForward(
                                                 start_index, intersections);
   // Advance start if the segment it's blocked after or not visible.
   if (blocked_status.HasBlockedStatus(BlockedStatus::kBlockedAfter) ||
-      !IsRuleSegmentVisible(track_direction, gap_index, start_index,
-                            rule_visibility, gap_geometry)) {
+      !is_rule_segment_visible) {
     return true;
   }
 
@@ -85,9 +76,10 @@ bool ShouldMoveIntersectionEndForward(
     const RuleBreak rule_break,
     const RuleVisibilityItems rule_visibility,
     const GapGeometry& gap_geometry,
-    const Vector<LayoutUnit>& intersections) {
-  if (!IsRuleSegmentVisible(track_direction, gap_index, end_index,
-                            rule_visibility, gap_geometry)) {
+    const Vector<GapIntersection>& intersections) {
+  if (!CSSGapDecorationUtils::IsRuleSegmentVisible(track_direction, gap_index,
+                                                   end_index, rule_visibility,
+                                                   gap_geometry)) {
     return false;
   }
 
@@ -117,6 +109,16 @@ bool ShouldMoveIntersectionEndForward(
   DCHECK_EQ(rule_break, RuleBreak::kIntersection);
 
   if (gap_geometry.GetContainerType() == GapGeometry::ContainerType::kFlex) {
+    // For flex, `end_index` cannot land on a close overlap state i.e. the end
+    // of an overlap window, because the segment would extend across the
+    // overlapping region within the gap. It can land on an open overlap state
+    // i.e. the beginning of an overlap window, because it ends the segment
+    // before the overlap starts.
+    if (intersections[end_index].IsOverlapWindowClose()) {
+      return true;
+    } else if (intersections[end_index].IsOverlapWindowOpen()) {
+      return false;
+    }
     // For flex, intersections will never be blocked before or after by
     // other items, due to the absence of spanners. Therefore, we can
     // break at each intersection point.
@@ -163,7 +165,7 @@ void AdjustIntersectionIndexPair(GridTrackSizingDirection track_direction,
                                  RuleBreak rule_break,
                                  RuleVisibilityItems rule_visibility,
                                  const GapGeometry& gap_geometry,
-                                 const Vector<LayoutUnit>& intersections) {
+                                 const Vector<GapIntersection>& intersections) {
   const wtf_size_t last_intersection_index = intersection_count - 1;
 
   CHECK_LE(start, last_intersection_index);
@@ -192,6 +194,49 @@ void AdjustIntersectionIndexPair(GridTrackSizingDirection track_direction,
   }
 }
 
+// Checks whether a cross-direction gap segment exists at the given
+// intersection. A segment is "present" if it passes the cross-direction
+// visibility rules and is not blocked by a spanning item. Returns true if at
+// least one segment (before or after) is present. Only applies to grid
+// containers with `rule-visibility-items: between`.
+bool HasCrossGapSegment(GridTrackSizingDirection cross_direction,
+                        wtf_size_t gap_index,
+                        wtf_size_t intersection_index,
+                        RuleVisibilityItems rule_visibility,
+                        RuleVisibilityItems cross_rule_visibility,
+                        const GapGeometry& gap_geometry,
+                        const Vector<GapIntersection>& intersections) {
+  if (gap_geometry.GetContainerType() != GapGeometry::ContainerType::kGrid ||
+      rule_visibility != RuleVisibilityItems::kBetween) {
+    return true;
+  }
+
+  const wtf_size_t cross_gap_index = intersection_index - 1;
+  const wtf_size_t cross_intersection_index = gap_index + 1;
+
+  const bool is_cross_before_visible =
+      CSSGapDecorationUtils::IsRuleSegmentVisible(
+          cross_direction, cross_gap_index, gap_index, cross_rule_visibility,
+          gap_geometry);
+  const bool is_cross_after_visible =
+      CSSGapDecorationUtils::IsRuleSegmentVisible(
+          cross_direction, cross_gap_index, cross_intersection_index,
+          cross_rule_visibility, gap_geometry);
+
+  const BlockedStatus cross_blocked = gap_geometry.GetIntersectionBlockedStatus(
+      cross_direction, cross_gap_index, cross_intersection_index,
+      intersections);
+
+  const bool is_cross_before_present =
+      is_cross_before_visible &&
+      !cross_blocked.HasBlockedStatus(BlockedStatus::kBlockedBefore);
+  const bool is_cross_after_present =
+      is_cross_after_visible &&
+      !cross_blocked.HasBlockedStatus(BlockedStatus::kBlockedAfter);
+
+  return is_cross_before_present || is_cross_after_present;
+}
+
 }  // namespace
 
 // TODO(samomekarajr): Consider refactoring the Paint method to improve
@@ -209,12 +254,18 @@ void GapDecorationsPainter::Paint(GridTrackSizingDirection track_direction,
       is_column_gap ? style.ColumnRuleStyle() : style.RowRuleStyle();
   GapDataList<int> rule_widths =
       is_column_gap ? style.ColumnRuleWidth() : style.RowRuleWidth();
-  RuleBreak rule_break =
-      CSSGapDecorationUtils::ResolveRuleBreakValue(style, track_direction);
+  RuleBreak rule_break = CSSGapDecorationUtils::ResolveRuleBreakValue(
+      style, track_direction, gap_geometry.GetContainerType());
 
-  RuleVisibilityItems rule_visibility = is_column_gap
-                                            ? style.ColumnRuleVisibilityItems()
-                                            : style.RowRuleVisibilityItems();
+  RuleVisibilityItems rule_visibility =
+      CSSGapDecorationUtils::ResolveRuleVisibilityItemsValue(
+          style, gap_geometry.GetContainerType(), track_direction);
+
+  const GridTrackSizingDirection cross_direction =
+      track_direction == kForColumns ? kForRows : kForColumns;
+  RuleVisibilityItems cross_rule_visibility =
+      CSSGapDecorationUtils::ResolveRuleVisibilityItemsValue(
+          style, gap_geometry.GetContainerType(), cross_direction);
 
   WritingModeConverter converter(style.GetWritingDirection(),
                                  box_fragment_.Size());
@@ -223,13 +274,30 @@ void GapDecorationsPainter::Paint(GridTrackSizingDirection track_direction,
   const BoxSide box_side =
       CSSGapDecorationUtils::BoxSideFromDirection(style, track_direction);
 
-  const LayoutUnit cross_gutter_width = track_direction == kForRows
-                                            ? gap_geometry.GetInlineGapSize()
-                                            : gap_geometry.GetBlockGapSize();
-
   const bool is_main = gap_geometry.IsMainDirection(track_direction);
   const wtf_size_t gap_count = is_main ? gap_geometry.GetMainGaps().size()
                                        : gap_geometry.GetCrossGaps().size();
+
+  // When `overlap-join` is specified, the decoration extends to meet the
+  // cross-direction decoration's edge at interior intersections. This requires
+  // knowing the cross-direction rule widths at each intersection point.
+  const bool has_overlap_join =
+      CSSGapDecorationUtils::HasOverlapJoin(style, is_column_gap);
+
+  // Pre-expand cross-direction rule widths for `overlap-join` resolution. Each
+  // interior intersection `i` corresponds to cross gap `i - 1`, whose
+  // decoration width determines how far the decoration extends when
+  // `overlap-join` is active.
+  Vector<int> cross_decoration_widths;
+  if (has_overlap_join) {
+    const GapDataList<int>& cross_rule_widths =
+        is_column_gap ? style.RowRuleWidth() : style.ColumnRuleWidth();
+    const wtf_size_t cross_gap_count = is_main
+                                           ? gap_geometry.GetCrossGaps().size()
+                                           : gap_geometry.GetMainGaps().size();
+    cross_decoration_widths = CSSGapDecorationUtils::GetExpandedWidths(
+        cross_rule_widths, cross_gap_count);
+  }
 
   auto width_iterator =
       GapDataListIterator<int>(rule_widths.GetGapDataList(), gap_count);
@@ -255,7 +323,7 @@ void GapDecorationsPainter::Paint(GridTrackSizingDirection track_direction,
     const LayoutUnit center =
         gap_geometry.GetGapCenterOffset(track_direction, gap_index);
 
-    const Vector<LayoutUnit> intersections =
+    const Vector<GapIntersection> intersections =
         gap_geometry.GenerateIntersectionListForGap(track_direction, gap_index);
 
     const wtf_size_t last_intersection_index = intersections.size() - 1;
@@ -270,59 +338,75 @@ void GapDecorationsPainter::Paint(GridTrackSizingDirection track_direction,
         break;
       }
 
-      // The cross gutter size is used to determine the "crossing gap width" at
-      // intersection points. The crossing gap width of an intersection point is
-      // defined as:
-      // * `0` if the intersection is at the content edge of the container.
-      // * The cross gutter size if it is an intersection with another gap.
-      // https://drafts.csswg.org/css-gaps-1/#crossing-gap-width
-      //
-      // TODO(crbug.com/446616449): Recently we have resolved to always use the
-      // cross gutter size for resolving the "crossing gap width", however, it
-      // is still an open question what this means for multicol containers where
-      // intersection points don't actually intersect another gap. As a result,
-      // for now, we continue to resolve the crossing gap width as `0` for any
-      // intersection in multicol containers. Discussion about this can be found
-      // in https://github.com/w3c/csswg-drafts/issues/12784.
-      // TODO(javiercon): This is only temporary. The multicol special case here
-      // will be addressed in follow up CL which will make it so that we don't
-      // need any special casing here.
-      const LayoutUnit start_width =
-          (gap_geometry.GetContainerType() ==
-               GapGeometry::ContainerType::kMultiColumn &&
-           is_column_gap) ||
-                  gap_geometry.IsEdgeIntersection(gap_index, start,
-                                                  intersections.size(), is_main,
-                                                  intersections)
-              ? LayoutUnit()
-              : cross_gutter_width;
-      const LayoutUnit end_width =
-          (gap_geometry.GetContainerType() ==
-               GapGeometry::ContainerType::kMultiColumn &&
-           is_column_gap) ||
-                  gap_geometry.IsEdgeIntersection(gap_index, end,
-                                                  intersections.size(), is_main,
-                                                  intersections)
-              ? LayoutUnit()
-              : cross_gutter_width;
+      // The `*inset_width` is the base value against which percentage inset
+      // values are resolved. It is `0` for edge intersections (content edges
+      // of the container). For interior intersections it is typically the
+      // cross gap width at that point. However, for flex main-direction
+      // overlap intersections, the inset width is the size of the overlap
+      // window.
+      const LayoutUnit start_max_inset_width = gap_geometry.GetMaxInsetWidth(
+          track_direction, gap_index, start, is_main, intersections);
+      const LayoutUnit end_max_inset_width = gap_geometry.GetMaxInsetWidth(
+          track_direction, gap_index, end, is_main, intersections);
+
+      // For `overlap-join`, determine the cross-direction decoration width at
+      // each intersection. Edge intersections have no cross decoration.
+      LayoutUnit start_cross_decoration_width;
+      LayoutUnit end_cross_decoration_width;
+      if (has_overlap_join) {
+        start_cross_decoration_width =
+            gap_geometry.GetCrossDecorationWidthForIntersection(
+                gap_index, start, is_main, intersections,
+                cross_decoration_widths);
+        end_cross_decoration_width =
+            gap_geometry.GetCrossDecorationWidthForIntersection(
+                gap_index, end, is_main, intersections,
+                cross_decoration_widths);
+      }
+
+      // When `overlap-join` is active in a grid container with
+      // `rule-visibility-items: between`, determine whether there is a
+      // cross-direction joining decoration at the intersection. When true,
+      // the inset extends to meet the cross decoration; otherwise it is 0.
+      const bool start_has_joining_decoration =
+          has_overlap_join &&
+          !gap_geometry.IsEdgeIntersection(
+              gap_index, start, intersections.size(), is_main, intersections) &&
+          HasCrossGapSegment(cross_direction, gap_index, start, rule_visibility,
+                             cross_rule_visibility, gap_geometry,
+                             intersections);
+      const bool end_has_joining_decoration =
+          has_overlap_join &&
+          !gap_geometry.IsEdgeIntersection(gap_index, end, intersections.size(),
+                                           is_main, intersections) &&
+          HasCrossGapSegment(cross_direction, gap_index, end, rule_visibility,
+                             cross_rule_visibility, gap_geometry,
+                             intersections);
 
       // Inset values are used to offset the end points of gap decorations.
-      // Percentage values are resolved against the crossing gap width of the
+      // Percentage values are resolved against the `*inset_width` of the
       // intersection point.
       // https://drafts.csswg.org/css-gaps-1/#propdef-column-rule-inset
-      LayoutUnit start_inset =
-          gap_geometry.ComputeInsetStart(style, gap_index, start, intersections,
-                                         is_column_gap, is_main, start_width);
-      LayoutUnit end_inset =
-          gap_geometry.ComputeInsetEnd(style, gap_index, end, intersections,
-                                       is_column_gap, is_main, end_width);
+      LayoutUnit start_inset = gap_geometry.ComputeInsetStart(
+          style, gap_index, start, intersections, is_column_gap, is_main,
+          start_has_joining_decoration, start_max_inset_width,
+          start_cross_decoration_width);
+      LayoutUnit end_inset = gap_geometry.ComputeInsetEnd(
+          style, gap_index, end, intersections, is_column_gap, is_main,
+          end_has_joining_decoration, end_max_inset_width,
+          end_cross_decoration_width);
 
-      // Compute the gap decorations offset as half of the `crossing_gap_width`
-      // plus the inset.
-      // https://drafts.csswg.org/css-gaps-1/#compute-the-offset
+      // `*_cross_width` is the width of the gap at the intersection point in
+      // the cross axis, which is used to compute the gap decoration offset from
+      // the intersection point.
+      LayoutUnit start_cross_width = gap_geometry.GetCrossWidthForIntersection(
+          track_direction, gap_index, start, is_main, intersections);
+      LayoutUnit end_cross_width = gap_geometry.GetCrossWidthForIntersection(
+          track_direction, gap_index, end, is_main, intersections);
       const LayoutUnit decoration_start_offset =
-          (start_width / 2) + start_inset;
-      const LayoutUnit decoration_end_offset = (end_width / 2) + end_inset;
+          (start_cross_width / 2) + start_inset;
+      const LayoutUnit decoration_end_offset =
+          (end_cross_width / 2) + end_inset;
 
       // Compute the primary axis values using the gap offsets.
       const LayoutUnit primary_start = center - (rule_thickness / 2);
@@ -330,9 +414,9 @@ void GapDecorationsPainter::Paint(GridTrackSizingDirection track_direction,
 
       // Compute the secondary axis values using the intersection offsets.
       const LayoutUnit secondary_start =
-          intersections[start] + decoration_start_offset;
-      const LayoutUnit secondary_size =
-          intersections[end] - secondary_start - decoration_end_offset;
+          intersections[start].GetOffset() + decoration_start_offset;
+      const LayoutUnit secondary_size = intersections[end].GetOffset() -
+                                        secondary_start - decoration_end_offset;
 
       // Columns paint a vertical strip at the center of the gap while rows
       // paint horizontal strip at the center of the gap

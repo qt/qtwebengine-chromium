@@ -85,8 +85,7 @@ static int vk_prores_raw_start_frame(AVCodecContext          *avctx,
     /* Allocate tile data */
     err = ff_vk_get_pooled_buffer(&ctx->s, &prv->frame_data_pool,
                                   &pp->frame_data_buf,
-                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                   NULL, prr->nb_tiles*sizeof(TileData),
                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
@@ -284,14 +283,12 @@ fail:
 static int add_desc(AVCodecContext *avctx, FFVulkanContext *s,
                     FFVulkanShader *shd)
 {
-    FFVulkanDescriptorSetBinding desc_set[] = {
-        {
-            .name   = "dst",
+    const FFVulkanDescriptorSetBinding desc_set[] = {
+        { /* dst */
             .type   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             .stages = VK_SHADER_STAGE_COMPUTE_BIT,
         },
-        {
-            .name   = "frame_data_buf",
+        { /* frame_data_buf */
             .type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
             .stages = VK_SHADER_STAGE_COMPUTE_BIT,
         },
@@ -308,8 +305,8 @@ static int init_decode_shader(AVCodecContext *avctx, FFVulkanContext *s,
 
     ff_vk_shader_add_push_const(shd, 0, sizeof(DecodePushData) - 64,
                                 VK_SHADER_STAGE_COMPUTE_BIT);
-   ff_vk_shader_load(shd, VK_SHADER_STAGE_COMPUTE_BIT, NULL,
-                     (uint32_t []) { 1, 4, 1 }, 0);
+    ff_vk_shader_load(shd, VK_SHADER_STAGE_COMPUTE_BIT, NULL,
+                      (uint32_t []) { 1, 4, 1 }, 0);
 
     add_desc(avctx, s, shd);
 

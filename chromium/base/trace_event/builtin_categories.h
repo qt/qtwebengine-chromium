@@ -146,6 +146,8 @@ PERFETTO_DEFINE_CATEGORIES_IN_NAMESPACE_WITH_ATTRS(
     perfetto::Category("fledge"),
     perfetto::Category("fonts"),
     perfetto::Category("GAMEPAD"),
+    perfetto::Category("glic").SetDescription(
+      "Events related to GLiC (Gemini Live in Chrome)."),
     perfetto::Category("gpu").SetTags("rendering"),
     perfetto::Category("gpu.angle"),
     perfetto::Category("gpu.angle.texture_metrics"),
@@ -259,6 +261,8 @@ PERFETTO_DEFINE_CATEGORIES_IN_NAMESPACE_WITH_ATTRS(
     perfetto::Category("toplevel").SetTags("scheduling", "toplevel"),
     perfetto::Category("toplevel.flow").SetTags("scheduling", "toplevel"),
     perfetto::Category("ui").SetTags("rendering"),
+    perfetto::Category("update_client").SetDescription(
+        "Events from component updater."),
     perfetto::Category("v8"),
     perfetto::Category("v8.execute"),
     perfetto::Category("v8.wasm"),
@@ -272,6 +276,7 @@ PERFETTO_DEFINE_CATEGORIES_IN_NAMESPACE_WITH_ATTRS(
       "Includes events related to WaaP (Webium-as-a-Product) UI experiments as "
       "described in //chrome/browser/waap."),
     perfetto::Category("wayland"),
+    perfetto::Category("wayland.debug").SetTags("debug"),
     perfetto::Category("webaudio").SetTags("audio"),
     perfetto::Category("webengine.fidl"),
     perfetto::Category("WebCore"),
@@ -305,6 +310,7 @@ PERFETTO_DEFINE_CATEGORIES_IN_NAMESPACE_WITH_ATTRS(
         .SetTags("slow"),
     perfetto::Category(TRACE_DISABLED_BY_DEFAULT("blink.invalidation"))
         .SetTags("slow"),
+    perfetto::Category("blink.webdx_feature_usage").SetTags("slow"),
     perfetto::Category(TRACE_DISABLED_BY_DEFAULT("cc"))
         .SetTags("slow"),
     perfetto::Category(TRACE_DISABLED_BY_DEFAULT("cc.debug")).SetTags("debug"),
@@ -559,7 +565,7 @@ PERFETTO_DEFINE_CATEGORIES_IN_NAMESPACE_WITH_ATTRS(
     perfetto::Category::Group("shutdown,viz"),
     perfetto::Category::Group("startup,benchmark,rail"),
     perfetto::Category::Group("startup,rail"),
-    perfetto::Category::Group("toplevel,graphics.pipeline"),
+    perfetto::Category::Group("toplevel,graphics.pipeline,viz"),
     perfetto::Category::Group("toplevel,Java"),
     perfetto::Category::Group("toplevel,mojom"),
     perfetto::Category::Group("toplevel,viz"),

@@ -12,6 +12,7 @@
 
 #include "base/functional/bind.h"
 #include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
@@ -74,8 +75,9 @@ void ActivityLogAPI::Shutdown() {
 }
 
 void ActivityLogAPI::OnListenerAdded(const EventListenerInfo& details) {
-  if (activity_log_->has_listeners())
+  if (activity_log_->has_listeners()) {
     return;
+  }
   StartOrStopListeningForExtensionActivities();
 }
 
@@ -138,8 +140,9 @@ ActivityLogPrivateGetExtensionActivitiesFunction::Run() {
   std::string page_url = filter.page_url ? *filter.page_url : std::string();
   std::string arg_url = filter.arg_url ? *filter.arg_url : std::string();
   int days_ago = -1;
-  if (filter.days_ago)
+  if (filter.days_ago) {
     days_ago = *filter.days_ago;
+  }
 
   // Call the ActivityLog.
   ActivityLog* activity_log = ActivityLog::GetInstance(browser_context());
@@ -157,8 +160,9 @@ void ActivityLogPrivateGetExtensionActivitiesFunction::OnLookupCompleted(
     std::unique_ptr<std::vector<scoped_refptr<Action>>> activities) {
   // Convert Actions to ExtensionActivities.
   std::vector<ExtensionActivity> result_arr;
-  for (const auto& activity : *activities)
+  for (const auto& activity : *activities) {
     result_arr.push_back(activity->ConvertToExtensionActivity());
+  }
 
   // Populate the return object.
   ActivityResultSet result_set;
@@ -178,8 +182,9 @@ ActivityLogPrivateDeleteActivitiesFunction::Run() {
   std::vector<int64_t> action_ids;
   int64_t value;
   for (const auto& activity_id : params->activity_ids) {
-    if (base::StringToInt64(activity_id, &value))
+    if (base::StringToInt64(activity_id, &value)) {
       action_ids.push_back(value);
+    }
   }
 
   ActivityLog* activity_log = ActivityLog::GetInstance(browser_context());
@@ -219,8 +224,9 @@ ExtensionFunction::ResponseAction ActivityLogPrivateDeleteUrlsFunction::Run() {
   std::vector<GURL> gurls;
   const std::vector<std::string>& urls = params->urls;
   gurls.reserve(urls.size());
-  for (const std::string& url : urls)
+  for (const std::string& url : urls) {
     gurls.push_back(GURL(url));
+  }
 
   ActivityLog* activity_log = ActivityLog::GetInstance(browser_context());
   DCHECK(activity_log);

@@ -45,6 +45,7 @@ maintained and developed.
 @end itemize
 
 All proposed code changes should be submitted for review to
+@url{https://code.ffmpeg.org/FFmpeg/FFmpeg/pulls, Forgejo} or
 @url{mailto:ffmpeg-devel@@ffmpeg.org, the development mailing list}, as
 described in more detail in the @ref{Submitting patches} chapter. The code
 should comply with the @ref{Development Policy} and follow the @ref{Coding Rules}.
@@ -366,6 +367,9 @@ symbols. If in doubt, just avoid names starting with @code{_} altogether.
 @item
 Casts should be used only when necessary. Unneeded parentheses
 should also be avoided if they don't make the code easier to understand.
+@item
+Where applicable, SI units shall be used. For example timeouts should use seconds as the fundamental unit not micro seconds.
+That means a bare value like @samp{1.0} must mean 1 second, @samp{50m} means 50 milliseconds. For weight, gram shall be used.
 @end itemize
 
 @anchor{Development Policy}
@@ -722,7 +726,8 @@ and has no lrint()')
 Also please if you send several patches, send each patch as a separate mail,
 do not attach several unrelated patches to the same mail.
 
-Patches should be posted to the
+Patches should be posted to
+@uref{https://code.ffmpeg.org/FFmpeg/FFmpeg/pulls, Forgejo} or the
 @uref{https://lists.ffmpeg.org/mailman/listinfo/ffmpeg-devel, ffmpeg-devel}
 mailing list. Use @code{git send-email} when possible since it will properly
 send patches without requiring extra care. If you cannot, then send patches

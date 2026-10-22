@@ -329,6 +329,11 @@ typedef struct {
   int gfu_boost;
 
   /*!
+   * Average boost factor of ARFs and GFs within a kf interval
+   */
+  int gfu_boost_average;
+
+  /*!
    * Stores the determined gf group lengths for a set of gf groups
    */
   int gf_intervals[MAX_NUM_GF_INTERVALS];

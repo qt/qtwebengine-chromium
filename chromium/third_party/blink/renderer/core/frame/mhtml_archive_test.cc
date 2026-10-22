@@ -129,11 +129,11 @@ class MHTMLArchiveTest : public testing::Test {
       }
 
       line = builder.ToString();
-      wtf_size_t pos = line.Find(":");
+      wtf_size_t pos = line.find(':');
       if (pos == kNotFound)
         continue;
-      String key = line.Substring(0, pos);
-      String value = line.Substring(pos + 2);
+      String key = line.substr(0, pos);
+      String value = line.substr(pos + 2);
       mhtml_headers.insert(key, value);
 
       line = next_line;
@@ -154,7 +154,7 @@ class MHTMLArchiveTest : public testing::Test {
                          bool validate) {
     // This boundary is as good as any other.  Plus it gets used in almost
     // all the examples in the MHTML spec - RFC 2557.
-    String boundary = String::FromUTF8("boundary-example");
+    String boundary = "boundary-example";
 
     MHTMLArchive::GenerateMHTMLHeader(boundary, url, title, mime_type,
                                       mhtml_date_, mhtml_data_);
@@ -216,7 +216,7 @@ TEST_F(MHTMLArchiveTest,
   const char kURL[] = "http://www.example.com/";
   const char kTitle[] = "abc";
   AddTestMainResource();
-  Serialize(ToKURL(kURL), String::FromUTF8(kTitle), "text/html",
+  Serialize(ToKURL(kURL), String::FromUtf8(kTitle), "text/html",
             MHTMLArchive::kUseDefaultEncoding);
 
   HashMap<String, String> mhtml_headers = ExtractMHTMLHeaders();
@@ -235,7 +235,7 @@ TEST_F(MHTMLArchiveTest,
   const char kURL[] = "http://www.example.com/";
   const char kTitle[] = "abc \t=\xe2\x98\x9d\xf0\x9f\x8f\xbb";
   AddTestMainResource();
-  Serialize(ToKURL(kURL), String::FromUTF8(kTitle), "text/html",
+  Serialize(ToKURL(kURL), String::FromUtf8(kTitle), "text/html",
             MHTMLArchive::kUseDefaultEncoding);
 
   HashMap<String, String> mhtml_headers = ExtractMHTMLHeaders();
@@ -258,7 +258,7 @@ TEST_F(MHTMLArchiveTest,
       "01234567890123456789012345678901234567890123456789"
       " \t=\xe2\x98\x9d\xf0\x9f\x8f\xbb";
   AddTestMainResource();
-  Serialize(ToKURL(kURL), String::FromUTF8(kTitle), "text/html",
+  Serialize(ToKURL(kURL), String::FromUtf8(kTitle), "text/html",
             MHTMLArchive::kUseDefaultEncoding);
 
   HashMap<String, String> mhtml_headers = ExtractMHTMLHeaders();
@@ -331,12 +331,13 @@ TEST_F(MHTMLArchiveTest, TestMHTMLPartsWithDefaultEncoding) {
     String encoding = part_headers.find("Content-Transfer-Encoding")->value;
     EXPECT_FALSE(encoding.empty());
 
-    if (content_type.StartsWith("text/"))
+    if (content_type.starts_with("text/")) {
       EXPECT_EQ("quoted-printable", encoding);
-    else if (content_type.StartsWith("image/"))
+    } else if (content_type.starts_with("image/")) {
       EXPECT_EQ("base64", encoding);
-    else
+    } else {
       FAIL() << "Unexpected Content-Type: " << content_type;
+    }
   }
   EXPECT_EQ(12, part_count);
 

@@ -13,20 +13,20 @@ class CFX_DIBitmap;
 
 class CFX_GlyphBitmap {
  public:
-  CFX_GlyphBitmap(int left, int top);
-  ~CFX_GlyphBitmap();
-
+  CFX_GlyphBitmap(int left, int top, RetainPtr<CFX_DIBitmap> bitmap);
   CFX_GlyphBitmap(const CFX_GlyphBitmap&) = delete;
   CFX_GlyphBitmap& operator=(const CFX_GlyphBitmap&) = delete;
+  ~CFX_GlyphBitmap();
 
-  const RetainPtr<CFX_DIBitmap>& GetBitmap() const { return bitmap_; }
+  RetainPtr<CFX_DIBitmap> GetWritableBitmap();
+  RetainPtr<const CFX_DIBitmap> GetBitmap() const;
   int left() const { return left_; }
   int top() const { return top_; }
 
  private:
   const int left_;
   const int top_;
-  RetainPtr<CFX_DIBitmap> bitmap_;
+  const RetainPtr<CFX_DIBitmap> bitmap_;
 };
 
 #endif  // CORE_FXGE_CFX_GLYPHBITMAP_H_

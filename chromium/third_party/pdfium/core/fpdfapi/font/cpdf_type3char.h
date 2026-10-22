@@ -27,7 +27,8 @@ class CPDF_Type3Char {
   static void TextUnitRectToGlyphUnitRect(CFX_FloatRect* pRect);
 
   bool LoadBitmapFromSoleImageOfForm();
-  void InitializeFromStreamData(bool bColored, pdfium::span<const float> pData);
+  void InitializeFromStreamData(bool colored,
+                                pdfium::span<const float, 6> data);
   void Transform(CPDF_Font::FormIface* pForm, const CFX_Matrix& matrix);
   void WillBeDestroyed();
 

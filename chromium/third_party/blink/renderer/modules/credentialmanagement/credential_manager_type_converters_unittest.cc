@@ -27,7 +27,6 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_authentication_extensions_prf_values.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_authentication_extensions_supplemental_pub_keys_inputs.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_authentication_extensions_supplemental_pub_keys_outputs.h"
-#include "third_party/blink/renderer/bindings/modules/v8/v8_cable_authentication_data.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_identity_credential_request_options_context.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_identity_provider_account.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_identity_provider_request_options.h"
@@ -428,10 +427,9 @@ TEST(CredentialManagerTypeConvertersTest,
   const char attestation_format[] = "format";
   supplemental_pub_keys->setAttestation("indirect");
   supplemental_pub_keys->setAttestationFormats(
-      Vector({blink::String::FromUTF8(attestation_format)}));
+      Vector({blink::String::FromUtf8(attestation_format)}));
   supplemental_pub_keys->setScopes(
-      Vector({blink::String::FromUTF8("device"),
-              blink::String::FromUTF8("provider")}));
+      Vector<blink::String>({"device", "provider"}));
   blink_type->setSupplementalPubKeys(supplemental_pub_keys);
 
   blink::mojom::blink::AuthenticationExtensionsClientInputsPtr mojo_type =
@@ -442,7 +440,7 @@ TEST(CredentialManagerTypeConvertersTest,
       /*device_scope_requested=*/true,
       /*provider_scope_requested=*/true,
       blink::mojom::blink::AttestationConveyancePreference::INDIRECT,
-      Vector<blink::String>({blink::String::FromUTF8(attestation_format)}));
+      Vector<blink::String>({blink::String::FromUtf8(attestation_format)}));
   ASSERT_EQ(*(mojo_type->supplemental_pub_keys), *expected);
 }
 

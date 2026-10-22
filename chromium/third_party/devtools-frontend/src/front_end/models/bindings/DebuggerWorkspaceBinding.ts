@@ -24,7 +24,7 @@ import {type ResourceScriptFile, ResourceScriptMapping} from './ResourceScriptMa
 export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObserver<SDK.DebuggerModel.DebuggerModel> {
   readonly resourceMapping: ResourceMapping;
   readonly #debuggerModelToData: Map<SDK.DebuggerModel.DebuggerModel, ModelData>;
-  readonly #liveLocationPromises: Set<Promise<void|Location|StackTraceTopFrameLocation|null>>;
+  readonly #liveLocationPromises: Set<unknown>;
   readonly pluginManager: DebuggerLanguagePluginManager;
   readonly ignoreListManager: Workspace.IgnoreListManager.IgnoreListManager;
   readonly workspace: Workspace.Workspace.WorkspaceImpl;
@@ -154,11 +154,11 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
    * The promise returned by this function is resolved once all *currently*
    * pending LiveLocations are processed.
    */
-  async pendingLiveLocationChangesPromise(): Promise<void|Location|StackTraceTopFrameLocation|null> {
+  async pendingLiveLocationChangesPromise(): Promise<void> {
     await Promise.all(this.#liveLocationPromises);
   }
 
-  private recordLiveLocationChange(promise: Promise<void|Location|StackTraceTopFrameLocation|null>): void {
+  private recordLiveLocationChange(promise: Promise<unknown>): void {
     void promise.then(() => {
       this.#liveLocationPromises.delete(promise);
     });
@@ -166,10 +166,14 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
   }
 
   async updateLocations(script: SDK.Script.Script): Promise<void> {
-    const updatePromises = [script.target()
-                                .model(StackTraceImpl.StackTraceModel.StackTraceModel)
-                                ?.scriptInfoChanged(script, this.#translateRawFrames.bind(this))];
+    const stackTraceUpdatePromise = script.target()
+                                        .model(StackTraceImpl.StackTraceModel.StackTraceModel)
+                                        ?.scriptInfoChanged(script, this.#translateRawFrames.bind(this));
+    if (stackTraceUpdatePromise) {
+      this.recordLiveLocationChange(stackTraceUpdatePromise);
+    }
 
+    const updatePromises = [stackTraceUpdatePromise];
     const modelData = this.#debuggerModelToData.get(script.debuggerModel);
     if (modelData) {
       const updatePromise = modelData.updateLocations(script);
@@ -184,7 +188,9 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
       Promise<StackTrace.StackTrace.StackTrace> {
     const model =
         target.model(StackTraceImpl.StackTraceModel.StackTraceModel) as StackTraceImpl.StackTraceModel.StackTraceModel;
-    return await model.createFromProtocolRuntime(stackTrace, this.#translateRawFrames.bind(this));
+    const stackTracePromise = model.createFromProtocolRuntime(stackTrace, this.#translateRawFrames.bind(this));
+    this.recordLiveLocationChange(stackTracePromise);
+    return await stackTracePromise;
   }
 
   async createStackTraceFromDebuggerPaused(
@@ -192,7 +198,9 @@ export class DebuggerWorkspaceBinding implements SDK.TargetManager.SDKModelObser
       target: SDK.Target.Target): Promise<StackTrace.StackTrace.DebuggableStackTrace> {
     const model =
         target.model(StackTraceImpl.StackTraceModel.StackTraceModel) as StackTraceImpl.StackTraceModel.StackTraceModel;
-    return await model.createFromDebuggerPaused(pausedDetails, this.#translateRawFrames.bind(this));
+    const stackTracePromise = model.createFromDebuggerPaused(pausedDetails, this.#translateRawFrames.bind(this));
+    this.recordLiveLocationChange(stackTracePromise);
+    return await stackTracePromise;
   }
 
   async createLiveLocation(

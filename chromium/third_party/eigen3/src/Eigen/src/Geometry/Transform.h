@@ -745,7 +745,7 @@ Transform<Scalar, Dim, Mode, Options>& Transform<Scalar, Dim, Mode, Options>::op
 
 /** \returns a QMatrix from \c *this assuming the dimension is 2.
  *
- * \warning this conversion might loss data if \c *this is not affine
+ * \warning this conversion might lose data if \c *this is not affine
  *
  * This function is available only if the token EIGEN_QT_SUPPORT is defined.
  */

@@ -5,6 +5,7 @@ Revision: 20ade4dea9589515a69793e447a6c6220b464535
 License: IJG, BSD-3-Clause, Zlib
 License File: LICENSE.md
 Security Critical: yes
+Update Mechanism: Manual
 Shipped: yes
 License Android Compatible: yes
 

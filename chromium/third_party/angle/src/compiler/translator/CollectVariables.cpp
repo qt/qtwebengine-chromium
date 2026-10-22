@@ -50,8 +50,6 @@ BlockType GetBlockType(TQualifier qualifier)
             return BlockType::kBlockUniform;
         case EvqBuffer:
             return BlockType::kBlockBuffer;
-        case EvqPixelLocalEXT:
-            return BlockType::kPixelLocalExt;
         default:
             UNREACHABLE();
             return BlockType::kBlockUniform;
@@ -132,8 +130,6 @@ class CollectVariablesTraverser : public TIntermTraverser
                               TSymbolTable *symbolTable,
                               GLenum shaderType,
                               const TExtensionBehavior &extensionBehavior,
-                              const ShBuiltInResources &resources,
-                              int tessControlShaderOutputVertices,
                               bool transformFloatUniformToFP16);
 
     bool visitGlobalQualifierDeclaration(Visit visit,
@@ -246,6 +242,10 @@ class CollectVariablesTraverser : public TIntermTraverser
     bool mLayerAdded;
 
     // Shared memory variables
+    // TODO(http://anglebug.com/349994211): This is incorrect, there can be multiple shared
+    // variables and this bool prevents all but the first from getting collected.  The only side
+    // effect is that validation of shared memory size against GL_MAX_COMPUTE_SHARED_MEMORY_SIZE
+    // cannot be correctly done.
     bool mSharedVariableAdded;
 
     // Tessellation Shader builtins
@@ -254,7 +254,6 @@ class CollectVariablesTraverser : public TIntermTraverser
     bool mTessLevelInnerAdded;
     bool mBoundingBoxAdded;
     bool mTessCoordAdded;
-    const int mTessControlShaderOutputVertices;
     bool mTransformFloatUniformToFP16;
 
     char mUserVariablePrefix;
@@ -262,7 +261,6 @@ class CollectVariablesTraverser : public TIntermTraverser
 
     GLenum mShaderType;
     const TExtensionBehavior &mExtensionBehavior;
-    const ShBuiltInResources &mResources;
 };
 
 CollectVariablesTraverser::CollectVariablesTraverser(
@@ -279,8 +277,6 @@ CollectVariablesTraverser::CollectVariablesTraverser(
     TSymbolTable *symbolTable,
     GLenum shaderType,
     const TExtensionBehavior &extensionBehavior,
-    const ShBuiltInResources &resources,
-    int tessControlShaderOutputVertices,
     const bool transformFloatUniformToFP16)
     : TIntermTraverser(true, false, false, symbolTable),
       mAttribs(attribs),
@@ -334,13 +330,11 @@ CollectVariablesTraverser::CollectVariablesTraverser(
       mTessLevelInnerAdded(false),
       mBoundingBoxAdded(false),
       mTessCoordAdded(false),
-      mTessControlShaderOutputVertices(tessControlShaderOutputVertices),
       mTransformFloatUniformToFP16(transformFloatUniformToFP16),
       mUserVariablePrefix(userVariablePrefix),
       mHashFunction(hashFunction),
       mShaderType(shaderType),
-      mExtensionBehavior(extensionBehavior),
-      mResources(resources)
+      mExtensionBehavior(extensionBehavior)
 {}
 
 std::string CollectVariablesTraverser::getMappedName(const TSymbol *symbol) const
@@ -827,25 +821,14 @@ void CollectVariablesTraverser::setFieldOrVariableProperties(const TType &type,
     {
         variableOut->arraySizes.assign(arraySizes.begin(), arraySizes.end());
 
+        // Tessellation shader inputs and outputs are arrayed and specifying the size is optional
+        // size.  However, the final size is assigned to them during parse in
+        // |TParseContext::sizeUnsizedArrayTypes|, so they cannot have an unspecified size.
         if (arraySizes[0] == 0)
         {
-            // Tessellation Control & Evaluation shader inputs:
-            // Declaring an array size is optional. If no size is specified, it will be taken from
-            // the implementation-dependent maximum patch size (gl_MaxPatchVertices).
-            if (type.getQualifier() == EvqTessControlIn ||
-                type.getQualifier() == EvqTessEvaluationIn)
-            {
-                variableOut->arraySizes[0] = mResources.MaxPatchVertices;
-            }
-
-            // Tessellation Control shader outputs:
-            // Declaring an array size is optional. If no size is specified, it will be taken from
-            // output patch size declared in the shader.
-            if (type.getQualifier() == EvqTessControlOut)
-            {
-                ASSERT(mTessControlShaderOutputVertices > 0);
-                variableOut->arraySizes[0] = mTessControlShaderOutputVertices;
-            }
+            ASSERT(type.getQualifier() != EvqTessControlIn &&
+                   type.getQualifier() != EvqTessEvaluationIn &&
+                   type.getQualifier() != EvqTessControlOut);
         }
     }
 }
@@ -889,7 +872,23 @@ void CollectVariablesTraverser::setCommonVariableProperties(const TType &type,
     if (isNamed)
     {
         variableOut->name.assign(variable.name().data(), variable.name().length());
-        variableOut->mappedName = getMappedName(&variable);
+
+        // If the symbol is AngleInternal, this is an emulated uniform.  There are only a few of
+        // them, and they are expected to be output as-is.
+        const bool isEmulatedUniform =
+            isUniform && variable.symbolType() == SymbolType::AngleInternal;
+        if (isEmulatedUniform)
+        {
+            variableOut->mappedName = variableOut->name;
+
+            // These variables are always considered active.
+            variableOut->staticUse = true;
+            variableOut->active    = true;
+        }
+        else
+        {
+            variableOut->mappedName = getMappedName(&variable);
+        }
     }
 
     // For I/O blocks, additionally store the name of the block as blockName.  If the variable is
@@ -1004,8 +1003,8 @@ ShaderVariable CollectVariablesTraverser::recordVarying(const TIntermSymbol &var
             else
             {
                 fieldVariable.location = location;
-                location += fieldType.getLocationCount();
             }
+            location += fieldType.getLocationCount();
 
             if (fieldType.getQualifier() != EvqGlobal)
             {
@@ -1056,8 +1055,6 @@ void CollectVariablesTraverser::recordInterfaceBlock(const char *instanceName,
     if (interfaceBlock->blockType == BlockType::kBlockUniform ||
         interfaceBlock->blockType == BlockType::kBlockBuffer)
     {
-        // TODO(oetuaho): Remove setting isRowMajorLayout.
-        interfaceBlock->isRowMajorLayout = false;
         interfaceBlock->binding          = blockType->blockBinding();
         interfaceBlock->layout           = GetBlockLayoutType(blockType->blockStorage());
     }
@@ -1164,16 +1161,20 @@ bool CollectVariablesTraverser::visitDeclaration(Visit, TIntermDeclaration *node
         // uniforms, varyings, outputs and interface blocks cannot be initialized in a shader, we
         // must have only TIntermSymbol nodes in the sequence in the cases we are interested in.
         const TIntermSymbol &variable = *variableNode->getAsSymbolNode();
-        if (variable.variable().symbolType() == SymbolType::AngleInternal)
+        const bool isUniformEmulatingBuiltIn =
+            qualifier == EvqUniform && typedNode.getBasicType() != EbtInterfaceBlock &&
+            (variable.getName() == "angle_DrawID" || variable.getName() == "angle_BaseVertex" ||
+             variable.getName() == "angle_BaseInstance");
+        if (variable.variable().symbolType() == SymbolType::AngleInternal &&
+            !isUniformEmulatingBuiltIn)
         {
-            // Internal variables are not collected.
+            // Internal variables are not collected, except for a few uniforms used for emulation.
+            // Note that only uniforms that replace built-ins should end up in reflection info, but
+            // currently there's no good way to distinguish between them (hence the specific name
+            // check for some uniforms above).
             continue;
         }
 
-        // SpirvTransformer::transform uses a map of ShaderVariables, it needs member variables and
-        // (named or unnamed) structure as ShaderVariable. at link between two shaders, validation
-        // between of named and unnamed, needs the same structure, its members, and members order
-        // except instance name.
         if (typedNode.getBasicType() == EbtInterfaceBlock && !IsShaderIoBlock(qualifier) &&
             qualifier != EvqPatchIn && qualifier != EvqPatchOut)
         {
@@ -1183,8 +1184,6 @@ bool CollectVariablesTraverser::visitDeclaration(Visit, TIntermDeclaration *node
             recordInterfaceBlock(isUnnamed ? nullptr : variable.getName().data(), type,
                                  &interfaceBlock);
 
-            // all fields in interface block will be added for updating interface variables because
-            // the temporal structure variable will be ignored.
             switch (qualifier)
             {
                 case EvqUniform:
@@ -1192,10 +1191,6 @@ bool CollectVariablesTraverser::visitDeclaration(Visit, TIntermDeclaration *node
                     break;
                 case EvqBuffer:
                     mShaderStorageBlocks->push_back(interfaceBlock);
-                    break;
-                case EvqPixelLocalEXT:
-                    // EXT_shader_pixel_local_storage is completely self-contained within the
-                    // shader, so we don't need to gather any info on it.
                     break;
                 default:
                     UNREACHABLE();
@@ -1260,9 +1255,7 @@ bool CollectVariablesTraverser::visitBinary(Visit, TIntermBinary *binaryNode)
         // NOTE: we do not determine static use / activeness for individual blocks of an array.
         TIntermTyped *blockNode = binaryNode->getLeft()->getAsTyped();
         ASSERT(blockNode);
-
-        TIntermConstantUnion *constantUnion = binaryNode->getRight()->getAsConstantUnion();
-        ASSERT(constantUnion);
+        ASSERT(binaryNode->getRight()->getAsConstantUnion());
 
         InterfaceBlock *namedBlock = nullptr;
 
@@ -1309,19 +1302,24 @@ bool CollectVariablesTraverser::visitBinary(Visit, TIntermBinary *binaryNode)
         {
             MarkActive(ioBlockVar);
         }
-        else if (qualifier != EvqPixelLocalEXT)
+        else
         {
             namedBlock = findNamedInterfaceBlock(interfaceBlock->name());
             ASSERT(namedBlock);
             ASSERT(namedBlock->staticUse);
             namedBlock->active      = true;
-            unsigned int fieldIndex = static_cast<unsigned int>(constantUnion->getIConst(0));
-            ASSERT(fieldIndex < namedBlock->fields.size());
-            // TODO(oetuaho): Would be nicer to record static use of fields of named interface
-            // blocks more accurately at parse time - now we only mark the fields statically used if
-            // they are active. http://anglebug.com/42261150 We need to mark this field and all of
-            // its sub-fields, as static/active
-            MarkActive(&namedBlock->fields[fieldIndex]);
+            // Even though a single field is identified to be active, mark all the fields active.
+            // The layout of the block cannot be changed by the translator based on which fields are
+            // active, and there isn't anything else that ANGLE or the application would
+            // realistically do with a knowledge that some fields may be inactive.
+            for (size_t fieldIndex = 0; fieldIndex < namedBlock->fields.size(); ++fieldIndex)
+            {
+                // TODO(oetuaho): Would be nicer to record static use of fields of named interface
+                // blocks more accurately at parse time - now we only mark the fields statically
+                // used if they are active. http://anglebug.com/42261150 We need to mark this field
+                // and all of its sub-fields, as static/active
+                MarkActive(&namedBlock->fields[fieldIndex]);
+            }
         }
 
         if (traverseIndexExpression)
@@ -1351,16 +1349,26 @@ void CollectVariables(TIntermBlock *root,
                       TSymbolTable *symbolTable,
                       GLenum shaderType,
                       const TExtensionBehavior &extensionBehavior,
-                      const ShBuiltInResources &resources,
-                      int tessControlShaderOutputVertices,
                       const bool transformFloatUniformToFP16)
 {
-    CollectVariablesTraverser collect(attributes, outputVariables, uniforms, inputVaryings,
-                                      outputVaryings, sharedVariables, uniformBlocks,
-                                      shaderStorageBlocks, userVariablePrefix, hashFunction,
-                                      symbolTable, shaderType, extensionBehavior, resources,
-                                      tessControlShaderOutputVertices, transformFloatUniformToFP16);
+    CollectVariablesTraverser collect(
+        attributes, outputVariables, uniforms, inputVaryings, outputVaryings, sharedVariables,
+        uniformBlocks, shaderStorageBlocks, userVariablePrefix, hashFunction, symbolTable,
+        shaderType, extensionBehavior, transformFloatUniformToFP16);
     root->traverse(&collect);
+
+    // Attributes are simply vertex shader inputs (and compute shader attributes),
+    // and are exclusive with input varyings.
+    ASSERT(shaderType != GL_VERTEX_SHADER || inputVaryings->empty());
+    ASSERT((shaderType == GL_VERTEX_SHADER || shaderType == GL_COMPUTE_SHADER) ||
+           attributes->empty());
+
+    // Outputs are simply fragment shader outputs, and are exclusive with output varyings.
+    ASSERT(shaderType != GL_FRAGMENT_SHADER || outputVaryings->empty());
+    ASSERT(shaderType == GL_FRAGMENT_SHADER || outputVariables->empty());
+
+    // Shared variables exist only in compute shaders.
+    ASSERT(shaderType == GL_COMPUTE_SHADER || sharedVariables->empty());
 }
 
 }  // namespace sh

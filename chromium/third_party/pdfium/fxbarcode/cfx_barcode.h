@@ -22,9 +22,9 @@ class CFX_Matrix;
 
 class CFX_Barcode {
  public:
+  explicit CFX_Barcode(BC_TYPE type);
   ~CFX_Barcode();
 
-  static std::unique_ptr<CFX_Barcode> Create(BC_TYPE type);
   BC_TYPE GetType();
   bool Encode(WideStringView contents);
 
@@ -50,9 +50,7 @@ class CFX_Barcode {
   bool SetErrorCorrectionLevel(int32_t level);
 
  private:
-  CFX_Barcode();
-
-  std::unique_ptr<CBC_CodeBase> bc_engine_;
+  const std::unique_ptr<CBC_CodeBase> bc_engine_;
 };
 
 #endif  // FXBARCODE_CFX_BARCODE_H_

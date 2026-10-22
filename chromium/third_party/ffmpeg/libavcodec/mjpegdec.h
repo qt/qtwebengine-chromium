@@ -60,7 +60,6 @@ typedef struct MJpegDecodeContext {
     GetByteContext gB;
     int buf_size;
 
-    int start_code; /* current start code */
     int buffer_size;
     uint8_t *buffer;
 
@@ -85,6 +84,13 @@ typedef struct MJpegDecodeContext {
     int colr;
     int xfrm;
     int adobe_transform;
+
+    /* SOS fields */
+    int nb_components_sos;
+    int Ss;
+    int Se;
+    int Ah;
+    int Al;
 
     int maxval;
     int near;         ///< near lossless bound (si 0 for lossless)
@@ -138,7 +144,9 @@ typedef struct MJpegDecodeContext {
     uint16_t (*ljpeg_buffer)[4];
     unsigned int ljpeg_buffer_size;
 
+#if FF_API_MJPEG_EXTERN_HUFF
     int extern_huff;
+#endif
     AVExifMetadata exif_metadata;
 
     AVStereo3D *stereo3d; ///!< stereoscopic information (cached, since it is read before frame allocation)
@@ -156,8 +164,6 @@ typedef struct MJpegDecodeContext {
     // Raw stream data for hwaccel use.
     const uint8_t *raw_image_buffer;
     size_t         raw_image_buffer_size;
-    const uint8_t *raw_scan_buffer;
-    size_t         raw_scan_buffer_size;
 
     uint8_t raw_huffman_lengths[2][4][16];
     uint8_t raw_huffman_values[2][4][256];
@@ -166,6 +172,10 @@ typedef struct MJpegDecodeContext {
     enum AVPixelFormat hwaccel_pix_fmt;
     void *hwaccel_picture_private;
     struct JLSState *jls_state;
+
+    const uint8_t *mb_bitmask;
+    size_t mb_bitmask_size;
+    const AVFrame *reference;
 } MJpegDecodeContext;
 
 int ff_mjpeg_build_vlc(VLC *vlc, const uint8_t *bits_table,
@@ -181,11 +191,37 @@ int ff_mjpeg_decode_frame_from_buf(AVCodecContext *avctx,
 int ff_mjpeg_decode_dqt(MJpegDecodeContext *s);
 int ff_mjpeg_decode_dht(MJpegDecodeContext *s);
 int ff_mjpeg_decode_sof(MJpegDecodeContext *s);
-int ff_mjpeg_decode_sos(MJpegDecodeContext *s,
-                        const uint8_t *mb_bitmask,int mb_bitmask_size,
-                        const AVFrame *reference);
-int ff_mjpeg_find_marker(MJpegDecodeContext *s,
-                         const uint8_t **buf_ptr, const uint8_t *buf_end,
-                         const uint8_t **unescaped_buf_ptr, int *unescaped_buf_size);
+int ff_mjpeg_decode_sos(MJpegDecodeContext *s);
+int ff_mjpeg_find_marker(const uint8_t **buf_ptr, const uint8_t *buf_end);
+int ff_mjpeg_unescape_sos(MJpegDecodeContext *s);
+
+static inline int ff_mjpeg_should_restart(MJpegDecodeContext *s)
+{
+    int restart = 0;
+    if (s->restart_interval) {
+        if (s->restart_count <= 0) {
+            s->restart_count = s->restart_interval;
+            restart = 1;
+        }
+        s->restart_count--;
+    } else {
+        if (s->restart_count < 0) {
+            s->restart_count = 0;
+            restart = 1;
+        }
+    }
+    return restart;
+}
+
+static inline int ff_mjpeg_handle_restart(MJpegDecodeContext *s, int *restart)
+{
+    *restart = ff_mjpeg_should_restart(s);
+    if (*restart) {
+        int ret = ff_mjpeg_unescape_sos(s);
+        if (ret < 0)
+            return ret;
+    }
+    return 0;
+}
 
 #endif /* AVCODEC_MJPEGDEC_H */

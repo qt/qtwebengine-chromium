@@ -74,7 +74,8 @@ class PageLoadMetricsForwardObserver final
   ObservePolicy ShouldObserveScheme(const GURL& url) const override;
   void OnTimingUpdate(content::RenderFrameHost* subframe_rfh,
                       const mojom::PageLoadTiming& timing) override;
-  void OnSoftNavigationUpdated(const mojom::SoftNavigationMetrics&) override;
+  void OnSoftNavigation() override;
+  void OnSoftNavigationLargestContentfulPaint(uint64_t num_soft_lcps) override;
   void OnEventTimingUpdate(
       content::RenderFrameHost* subframe_rfh,
       const std::vector<mojom::EventTimingPtr>& event_timings) override;
@@ -131,8 +132,6 @@ class PageLoadMetricsForwardObserver final
   void OnFeaturesUsageObserved(
       content::RenderFrameHost* rfh,
       const std::vector<blink::UseCounterFeature>& features) override;
-  void SetUpSharedMemoryForDroppedFrames(
-      const base::ReadOnlySharedMemoryRegion& dropped_frames_memory) override;
   void OnResourceDataUseObserved(
       content::RenderFrameHost* rfh,
       const std::vector<mojom::ResourceDataUpdatePtr>& resources) override;

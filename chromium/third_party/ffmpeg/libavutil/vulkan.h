@@ -258,9 +258,8 @@ typedef struct FFVulkanShader {
     FFVulkanDescriptorSet desc_set[FF_VK_MAX_DESCRIPTOR_SETS];
     int nb_descriptor_sets;
 
-    /* Descriptor buffer */
+    /* Descriptors */
     VkDescriptorSetLayout desc_layout[FF_VK_MAX_DESCRIPTOR_SETS];
-    uint32_t bound_buffer_indices[FF_VK_MAX_DESCRIPTOR_SETS];
 
     /* Descriptor pool */
     int use_push;
@@ -693,7 +692,7 @@ int ff_vk_shader_register_exec(FFVulkanContext *s, FFVkExecPool *pool,
  * Bind a shader.
  */
 void ff_vk_exec_bind_shader(FFVulkanContext *s, FFVkExecContext *e,
-                            FFVulkanShader *shd);
+                            const FFVulkanShader *shd);
 
 /**
  * Update push constant in a shader.

@@ -186,7 +186,7 @@ CPDF_IconFit CPDF_FormControl::GetIconFit() const {
   return GetMK().GetIconFit();
 }
 
-int CPDF_FormControl::GetTextPosition() const {
+CPDF_ApSettings::TextPosition CPDF_FormControl::GetTextPosition() const {
   return GetMK().GetTextPosition();
 }
 

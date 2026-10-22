@@ -290,6 +290,8 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
       viz::SharedImageFormat format,
       uint32_t texture_target);
   static scoped_refptr<ClientSharedImage> CreateForTesting(
+      const gfx::ColorSpace& color_space);
+  static scoped_refptr<ClientSharedImage> CreateForTesting(
       SharedImageUsageSet usage);
   static scoped_refptr<ClientSharedImage> CreateForTesting(
       const SharedImageMetadata& metadata);
@@ -453,6 +455,7 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
   void FinishMapAsyncForTests(
       base::OnceCallback<void(std::unique_ptr<ScopedMapping>)> result_cb,
       bool success);
+  scoped_refptr<SharedImageInterface> GetSharedImageInterface();
 
   const Mailbox mailbox_;
   const SharedImageMetadata metadata_;
@@ -463,6 +466,7 @@ class GPU_COMMAND_BUFFER_CLIENT_EXPORT ClientSharedImage
   std::unique_ptr<MappableBuffer> mappable_buffer_;
   std::optional<gfx::BufferUsage> buffer_usage_;
   scoped_refptr<SharedImageInterfaceHolder> sii_holder_;
+  scoped_refptr<SharedImageInterface> sii_;
 
   // CopyNativeGmbToSharedMemoryAsync uses this task runner for
   // operations to prevent deadlocks.

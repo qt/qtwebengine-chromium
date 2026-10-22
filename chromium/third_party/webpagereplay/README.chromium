@@ -11,6 +11,6 @@ Description:
 - Web Page Replay (WprGo) is a performance testing tool written in Golang for
   recording and replaying web pages.
 Local Modifications:
-- Make binaries to be in CIPD repository so that 'gclient sync' could download them.
+- Make binaries to be in Google Cloud bucket so that 'gclient sync' could download them.
 How To Update:
-  # TODO(crbug.com/430568050): Support uploading prebuilt binaries in this repo.
+  scripts/upload_new_binaries.py

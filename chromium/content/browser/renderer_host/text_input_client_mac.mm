@@ -7,13 +7,17 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
-#include "base/metrics/histogram_macros.h"
+#include "base/memory/weak_ptr.h"
+#include "base/message_loop/message_pump_apple.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/no_destructor.h"
 #include "base/run_loop.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "base/types/pass_key.h"
 #include "content/browser/renderer_host/frame_tree.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
@@ -62,6 +66,14 @@ RenderFrameHostImpl* GetFocusedRenderFrameHostImpl(RenderWidgetHost* widget) {
   return focused_node ? focused_node->current_frame_host() : nullptr;
 }
 
+base::WeakPtr<RenderFrameHostImpl> GetWeakFocusedRenderFrameHostImpl(
+    RenderWidgetHost* widget) {
+  if (RenderFrameHostImpl* rhfi = GetFocusedRenderFrameHostImpl(widget)) {
+    return rhfi->GetWeakPtr();
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 TextInputClientMac::TextInputClientMac()
@@ -105,79 +117,113 @@ void TextInputClientMac::GetStringFromRange(RenderWidgetHost* rwh,
 
 uint32_t TextInputClientMac::GetCharacterIndexAtPoint(RenderWidgetHost* rwh,
                                                       const gfx::Point& point) {
+  return GetCharacterIndexAtPoint(GetWeakFocusedRenderFrameHostImpl(rwh),
+                                  point);
+}
+
+uint32_t TextInputClientMac::GetCharacterIndexAtPoint(
+    base::WeakPtr<RenderFrameHostImpl> rfhi,
+    gfx::Point point) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  RenderFrameHostImpl* rfhi = GetFocusedRenderFrameHostImpl(rwh);
   // If it doesn't have a focused frame, it calls SetCharacterIndexAndSignal()
   // with index 0.
   if (!rfhi) {
     return 0;
   }
 
-  base::TimeTicks start = base::TimeTicks::Now();
+  base::UmaHistogramBoolean("TextInputClient.InSyncRequest.CharacterIndex",
+                            in_sync_request_);
+  if (in_sync_request_) {
+    return 0;
+  }
+
+  base::LiveTicks start = base::LiveTicks::Now();
   base::TimeDelta wait_timeout = features::kTextInputClientIPCTimeout.Get();
 
   BeforeRequest();
   async_request_delegate_->GetCharacterIndexAtPoint(
-      rfhi, current_request_.value(), point);
-  if (features::kTextInputClientUseNestedLoop.Get()) {
+      rfhi.get(), current_request_.value(), point);
+  if (base::FeatureList::IsEnabled(features::kTextInputClientUseNestedLoop)) {
     EnterNestedLoop(wait_timeout);
+    // IMPORTANT: After this point the nested loop may have invalidated any
+    // pointers and references passed in from the caller (notably `rfhi`).
+    // `this` is valid because TextInputClientMac is a leaked singleton.
   } else {
     base::TimeDelta remaining_timeout = wait_timeout;
     while (!character_index_ && remaining_timeout.is_positive()) {
       base::ScopedAllowBaseSyncPrimitivesOutsideBlockingScope allow_wait;
       condition_.TimedWait(remaining_timeout);
-      remaining_timeout = start + wait_timeout - base::TimeTicks::Now();
+      remaining_timeout = start + wait_timeout - base::LiveTicks::Now();
     }
   }
+  base::UmaHistogramBoolean("TextInputClient.CharacterIndex.TimedOut",
+                            !character_index_.has_value());
 
   // Return a sentinel if no response was received.
   uint32_t index = character_index_.value_or(UINT32_MAX);
   AfterRequest();
 
-  base::TimeDelta delta(base::TimeTicks::Now() - start);
-  UMA_HISTOGRAM_LONG_TIMES("TextInputClient.CharacterIndex",
-                           delta * base::Time::kMicrosecondsPerMillisecond);
+  base::UmaHistogramLongTimes("TextInputClient.CharacterIndex2",
+                              base::LiveTicks::Now() - start);
 
   return index;
 }
 
 gfx::Rect TextInputClientMac::GetFirstRectForRange(RenderWidgetHost* rwh,
                                                    const gfx::Range& range) {
+  return GetFirstRectForRange(GetWeakFocusedRenderFrameHostImpl(rwh), range);
+}
+
+gfx::Rect TextInputClientMac::GetFirstRectForRange(
+    base::WeakPtr<RenderFrameHostImpl> rfhi,
+    gfx::Range range) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  RenderFrameHostImpl* rfhi = GetFocusedRenderFrameHostImpl(rwh);
   if (!rfhi) {
     return gfx::Rect();
   }
 
-  base::TimeTicks start = base::TimeTicks::Now();
+  base::UmaHistogramBoolean("TextInputClient.InSyncRequest.FirstRect",
+                            in_sync_request_);
+  if (in_sync_request_) {
+    return gfx::Rect();
+  }
+
+  base::LiveTicks start = base::LiveTicks::Now();
   base::TimeDelta wait_timeout = features::kTextInputClientIPCTimeout.Get();
 
   BeforeRequest();
-  async_request_delegate_->GetFirstRectForRange(rfhi, current_request_.value(),
-                                                range);
-  if (features::kTextInputClientUseNestedLoop.Get()) {
+  async_request_delegate_->GetFirstRectForRange(
+      rfhi.get(), current_request_.value(), range);
+  if (base::FeatureList::IsEnabled(features::kTextInputClientUseNestedLoop)) {
     EnterNestedLoop(wait_timeout);
+    // IMPORTANT: After this point the nested loop may have invalidated any
+    // pointers and references passed in from the caller (notably `rfhi`).
+    // `this` is valid because TextInputClientMac is a leaked singleton.
   } else {
     base::TimeDelta remaining_timeout = wait_timeout;
     while (!first_rect_ && remaining_timeout.is_positive()) {
       base::ScopedAllowBaseSyncPrimitivesOutsideBlockingScope allow_wait;
       condition_.TimedWait(remaining_timeout);
-      remaining_timeout = start + wait_timeout - base::TimeTicks::Now();
+      remaining_timeout = start + wait_timeout - base::LiveTicks::Now();
     }
   }
 
+  base::UmaHistogramBoolean("TextInputClient.FirstRect.TimedOut",
+                            !first_rect_.has_value());
+
   // `first_rect_` is in (child) frame coordinate and needs to be transformed to
-  // the root frame coordinate.
+  // the root frame coordinate. If `rfhi` has been deleted, it's too late to do
+  // the transform but the result is moot anyway.
   gfx::Rect rect =
-      first_rect_ ? gfx::Rect(rwh->GetView()->TransformPointToRootCoordSpace(
-                                  first_rect_->origin()),
-                              first_rect_->size())
-                  : gfx::Rect();
+      first_rect_ && rfhi
+          ? gfx::Rect(rfhi->GetView()->TransformPointToRootCoordSpace(
+                          first_rect_->origin()),
+                      first_rect_->size())
+          : gfx::Rect();
   AfterRequest();
 
-  base::TimeDelta delta(base::TimeTicks::Now() - start);
-  UMA_HISTOGRAM_LONG_TIMES("TextInputClient.FirstRect",
-                           delta * base::Time::kMicrosecondsPerMillisecond);
+  base::UmaHistogramLongTimes("TextInputClient.FirstRect2",
+                              base::LiveTicks::Now() - start);
 
   return rect;
 }
@@ -193,7 +239,7 @@ void TextInputClientMac::SetCharacterIndexAndSignal(
       return;
     }
     character_index_ = index;
-    if (features::kTextInputClientUseNestedLoop.Get()) {
+    if (base::FeatureList::IsEnabled(features::kTextInputClientUseNestedLoop)) {
       CHECK(nested_loop_);
       nested_loop_->Quit();
       return;
@@ -213,7 +259,7 @@ void TextInputClientMac::SetFirstRectAndSignal(
       return;
     }
     first_rect_ = first_rect;
-    if (features::kTextInputClientUseNestedLoop.Get()) {
+    if (base::FeatureList::IsEnabled(features::kTextInputClientUseNestedLoop)) {
       CHECK(nested_loop_);
       nested_loop_->Quit();
       return;
@@ -258,13 +304,12 @@ void TextInputClientMac::BeforeRequest() {
   CHECK(!in_sync_request_);
   in_sync_request_ = true;
 
-  base::TimeTicks start = base::TimeTicks::Now();
+  base::LiveTicks start = base::LiveTicks::Now();
 
   lock_.Acquire();
 
-  base::TimeDelta delta(base::TimeTicks::Now() - start);
-  UMA_HISTOGRAM_LONG_TIMES("TextInputClient.LockWait",
-                           delta * base::Time::kMicrosecondsPerMillisecond);
+  base::UmaHistogramLongTimes("TextInputClient.LockWait2",
+                              base::LiveTicks::Now() - start);
 
   CHECK(!current_request_.has_value());
   current_request_ = RequestToken();
@@ -272,7 +317,7 @@ void TextInputClientMac::BeforeRequest() {
   first_rect_.reset();
 
   CHECK(!nested_loop_);
-  if (features::kTextInputClientUseNestedLoop.Get()) {
+  if (base::FeatureList::IsEnabled(features::kTextInputClientUseNestedLoop)) {
     nested_loop_.emplace(base::RunLoop::Type::kNestableTasksAllowed);
   }
 }
@@ -304,6 +349,13 @@ void TextInputClientMac::EnterNestedLoop(base::TimeDelta timeout) {
     base::OneShotTimer nested_loop_timer;
     nested_loop_timer.Start(FROM_HERE, timeout, this,
                             &TextInputClientMac::OnNestedLoopTimeout);
+
+    std::optional<base::ScopedRestrictNSEventMask> event_mask;
+    if (features::kTextInputClientNestedLoopEventMask.Get()) {
+      // Don't pump UI events in the nested loop, to prevent re-entering from
+      // queued AppKit NSTextInputContext events.
+      event_mask.emplace(base::PassKey<TextInputClientMac>{});
+    }
 
     // The loop will exit either when a response is received, or the timer
     // fires.

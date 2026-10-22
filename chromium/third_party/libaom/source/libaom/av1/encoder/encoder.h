@@ -108,17 +108,6 @@ typedef struct aom_rational64 {
 } aom_rational64_t;  // alias for struct aom_rational
 
 enum {
-  // Good Quality Fast Encoding. The encoder balances quality with the amount of
-  // time it takes to encode the output. Speed setting controls how fast.
-  GOOD,
-  // Realtime Fast Encoding. Will force some restrictions on bitrate
-  // constraints.
-  REALTIME,
-  // All intra mode. All the frames are coded as intra frames.
-  ALLINTRA
-} UENUM1BYTE(MODE);
-
-enum {
   FRAMEFLAGS_KEY = 1 << 0,
   FRAMEFLAGS_GOLDEN = 1 << 1,
   FRAMEFLAGS_BWDREF = 1 << 2,
@@ -167,9 +156,8 @@ enum {
   DELTA_Q_PERCEPTUAL = 2,     // Modulation to improve video perceptual quality
   DELTA_Q_PERCEPTUAL_AI = 3,  // Perceptual quality opt for all intra mode
   DELTA_Q_USER_RATING_BASED = 4,  // User rating based delta q mode
-  DELTA_Q_HDR = 5,  // QP adjustment based on HDR block pixel average
-  DELTA_Q_VARIANCE_BOOST =
-      6,              // Variance Boost style modulation for all intra mode
+  DELTA_Q_HDR = 5,             // QP adjustment based on HDR block pixel average
+  DELTA_Q_VARIANCE_BOOST = 6,  // Variance Boost style modulation
   DELTA_Q_MODE_COUNT  // This should always be the last member of the enum
 } UENUM1BYTE(DELTAQ_MODE);
 
@@ -791,9 +779,10 @@ typedef struct {
 } InputCfg;
 
 typedef struct {
-  // If true, encoder will use fixed QP offsets, that are either:
-  // - Given by the user, and stored in 'fixed_qp_offsets' array, OR
-  // - Picked automatically from cq_level.
+  // Controls how the encoder applies fixed QP offsets.
+  // If the value is 0, QP offsets are chosen adaptively.
+  // If the value is 1, fixed QP offsets are picked automatically from cq_level.
+  // If the value is 2, no QP offsets will be applied.
   int use_fixed_qp_offsets;
   // Indicates the minimum flatness of the quantization matrix.
   int qm_minlevel;
@@ -828,9 +817,10 @@ typedef struct {
    * For values 1-7, eob and skip block optimization are
    * avoided and rdmult is adjusted in favor of block sharpness.
    *
-   * In all-intra mode: it also sets the `loop_filter_sharpness` syntax element
-   * in the bitstream. Larger values increasingly reduce how much the filtering
-   * can change the sample values on block edges to favor perceived sharpness.
+   * In all-intra mode or tune IQ or SSIMULACRA2: it also sets the
+   * `loop_filter_sharpness` syntax element in the bitstream. Larger values
+   * increasingly reduce how much the filtering can change the sample values on
+   * block edges to favor perceived sharpness.
    */
   int sharpness;
 
@@ -1489,6 +1479,7 @@ typedef struct ThreadData {
   CONV_BUF_TYPE *tmp_conv_dst;
   uint64_t abs_sum_level;
   uint8_t *tmp_pred_bufs[2];
+  uint8_t *upsample_pred;
   uint8_t *wiener_tmp_pred_buf;
   int intrabc_used;
   int deltaq_used;
@@ -3338,6 +3329,13 @@ typedef struct AV1_COMP {
   int prune_ref_frame_mask;
 
   /*!
+   * Mark the reference frames which are important (based on the temporal
+   * distance and quality) to prevent pruning the reference frame at block
+   * level.
+   */
+  int keep_single_ref_frame_mask;
+
+  /*!
    * Loop Restoration context.
    */
   AV1LrStruct lr_ctxt;
@@ -3642,6 +3640,11 @@ typedef struct AV1_COMP {
    * Buffer to store 64x64 SAD
    */
   uint64_t *src_sad_blk_64x64;
+
+  /*!
+   * Size of allocated buffer to store 64x64 SAD, in units of uint64_t.
+   */
+  int src_sad_blk_alloc_size;
 
   /*!
    * SSE between the current frame and the reconstructed last frame
@@ -4233,6 +4236,11 @@ static inline int av1_resize_scaled(const AV1_COMMON *cm) {
 
 static inline int av1_frame_scaled(const AV1_COMMON *cm) {
   return av1_superres_scaled(cm) || av1_resize_scaled(cm);
+}
+
+static inline bool av1_encode_for_extrc(AOM_EXT_RATECTRL const *ext_rc) {
+  return ext_rc->ready && (ext_rc->funcs.rc_type & AOM_RC_QP) != 0 &&
+         ext_rc->funcs.get_encodeframe_decision != NULL;
 }
 
 // Don't allow a show_existing_frame to coincide with an error resilient

@@ -17,6 +17,8 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/logging.h"
+#include "base/memory/memory_pressure_listener.h"
+#include "base/memory/memory_pressure_listener_registry.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/strcat.h"
@@ -24,8 +26,10 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
+#include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
+#include "base/test/test_future.h"
 #include "base/test/test_mock_time_task_runner.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -97,6 +101,8 @@
 #include "net/third_party/quiche/src/quiche/quic/core/crypto/quic_decrypter.h"
 #include "net/third_party/quiche/src/quiche/quic/core/crypto/quic_encrypter.h"
 #include "net/third_party/quiche/src/quiche/quic/core/crypto/transport_parameters.h"
+#include "net/third_party/quiche/src/quiche/quic/core/http/http_constants.h"
+#include "net/third_party/quiche/src/quiche/quic/core/http/http_encoder.h"
 #include "net/third_party/quiche/src/quiche/quic/core/quic_constants.h"
 #include "net/third_party/quiche/src/quiche/quic/core/quic_utils.h"
 #include "net/third_party/quiche/src/quiche/quic/platform/api/quic_test.h"
@@ -112,6 +118,7 @@
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/boringssl/src/include/openssl/ssl.h"
 #include "url/gurl.h"
 #include "url/scheme_host_port.h"
 #include "url/url_constants.h"
@@ -189,7 +196,8 @@ class SessionAttemptHelper : public QuicSessionAttempt::Delegate {
         this, quic_session_alias_key_.session_key(), quic_endpoint,
         /*cert_verify_flags=*/0,
         /*dns_resolution_start_time=*/base::TimeTicks(),
-        /*dns_resolution_end_time=*/base::TimeTicks(), /*use_dns_aliases=*/true,
+        /*dns_resolution_end_time=*/base::TimeTicks(),
+        /*dns_resolution_details=*/std::nullopt, /*use_dns_aliases=*/true,
         /*dns_aliases=*/{}, MultiplexedSessionCreationInitiator::kUnknown,
         /*connection_management_config=*/std::nullopt);
   }
@@ -1402,6 +1410,109 @@ TEST_P(QuicSessionPoolTest, ServerNetworkStatsWithNetworkAnonymizationKey) {
       }
     }
   }
+}
+
+TEST_P(QuicSessionPoolTest, MemoryPressureDohExclusion) {
+  base::MemoryPressureListenerRegistry memory_pressure_listener_registry;
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatures(
+      {features::kPartitionConnectionsByNetworkIsolationKey,
+       features::kIgnoreQuicCryptoConfigMemoryPressureForDoh},
+      {});
+  Initialize();
+
+  quic::QuicServerId doh_server_id("doh.example.com", 443);
+  quic::QuicServerId general_server_id("www.example.com", 443);
+
+  // 1. Create a config with DoH partition.
+  NetworkAnonymizationKey doh_nak =
+      NetworkAnonymizationKey::CreateEmptyWithPartition(
+          NetworkIsolationPartition::kDnsOverHttps);
+  QuicSessionPool::QuicCryptoClientConfigKey doh_key =
+      CreateTestQuicCryptoClientConfigKey(doh_nak);
+  std::unique_ptr<QuicCryptoClientConfigHandle> doh_handle =
+      QuicSessionPoolPeer::GetCryptoConfig(pool_.get(), doh_key);
+
+  // 2. Create a config with General partition.
+  NetworkAnonymizationKey general_nak =
+      NetworkAnonymizationKey::CreateEmptyWithPartition(
+          NetworkIsolationPartition::kGeneral);
+  QuicSessionPool::QuicCryptoClientConfigKey general_key =
+      CreateTestQuicCryptoClientConfigKey(general_nak);
+  std::unique_ptr<QuicCryptoClientConfigHandle> general_handle =
+      QuicSessionPoolPeer::GetCryptoConfig(pool_.get(), general_key);
+
+  // Populate session cache.
+  bssl::UniquePtr<SSL_SESSION> doh_session(
+      SSL_SESSION_new(doh_handle->GetConfig()->ssl_ctx()));
+  ASSERT_TRUE(doh_session);
+
+  bssl::UniquePtr<SSL_SESSION> general_session(
+      SSL_SESSION_new(general_handle->GetConfig()->ssl_ctx()));
+  ASSERT_TRUE(general_session);
+
+  quic::TransportParameters params;
+  doh_handle->GetConfig()->session_cache()->Insert(
+      doh_server_id, std::move(doh_session), params, nullptr);
+  general_handle->GetConfig()->session_cache()->Insert(
+      general_server_id, std::move(general_session), params, nullptr);
+
+  EXPECT_FALSE(QuicSessionPoolPeer::CryptoConfigSessionCacheIsEmpty(pool_.get(),
+                                                                    doh_key));
+  EXPECT_FALSE(QuicSessionPoolPeer::CryptoConfigSessionCacheIsEmpty(
+      pool_.get(), general_key));
+
+  // 3. Trigger memory pressure.
+  base::test::TestFuture<void> memory_pressure_future;
+  base::MemoryPressureListener::SimulatePressureNotificationAsync(
+      base::MemoryPressureLevel::MEMORY_PRESSURE_LEVEL_CRITICAL,
+      memory_pressure_future.GetCallback());
+  ASSERT_TRUE(memory_pressure_future.Wait());
+
+  // 4. Verify that DoH was NOT cleared and General WAS cleared.
+  EXPECT_FALSE(QuicSessionPoolPeer::CryptoConfigSessionCacheIsEmpty(pool_.get(),
+                                                                    doh_key));
+  EXPECT_TRUE(QuicSessionPoolPeer::CryptoConfigSessionCacheIsEmpty(
+      pool_.get(), general_key));
+}
+
+TEST_P(QuicSessionPoolTest, MemoryPressureWithFeatureDisabled) {
+  base::MemoryPressureListenerRegistry memory_pressure_listener_registry;
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatures(
+      {features::kPartitionConnectionsByNetworkIsolationKey},
+      {features::kIgnoreQuicCryptoConfigMemoryPressureForDoh});
+  Initialize();
+
+  quic::QuicServerId server_id("doh.example.com", 443);
+
+  NetworkAnonymizationKey doh_nak =
+      NetworkAnonymizationKey::CreateEmptyWithPartition(
+          NetworkIsolationPartition::kDnsOverHttps);
+  QuicSessionPool::QuicCryptoClientConfigKey doh_key =
+      CreateTestQuicCryptoClientConfigKey(doh_nak);
+  std::unique_ptr<QuicCryptoClientConfigHandle> doh_handle =
+      QuicSessionPoolPeer::GetCryptoConfig(pool_.get(), doh_key);
+
+  bssl::UniquePtr<SSL_SESSION> doh_session(
+      SSL_SESSION_new(doh_handle->GetConfig()->ssl_ctx()));
+  ASSERT_TRUE(doh_session);
+
+  quic::TransportParameters params;
+  doh_handle->GetConfig()->session_cache()->Insert(
+      server_id, std::move(doh_session), params, nullptr);
+  EXPECT_FALSE(QuicSessionPoolPeer::CryptoConfigSessionCacheIsEmpty(pool_.get(),
+                                                                    doh_key));
+
+  base::test::TestFuture<void> memory_pressure_future;
+  base::MemoryPressureListener::SimulatePressureNotificationAsync(
+      base::MemoryPressureLevel::MEMORY_PRESSURE_LEVEL_CRITICAL,
+      memory_pressure_future.GetCallback());
+  ASSERT_TRUE(memory_pressure_future.Wait());
+
+  // Now it should be cleared.
+  EXPECT_TRUE(QuicSessionPoolPeer::CryptoConfigSessionCacheIsEmpty(pool_.get(),
+                                                                   doh_key));
 }
 
 TEST_P(QuicSessionPoolTest, PooledWithDifferentIpSession) {
@@ -15363,6 +15474,131 @@ TEST_P(QuicSessionPoolTest,
   quic_data1.ExpectAllWriteDataConsumed();
   quic_data2.ExpectAllReadDataConsumed();
   quic_data2.ExpectAllWriteDataConsumed();
+}
+
+// Tests for CanUseExistingSessionForWebSocket().
+// Verifies that the method returns false when no QUIC session exists.
+TEST_P(QuicSessionPoolTest, CanUseExistingSessionForWebSocket_NoSessionExists) {
+  Initialize();
+
+  // No QUIC session has been created, so there's nothing to reuse.
+  EXPECT_FALSE(HasActiveSession(kDefaultDestination));
+
+  QuicSessionKey session_key(
+      kDefaultServerHostName, kDefaultServerPort, PRIVACY_MODE_DISABLED,
+      ProxyChain::Direct(), SessionUsage::kDestination, SocketTag(),
+      NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
+      /*require_dns_https_alpn=*/false,
+      /*disable_cert_verification_network_fetches=*/false);
+  EXPECT_FALSE(pool_->CanUseExistingSessionForWebSocket(session_key,
+                                                        kDefaultDestination));
+}
+
+// Verifies that the method returns false when a session exists but the server
+// has not advertised SETTINGS_ENABLE_CONNECT_PROTOCOL (Extended CONNECT).
+TEST_P(QuicSessionPoolTest,
+       CanUseExistingSessionForWebSocket_NoExtendedConnect) {
+  Initialize();
+  ProofVerifyDetailsChromium verify_details = DefaultProofVerifyDetails();
+  crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details);
+
+  // Set up a normal QUIC session (server does NOT send
+  // SETTINGS_ENABLE_CONNECT_PROTOCOL).
+  MockQuicData socket_data(version_);
+  socket_data.AddReadPauseForever();
+  socket_data.AddWrite(SYNCHRONOUS, ConstructInitialSettingsPacket());
+  socket_data.AddSocketDataToFactory(socket_factory_.get());
+
+  RequestBuilder builder(this);
+  EXPECT_EQ(ERR_IO_PENDING, builder.CallRequest());
+  EXPECT_THAT(callback_.WaitForResult(), IsOk());
+  std::unique_ptr<HttpStream> stream = CreateStream(&builder.request);
+  EXPECT_TRUE(stream.get());
+  EXPECT_TRUE(HasActiveSession(kDefaultDestination));
+
+  // The session exists but does NOT have Extended CONNECT support.
+  QuicChromiumClientSession* session = GetActiveSession(kDefaultDestination);
+  EXPECT_FALSE(session->allow_extended_connect());
+
+  QuicSessionKey session_key(
+      kDefaultServerHostName, kDefaultServerPort, PRIVACY_MODE_DISABLED,
+      ProxyChain::Direct(), SessionUsage::kDestination, SocketTag(),
+      NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
+      /*require_dns_https_alpn=*/false,
+      /*disable_cert_verification_network_fetches=*/false);
+  EXPECT_TRUE(pool_->CanUseExistingSession(session_key, kDefaultDestination));
+  EXPECT_FALSE(pool_->CanUseExistingSessionForWebSocket(session_key,
+                                                        kDefaultDestination));
+
+  socket_data.ExpectAllReadDataConsumed();
+  socket_data.ExpectAllWriteDataConsumed();
+}
+
+// Verifies that the method returns true when a session exists and the server
+// has advertised SETTINGS_ENABLE_CONNECT_PROTOCOL=1 (Extended CONNECT),
+// enabling WebSocket-over-HTTP/3.
+TEST_P(QuicSessionPoolTest,
+       CanUseExistingSessionForWebSocket_WithExtendedConnect) {
+  Initialize();
+  ProofVerifyDetailsChromium verify_details = DefaultProofVerifyDetails();
+  crypto_client_stream_factory_.AddProofVerifyDetails(&verify_details);
+
+  MockQuicData socket_data(version_);
+  socket_data.AddWrite(SYNCHRONOUS, ConstructInitialSettingsPacket());
+  // Pause reads so the session establishes fully before processing server data.
+  socket_data.AddReadPause();
+
+  // Construct a server SETTINGS frame containing
+  // SETTINGS_ENABLE_CONNECT_PROTOCOL=1. This simulates a server that supports
+  // Extended CONNECT (required for WebSocket-over-HTTP/3).
+  quic::SettingsFrame settings;
+  settings.values[quic::SETTINGS_ENABLE_CONNECT_PROTOCOL] = 1;
+  std::string settings_data =
+      quic::HttpEncoder::SerializeSettingsFrame(settings);
+  quic::QuicStreamId server_control_stream_id =
+      GetNthServerInitiatedUnidirectionalStreamId(0);
+  // The control stream type byte (0x00) precedes the SETTINGS frame.
+  std::string control_stream_data = std::string(1, 0x00) + settings_data;
+  socket_data.AddRead(
+      ASYNC, server_maker_.Packet(1)
+                 .AddStreamFrame(server_control_stream_id, /*fin=*/false,
+                                 control_stream_data)
+                 .Build());
+
+  // No need to model the client ACK -- adding it causes a
+  // `SequencedSocketData` ordering conflict. We only need the session to
+  // process the SETTINGS frame.
+  socket_data.AddReadPauseForever();
+  socket_data.AddSocketDataToFactory(socket_factory_.get());
+
+  RequestBuilder builder(this);
+  EXPECT_EQ(ERR_IO_PENDING, builder.CallRequest());
+  EXPECT_THAT(callback_.WaitForResult(), IsOk());
+  std::unique_ptr<HttpStream> stream = CreateStream(&builder.request);
+  EXPECT_TRUE(stream.get());
+  EXPECT_TRUE(HasActiveSession(kDefaultDestination));
+
+  // Before receiving server SETTINGS, Extended CONNECT is not yet available.
+  QuicChromiumClientSession* session = GetActiveSession(kDefaultDestination);
+  EXPECT_FALSE(session->allow_extended_connect());
+
+  // Resume the socket to deliver the server SETTINGS frame.
+  socket_data.Resume();
+  ASSERT_TRUE(base::test::RunUntil(
+      [&]() { return session->allow_extended_connect(); }));
+
+  QuicSessionKey session_key(
+      kDefaultServerHostName, kDefaultServerPort, PRIVACY_MODE_DISABLED,
+      ProxyChain::Direct(), SessionUsage::kDestination, SocketTag(),
+      NetworkAnonymizationKey(), SecureDnsPolicy::kAllow,
+      /*require_dns_https_alpn=*/false,
+      /*disable_cert_verification_network_fetches=*/false);
+  EXPECT_TRUE(pool_->CanUseExistingSession(session_key, kDefaultDestination));
+  EXPECT_TRUE(pool_->CanUseExistingSessionForWebSocket(session_key,
+                                                       kDefaultDestination));
+
+  socket_data.ExpectAllReadDataConsumed();
+  socket_data.ExpectAllWriteDataConsumed();
 }
 
 }  // namespace net::test

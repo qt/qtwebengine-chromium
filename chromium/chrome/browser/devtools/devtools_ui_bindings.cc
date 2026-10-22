@@ -22,7 +22,6 @@
 #include "base/json/string_escape.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/no_destructor.h"
 #include "base/notimplemented.h"
@@ -37,6 +36,7 @@
 #include "base/uuid.h"
 #include "base/values.h"
 #include "base/version_info/channel.h"
+#include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/browser_process.h"
@@ -103,6 +103,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
+#include "extensions/buildflags/buildflags.h"
 #include "google_apis/google_api_keys.h"
 #include "ipc/constants.mojom.h"
 #include "net/base/features.h"
@@ -131,20 +132,22 @@
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/user_education/browser_user_education_interface.h"
 #include "chrome/browser/user_education/user_education_service.h"
 #include "chrome/browser/user_education/user_education_service_factory.h"
 #endif
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 #include "chrome/browser/extensions/extension_management.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_util.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/manifest.h"
 #include "extensions/common/manifest_handlers/devtools_page_handler.h"
+#include "extensions/common/mojom/api_permission_id.mojom-shared.h"
 #include "extensions/common/permissions/permissions_data.h"
-#endif
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 
 using content::BrowserThread;
 
@@ -239,13 +242,14 @@ void DefaultBindingsDelegate::OpenInNewTab(const std::string& url) {
 #if BUILDFLAG(IS_ANDROID)
   NOTIMPLEMENTED();
 #else
-  Browser* browser = chrome::FindBrowserWithTab(web_contents_);
+  BrowserWindowInterface* browser = chrome::FindBrowserWithTab(web_contents_);
   // Check if the browser is still alive, as it might have been closed in the
   // meantime.
   // TODO(https://crbug.com/403946437): We should definitely understand why this
   // happens.
   if (browser) {
-    browser->OpenURL(params, /*navigation_handle_callback=*/{});
+    browser->GetBrowserForMigrationOnly()->OpenURL(
+        params, /*navigation_handle_callback=*/{});
   }
 #endif
 }
@@ -255,16 +259,17 @@ void DefaultBindingsDelegate::OpenSearchResultsInNewTab(
 #if BUILDFLAG(IS_ANDROID)
   NOTIMPLEMENTED();
 #else
-  Browser* browser = chrome::FindBrowserWithTab(web_contents_);
+  BrowserWindowInterface* browser = chrome::FindBrowserWithTab(web_contents_);
   TemplateURLService* url_service =
-      TemplateURLServiceFactory::GetForProfile(browser->profile());
+      TemplateURLServiceFactory::GetForProfile(browser->GetProfile());
   DCHECK(url_service);
   GURL url =
       GetDefaultSearchURLForSearchTerms(url_service, base::UTF8ToUTF16(query));
   content::OpenURLParams params(GURL(url), content::Referrer(),
                                 WindowOpenDisposition::NEW_FOREGROUND_TAB,
                                 ui::PAGE_TRANSITION_LINK, false);
-  browser->OpenURL(params, /*navigation_handle_callback=*/{});
+  browser->GetBrowserForMigrationOnly()->OpenURL(
+      params, /*navigation_handle_callback=*/{});
 #endif
 }
 
@@ -781,6 +786,10 @@ std::string DevToolsUIBindings::GetTypeForMetrics() {
   return "DevTools";
 }
 
+bool DevToolsUIBindings::MayAccessAllCookies() {
+  return true;
+}
+
 namespace {
 bool IsAnyAidaPoweredFeatureEnabled() {
   return base::FeatureList::IsEnabled(::features::kDevToolsConsoleInsights) ||
@@ -791,9 +800,12 @@ bool IsAnyAidaPoweredFeatureEnabled() {
              ::features::kDevToolsAiAssistanceNetworkAgent) ||
          base::FeatureList::IsEnabled(
              ::features::kDevToolsAiAssistancePerformanceAgent) ||
+         base::FeatureList::IsEnabled(::features::kDevToolsAiCodeCompletion) ||
+         base::FeatureList::IsEnabled(::features::kDevToolsAiCodeGeneration) ||
          base::FeatureList::IsEnabled(
-             ::features::kDevToolsAiCodeCompletion) ||
-         base::FeatureList::IsEnabled(::features::kDevToolsAiCodeGeneration);
+             ::features::kDevToolsAiCodeCompletionStyles) ||
+         base::FeatureList::IsEnabled(
+             ::features::kDevToolsAiAssistanceAccessibilityAgent);
 }
 }  // namespace
 
@@ -1845,6 +1857,16 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
   }
 
   if (base::FeatureList::IsEnabled(
+          ::features::kDevToolsAiAssistanceAccessibilityAgent)) {
+    base::DictValue accessibility_agent_dict;
+    accessibility_agent_dict.Set(
+        "enabled", base::FeatureList::IsEnabled(
+                       ::features::kDevToolsAiAssistanceAccessibilityAgent));
+    response_dict.Set("devToolsAiAssistanceAccessibilityAgent",
+                      std::move(accessibility_agent_dict));
+  }
+
+  if (base::FeatureList::IsEnabled(
           ::features::kDevToolsAiAssistancePerformanceAgent)) {
     base::DictValue ai_assistance_performance_agent_dict;
     ai_assistance_performance_agent_dict.Set(
@@ -1901,9 +1923,8 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
     ai_code_completion_dict.Set(
         "temperature", features::kDevToolsAiCodeCompletionTemperature.Get());
     ai_code_completion_dict.Set(
-        "userTier",
-        features::kDevToolsAiCodeCompletionUserTier.GetName(
-            features::kDevToolsAiCodeCompletionUserTier.Get()));
+        "userTier", features::kDevToolsAiCodeCompletionUserTier.GetName(
+                        features::kDevToolsAiCodeCompletionUserTier.Get()));
     response_dict.Set("devToolsAiCodeCompletion",
                       std::move(ai_code_completion_dict));
   }
@@ -1918,22 +1939,37 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
     ai_code_generation_dict.Set(
         "temperature", features::kDevToolsAiCodeGenerationTemperature.Get());
     ai_code_generation_dict.Set(
-        "userTier",
-        features::kDevToolsAiCodeGenerationUserTier.GetName(
-            features::kDevToolsAiCodeGenerationUserTier.Get()));
+        "userTier", features::kDevToolsAiCodeGenerationUserTier.GetName(
+                        features::kDevToolsAiCodeGenerationUserTier.Get()));
     response_dict.Set("devToolsAiCodeGeneration",
                       std::move(ai_code_generation_dict));
   }
 
   if (base::FeatureList::IsEnabled(
-          ::features::kDevToolsEnableDurableMessages)) {
-    base::DictValue devtools_durable_message_dict;
-    devtools_durable_message_dict.Set(
-        "enabled",
-        base::FeatureList::IsEnabled(features::kDevToolsEnableDurableMessages));
-    response_dict.Set("devToolsEnableDurableMessages",
-                      std::move(devtools_durable_message_dict));
+          ::features::kDevToolsAiCodeCompletionStyles)) {
+    base::DictValue ai_code_completion_styles_dict;
+    ai_code_completion_styles_dict.Set(
+        "enabled", base::FeatureList::IsEnabled(
+                       ::features::kDevToolsAiCodeCompletionStyles));
+    ai_code_completion_styles_dict.Set(
+        "modelId", features::kDevToolsAiCodeCompletionStylesModelId.Get());
+    ai_code_completion_styles_dict.Set(
+        "temperature",
+        features::kDevToolsAiCodeCompletionStylesTemperature.Get());
+    ai_code_completion_styles_dict.Set(
+        "userTier",
+        features::kDevToolsAiCodeCompletionStylesUserTier.GetName(
+            features::kDevToolsAiCodeCompletionStylesUserTier.Get()));
+    response_dict.Set("devToolsAiCodeCompletionStyles",
+                      std::move(ai_code_completion_styles_dict));
   }
+
+  response_dict.Set(
+      "devToolsEnableDurableMessages",
+      base::DictValue().Set(
+          "enabled",
+          GetFeatureStateForDevTools(::features::kDevToolsEnableDurableMessages,
+                                     enabled_by_flags, disabled_by_flags)));
 
   base::DictValue devtools_well_known_dict;
   devtools_well_known_dict.Set(
@@ -1947,46 +1983,6 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
 
   response_dict.Set("isOffTheRecord", profile->IsOffTheRecord());
 
-  base::DictValue devtools_privacy_ui_dict;
-  devtools_privacy_ui_dict.Set(
-      "enabled", base::FeatureList::IsEnabled(::features::kDevToolsPrivacyUI));
-  response_dict.Set("devToolsPrivacyUI", std::move(devtools_privacy_ui_dict));
-
-  if (base::FeatureList::IsEnabled(features::kDevToolsPrivacyUI)) {
-    base::DictValue third_party_cookie_controls_dict;
-    third_party_cookie_controls_dict.Set(
-        "thirdPartyCookieRestrictionEnabled",
-        base::FeatureList::IsEnabled(
-            content_settings::features::kTrackingProtection3pcd));
-
-    third_party_cookie_controls_dict.Set(
-        "thirdPartyCookieMetadataEnabled",
-        base::FeatureList::IsEnabled(net::features::kTpcdMetadataGrants));
-    third_party_cookie_controls_dict.Set(
-        "thirdPartyCookieHeuristicsEnabled",
-        base::FeatureList::IsEnabled(
-            content_settings::features::kTpcdHeuristicsGrants));
-
-    policy::PolicyService* policy_service =
-        profile->GetProfilePolicyConnector()->policy_service();
-    CHECK(policy_service);
-    const policy::PolicyMap& policies = policy_service->GetPolicies(
-        policy::PolicyNamespace(policy::POLICY_DOMAIN_CHROME, std::string()));
-    const base::Value* block_third_party_cookies = policies.GetValue(
-        policy::key::kBlockThirdPartyCookies, base::Value::Type::BOOLEAN);
-    if (block_third_party_cookies && block_third_party_cookies->is_bool()) {
-      third_party_cookie_controls_dict.Set(
-          "managedBlockThirdPartyCookies",
-          block_third_party_cookies->GetBool());
-    } else {
-      third_party_cookie_controls_dict.Set("managedBlockThirdPartyCookies",
-                                           "Unset");
-    }
-    // TODO: Add enterprise policy CookiesAllowedForUrls.
-
-    response_dict.Set("thirdPartyCookieControls",
-                      std::move(third_party_cookie_controls_dict));
-  }
   base::DictValue origin_bound_cookies_dict;
   origin_bound_cookies_dict.Set(
       "portBindingEnabled",
@@ -2011,6 +2007,16 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
     response_dict.Set("devToolsAnimationStylesInStylesTab",
                       std::move(devtools_animation_styles_in_styles_tab_dict));
   }
+
+#if BUILDFLAG(ENABLE_JXL_DECODER)
+  const bool jpeg_xl_image_format_enabled =
+      base::FeatureList::IsEnabled(blink::features::kJXLImageFormat);
+#else
+  const bool jpeg_xl_image_format_enabled = false;
+#endif
+  response_dict.Set(
+      "devToolsJpegXlImageFormat",
+      base::DictValue().Set("enabled", jpeg_xl_image_format_enabled));
 
   base::DictValue deep_links_via_extensibility_api_dict;
   deep_links_via_extensibility_api_dict.Set(
@@ -2066,6 +2072,11 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
     response_dict.Set("devToolsGdpProfiles", std::move(gdp_profiles_dict));
   }
 
+  response_dict.Set(
+      "devToolsUseGcaApi",
+      base::DictValue().Set("enabled", base::FeatureList::IsEnabled(
+                                           ::features::kDevToolsUseGcaApi)));
+
   base::DictValue gdp_profiles_availability_dict;
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   gdp_profiles_availability_dict.Set("enabled", true);
@@ -2084,25 +2095,12 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
       base::DictValue().Set("enabled", base::FeatureList::IsEnabled(
                                            ::features::kDevToolsLiveEdit)));
 
-  response_dict.Set(
-      "devToolsIndividualRequestThrottling",
-      base::DictValue().Set(
-          "enabled", base::FeatureList::IsEnabled(
-                         ::features::kDevToolsIndividualRequestThrottling)));
-
   base::DictValue device_bound_sessions_debugging;
   device_bound_sessions_debugging.Set(
       "enabled",
       base::FeatureList::IsEnabled(features::kDeviceBoundSessionsDevTools));
   response_dict.Set("deviceBoundSessionsDebugging",
                     std::move(device_bound_sessions_debugging));
-
-  base::DictValue prompt_api_dict;
-  prompt_api_dict.Set("enabled", base::FeatureList::IsEnabled(
-                                     ::features::kDevToolsAiPromptApi));
-  prompt_api_dict.Set("allowWithoutGpu",
-                      features::kDevToolsAiPromptApiAllowWithoutGpu.Get());
-  response_dict.Set("devToolsAiPromptApi", std::move(prompt_api_dict));
 
   if (base::FeatureList::IsEnabled(
           ::features::kDevToolsAiAssistanceContextSelectionAgent)) {
@@ -2134,6 +2132,12 @@ base::DictValue DevToolsUIBindings::GetHostConfigDictionary(Profile* profile) {
                     base::DictValue().Set(
                         "enabled", base::FeatureList::IsEnabled(
                                        ::features::kDevToolsGeminiRebranding)));
+
+  response_dict.Set(
+      "devToolsWebMCPSupport",
+      base::DictValue().Set("enabled",
+                            base::FeatureList::IsEnabled(
+                                blink::features::kDevToolsWebMCPSupport)));
 
   return response_dict;
 }
@@ -2655,7 +2659,7 @@ void DevToolsUIBindings::OnPermissionDialogResult(
 }
 
 void DevToolsUIBindings::AddDevToolsExtensionsToClient() {
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   const extensions::ExtensionRegistry* registry =
       extensions::ExtensionRegistry::Get(profile_->GetOriginalProfile());
   if (!registry) {
@@ -2664,10 +2668,10 @@ void DevToolsUIBindings::AddDevToolsExtensionsToClient() {
 
   base::ListValue results;
   base::ListValue forbidden_origins;
-  bool have_user_installed_devtools_extensions = false;
   extensions::ExtensionManagement* management =
       extensions::ExtensionManagementFactory::GetForBrowserContext(
           web_contents_->GetBrowserContext());
+
   forbidden_origins.Append(
       url::Origin::Create(search::GetNewTabPageURL(profile_)).Serialize());
   for (const scoped_refptr<const extensions::Extension>& extension :
@@ -2719,25 +2723,13 @@ void DevToolsUIBindings::AddDevToolsExtensionsToClient() {
             .Set("runtimeAllowedHosts", std::move(runtime_allowed_hosts))
             .Set("runtimeBlockedHosts", std::move(runtime_blocked_hosts)));
     results.Append(std::move(extension_info));
-
-    if (!(extensions::Manifest::IsPolicyLocation(extension->location()) ||
-          extensions::Manifest::IsComponentLocation(extension->location()))) {
-      have_user_installed_devtools_extensions = true;
-    }
-  }
-
-  if (have_user_installed_devtools_extensions) {
-    bool is_developer_mode =
-        profile_->GetPrefs()->GetBoolean(prefs::kExtensionsUIDeveloperMode);
-    base::UmaHistogramBoolean("Extensions.DevTools.UserIsInDeveloperMode",
-                              is_developer_mode);
   }
 
   CallClientMethod("DevToolsAPI", "setOriginsForbiddenForExtensions",
                    base::Value(std::move(forbidden_origins)));
   CallClientMethod("DevToolsAPI", "addExtensions",
                    base::Value(std::move(results)));
-#endif
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 }
 
 void DevToolsUIBindings::RegisterExtensionsAPI(const std::string& origin,

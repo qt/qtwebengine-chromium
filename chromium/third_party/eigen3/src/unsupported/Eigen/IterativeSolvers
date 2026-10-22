@@ -78,6 +78,7 @@
 #include "../../Eigen/src/Core/util/DisableStupidWarnings.h"
 
 // IWYU pragma: begin_exports
+#include "src/IterativeSolvers/Scaling.h"
 #include "src/IterativeSolvers/IncompleteLU.h"
 #include "src/IterativeSolvers/GMRES.h"
 #include "src/IterativeSolvers/DGMRES.h"

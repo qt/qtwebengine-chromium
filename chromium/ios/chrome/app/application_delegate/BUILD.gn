@@ -153,7 +153,7 @@ source_set("app_state") {
     "//base",
     "//ios/chrome/app",
     "//ios/chrome/app:task_names",
-    "//ios/chrome/app:tasks_handling",
+    "//ios/chrome/app:tasks_handling_header",
     "//ios/chrome/app/background_refresh:headers",
     "//ios/chrome/browser/crash_report/model",
     "//ios/chrome/browser/device_orientation/ui_bundled",
@@ -262,11 +262,11 @@ source_set("test_support") {
     "app_init_stage_test_utils.h",
     "fake_startup_information.h",
     "fake_startup_information.mm",
+    "fake_tab_opener.h",
+    "fake_tab_opener.mm",
     "metrics_mediator_testing.h",
     "mock_metrickit_metric_payload.h",
     "mock_metrickit_metric_payload.mm",
-    "mock_tab_opener.h",
-    "mock_tab_opener.mm",
   ]
   deps = [
     ":app_init_stage",

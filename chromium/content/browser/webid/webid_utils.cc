@@ -16,6 +16,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/runtime_feature_state/runtime_feature_state_document_data.h"
+#include "content/public/browser/webid/federated_embedder_login_request.h"
 #include "content/public/browser/webid/federated_identity_api_permission_context_delegate.h"
 #include "content/public/browser/webid/federated_identity_permission_context_delegate.h"
 #include "content/public/common/web_identity.h"
@@ -51,22 +52,40 @@ bool IsSameSiteWithAncestors(const url::Origin& origin,
 }
 
 void SetIdpSigninStatus(content::BrowserContext* context,
+                        network::mojom::RequestDestination destination,
                         FrameTreeNodeId frame_tree_node_id,
-                        const url::Origin& origin,
+                        const std::optional<url::Origin>& initiator,
+                        const url::Origin& idp_origin,
                         blink::mojom::IdpSigninStatus status) {
   FrameTreeNode* frame_tree_node = nullptr;
   // frame_tree_node_id may be invalid if we are loading the first frame
-  // of the tab.
+  // of the tab, but check the destination because we don't want to allow
+  // Set-Login subresource headers if we don't have a frame to check.
+  // This is because we want to ensure that Set-Login is only used by
+  // the same-site origin or a top-level navigation.
+  if (!frame_tree_node_id &&
+      destination != network::mojom::RequestDestination::kDocument) {
+    return;
+  }
   if (frame_tree_node_id) {
     frame_tree_node = FrameTreeNode::GloballyFindByID(frame_tree_node_id);
     // If the id was valid, but the lookup failed, we ignore the load because we
-    // cannot do same-origin checks.
+    // cannot do same-site checks.
     if (!frame_tree_node) {
       RecordSetLoginStatusIgnoredReason(
           SetLoginStatusIgnoredReason::kFrameTreeLookupFailed);
       return;
     }
   }
+
+  if (destination != network::mojom::RequestDestination::kDocument) {
+    if (!initiator || !net::SchemefulSite::IsSameSite(idp_origin, *initiator)) {
+      RecordSetLoginStatusIgnoredReason(
+          SetLoginStatusIgnoredReason::kCrossOrigin);
+      return;
+    }
+  }
+
   // Make sure we're same-origin with our ancestors.
   if (frame_tree_node) {
     if (frame_tree_node->IsInFencedFrameTree()) {
@@ -75,7 +94,7 @@ void SetIdpSigninStatus(content::BrowserContext* context,
       return;
     }
 
-    if (!IsSameSiteWithAncestors(origin, frame_tree_node->parent())) {
+    if (!IsSameSiteWithAncestors(idp_origin, frame_tree_node->parent())) {
       RecordSetLoginStatusIgnoredReason(
           SetLoginStatusIgnoredReason::kCrossOrigin);
       return;
@@ -88,7 +107,8 @@ void SetIdpSigninStatus(content::BrowserContext* context,
     return;
   }
   delegate->SetIdpSigninStatus(
-      origin, status == blink::mojom::IdpSigninStatus::kSignedIn, std::nullopt);
+      idp_origin, status == blink::mojom::IdpSigninStatus::kSignedIn,
+      std::nullopt);
 }
 
 std::optional<std::string> ComputeConsoleMessageForHttpResponseCode(
@@ -218,20 +238,6 @@ std::string GetConsoleErrorMessageFromResult(
       return "Provider's FedCM config file content type must be a JSON content "
              "type.";
     }
-    case FederatedAuthRequestResult::kClientMetadataHttpNotFound: {
-      return "The provider's client metadata endpoint cannot be found.";
-    }
-    case FederatedAuthRequestResult::kClientMetadataNoResponse: {
-      return "The provider's client metadata fetch resulted in an error "
-             "response code.";
-    }
-    case FederatedAuthRequestResult::kClientMetadataInvalidResponse: {
-      return "Provider's client metadata is invalid.";
-    }
-    case FederatedAuthRequestResult::kClientMetadataInvalidContentType: {
-      return "Provider's client metadata content type must be a JSON content "
-             "type.";
-    }
     case FederatedAuthRequestResult::kAccountsHttpNotFound: {
       return "The provider's accounts list endpoint cannot be found.";
     }
@@ -284,13 +290,6 @@ std::string GetConsoleErrorMessageFromResult(
       return "Silent mediation was requested, but the conditions to achieve it "
              "were not met.";
     }
-    case FederatedAuthRequestResult::kThirdPartyCookiesBlocked: {
-      return "Third party cookies are blocked. Right now the Chromium "
-             "implementation of FedCM API requires third party cookies and "
-             "this restriction will be removed soon. In the interim, to test "
-             "FedCM without third-party cookies, enable the "
-             "#fedcm-without-third-party-cookies flag.";
-    }
     case FederatedAuthRequestResult::kMissingTransientUserActivation: {
       return "FedCM active mode requires transient user activation.";
     }
@@ -299,9 +298,6 @@ std::string GetConsoleErrorMessageFromResult(
     }
     case FederatedAuthRequestResult::kNotSignedInWithIdp: {
       return "Not signed in with the identity provider.";
-    }
-    case FederatedAuthRequestResult::kInvalidFieldsSpecified: {
-      return "Invalid 'fields' were specified in the FedCM call.";
     }
     case FederatedAuthRequestResult::kRelyingPartyOriginIsOpaque: {
       return "FedCM is not supported on an opaque origin.";
@@ -401,7 +397,7 @@ std::string GetDisconnectConsoleErrorMessage(
   }
 }
 
-std::string FormatUrlForDisplay(const GURL& url) {
+std::string FormatUrlToSite(const GURL& url) {
   // We do not use url_formatter::FormatUrlForSecurityDisplay() directly because
   // our UI intentionally shows only the eTLD+1, as it makes for a shorter text
   // that is also clearer to users. The identity provider's well-known file is
@@ -481,6 +477,14 @@ bool DidNavigationHandleHaveActivation(NavigationHandle* handle) {
 perfetto::NamedTrack CreatePerfettoTrackForFedCM(void* class_pointer) {
   return perfetto::NamedTrack::ThreadScoped(
       "FedCM", reinterpret_cast<uintptr_t>(class_pointer));
+}
+
+bool HasEmbedderLoginRequest(RenderFrameHost* rfh) {
+  if (!rfh) {
+    return false;
+  }
+  return !!FederatedEmbedderLoginRequest::Get(
+      WebContents::FromRenderFrameHost(rfh));
 }
 
 }  // namespace content::webid

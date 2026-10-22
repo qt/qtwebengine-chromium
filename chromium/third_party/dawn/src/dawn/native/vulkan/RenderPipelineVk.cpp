@@ -350,37 +350,79 @@ Ref<RenderPipeline> RenderPipeline::CreateUninitialized(
 }
 
 MaybeError RenderPipeline::InitializeImpl() {
-    Device* device = ToBackend(GetDevice());
-    PipelineLayout* layout = ToBackend(GetLayout());
+    // Gather list of internal immediate constants used by this pipeline
+    if ((NeedsPixelCenterPolyfill() || UsesFragDepth()) && !HasUnclippedDepth()) {
+        mImmediateMask |= GetImmediateConstantBlockBits(
+            offsetof(RenderImmediateConstants, clampFragDepth), sizeof(ClampFragDepthArgs));
+    }
+
+    if (GetDevice()->NeedsStaticSamplerForExternalTexture() && GetLayout()->HasExternalTextures()) {
+        DAWN_ASSERT(!GetLayout()->HasAPIStaticSamplers());
+        mRequiresSpecialization = true;
+    }
 
     // The cache key is only used for storing VkPipelineCache objects in BlobStore. That's not
     // done with the monolithic pipeline cache so it's unnecessary work and memory usage.
     bool buildCacheKey =
-        !device->GetTogglesState().IsEnabled(Toggle::VulkanMonolithicPipelineCache);
+        !GetDevice()->GetTogglesState().IsEnabled(Toggle::VulkanMonolithicPipelineCache);
+
+    Specialization specialization = {
+        .layout = {.pushConstantBytes = ToPushConstantBytes(mImmediateMask)},
+    };
+
+    SpecializationResult r;
+    DAWN_TRY_ASSIGN(r, InitializeSpecialization(specialization, buildCacheKey));
+    mHandles = {.pipeline = r.pipeline->Get(), .layout = r.layout->Get()};
+
+    mSpecializations.emplace(std::move(specialization), std::move(r));
+
+    return {};
+}
+
+ResultOrError<PipelineHandles> RenderPipeline::GetOrCreateSpecializedHandle(
+    Specialization&& specializationIn) {
+    Specialization specialization = specializationIn;
+    specialization.layout.pushConstantBytes = ToPushConstantBytes(mImmediateMask);
+
+    if (auto it = mSpecializations.find(specialization); it != mSpecializations.end()) {
+        return PipelineHandles{.pipeline = it->second.pipeline->Get(),
+                               .layout = it->second.layout->Get()};
+    }
+
+    // Do no make a new cache key, so that the VkPipelineCache from InitializeImpl is used for all
+    // specializations.
+    SpecializationResult r;
+    DAWN_TRY_ASSIGN(r, InitializeSpecialization(specialization, /*buildCacheKey=*/false));
+
+    auto handles = PipelineHandles{.pipeline = r.pipeline->Get(), .layout = r.layout->Get()};
+
+    mSpecializations.emplace(std::move(specialization), std::move(r));
+    return handles;
+}
+
+ResultOrError<RenderPipeline::SpecializationResult> RenderPipeline::InitializeSpecialization(
+    const Specialization& specialization,
+    bool buildCacheKey) {
+    Device* device = ToBackend(GetDevice());
+    PipelineLayout* layout = ToBackend(GetLayout());
+
     if (buildCacheKey) {
         // Vulkan devices need cache UUID field to be serialized into pipeline cache keys.
         StreamIn(&mCacheKey, device->GetDeviceInfo().properties.pipelineCacheUUID);
     }
 
-    // Gather list of internal immediate constants used by this pipeline
-    bool isSampled = (GetSampleCount() > 1u) && UsesFragPosition() &&
-                     (IsFragMultiSampled() || UsesSampleIndex());
-    if ((isSampled || UsesFragDepth()) && !HasUnclippedDepth()) {
-        mImmediateMask |= GetImmediateConstantBlockBits(
-            offsetof(RenderImmediateConstants, clampFragDepth), sizeof(ClampFragDepthArgs));
-    }
+    SpecializationResult result;
+    DAWN_TRY_ASSIGN(result.layout,
+                    layout->GetOrCreateVkLayoutObject(std::move(specialization.layout)));
 
     // There are at most 2 shader stages in render pipeline, i.e. vertex and fragment
     std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
     uint32_t stageCount = 0;
 
-    auto AddShaderStage = [&](SingleShaderStage stage, bool emitPointSize) -> MaybeError {
-        const ProgrammableStage& programmableStage = GetStage(stage);
+    auto AddShaderStage = [&](const ShaderModule::CompileParameters& compileParams) -> MaybeError {
         ShaderModule::ModuleAndSpirv moduleAndSpirv;
         DAWN_TRY_ASSIGN(moduleAndSpirv,
-                        ToBackend(programmableStage.module)
-                            ->GetHandleAndSpirv(stage, programmableStage, layout, emitPointSize,
-                                                isSampled, GetImmediateMask()));
+                        ToBackend(compileParams.stage->module)->GetHandleAndSpirv(compileParams));
         mHasInputAttachment = mHasInputAttachment || moduleAndSpirv.hasInputAttachment;
         if (buildCacheKey) {
             // Record cache key for each shader since it will become inaccessible later on.
@@ -393,7 +435,7 @@ MaybeError RenderPipeline::InitializeImpl() {
         shaderStage->pNext = nullptr;
         shaderStage->flags = 0;
         shaderStage->pSpecializationInfo = nullptr;
-        shaderStage->stage = VulkanShaderStage(stage);
+        shaderStage->stage = VulkanShaderStage(compileParams.stage->metadata->stage);
         // string_view returned by GetIsolatedEntryPointName() points to a null-terminated string.
         shaderStage->pName = device->GetIsolatedEntryPointName().data();
 
@@ -402,13 +444,25 @@ MaybeError RenderPipeline::InitializeImpl() {
     };
 
     // Add the vertex stage that's always present.
-    DAWN_TRY(AddShaderStage(SingleShaderStage::Vertex,
-                            GetPrimitiveTopology() == wgpu::PrimitiveTopology::PointList));
+    DAWN_TRY(AddShaderStage({
+        .stage = &GetStage(SingleShaderStage::Vertex),
+        .layout = layout,
+        .immediateMask = GetImmediateMask(),
+        .ycbcrExternalTextures = &specialization.ycbcrExternalTextures,
+        .emitPointSize = GetPrimitiveTopology() == wgpu::PrimitiveTopology::PointList,
+        .polyfillPixelCenter = NeedsPixelCenterPolyfill(),
+    }));
 
     // Add the fragment stage if present.
     if (GetStageMask() & wgpu::ShaderStage::Fragment) {
-        DAWN_TRY(AddShaderStage(SingleShaderStage::Fragment,
-                                /*emitPointSize*/ false));
+        DAWN_TRY(AddShaderStage({
+            .stage = &GetStage(SingleShaderStage::Fragment),
+            .layout = layout,
+            .immediateMask = GetImmediateMask(),
+            .ycbcrExternalTextures = &specialization.ycbcrExternalTextures,
+            .polyfillPixelCenter = NeedsPixelCenterPolyfill(),
+            .needsMultisampledFramebufferFetch = UseSampleRateShading() && UsesFramebufferFetch(),
+        }));
     }
 
     PipelineVertexInputStateCreateInfoTemporaryAllocations tempAllocations;
@@ -534,8 +588,6 @@ MaybeError RenderPipeline::InitializeImpl() {
     dynamic.dynamicStateCount = sizeof(dynamicStates) / sizeof(dynamicStates[0]);
     dynamic.pDynamicStates = dynamicStates;
 
-    DAWN_TRY(PipelineVk::InitializeBase(layout, mImmediateMask));
-
     // The create info chains in a bunch of things created on the stack here or inside state
     // objects.
     VkGraphicsPipelineCreateInfo createInfo;
@@ -554,7 +606,7 @@ MaybeError RenderPipeline::InitializeImpl() {
     createInfo.pColorBlendState =
         (GetStageMask() & wgpu::ShaderStage::Fragment) ? &colorBlend : nullptr;
     createInfo.pDynamicState = &dynamic;
-    createInfo.layout = GetVkLayout();
+    createInfo.layout = result.layout->Get();
     createInfo.basePipelineHandle = VkPipeline{};
     createInfo.basePipelineIndex = -1;
     PNextChainBuilder createInfoChain(&createInfo);
@@ -563,7 +615,7 @@ MaybeError RenderPipeline::InitializeImpl() {
     VkPipelineRenderingCreateInfoKHR pipelineRenderingCreateInfo;
     PerColorAttachment<VkFormat> colorAttachmentFormats;
 
-    if (device->IsToggleEnabled(Toggle::VulkanUseDynamicRendering)) {
+    if (device->GetRenderPassType() == VulkanRenderPassType::DynamicRendering) {
         // Dynamic rendering doesn't need a VkRenderPass object, just a description of the
         // attachments formats that will be used with this pipeline.
         VkRenderPass nullRenderPass = VK_NULL_HANDLE;
@@ -604,8 +656,6 @@ MaybeError RenderPipeline::InitializeImpl() {
                 pipelineRenderingCreateInfo.stencilAttachmentFormat = vkDsFormat;
             }
         }
-
-        // TODO(crbug.com/463893794): Handle ExpandResolveTexture.
     } else {
         // Get a VkRenderPass that matches the attachment formats for this pipeline.
         // VkRenderPass compatibility rules let us provide placeholder data for a bunch of
@@ -686,18 +736,22 @@ MaybeError RenderPipeline::InitializeImpl() {
         }
     }
 
+    // Record cache key information now since createInfo is not stored. Only store for the noop
+    // specialization created in InitializeImpl so that future specializations use the same pipeline
+    // cache, and may reuse the VkPipeline when they happen to be the same on the driver side.
     if (buildCacheKey) {
-        // Record cache key information now since createInfo is not stored.
         StreamIn(&mCacheKey, createInfo, layout->GetCacheKey());
     }
 
     // Try to see if we have anything in the blob cache.
     platform::metrics::DawnHistogramTimer cacheTimer(GetDevice()->GetPlatform());
     Ref<PipelineCache> cache = ToBackend(GetDevice()->GetOrCreatePipelineCache(GetCacheKey()));
+    VkPipeline pipeline;
     DAWN_TRY(
         CheckVkSuccess(device->fn.CreateGraphicsPipelines(device->GetVkDevice(), cache->GetHandle(),
-                                                          1, &createInfo, nullptr, &*mHandle),
+                                                          1, &createInfo, nullptr, &*pipeline),
                        "CreateGraphicsPipelines"));
+    result.pipeline = AcquireRef(new RefCountedVkHandle<VkPipeline>(device, pipeline));
     cacheTimer.RecordMicroseconds(cache->CacheHit() ? "Vulkan.CreateGraphicsPipelines.CacheHit"
                                                     : "Vulkan.CreateGraphicsPipelines.CacheMiss");
 
@@ -709,11 +763,11 @@ MaybeError RenderPipeline::InitializeImpl() {
         device->fn.DestroyShaderModule(device->GetVkDevice(), shaderStages[i].module, nullptr);
     }
 
-    return {};
+    return result;
 }
 
 void RenderPipeline::SetLabelImpl() {
-    SetDebugName(ToBackend(GetDevice()), mHandle, "Dawn_RenderPipeline", GetLabel());
+    SetDebugName(ToBackend(GetDevice()), mHandles.pipeline, "Dawn_RenderPipeline", GetLabel());
 }
 
 VkPipelineVertexInputStateCreateInfo RenderPipeline::ComputeVertexInputDesc(
@@ -808,15 +862,29 @@ RenderPipeline::~RenderPipeline() = default;
 
 void RenderPipeline::DestroyImpl(DestroyReason reason) {
     RenderPipelineBase::DestroyImpl(reason);
-    PipelineVk::DestroyImpl(reason);
-    if (mHandle != VK_NULL_HANDLE) {
-        ToBackend(GetDevice())->GetFencedDeleter()->DeleteWhenUnused(mHandle);
-        mHandle = VK_NULL_HANDLE;
-    }
+
+    mSpecializations.clear();
+
+    // Handles were owned by refs in mSpecializations that were just deleted.
+    mHandles = {};
+}
+
+bool RenderPipeline::NeedsPixelCenterPolyfill() const {
+    return UseSampleRateShading() && UsesFragPosition();
+}
+
+bool RenderPipeline::RequiresSpecialization() const {
+    return mRequiresSpecialization;
 }
 
 VkPipeline RenderPipeline::GetHandle() const {
-    return mHandle;
+    DAWN_ASSERT(mHandles.pipeline != VK_NULL_HANDLE);
+    return mHandles.pipeline;
+}
+
+VkPipelineLayout RenderPipeline::GetVkLayout() const {
+    DAWN_ASSERT(mHandles.layout != nullptr);
+    return mHandles.layout;
 }
 
 }  // namespace dawn::native::vulkan

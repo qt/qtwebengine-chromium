@@ -351,6 +351,10 @@ export class TargetBase {
     return this.getAgent('CacheStorage');
   }
 
+  crashReportContextAgent(): ProtocolProxyApi.CrashReportContextApi {
+    return this.getAgent('CrashReportContext');
+  }
+
   cssAgent(): ProtocolProxyApi.CSSApi {
     return this.getAgent('CSS');
   }
@@ -491,6 +495,10 @@ export class TargetBase {
     return this.getAgent('WebAuthn');
   }
 
+  webMCPAgent(): ProtocolProxyApi.WebMCPApi {
+    return this.getAgent('WebMCP');
+  }
+
   // Dispatcher registration and de-registration, keep alphabetically sorted.
 
   /**
@@ -557,6 +565,10 @@ export class TargetBase {
 
   registerDOMStorageDispatcher(dispatcher: ProtocolProxyApi.DOMStorageDispatcher): void {
     this.registerDispatcher('DOMStorage', dispatcher);
+  }
+
+  registerEmulationDispatcher(dispatcher: ProtocolProxyApi.EmulationDispatcher): void {
+    this.registerDispatcher('Emulation', dispatcher);
   }
 
   registerFetchDispatcher(dispatcher: ProtocolProxyApi.FetchDispatcher): void {
@@ -633,6 +645,10 @@ export class TargetBase {
 
   registerWebAuthnDispatcher(dispatcher: ProtocolProxyApi.WebAuthnDispatcher): void {
     this.registerDispatcher('WebAuthn', dispatcher);
+  }
+
+  registerWebMCPDispatcher(dispatcher: ProtocolProxyApi.WebMCPDispatcher): void {
+    this.registerDispatcher('WebMCP', dispatcher);
   }
 }
 

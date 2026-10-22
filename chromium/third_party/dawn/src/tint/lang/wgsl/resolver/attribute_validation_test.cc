@@ -25,6 +25,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "gmock/gmock.h"
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/wgsl/resolver/resolver.h"
@@ -32,8 +33,6 @@
 #include "src/tint/utils/containers/transform.h"
 #include "src/tint/utils/macros/compiler.h"
 #include "src/tint/utils/text/string_stream.h"
-
-#include "gmock/gmock.h"
 
 namespace tint::resolver {
 
@@ -222,8 +221,9 @@ const ast::Attribute* CreateAttribute(const Source& source,
         case AttributeKind::kColor:
             return builder.Color(source, 2_a);
         case AttributeKind::kDiagnostic:
-            return builder.DiagnosticAttribute(source, wgsl::DiagnosticSeverity::kInfo, "chromium",
-                                               "unreachable_code");
+            return builder.DiagnosticAttribute(
+                source, wgsl::DiagnosticSeverity::kInfo,
+                builder.DiagnosticRuleName("chromium", "unreachable_code"));
         case AttributeKind::kGroup:
             return builder.Group(source, 1_a);
         case AttributeKind::kId:

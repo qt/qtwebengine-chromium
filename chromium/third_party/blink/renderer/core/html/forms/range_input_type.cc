@@ -209,7 +209,7 @@ void RangeInputType::HandleKeydownEvent(KeyboardEvent& event) {
   // FIXME: We can't use stepUp() for the step value "any". So, we increase
   // or decrease the value by 1/100 of the value range. Is it reasonable?
   const Decimal step =
-      EqualIgnoringASCIICase(
+      EqualIgnoringAsciiCase(
           GetElement().FastGetAttribute(html_names::kStepAttr), "any")
           ? (step_range.Maximum() - step_range.Minimum()) / 100
           : step_range.Step();
@@ -278,7 +278,10 @@ void RangeInputType::CreateShadowSubtree() {
   track->SetShadowPseudoId(shadow_element_names::kPseudoSliderTrack);
   track->setAttribute(html_names::kIdAttr,
                       shadow_element_names::kIdSliderTrack);
-  track->AppendChild(MakeGarbageCollected<SliderThumbElement>(document));
+  auto* thumb = MakeGarbageCollected<SliderThumbElement>(document);
+  thumb->setAttribute(html_names::kIdAttr,
+                      shadow_element_names::kIdSliderThumb);
+  track->AppendChild(thumb);
   auto* container = MakeGarbageCollected<SliderContainerElement>(document);
   container->AppendChild(track);
   GetElement().UserAgentShadowRoot()->AppendChild(container);

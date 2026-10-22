@@ -5,11 +5,13 @@
 #ifndef DISCOVERY_DNSSD_IMPL_SERVICE_KEY_H_
 #define DISCOVERY_DNSSD_IMPL_SERVICE_KEY_H_
 
+#include <functional>
 #include <string>
 #include <string_view>
 #include <utility>
 
 #include "platform/base/error.h"
+#include "util/hashing.h"
 
 namespace openscreen::discovery {
 
@@ -45,9 +47,6 @@ class ServiceKey {
   std::string service_id_;
   std::string domain_id_;
 
-  template <typename H>
-  friend H AbslHashValue(H h, const ServiceKey& key);
-
   friend bool operator<(const ServiceKey& lhs, const ServiceKey& rhs);
 
   // Validation method which needs the same code as CreateFromRecord(). Use a
@@ -56,12 +55,6 @@ class ServiceKey {
   friend bool HasValidDnsRecordAddress(const MdnsRecord& record);
   friend bool HasValidDnsRecordAddress(const DomainName& domain);
 };
-
-// Hashing functions to allow for using with absl::Hash<...>.
-template <typename H>
-H AbslHashValue(H h, const ServiceKey& key) {
-  return H::combine(std::move(h), key.service_id_, key.domain_id_);
-}
 
 // Comparison operators for using above keys with an std::map
 inline bool operator<(const ServiceKey& lhs, const ServiceKey& rhs) {
@@ -93,5 +86,16 @@ inline bool operator!=(const ServiceKey& lhs, const ServiceKey& rhs) {
 }
 
 }  // namespace openscreen::discovery
+
+namespace std {
+
+template <>
+struct hash<openscreen::discovery::ServiceKey> {
+  size_t operator()(const openscreen::discovery::ServiceKey& key) const {
+    return openscreen::ComputeAggregateHash(key.service_id(), key.domain_id());
+  }
+};
+
+}  // namespace std
 
 #endif  // DISCOVERY_DNSSD_IMPL_SERVICE_KEY_H_

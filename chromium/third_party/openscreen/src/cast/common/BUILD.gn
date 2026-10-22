@@ -38,7 +38,6 @@ openscreen_source_set("certificate") {
 
   deps = [
     "../../platform",
-    "../../third_party/abseil",
     "../../util",
     "certificate/proto:certificate_proto",
   ]
@@ -76,7 +75,6 @@ openscreen_source_set("certificate_boringssl") {
 
   deps = [
     ":certificate",
-    "../../third_party/abseil",
     "../../util",
   ]
 }
@@ -111,7 +109,6 @@ openscreen_source_set("channel") {
   public_deps = [
     ":public",
     "../../platform",
-    "../../third_party/abseil",
     "../../util",
     "channel/proto:channel_proto",
   ]
@@ -141,7 +138,6 @@ openscreen_source_set("public") {
   public_deps = [
     "../../discovery:public",
     "../../platform",
-    "../../third_party/abseil",
     "../../util",
   ]
 }
@@ -187,7 +183,6 @@ openscreen_source_set("test_helpers") {
     "../../discovery:public",
     "../../platform:test",
     "../../testing/util",
-    "../../third_party/abseil",
     "../../third_party/boringssl",
     "../../third_party/googletest:gmock",
     "../../third_party/googletest:gtest",

@@ -51,6 +51,7 @@ export interface PreloadingGridRow {
   id: string;
   pipeline: SDK.PreloadingModel.PreloadPipeline;
   ruleSets: Protocol.Preload.RuleSet[];
+  statusCode?: number;
 }
 
 export interface ViewInput {
@@ -107,7 +108,7 @@ export const PRELOADING_GRID_DEFAULT_VIEW: View = (input, _output, target): void
                         'vertical-align': 'sub',
                       })}
                     ></devtools-icon>` : ''}
-                  ${hasWarning ? i18nString(UIStrings.prefetchFallbackReady) : composedStatus(attempt)}
+                  ${hasWarning ? i18nString(UIStrings.prefetchFallbackReady) : composedStatus(attempt, row.statusCode)}
                 </div>
               </td>
             </tr>`;

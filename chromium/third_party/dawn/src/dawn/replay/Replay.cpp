@@ -28,6 +28,7 @@
 #include "dawn/replay/Replay.h"
 
 #include <webgpu/webgpu_cpp.h>
+
 #include <algorithm>
 #include <iostream>
 #include <memory>
@@ -74,8 +75,6 @@ DAWN_REPLAY_ROOT_COMMANDS_ENUM(DAWN_REPLAY_ENUM_TO_STRING)
 
 }  // namespace schema
 
-class ReplayImpl;
-
 Replay::~Replay() = default;
 
 std::unique_ptr<Replay> Replay::Create(wgpu::Device device, std::unique_ptr<Capture> capture) {
@@ -98,30 +97,154 @@ bool Replay::Play() {
     return false;
 }
 
-template wgpu::BindGroup Replay::GetObjectByLabel<wgpu::BindGroup>(std::string_view label) const;
-template wgpu::BindGroupLayout Replay::GetObjectByLabel<wgpu::BindGroupLayout>(
-    std::string_view label) const;
-template wgpu::Buffer Replay::GetObjectByLabel<wgpu::Buffer>(std::string_view label) const;
-template wgpu::CommandBuffer Replay::GetObjectByLabel<wgpu::CommandBuffer>(
-    std::string_view label) const;
-template wgpu::ComputePipeline Replay::GetObjectByLabel<wgpu::ComputePipeline>(
-    std::string_view label) const;
-template wgpu::Device Replay::GetObjectByLabel<wgpu::Device>(std::string_view label) const;
-template wgpu::PipelineLayout Replay::GetObjectByLabel<wgpu::PipelineLayout>(
-    std::string_view label) const;
-template wgpu::QuerySet Replay::GetObjectByLabel<wgpu::QuerySet>(std::string_view label) const;
-template wgpu::RenderBundle Replay::GetObjectByLabel<wgpu::RenderBundle>(
-    std::string_view label) const;
-template wgpu::RenderPipeline Replay::GetObjectByLabel<wgpu::RenderPipeline>(
-    std::string_view label) const;
-template wgpu::Sampler Replay::GetObjectByLabel<wgpu::Sampler>(std::string_view label) const;
-template wgpu::ShaderModule Replay::GetObjectByLabel<wgpu::ShaderModule>(
-    std::string_view label) const;
-template wgpu::Texture Replay::GetObjectByLabel<wgpu::Texture>(std::string_view label) const;
-template wgpu::ExternalTexture Replay::GetObjectByLabel<wgpu::ExternalTexture>(
-    std::string_view label) const;
-template wgpu::TextureView Replay::GetObjectByLabel<wgpu::TextureView>(
-    std::string_view label) const;
+#define DAWN_REPLAY_GET_OBJECT_BY_LABEL(NAME) \
+    template wgpu::NAME Replay::GetObjectByLabel<wgpu::NAME>(std::string_view label) const;
+DAWN_REPLAY_OBJECT_TYPES(DAWN_REPLAY_GET_OBJECT_BY_LABEL)
+#undef DAWN_REPLAY_GET_OBJECT_BY_LABEL
+
+#define DAWN_REPLAY_RESOURCE_VARIANT(NAME) wgpu::NAME,
+typedef std::variant<DAWN_REPLAY_OBJECT_TYPES(DAWN_REPLAY_RESOURCE_VARIANT) std::monostate>
+    Resource;
+#undef DAWN_REPLAY_RESOURCE_VARIANT
+
+struct LabeledResource {
+    std::string label;
+    Resource resource;
+};
+
+class DawnResourceVisitor : public ResourceVisitor {
+  public:
+    using ResourceVisitor::operator();
+    explicit DawnResourceVisitor(DawnRootCommandVisitor* visitor) : mVisitor(visitor) {}
+
+#define DAWN_REPLAY_RESOURCE_VISITOR_OVERRIDE(ENUM, TYPE) \
+    MaybeError operator()(const TYPE& data) override;
+    DAWN_REPLAY_RESOURCE_DATA_MAP(DAWN_REPLAY_RESOURCE_VISITOR_OVERRIDE)
+#undef DAWN_REPLAY_RESOURCE_VISITOR_OVERRIDE
+
+  private:
+    template <typename T>
+    MaybeError Create(const T& data);
+
+    DawnRootCommandVisitor* mVisitor;
+};
+
+class DawnRootCommandVisitor : public RootCommandVisitor {
+  public:
+    using RootCommandVisitor::operator();
+    explicit DawnRootCommandVisitor(wgpu::Device device)
+        : mDevice(device), mResourceVisitor(this) {}
+
+    MaybeError operator()(const CreateResourceData& data) override {
+        mCurrentResourceId = data.resource.id;
+        mCurrentResourceLabel = data.resource.label;
+        return std::visit(mResourceVisitor, data.data);
+    }
+
+    MaybeError operator()(const schema::RootCommandWriteBufferCmdData& data) override;
+    MaybeError operator()(const schema::RootCommandWriteTextureCmdData& data) override;
+    MaybeError operator()(const schema::RootCommandQueueSubmitCmdData& data) override;
+    MaybeError operator()(const schema::RootCommandSetLabelCmdData& data) override;
+    MaybeError operator()(const schema::RootCommandInitTextureCmdData& data) override;
+    MaybeError operator()(const schema::RootCommandEndCmdData& data) override { return {}; }
+
+    ResourceVisitor& GetResourceVisitor() override { return mResourceVisitor; }
+
+    wgpu::Device GetDevice() const { return mDevice; }
+    schema::ObjectId GetCurrentResourceId() const { return mCurrentResourceId; }
+    const std::string& GetCurrentResourceLabel() const { return mCurrentResourceLabel; }
+
+    template <typename T>
+    T GetObjectById(schema::ObjectId id) const {
+        if (id == 0) {
+            return nullptr;
+        }
+        auto iter = mResources.find(id);
+        if (iter == mResources.end()) {
+            return nullptr;
+        }
+        const T* p = std::get_if<T>(&iter->second.resource);
+        return p ? *p : nullptr;
+    }
+
+    template <typename T>
+    T GetObjectByLabel(std::string_view label) const {
+        auto isLabel = [label](const LabeledResource& res) { return res.label == label; };
+        auto resourcesWithMachingLabel =
+            mResources | std::views::values | std::views::filter(isLabel);
+        for (const auto& res : resourcesWithMachingLabel) {
+            const T* p = std::get_if<T>(&res.resource);
+            if (p) {
+                return *p;
+            }
+        }
+        return nullptr;
+    }
+
+    template <typename T>
+    const std::string& GetLabel(const T& object) const {
+        if (object == nullptr) {
+            return kNotFound;
+        }
+        return GetLabel(GetObjectId(object));
+    }
+
+    const std::string& GetLabel(schema::ObjectId id) const {
+        auto iter = mResources.find(id);
+        if (iter == mResources.end()) {
+            return kNotFound;
+        }
+        return iter->second.label;
+    }
+
+    template <typename T>
+    schema::ObjectId GetObjectId(const T& object) const {
+        auto iter = mResourceToIdMap.find(object.Get());
+        return iter != mResourceToIdMap.end() ? iter->second : 0;
+    }
+
+    template <typename T>
+    void AddResource(schema::ObjectId id, const std::string& label, T resource) {
+        mResources.emplace(id, LabeledResource{label, resource});
+        mResourceToIdMap.emplace(resource.Get(), id);
+    }
+
+    void AddResource(schema::ObjectId id, const std::string& label, Resource resource) {
+        std::visit(
+            [&](auto& r) {
+                if constexpr (!std::is_same_v<std::decay_t<decltype(r)>, std::monostate>) {
+                    mResources.emplace(id, LabeledResource{label, r});
+                    mResourceToIdMap.emplace(r.Get(), id);
+                }
+            },
+            resource);
+    }
+
+    MaybeError SetLabel(schema::ObjectId id, schema::ObjectType type, const std::string& label);
+
+    BlitBufferToDepthTexture& GetBlitBufferToDepthTexture() { return mBlitBufferToDepthTexture; }
+
+    void SetContentReadHead(ReadHead* readHead) override { mContentReadHead = readHead; }
+
+  private:
+    wgpu::Device mDevice;
+    DawnResourceVisitor mResourceVisitor;
+
+    using IdToResourceMap = absl::flat_hash_map<schema::ObjectId, LabeledResource>;
+    IdToResourceMap mResources;
+
+    using ResourcePtrToIdMap = absl::flat_hash_map<const void*, schema::ObjectId>;
+    ResourcePtrToIdMap mResourceToIdMap;
+
+    BlitBufferToDepthTexture mBlitBufferToDepthTexture;
+
+    schema::ObjectId mCurrentResourceId;
+    std::string mCurrentResourceLabel;
+
+    ReadHead* mContentReadHead = nullptr;
+
+    std::string kNotFound;
+};
 
 namespace {
 
@@ -175,7 +298,8 @@ wgpu::Color ToWGPU(const schema::Color& color) {
     };
 }
 
-wgpu::PassTimestampWrites ToWGPU(const ReplayImpl& replay, const schema::TimestampWrites& writes) {
+wgpu::PassTimestampWrites ToWGPU(const DawnRootCommandVisitor& replay,
+                                 const schema::TimestampWrites& writes) {
     return wgpu::PassTimestampWrites{
         .nextInChain = nullptr,
         .querySet = replay.GetObjectById<wgpu::QuerySet>(writes.querySetId),
@@ -205,7 +329,7 @@ wgpu::TexelCopyBufferLayout ToWGPU(const schema::TexelCopyBufferLayout& info) {
     };
 }
 
-wgpu::TexelCopyBufferInfo ToWGPU(const ReplayImpl& replay,
+wgpu::TexelCopyBufferInfo ToWGPU(const DawnRootCommandVisitor& replay,
                                  const schema::TexelCopyBufferInfo& info) {
     return wgpu::TexelCopyBufferInfo{
         .layout = ToWGPU(info.layout),
@@ -213,7 +337,7 @@ wgpu::TexelCopyBufferInfo ToWGPU(const ReplayImpl& replay,
     };
 }
 
-wgpu::TexelCopyTextureInfo ToWGPU(const ReplayImpl& replay,
+wgpu::TexelCopyTextureInfo ToWGPU(const DawnRootCommandVisitor& replay,
                                   const schema::TexelCopyTextureInfo& info) {
     return wgpu::TexelCopyTextureInfo{
         .texture = replay.GetObjectById<wgpu::Texture>(info.textureId),
@@ -269,7 +393,7 @@ MaybeError ReadContentIntoBuffer(ReadHead& readHead,
     return {};
 }
 
-MaybeError ReadContentIntoTexture(const ReplayImpl& replay,
+MaybeError ReadContentIntoTexture(const DawnRootCommandVisitor& replay,
                                   ReadHead& readHead,
                                   wgpu::Device device,
                                   const schema::RootCommandWriteTextureCmdData& cmdData) {
@@ -299,7 +423,7 @@ bool TextureFormatNeedsBlit(wgpu::TextureFormat format, wgpu::TextureAspect aspe
     }
 }
 
-MaybeError InitializeTexture(const ReplayImpl& replay,
+MaybeError InitializeTexture(const DawnRootCommandVisitor& replay,
                              BlitBufferToDepthTexture& blitBufferToDepthTexture,
                              ReadHead& readHead,
                              wgpu::Device device,
@@ -321,88 +445,160 @@ MaybeError InitializeTexture(const ReplayImpl& replay,
     return {};
 }
 
-ResultOrError<wgpu::BindGroup> CreateBindGroup(const ReplayImpl& replay,
-                                               wgpu::Device device,
-                                               ReadHead& readHead,
-                                               const std::string& label) {
-    schema::BindGroup bg;
-    DAWN_TRY(Deserialize(readHead, &bg));
+struct BindGroupEntryVisitor {
+    const DawnRootCommandVisitor& replay;
+    std::vector<wgpu::BindGroupEntry>& entries;
+    std::vector<std::unique_ptr<wgpu::ExternalTextureBindingEntry>>& externalTextureBindingEntries;
 
+    template <typename T>
+    MaybeError operator()(const T& data) {
+        wgpu::BindGroupEntry entry;
+        entry.binding = data.binding;
+        DAWN_TRY(FillEntry(entry, data.data));
+        entries.push_back(entry);
+        return {};
+    }
+
+    MaybeError operator()(const std::monostate&) {
+        return DAWN_INTERNAL_ERROR("invalid bind group entry");
+    }
+
+  private:
+    MaybeError FillEntry(wgpu::BindGroupEntry& entry,
+                         const schema::BindGroupEntryTypeBufferBindingData& data) {
+        entry.buffer = replay.GetObjectById<wgpu::Buffer>(data.bufferId);
+        entry.offset = data.offset;
+        entry.size = data.size;
+        return {};
+    }
+
+    MaybeError FillEntry(wgpu::BindGroupEntry& entry,
+                         const schema::BindGroupEntryTypeSamplerBindingData& data) {
+        entry.sampler = replay.GetObjectById<wgpu::Sampler>(data.samplerId);
+        return {};
+    }
+
+    MaybeError FillEntry(wgpu::BindGroupEntry& entry,
+                         const schema::BindGroupEntryTypeTextureBindingData& data) {
+        entry.textureView = replay.GetObjectById<wgpu::TextureView>(data.textureViewId);
+        return {};
+    }
+
+    MaybeError FillEntry(wgpu::BindGroupEntry& entry,
+                         const schema::BindGroupEntryTypeStorageTextureBindingData& data) {
+        entry.textureView = replay.GetObjectById<wgpu::TextureView>(data.textureViewId);
+        return {};
+    }
+
+    MaybeError FillEntry(wgpu::BindGroupEntry& entry,
+                         const schema::BindGroupEntryTypeTexelBufferBindingData& data) {
+        return DAWN_INTERNAL_ERROR("texel buffer binding not supported");
+    }
+
+    MaybeError FillEntry(wgpu::BindGroupEntry& entry,
+                         const schema::BindGroupEntryTypeInputAttachmentBindingInfoData& data) {
+        entry.textureView = replay.GetObjectById<wgpu::TextureView>(data.textureViewId);
+        return {};
+    }
+
+    MaybeError FillEntry(wgpu::BindGroupEntry& entry,
+                         const schema::BindGroupEntryTypeExternalTextureBindingData& data) {
+        if (data.externalTextureId != 0) {
+            auto& externalBindingEntryPtr = externalTextureBindingEntries.emplace_back(
+                std::make_unique<wgpu::ExternalTextureBindingEntry>());
+            externalBindingEntryPtr->externalTexture =
+                replay.GetObjectById<wgpu::ExternalTexture>(data.externalTextureId);
+            entry.nextInChain = externalBindingEntryPtr.get();
+        } else {
+            // External texture binding can bind a regular texture view
+            DAWN_ASSERT(data.textureViewId != 0);
+            entry.textureView = replay.GetObjectById<wgpu::TextureView>(data.textureViewId);
+        }
+        return {};
+    }
+
+    template <typename T>
+    MaybeError FillEntry(wgpu::BindGroupEntry& entry, const T&) {
+        return {};
+    }
+};
+
+struct BindGroupLayoutEntryVisitor {
+    wgpu::BindGroupLayoutEntry& entry;
+    wgpu::ExternalTextureBindingLayout& externalTextureBindingLayout;
+
+    template <typename T>
+    MaybeError operator()(const T& data) {
+        entry.binding = data.binding.binding;
+        entry.visibility = data.binding.visibility;
+        entry.bindingArraySize = data.binding.bindingArraySize;
+        return FillEntry(data.data);
+    }
+
+    MaybeError operator()(const std::monostate&) {
+        return DAWN_INTERNAL_ERROR("invalid bind group layout entry");
+    }
+
+  private:
+    MaybeError FillEntry(const schema::BindGroupLayoutEntryTypeBufferBindingData& data) {
+        entry.buffer = {
+            .type = data.type,
+            .hasDynamicOffset = data.hasDynamicOffset,
+            .minBindingSize = data.minBindingSize,
+        };
+        return {};
+    }
+
+    MaybeError FillEntry(const schema::BindGroupLayoutEntryTypeSamplerBindingData& data) {
+        entry.sampler = {.type = data.type};
+        return {};
+    }
+
+    MaybeError FillEntry(const schema::BindGroupLayoutEntryTypeStorageTextureBindingData& data) {
+        entry.storageTexture = {
+            .access = data.access,
+            .format = data.format,
+            .viewDimension = data.viewDimension,
+        };
+        return {};
+    }
+
+    MaybeError FillEntry(const schema::BindGroupLayoutEntryTypeTextureBindingData& data) {
+        entry.texture = {
+            .sampleType = data.sampleType,
+            .viewDimension = data.viewDimension,
+            .multisampled = data.multisampled,
+        };
+        return {};
+    }
+
+    MaybeError FillEntry(const schema::BindGroupLayoutEntryTypeExternalTextureBindingData& data) {
+        entry.nextInChain = &externalTextureBindingLayout;
+        return {};
+    }
+
+    template <typename T>
+    MaybeError FillEntry(const T&) {
+        return DAWN_INTERNAL_ERROR("unhandled bind group layout entry type");
+    }
+};
+
+ResultOrError<wgpu::BindGroup> CreateResource(const DawnRootCommandVisitor& replay,
+                                              wgpu::Device device,
+                                              const BindGroupData& data,
+                                              const std::string& label) {
     std::vector<wgpu::BindGroupEntry> entries;
-    entries.reserve(bg.numEntries);
-    // To make only the case with ExternalTexture more expensive, use
-    // unique_ptr<wgpu::ExternalTextureBindingEntry> for the vector member. vector::reserve is not
-    // needed since the member itself is pointer and the address would not change on reallocation.
+    entries.reserve(data.entries.size());
     std::vector<std::unique_ptr<wgpu::ExternalTextureBindingEntry>> externalTextureBindingEntries;
 
-    for (uint32_t i = 0; i < bg.numEntries; ++i) {
-        schema::BindGroupLayoutEntryType entryType;
-        uint32_t binding;
-        DAWN_TRY(Deserialize(readHead, &entryType));
-        DAWN_TRY(Deserialize(readHead, &binding));
-
-        switch (entryType) {
-            case schema::BindGroupLayoutEntryType::BufferBinding: {
-                schema::BindGroupEntryTypeBufferBindingData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                entries.push_back(wgpu::BindGroupEntry{
-                    .binding = binding,
-                    .buffer = replay.GetObjectById<wgpu::Buffer>(data.bufferId),
-                    .offset = data.offset,
-                    .size = data.size,
-                });
-                break;
-            }
-            case schema::BindGroupLayoutEntryType::SamplerBinding: {
-                schema::BindGroupEntryTypeSamplerBindingData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                entries.push_back(wgpu::BindGroupEntry{
-                    .binding = binding,
-                    .sampler = replay.GetObjectById<wgpu::Sampler>(data.samplerId),
-                });
-                break;
-            }
-            case schema::BindGroupLayoutEntryType::TextureBinding: {
-                schema::BindGroupEntryTypeTextureBindingData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                entries.push_back(wgpu::BindGroupEntry{
-                    .binding = binding,
-                    .textureView = replay.GetObjectById<wgpu::TextureView>(data.textureViewId),
-                });
-                break;
-            }
-            case schema::BindGroupLayoutEntryType::ExternalTextureBinding: {
-                schema::BindGroupEntryTypeExternalTextureBindingData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-
-                if (data.externalTextureId != 0) {
-                    auto& externalBindingEntryPtr = externalTextureBindingEntries.emplace_back(
-                        std::make_unique<wgpu::ExternalTextureBindingEntry>());
-                    externalBindingEntryPtr->externalTexture =
-                        replay.GetObjectById<wgpu::ExternalTexture>(data.externalTextureId);
-
-                    entries.push_back(wgpu::BindGroupEntry{
-                        .nextInChain = externalBindingEntryPtr.get(),
-                        .binding = binding,
-                    });
-                } else {
-                    // External texture binding can bind a regular texture view
-                    DAWN_ASSERT(data.textureViewId != 0);
-                    entries.push_back(wgpu::BindGroupEntry{
-                        .binding = binding,
-                        .textureView = replay.GetObjectById<wgpu::TextureView>(data.textureViewId),
-                    });
-                }
-                break;
-            }
-            default:
-                return DAWN_INTERNAL_ERROR("unsupported bind group entry type");
-        }
+    for (const auto& entryVariant : data.entries) {
+        DAWN_TRY(std::visit(BindGroupEntryVisitor{replay, entries, externalTextureBindingEntries},
+                            entryVariant));
     }
 
     wgpu::BindGroupDescriptor desc{
         .label = wgpu::StringView(label),
-        .layout = replay.GetObjectById<wgpu::BindGroupLayout>(bg.layoutId),
+        .layout = replay.GetObjectById<wgpu::BindGroupLayout>(data.bg.layoutId),
         .entryCount = entries.size(),
         .entries = entries.data(),
     };
@@ -410,15 +606,12 @@ ResultOrError<wgpu::BindGroup> CreateBindGroup(const ReplayImpl& replay,
     return {bindGroup};
 }
 
-ResultOrError<wgpu::BindGroupLayout> CreateBindGroupLayout(const ReplayImpl& replay,
-                                                           wgpu::Device device,
-                                                           ReadHead& readHead,
-                                                           const std::string& label) {
-    schema::BindGroupLayout bgl;
-    DAWN_TRY(Deserialize(readHead, &bgl));
-
+ResultOrError<wgpu::BindGroupLayout> CreateResource(const DawnRootCommandVisitor& replay,
+                                                    wgpu::Device device,
+                                                    const BindGroupLayoutData& data,
+                                                    const std::string& label) {
     std::vector<wgpu::BindGroupLayoutEntry> entries;
-    entries.reserve(bgl.numEntries);
+    entries.reserve(data.entries.size());
 
     // External texture binding layouts are chained structs that are set as a pointer within
     // the bind group layout entry. We declare an entry here so that it can be used when needed
@@ -427,94 +620,11 @@ ResultOrError<wgpu::BindGroupLayout> CreateBindGroupLayout(const ReplayImpl& rep
     // there's no issue with using the same struct multiple times.
     wgpu::ExternalTextureBindingLayout externalTextureBindingLayout;
 
-    for (uint32_t i = 0; i < bgl.numEntries; ++i) {
-        schema::BindGroupLayoutEntryType entryType;
-        schema::BindGroupLayoutBinding binding;
-        DAWN_TRY(Deserialize(readHead, &entryType));
-        DAWN_TRY(Deserialize(readHead, &binding));
-
-        switch (entryType) {
-            case schema::BindGroupLayoutEntryType::BufferBinding: {
-                schema::BindGroupLayoutEntryTypeBufferBindingData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-
-                entries.push_back({
-                    .binding = binding.binding,
-                    .visibility = binding.visibility,
-                    .bindingArraySize = binding.bindingArraySize,
-                    .buffer =
-                        {
-                            .type = data.type,
-                            .hasDynamicOffset = data.hasDynamicOffset,
-                            .minBindingSize = data.minBindingSize,
-                        },
-                });
-                break;
-            }
-            case schema::BindGroupLayoutEntryType::SamplerBinding: {
-                schema::BindGroupLayoutEntryTypeSamplerBindingData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-
-                entries.push_back({
-                    .binding = binding.binding,
-                    .visibility = binding.visibility,
-                    .bindingArraySize = binding.bindingArraySize,
-                    .sampler =
-                        {
-                            .type = data.type,
-                        },
-                });
-                break;
-            }
-            case schema::BindGroupLayoutEntryType::StorageTextureBinding: {
-                schema::BindGroupLayoutEntryTypeStorageTextureBindingData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-
-                entries.push_back({
-                    .binding = binding.binding,
-                    .visibility = binding.visibility,
-                    .bindingArraySize = binding.bindingArraySize,
-                    .storageTexture =
-                        {
-                            .access = data.access,
-                            .format = data.format,
-                            .viewDimension = data.viewDimension,
-                        },
-                });
-                break;
-            }
-            case schema::BindGroupLayoutEntryType::TextureBinding: {
-                schema::BindGroupLayoutEntryTypeTextureBindingData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-
-                entries.push_back({
-                    .binding = binding.binding,
-                    .visibility = binding.visibility,
-                    .bindingArraySize = binding.bindingArraySize,
-                    .texture =
-                        {
-                            .sampleType = data.sampleType,
-                            .viewDimension = data.viewDimension,
-                            .multisampled = data.multisampled,
-                        },
-                });
-                break;
-            }
-            case schema::BindGroupLayoutEntryType::ExternalTextureBinding: {
-                schema::BindGroupLayoutEntryTypeExternalTextureBindingData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-
-                entries.push_back({
-                    .nextInChain = &externalTextureBindingLayout,
-                    .binding = binding.binding,
-                    .visibility = binding.visibility,
-                    .bindingArraySize = binding.bindingArraySize,
-                });
-                break;
-            }
-            default:
-                return DAWN_INTERNAL_ERROR("unhandled bind group layout entry type");
-        }
+    for (const auto& entryVariant : data.entries) {
+        wgpu::BindGroupLayoutEntry entry;
+        DAWN_TRY(std::visit(BindGroupLayoutEntryVisitor{entry, externalTextureBindingLayout},
+                            entryVariant));
+        entries.push_back(entry);
     }
 
     wgpu::BindGroupLayoutDescriptor desc{
@@ -526,12 +636,10 @@ ResultOrError<wgpu::BindGroupLayout> CreateBindGroupLayout(const ReplayImpl& rep
     return {bindGroupLayout};
 }
 
-ResultOrError<wgpu::Buffer> CreateBuffer(wgpu::Device device,
-                                         ReadHead& readHead,
-                                         const std::string& label) {
-    schema::Buffer buf;
-    DAWN_TRY(Deserialize(readHead, &buf));
-
+ResultOrError<wgpu::Buffer> CreateResource(const DawnRootCommandVisitor&,
+                                           wgpu::Device device,
+                                           const schema::Buffer& buf,
+                                           const std::string& label) {
     wgpu::BufferUsage usage =
         (buf.usage & (wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite))
             ? buf.usage
@@ -551,13 +659,10 @@ ResultOrError<wgpu::Buffer> CreateBuffer(wgpu::Device device,
     return {buffer};
 }
 
-ResultOrError<wgpu::ComputePipeline> CreateComputePipeline(const ReplayImpl& replay,
-                                                           wgpu::Device device,
-                                                           ReadHead& readHead,
-                                                           const std::string& label) {
-    schema::ComputePipeline pipeline;
-    DAWN_TRY(Deserialize(readHead, &pipeline));
-
+ResultOrError<wgpu::ComputePipeline> CreateResource(const DawnRootCommandVisitor& replay,
+                                                    wgpu::Device device,
+                                                    const schema::ComputePipeline& pipeline,
+                                                    const std::string& label) {
     std::vector<wgpu::ConstantEntry> constants = ToWGPU(pipeline.compute.constants);
 
     wgpu::ComputePipelineDescriptor desc{
@@ -575,13 +680,10 @@ ResultOrError<wgpu::ComputePipeline> CreateComputePipeline(const ReplayImpl& rep
     return {computePipeline};
 }
 
-ResultOrError<wgpu::ExternalTexture> CreateExternalTexture(const ReplayImpl& replay,
-                                                           wgpu::Device device,
-                                                           ReadHead& readHead,
-                                                           const std::string& label) {
-    schema::ExternalTexture tex;
-    DAWN_TRY(Deserialize(readHead, &tex));
-
+ResultOrError<wgpu::ExternalTexture> CreateResource(const DawnRootCommandVisitor& replay,
+                                                    wgpu::Device device,
+                                                    const schema::ExternalTexture& tex,
+                                                    const std::string& label) {
     wgpu::ExternalTextureDescriptor desc{
         .label = wgpu::StringView(label),
         .plane0 = replay.GetObjectById<wgpu::TextureView>(tex.plane0Id),
@@ -601,13 +703,10 @@ ResultOrError<wgpu::ExternalTexture> CreateExternalTexture(const ReplayImpl& rep
     return {externalTexture};
 }
 
-ResultOrError<wgpu::PipelineLayout> CreatePipelineLayout(const ReplayImpl& replay,
-                                                         wgpu::Device device,
-                                                         ReadHead& readHead,
-                                                         const std::string& label) {
-    schema::PipelineLayout layout;
-    DAWN_TRY(Deserialize(readHead, &layout));
-
+ResultOrError<wgpu::PipelineLayout> CreateResource(const DawnRootCommandVisitor& replay,
+                                                   wgpu::Device device,
+                                                   const schema::PipelineLayout& layout,
+                                                   const std::string& label) {
     std::vector<wgpu::BindGroupLayout> bindGroupLayouts;
     for (const auto bindGroupLayoutId : layout.bindGroupLayoutIds) {
         bindGroupLayouts.push_back(replay.GetObjectById<wgpu::BindGroupLayout>(bindGroupLayoutId));
@@ -623,13 +722,10 @@ ResultOrError<wgpu::PipelineLayout> CreatePipelineLayout(const ReplayImpl& repla
     return {pipelineLayout};
 }
 
-ResultOrError<wgpu::QuerySet> CreateQuerySet(const ReplayImpl& replay,
+ResultOrError<wgpu::QuerySet> CreateResource(const DawnRootCommandVisitor& replay,
                                              wgpu::Device device,
-                                             ReadHead& readHead,
+                                             const schema::QuerySet& querySetData,
                                              const std::string& label) {
-    schema::QuerySet querySetData;
-    DAWN_TRY(Deserialize(readHead, &querySetData));
-
     wgpu::QuerySetDescriptor desc{
         .label = wgpu::StringView(label),
         .type = querySetData.type,
@@ -639,171 +735,113 @@ ResultOrError<wgpu::QuerySet> CreateQuerySet(const ReplayImpl& replay,
     return {querySet};
 }
 
-template <typename T>
-MaybeError ProcessWriteTimestamp(const ReplayImpl& replay, T pass, ReadHead& readHead) {
-    schema::CommandBufferCommandWriteTimestampCmdData data;
-    DAWN_TRY(Deserialize(readHead, &data));
-    pass.WriteTimestamp(replay.GetObjectById<wgpu::QuerySet>(data.querySetId), data.queryIndex);
-    return {};
-}
+template <typename Base, typename Pass>
+struct DawnCommandVisitor : Base {
+    const DawnRootCommandVisitor& replay;
+    Pass pass;
 
-template <typename T>
-MaybeError ProcessSharedCommands(const ReplayImpl& replay,
-                                 T pass,
-                                 schema::CommandBufferCommand cmd,
-                                 ReadHead& readHead) {
-    switch (cmd) {
-        case schema::CommandBufferCommand::SetBindGroup: {
-            schema::CommandBufferCommandSetBindGroupCmdData data;
-            DAWN_TRY(Deserialize(readHead, &data));
-            pass.SetBindGroup(data.index, replay.GetObjectById<wgpu::BindGroup>(data.bindGroupId),
-                              data.dynamicOffsets.size(), data.dynamicOffsets.data());
-            break;
-        }
-        case schema::CommandBufferCommand::SetImmediates: {
-            schema::CommandBufferCommandSetImmediatesCmdData data;
-            DAWN_TRY(Deserialize(readHead, &data));
-            pass.SetImmediates(data.offset, data.data.data(), data.data.size());
-            break;
-        }
-        default:
-            DAWN_UNREACHABLE();
+    DawnCommandVisitor(const DawnRootCommandVisitor& r, Pass p) : replay(r), pass(p) {}
+
+    MaybeError operator()(const schema::CommandBufferCommandSetBindGroupCmdData& data) override {
+        pass.SetBindGroup(data.index, replay.GetObjectById<wgpu::BindGroup>(data.bindGroupId),
+                          data.dynamicOffsets.size(), data.dynamicOffsets.data());
+        return {};
     }
-    return {};
-}
 
-template <typename T>
-MaybeError ProcessDebugCommands(T pass, schema::CommandBufferCommand cmd, ReadHead& readHead) {
-    switch (cmd) {
-        case schema::CommandBufferCommand::PushDebugGroup: {
-            schema::CommandBufferCommandPushDebugGroupCmdData data;
-            DAWN_TRY(Deserialize(readHead, &data));
-            pass.PushDebugGroup(wgpu::StringView(data.groupLabel));
-            break;
-        }
-        case schema::CommandBufferCommand::InsertDebugMarker: {
-            schema::CommandBufferCommandInsertDebugMarkerCmdData data;
-            DAWN_TRY(Deserialize(readHead, &data));
-            pass.InsertDebugMarker(wgpu::StringView(data.markerLabel));
-            break;
-        }
-        case schema::CommandBufferCommand::PopDebugGroup: {
-            // PopDebugGroup has no data
-            pass.PopDebugGroup();
-            break;
-        }
-        default:
-            DAWN_UNREACHABLE();
+    MaybeError operator()(const schema::CommandBufferCommandSetImmediatesCmdData& data) override {
+        pass.SetImmediates(data.offset, data.data.data(), data.data.size());
+        return {};
     }
-    return {};
-}
 
-template <typename T>
-MaybeError ProcessRenderCommand(const ReplayImpl& replay,
-                                ReadHead& readHead,
-                                wgpu::Device device,
-                                schema::CommandBufferCommand cmd,
-                                T pass) {
-    switch (cmd) {
-        case schema::CommandBufferCommand::SetRenderPipeline: {
-            schema::CommandBufferCommandSetRenderPipelineCmdData data;
-            DAWN_TRY(Deserialize(readHead, &data));
-            pass.SetPipeline(replay.GetObjectById<wgpu::RenderPipeline>(data.pipelineId));
-            break;
-        }
-        case schema::CommandBufferCommand::SetVertexBuffer: {
-            schema::CommandBufferCommandSetVertexBufferCmdData data;
-            DAWN_TRY(Deserialize(readHead, &data));
-            pass.SetVertexBuffer(data.slot, replay.GetObjectById<wgpu::Buffer>(data.bufferId),
-                                 data.offset, data.size);
-            break;
-        }
-        case schema::CommandBufferCommand::SetIndexBuffer: {
-            schema::CommandBufferCommandSetIndexBufferCmdData data;
-            DAWN_TRY(Deserialize(readHead, &data));
-            pass.SetIndexBuffer(replay.GetObjectById<wgpu::Buffer>(data.bufferId), data.format,
-                                data.offset, data.size);
-            break;
-        }
-        case schema::CommandBufferCommand::Draw: {
-            schema::CommandBufferCommandDrawCmdData data;
-            DAWN_TRY(Deserialize(readHead, &data));
-            pass.Draw(data.vertexCount, data.instanceCount, data.firstVertex, data.firstInstance);
-            break;
-        }
-        case schema::CommandBufferCommand::DrawIndexed: {
-            schema::CommandBufferCommandDrawIndexedCmdData data;
-            DAWN_TRY(Deserialize(readHead, &data));
-            pass.DrawIndexed(data.indexCount, data.instanceCount, data.firstIndex, data.baseVertex,
-                             data.firstInstance);
-            break;
-        }
-        case schema::CommandBufferCommand::DrawIndirect: {
-            schema::CommandBufferCommandDrawIndirectCmdData data;
-            DAWN_TRY(Deserialize(readHead, &data));
-            pass.DrawIndirect(replay.GetObjectById<wgpu::Buffer>(data.indirectBufferId),
-                              data.indirectOffset);
-            break;
-        }
-        case schema::CommandBufferCommand::DrawIndexedIndirect: {
-            schema::CommandBufferCommandDrawIndexedIndirectCmdData data;
-            DAWN_TRY(Deserialize(readHead, &data));
-            pass.DrawIndexedIndirect(replay.GetObjectById<wgpu::Buffer>(data.indirectBufferId),
-                                     data.indirectOffset);
-            break;
-        }
-        case schema::CommandBufferCommand::SetBindGroup:
-        case schema::CommandBufferCommand::SetImmediates:
-            DAWN_TRY(ProcessSharedCommands(replay, pass, cmd, readHead));
-            break;
-        case schema::CommandBufferCommand::PushDebugGroup:
-        case schema::CommandBufferCommand::InsertDebugMarker:
-        case schema::CommandBufferCommand::PopDebugGroup:
-            DAWN_TRY(ProcessDebugCommands(pass, cmd, readHead));
-            break;
-        default:
-            return DAWN_INTERNAL_ERROR("Render Pass/Bundle Command not implemented");
+    MaybeError operator()(const schema::CommandBufferCommandPushDebugGroupCmdData& data) override {
+        pass.PushDebugGroup(wgpu::StringView(data.groupLabel));
+        return {};
     }
-    return {};
-}
 
-MaybeError ProcessRenderBundleCommands(const ReplayImpl& replay,
-                                       ReadHead& readHead,
-                                       wgpu::Device device,
-                                       wgpu::RenderBundleEncoder pass) {
-    schema::CommandBufferCommand cmd;
-
-    while (!readHead.IsDone()) {
-        DAWN_TRY(Deserialize(readHead, &cmd));
-        switch (cmd) {
-            case schema::CommandBufferCommand::End: {
-                return {};
-            }
-            default:
-                DAWN_TRY(ProcessRenderCommand(replay, readHead, device, cmd, pass));
-                break;
-        }
+    MaybeError operator()(
+        const schema::CommandBufferCommandInsertDebugMarkerCmdData& data) override {
+        pass.InsertDebugMarker(wgpu::StringView(data.markerLabel));
+        return {};
     }
-    return DAWN_INTERNAL_ERROR("Missing RenderBundle End command");
-}
 
-ResultOrError<wgpu::RenderBundle> CreateRenderBundle(const ReplayImpl& replay,
-                                                     wgpu::Device device,
-                                                     ReadHead& readHead,
-                                                     const std::string& label) {
-    schema::RenderBundle bundle;
-    DAWN_TRY(Deserialize(readHead, &bundle));
+    MaybeError operator()(const schema::CommandBufferCommandPopDebugGroupCmdData& data) override {
+        pass.PopDebugGroup();
+        return {};
+    }
+};
 
+template <typename Base, typename Pass>
+struct DawnRenderVisitor : DawnCommandVisitor<Base, Pass> {
+    using DawnCommandVisitor<Base, Pass>::DawnCommandVisitor;
+    using DawnCommandVisitor<Base, Pass>::replay;
+    using DawnCommandVisitor<Base, Pass>::pass;
+
+    MaybeError operator()(
+        const schema::CommandBufferCommandSetRenderPipelineCmdData& data) override {
+        pass.SetPipeline(replay.template GetObjectById<wgpu::RenderPipeline>(data.pipelineId));
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandSetVertexBufferCmdData& data) override {
+        pass.SetVertexBuffer(data.slot, replay.template GetObjectById<wgpu::Buffer>(data.bufferId),
+                             data.offset, data.size);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandSetIndexBufferCmdData& data) override {
+        pass.SetIndexBuffer(replay.template GetObjectById<wgpu::Buffer>(data.bufferId), data.format,
+                            data.offset, data.size);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandDrawCmdData& data) override {
+        pass.Draw(data.vertexCount, data.instanceCount, data.firstVertex, data.firstInstance);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandDrawIndexedCmdData& data) override {
+        pass.DrawIndexed(data.indexCount, data.instanceCount, data.firstIndex, data.baseVertex,
+                         data.firstInstance);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandDrawIndirectCmdData& data) override {
+        pass.DrawIndirect(replay.template GetObjectById<wgpu::Buffer>(data.indirectBufferId),
+                          data.indirectOffset);
+        return {};
+    }
+
+    MaybeError operator()(
+        const schema::CommandBufferCommandDrawIndexedIndirectCmdData& data) override {
+        pass.DrawIndexedIndirect(replay.template GetObjectById<wgpu::Buffer>(data.indirectBufferId),
+                                 data.indirectOffset);
+        return {};
+    }
+};
+
+struct DawnRenderBundleVisitor : DawnRenderVisitor<RenderBundleVisitor, wgpu::RenderBundleEncoder> {
+    using DawnRenderVisitor::DawnRenderVisitor;
+
+    MaybeError operator()(const schema::CommandBufferCommandEndCmdData& data) override {
+        return {};
+    }
+};
+
+ResultOrError<wgpu::RenderBundle> CreateResource(const DawnRootCommandVisitor& replay,
+                                                 wgpu::Device device,
+                                                 const RenderBundleData& data,
+                                                 const std::string& label) {
     wgpu::RenderBundleEncoderDescriptor desc{
-        .colorFormatCount = bundle.colorFormats.size(),
-        .colorFormats = bundle.colorFormats.data(),
-        .depthStencilFormat = bundle.depthStencilFormat,
-        .sampleCount = bundle.sampleCount,
-        .depthReadOnly = bundle.depthReadOnly,
-        .stencilReadOnly = bundle.stencilReadOnly,
+        .colorFormatCount = data.bundle.colorFormats.size(),
+        .colorFormats = data.bundle.colorFormats.data(),
+        .depthStencilFormat = data.bundle.depthStencilFormat,
+        .sampleCount = data.bundle.sampleCount,
+        .depthReadOnly = data.bundle.depthReadOnly,
+        .stencilReadOnly = data.bundle.stencilReadOnly,
     };
     wgpu::RenderBundleEncoder encoder = device.CreateRenderBundleEncoder(&desc);
-    DAWN_TRY(ProcessRenderBundleCommands(replay, readHead, device, encoder));
+    DawnRenderBundleVisitor visitor{replay, encoder};
+    DAWN_TRY(ProcessRenderBundleCommands(data.readHead, &visitor));
 
     wgpu::RenderBundleDescriptor bundleDesc{
         .label = wgpu::StringView(label),
@@ -812,13 +850,10 @@ ResultOrError<wgpu::RenderBundle> CreateRenderBundle(const ReplayImpl& replay,
     return {renderBundle};
 }
 
-ResultOrError<wgpu::RenderPipeline> CreateRenderPipeline(const ReplayImpl& replay,
-                                                         wgpu::Device device,
-                                                         ReadHead& readHead,
-                                                         const std::string& label) {
-    schema::RenderPipeline pipeline;
-    DAWN_TRY(Deserialize(readHead, &pipeline));
-
+ResultOrError<wgpu::RenderPipeline> CreateResource(const DawnRootCommandVisitor& replay,
+                                                   wgpu::Device device,
+                                                   const schema::RenderPipeline& pipeline,
+                                                   const std::string& label) {
     std::vector<wgpu::ConstantEntry> vertexConstants = ToWGPU(pipeline.vertex.program.constants);
     std::vector<wgpu::ConstantEntry> fragmentConstants =
         ToWGPU(pipeline.fragment.program.constants);
@@ -928,12 +963,10 @@ ResultOrError<wgpu::RenderPipeline> CreateRenderPipeline(const ReplayImpl& repla
     return {renderPipeline};
 }
 
-ResultOrError<wgpu::Sampler> CreateSampler(wgpu::Device device,
-                                           ReadHead& readHead,
-                                           const std::string& label) {
-    schema::Sampler sampler;
-    DAWN_TRY(Deserialize(readHead, &sampler));
-
+ResultOrError<wgpu::Sampler> CreateResource(const DawnRootCommandVisitor&,
+                                            wgpu::Device device,
+                                            const schema::Sampler& sampler,
+                                            const std::string& label) {
     wgpu::SamplerDescriptor desc{
         .label = wgpu::StringView(label),
         .addressModeU = sampler.addressModeU,
@@ -950,12 +983,10 @@ ResultOrError<wgpu::Sampler> CreateSampler(wgpu::Device device,
     return {device.CreateSampler(&desc)};
 }
 
-ResultOrError<wgpu::ShaderModule> CreateShaderModule(wgpu::Device device,
-                                                     ReadHead& readHead,
-                                                     const std::string& label) {
-    schema::ShaderModule mod;
-    DAWN_TRY(Deserialize(readHead, &mod));
-
+ResultOrError<wgpu::ShaderModule> CreateResource(const DawnRootCommandVisitor&,
+                                                 wgpu::Device device,
+                                                 const schema::ShaderModule& mod,
+                                                 const std::string& label) {
     // TODO(452840621): Make this use a chain instead of hard coded to WGSL only and handle other
     // chained structs.
     wgpu::ShaderSourceWGSL source({
@@ -970,12 +1001,17 @@ ResultOrError<wgpu::ShaderModule> CreateShaderModule(wgpu::Device device,
     return {shaderModule};
 }
 
-ResultOrError<wgpu::Texture> CreateTexture(wgpu::Device device,
-                                           ReadHead& readHead,
-                                           const std::string& label) {
-    schema::Texture tex;
-    DAWN_TRY(Deserialize(readHead, &tex));
+ResultOrError<wgpu::TexelBufferView> CreateResource(const DawnRootCommandVisitor&,
+                                                    wgpu::Device device,
+                                                    const schema::TexelBufferView& view,
+                                                    const std::string& label) {
+    return DAWN_UNIMPLEMENTED_ERROR("TexelBufferView not supported");
+}
 
+ResultOrError<wgpu::Texture> CreateResource(const DawnRootCommandVisitor&,
+                                            wgpu::Device device,
+                                            const schema::Texture& tex,
+                                            const std::string& label) {
     wgpu::TextureUsage usage = tex.usage;
     if (!(usage & wgpu::TextureUsage::TransientAttachment)) {
         usage |= wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst;
@@ -996,12 +1032,10 @@ ResultOrError<wgpu::Texture> CreateTexture(wgpu::Device device,
     return {texture};
 }
 
-ResultOrError<wgpu::TextureView> CreateTextureView(const ReplayImpl& replay,
-                                                   ReadHead& readHead,
-                                                   const std::string& label) {
-    schema::TextureView view;
-    DAWN_TRY(Deserialize(readHead, &view));
-
+ResultOrError<wgpu::TextureView> CreateResource(const DawnRootCommandVisitor& replay,
+                                                wgpu::Device device,
+                                                const schema::TextureView& view,
+                                                const std::string& label) {
     wgpu::TextureViewDescriptor desc{
         .label = wgpu::StringView(label),
         .format = view.format,
@@ -1028,296 +1062,354 @@ ResultOrError<wgpu::TextureView> CreateTextureView(const ReplayImpl& replay,
     return {textureView};
 }
 
-MaybeError ProcessComputePassCommands(const ReplayImpl& replay,
-                                      ReadHead& readHead,
-                                      wgpu::Device device,
-                                      wgpu::ComputePassEncoder pass) {
-    schema::CommandBufferCommand cmd;
+struct DawnComputePassVisitor : DawnCommandVisitor<ComputePassVisitor, wgpu::ComputePassEncoder> {
+    using DawnCommandVisitor::DawnCommandVisitor;
 
-    while (!readHead.IsDone()) {
-        DAWN_TRY(Deserialize(readHead, &cmd));
-        switch (cmd) {
-            case schema::CommandBufferCommand::End: {
-                pass.End();
-                return {};
-            }
-            case schema::CommandBufferCommand::SetComputePipeline: {
-                schema::CommandBufferCommandSetComputePipelineCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                pass.SetPipeline(replay.GetObjectById<wgpu::ComputePipeline>(data.pipelineId));
-                break;
-            }
-            case schema::CommandBufferCommand::Dispatch: {
-                schema::CommandBufferCommandDispatchCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                pass.DispatchWorkgroups(data.x, data.y, data.z);
-                break;
-            }
-            case schema::CommandBufferCommand::DispatchIndirect: {
-                schema::CommandBufferCommandDispatchIndirectCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                pass.DispatchWorkgroupsIndirect(replay.GetObjectById<wgpu::Buffer>(data.bufferId),
-                                                data.offset);
-                break;
-            }
-            case schema::CommandBufferCommand::WriteTimestamp:
-                DAWN_TRY(ProcessWriteTimestamp(replay, pass, readHead));
-                break;
-            case schema::CommandBufferCommand::SetBindGroup:
-            case schema::CommandBufferCommand::SetImmediates:
-                DAWN_TRY(ProcessSharedCommands(replay, pass, cmd, readHead));
-                break;
-            case schema::CommandBufferCommand::PushDebugGroup:
-            case schema::CommandBufferCommand::InsertDebugMarker:
-            case schema::CommandBufferCommand::PopDebugGroup:
-                DAWN_TRY(ProcessDebugCommands(pass, cmd, readHead));
-                break;
-            default:
-                return DAWN_INTERNAL_ERROR("Compute Pass Command not implemented");
-        }
+    MaybeError operator()(
+        const schema::CommandBufferCommandSetComputePipelineCmdData& data) override {
+        pass.SetPipeline(replay.GetObjectById<wgpu::ComputePipeline>(data.pipelineId));
+        return {};
     }
-    return DAWN_INTERNAL_ERROR("Missing ComputePass End command");
-}
 
-MaybeError ProcessRenderPassCommands(const ReplayImpl& replay,
-                                     ReadHead& readHead,
-                                     wgpu::Device device,
-                                     wgpu::RenderPassEncoder pass) {
-    schema::CommandBufferCommand cmd;
-
-    while (!readHead.IsDone()) {
-        DAWN_TRY(Deserialize(readHead, &cmd));
-        switch (cmd) {
-            case schema::CommandBufferCommand::End: {
-                pass.End();
-                return {};
-            }
-            case schema::CommandBufferCommand::ExecuteBundles: {
-                schema::CommandBufferCommandExecuteBundlesCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                std::vector<wgpu::RenderBundle> bundles;
-                for (auto bundleId : data.bundleIds) {
-                    bundles.push_back(replay.GetObjectById<wgpu::RenderBundle>(bundleId));
-                }
-                pass.ExecuteBundles(bundles.size(), bundles.data());
-                break;
-            }
-            case schema::CommandBufferCommand::BeginOcclusionQuery: {
-                schema::CommandBufferCommandBeginOcclusionQueryCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                pass.BeginOcclusionQuery(data.queryIndex);
-                break;
-            }
-            case schema::CommandBufferCommand::EndOcclusionQuery: {
-                pass.EndOcclusionQuery();
-                break;
-            }
-            case schema::CommandBufferCommand::SetBlendConstant: {
-                schema::CommandBufferCommandSetBlendConstantCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                wgpu::Color color = ToWGPU(data.color);
-                pass.SetBlendConstant(&color);
-                break;
-            }
-            case schema::CommandBufferCommand::SetScissorRect: {
-                schema::CommandBufferCommandSetScissorRectCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                pass.SetScissorRect(data.x, data.y, data.width, data.height);
-                break;
-            }
-            case schema::CommandBufferCommand::SetStencilReference: {
-                schema::CommandBufferCommandSetStencilReferenceCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                pass.SetStencilReference(data.reference);
-                break;
-            }
-            case schema::CommandBufferCommand::SetViewport: {
-                schema::CommandBufferCommandSetViewportCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                pass.SetViewport(data.x, data.y, data.width, data.height, data.minDepth,
-                                 data.maxDepth);
-                break;
-            }
-            case schema::CommandBufferCommand::WriteTimestamp:
-                DAWN_TRY(ProcessWriteTimestamp(replay, pass, readHead));
-                break;
-            default:
-                DAWN_TRY(ProcessRenderCommand(replay, readHead, device, cmd, pass));
-                break;
-        }
+    MaybeError operator()(const schema::CommandBufferCommandDispatchCmdData& data) override {
+        pass.DispatchWorkgroups(data.x, data.y, data.z);
+        return {};
     }
-    return DAWN_INTERNAL_ERROR("Missing RenderPass End command");
-}
 
-MaybeError ProcessEncoderCommands(const ReplayImpl& replay,
-                                  ReadHead& readHead,
-                                  wgpu::Device device,
-                                  wgpu::CommandEncoder encoder) {
-    schema::CommandBufferCommand cmd;
-
-    while (!readHead.IsDone()) {
-        DAWN_TRY(Deserialize(readHead, &cmd));
-        switch (cmd) {
-            case schema::CommandBufferCommand::BeginComputePass: {
-                schema::CommandBufferCommandBeginComputePassCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                wgpu::PassTimestampWrites timestampWrites = ToWGPU(replay, data.timestampWrites);
-                wgpu::ComputePassDescriptor desc{
-                    .label = wgpu::StringView(data.label),
-                    .timestampWrites = timestampWrites.querySet ? &timestampWrites : nullptr,
-                };
-                wgpu::ComputePassEncoder pass = encoder.BeginComputePass(&desc);
-                DAWN_TRY(ProcessComputePassCommands(replay, readHead, device, pass));
-                break;
-            }
-            case schema::CommandBufferCommand::BeginRenderPass: {
-                schema::CommandBufferCommandBeginRenderPassCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                wgpu::PassTimestampWrites timestampWrites = ToWGPU(replay, data.timestampWrites);
-                std::vector<wgpu::RenderPassColorAttachment> colorAttachments;
-
-                for (const auto& attachment : data.colorAttachments) {
-                    colorAttachments.push_back(wgpu::RenderPassColorAttachment{
-                        .nextInChain = nullptr,
-                        .view = replay.GetObjectById<wgpu::TextureView>(attachment.viewId),
-                        .depthSlice = attachment.depthSlice,
-                        .resolveTarget =
-                            replay.GetObjectById<wgpu::TextureView>(attachment.resolveTargetId),
-                        .loadOp = attachment.loadOp,
-                        .storeOp = attachment.storeOp,
-                        .clearValue = ToWGPU(attachment.clearValue),
-                    });
-                }
-
-                wgpu::RenderPassDepthStencilAttachment depthStencilAttachment{
-                    .view =
-                        replay.GetObjectById<wgpu::TextureView>(data.depthStencilAttachment.viewId),
-                    .depthLoadOp = data.depthStencilAttachment.depthLoadOp,
-                    .depthStoreOp = data.depthStencilAttachment.depthStoreOp,
-                    .depthClearValue = data.depthStencilAttachment.depthClearValue,
-                    .depthReadOnly = data.depthStencilAttachment.depthReadOnly,
-                    .stencilLoadOp = data.depthStencilAttachment.stencilLoadOp,
-                    .stencilStoreOp = data.depthStencilAttachment.stencilStoreOp,
-                    .stencilClearValue = data.depthStencilAttachment.stencilClearValue,
-                    .stencilReadOnly = data.depthStencilAttachment.stencilReadOnly,
-                };
-
-                wgpu::RenderPassDescriptor desc{
-                    .label = wgpu::StringView(data.label),
-                    .colorAttachmentCount = colorAttachments.size(),
-                    .colorAttachments = colorAttachments.data(),
-                    .depthStencilAttachment =
-                        depthStencilAttachment.view != nullptr ? &depthStencilAttachment : nullptr,
-                    .occlusionQuerySet =
-                        replay.GetObjectById<wgpu::QuerySet>(data.occlusionQuerySetId),
-                    .timestampWrites = timestampWrites.querySet ? &timestampWrites : nullptr,
-                };
-
-                wgpu::RenderPassDescriptorResolveRect resolveRect;
-                if (data.resolveRect.width != 0) {
-                    resolveRect.colorOffsetX = data.resolveRect.colorOffsetX;
-                    resolveRect.colorOffsetY = data.resolveRect.colorOffsetY;
-                    resolveRect.resolveOffsetX = data.resolveRect.resolveOffsetX;
-                    resolveRect.resolveOffsetY = data.resolveRect.resolveOffsetY;
-                    resolveRect.width = data.resolveRect.width;
-                    resolveRect.height = data.resolveRect.height;
-                    desc.nextInChain = &resolveRect;
-                }
-
-                wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&desc);
-                DAWN_TRY(ProcessRenderPassCommands(replay, readHead, device, pass));
-                break;
-            }
-            case schema::CommandBufferCommand::ClearBuffer: {
-                schema::CommandBufferCommandClearBufferCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                encoder.ClearBuffer(replay.GetObjectById<wgpu::Buffer>(data.bufferId), data.offset,
-                                    data.size);
-                break;
-            }
-            case schema::CommandBufferCommand::CopyBufferToBuffer: {
-                schema::CommandBufferCommandCopyBufferToBufferCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                encoder.CopyBufferToBuffer(replay.GetObjectById<wgpu::Buffer>(data.srcBufferId),
-                                           data.srcOffset,
-                                           replay.GetObjectById<wgpu::Buffer>(data.dstBufferId),
-                                           data.dstOffset, data.size);
-                break;
-            }
-            case schema::CommandBufferCommand::CopyBufferToTexture: {
-                schema::CommandBufferCommandCopyBufferToTextureCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                wgpu::TexelCopyBufferInfo src = ToWGPU(replay, data.source);
-                wgpu::TexelCopyTextureInfo dst = ToWGPU(replay, data.destination);
-                wgpu::Extent3D copySize = ToWGPU(data.copySize);
-                encoder.CopyBufferToTexture(&src, &dst, &copySize);
-                break;
-            }
-            case schema::CommandBufferCommand::CopyTextureToBuffer: {
-                schema::CommandBufferCommandCopyTextureToBufferCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                wgpu::TexelCopyTextureInfo src = ToWGPU(replay, data.source);
-                wgpu::TexelCopyBufferInfo dst = ToWGPU(replay, data.destination);
-                wgpu::Extent3D copySize = ToWGPU(data.copySize);
-                encoder.CopyTextureToBuffer(&src, &dst, &copySize);
-                break;
-            }
-            case schema::CommandBufferCommand::CopyTextureToTexture: {
-                schema::CommandBufferCommandCopyTextureToTextureCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                wgpu::TexelCopyTextureInfo src = ToWGPU(replay, data.source);
-                wgpu::TexelCopyTextureInfo dst = ToWGPU(replay, data.destination);
-                wgpu::Extent3D copySize = ToWGPU(data.copySize);
-                encoder.CopyTextureToTexture(&src, &dst, &copySize);
-                break;
-            }
-            case schema::CommandBufferCommand::End: {
-                return {};
-            }
-            case schema::CommandBufferCommand::ResolveQuerySet: {
-                schema::CommandBufferCommandResolveQuerySetCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                encoder.ResolveQuerySet(replay.GetObjectById<wgpu::QuerySet>(data.querySetId),
-                                        data.firstQuery, data.queryCount,
-                                        replay.GetObjectById<wgpu::Buffer>(data.destinationId),
-                                        data.destinationOffset);
-                break;
-            }
-            case schema::CommandBufferCommand::WriteBuffer: {
-                schema::CommandBufferCommandWriteBufferCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                wgpu::Buffer buffer = replay.GetObjectById<wgpu::Buffer>(data.bufferId);
-                encoder.WriteBuffer(buffer, data.bufferOffset, data.data.data(), data.data.size());
-                break;
-            }
-            case schema::CommandBufferCommand::WriteTimestamp:
-                DAWN_TRY(ProcessWriteTimestamp(replay, encoder, readHead));
-                break;
-            case schema::CommandBufferCommand::PushDebugGroup:
-            case schema::CommandBufferCommand::InsertDebugMarker:
-            case schema::CommandBufferCommand::PopDebugGroup:
-                DAWN_TRY(ProcessDebugCommands(encoder, cmd, readHead));
-                break;
-            default:
-                return DAWN_INTERNAL_ERROR("Encoder Command not implemented");
-        }
+    MaybeError operator()(
+        const schema::CommandBufferCommandDispatchIndirectCmdData& data) override {
+        pass.DispatchWorkgroupsIndirect(replay.GetObjectById<wgpu::Buffer>(data.bufferId),
+                                        data.offset);
+        return {};
     }
-    return DAWN_INTERNAL_ERROR("Missing End command");
-}
 
-ResultOrError<wgpu::CommandBuffer> CreateCommandBuffer(const ReplayImpl& replay,
-                                                       wgpu::Device device,
-                                                       ReadHead& readHead,
-                                                       const std::string& label) {
+    MaybeError operator()(const schema::CommandBufferCommandWriteTimestampCmdData& data) override {
+        pass.WriteTimestamp(replay.GetObjectById<wgpu::QuerySet>(data.querySetId), data.queryIndex);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandEndCmdData& data) override {
+        pass.End();
+        return {};
+    }
+};
+
+struct DawnRenderPassVisitor : DawnRenderVisitor<RenderPassVisitor, wgpu::RenderPassEncoder> {
+    using DawnRenderVisitor::DawnRenderVisitor;
+
+    MaybeError operator()(const schema::CommandBufferCommandExecuteBundlesCmdData& data) override {
+        std::vector<wgpu::RenderBundle> bundles;
+        for (auto bundleId : data.bundleIds) {
+            bundles.push_back(replay.GetObjectById<wgpu::RenderBundle>(bundleId));
+        }
+        pass.ExecuteBundles(bundles.size(), bundles.data());
+        return {};
+    }
+
+    MaybeError operator()(
+        const schema::CommandBufferCommandBeginOcclusionQueryCmdData& data) override {
+        pass.BeginOcclusionQuery(data.queryIndex);
+        return {};
+    }
+
+    MaybeError operator()(
+        const schema::CommandBufferCommandEndOcclusionQueryCmdData& data) override {
+        pass.EndOcclusionQuery();
+        return {};
+    }
+
+    MaybeError operator()(
+        const schema::CommandBufferCommandSetBlendConstantCmdData& data) override {
+        wgpu::Color color = ToWGPU(data.color);
+        pass.SetBlendConstant(&color);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandSetScissorRectCmdData& data) override {
+        pass.SetScissorRect(data.x, data.y, data.width, data.height);
+        return {};
+    }
+
+    MaybeError operator()(
+        const schema::CommandBufferCommandSetStencilReferenceCmdData& data) override {
+        pass.SetStencilReference(data.reference);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandSetViewportCmdData& data) override {
+        pass.SetViewport(data.x, data.y, data.width, data.height, data.minDepth, data.maxDepth);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandWriteTimestampCmdData& data) override {
+        pass.WriteTimestamp(replay.GetObjectById<wgpu::QuerySet>(data.querySetId), data.queryIndex);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandEndCmdData& data) override {
+        pass.End();
+        return {};
+    }
+};
+
+struct DawnEncoderVisitor : EncoderVisitor {
+    const DawnRootCommandVisitor& replay;
+    wgpu::CommandEncoder pass;
+    wgpu::Device device;
+
+    DawnEncoderVisitor(const DawnRootCommandVisitor& r, wgpu::CommandEncoder p, wgpu::Device d)
+        : replay(r), pass(p), device(d) {}
+
+    ResultOrError<ComputePassVisitor*> BeginComputePass(
+        const schema::CommandBufferCommandBeginComputePassCmdData& data) override {
+        wgpu::PassTimestampWrites timestampWrites = ToWGPU(replay, data.timestampWrites);
+        wgpu::ComputePassDescriptor desc{
+            .label = wgpu::StringView(data.label),
+            .timestampWrites = timestampWrites.querySet ? &timestampWrites : nullptr,
+        };
+        mComputePassEncoder = pass.BeginComputePass(&desc);
+        mComputePassVisitor = std::make_unique<DawnComputePassVisitor>(replay, mComputePassEncoder);
+        return mComputePassVisitor.get();
+    }
+
+    ResultOrError<RenderPassVisitor*> BeginRenderPass(
+        const schema::CommandBufferCommandBeginRenderPassCmdData& data) override {
+        wgpu::PassTimestampWrites timestampWrites = ToWGPU(replay, data.timestampWrites);
+        std::vector<wgpu::RenderPassColorAttachment> colorAttachments;
+
+        for (const auto& attachment : data.colorAttachments) {
+            colorAttachments.push_back(wgpu::RenderPassColorAttachment{
+                .nextInChain = nullptr,
+                .view = replay.GetObjectById<wgpu::TextureView>(attachment.viewId),
+                .depthSlice = attachment.depthSlice,
+                .resolveTarget =
+                    replay.GetObjectById<wgpu::TextureView>(attachment.resolveTargetId),
+                .loadOp = attachment.loadOp,
+                .storeOp = attachment.storeOp,
+                .clearValue = ToWGPU(attachment.clearValue),
+            });
+        }
+
+        wgpu::RenderPassDepthStencilAttachment depthStencilAttachment{
+            .view = replay.GetObjectById<wgpu::TextureView>(data.depthStencilAttachment.viewId),
+            .depthLoadOp = data.depthStencilAttachment.depthLoadOp,
+            .depthStoreOp = data.depthStencilAttachment.depthStoreOp,
+            .depthClearValue = data.depthStencilAttachment.depthClearValue,
+            .depthReadOnly = data.depthStencilAttachment.depthReadOnly,
+            .stencilLoadOp = data.depthStencilAttachment.stencilLoadOp,
+            .stencilStoreOp = data.depthStencilAttachment.stencilStoreOp,
+            .stencilClearValue = data.depthStencilAttachment.stencilClearValue,
+            .stencilReadOnly = data.depthStencilAttachment.stencilReadOnly,
+        };
+
+        wgpu::RenderPassDescriptor desc{
+            .label = wgpu::StringView(data.label),
+            .colorAttachmentCount = colorAttachments.size(),
+            .colorAttachments = colorAttachments.data(),
+            .depthStencilAttachment =
+                depthStencilAttachment.view != nullptr ? &depthStencilAttachment : nullptr,
+            .occlusionQuerySet = replay.GetObjectById<wgpu::QuerySet>(data.occlusionQuerySetId),
+            .timestampWrites = timestampWrites.querySet ? &timestampWrites : nullptr,
+        };
+
+        wgpu::RenderPassDescriptorResolveRect resolveRect;
+        if (data.resolveRect.width != 0) {
+            resolveRect.colorOffsetX = data.resolveRect.colorOffsetX;
+            resolveRect.colorOffsetY = data.resolveRect.colorOffsetY;
+            resolveRect.resolveOffsetX = data.resolveRect.resolveOffsetX;
+            resolveRect.resolveOffsetY = data.resolveRect.resolveOffsetY;
+            resolveRect.width = data.resolveRect.width;
+            resolveRect.height = data.resolveRect.height;
+            desc.nextInChain = &resolveRect;
+        }
+
+        mRenderPassEncoder = pass.BeginRenderPass(&desc);
+        mRenderPassVisitor = std::make_unique<DawnRenderPassVisitor>(replay, mRenderPassEncoder);
+        return mRenderPassVisitor.get();
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandClearBufferCmdData& data) override {
+        pass.ClearBuffer(replay.GetObjectById<wgpu::Buffer>(data.bufferId), data.offset, data.size);
+        return {};
+    }
+
+    MaybeError operator()(
+        const schema::CommandBufferCommandCopyBufferToBufferCmdData& data) override {
+        pass.CopyBufferToBuffer(
+            replay.GetObjectById<wgpu::Buffer>(data.srcBufferId), data.srcOffset,
+            replay.GetObjectById<wgpu::Buffer>(data.dstBufferId), data.dstOffset, data.size);
+        return {};
+    }
+
+    MaybeError operator()(
+        const schema::CommandBufferCommandCopyBufferToTextureCmdData& data) override {
+        wgpu::TexelCopyBufferInfo src = ToWGPU(replay, data.source);
+        wgpu::TexelCopyTextureInfo dst = ToWGPU(replay, data.destination);
+        wgpu::Extent3D copySize = ToWGPU(data.copySize);
+        pass.CopyBufferToTexture(&src, &dst, &copySize);
+        return {};
+    }
+
+    MaybeError operator()(
+        const schema::CommandBufferCommandCopyTextureToBufferCmdData& data) override {
+        wgpu::TexelCopyTextureInfo src = ToWGPU(replay, data.source);
+        wgpu::TexelCopyBufferInfo dst = ToWGPU(replay, data.destination);
+        wgpu::Extent3D copySize = ToWGPU(data.copySize);
+        pass.CopyTextureToBuffer(&src, &dst, &copySize);
+        return {};
+    }
+
+    MaybeError operator()(
+        const schema::CommandBufferCommandCopyTextureToTextureCmdData& data) override {
+        wgpu::TexelCopyTextureInfo src = ToWGPU(replay, data.source);
+        wgpu::TexelCopyTextureInfo dst = ToWGPU(replay, data.destination);
+        wgpu::Extent3D copySize = ToWGPU(data.copySize);
+        pass.CopyTextureToTexture(&src, &dst, &copySize);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandResolveQuerySetCmdData& data) override {
+        pass.ResolveQuerySet(
+            replay.GetObjectById<wgpu::QuerySet>(data.querySetId), data.firstQuery, data.queryCount,
+            replay.GetObjectById<wgpu::Buffer>(data.destinationId), data.destinationOffset);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandWriteBufferCmdData& data) override {
+        wgpu::Buffer buffer = replay.GetObjectById<wgpu::Buffer>(data.bufferId);
+        pass.WriteBuffer(buffer, data.bufferOffset, data.data.data(), data.data.size());
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandWriteTimestampCmdData& data) override {
+        pass.WriteTimestamp(replay.GetObjectById<wgpu::QuerySet>(data.querySetId), data.queryIndex);
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandPushDebugGroupCmdData& data) override {
+        pass.PushDebugGroup(wgpu::StringView(data.groupLabel));
+        return {};
+    }
+
+    MaybeError operator()(
+        const schema::CommandBufferCommandInsertDebugMarkerCmdData& data) override {
+        pass.InsertDebugMarker(wgpu::StringView(data.markerLabel));
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandPopDebugGroupCmdData& data) override {
+        pass.PopDebugGroup();
+        return {};
+    }
+
+    MaybeError operator()(const schema::CommandBufferCommandEndCmdData& data) override {
+        return {};
+    }
+
+  private:
+    wgpu::ComputePassEncoder mComputePassEncoder;
+    std::unique_ptr<DawnComputePassVisitor> mComputePassVisitor;
+    wgpu::RenderPassEncoder mRenderPassEncoder;
+    std::unique_ptr<DawnRenderPassVisitor> mRenderPassVisitor;
+};
+
+ResultOrError<wgpu::CommandBuffer> CreateResource(const DawnRootCommandVisitor& replay,
+                                                  wgpu::Device device,
+                                                  const CommandBufferData& data,
+                                                  const std::string& label) {
     wgpu::CommandEncoderDescriptor desc{
         .label = wgpu::StringView(label),
     };
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder(&desc);
-    DAWN_TRY(ProcessEncoderCommands(replay, readHead, device, encoder));
+    DawnEncoderVisitor visitor{replay, encoder, device};
+    DAWN_TRY(ProcessEncoderCommands(data.readHead, &visitor));
     return {encoder.Finish()};
 }
 
+ResultOrError<wgpu::CommandBuffer> CreateResource(const DawnRootCommandVisitor& replay,
+                                                  wgpu::Device device,
+                                                  const DeviceData& data,
+                                                  const std::string& label) {
+    // This is here to make resource handling generic. We don't create
+    // devices from commands but we reference devices as another resource.
+    return DAWN_INTERNAL_ERROR("Device creation not supported");
+}
+
 }  // anonymous namespace
+
+#define DAWN_REPLAY_VISIT_RESOURCE_CREATE(ENUM, TYPE)              \
+    MaybeError DawnResourceVisitor::operator()(const TYPE& data) { \
+        return Create(data);                                       \
+    }
+DAWN_REPLAY_RESOURCE_DATA_MAP(DAWN_REPLAY_VISIT_RESOURCE_CREATE)
+#undef DAWN_REPLAY_VISIT_RESOURCE_CREATE
+
+template <typename T>
+MaybeError DawnResourceVisitor::Create(const T& data) {
+    auto res =
+        CreateResource(*mVisitor, mVisitor->GetDevice(), data, mVisitor->GetCurrentResourceLabel());
+    if (res.IsError()) {
+        return res.AcquireError();
+    }
+    mVisitor->AddResource(mVisitor->GetCurrentResourceId(), mVisitor->GetCurrentResourceLabel(),
+                          res.AcquireSuccess());
+    return {};
+}
+
+MaybeError DawnRootCommandVisitor::operator()(const schema::RootCommandWriteBufferCmdData& data) {
+    wgpu::Buffer buffer = GetObjectById<wgpu::Buffer>(data.bufferId);
+    return ReadContentIntoBuffer(*mContentReadHead, mDevice, buffer, data.bufferOffset, data.size);
+}
+
+MaybeError DawnRootCommandVisitor::operator()(const schema::RootCommandWriteTextureCmdData& data) {
+    return ReadContentIntoTexture(*this, *mContentReadHead, mDevice, data);
+}
+
+MaybeError DawnRootCommandVisitor::operator()(const schema::RootCommandQueueSubmitCmdData& data) {
+    std::vector<wgpu::CommandBuffer> commandBuffers;
+    commandBuffers.reserve(data.commandBuffers.size());
+    for (auto id : data.commandBuffers) {
+        commandBuffers.push_back(GetObjectById<wgpu::CommandBuffer>(id));
+    }
+    mDevice.GetQueue().Submit(commandBuffers.size(), commandBuffers.data());
+    return {};
+}
+
+MaybeError DawnRootCommandVisitor::operator()(const schema::RootCommandSetLabelCmdData& data) {
+    return SetLabel(data.id, data.type, data.label);
+}
+
+MaybeError DawnRootCommandVisitor::operator()(const schema::RootCommandInitTextureCmdData& data) {
+    return InitializeTexture(*this, mBlitBufferToDepthTexture, *mContentReadHead, mDevice, data);
+}
+
+MaybeError DawnRootCommandVisitor::SetLabel(schema::ObjectId id,
+                                            schema::ObjectType type,
+                                            const std::string& label) {
+// We update both the object's label and our own copy of the label
+// as there is no API to get an object's label from WebGPU
+#define DAWN_SET_LABEL_CASE(NAME)                                                           \
+    case schema::ObjectType::NAME: {                                                        \
+        auto iter = mResources.find(id);                                                    \
+        DAWN_ASSERT(iter != mResources.end());                                              \
+        std::get_if<wgpu::NAME>(&iter->second.resource)->SetLabel(wgpu::StringView(label)); \
+        iter->second.label = label;                                                         \
+        break;                                                                              \
+    }
+
+#define DAWN_SET_LABEL_GEN(NAME, MEMBERS) MEMBERS(DAWN_SET_LABEL_CASE)
+
+    switch (type) {
+        DAWN_REPLAY_OBJECT_TYPES_ENUM(DAWN_SET_LABEL_GEN)
+        default:
+            return DAWN_INTERNAL_ERROR("unhandled resource type");
+    }
+
+#undef DAWN_SET_LABEL_GEN
+#undef DAWN_SET_LABEL_CASE
+
+    return {};
+}
 
 std::unique_ptr<ReplayImpl> ReplayImpl::Create(wgpu::Device device,
                                                std::unique_ptr<Capture> capture) {
@@ -1326,232 +1418,34 @@ std::unique_ptr<ReplayImpl> ReplayImpl::Create(wgpu::Device device,
 }
 
 ReplayImpl::ReplayImpl(wgpu::Device device, std::unique_ptr<CaptureImpl> capture)
-    : mDevice(device), mCapture(std::move(capture)) {
-    AddResource(schema::kDeviceId, "", device);
-}
-
-MaybeError ReplayImpl::CreateResource(wgpu::Device device, ReadHead& readHead) {
-    schema::LabeledResource resource;
-    DAWN_TRY(Deserialize(readHead, &resource));
-
-    switch (resource.type) {
-        case schema::ObjectType::BindGroup: {
-            wgpu::BindGroup bindGroup;
-            DAWN_TRY_ASSIGN(bindGroup, CreateBindGroup(*this, device, readHead, resource.label));
-            AddResource(resource.id, resource.label, bindGroup);
-            return {};
-        }
-
-        case schema::ObjectType::BindGroupLayout: {
-            wgpu::BindGroupLayout bindGroupLayout;
-            DAWN_TRY_ASSIGN(bindGroupLayout,
-                            CreateBindGroupLayout(*this, device, readHead, resource.label));
-            AddResource(resource.id, resource.label, bindGroupLayout);
-            return {};
-        }
-
-        case schema::ObjectType::Buffer: {
-            wgpu::Buffer buffer;
-            DAWN_TRY_ASSIGN(buffer, CreateBuffer(device, readHead, resource.label));
-            AddResource(resource.id, resource.label, buffer);
-            return {};
-        }
-
-        case schema::ObjectType::CommandBuffer: {
-            // Command buffers are special and don't have any resources to create.
-            // They are just a sequence of commands.
-            wgpu::CommandBuffer commandBuffer;
-            DAWN_TRY_ASSIGN(commandBuffer,
-                            CreateCommandBuffer(*this, device, readHead, resource.label));
-            AddResource(resource.id, resource.label, commandBuffer);
-            return {};
-        }
-
-        case schema::ObjectType::ComputePipeline: {
-            wgpu::ComputePipeline computePipeline;
-            DAWN_TRY_ASSIGN(computePipeline,
-                            CreateComputePipeline(*this, device, readHead, resource.label));
-            AddResource(resource.id, resource.label, computePipeline);
-            return {};
-        }
-
-        case schema::ObjectType::ExternalTexture: {
-            wgpu::ExternalTexture externalTexture;
-            DAWN_TRY_ASSIGN(externalTexture,
-                            CreateExternalTexture(*this, device, readHead, resource.label));
-            mResources.insert({resource.id, {resource.label, externalTexture}});
-            return {};
-        }
-
-        case schema::ObjectType::PipelineLayout: {
-            wgpu::PipelineLayout pipelineLayout;
-            DAWN_TRY_ASSIGN(pipelineLayout,
-                            CreatePipelineLayout(*this, device, readHead, resource.label));
-            AddResource(resource.id, resource.label, pipelineLayout);
-            return {};
-        }
-
-        case schema::ObjectType::QuerySet: {
-            wgpu::QuerySet querySet;
-            DAWN_TRY_ASSIGN(querySet, CreateQuerySet(*this, device, readHead, resource.label));
-            AddResource(resource.id, resource.label, querySet);
-            return {};
-        }
-
-        case schema::ObjectType::RenderBundle: {
-            // Command buffers are special and don't have any resources to create.
-            // They are just a sequence of commands.
-            wgpu::RenderBundle renderBundle;
-            DAWN_TRY_ASSIGN(renderBundle,
-                            CreateRenderBundle(*this, device, readHead, resource.label));
-            AddResource(resource.id, resource.label, renderBundle);
-            return {};
-        }
-
-        case schema::ObjectType::RenderPipeline: {
-            wgpu::RenderPipeline renderPipeline;
-            DAWN_TRY_ASSIGN(renderPipeline,
-                            CreateRenderPipeline(*this, device, readHead, resource.label));
-            AddResource(resource.id, resource.label, renderPipeline);
-            return {};
-        }
-
-        case schema::ObjectType::Sampler: {
-            wgpu::Sampler sampler;
-            DAWN_TRY_ASSIGN(sampler, CreateSampler(device, readHead, resource.label));
-            AddResource(resource.id, resource.label, sampler);
-            return {};
-        }
-
-        case schema::ObjectType::ShaderModule: {
-            wgpu::ShaderModule shaderModule;
-            DAWN_TRY_ASSIGN(shaderModule, CreateShaderModule(device, readHead, resource.label));
-            AddResource(resource.id, resource.label, shaderModule);
-            return {};
-        }
-
-        case schema::ObjectType::Texture: {
-            wgpu::Texture texture;
-            DAWN_TRY_ASSIGN(texture, CreateTexture(device, readHead, resource.label));
-            AddResource(resource.id, resource.label, texture);
-            return {};
-        }
-
-        case schema::ObjectType::TextureView: {
-            wgpu::TextureView textureView;
-            DAWN_TRY_ASSIGN(textureView, CreateTextureView(*this, readHead, resource.label));
-            AddResource(resource.id, resource.label, textureView);
-            return {};
-        }
-
-        default:
-            return DAWN_INTERNAL_ERROR("unhandled resource type");
-    }
-}
-
-MaybeError ReplayImpl::SetLabel(schema::ObjectId id,
-                                schema::ObjectType type,
-                                const std::string& label) {
-// We update both the object's label and our own copy of the label
-// as there is no API to get an object's label from WebGPU
-#define DAWN_SET_LABEL(type)                                                                \
-    case schema::ObjectType::type: {                                                        \
-        auto iter = mResources.find(id);                                                    \
-        std::get_if<wgpu::type>(&iter->second.resource)->SetLabel(wgpu::StringView(label)); \
-        iter->second.label = label;                                                         \
-        break;                                                                              \
-    }
-
-    switch (type) {
-        DAWN_SET_LABEL(BindGroup)
-        DAWN_SET_LABEL(BindGroupLayout)
-        DAWN_SET_LABEL(Buffer)
-        DAWN_SET_LABEL(CommandBuffer)
-        DAWN_SET_LABEL(ComputePipeline)
-        DAWN_SET_LABEL(Device)
-        DAWN_SET_LABEL(ExternalTexture)
-        DAWN_SET_LABEL(PipelineLayout)
-        DAWN_SET_LABEL(QuerySet)
-        DAWN_SET_LABEL(RenderBundle)
-        DAWN_SET_LABEL(RenderPipeline)
-        DAWN_SET_LABEL(Sampler)
-        DAWN_SET_LABEL(ShaderModule)
-        DAWN_SET_LABEL(Texture)
-        DAWN_SET_LABEL(TextureView)
-        default:
-            return DAWN_INTERNAL_ERROR("unhandled resource type");
-    }
-    return {};
-}
-
-const std::string& ReplayImpl::GetLabel(schema::ObjectId id) const {
-    auto iter = mResources.find(id);
-    if (iter == mResources.end()) {
-        return kNotFound;
-    }
-    return iter->second.label;
+    : mVisitor(new DawnRootCommandVisitor(device)), mCapture(std::move(capture)) {
+    mVisitor->AddResource(schema::kDeviceId, "", device);
 }
 
 MaybeError ReplayImpl::Play() {
-    auto readHead = mCapture->GetCommandReadHead();
-    auto contentReadHead = mCapture->GetContentReadHead();
-    schema::RootCommand cmd;
-
-    while (!readHead.IsDone()) {
-        DAWN_TRY(Deserialize(readHead, &cmd));
-        switch (cmd) {
-            case schema::RootCommand::CreateResource: {
-                DAWN_TRY(CreateResource(mDevice, readHead));
-                break;
-            }
-            case schema::RootCommand::WriteBuffer: {
-                schema::RootCommandWriteBufferCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                wgpu::Buffer buffer = GetObjectById<wgpu::Buffer>(data.bufferId);
-                DAWN_TRY(ReadContentIntoBuffer(contentReadHead, mDevice, buffer, data.bufferOffset,
-                                               data.size));
-                break;
-            }
-            case schema::RootCommand::WriteTexture: {
-                // TODO(451460573): Support textures with multiple subresources
-                schema::RootCommandWriteTextureCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                DAWN_TRY(ReadContentIntoTexture(*this, contentReadHead, mDevice, data));
-                break;
-            }
-            case schema::RootCommand::QueueSubmit: {
-                schema::RootCommandQueueSubmitCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-
-                std::vector<wgpu::CommandBuffer> commandBuffers;
-                std::transform(data.commandBuffers.begin(), data.commandBuffers.end(),
-                               std::back_inserter(commandBuffers), [&](const auto id) {
-                                   return GetObjectById<wgpu::CommandBuffer>(id);
-                               });
-
-                mDevice.GetQueue().Submit(commandBuffers.size(), commandBuffers.data());
-                break;
-            }
-            case schema::RootCommand::SetLabel: {
-                schema::RootCommandSetLabelCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                DAWN_TRY(SetLabel(data.id, data.type, data.label));
-                break;
-            }
-            case schema::RootCommand::InitTexture: {
-                schema::RootCommandInitTextureCmdData data;
-                DAWN_TRY(Deserialize(readHead, &data));
-                DAWN_TRY(InitializeTexture(*this, mBlitBufferToDepthTexture, contentReadHead,
-                                           mDevice, data));
-                break;
-            }
-            default: {
-                return DAWN_INTERNAL_ERROR("unimplemented root command");
-            }
-        }
+    if (mCapture->Walk(*mVisitor)) {
+        return {};
     }
+    return DAWN_INTERNAL_ERROR("Capture walk failed");
+}
 
-    return {};
+template <typename T>
+T ReplayImpl::GetObjectByLabel(std::string_view label) const {
+    return mVisitor->GetObjectByLabel<T>(label);
+}
+
+template <typename T>
+T ReplayImpl::GetObjectById(schema::ObjectId id) const {
+    return mVisitor->GetObjectById<T>(id);
+}
+
+template <typename T>
+const std::string& ReplayImpl::GetLabel(const T& object) const {
+    return mVisitor->GetLabel(object);
+}
+
+const std::string& ReplayImpl::GetLabel(schema::ObjectId id) const {
+    return mVisitor->GetLabel(id);
 }
 
 }  // namespace dawn::replay

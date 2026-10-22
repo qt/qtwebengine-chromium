@@ -45,6 +45,7 @@
 #include "third_party/blink/renderer/core/html/forms/html_option_element.h"
 #include "third_party/blink/renderer/core/html/html_menu_item_element.h"
 #include "third_party/blink/renderer/core/html/html_quote_element.h"
+#include "third_party/blink/renderer/core/input/event_handler.h"
 #include "third_party/blink/renderer/core/input_type_names.h"
 #include "third_party/blink/renderer/core/layout/generated_children.h"
 #include "third_party/blink/renderer/core/layout/layout_counter.h"
@@ -59,6 +60,7 @@
 #include "third_party/blink/renderer/core/view_transition/view_transition_pseudo_element_base.h"
 #include "third_party/blink/renderer/core/view_transition/view_transition_utils.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -87,9 +89,10 @@ PseudoElement* PseudoElement::Create(Element* parent,
                                      PseudoId pseudo_id,
                                      const AtomicString& pseudo_argument) {
   if (pseudo_id == kPseudoIdCheckMark) {
-    if (!IsA<HTMLOptionElement>(parent) && !IsA<HTMLMenuItemElement>(parent)) {
-      // The `::checkmark` pseudo-element should only be created for option and
-      // menuitem elements.
+    if (!IsA<HTMLOptionElement>(parent) && !IsA<HTMLMenuItemElement>(parent) &&
+        !IsA<HTMLInputElement>(parent)) {
+      // The `::checkmark` pseudo-element should only be created for option,
+      // menuitem, and input (checkbox and radio) elements.
       return nullptr;
     }
   }
@@ -98,6 +101,15 @@ PseudoElement* PseudoElement::Create(Element* parent,
     if (!IsA<HTMLSelectElement>(parent)) {
       // The `::picker-icon` pseudo-element should only be created for select
       // elements.
+      return nullptr;
+    }
+  }
+
+  if (pseudo_id == kPseudoIdExpandIcon) {
+    // The ::expand-icon pseudo-element should only be created for menuitem
+    // elements which are inside a menulist and are set up to invoke a submenu.
+    auto* menuitem = DynamicTo<HTMLMenuItemElement>(parent);
+    if (!menuitem || !menuitem->ShouldHaveExpandIcon()) {
       return nullptr;
     }
   }
@@ -132,6 +144,7 @@ PseudoElement* PseudoElement::Create(Element* parent,
   }
   DCHECK(pseudo_id == kPseudoIdAfter || pseudo_id == kPseudoIdBefore ||
          pseudo_id == kPseudoIdCheckMark || pseudo_id == kPseudoIdPickerIcon ||
+         pseudo_id == kPseudoIdExpandIcon ||
          pseudo_id == kPseudoIdInterestHint || pseudo_id == kPseudoIdBackdrop ||
          pseudo_id == kPseudoIdMarker || pseudo_id == kPseudoIdColumn ||
          pseudo_id == kPseudoIdOverscrollAreaParent);
@@ -157,6 +170,11 @@ const QualifiedName& PseudoElementTagName(PseudoId pseudo_id) {
       DEFINE_STATIC_LOCAL(QualifiedName, picker_icon,
                           (AtomicString("::picker-icon")));
       return picker_icon;
+    }
+    case kPseudoIdExpandIcon: {
+      DEFINE_STATIC_LOCAL(QualifiedName, expand_icon,
+                          (AtomicString("::expand-icon")));
+      return expand_icon;
     }
     case kPseudoIdInterestHint: {
       DEFINE_STATIC_LOCAL(QualifiedName, interest_hint,
@@ -395,6 +413,7 @@ const ComputedStyle* PseudoElement::AdjustedLayoutStyle(
             .GetStyleResolver()
             .CreateComputedStyleBuilderInheritingFrom(style);
     builder.SetContent(style.GetContentData());
+    builder.SetBaseTextDecorationData(style.AppliedTextDecorationData());
     builder.SetDisplay(EDisplay::kInline);
     builder.SetStyleType(GetPseudoIdForStyling());
     return builder.TakeStyle();
@@ -468,6 +487,9 @@ void PseudoElement::Dispose() {
 
   DetachLayoutTree();
   Element* parent = ParentOrShadowHostElement();
+  if (LocalFrame* frame = GetDocument().GetFrame()) {
+    frame->GetEventHandler().HandlePseudoElementRemoval(*this);
+  }
   GetDocument().AdoptIfNeeded(*this);
   SetParentNode(nullptr);
   RemovedFrom(*parent);
@@ -554,6 +576,7 @@ void PseudoElement::AttachLayoutTree(AttachContext& context) {
     case kPseudoIdCheckMark:
     case kPseudoIdBefore:
     case kPseudoIdAfter:
+    case kPseudoIdExpandIcon:
     case kPseudoIdPickerIcon:
     case kPseudoIdInterestHint:
     case kPseudoIdScrollMarker:
@@ -636,6 +659,7 @@ bool PseudoElement::CanGenerateContent() const {
     case kPseudoIdCheckMark:
     case kPseudoIdBefore:
     case kPseudoIdAfter:
+    case kPseudoIdExpandIcon:
     case kPseudoIdPickerIcon:
     case kPseudoIdInterestHint:
     case kPseudoIdScrollMarker:
@@ -692,6 +716,44 @@ Node* PseudoElement::InnerNodeForHitTesting() {
   if (parent && parent->IsPseudoElement())
     return To<PseudoElement>(parent)->InnerNodeForHitTesting();
   return parent;
+}
+
+// static
+bool PseudoElement::SupportsHitTesting(PseudoId pseudo_id) {
+  // Returns true for pseudo-elements that should participate in hit testing.
+  // This gates whether the pseudo appears via InnerPossiblyPseudoElement().
+  // Event targeting (which pseudo keeps event.RawTarget vs resolves to
+  // originating) is determined by HasActivationBehavior() in
+  // EventTargetRespectingTargetRules.
+  switch (pseudo_id) {
+    case kPseudoIdBackdrop:
+      return RuntimeEnabledFeatures::CSSPseudoElementBackdropEnabled();
+    case kPseudoIdBefore:
+    case kPseudoIdAfter:
+    case kPseudoIdMarker:
+      return RuntimeEnabledFeatures::PseudoElementsHitTestableEnabled();
+    case kPseudoIdInterestHint:
+    case kPseudoIdScrollMarker:
+    case kPseudoIdScrollMarkerGroupBefore:
+    case kPseudoIdScrollMarkerGroupAfter:
+    case kPseudoIdScrollButtonBlockStart:
+    case kPseudoIdScrollButtonInlineStart:
+    case kPseudoIdScrollButtonInlineEnd:
+    case kPseudoIdScrollButtonBlockEnd:
+      return true;
+    case kPseudoIdViewTransition:
+    case kPseudoIdViewTransitionGroup:
+    case kPseudoIdViewTransitionImagePair:
+    case kPseudoIdViewTransitionOld:
+    case kPseudoIdViewTransitionNew:
+      return RuntimeEnabledFeatures::CSSPseudoElementViewTransitionsEnabled();
+    default:
+      return false;
+  }
+}
+
+bool PseudoElement::SupportsHitTesting() const {
+  return SupportsHitTesting(pseudo_id_);
 }
 
 void PseudoElement::AccessKeyAction(
@@ -753,6 +815,7 @@ bool PseudoElementLayoutObjectIsNeeded(PseudoId pseudo_id,
     case kPseudoIdCheckMark:
     case kPseudoIdBefore:
     case kPseudoIdAfter:
+    case kPseudoIdExpandIcon:
     case kPseudoIdPickerIcon:
     case kPseudoIdInterestHint:
       return !pseudo_style.ContentPreventsBoxGeneration();

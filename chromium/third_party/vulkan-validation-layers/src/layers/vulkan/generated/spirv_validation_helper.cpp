@@ -45,14 +45,14 @@ struct FeaturePointer {
     // Default and nullptr constructor to create an empty FeaturePointer
     FeaturePointer() : IsEnabled(nullptr) {}
     FeaturePointer(std::nullptr_t ptr) : IsEnabled(nullptr) {}
-    FeaturePointer(bool DeviceFeatures::*ptr) : IsEnabled([=](const DeviceFeatures& features) { return features.*ptr; }) {}
+    FeaturePointer(bool DeviceFeatures::* ptr) : IsEnabled([=](const DeviceFeatures& features) { return features.*ptr; }) {}
 };
 
 // Each instance of the struct will only have a singel field non-null
 struct RequiredSpirvInfo {
     uint32_t version;
     FeaturePointer feature;
-    ExtEnabled DeviceExtensions::*extension;
+    ExtEnabled DeviceExtensions::* extension;
     const char* property;  // For human readability and make some capabilities unique
 };
 
@@ -294,6 +294,13 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo>& GetSpirvCapabilites(
         {spv::CapabilityShader64BitIndexingEXT, {0, &DeviceFeatures::shader64BitIndexing, nullptr, ""}},
         {spv::CapabilityLongVectorEXT, {0, &DeviceFeatures::longVector, nullptr, ""}},
         {spv::CapabilityDescriptorHeapEXT, {0, &DeviceFeatures::descriptorHeap, nullptr, ""}},
+        {spv::CapabilityDotProductFloat16AccFloat32VALVE, {0, &DeviceFeatures::shaderMixedFloatDotProductFloat16AccFloat32, nullptr, ""}},
+        {spv::CapabilityDotProductFloat16AccFloat16VALVE, {0, &DeviceFeatures::shaderMixedFloatDotProductFloat16AccFloat16, nullptr, ""}},
+        {spv::CapabilityDotProductBFloat16AccVALVE, {0, &DeviceFeatures::shaderMixedFloatDotProductBFloat16Acc, nullptr, ""}},
+        {spv::CapabilityDotProductFloat8AccFloat32VALVE, {0, &DeviceFeatures::shaderMixedFloatDotProductFloat8AccFloat32, nullptr, ""}},
+        // Not found in current SPIR-V Headers
+        // {spv::CapabilityConstantDataKHR, {0, &DeviceFeatures::shaderConstantData, nullptr, ""}},
+        {spv::CapabilityAbortKHR, {0, &DeviceFeatures::shaderAbort, nullptr, ""}},
     };
     // clang-format on
     return spirv_capabilities;
@@ -430,6 +437,7 @@ const std::unordered_multimap<std::string_view, RequiredSpirvInfo>& GetSpirvExte
         {"SPV_EXT_shader_64bit_indexing", {0, nullptr, &DeviceExtensions::vk_ext_shader_64bit_indexing, ""}},
         {"SPV_EXT_long_vector", {0, nullptr, &DeviceExtensions::vk_ext_shader_long_vector, ""}},
         {"SPV_EXT_descriptor_heap", {0, nullptr, &DeviceExtensions::vk_ext_descriptor_heap, ""}},
+        {"SPV_VALVE_mixed_float_dot_product", {0, nullptr, &DeviceExtensions::vk_valve_shader_mixed_float_dot_product, ""}},
     };
     // clang-format on
     return spirv_extensions;
@@ -677,8 +685,14 @@ static inline const char* string_SpvCapability(uint32_t input_value) {
             return "BFloat16DotProductKHR";
         case spv::CapabilityBFloat16CooperativeMatrixKHR:
             return "BFloat16CooperativeMatrixKHR";
+        case spv::CapabilityAbortKHR:
+            return "AbortKHR";
         case spv::CapabilityDescriptorHeapEXT:
             return "DescriptorHeapEXT";
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+        case spv::CapabilityPoisonFreezeKHR:
+            return "PoisonFreezeKHR";
+#endif
         case spv::CapabilitySampleMaskOverrideCoverageNV:
             return "SampleMaskOverrideCoverageNV";
         case spv::CapabilityGeometryShaderPassthroughNV:
@@ -879,6 +893,14 @@ static inline const char* string_SpvCapability(uint32_t input_value) {
         case spv::CapabilityBindlessImagesINTEL:
             return "BindlessImagesINTEL";
 #endif
+        case spv::CapabilityDotProductFloat16AccFloat32VALVE:
+            return "DotProductFloat16AccFloat32VALVE";
+        case spv::CapabilityDotProductFloat16AccFloat16VALVE:
+            return "DotProductFloat16AccFloat16VALVE";
+        case spv::CapabilityDotProductBFloat16AccVALVE:
+            return "DotProductBFloat16AccVALVE";
+        case spv::CapabilityDotProductFloat8AccFloat32VALVE:
+            return "DotProductFloat8AccFloat32VALVE";
         default:
             return "Unhandled OpCapability";
     };
@@ -1113,7 +1135,7 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityStorageImageReadWithoutFormat, "VkPhysicalDeviceFeatures::shaderStorageImageReadWithoutFormat OR VK_VERSION_1_3 OR VK_KHR_format_feature_flags2"},
     {spv::CapabilityStorageImageWriteWithoutFormat, "VkPhysicalDeviceFeatures::shaderStorageImageWriteWithoutFormat OR VK_VERSION_1_3 OR VK_KHR_format_feature_flags2"},
     {spv::CapabilityMultiViewport, "VkPhysicalDeviceFeatures::multiViewport"},
-    {spv::CapabilityDrawParameters, "VkPhysicalDeviceVulkan11Features::shaderDrawParameters OR VK_KHR_shader_draw_parameters"},
+    {spv::CapabilityDrawParameters, "VkPhysicalDeviceVulkan11Features::shaderDrawParameters OR VK_KHR_shader_draw_parameters [when using Vulkan 1.0]"},
     {spv::CapabilityMultiView, "VkPhysicalDeviceVulkan11Features::multiview"},
     {spv::CapabilityDeviceGroup, "VK_VERSION_1_1 OR VK_KHR_device_group"},
     {spv::CapabilityVariablePointersStorageBuffer, "VkPhysicalDeviceVulkan11Features::variablePointersStorageBuffer"},
@@ -1129,7 +1151,7 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityGeometryShaderPassthroughNV, "VK_NV_geometry_shader_passthrough"},
     {spv::CapabilityShaderViewportIndex, "VkPhysicalDeviceVulkan12Features::shaderOutputViewportIndex"},
     {spv::CapabilityShaderLayer, "VkPhysicalDeviceVulkan12Features::shaderOutputLayer"},
-    {spv::CapabilityShaderViewportIndexLayerEXT, "VK_EXT_shader_viewport_index_layer OR VK_NV_viewport_array2"},
+    {spv::CapabilityShaderViewportIndexLayerEXT, "VK_EXT_shader_viewport_index_layer [when using Vulkan 1.0 or 1.1] OR VK_NV_viewport_array2"},
     {spv::CapabilityShaderViewportMaskNV, "VK_NV_viewport_array2"},
     {spv::CapabilityPerViewAttributesNV, "VK_NVX_multiview_per_view_attributes"},
     {spv::CapabilityStorageBuffer16BitAccess, "VkPhysicalDeviceVulkan11Features::storageBuffer16BitAccess"},
@@ -1253,6 +1275,11 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityShader64BitIndexingEXT, "VkPhysicalDeviceShader64BitIndexingFeaturesEXT::shader64BitIndexing"},
     {spv::CapabilityLongVectorEXT, "VkPhysicalDeviceShaderLongVectorFeaturesEXT::longVector"},
     {spv::CapabilityDescriptorHeapEXT, "VkPhysicalDeviceDescriptorHeapFeaturesEXT::descriptorHeap"},
+    {spv::CapabilityDotProductFloat16AccFloat32VALVE, "VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE::shaderMixedFloatDotProductFloat16AccFloat32"},
+    {spv::CapabilityDotProductFloat16AccFloat16VALVE, "VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE::shaderMixedFloatDotProductFloat16AccFloat16"},
+    {spv::CapabilityDotProductBFloat16AccVALVE, "VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE::shaderMixedFloatDotProductBFloat16Acc"},
+    {spv::CapabilityDotProductFloat8AccFloat32VALVE, "VkPhysicalDeviceShaderMixedFloatDotProductFeaturesVALVE::shaderMixedFloatDotProductFloat8AccFloat32"},
+    {spv::CapabilityAbortKHR, "VkPhysicalDeviceShaderAbortFeaturesKHR::shaderAbort"},
     };
 
     // VUs before catch unknown capabilities
@@ -1368,6 +1395,7 @@ static inline std::string SpvExtensionRequirements(std::string_view extension) {
     {"SPV_EXT_shader_64bit_indexing", {{vvl::Extension::_VK_EXT_shader_64bit_indexing}}},
     {"SPV_EXT_long_vector", {{vvl::Extension::_VK_EXT_shader_long_vector}}},
     {"SPV_EXT_descriptor_heap", {{vvl::Extension::_VK_EXT_descriptor_heap}}},
+    {"SPV_VALVE_mixed_float_dot_product", {{vvl::Extension::_VK_VALVE_shader_mixed_float_dot_product}}},
     };
 
     // VUs before catch unknown extensions

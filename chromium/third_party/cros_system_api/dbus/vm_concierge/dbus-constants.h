@@ -50,6 +50,7 @@ const char kReclaimVmMemoryMethod[] = "ReclaimVmMemory";
 const char kResizeDiskImageMethod[] = "ResizeDiskImage";
 const char kResumeVmMethod[] = "ResumeVm";
 const char kSetBalloonTimerMethod[] = "SetBalloonTimer";
+const char kSetCrostiniVmTypeMethod[] = "SetCrostiniVmType";
 const char kSetUpVmUserMethod[] = "SetUpVmUser";
 const char kSetVmCpuRestrictionMethod[] = "SetVmCpuRestriction";
 const char kStartArcVmMethod[] = "StartArcVm";

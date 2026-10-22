@@ -162,7 +162,6 @@ export class Importer {
     const includedRequestCookies = entry.request.cookies.map(
         cookie => ({
           cookie: this.fillCookieFromHARCookie(SDK.Cookie.Type.REQUEST, cookie),
-          exemptionReason: undefined,
         }),
     );
     request.setIncludedRequestCookies(includedRequestCookies);

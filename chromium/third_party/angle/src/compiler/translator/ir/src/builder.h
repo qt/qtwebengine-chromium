@@ -81,6 +81,7 @@ class Builder
     TypeId getArrayTypeId(TypeId elementTypeId, const angle::Span<const unsigned int> &arraySizes);
 
     void setEarlyFragmentTests(bool value);
+    void setNumViews(uint32_t value);
     void setAdvancedBlendEquations(uint32_t value);
     void setTcsVertices(uint32_t value);
     void setTesPrimitive(TLayoutTessEvaluationType value);
@@ -98,6 +99,7 @@ class Builder
                                         const TType &type,
                                         DeclarationSource source);
     VariableId declareTempVariable(const ImmutableString &name, TypeId typeId, const TType &type);
+    void rescopeAsForLoopVariable(VariableId id);
     void markVariableInvariant(VariableId id);
     void markVariablePrecise(VariableId id);
     void initialize(VariableId id);
@@ -228,6 +230,7 @@ class Builder
     }
 
     void setEarlyFragmentTests(bool value) {}
+    void setNumViews(uint32_t value) {}
     void setAdvancedBlendEquations(uint32_t value) {}
     void setTcsVertices(uint32_t value) {}
     void setTesPrimitive(TLayoutTessEvaluationType value) {}
@@ -251,6 +254,7 @@ class Builder
     {
         return 0;
     }
+    void rescopeAsForLoopVariable(VariableId id) {}
     void markVariableInvariant(VariableId id) {}
     void markVariablePrecise(VariableId id) {}
     void initialize(VariableId id) {}

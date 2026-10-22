@@ -45,6 +45,9 @@
 
 using testing::_;
 using testing::AnyNumber;
+using testing::ElementsAre;
+using testing::InSequence;
+using testing::Optional;
 using testing::Return;
 using testing::StrictMock;
 
@@ -65,6 +68,10 @@ class MockVideoFrameProvider : public cc::VideoFrameProvider {
   MOCK_METHOD0(GetCurrentFrame, scoped_refptr<media::VideoFrame>());
   MOCK_METHOD0(PutCurrentFrame, void());
   MOCK_METHOD0(OnContextLost, void());
+  MOCK_METHOD3(OnFramePresented,
+               void(base::TimeTicks,
+                    std::optional<base::TimeTicks>,
+                    std::optional<uint32_t>));
 
   base::TimeDelta GetPreferredRenderInterval() override {
     return preferred_interval;
@@ -162,7 +169,7 @@ class TestClientSharedImageInterface : public gpu::ClientSharedImageInterface {
   TestClientSharedImageInterface()
       : gpu::ClientSharedImageInterface(
             nullptr,
-            base::MakeRefCounted<gpu::GpuChannelHost>(
+            gpu::GpuChannelHost::Create(
                 0 /* channel_id */,
                 gpu::GPUInfo(),
                 gpu::GpuFeatureInfo(),
@@ -1165,6 +1172,7 @@ TEST_F(VideoFrameSubmitterTest, ProcessTimingDetails) {
   EXPECT_CALL(*video_frame_provider_, UpdateCurrentFrame)
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*video_frame_provider_, PutCurrentFrame).Times(AnyNumber());
+  EXPECT_CALL(*video_frame_provider_, OnFramePresented).Times(AnyNumber());
   EXPECT_CALL(*sink_, DoSubmitCompositorFrame).WillRepeatedly(sink_submit);
   EXPECT_CALL(*resource_provider_, AppendQuads).Times(AnyNumber());
   EXPECT_CALL(*resource_provider_, PrepareSendToParent).Times(AnyNumber());
@@ -1188,6 +1196,92 @@ TEST_F(VideoFrameSubmitterTest, ProcessTimingDetails) {
   submitter_->StopRendering();
   EXPECT_EQ(reports, 1);
   task_environment_.RunUntilIdle();
+}
+
+TEST_F(VideoFrameSubmitterTest, CallsFramePresentedCallback) {
+  constexpr int kFps = 30;
+  constexpr base::TimeDelta kFrameDuration = base::Seconds(1.0 / kFps);
+  constexpr int kFramesToRun = 3;
+  HashMap<uint32_t, viz::FrameTimingDetails> timing_details;
+  HashMap<uint32_t, viz::FrameTimingDetails> all_timing_details;
+  struct Timestamps {
+    bool operator==(const Timestamps& other) const = default;
+    base::TimeTicks display_time;
+    std::optional<base::TimeTicks> capture_begin_time;
+    std::optional<uint32_t> rtp_timestamp;
+  };
+  Vector<Timestamps> timestamps;
+
+  MakeSubmitter(base::BindLambdaForTesting(
+      [&](const cc::VideoPlaybackRoughnessReporter::Measurement& measurement) {
+      }));
+  EXPECT_CALL(*sink_, SetNeedsBeginFrame(true));
+  submitter_->StartRendering();
+  task_environment_.RunUntilIdle();
+  EXPECT_TRUE(IsRendering());
+
+  auto sink_submit = [&](const viz::LocalSurfaceId&,
+                         viz::CompositorFrame* frame) {
+    auto token = frame->metadata.frame_token;
+    viz::FrameTimingDetails details;
+    details.presentation_feedback.timestamp =
+        base::TimeTicks() + kFrameDuration * token;
+    details.presentation_feedback.flags =
+        gfx::PresentationFeedback::kHWCompletion;
+    timing_details.clear();
+    timing_details.Set(token, details);
+    all_timing_details.Set(token, details);
+  };
+
+  EXPECT_CALL(*video_frame_provider_, UpdateCurrentFrame)
+      .WillRepeatedly(Return(true));
+  EXPECT_CALL(*video_frame_provider_, PutCurrentFrame).Times(AnyNumber());
+  EXPECT_CALL(*video_frame_provider_, OnFramePresented)
+      .WillRepeatedly([&](base::TimeTicks display_time,
+                          std::optional<base::TimeTicks> capture_begin_time,
+                          std::optional<uint32_t> rtp_timestamp) {
+        timestamps.push_back(
+            Timestamps{display_time, capture_begin_time, rtp_timestamp});
+      });
+  EXPECT_CALL(*sink_, DoSubmitCompositorFrame).WillRepeatedly(sink_submit);
+  EXPECT_CALL(*resource_provider_, AppendQuads).Times(AnyNumber());
+  EXPECT_CALL(*resource_provider_, PrepareSendToParent).Times(AnyNumber());
+  EXPECT_CALL(*resource_provider_, ReleaseFrameResources).Times(AnyNumber());
+
+  for (int i = 0; i < kFramesToRun; i++) {
+    auto frame = media::VideoFrame::CreateFrame(
+        media::PIXEL_FORMAT_YV12, gfx::Size(8, 8), gfx::Rect(gfx::Size(8, 8)),
+        gfx::Size(8, 8), i * kFrameDuration);
+    frame->metadata().capture_begin_time =
+        base::TimeTicks() + i * kFrameDuration;
+    frame->metadata().rtp_timestamp = i * kFrameDuration.InMilliseconds() * 90;
+    EXPECT_CALL(*video_frame_provider_, GetCurrentFrame())
+        .WillRepeatedly(Return(frame));
+
+    auto args = begin_frame_source_->CreateBeginFrameArgs(BEGINFRAME_FROM_HERE,
+                                                          now_src_.get());
+    OnBeginFrame(args, timing_details, Vector<viz::ReturnedResource>());
+    task_environment_.RunUntilIdle();
+    AckSubmittedFrame();
+  }
+  EXPECT_CALL(*sink_, SetNeedsBeginFrame(false));
+  submitter_->StopRendering();
+  task_environment_.RunUntilIdle();
+
+  Vector<uint32_t> frame_tokens;
+  for (auto entry : all_timing_details.Keys()) {
+    frame_tokens.push_back(entry);
+  }
+  std::sort(frame_tokens.begin(), frame_tokens.end());
+  EXPECT_EQ(all_timing_details.size(), 3u);
+  EXPECT_THAT(timestamps,
+              ElementsAre(Timestamps{all_timing_details.at(frame_tokens[0])
+                                         .presentation_feedback.timestamp,
+                                     base::TimeTicks(), 0},
+                          Timestamps{all_timing_details.at(frame_tokens[1])
+                                         .presentation_feedback.timestamp,
+                                     base::TimeTicks() + kFrameDuration,
+                                     kFrameDuration.InMilliseconds() * 90}));
 }
 
 TEST_F(VideoFrameSubmitterTest, OpaqueFramesNotifyEmbedder) {
@@ -1231,6 +1325,56 @@ TEST_F(VideoFrameSubmitterTest, OpaqueFramesNotifyEmbedder) {
   EXPECT_CALL(*surface_embedder_, OnOpacityChanged(false)).Times(0);
   submitter_->DidReceiveFrame();
   DrainMainThread();
+}
+
+TEST_F(VideoFrameSubmitterTest, FrameTokenWraparoundSorting) {
+  // Start near wraparound.
+  submitter_->SetNextFrameTokenForTesting(viz::kLocalFrameToken - 2);
+
+  // Relaxed expectations for uninteresting calls during setup.
+  EXPECT_CALL(*video_frame_provider_, UpdateCurrentFrame)
+      .Times(AnyNumber());
+  EXPECT_CALL(*sink_, DidNotProduceFrame).Times(AnyNumber());
+
+  EXPECT_CALL(*sink_, SetNeedsBeginFrame(true));
+  submitter_->StartRendering();
+  task_environment_.RunUntilIdle();
+
+  uint32_t token1 = viz::kLocalFrameToken - 1;
+  uint32_t token2 = 1;
+
+  // Submit two frames to populate pending_frames_
+  EXPECT_SUBMISSION(SubmissionType::kManual);
+  submitter_->DidReceiveFrame();
+  task_environment_.RunUntilIdle();
+  AckSubmittedFrame();
+
+  EXPECT_SUBMISSION(SubmissionType::kManual);
+  submitter_->DidReceiveFrame();
+  task_environment_.RunUntilIdle();
+  AckSubmittedFrame();
+
+  HashMap<uint32_t, viz::FrameTimingDetails> timing_details;
+  viz::FrameTimingDetails details1;
+  details1.presentation_feedback.timestamp =
+      base::TimeTicks() + base::Milliseconds(100);
+  viz::FrameTimingDetails details2;
+  details2.presentation_feedback.timestamp =
+      base::TimeTicks() + base::Milliseconds(116);
+
+  timing_details.Set(token1, details1);
+  timing_details.Set(token2, details2);
+
+  // VideoFrameProvider should receive timestamps in monotonic order.
+  InSequence s;
+  EXPECT_CALL(*video_frame_provider_,
+              OnFramePresented(details1.presentation_feedback.timestamp, _, _));
+  EXPECT_CALL(*video_frame_provider_,
+              OnFramePresented(details2.presentation_feedback.timestamp, _, _));
+
+  viz::BeginFrameArgs args = begin_frame_source_->CreateBeginFrameArgs(
+      BEGINFRAME_FROM_HERE, now_src_.get());
+  OnBeginFrame(args, timing_details, Vector<viz::ReturnedResource>());
 }
 
 }  // namespace blink

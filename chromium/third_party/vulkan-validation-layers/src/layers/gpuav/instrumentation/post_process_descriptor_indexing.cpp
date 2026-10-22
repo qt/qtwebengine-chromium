@@ -49,27 +49,33 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                 pp_cb_state.last_desc_set_binding_to_post_process_buffers_lut;
         });
 
-    cb.on_instrumentation_desc_set_update_functions.emplace_back(
-        [dummy_buffer_range = vko::BufferRange{}](CommandBufferSubState& cb, VkPipelineBindPoint, const Location&,
-                                                  VkDescriptorBufferInfo& out_buffer_info, uint32_t& out_dst_binding) mutable {
+    cb.on_instrumentation_common_desc_update_functions.emplace_back(
+        [dummy_buffer_range = vko::BufferRange{}](CommandBufferSubState& cb, const LastBound&, const Location&,
+                                                  CommonDescriptorUpdate& out_update) mutable {
             PostProcessingCbState* pp_cb_state = cb.shared_resources_cache.TryGet<PostProcessingCbState>();
             if (pp_cb_state) {
-                out_buffer_info.buffer = pp_cb_state->last_desc_set_binding_to_post_process_buffers_lut.buffer;
-                out_buffer_info.offset = pp_cb_state->last_desc_set_binding_to_post_process_buffers_lut.offset;
-                out_buffer_info.range = pp_cb_state->last_desc_set_binding_to_post_process_buffers_lut.size;
+                const vko::BufferRange& buffer_range = pp_cb_state->last_desc_set_binding_to_post_process_buffers_lut;
+                out_update.buffer = buffer_range.buffer;
+                out_update.offset = buffer_range.offset;
+                out_update.range = buffer_range.size;
+                out_update.address = buffer_range.offset_address;
             } else {
-                // Eventually, no descriptor set was bound in command buffer.
-                // Instrumenation descriptor set is already defined at this point and needs a binding,
-                // so just provide a dummy buffer
+                // TODO - This will always hit the case for Buffer/Heap mode, this is wrong and just an issue with the fact
+                // on_update_bound_descriptor_sets is never called
+
+                // [For Classic mode] If no descriptor set was bound in command buffer, we still need "something" to be in the slot
+                // or else it will be marked as invalid for not being updated
                 if (dummy_buffer_range.buffer == VK_NULL_HANDLE) {
+                    // Caputre the dummy_buffer_range so if found multiple time, only allocate it once
                     dummy_buffer_range = cb.gpu_resources_manager.GetDeviceLocalBufferRange(64);
                 }
-                out_buffer_info.buffer = dummy_buffer_range.buffer;
-                out_buffer_info.offset = dummy_buffer_range.offset;
-                out_buffer_info.range = dummy_buffer_range.size;
+                out_update.buffer = dummy_buffer_range.buffer;
+                out_update.offset = dummy_buffer_range.offset;
+                out_update.range = dummy_buffer_range.size;
+                out_update.address = dummy_buffer_range.offset_address;
             }
 
-            out_dst_binding = glsl::kBindingInstPostProcess;
+            out_update.binding = glsl::kBindingInstPostProcess;
         });
 
     auto bound_desc_sets_to_pp_buffer_map =
@@ -190,7 +196,7 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                     pipeline_state = gpuav.Get<vvl::Pipeline>(it->second.pipeline).get();
                 } else if (it->second.shader_object != VK_NULL_HANDLE) {
                     shader_object_state = gpuav.Get<vvl::ShaderObject>(it->second.shader_object).get();
-                    ASSERT_AND_CONTINUE(shader_object_state->entrypoint);
+                    ASSERT_AND_CONTINUE(shader_object_state->stage.entrypoint);
                 } else {
                     assert(false);
                     continue;
@@ -201,7 +207,7 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                 const uint32_t invalid_index_command = gpuav.gpuav_settings.invalid_index_command;
                 for (const DescriptorAccess& descriptor_access : descriptor_accesses) {
                     if (descriptor_access.error_logger_i == invalid_index_command) {
-                        gpuav.LogError("GPUAV-Overflow-Unknown", LogObjectList(), Location(vvl::Func::Empty),
+                        gpuav.LogError("GPUAV-Overflow-Unknown", LogObjectList(), submission_loc,
                                        "Cannot perform runtime descriptor access validation, access was done in a command past the "
                                        "internal limit of %" PRIu32
                                        " draw/dispatch/traceRays commands in a command buffer.\nThis can be adjusted setting env "
@@ -225,10 +231,10 @@ void RegisterPostProcessingValidation(Validator& gpuav, CommandBufferSubState& c
                             }
                         }
                     } else if (shader_object_state) {
-                        ASSERT_AND_CONTINUE(shader_object_state->entrypoint);
-                        auto variable_it =
-                            shader_object_state->entrypoint->resource_interface_variable_map.find(descriptor_access.variable_id);
-                        if (variable_it != shader_object_state->entrypoint->resource_interface_variable_map.end()) {
+                        ASSERT_AND_CONTINUE(shader_object_state->stage.entrypoint);
+                        auto variable_it = shader_object_state->stage.entrypoint->resource_interface_variable_map.find(
+                            descriptor_access.variable_id);
+                        if (variable_it != shader_object_state->stage.entrypoint->resource_interface_variable_map.end()) {
                             resource_variable = variable_it->second;
                         }
                     }

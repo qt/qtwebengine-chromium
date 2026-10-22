@@ -396,6 +396,17 @@ MaybeError VulkanFunctions::LoadDeviceProcs(VkInstance instance,
         GET_DEVICE_PROC(CmdEndRenderingKHR);
     }
 
+    if (deviceInfo.HasExt(DeviceExt::ExtendedDynamicState)) {
+        GET_DEVICE_PROC(CmdSetCullModeEXT);
+        GET_DEVICE_PROC(CmdSetDepthCompareOpEXT);
+        GET_DEVICE_PROC(CmdSetDepthTestEnableEXT);
+        GET_DEVICE_PROC(CmdSetDepthWriteEnableEXT);
+        GET_DEVICE_PROC(CmdSetFrontFaceEXT);
+        GET_DEVICE_PROC(CmdSetPrimitiveTopologyEXT);
+        GET_DEVICE_PROC(CmdSetStencilOpEXT);
+        GET_DEVICE_PROC(CmdSetStencilTestEnableEXT);
+    }
+
     // Not promoted to core in any version
     if (deviceInfo.HasExt(DeviceExt::ExternalMemoryFD)) {
         GET_DEVICE_PROC(GetMemoryFdKHR);

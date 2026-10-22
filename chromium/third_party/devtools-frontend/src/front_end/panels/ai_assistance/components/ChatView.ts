@@ -7,6 +7,7 @@ import '../../../ui/components/spinners/spinners.js';
 import * as Host from '../../../core/host/host.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import type * as Platform from '../../../core/platform/platform.js';
+import * as Root from '../../../core/root/root.js';
 import * as AiAssistanceModel from '../../../models/ai_assistance/ai_assistance.js';
 import * as Buttons from '../../../ui/components/buttons/buttons.js';
 import type {MarkdownLitRenderer} from '../../../ui/components/markdown_view/MarkdownView.js';
@@ -17,10 +18,16 @@ import {PatchWidget} from '../PatchWidget.js';
 import {ChatInput} from './ChatInput.js';
 import {ChatMessage, type Message, type ModelChatMessage} from './ChatMessage.js';
 import chatViewStyles from './chatView.css.js';
+import {ExportForAgentsDialog} from './ExportForAgentsDialog.js';
 
 export {ChatInput, type ImageInputData} from './ChatInput.js';
 
-const {ref, repeat, classMap} = Directives;
+const {
+  ref,
+  repeat,
+  classMap,
+} = Directives;
+const {widget} = UI.Widget;
 
 /*
 * Strings that don't need to be translated at this time.
@@ -58,13 +65,15 @@ export interface Props {
   onCopyResponseClick: (message: ModelChatMessage) => void;
   onContextRemoved: (() => void)|null;
   onContextAdd: (() => void)|null;
+  conversationMarkdown: string;
+  onExportConversation: (() => void)|null;
   changeManager: AiAssistanceModel.ChangeManager.ChangeManager;
   inspectElementToggled: boolean;
   messages: Message[];
-  selectedContext: AiAssistanceModel.AiAgent.ConversationContext<unknown>|null;
-  isLoading: boolean;
+  context: AiAssistanceModel.AiAgent.ConversationContext<unknown>|null;
+  isContextSelected: boolean;
   canShowFeedbackForm: boolean;
-  userInfo: Pick<Host.InspectorFrontendHostAPI.SyncInformation, 'accountImage'|'accountGivenName'>;
+  isLoading: boolean;
   conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType;
   isReadOnly: boolean;
   blockedByCrossOrigin: boolean;
@@ -76,26 +85,39 @@ export interface Props {
   disclaimerText: Platform.UIString.LocalizedString;
   uploadImageInputEnabled?: boolean;
   markdownRenderer: MarkdownLitRenderer;
-  additionalFloatyContext: UI.Floaty.FloatyContextSelection[];
+  generateConversationSummary: (markdown: string) => Promise<string>;
+  walkthrough: {
+    onOpen: (message: ModelChatMessage) => void,
+    onToggle: (isOpen: boolean, message: ModelChatMessage) => void,
+    isExpanded: boolean,
+    isInlined: boolean,
+    activeSidebarMessage: ModelChatMessage|null,
+    inlineExpandedMessages: ModelChatMessage[],
+  };
 }
 
 interface ChatWidgetInput extends Props {
-  accountGivenName: string;
   handleScroll: (ev: Event) => void;
   handleSuggestionClick: (title: string) => void;
   handleMessageContainerRef: (el: Element|undefined) => void;
+  exportForAgentsClick: () => void;
 }
 
 const DEFAULT_VIEW: View = (input, output, target) => {
+  const hasAiV2 = Boolean(Root.Runtime.hostConfig.devToolsAiAssistanceV2?.enabled);
+
   const chatUiClasses = classMap({
     'chat-ui': true,
     gemini: AiAssistanceModel.AiUtils.isGeminiBranding(),
+    'ai-v2': hasAiV2,
   });
 
   const inputWidgetClasses = classMap({
     'chat-input-widget': true,
     sticky: !input.isReadOnly,
   });
+
+  const shouldShowPatchWidget = !hasAiV2 && !input.isLoading;
 
   // clang-format off
     render(html`
@@ -105,25 +127,28 @@ const DEFAULT_VIEW: View = (input, output, target) => {
           ${input.messages.length > 0 ? html`
             <div class="messages-container" ${ref(input.handleMessageContainerRef)}>
               ${repeat(input.messages, message =>
-                html`<devtools-widget .widgetConfig=${UI.Widget.widgetConfig(ChatMessage, {
+                widget(ChatMessage, {
                   message,
                   isLoading: input.isLoading && input.messages.at(-1) === message,
                   isReadOnly: input.isReadOnly,
                   canShowFeedbackForm: input.canShowFeedbackForm,
-                  userInfo: input.userInfo,
                   markdownRenderer: input.markdownRenderer,
                   isLastMessage: input.messages.at(-1) === message,
+                  isFirstMessage: input.messages.at(0) === message,
                   onSuggestionClick: input.handleSuggestionClick,
                   onFeedbackSubmit: input.onFeedbackSubmit,
                   onCopyResponseClick: input.onCopyResponseClick,
-                })}></devtools-widget>`
+                  onExportClick: input.exportForAgentsClick,
+                  changeSummary: input.changeSummary,
+                  walkthrough: {
+                    ...input.walkthrough,
+                  }
+                })
               )}
-              ${input.isLoading ? nothing : html`<devtools-widget
-                .widgetConfig=${UI.Widget.widgetConfig(PatchWidget, {
-                  changeSummary: input.changeSummary ?? '',
-                  changeManager: input.changeManager,
-                })}
-              ></devtools-widget>`}
+              ${shouldShowPatchWidget ? widget(PatchWidget, {
+                changeSummary: input.changeSummary ?? '',
+                changeManager: input.changeManager,
+              }) : nothing}
             </div>
           ` : html`
             <div class="empty-state-container">
@@ -135,7 +160,7 @@ const DEFAULT_VIEW: View = (input, output, target) => {
                 </div>
                 ${AiAssistanceModel.AiUtils.isGeminiBranding() ?
                   html`
-                    <h1 class='greeting'>Hello${input.accountGivenName ? `, ${input.accountGivenName}` : ''}</h1>
+                    <h1 class='greeting'>Hello</h1>
                     <p class='cta'>${lockedString(UIStringsNotTranslate.emptyStateTextGemini)}</p>
                   ` : html`<h1>${lockedString(UIStringsNotTranslate.emptyStateText)}</h1>`
                 }
@@ -159,19 +184,19 @@ const DEFAULT_VIEW: View = (input, output, target) => {
               </div>
             </div>
           `}
-          <devtools-widget class=${inputWidgetClasses} .widgetConfig=${UI.Widget.widgetConfig(ChatInput, {
+          <devtools-widget class=${inputWidgetClasses} ${widget(ChatInput, {
             isLoading: input.isLoading,
             blockedByCrossOrigin: input.blockedByCrossOrigin,
             isTextInputDisabled: input.isTextInputDisabled,
             inputPlaceholder: input.inputPlaceholder,
             disclaimerText: input.disclaimerText,
-            selectedContext: input.selectedContext,
+            context: input.context,
+            isContextSelected: input.isContextSelected,
             inspectElementToggled: input.inspectElementToggled,
             multimodalInputEnabled: input.multimodalInputEnabled ?? false,
             conversationType: input.conversationType,
             uploadImageInputEnabled: input.uploadImageInputEnabled ?? false,
             isReadOnly: input.isReadOnly,
-            additionalFloatyContext: input.additionalFloatyContext,
             onContextClick: input.onContextClick,
             onInspectElementClick: input.onInspectElementClick,
             onTextSubmit: input.onTextSubmit,
@@ -185,6 +210,19 @@ const DEFAULT_VIEW: View = (input, output, target) => {
     `, target);
   // clang-format on
 };
+
+/**
+ * ChatView is a web component for historical reasons and generally should not
+ * exist because it barely has any presenter logic and it is definitely not
+ * re-usable as a custom element. Instead, the template from ChatView should be
+ * embdedded into the AiAssistancePanel (the sole host of chat interfaces) and
+ * the scroll handling logic should be implemented in view functions using refs
+ * or re-usable custom elements. Currently, the ChatView just combines the
+ * interfaces of ChatMessage and ChatInput presenters and passes most of the
+ * properties down to those presenters as-is.
+ *
+ * @deprecated
+ */
 export class ChatView extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
   #scrollTop?: number;
@@ -210,6 +248,7 @@ export class ChatView extends HTMLElement {
    */
   #isProgrammaticScroll = false;
   #view: View;
+  #cachedSummary: {markdown: string, summary: string}|null = null;
 
   constructor(props: Props, view = DEFAULT_VIEW) {
     super();
@@ -323,14 +362,38 @@ export class ChatView extends HTMLElement {
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiAssistanceDynamicSuggestionClicked);
   };
 
+  async #getSummary(): Promise<string> {
+    if (this.#cachedSummary?.markdown === this.#props.conversationMarkdown) {
+      return this.#cachedSummary.summary;
+    }
+    try {
+      const summary = await this.#props.generateConversationSummary(this.#props.conversationMarkdown);
+      this.#cachedSummary = {markdown: this.#props.conversationMarkdown, summary};
+      return summary;
+    } catch (err) {
+      console.error(err);
+      return 'Failed to generate summary.';
+    }
+  }
+
+  async #exportForAgentsClick(): Promise<void> {
+    const summaryPromise = this.#getSummary();
+
+    void ExportForAgentsDialog.show({
+      promptText: summaryPromise,
+      markdownText: this.#props.conversationMarkdown,
+      onConversationSaveAs: this.#props.onExportConversation ?? (async () => {}),
+    });
+  }
+
   #render(): void {
     this.#view(
         {
           ...this.#props,
-          accountGivenName: this.#props.userInfo.accountGivenName ?? '',
           handleScroll: this.#handleScroll,
           handleSuggestionClick: this.#handleSuggestionClick,
           handleMessageContainerRef: this.#handleMessageContainerRef,
+          exportForAgentsClick: this.#exportForAgentsClick.bind(this),
         },
         this.#output, this.#shadow);
   }

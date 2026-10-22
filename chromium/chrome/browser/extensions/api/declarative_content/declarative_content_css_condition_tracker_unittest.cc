@@ -63,6 +63,7 @@ class InterceptingRendererStartupHelper : public RendererStartupHelper,
   // mojom::Renderer implementation:
   void ActivateExtension(const ExtensionId& extension_id) override {}
   void SetActivityLoggingEnabled(bool enabled) override {}
+  void SetPolicyActivityLoggingEnabled(bool enabled) override {}
   void LoadExtensions(
       std::vector<mojom::ExtensionLoadedParamsPtr> loaded_extensions) override {
   }
@@ -448,7 +449,7 @@ TEST_F(DeclarativeContentCssConditionTrackerTest, Navigation) {
   }
 }
 
-// https://crbug.com/497586
+// https://crbug.com/40421566
 TEST_F(DeclarativeContentCssConditionTrackerTest, WebContentsOutlivesTracker) {
   const std::unique_ptr<content::WebContents> tab = MakeTab();
 

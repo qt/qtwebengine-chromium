@@ -137,9 +137,16 @@ class IndirectDrawMetadata : public NonCopyable {
     };
 
     struct IndexedIndirectConfig {
-        uintptr_t inputIndirectBufferPtr;
-        bool duplicateBaseVertexInstance;
-        DrawType drawType;
+        const uintptr_t inputIndirectBufferPtr;
+        const bool duplicateBaseVertexInstance;
+        const DrawType drawType;
+
+        IndexedIndirectConfig(uintptr_t inputIndirectBufferPtr,
+                              bool duplicateBaseVertexInstance,
+                              DrawType drawType)
+            : inputIndirectBufferPtr(inputIndirectBufferPtr),
+              duplicateBaseVertexInstance(duplicateBaseVertexInstance),
+              drawType(drawType) {}
 
         bool operator<(const IndexedIndirectConfig& other) const;
         bool operator==(const IndexedIndirectConfig& other) const = default;

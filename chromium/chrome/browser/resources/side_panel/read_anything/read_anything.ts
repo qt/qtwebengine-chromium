@@ -23,7 +23,6 @@ export {ReadabilityImageClassifier} from './content/readability_image_classifier
 export {SelectionController} from './content/selection_controller.js';
 export type {ColorMenuElement} from './menus/color_menu.js';
 export type {FontMenuElement} from './menus/font_menu.js';
-export type {FontSelectElement} from './menus/font_select.js';
 export type {HighlightMenuElement} from './menus/highlight_menu.js';
 export type {LetterSpacingMenuElement} from './menus/letter_spacing_menu.js';
 export type {LineFocusMenuElement} from './menus/line_focus_menu.js';
@@ -51,10 +50,11 @@ export {PauseActionSource, SpeechEngineState, SpeechModel} from './read_aloud/sp
 export {getCurrentSpeechRate, isInvalidHighlightForWordHighlighting, textEndsWithOpeningPunctuation} from './read_aloud/speech_presentation_rules.js';
 export {TextSegmenter} from './read_aloud/text_segmenter.js';
 export {TsReadModelImpl} from './read_aloud/ts_model_impl.js';
+export {getFilteredVoiceList} from './read_aloud/tts_voice_filtering.js';
 export {V8ModelImpl} from './read_aloud/v8_model_impl.js';
 export type {VoiceLanguageListener} from './read_aloud/voice_language_controller.js';
 export {VoiceLanguageController} from './read_aloud/voice_language_controller.js';
-export {AVAILABLE_GOOGLE_TTS_LOCALES, convertLangOrLocaleForVoicePackManager, convertLangOrLocaleToExactVoicePackLocale, convertLangToAnAvailableLangIfPresent, createInitialListOfEnabledLanguages, EXTENSION_RESPONSE_TIMEOUT_MS, getFilteredVoiceList, getNotification, getVoicePackConvertedLangIfExists, mojoVoicePackStatusToVoicePackStatusEnum, NotificationType, PACK_MANAGER_SUPPORTED_LANGS_AND_LOCALES, VoiceClientSideStatusCode, VoicePackServerStatusErrorCode, VoicePackServerStatusSuccessCode} from './read_aloud/voice_language_conversions.js';
+export {AVAILABLE_GOOGLE_TTS_LOCALES, convertLangOrLocaleForVoicePackManager, convertLangOrLocaleToExactVoicePackLocale, convertLangToAnAvailableLangIfPresent, createInitialListOfEnabledLanguages, EXTENSION_RESPONSE_TIMEOUT_MS, getNotification, getVoicePackConvertedLangIfExists, mojoVoicePackStatusToVoicePackStatusEnum, NotificationType, PACK_MANAGER_SUPPORTED_LANGS_AND_LOCALES, VoiceClientSideStatusCode, VoicePackServerStatusErrorCode, VoicePackServerStatusSuccessCode} from './read_aloud/voice_language_conversions.js';
 export {VoiceLanguageModel} from './read_aloud/voice_language_model.js';
 export type {VoiceNotificationListener} from './read_aloud/voice_notification_manager.js';
 export {VoiceNotificationManager} from './read_aloud/voice_notification_manager.js';
@@ -66,4 +66,4 @@ export {getTextNodeOffsets} from './shared/dom_queries.js';
 export {getNewIndex, isActivationKey, isArrow, isBackwardArrow, isForwardArrow, isHorizontalArrow, isVerticalArrow} from './shared/keyboard_util.js';
 export type {MetricsBrowserProxy} from './shared/metrics_browser_proxy.js';
 export {MetricsBrowserProxyImpl, ReadAloudSettingsChange, ReadAnythingNewPage, ReadAnythingSettingsChange, ReadAnythingSpeechError, ReadAnythingVoiceType} from './shared/metrics_browser_proxy.js';
-export {ReadAnythingLogger, SpeechControls, TimeFrom} from './shared/read_anything_logger.js';
+export {LinkStatus, ReadAnythingLogger, SpeechControls, TimeFrom} from './shared/read_anything_logger.js';

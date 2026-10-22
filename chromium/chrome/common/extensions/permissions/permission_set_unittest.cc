@@ -737,7 +737,7 @@ TEST(PermissionsTest, IsPrivilegeIncrease) {
 
 // Tests that swapping out a permission for a less powerful one is not
 // considered a privilege increase.
-// Regression test for https://crbug.com/841938.
+// Regression test for https://crbug.com/40575861.
 TEST(PermissionsTest,
      IsNotPrivilegeIncreaseWhenSwitchingForLowerPrivilegePermission) {
   APIPermissionSet apis1;
@@ -871,6 +871,7 @@ TEST(PermissionsTest, PermissionMessages) {
 #if BUILDFLAG(ENABLE_PLATFORM_APPS)
   skip.insert(APIPermissionID::kFirstRunPrivate);
 #endif
+  skip.insert(APIPermissionID::kGlicPrivate);
   skip.insert(APIPermissionID::kImageLoaderPrivate);
   skip.insert(APIPermissionID::kInputMethodPrivate);
   skip.insert(APIPermissionID::kLanguageSettingsPrivate);
@@ -1272,7 +1273,8 @@ TEST(PermissionsTest, GetWarningMessages_DeclarativeWebRequest) {
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 #if BUILDFLAG(ENABLE_PLATFORM_APPS)
-// "serial" is a platform app API.
+#if BUILDFLAG(IS_CHROMEOS)
+// "serial" is a platform app API only available on ChromeOS.
 TEST(PermissionsTest, GetWarningMessages_Serial) {
   scoped_refptr<Extension> extension =
       LoadManifest("permissions", "serial.json");
@@ -1283,6 +1285,7 @@ TEST(PermissionsTest, GetWarningMessages_Serial) {
   EXPECT_TRUE(VerifyOnePermissionMessage(extension->permissions_data(),
                                          "Access your serial devices"));
 }
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 // "socket" is a platform app API.
 TEST(PermissionsTest, GetWarningMessages_Socket_AnyHost) {
@@ -1343,7 +1346,7 @@ TEST(PermissionsTest, GetWarningMessages_Socket_TwoDomainsOneHostname) {
 
 // Since platform apps always use isolated storage, they can't (silently)
 // access user data on other domains, so there's no need to prompt about host
-// permissions. See crbug.com/255229.
+// permissions. See crbug.com/40323545.
 TEST(PermissionsTest, GetWarningMessages_PlatformAppHosts) {
   scoped_refptr<Extension> extension =
       LoadManifest("permissions", "platform_app_hosts.json");

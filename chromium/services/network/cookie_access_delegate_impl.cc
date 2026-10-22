@@ -55,10 +55,7 @@ net::CookieScopeSemantics CookieAccessDelegateImpl::GetScopeSemantics(
   if (!cookie_settings_) {
     return net::CookieScopeSemantics::UNKNOWN;
   }
-  // TODO(crbug.com/378827534)  finish propagating string_view thru cookie
-  // settings.
-  return cookie_settings_->GetCookieScopeSemanticsForDomain(
-      std::string(domain));
+  return cookie_settings_->GetCookieScopeSemanticsForDomain(domain);
 }
 
 bool CookieAccessDelegateImpl::ShouldIgnoreSameSiteRestrictions(
@@ -85,17 +82,6 @@ CookieAccessDelegateImpl::ComputeFirstPartySetMetadataMaybeAsync(
   }
   return first_party_sets_access_delegate_->ComputeMetadata(
       site, top_frame_site, std::move(callback));
-}
-
-std::optional<FirstPartySetsAccessDelegate::EntriesResult>
-CookieAccessDelegateImpl::FindFirstPartySetEntries(
-    const base::flat_set<net::SchemefulSite>& sites,
-    base::OnceCallback<void(FirstPartySetsAccessDelegate::EntriesResult)>
-        callback) const {
-  if (!first_party_sets_access_delegate_)
-    return FirstPartySetsAccessDelegate::EntriesResult();
-  return first_party_sets_access_delegate_->FindEntries(sites,
-                                                        std::move(callback));
 }
 
 }  // namespace network

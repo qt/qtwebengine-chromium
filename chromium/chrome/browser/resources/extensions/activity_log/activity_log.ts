@@ -119,8 +119,8 @@ export class ExtensionsActivityLogElement extends
   }
 
   protected isPlaceholder_(): boolean {
-    return !!(this.extensionInfo as ActivityLogExtensionPlaceholder)
-                 .isPlaceholder;
+    return (this.extensionInfo as ActivityLogExtensionPlaceholder)
+        .isPlaceholder;
   }
 
   protected getExtensionIconUrl_(): string {
@@ -171,7 +171,7 @@ export class ExtensionsActivityLogElement extends
     return this.selectedSubpage_ === ActivityLogSubpage.STREAM;
   }
 
-  protected onTabsChangedSelectedSubpage_(
+  protected onTabsSelectedChanged_(
       e: CustomEvent<{value: ActivityLogSubpage}>) {
     this.selectedSubpage_ = e.detail.value;
   }

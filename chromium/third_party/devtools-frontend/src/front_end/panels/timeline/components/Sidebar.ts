@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 /* eslint-disable @devtools/no-imperative-dom-api */
 
+import * as Common from '../../../core/common/common.js';
 import type * as Trace from '../../../models/trace/trace.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 
@@ -75,6 +76,14 @@ export class SidebarWidget extends UI.Widget.VBox {
    * user pops the sidebar open, we want to re-activate it.
    */
   #insightToRestoreOnOpen: ActiveInsight|null = null;
+  /**
+   * We track if the user has opened the sidebar once. This is used to
+   * automatically show the sidebar for new users when they first record or
+   * import a trace, but then persist its state (so if they close it, it stays
+   * closed).
+   */
+  #hasOpenedOnce =
+      Common.Settings.Settings.instance().createSetting<boolean>('timeline-sidebar-opened-at-least-once', false);
 
   constructor() {
     super();
@@ -93,6 +102,7 @@ export class SidebarWidget extends UI.Widget.VBox {
 
   override wasShown(): void {
     super.wasShown();
+    this.#hasOpenedOnce.set(true);
     this.#tabbedPane.show(this.element);
     this.#updateAnnotationsCountBadge();
 
@@ -152,6 +162,25 @@ export class SidebarWidget extends UI.Widget.VBox {
       this.#tabbedPane.selectTab(SidebarTabs.INSIGHTS);
     }
   }
+
+  openInsightsTab(): void {
+    this.#tabbedPane.selectTab(SidebarTabs.INSIGHTS);
+  }
+
+  setActiveInsightSet(insightSetKey: string): void {
+    this.#insightsView.setActiveInsightSet(insightSetKey);
+  }
+
+  /**
+   * True if the sidebar has been visible at least one time. This is persisted
+   * to the user settings so it persists across sessions. This is used because
+   * we do not force the RPP sidebar open by default; if a user has seen it &
+   * then closed it, we will not re-open it automatically. But if a user
+   * has never seen it, we want them to see it once to know it exists.
+   */
+  sidebarHasBeenOpened(): boolean {
+    return this.#hasOpenedOnce.get();
+  }
 }
 
 class InsightsView extends UI.Widget.VBox {
@@ -160,27 +189,24 @@ class InsightsView extends UI.Widget.VBox {
   constructor() {
     super();
     this.element.classList.add('sidebar-insights');
-    this.element.appendChild(this.#component);
+    this.#getWidget().show(this.element);
+  }
+
+  #getWidget(): SidebarInsightsTab {
+    return UI.Widget.Widget.get(this.#component) as SidebarInsightsTab;
   }
 
   setParsedTrace(parsedTrace: Trace.TraceModel.ParsedTrace|null): void {
-    this.#component.widgetConfig = UI.Widget.widgetConfig(SidebarInsightsTab, {parsedTrace});
+    const widget = this.#getWidget();
+    widget.parsedTrace = parsedTrace;
   }
 
   getActiveInsight(): ActiveInsight|null {
-    const widget = this.#component.getWidget();
-    if (widget) {
-      return widget.activeInsight;
-    }
-
-    return null;
+    return this.#getWidget().activeInsight;
   }
 
   setActiveInsight(active: ActiveInsight|null, opts: {highlight: boolean}): void {
-    const widget = this.#component.getWidget();
-    if (!widget) {
-      return;
-    }
+    const widget = this.#getWidget();
 
     widget.activeInsight = active;
     if (opts.highlight && active) {
@@ -188,9 +214,13 @@ class InsightsView extends UI.Widget.VBox {
       // might highlight the wrong insight. The UI needs to be fully
       // re-rendered before we can highlight the newly-expanded insight.
       void widget.updateComplete.then(() => {
-        widget.highlightActiveInsight();
+        void widget.highlightActiveInsight();
       });
     }
+  }
+
+  setActiveInsightSet(insightSetKey: string): void {
+    this.#getWidget().setActiveInsightSet(insightSetKey);
   }
 }
 

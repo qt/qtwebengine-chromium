@@ -47,9 +47,8 @@ class GraphImpl : public Graph {
   // FrameVisibilityVoter::OnFrameVisibilityChanged() can call
   // FrameNodeImpl::SetPriorityAndReason().)
   template <typename Observer>
-  using ObserverList = base::ObserverList<Observer,
-                                          /*check_empty=*/true,
-                                          /*allow_reentrancy=*/true>;
+  using ObserverList =
+      base::ReentrantObserverList<Observer, /*check_empty=*/true>;
 
   GraphImpl();
   ~GraphImpl() override;

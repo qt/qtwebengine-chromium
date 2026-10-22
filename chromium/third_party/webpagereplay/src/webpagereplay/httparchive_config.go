@@ -11,6 +11,8 @@ import (
 type HttpArchiveConfig struct {
 	Method, Host, FullPath                                           string
 	StatusCode                                                       int
+	LogLevel                                                         string
+	RelativeTimestamps                                               bool
 	DecodeResponseBody, SkipExisting, OverwriteExisting, InvertMatch bool
 	KeepDuplicates                                                   bool
 }
@@ -30,16 +32,27 @@ func (cfg *HttpArchiveConfig) RequestFilterFlags() []cli.Flag {
 			Destination: &cfg.Host,
 		},
 		&cli.StringFlag{
-			Name:        "full_path",
+			Name:        "full-path",
 			Value:       "",
 			Usage:       "Only include URLs matching this full path.",
 			Destination: &cfg.FullPath,
 		},
 		&cli.IntFlag{
-			Name:        "status_code",
+			Name:        "status-code",
 			Value:       0,
 			Usage:       "Only include URLs matching this response status code.",
 			Destination: &cfg.StatusCode,
+		},
+		&cli.StringFlag{
+			Name:        "log-level",
+			Value:       "INFO",
+			Usage:       "Logging level (DEBUG, INFO, WARN, ERROR).",
+			Destination: &cfg.LogLevel,
+		},
+		&cli.BoolFlag{
+			Name:        "relative-timestamps",
+			Usage:       "Display relative timestamps in logs.",
+			Destination: &cfg.RelativeTimestamps,
 		},
 	}
 }
@@ -47,7 +60,7 @@ func (cfg *HttpArchiveConfig) RequestFilterFlags() []cli.Flag {
 func (cfg *HttpArchiveConfig) DefaultFlags() []cli.Flag {
 	return append([]cli.Flag{
 		&cli.BoolFlag{
-			Name:        "decode_response_body",
+			Name:        "decode-response-body",
 			Usage:       "Decode/encode response body according to Content-Encoding header.",
 			Destination: &cfg.DecodeResponseBody,
 		},
@@ -86,7 +99,7 @@ func (cfg *HttpArchiveConfig) MergeFlags() []cli.Flag {
 			Usage: "By default, if the archives specify different responses for the same request, " +
 				"the response from the first archive will be kept. If this flag is set, both responses " +
 				"will be kept, which can be useful if the merged archive is replayed with " +
-				"--serve_response_in_chronological_sequence (iterates through the duplicated responses).",
+				"--serve-response-in-chronological-sequence (iterates through the duplicated responses).",
 			Destination: &cfg.KeepDuplicates,
 		},
 	}

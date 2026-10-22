@@ -71,7 +71,7 @@ bool ValidatePseudoElement(String& pseudo, ExceptionState& exception_state) {
   }
 
   AtomicString pseudo_argument = g_null_atom;
-  PseudoId pseudo_id = pseudo.StartsWith(":")
+  PseudoId pseudo_id = pseudo.starts_with(':')
                            ? CSSSelectorParser::ParsePseudoElement(
                                  pseudo, /*parent=*/nullptr, pseudo_argument)
                            : kPseudoIdInvalid;
@@ -98,13 +98,13 @@ bool ValidatePseudoElement(String& pseudo, ExceptionState& exception_state) {
 
     default:
       // Convert to canonical form.
-      if (!pseudo.StartsWith("::")) {
+      if (!pseudo.starts_with("::")) {
         StringBuilder sb;
         sb.Append(":");
         sb.Append(pseudo);
         pseudo = sb.ToString();
       }
-      pseudo = pseudo.LowerASCII();
+      pseudo = pseudo.ToAsciiLower();
       return true;
   }
 }
@@ -286,12 +286,11 @@ KeyframeEffect::KeyframeEffect(Element* target,
   DCHECK(model_);
 
   // fix target for css animations and transitions
-  if (target && target->IsPseudoElement()) {
+  if (auto* pseudo_element = DynamicTo<PseudoElement>(target)) {
     // The |target_element_| is used to target events in script when
     // animating pseudo-elements. This requires using the DOM element that the
     // pseudo-element originates from.
-    target_element_ =
-        &DynamicTo<PseudoElement>(target)->UltimateOriginatingElement();
+    target_element_ = &pseudo_element->UltimateOriginatingElement();
     DCHECK(!target_element_->IsPseudoElement());
     target_pseudo_ = PseudoElement::PseudoElementNameForEvents(target);
   }
@@ -703,7 +702,8 @@ void KeyframeEffect::ApplyEffects() {
     return;
 
   if (GetAnimation() && HasIncompatibleStyle()) {
-    GetAnimation()->CancelAnimationOnCompositor();
+    GetAnimation()->SetCompositorPending(
+        Animation::CompositorPendingReason::kPendingCancel);
   }
 
   std::optional<double> iteration = CurrentIteration();

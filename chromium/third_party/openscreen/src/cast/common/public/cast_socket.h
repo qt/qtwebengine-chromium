@@ -20,7 +20,7 @@ class CastMessage;
 // Represents a simple message-oriented socket for communicating with the Cast
 // V2 protocol.  It isn't thread-safe, so it should only be used on the same
 // TaskRunner thread as its TlsConnection.
-class CastSocket : public TlsConnection::Client {
+class CastSocket : public Connection::Client {
  public:
   class Client {
    public:
@@ -33,7 +33,7 @@ class CastSocket : public TlsConnection::Client {
     virtual ~Client();
   };
 
-  CastSocket(std::unique_ptr<TlsConnection> connection, Client* client);
+  CastSocket(std::unique_ptr<Connection> connection, Client* client);
   ~CastSocket();
 
   // Sends `message` immediately unless the underlying TLS connection is
@@ -56,9 +56,9 @@ class CastSocket : public TlsConnection::Client {
   void set_audio_only(bool audio_only) { audio_only_ = audio_only; }
   bool audio_only() const { return audio_only_; }
 
-  // TlsConnection::Client overrides.
-  void OnError(TlsConnection* connection, const Error& error) override;
-  void OnRead(TlsConnection* connection, std::vector<uint8_t> block) override;
+  // Connection::Client overrides.
+  void OnError(Connection* connection, const Error& error) override;
+  void OnRead(Connection* connection, std::vector<uint8_t> block) override;
 
   WeakPtr<CastSocket> GetWeakPtr() const { return weak_factory_.GetWeakPtr(); }
 
@@ -70,7 +70,7 @@ class CastSocket : public TlsConnection::Client {
 
   static int g_next_socket_id_;
 
-  const std::unique_ptr<TlsConnection> connection_;
+  const std::unique_ptr<Connection> connection_;
   Client* client_;  // May never be null.
   const int socket_id_;
   bool audio_only_ = false;

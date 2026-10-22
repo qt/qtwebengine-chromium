@@ -14,6 +14,7 @@ describe('LoggingDriver', () => {
   let recordImpression: sinon.SinonStub;
   let throttler: Common.Throttler.Throttler;
   let throttle: sinon.SinonStub;
+  let processingThrottler: Common.Throttler.Throttler;
   let onerror: OnErrorEventHandler;
 
   before(() => {
@@ -32,6 +33,7 @@ describe('LoggingDriver', () => {
   beforeEach(() => {
     throttler = new Common.Throttler.Throttler(1000000000);
     throttle = sinon.stub(throttler, 'schedule');
+    processingThrottler = new Common.Throttler.Throttler(1000000000);
     recordImpression = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
         'recordImpression',
@@ -42,7 +44,7 @@ describe('LoggingDriver', () => {
     await VisualLoggingTesting.LoggingDriver.stopLogging();
   });
 
-  function addLoggableElements() {
+  async function addLoggableElements() {
     const parent = document.createElement('div');
     parent.id = 'parent';
     parent.setAttribute('jslog', 'TreeItem; track: hover');
@@ -55,10 +57,11 @@ describe('LoggingDriver', () => {
     element.style.height = '300px';
     parent.appendChild(element);
     renderElementIntoDOM(parent);
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
 
   it('logs impressions on startLogging', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging();
     sinon.assert.calledOnce(recordImpression);
     assert.sameDeepMembers(recordImpression.firstCall.firstArg.impressions, [
@@ -76,14 +79,14 @@ describe('LoggingDriver', () => {
   }
 
   it('does not log impressions when document hidden', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     sinon.stub(document, 'hidden').value(true);
     await VisualLoggingTesting.LoggingDriver.startLogging({processingThrottler: throttler});
     sinon.assert.notCalled(recordImpression);
   });
 
   it('does not log impressions when parent hidden', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const parent = document.getElementById('parent')!;
     parent.style.height = '0';
     await VisualLoggingTesting.LoggingDriver.startLogging({processingThrottler: throttler});
@@ -92,7 +95,7 @@ describe('LoggingDriver', () => {
 
   it('logs impressions when visibility changes', async () => {
     let hidden = true;
-    addLoggableElements();
+    await addLoggableElements();
     sinon.stub(document, 'hidden').get(() => hidden);
     await VisualLoggingTesting.LoggingDriver.startLogging({processingThrottler: throttler});
 
@@ -105,7 +108,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs impressions on scroll', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const parent = document.getElementById('parent')!;
     parent.style.marginTop = '2000px';
     await VisualLoggingTesting.LoggingDriver.startLogging({processingThrottler: throttler});
@@ -131,7 +134,7 @@ describe('LoggingDriver', () => {
 
   it('logs impressions on mutation', async () => {
     await VisualLoggingTesting.LoggingDriver.startLogging({processingThrottler: throttler});
-    addLoggableElements();
+    await addLoggableElements();
     await assertImpressionRecordedDeferred();
   });
 
@@ -220,7 +223,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs clicks', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging();
     const recordClick = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -234,7 +237,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs right clicks', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging();
     const recordClick = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -248,7 +251,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs middle clicks', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging();
     const recordClick = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -262,7 +265,7 @@ describe('LoggingDriver', () => {
   });
 
   it('does not log clicks if not configured', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging();
     const recordClick = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -277,7 +280,7 @@ describe('LoggingDriver', () => {
   });
 
   it('does not log click on double click', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const element = document.getElementById('element')!;
     element.setAttribute('jslog', 'TreeItem; context:42; track: click, dblclick');
     await VisualLoggingTesting.LoggingDriver.startLogging({clickLogThrottler: throttler});
@@ -298,7 +301,7 @@ describe('LoggingDriver', () => {
   });
 
   it('does not log click on parent when clicked on child', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const parent = document.getElementById('parent')!;
     parent.setAttribute('jslog', 'TreeItem; track: click');
     await VisualLoggingTesting.LoggingDriver.startLogging({clickLogThrottler: throttler});
@@ -387,7 +390,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs keydown', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging({keyboardLogThrottler: throttler});
     const recordKeyDown = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -406,7 +409,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs keydown for specific codes', async () => {
-    addLoggableElements();
+    await addLoggableElements();
 
     const element = document.getElementById('element')!;
     element.setAttribute('jslog', 'TreeItem; context:42; track: keydown: KeyA|KeyB');
@@ -436,7 +439,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs change', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging();
     const recordChange = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -449,7 +452,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs change for each input type', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging();
     const recordChange = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -477,7 +480,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs change on focus out after input', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging();
     const recordChange = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -491,7 +494,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs change on new impressions', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging({processingThrottler: throttler});
     const recordChange = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -507,7 +510,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs change on resize', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler});
     const recordChange = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -522,7 +525,7 @@ describe('LoggingDriver', () => {
   });
 
   it('does not log change on focus out without input', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging();
     const recordChange = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -611,7 +614,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs hover', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging({hoverLogThrottler: throttler});
     const recordHover = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -627,7 +630,7 @@ describe('LoggingDriver', () => {
   });
 
   it('does not log hover if too short', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging({hoverLogThrottler: throttler});
     const recordHover = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -644,7 +647,7 @@ describe('LoggingDriver', () => {
   });
 
   it('does not log hover if in descendent', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging({hoverLogThrottler: throttler});
     const recordHover = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -665,7 +668,7 @@ describe('LoggingDriver', () => {
 
   it('logs drag', async () => {
     const dragLogThrottler = new Common.Throttler.Throttler(1000000000);
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging({dragLogThrottler});
     const recordDrag = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -684,7 +687,7 @@ describe('LoggingDriver', () => {
 
   it('does not log drag if too short in time', async () => {
     const dragLogThrottler = new Common.Throttler.Throttler(1000000000);
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging({dragLogThrottler});
     const recordDrag = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -703,7 +706,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs drag if short in time but long in distance', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging({dragLogThrottler: throttler});
     const recordDrag = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -723,8 +726,8 @@ describe('LoggingDriver', () => {
   });
 
   it('logs resize', async () => {
-    addLoggableElements();
-    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler});
+    await addLoggableElements();
+    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler, processingThrottler});
     const recordResize = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
         'recordResize',
@@ -740,7 +743,7 @@ describe('LoggingDriver', () => {
   });
 
   it('does not log resize if too small', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler});
     const recordResize = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -753,8 +756,8 @@ describe('LoggingDriver', () => {
   });
 
   it('logs resize on visibility change', async () => {
-    addLoggableElements();
-    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler});
+    await addLoggableElements();
+    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler, processingThrottler});
     const recordResize = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
         'recordResize',
@@ -783,11 +786,11 @@ describe('LoggingDriver', () => {
   });
 
   it('throttles resize per element', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const element1 = document.getElementById('element')!;
     const element2 = element1.cloneNode() as HTMLElement;
     document.getElementById('parent')?.appendChild(element2);
-    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler});
+    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler, processingThrottler});
     const recordResize = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
         'recordResize',
@@ -811,7 +814,7 @@ describe('LoggingDriver', () => {
   });
 
   it('only logs resize of the outer element when disappearing', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const element = document.getElementById('element')!;
     const child = document.createElement('div');
     child.setAttribute('jslog', 'TreeItem; track: resize');
@@ -819,7 +822,7 @@ describe('LoggingDriver', () => {
     child.style.height = '100%';
     element.appendChild(child);
 
-    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler});
+    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler, processingThrottler});
     const recordResize = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
         'recordResize',
@@ -836,7 +839,7 @@ describe('LoggingDriver', () => {
   });
 
   it('only logs resize of the outer element when appearing', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const element = document.getElementById('element')!;
     element.style.width = '0';
     const child = document.createElement('div');
@@ -845,7 +848,7 @@ describe('LoggingDriver', () => {
     child.style.height = '100%';
     element.appendChild(child);
 
-    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler});
+    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler, processingThrottler});
     const recordResize = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
         'recordResize',
@@ -862,7 +865,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs regular resize of both elements', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const element = document.getElementById('element')!;
     const child = document.createElement('div');
     child.setAttribute('jslog', 'TreeItem; track: resize');
@@ -870,7 +873,7 @@ describe('LoggingDriver', () => {
     child.style.height = '100%';
     element.appendChild(child);
 
-    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler});
+    await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler, processingThrottler});
     const recordResize = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
         'recordResize',
@@ -889,7 +892,7 @@ describe('LoggingDriver', () => {
   });
 
   it('does not log resize intial impressions due to visibility change', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const element = document.getElementById('element')!;
     element.style.display = 'none';
 
@@ -903,7 +906,7 @@ describe('LoggingDriver', () => {
 
     element.style.display = 'block';
     await expectCalled(throttle).then(([work]) => work());
-    sinon.assert.calledOnce(throttle);
+    sinon.assert.called(throttle);
     sinon.assert.calledOnce(recordImpression);
     sinon.assert.notCalled(recordResize);
 
@@ -912,7 +915,7 @@ describe('LoggingDriver', () => {
   });
 
   it('properly handles the switch between visible elements', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const element1 = document.getElementById('element')!;
     const child = document.createElement('div');
     child.id = 'child';
@@ -953,7 +956,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs resize when removed from DOM', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     await VisualLoggingTesting.LoggingDriver.startLogging({resizeLogThrottler: throttler});
     const recordResize = sinon.stub(
         Host.InspectorFrontendHost.InspectorFrontendHostInstance,
@@ -973,7 +976,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs click, then resize, then impressions', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const processingThrottler = new Common.Throttler.Throttler(10);
     const clickLogThrottler = new Common.Throttler.Throttler(100);
     const keyboardLogThrottler = new Common.Throttler.Throttler(100);
@@ -1012,7 +1015,7 @@ describe('LoggingDriver', () => {
 
   // Flaky test.
   it.skip('[crbug.com/453711161] logs keydown, then resize, then impressions', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const element = document.getElementById('element')!;
     element.setAttribute('jslog', 'TreeItem; context:42; track: keydown: KeyA, resize');
     const keyboardLogThrottler = new Common.Throttler.Throttler(100);
@@ -1049,7 +1052,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs non-DOM impressions', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const loggable = {};
     const parent = document.getElementById('parent')!;
     VisualLoggingTesting.NonDomState.registerLoggable(loggable, {ve: 1, context: '123'}, parent);
@@ -1064,7 +1067,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs non-DOM impressions after parent was logged', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const loggable1 = {};
     const parent = document.getElementById('parent')!;
     await VisualLoggingTesting.LoggingDriver.startLogging();
@@ -1090,7 +1093,7 @@ describe('LoggingDriver', () => {
   });
 
   it('logs root non-DOM impressions', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const loggable = {};
     VisualLoggingTesting.NonDomState.registerLoggable(loggable, {ve: 1, context: '123'}, undefined);
     await VisualLoggingTesting.LoggingDriver.startLogging();
@@ -1105,7 +1108,7 @@ describe('LoggingDriver', () => {
   });
 
   it('postpones logging non-DOM impressions with detached parent', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const loggable = {};
     const parent = document.createElement('div');
     VisualLoggingTesting.NonDomState.registerLoggable(loggable, {ve: 1, context: '123'}, parent);
@@ -1122,7 +1125,7 @@ describe('LoggingDriver', () => {
   });
 
   it('does not log a non-DOM impression twice for the same loggable', async () => {
-    addLoggableElements();
+    await addLoggableElements();
     const loggable = {};
     const parent = document.getElementById('parent')!;
     VisualLoggingTesting.NonDomState.registerLoggable(loggable, {ve: 1, context: '123'}, parent);

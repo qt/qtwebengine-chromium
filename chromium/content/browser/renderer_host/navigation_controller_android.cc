@@ -127,17 +127,24 @@ NavigationControllerAndroid::NavigationControllerAndroid(
     NavigationControllerImpl* navigation_controller)
     : navigation_controller_(navigation_controller) {
   JNIEnv* env = AttachCurrentThread();
-  obj_.Reset(env, Java_NavigationControllerImpl_create(
-                      env, reinterpret_cast<intptr_t>(this)));
+  obj_ =
+      JavaObjectWeakGlobalRef(env, Java_NavigationControllerImpl_create(
+                                       env, reinterpret_cast<intptr_t>(this)));
 }
 
 NavigationControllerAndroid::~NavigationControllerAndroid() {
-  Java_NavigationControllerImpl_destroy(AttachCurrentThread(), obj_);
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = obj_.get(env);
+  CHECK(!obj.is_null());
+  Java_NavigationControllerImpl_destroy(env, obj);
 }
 
 base::android::ScopedJavaLocalRef<jobject>
 NavigationControllerAndroid::GetJavaObject() {
-  return base::android::ScopedJavaLocalRef<jobject>(obj_);
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = obj_.get(env);
+  CHECK(!obj.is_null());
+  return obj;
 }
 
 bool NavigationControllerAndroid::CanGoBack(JNIEnv* env) {
@@ -229,7 +236,8 @@ base::android::ScopedJavaLocalRef<jobject> NavigationControllerAndroid::LoadUrl(
     int64_t input_start,
     int64_t navigation_ui_data_ptr,
     bool is_pdf,
-    bool remove_extra_headers_on_cross_origin_redirect) {
+    bool remove_extra_headers_on_cross_origin_redirect,
+    const JavaRef<jstring>& internal_scroll_to_text_fragment) {
   DCHECK(url);
   NavigationController::LoadURLParams params(
       GURL(ConvertJavaStringToUTF8(env, url)));
@@ -319,6 +327,11 @@ base::android::ScopedJavaLocalRef<jobject> NavigationControllerAndroid::LoadUrl(
     params.input_start = base::TimeTicks::FromUptimeMillis(input_start);
 
   params.navigation_ui_data = std::move(navigation_ui_data);
+
+  if (internal_scroll_to_text_fragment) {
+    params.internal_scroll_to_text_fragment =
+        ConvertJavaStringToUTF8(env, internal_scroll_to_text_fragment);
+  }
 
   base::WeakPtr<NavigationHandle> handle =
       navigation_controller_->LoadURLWithParams(params);

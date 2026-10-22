@@ -13,8 +13,10 @@
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_ostream_operators.h"
 #include "base/strings/utf_string_conversions.h"
-#include "components/autofill/core/browser/autofill_field.h"
+#include "components/autofill/core/browser/autofill_format_string.h"
+#include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_i18n_api.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_normalization_utils.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_structured_address_component.h"
@@ -24,8 +26,6 @@
 #include "components/autofill/core/browser/data_quality/autofill_data_util.h"
 #include "components/autofill/core/browser/field_type_utils.h"
 #include "components/autofill/core/browser/field_types.h"
-#include "components/autofill/core/browser/geo/autofill_country.h"
-#include "components/autofill/core/browser/geo/country_names.h"
 #include "components/autofill/core/browser/proto/server.pb.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "third_party/abseil-cpp/absl/functional/overload.h"
@@ -147,6 +147,8 @@ bool IsMaskableRecordType(EntityInstance::RecordType record_type) {
       return false;
     case EntityInstance::RecordType::kServerWallet:
       return true;
+    case EntityInstance::RecordType::kAccessibilityAnnotator:
+      return false;
   }
   NOTREACHED();
 }
@@ -177,10 +179,10 @@ AttributeInstance& AttributeInstance::operator=(AttributeInstance&&) = default;
 AttributeInstance::~AttributeInstance() = default;
 
 std::u16string AttributeInstance::GetInfo(
-    FieldType field_type,
+    std::optional<FieldType> unnormalized_field_type,
     std::string_view app_locale,
     base::optional_ref<const AutofillFormatString> format_string) const {
-  field_type = GetNormalizedFieldType(field_type);
+  FieldType field_type = GetNormalizedFieldType(unnormalized_field_type);
   return std::visit(
       absl::Overload{[&](const CountryInfo& country) {
                        return country.GetCountryName(app_locale);
@@ -191,7 +193,6 @@ std::u16string AttributeInstance::GetInfo(
                          return date.GetIcuDate(format_string->value,
                                                 app_locale);
                        }
-
                        return date.GetDate(format_string ? format_string->value
                                                          : u"YYYY-MM-DD");
                      },
@@ -203,8 +204,9 @@ std::u16string AttributeInstance::GetInfo(
       info_);
 }
 
-std::u16string AttributeInstance::GetRawInfo(FieldType field_type) const {
-  field_type = GetNormalizedFieldType(field_type);
+std::u16string AttributeInstance::GetRawInfo(
+    std::optional<FieldType> unnormalized_field_type) const {
+  FieldType field_type = GetNormalizedFieldType(unnormalized_field_type);
   return std::visit(
       absl::Overload{
           [&](const CountryInfo& country) {
@@ -223,8 +225,8 @@ std::u16string AttributeInstance::GetRawInfo(FieldType field_type) const {
 }
 
 VerificationStatus AttributeInstance::GetVerificationStatus(
-    FieldType field_type) const {
-  field_type = GetNormalizedFieldType(field_type);
+    std::optional<FieldType> unnormalized_field_type) const {
+  FieldType field_type = GetNormalizedFieldType(unnormalized_field_type);
   return std::visit(
       absl::Overload{
           [&](const CountryInfo&) { return VerificationStatus::kNoStatus; },
@@ -241,12 +243,12 @@ VerificationStatus AttributeInstance::GetVerificationStatus(
 }
 
 void AttributeInstance::SetInfo(
-    FieldType field_type,
+    std::optional<FieldType> unnormalized_field_type,
     const std::u16string& value,
     std::string_view app_locale,
     base::optional_ref<const AutofillFormatString> format_string,
     VerificationStatus status) {
-  field_type = GetNormalizedFieldType(field_type);
+  FieldType field_type = GetNormalizedFieldType(unnormalized_field_type);
   std::visit(
       absl::Overload{
           [&](CountryInfo& country) {
@@ -280,10 +282,11 @@ void AttributeInstance::SetInfo(
       info_);
 }
 
-void AttributeInstance::SetRawInfo(FieldType field_type,
-                                   const std::u16string& value,
-                                   VerificationStatus status) {
-  field_type = GetNormalizedFieldType(field_type);
+void AttributeInstance::SetRawInfo(
+    std::optional<FieldType> unnormalized_field_type,
+    const std::u16string& value,
+    VerificationStatus status) {
+  FieldType field_type = GetNormalizedFieldType(unnormalized_field_type);
   std::visit(absl::Overload{
                  [&](CountryInfo& country) {
                    if (!country.SetCountryFromCountryCode(value)) {
@@ -306,9 +309,10 @@ void AttributeInstance::SetRawInfo(FieldType field_type,
 }
 
 FieldType AttributeInstance::GetNormalizedFieldType(
-    FieldType field_type) const {
-  return type_.field_subtypes().contains(field_type) ? field_type
-                                                     : type_.field_type();
+    std::optional<FieldType> field_type) const {
+  return field_type && type_.field_subtypes().contains(*field_type)
+             ? *field_type
+             : type_.field_type().value_or(UNKNOWN_TYPE);
 }
 
 void AttributeInstance::FinalizeInfo() {
@@ -333,12 +337,11 @@ EntityInstance::EntityInstance(
     std::string frecency_override)
     : type_(type),
       attributes_(std::move(attributes)),
-      guid_(std::move(guid)),
       nickname_(std::move(nickname)),
-      entity_metadata_{.guid = guid_,
-                       .date_modified = date_modified,
-                       .use_count = use_count,
-                       .use_date = use_date},
+      metadata_{.guid = std::move(guid),
+                .date_modified = date_modified,
+                .use_count = use_count,
+                .use_date = use_date},
       record_type_(record_type),
       are_attributes_read_only_(are_attributes_read_only),
       frecency_override_(std::move(frecency_override)) {
@@ -380,6 +383,9 @@ std::ostream& operator<<(std::ostream& os,
       break;
     case EntityInstance::RecordType::kServerWallet:
       os << "kServerWallet" << std::endl;
+      break;
+    case EntityInstance::RecordType::kAccessibilityAnnotator:
+      os << "kAccessibilityAnnotator" << std::endl;
       break;
   }
   return os;
@@ -425,8 +431,8 @@ EntityInstance::EntityMergeability::operator=(
 EntityInstance::EntityMergeability::~EntityMergeability() = default;
 
 void EntityInstance::RecordEntityUsed(base::Time date) {
-  entity_metadata_.use_date = date;
-  ++entity_metadata_.use_count;
+  metadata_.use_date = date;
+  ++metadata_.use_count;
 }
 
 EntityInstance::EntityMergeability EntityInstance::GetEntityMergeability(
@@ -570,6 +576,8 @@ bool EntityInstance::IsServerInstance() const {
       return false;
     case RecordType::kServerWallet:
       return true;
+    case RecordType::kAccessibilityAnnotator:
+      return false;
   }
   NOTREACHED();
 }
@@ -639,10 +647,25 @@ bool EntityInstance::IsUnmaskedServerEntity() const {
              });
 }
 
+EntityInstance EntityInstance::CopyWithNewEntityId(EntityId id) const {
+  EntityInstance new_instance = *this;
+  new_instance.metadata_.guid = std::move(id);
+  return new_instance;
+}
+
 EntityInstance EntityInstance::CopyWithNewRecordType(
     RecordType record_type) const {
   EntityInstance new_entity = *this;
   new_entity.record_type_ = record_type;
+  return new_entity;
+}
+
+EntityInstance EntityInstance::CopyWithUpdatedAttribute(
+    AttributeInstance attribute) const {
+  EntityInstance new_entity = *this;
+  auto it = new_entity.attributes_.find(attribute.type());
+  CHECK(it != new_entity.attributes_.end());
+  *it = std::move(attribute);
   return new_entity;
 }
 
@@ -669,29 +692,15 @@ bool EntityInstance::FrecencyOrder::operator()(
            log(static_cast<double>(entity.use_count()) + 2);
   };
 
-  // We use rounded values to express near equivalence.
-  //
-  // We cannot use `std::fabs(x - y) < kEpsilon` because that'd break
-  // transitivity of equivalence, which is required by std::sort().
-  //
-  // We don't need to worry about overflows because the maximum absolute value
-  // of get_ranking_score() is
-  //   std::log(std::numeric_limits<double>::max()) / std::log(2)
-  // which is ~1023.
-  static constexpr double kEpsilon = 0.00001;
-  const int32_t lhs_score = std::lround(get_ranking_score(lhs) / kEpsilon);
-  const int32_t rhs_score = std::lround(get_ranking_score(rhs) / kEpsilon);
-
-  if (lhs_score != rhs_score) {
-    return lhs_score > rhs_score;
-  }
-  return lhs.use_date() > rhs.use_date();
+  return std::tuple(get_ranking_score(lhs), lhs.use_date()) >
+         std::tuple(get_ranking_score(rhs), rhs.use_date());
 }
 
 bool IsMaskedStorageSupported(EntityType type,
                               EntityInstance::RecordType record_type) {
   switch (record_type) {
     case EntityInstance::RecordType::kLocal:
+    case EntityInstance::RecordType::kAccessibilityAnnotator:
       return false;
     case EntityInstance::RecordType::kServerWallet:
       break;
@@ -705,6 +714,8 @@ bool IsMaskedStorageSupported(EntityType type,
       return true;
     case EntityTypeName::kFlightReservation:
     case EntityTypeName::kVehicle:
+    case EntityTypeName::kOrder:
+    case EntityTypeName::kShipment:
       return false;
   }
   NOTREACHED();

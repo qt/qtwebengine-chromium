@@ -61,6 +61,10 @@ const UIStrings = {
    */
   settingsChangedReloadDevTools: 'Settings changed. To apply, reload DevTools.',
   /**
+   * @description Message to display if a setting change requires a reload of DevTools
+   */
+  settingsChangedRestartChrome: 'Settings changed. To apply, restart Chrome.',
+  /**
    * @description Warning text shown when the user has entered text to filter the
    * list of experiments, but no experiments match the filter.
    */
@@ -162,8 +166,7 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
     return settingsScreen;
   }
 
-  static async showSettingsScreen(
-      options: ShowSettingsScreenOptions|undefined = {name: undefined, focusTabHeader: undefined}): Promise<void> {
+  static async showSettingsScreen(options: ShowSettingsScreenOptions = {}): Promise<void> {
     const {name, focusTabHeader} = options;
     const settingsScreen = SettingsScreen.revealSettingsScreen();
 
@@ -464,8 +467,13 @@ export class ExperimentsSettingsTab extends UI.Widget.VBox implements SettingsTa
       }
       experiment.setEnabled(checkbox.checked);
       Host.userMetrics.experimentChanged(experiment.name, experiment.isEnabled());
-      UI.InspectorView.InspectorView.instance().displayReloadRequiredWarning(
-          i18nString(UIStrings.settingsChangedReloadDevTools));
+      if (experiment instanceof Root.Runtime.HostExperiment && experiment.requiresChromeRestart) {
+        UI.InspectorView.InspectorView.instance().displayChromeRestartRequiredWarning(
+            i18nString(UIStrings.settingsChangedRestartChrome));
+      } else {
+        UI.InspectorView.InspectorView.instance().displayReloadRequiredWarning(
+            i18nString(UIStrings.settingsChangedReloadDevTools));
+      }
     }
     checkbox.addEventListener('click', listener, false);
 
@@ -628,17 +636,7 @@ const GREENDEV_VIEW: View = (input, _output, target) => {
               <span>${i18nString(UIStrings.greenDevUnstable)}</span>
              </div>
              <div class="settings-experiments-block">
-               ${renderPrototypeCheckboxes(input.settings, ['aiAnnotations', 'inDevToolsFloaty', 'copyToGemini'])}
-             </div>
-           </devtools-card>
-
-           <devtools-card .heading=${'GreenDev widgets'}>
-             <div class="experiments-warning-subsection">
-              <devtools-icon .name=${'warning'}></devtools-icon>
-              <span>${i18nString(UIStrings.greenDevUnstable)}</span>
-             </div>
-             <div class="settings-experiments-block greendev-widgets">
-               ${renderWidgetOptions(input.settings)}
+               ${renderPrototypeCheckboxes(input.settings, ['aiAnnotations', 'copyToGemini', 'breakpointDebuggerAgent', 'emulationCapabilities'])}
              </div>
            </devtools-card>
          </div>
@@ -647,51 +645,11 @@ const GREENDEV_VIEW: View = (input, _output, target) => {
 };
 
 const GREENDEV_PROTOTYPE_NAMES: Record<keyof GreenDev.GreenDevSettings, string> = {
-  inDevToolsFloaty: 'In DevTools context picker',
   aiAnnotations: 'AI auto-annotations',
-  inlineWidgets: 'Inline widgets in AI Assistance',
-  artifactViewer: 'Widgets in the Artifact viewer',
-  copyToGemini: 'Copy changes to AI Prompt'
+  copyToGemini: 'Copy changes to AI Prompt',
+  breakpointDebuggerAgent: 'Breakpoint Debugger Agent',
+  emulationCapabilities: 'Emulation Capabilities',
 };
-
-function renderWidgetOptions(settings: GreenDev.GreenDevSettings): TemplateResult {
-  function onChange(nowActiveRadio: 'inlineWidgets'|'artifactViewer'|'none') {
-    return () => {
-      switch (nowActiveRadio) {
-        case 'inlineWidgets': {
-          settings.artifactViewer.set(false);
-          settings.inlineWidgets.set(true);
-          break;
-        }
-        case 'artifactViewer': {
-          settings.artifactViewer.set(true);
-          settings.inlineWidgets.set(false);
-          break;
-        }
-        case 'none': {
-          settings.artifactViewer.set(false);
-          settings.inlineWidgets.set(false);
-        }
-      }
-
-      UI.InspectorView.InspectorView.instance().displayReloadRequiredWarning(
-          i18nString(UIStrings.settingsChangedReloadDevTools));
-    };
-  }
-  // clang-format off
-  return html`
-    <p class="settings-experiment">
-      <label><input type="radio" name="widgets-choice" @change=${onChange('inlineWidgets')}>${GREENDEV_PROTOTYPE_NAMES['inlineWidgets']}</label>
-    </p>
-    <p class="settings-experiment">
-      <label><input type="radio" name="widgets-choice" @change=${onChange('artifactViewer')}>${GREENDEV_PROTOTYPE_NAMES['artifactViewer']}</label>
-    </p>
-    <p class="settings-experiment">
-      <label><input type="radio" name="widgets-choice" @change=${onChange('none')}>None</label>
-    </p>
-  `;
-  // clang-format on
-}
 
 function renderPrototypeCheckboxes(
     settings: GreenDev.GreenDevSettings,

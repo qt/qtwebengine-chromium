@@ -66,7 +66,9 @@ export class SimpleActionMenuElement extends SimpleActionMenuElementBase {
   accessor label: string = '';
 
   open(anchor: HTMLElement, showAtConfig?: ShowAtConfigPrefs) {
-    openMenu(this.$.lazyMenu.get(), anchor, showAtConfig);
+    openMenu(
+        this.$.lazyMenu.get(), anchor, showAtConfig, /* onShow= */ undefined,
+        this.nonModal);
   }
 
   close() {
@@ -87,7 +89,8 @@ export class SimpleActionMenuElement extends SimpleActionMenuElementBase {
   }
 
   protected isItemSelected_(index: number, item: MenuStateItem<any>): boolean {
-    return item.selected || index === this.currentSelectedIndex;
+    // Only use currentSelectedIndex if item.selected is undefined.
+    return item.selected ?? (index === this.currentSelectedIndex);
   }
 
   protected doesItemHaveIcon_(item: MenuStateItem<any>): boolean {

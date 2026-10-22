@@ -22,7 +22,6 @@ import {
   registerActions,
   registerNoopActions,
   stubNoopSettings,
-  updateHostConfig
 } from '../../testing/EnvironmentHelpers.js';
 import {expectCalled} from '../../testing/ExpectStubCall.js';
 import {stubFileManager} from '../../testing/FileManagerHelpers.js';
@@ -1084,7 +1083,6 @@ Invoke-WebRequest -UseBasicParsing -Uri "url-header-und-content-overridden"`]);
 
   describe('Request blocking and throttling', () => {
     beforeEach(() => {
-      updateHostConfig({devToolsIndividualRequestThrottling: {enabled: true}});
       SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
     });
     async function invokeMenuItem(menu: string, action: string): Promise<void> {
@@ -1202,7 +1200,6 @@ Invoke-WebRequest -UseBasicParsing -Uri "url-header-und-content-overridden"`]);
         'Network.emulateNetworkConditionsByRule',
         params => params.matchedNetworkConditions.length > 0 ? {ruleIds: [ruleId]} : {ruleIds: []});
 
-    updateHostConfig({devToolsIndividualRequestThrottling: {enabled: true}});
     SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
     networkLogView = createNetworkLogView();
     const container = renderElementIntoDOM(document.createElement('div'), {includeCommonStyles: true});

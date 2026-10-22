@@ -28,12 +28,13 @@ static_library("osauth") {
     "password_selection_screen.h",
     "recovery_eligibility_screen.cc",
     "recovery_eligibility_screen.h",
+    "remove_local_auth_factors_screen.cc",
+    "remove_local_auth_factors_screen.h",
   ]
 
   public_deps = [
     "//base",
     "//chrome/browser:browser_public_dependencies",
-    "//chrome/browser/ash/login/screens",
     "//chrome/browser/ui/webui/ash/login/mojom",
     "//chromeos/ash/components/login/auth",
     "//chromeos/ash/components/login/auth/public:authpublic",
@@ -45,11 +46,11 @@ static_library("osauth") {
   deps = [
     "//ash/constants",
     "//ash/public/cpp",
-    "//chrome/browser:browser_process",
     "//chrome/browser/ash/auth",
     "//chrome/browser/ash/login",
     "//chrome/browser/ash/login/quick_unlock",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/profiles:profile_manager",
     "//chrome/browser/ui/ash/login",
     "//chromeos/ash/components/cryptohome",
     "//chromeos/ash/components/cryptohome:public",
@@ -61,6 +62,7 @@ static_library("osauth") {
     "//components/crash/core/app",
     "//components/device_event_log",
     "//components/user_manager",
+    "//services/network/public/cpp",
   ]
 
   allow_circular_includes_from = [
@@ -80,6 +82,7 @@ source_set("browser_tests") {
     "local_password_setup_screen_browsertest.cc",
     "password_selection_screen_browsertest.cc",
     "recovery_eligibility_screen_browsertest.cc",
+    "remove_local_auth_factors_screen_browsertest.cc",
   ]
 
   deps = [
@@ -90,7 +93,9 @@ source_set("browser_tests") {
     "//base/test:test_support",
     "//chrome/browser",
     "//chrome/browser/ash/login",
+    "//chrome/browser/ash/login:test_support",
     "//chrome/browser/ash/login/quick_unlock",
+    "//chrome/browser/ash/login/signin",
     "//chrome/browser/ash/login/test:test_support",
     "//chrome/browser/ash/policy/test_support",
     "//chrome/browser/profiles:profile",

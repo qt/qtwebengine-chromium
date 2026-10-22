@@ -35,8 +35,7 @@ bool RefCountedEvent::init(Context *context, EventStage eventStage)
     // First try with recycler. We must issue VkCmdResetEvent before VkCmdSetEvent
     if (context->getRefCountedEventsGarbageRecycler()->fetch(context->getRenderer(), this))
     {
-        ASSERT(valid());
-        ASSERT(!mHandle->isReferenced());
+        assertValidAndNoReference();
     }
     else
     {
@@ -61,7 +60,9 @@ bool RefCountedEvent::init(Context *context, EventStage eventStage)
                 // that many VkEvents under normal situation. If we failed to allocate, there is a
                 // high chance that we may have a leak somewhere. This macro should help us catch
                 // such potential bugs in the bots if that happens.
-                UNREACHABLE();
+                ASSERT(false);
+                // Ensure memory is freed and pointer is nulled
+                SafeDelete(mHandle);
                 // If still fail to create, we just return. An invalid event will trigger
                 // pipelineBarrier code path
                 return false;
@@ -120,8 +121,7 @@ void RefCountedEvent::releaseImpl(Renderer *renderer, RecyclerT *recycler)
 
 void RefCountedEvent::destroy(VkDevice device)
 {
-    ASSERT(mHandle != nullptr);
-    ASSERT(!mHandle->isReferenced());
+    assertValidAndNoReference();
     mHandle->get().event.destroy(device);
     SafeDelete(mHandle);
 }
@@ -347,7 +347,7 @@ void RefCountedEventRecycler::recycle(RefCountedEventCollector &&garbageObjects,
     ASSERT(!garbageObjects.empty());
     for (const RefCountedEvent &event : garbageObjects)
     {
-        ASSERT(event.validAndNoReference());
+        event.assertValidAndNoReference();
     }
     std::lock_guard<angle::SimpleMutex> lock(mMutex);
     if (mEventsToReset.size() >= kMaxEventToKeepCount)

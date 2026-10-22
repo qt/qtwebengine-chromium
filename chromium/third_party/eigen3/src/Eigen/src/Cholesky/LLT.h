@@ -86,7 +86,7 @@ class LLT : public SolverBase<LLT<MatrixType_, UpLo_> > {
    * The default constructor is useful in cases in which the user intends to
    * perform decompositions via LLT::compute(const MatrixType&).
    */
-  LLT() : m_matrix(), m_isInitialized(false) {}
+  LLT() : m_matrix(), m_l1_norm(0), m_isInitialized(false), m_info(InvalidInput) {}
 
   /** \brief Default Constructor with memory preallocation
    *
@@ -94,10 +94,11 @@ class LLT : public SolverBase<LLT<MatrixType_, UpLo_> > {
    * according to the specified problem \a size.
    * \sa LLT()
    */
-  explicit LLT(Index size) : m_matrix(size, size), m_isInitialized(false) {}
+  explicit LLT(Index size) : m_matrix(size, size), m_l1_norm(0), m_isInitialized(false), m_info(InvalidInput) {}
 
   template <typename InputType>
-  explicit LLT(const EigenBase<InputType>& matrix) : m_matrix(matrix.rows(), matrix.cols()), m_isInitialized(false) {
+  explicit LLT(const EigenBase<InputType>& matrix)
+      : m_matrix(matrix.rows(), matrix.cols()), m_l1_norm(0), m_isInitialized(false), m_info(InvalidInput) {
     compute(matrix.derived());
   }
 
@@ -109,7 +110,8 @@ class LLT : public SolverBase<LLT<MatrixType_, UpLo_> > {
    * \sa LLT(const EigenBase&)
    */
   template <typename InputType>
-  explicit LLT(EigenBase<InputType>& matrix) : m_matrix(matrix.derived()), m_isInitialized(false) {
+  explicit LLT(EigenBase<InputType>& matrix)
+      : m_matrix(matrix.derived()), m_l1_norm(0), m_isInitialized(false), m_info(InvalidInput) {
     compute(matrix.derived());
   }
 
@@ -137,7 +139,7 @@ class LLT : public SolverBase<LLT<MatrixType_, UpLo_> > {
    * \sa solveInPlace(), MatrixBase::llt(), SelfAdjointView::llt()
    */
   template <typename Rhs>
-  inline const Solve<LLT, Rhs> solve(const MatrixBase<Rhs>& b) const;
+  inline Solve<LLT, Rhs> solve(const MatrixBase<Rhs>& b) const;
 #endif
 
   template <typename Derived>
@@ -404,7 +406,7 @@ LLT<MatrixType, UpLo_>& LLT<MatrixType, UpLo_>::compute(const EigenBase<InputTyp
 
   // Compute matrix L1 norm = max abs column sum.
   m_l1_norm = RealScalar(0);
-  // TODO move this code to SelfAdjointView
+  // TODO: move this code to SelfAdjointView
   for (Index col = 0; col < size; ++col) {
     RealScalar abs_col_sum;
     if (UpLo_ == Lower)
@@ -495,7 +497,7 @@ MatrixType LLT<MatrixType, UpLo_>::reconstructedMatrix() const {
  * \sa SelfAdjointView::llt()
  */
 template <typename Derived>
-inline const LLT<typename MatrixBase<Derived>::PlainObject> MatrixBase<Derived>::llt() const {
+inline LLT<typename MatrixBase<Derived>::PlainObject> MatrixBase<Derived>::llt() const {
   return LLT<PlainObject>(derived());
 }
 
@@ -504,7 +506,7 @@ inline const LLT<typename MatrixBase<Derived>::PlainObject> MatrixBase<Derived>:
  * \sa SelfAdjointView::llt()
  */
 template <typename MatrixType, unsigned int UpLo>
-inline const LLT<typename SelfAdjointView<MatrixType, UpLo>::PlainObject, UpLo> SelfAdjointView<MatrixType, UpLo>::llt()
+inline LLT<typename SelfAdjointView<MatrixType, UpLo>::PlainObject, UpLo> SelfAdjointView<MatrixType, UpLo>::llt()
     const {
   return LLT<PlainObject, UpLo>(m_matrix);
 }

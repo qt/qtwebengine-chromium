@@ -39,14 +39,6 @@ export class ContextualTasksOnboardingTooltipElement extends CrLitElement {
   // The element that the tooltip is anchored to.
   accessor target: Element|null = null;
   accessor shouldShow: boolean = false;
-  protected onboardingTitle_: string =
-      loadTimeData.getString('onboardingTitle');
-  protected onboardingBody_: string = loadTimeData.getString('onboardingBody');
-  protected onboardingLink_: string = loadTimeData.getString('onboardingLink');
-  protected onboardingLinkUrl_: string =
-      loadTimeData.getString('onboardingLinkUrl');
-  protected onboardingAcceptButton_: string =
-      loadTimeData.getString('onboardingAcceptButton');
 
   private onboardingTooltipIsVisible_: boolean = false;
   private numberOfTimesTooltipShown_: number = 0;
@@ -210,7 +202,7 @@ export class ContextualTasksOnboardingTooltipElement extends CrLitElement {
     }
   }
 
-  protected onTooltipClose_(e: Event) {
+  protected onTooltipCloseClick_(e: Event) {
     e.stopPropagation();
     BrowserProxyImpl.getInstance().handler.onboardingTooltipDismissed();
     this.userDismissedTooltip_ = true;
@@ -218,10 +210,7 @@ export class ContextualTasksOnboardingTooltipElement extends CrLitElement {
     this.stopObservingTooltipResize_();
     this.clearTooltipImpressionTimer_();
     this.hide();
-    this.dispatchEvent(new CustomEvent('onboarding-tooltip-dismissed', {
-      bubbles: true,
-      composed: true,
-    }));
+    this.fire('onboarding-tooltip-dismissed');
   }
 
   get numberOfTimesTooltipShownForTesting() {

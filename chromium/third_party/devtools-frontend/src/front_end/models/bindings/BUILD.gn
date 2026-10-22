@@ -65,6 +65,7 @@ devtools_entrypoint("bundle") {
     "../../panels/coverage/*",
     "../../panels/elements/*",
     "../../panels/emulation/*",
+    "../../panels/issues/*",
     "../../panels/linear_memory_inspector/*",
     "../../panels/network/*",
     "../../panels/profiler/*",
@@ -88,6 +89,7 @@ devtools_entrypoint("bundle") {
     "../persistence/*",
     "../source_map_scopes/*",
     "../trace_source_maps_resolver/*",
+    "../web_mcp/*",
     "../workspace/*",
   ]
 

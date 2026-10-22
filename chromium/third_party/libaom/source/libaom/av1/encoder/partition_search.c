@@ -10,6 +10,7 @@
  */
 
 #include <float.h>
+#include <inttypes.h>
 
 #include "config/aom_config.h"
 
@@ -4917,18 +4918,77 @@ static void build_pc_tree_from_part_decision(
       node->partitioning = partitioning;
       bsize = node->block_size;
     }
-    if (partitioning == PARTITION_SPLIT) {
-      const BLOCK_SIZE subsize = get_partition_subsize(bsize, PARTITION_SPLIT);
-      for (int i = 0; i < 4; ++i) {
-        if (node != NULL) {  // Suppress warning
-          node->split[i] = av1_alloc_pc_tree_node(subsize);
-          if (!node->split[i])
-            aom_internal_error(error_info, AOM_CODEC_MEM_ERROR,
-                               "Failed to allocate PC_TREE");
-          node->split[i]->index = i;
-          tree_node_queue[last_idx] = node->split[i];
-          ++last_idx;
-        }
+    if (partitioning != PARTITION_NONE) {
+      const BLOCK_SIZE subsize = get_partition_subsize(bsize, partitioning);
+      // Smaller block size for AB partition
+      const BLOCK_SIZE subsize2 = get_partition_subsize(bsize, PARTITION_SPLIT);
+
+      switch (partitioning) {
+        case PARTITION_SPLIT:
+        case PARTITION_HORZ_4:
+        case PARTITION_VERT_4:
+          for (int i = 0; i < 4; ++i) {
+            if (node != NULL) {  // Suppress warning
+              node->split[i] = av1_alloc_pc_tree_node(subsize);
+              if (!node->split[i])
+                aom_internal_error(error_info, AOM_CODEC_MEM_ERROR,
+                                   "Failed to allocate PC_TREE");
+              node->split[i]->index = i;
+              tree_node_queue[last_idx] = node->split[i];
+              ++last_idx;
+            }
+          }
+          break;
+        case PARTITION_HORZ:
+        case PARTITION_VERT:
+          for (int i = 0; i < 2; ++i) {
+            if (node != NULL) {  // Suppress warning
+              node->split[i] = av1_alloc_pc_tree_node(subsize);
+              if (!node->split[i])
+                aom_internal_error(error_info, AOM_CODEC_MEM_ERROR,
+                                   "Failed to allocate PC_TREE");
+              node->split[i]->index = i;
+              tree_node_queue[last_idx] = node->split[i];
+              ++last_idx;
+            }
+          }
+          break;
+        case PARTITION_HORZ_A:
+        case PARTITION_VERT_A:
+          if (node != NULL) {  // Suppress warning
+            node->split[0] = av1_alloc_pc_tree_node(subsize2);
+            node->split[1] = av1_alloc_pc_tree_node(subsize2);
+            node->split[2] = av1_alloc_pc_tree_node(subsize);
+            for (int i = 0; i < 3; ++i) {
+              if (!node->split[i])
+                aom_internal_error(error_info, AOM_CODEC_MEM_ERROR,
+                                   "Failed to allocate PC_TREE");
+              node->split[i]->index = i;
+              tree_node_queue[last_idx] = node->split[i];
+              ++last_idx;
+            }
+          }
+          break;
+        case PARTITION_HORZ_B:
+        case PARTITION_VERT_B:
+          if (node != NULL) {  // Suppress warning
+            node->split[0] = av1_alloc_pc_tree_node(subsize);
+            node->split[1] = av1_alloc_pc_tree_node(subsize2);
+            node->split[2] = av1_alloc_pc_tree_node(subsize2);
+            for (int i = 0; i < 3; ++i) {
+              if (!node->split[i])
+                aom_internal_error(error_info, AOM_CODEC_MEM_ERROR,
+                                   "Failed to allocate PC_TREE");
+              node->split[i]->index = i;
+              tree_node_queue[last_idx] = node->split[i];
+              ++last_idx;
+            }
+          }
+          break;
+        case PARTITION_NONE:
+        default:
+          // Should not hit this case.
+          assert(0);
       }
     }
     --num_nodes;

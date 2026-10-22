@@ -71,8 +71,7 @@ bool read_blankspace(std::string_view str,
                      uint32_t* blankspace_size) {
     // See https://www.w3.org/TR/WGSL/#blankspace
 
-    auto* utf8 = reinterpret_cast<const uint8_t*>(&str[i]);
-    auto [cp, n] = tint::utf8::Decode(utf8, str.size() - i);
+    auto [cp, n] = tint::utf8::Decode(str.substr(i));
 
     if (n == 0) {
         return false;
@@ -326,9 +325,8 @@ std::optional<Token> Lexer::skip_blankspace_and_comments() {
 
 std::optional<Token> Lexer::skip_comment() {
     auto unicode_length = [](std::string_view str, size_t i) {
-        auto* utf8 = reinterpret_cast<const uint8_t*>(&str[i]);
-        auto [_, n] = tint::utf8::Decode(utf8, str.size() - i);
-        return uint32_t(n);
+        auto [_, n] = tint::utf8::Decode(str.substr(i));
+        return static_cast<uint32_t>(n);
     };
 
     if (matches(pos(), "//")) {
@@ -1028,8 +1026,7 @@ std::optional<Token> Lexer::try_ident() {
 
     // Must begin with an XID_Source unicode character, or underscore
     {
-        auto* utf8 = reinterpret_cast<const uint8_t*>(&at(pos()));
-        auto [code_point, n] = tint::utf8::Decode(utf8, length() - pos());
+        auto [code_point, n] = tint::utf8::Decode(line().substr(pos()));
         if (n == 0) {
             advance();  // Skip the bad byte.
             return Token{Token::Type::kError, source, "invalid UTF-8"};
@@ -1043,8 +1040,7 @@ std::optional<Token> Lexer::try_ident() {
 
     while (!is_eol()) {
         // Must continue with an XID_Continue unicode character
-        auto* utf8 = reinterpret_cast<const uint8_t*>(&at(pos()));
-        auto [code_point, n] = tint::utf8::Decode(utf8, line().size() - pos());
+        auto [code_point, n] = tint::utf8::Decode(line().substr(pos()));
         if (n == 0) {
             advance();  // Skip the bad byte.
             return Token{Token::Type::kError, source, "invalid UTF-8"};

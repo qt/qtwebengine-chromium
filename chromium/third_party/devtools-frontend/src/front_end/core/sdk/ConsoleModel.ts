@@ -153,7 +153,7 @@ export class ConsoleModel extends SDKModel<EventTypes> {
           replMode: true,
           allowUnsafeEvalBlockedByCSP: false,
         },
-        Common.Settings.Settings.instance().moduleSetting('console-user-activation-eval').get(),
+        this.target().targetManager().settings.moduleSetting('console-user-activation-eval').get(),
         /* awaitPromise */ false);
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.ConsoleEvaluated);
     if ('error' in result) {
@@ -284,7 +284,8 @@ export class ConsoleModel extends SDKModel<EventTypes> {
   }
 
   private clearIfNecessary(): void {
-    if (!Common.Settings.Settings.instance().moduleSetting('preserve-console-log').get()) {
+    const settings = this.target().targetManager().settings;
+    if (!settings.moduleSetting('preserve-console-log').get()) {
       this.clear();
     }
     ++this.#pageLoadSequenceNumber;
@@ -292,7 +293,8 @@ export class ConsoleModel extends SDKModel<EventTypes> {
 
   private primaryPageChanged(
       event: Common.EventTarget.EventTargetEvent<{frame: ResourceTreeFrame, type: PrimaryPageChangeType}>): void {
-    if (Common.Settings.Settings.instance().moduleSetting('preserve-console-log').get()) {
+    const settings = this.target().targetManager().settings;
+    if (settings.moduleSetting('preserve-console-log').get()) {
       const {frame} = event.data;
       if (frame.backForwardCacheDetails.restoredFromCache) {
         Common.Console.Console.instance().log(i18nString(UIStrings.bfcacheNavigation, {PH1: frame.url}));
@@ -353,25 +355,25 @@ export class ConsoleModel extends SDKModel<EventTypes> {
   }
 
   // messages[] are not ordered by timestamp.
-  static allMessagesUnordered(): ConsoleMessage[] {
+  static allMessagesUnordered(targetManager: TargetManager = TargetManager.instance()): ConsoleMessage[] {
     const messages = [];
-    for (const target of TargetManager.instance().targets()) {
+    for (const target of targetManager.targets()) {
       const targetMessages = target.model(ConsoleModel)?.messages() || [];
       messages.push(...targetMessages);
     }
     return messages;
   }
 
-  static requestClearMessages(): void {
-    for (const logModel of TargetManager.instance().models(LogModel)) {
+  static requestClearMessages(targetManager: TargetManager = TargetManager.instance()): void {
+    for (const logModel of targetManager.models(LogModel)) {
       logModel.requestClear();
     }
-    for (const runtimeModel of TargetManager.instance().models(RuntimeModel)) {
+    for (const runtimeModel of targetManager.models(RuntimeModel)) {
       runtimeModel.discardConsoleEntries();
       // Runtime.discardConsoleEntries implies Runtime.releaseObjectGroup('console').
       runtimeModel.releaseObjectGroup('live-expression');
     }
-    for (const target of TargetManager.instance().targets()) {
+    for (const target of targetManager.targets()) {
       target.model(ConsoleModel)?.clear();
     }
   }
@@ -390,9 +392,9 @@ export class ConsoleModel extends SDKModel<EventTypes> {
     return this.#errors;
   }
 
-  static allErrors(): number {
+  static allErrors(targetManager: TargetManager = TargetManager.instance()): number {
     let errors = 0;
-    for (const target of TargetManager.instance().targets()) {
+    for (const target of targetManager.targets()) {
       errors += target.model(ConsoleModel)?.errors() || 0;
     }
     return errors;
@@ -402,9 +404,9 @@ export class ConsoleModel extends SDKModel<EventTypes> {
     return this.#warnings;
   }
 
-  static allWarnings(): number {
+  static allWarnings(targetManager: TargetManager = TargetManager.instance()): number {
     let warnings = 0;
-    for (const target of TargetManager.instance().targets()) {
+    for (const target of targetManager.targets()) {
       warnings += target.model(ConsoleModel)?.warnings() || 0;
     }
     return warnings;

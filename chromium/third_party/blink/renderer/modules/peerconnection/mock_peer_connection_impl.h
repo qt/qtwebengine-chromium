@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 
 #include "base/memory/raw_ptr.h"
@@ -142,8 +143,8 @@ class FakeRtpTransceiver : public webrtc::RtpTransceiverInterface {
     return {};
   }
   webrtc::RTCError SetCodecPreferences(
-      webrtc::ArrayView<webrtc::RtpCodecCapability>) override {
-    RTC_DCHECK_NOTREACHED() << "Not implemented";
+      std::span<webrtc::RtpCodecCapability>) override {
+    NOTREACHED() << "Not implemented";
     return {};
   }
   std::vector<webrtc::RtpHeaderExtensionCapability>
@@ -151,8 +152,8 @@ class FakeRtpTransceiver : public webrtc::RtpTransceiverInterface {
     return {};
   }
   webrtc::RTCError SetHeaderExtensionsToNegotiate(
-      webrtc::ArrayView<const webrtc::RtpHeaderExtensionCapability>
-          header_extensions) override {
+      std::span<const webrtc::RtpHeaderExtensionCapability> header_extensions)
+      override {
     return webrtc::RTCError(webrtc::RTCErrorType::UNSUPPORTED_OPERATION);
   }
 

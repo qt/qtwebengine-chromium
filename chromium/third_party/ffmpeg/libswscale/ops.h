@@ -69,12 +69,14 @@ typedef enum SwsOpType {
     SWS_OP_TYPE_NB,
 } SwsOpType;
 
-enum SwsCompFlags {
+const char *ff_sws_op_type_name(SwsOpType op);
+
+typedef enum SwsCompFlags {
     SWS_COMP_GARBAGE = 1 << 0, /* contents are undefined / garbage data */
     SWS_COMP_EXACT   = 1 << 1, /* value is an exact integer */
     SWS_COMP_ZERO    = 1 << 2, /* known to be a constant zero */
     SWS_COMP_SWAPPED = 1 << 3, /* byte order is swapped */
-};
+} SwsCompFlags;
 
 typedef union SwsConst {
     /* Generic constant value */
@@ -87,8 +89,8 @@ static_assert(sizeof(SwsConst) == sizeof(AVRational) * 4,
               "First field of SwsConst should span the entire union");
 
 typedef struct SwsComps {
-    unsigned flags[4]; /* knowledge about (output) component contents */
-    bool unused[4];    /* which input components are definitely unused */
+    SwsCompFlags flags[4]; /* knowledge about (output) component contents */
+    bool unused[4]; /* which input components are definitely unused */
 
     /* Keeps track of the known possible value range, or {0, 0} for undefined
      * or (unknown range) floating point inputs */
@@ -139,7 +141,7 @@ typedef struct SwsConvertOp {
 typedef struct SwsDitherOp {
     AVRational *matrix; /* tightly packed dither matrix (refstruct) */
     int size_log2; /* size (in bits) of the dither matrix */
-    uint8_t y_offset[4]; /* row offset for each component */
+    int8_t y_offset[4]; /* row offset for each component, or -1 for ignored */
 } SwsDitherOp;
 
 typedef struct SwsLinearOp {
@@ -197,15 +199,8 @@ typedef struct SwsOp {
     };
 
     /**
-     * Metadata about the operation's input/output components.
-     *
-     * For SWS_OP_READ, this is informative; and lets the optimizer know
-     * additional information about the value range and/or pixel data to expect.
-     * The default value of {0} is safe to pass in the case that no additional
-     * information is known.
-     *
-     * For every other operation, this metadata is discarded and regenerated
-     * automatically by `ff_sws_op_list_update_comps()`.
+     * Metadata about the operation's input/output components. Discarded
+     * and regenerated automatically by `ff_sws_op_list_update_comps()`.
      *
      * Note that backends may rely on the presence and accuracy of this
      * metadata for all operations, during ff_sws_ops_compile().
@@ -230,8 +225,22 @@ typedef struct SwsOpList {
     SwsOp *ops;
     int num_ops;
 
-    /* Purely informative metadata associated with this operation list */
+    /* Metadata associated with this operation list */
     SwsFormat src, dst;
+
+    /* Input/output plane pointer swizzle mask */
+    SwsSwizzleOp order_src, order_dst;
+
+    /**
+     * Source component metadata associated with pixel values from each
+     * corresponding component (in plane/memory order, i.e. not affected by
+     * `order_src`). Lets the optimizer know additional information about
+     * the value range and/or pixel data to expect.
+     *
+     * The default value of {0} is safe to pass in the case that no additional
+     * information is known.
+     */
+    SwsComps comps_src;
 } SwsOpList;
 
 SwsOpList *ff_sws_op_list_alloc(void);
@@ -241,6 +250,27 @@ void ff_sws_op_list_free(SwsOpList **ops);
  * Returns a duplicate of `ops`, or NULL on OOM.
  */
 SwsOpList *ff_sws_op_list_duplicate(const SwsOpList *ops);
+
+/**
+ * Returns the input operation for a given op list, or NULL if there is none
+ * (e.g. for a pure CLEAR-only operation list).
+ *
+ * This will always be an op of type SWS_OP_READ.
+ */
+const SwsOp *ff_sws_op_list_input(const SwsOpList *ops);
+
+/**
+ * Returns the output operation for a given op list, or NULL if there is none.
+ *
+ * This will always be an op of type SWS_OP_WRITE.
+ */
+const SwsOp *ff_sws_op_list_output(const SwsOpList *ops);
+
+/**
+ * Returns whether an op list represents a true no-op operation, i.e. may be
+ * eliminated entirely from an execution graph.
+ */
+bool ff_sws_op_list_is_noop(const SwsOpList *ops);
 
 /**
  * Returns the size of the largest pixel type used in `ops`.
@@ -258,7 +288,8 @@ void ff_sws_op_list_remove_at(SwsOpList *ops, int index, int count);
 /**
  * Print out the contents of an operation list.
  */
-void ff_sws_op_list_print(void *log_ctx, int log_level, const SwsOpList *ops);
+void ff_sws_op_list_print(void *log_ctx, int log_level, int log_level_extra,
+                          const SwsOpList *ops);
 
 /**
  * Infer + propagate known information about components. Called automatically
@@ -281,9 +312,11 @@ enum SwsOpCompileFlags {
  * Resolves an operation list to a graph pass. The first and last operations
  * must be a read/write respectively. `flags` is a list of SwsOpCompileFlags.
  *
+ * Takes over ownership of `ops` and sets it to NULL, even on failure.
+ *
  * Note: `ops` may be modified by this function.
  */
-int ff_sws_compile_pass(SwsGraph *graph, SwsOpList *ops, int flags, SwsFormat dst,
+int ff_sws_compile_pass(SwsGraph *graph, SwsOpList **ops, int flags,
                         SwsPass *input, SwsPass **output);
 
 #endif

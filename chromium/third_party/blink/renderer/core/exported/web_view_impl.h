@@ -31,10 +31,11 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_EXPORTED_WEB_VIEW_IMPL_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_EXPORTED_WEB_VIEW_IMPL_H_
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
-#include "base/debug/stack_trace.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/observer_list.h"
@@ -588,6 +589,8 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   // Tells the browser that another page has accessed the DOM of the initial
   // empty document of a main frame.
   void DidAccessInitialMainDocument();
+  void DidChangeThemeColor(std::optional<SkColor> theme_color);
+  void DidChangeBackgroundColor(SkColor4f background_color, bool color_adjust);
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
   // Additional Windowing Controls API.
@@ -664,7 +667,6 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   friend class SimCompositor;
   friend class WebView;  // So WebView::Create can call our constructor
 
-  void AcceptLanguagesChanged();
   void ThemeChanged();
 
   // Update the target url locally and tell the browser that the target URL has
@@ -800,6 +802,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void UpdateInspectorDeviceScaleFactorOverride();
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  // Additional Windowing Controls API helpers.
   void WasMaximized();
   void WasMinimized();
   void WasRestored();
@@ -809,6 +812,8 @@ class CORE_EXPORT WebViewImpl final : public WebView,
     kMinimize,
     kRestore,
   };
+  void PostDelayedRejectionForAWCPromise(uint64_t id);
+  void RejectAWCPromise(uint64_t id);
   void HandleWindowShowStateChangeCallbackWith(WindowShowStateChangeType type);
 #endif
 
@@ -1018,23 +1023,31 @@ class CORE_EXPORT WebViewImpl final : public WebView,
 
   scheduler::WebAgentGroupScheduler& web_agent_group_scheduler_;
 
-  // TODO(crbug.com/1499519): Remove this temporary debugging.
-  std::optional<base::debug::StackTrace> close_task_posted_stack_trace_;
-  std::optional<base::debug::StackTrace> close_called_stack_trace_;
-  std::optional<base::debug::StackTrace> close_window_called_stack_trace_;
-
   // Indicates whether the page supports draggable regions via the app-region
   // CSS property.
   bool supports_draggable_regions_ = false;
 
+  // True if the most recent navigation was a bfcache restoration. This is used
+  // to skip Blink-side scroll restoration to avoid conflicts with the cache's
+  // native restoration. Reset on each lifecycle update.
+  bool last_page_lifecycle_state_update_restored_from_bfcache_ = false;
+
   // All the registered observers.
   base::ObserverList<WebViewObserver> observers_;
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
-  std::optional<
-      std::pair<WindowShowStateChangeType, WindowingControlsChangeCallback>>
-      window_show_state_change_callback_;
-  std::optional<std::pair<bool, WindowingControlsChangeCallback>>
-      set_resizable_change_callback_;
+  struct WindowShowStateCallbackData {
+    uint64_t id;
+    WindowShowStateChangeType requested_action;
+    WindowingControlsChangeCallback callback;
+  };
+  std::optional<WindowShowStateCallbackData> window_show_state_change_callback_;
+
+  struct SetResizableCallbackData {
+    uint64_t id;
+    bool requested_resizable;
+    WindowingControlsChangeCallback callback;
+  };
+  std::optional<SetResizableCallbackData> set_resizable_change_callback_;
 #endif
 };
 

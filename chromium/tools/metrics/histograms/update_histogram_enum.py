@@ -10,14 +10,13 @@ If the file was pretty-printed, the updated version is pretty-printed too.
 import enum
 import io
 import logging
-import os
 import re
-import sys
 from xml.dom import minidom
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
-import histogram_configuration_model
-import path_util
+import setup_modules  # pylint: disable=unused-import
+
+import chromium_src.tools.metrics.common.path_util as path_util
+import chromium_src.tools.metrics.histograms.histogram_configuration_model as histogram_configuration_model
 
 
 class UserError(Exception):
@@ -34,6 +33,7 @@ class DuplicatedValue(Exception):
       first_label: First enum label that shares the duplicated enum value.
       second_label: Second enum label that shares the duplicated enum value.
   """
+
   def __init__(self, first_label, second_label):
     self.first_label = first_label
     self.second_label = second_label
@@ -46,6 +46,7 @@ class DuplicatedLabel(Exception):
       first_value: First enum value that shares the duplicated enum label.
       second_value: Second enum value that shares the duplicated enum label.
   """
+
   def __init__(self, first_value, second_value):
     self.first_value = first_value
     self.second_value = second_value
@@ -123,7 +124,7 @@ def ReadHistogramValues(filename, start_marker, end_marker, strip_k_prefix):
     if label in ['kMinValue', 'kMaxValue']:
       continue
     if strip_k_prefix:
-      assert label.startswith('k'), "Enum " + label + " should start with 'k'."
+      assert label.startswith('k'), 'Enum ' + label + " should start with 'k'."
       label = label[1:]
     _CheckForDuplicates(enum_value, label, result)
     result[enum_value] = label
@@ -342,9 +343,9 @@ def UpdateHistogramFromDict(xml_path,
           histograms.xml.
   """
   xml_path = path_util.GetInputFile(xml_path)
-  (xml, new_xml) = _GetOldAndUpdatedXml(xml_path, node_name, input_list_values,
-                                        input_list_path, caller_script_name,
-                                        update_comment)
+  (_, new_xml) = _GetOldAndUpdatedXml(xml_path, node_name, input_list_values,
+                                      input_list_path, caller_script_name,
+                                      update_comment)
   with io.open(xml_path, 'w', encoding='utf-8', newline='') as f:
     f.write(new_xml)
 

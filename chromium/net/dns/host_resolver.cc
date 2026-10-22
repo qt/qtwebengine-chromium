@@ -27,6 +27,7 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_change_notifier.h"
+#include "net/dns/canary_domain_service.h"
 #include "net/dns/context_host_resolver.h"
 #include "net/dns/dns_client.h"
 #include "net/dns/dns_util.h"
@@ -105,6 +106,10 @@ class FailingRequestImpl : public HostResolver::ResolveHostRequest,
     return nullopt_result;
   }
 
+  std::optional<ResolutionDetails> GetResolutionDetails() const override {
+    return std::nullopt;
+  }
+
  private:
   const int error_;
 };
@@ -142,6 +147,10 @@ class FailingServiceEndpointRequestImpl
   }
 
   bool IsStaleWhileRefresing() const override { return false; }
+
+  std::optional<ResolutionDetails> GetResolutionDetails() const override {
+    return std::nullopt;
+  }
 
   void ChangeRequestPriority(RequestPriority priority) override {}
 
@@ -238,6 +247,12 @@ const url::SchemeHostPort& HostResolver::Host::AsSchemeHostPort() const {
       std::get_if<url::SchemeHostPort>(&host_);
   DCHECK(scheme_host_port);
   return *scheme_host_port;
+}
+
+const HostPortPair& HostResolver::Host::AsHostPortPair() const {
+  const HostPortPair* host_port_pair = std::get_if<HostPortPair>(&host_);
+  DCHECK(host_port_pair);
+  return *host_port_pair;
 }
 
 HostResolver::HttpsSvcbOptions::HttpsSvcbOptions() = default;
@@ -356,6 +371,11 @@ HostCache* HostResolver::GetHostCache() {
 base::DictValue HostResolver::GetDnsConfigAsValue() const {
   return base::DictValue();
 }
+void HostResolver::SetDohFallbackUpgradeAllowed(bool allowed) {
+  // Should be overridden in any HostResolver implementation where this method
+  // may be called.
+  NOTREACHED();
+}
 
 void HostResolver::SetRequestContext(URLRequestContext* request_context) {
   // Should be overridden in any HostResolver implementation where this method
@@ -377,6 +397,12 @@ const URLRequestContext* HostResolver::GetContextForTesting() const {
 
 handles::NetworkHandle HostResolver::GetTargetNetworkForTesting() const {
   return handles::kInvalidNetworkHandle;
+}
+
+std::unique_ptr<CanaryDomainService> HostResolver::CreateCanaryDomainService() {
+  // Should be overridden in any HostResolver implementation where this method
+  // may be called.
+  NOTREACHED();
 }
 
 // static

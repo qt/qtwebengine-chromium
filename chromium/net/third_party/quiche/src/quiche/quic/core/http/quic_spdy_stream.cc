@@ -905,6 +905,11 @@ void QuicSpdyStream::OnDataAvailable() {
     return;
   }
 
+  // TODO(b/488057588) Remove this after debugging.
+  if (sequencer()->IsClosed() &&
+      on_body_available_called_because_sequencer_is_closed_) {
+    QUICHE_CODE_COUNT(quic_on_body_available_skipped);
+  }
   if (sequencer()->IsClosed() &&
       !on_body_available_called_because_sequencer_is_closed_) {
     on_body_available_called_because_sequencer_is_closed_ = true;
@@ -1956,6 +1961,10 @@ bool QuicSpdyStream::AreHeaderFieldValuesValid(
 
 void QuicSpdyStream::StopReading() {
   QuicStream::StopReading();
+  if (GetQuicReloadableFlag(quic_clear_body_manager_along_with_sequencer)) {
+    QUICHE_RELOADABLE_FLAG_COUNT(quic_clear_body_manager_along_with_sequencer);
+    body_manager_.Clear();
+  }
   if (VersionIsIetfQuic(transport_version()) && !fin_received() &&
       spdy_session_->qpack_decoder()) {
     // Clean up Qpack decoding states.

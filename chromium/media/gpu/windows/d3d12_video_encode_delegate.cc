@@ -296,11 +296,11 @@ D3D12VideoEncodeDelegate::Encode(D3D12PictureBuffer picture_buffer,
           IID_PPV_ARGS(&processed_input_frame_));
       RETURN_ON_HR_FAILURE(
           hr, "CreateCommittedResource for processed input frame failed",
-          EncoderStatus::Codes::kSystemAPICallError);
+          EncoderStatus::Codes::kD3D12CreateCommittedResourceFailed);
     }
     if (picture_buffer.fence_and_value.first) {
       if (!video_processor_wrapper_->Wait(picture_buffer.fence_and_value)) {
-        return {EncoderStatus::Codes::kSystemAPICallError,
+        return {EncoderStatus::Codes::kD3D12FenceWaitFailed,
                 "D3D12 video processor wait failed"};
       }
     }
@@ -311,7 +311,7 @@ D3D12VideoEncodeDelegate::Encode(D3D12PictureBuffer picture_buffer,
         processed_input_frame_.Get(), 0, output_color_space,
         gfx::Rect(0, 0, input_size_.Width, input_size_.Height));
     if (!fence_or_value.first) {
-      return {EncoderStatus::Codes::kSystemAPICallError,
+      return {EncoderStatus::Codes::kD3D12VideoProcessorProcessFramesFailed,
               "D3D12 video processor process frame failed"};
     }
 
@@ -319,7 +319,7 @@ D3D12VideoEncodeDelegate::Encode(D3D12PictureBuffer picture_buffer,
   }
   if (picture_buffer.fence_and_value.first) {
     if (!video_encoder_wrapper_->Wait(picture_buffer.fence_and_value)) {
-      return {EncoderStatus::Codes::kSystemAPICallError,
+      return {EncoderStatus::Codes::kD3D12FenceWaitFailed,
               "D3D12 video encoder wait failed"};
     }
   }
@@ -558,6 +558,10 @@ EncoderStatus::Or<size_t> D3D12VideoEncodeDelegate::ReadbackBitstream(
     return std::move(size_or_error).error();
   }
   size_t size = std::move(size_or_error).value();
+  if (size > bitstream_buffer.size()) {
+    return {EncoderStatus::Codes::kEncoderHardwareDriverError,
+            "Encoded bitstream exceeds output buffer size"};
+  }
   D3D12_RANGE written_range{};
   metadata.Commit(&written_range);
   EncoderStatus status =
@@ -583,8 +587,11 @@ bool D3D12VideoEncodeDecodedPictureBuffers<
                                             DXGI_FORMAT format,
                                             size_t max_num_ref_frames,
                                             bool use_texture_array) {
-  CHECK_GT(max_num_ref_frames, 0u);
-  CHECK_LE(max_num_ref_frames, kMaxDpbSize);
+  if (max_num_ref_frames == 0 || max_num_ref_frames > kMaxDpbSize) {
+    LOG(ERROR) << "Invalid max reference frames number: " << max_num_ref_frames
+               << " (should be between 1 and " << kMaxDpbSize << ")";
+    return false;
+  }
   size_ = max_num_ref_frames;
 
   // We reserve one space in extra for the current frame.

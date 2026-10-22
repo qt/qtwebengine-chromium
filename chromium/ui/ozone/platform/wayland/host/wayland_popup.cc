@@ -6,6 +6,7 @@
 
 #include <optional>
 
+#include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/ui_base_types.h"
@@ -179,7 +180,11 @@ void WaylandPopup::SetBoundsInDIP(const gfx::Rect& bounds_dip) {
   }
 
   auto old_bounds_dip = GetBoundsInDIP();
+  auto weak_this = AsWeakPtr();
   WaylandWindow::SetBoundsInDIP(bounds_dip);
+  if (!weak_this) {
+    return;
+  }
 
   // The shell popup can be null if bounds are being fixed during
   // the initialization. See WaylandPopup::CreateShellPopup.

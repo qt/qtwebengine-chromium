@@ -102,8 +102,7 @@ namespace {
 
 bool IsWhitespaceForRebalance(const Text& text_node, UChar character) {
   if (IsWhitespace(character)) {
-    if (character == uchar::kLineFeed &&
-        RuntimeEnabledFeatures::InsertLineBreakIfPhrasingContentEnabled()) {
+    if (character == uchar::kLineFeed) {
       return !text_node.GetLayoutObject() ||
              text_node.GetLayoutObject()->StyleRef().ShouldCollapseBreaks();
     }
@@ -756,7 +755,7 @@ bool CompositeEditCommand::CanRebalance(const Position& position) const {
     return false;
 
   LayoutText* layout_text = text_node->GetLayoutObject();
-  if (layout_text && layout_text->Style()->ShouldPreserveWhiteSpaces()) {
+  if (layout_text && layout_text->StyleRef().ShouldPreserveWhiteSpaces()) {
     return false;
   }
 
@@ -815,7 +814,7 @@ void CompositeEditCommand::RebalanceWhitespaceOnTextSubstring(Text* text_node,
   VisiblePosition visible_downstream_pos =
       CreateVisiblePosition(Position(text_node, downstream));
 
-  String string = text.Substring(upstream, length);
+  StringView string = text.subview(upstream, length);
   // FIXME: Because of the problem mentioned at the top of this function, we
   // must also use nbsps at the start/end of the string because this function
   // doesn't get all surrounding whitespace, just the whitespace in the
@@ -852,7 +851,7 @@ void CompositeEditCommand::PrepareWhitespaceAtPositionForSplit(
   if (text_node->length() == 0)
     return;
   LayoutText* layout_text = text_node->GetLayoutObject();
-  if (layout_text && layout_text->Style()->ShouldPreserveWhiteSpaces()) {
+  if (layout_text && layout_text->StyleRef().ShouldPreserveWhiteSpaces()) {
     return;
   }
 
@@ -2210,13 +2209,19 @@ void CompositeEditCommand::AppliedEditing() {
     editor.GetUndoStack().RegisterUndoStep(EnsureUndoStep());
   }
 
-  if (Element* element = undo_step.StartingRootEditableElement()) {
-    if (element->GetDocument().IsPageVisible()) {
-      element->GetDocument()
-          .GetPage()
-          ->GetChromeClient()
-          .DidUserChangeContentEditableContent(*element);
-    }
+  Element* element = undo_step.StartingRootEditableElement();
+  if (!element) {
+    // Fallback to EndingRoot because StartingRoot may be null if the DeleteKey
+    // command was grouped into a single typing command (happens in
+    // TypingCommand::DeleteKeyPressed). Using the current root leads to the
+    // notification reaching Chrome Client, preventing state desyncs.
+    element = undo_step.EndingRootEditableElement();
+  }
+  if (element && element->GetDocument().IsPageVisible()) {
+    element->GetDocument()
+        .GetPage()
+        ->GetChromeClient()
+        .DidUserChangeContentEditableContent(*element);
   }
   editor.RespondToChangedContents(new_selection.Anchor());
 

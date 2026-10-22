@@ -272,6 +272,7 @@ ci.builder(
                 # This is necessary due to child builders running the
                 # telemetry_perf_unittests suite.
                 "chromium_with_telemetry_dependencies",
+                "use_clang_coverage",
             ],
         ),
         chromium_config = builder_config.chromium_config(
@@ -296,9 +297,19 @@ ci.builder(
         ],
     ),
     targets = targets.bundle(
+        targets = [
+            "chromium_mac_scripts",
+        ],
         additional_compile_targets = [
             "all",
         ],
+        per_test_modifications = {
+            "check_static_initializers": targets.mixin(
+                args = [
+                    "--allow-coverage-initializer",
+                ],
+            ),
+        },
     ),
     os = os.MAC_DEFAULT,
     cpu = cpu.ARM64,
@@ -624,14 +635,18 @@ ci.thin_tester(
                 mixins = "mac_15_arm64",
                 remove_mixins = "mac_15_vm_optional",
             ),
+            # TODO(crbug.com/436628295): tests fails on VM when host OS
+            # is 26.4 while VM OS is 15.6.1
             "interactive_ui_tests": targets.per_test_modification(
                 mixins = [
                     targets.mixin(
                         swarming = targets.swarming(
-                            shards = 7,
+                            shards = 8,
                         ),
                     ),
+                    "mac_15_arm64",
                 ],
+                remove_mixins = "mac_15_vm_optional",
             ),
             "sync_integration_tests": targets.mixin(
                 ci_only = True,

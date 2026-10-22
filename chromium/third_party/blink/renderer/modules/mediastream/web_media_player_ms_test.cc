@@ -79,6 +79,7 @@ class MockSurfaceLayerBridge : public WebSurfaceLayerBridge {
   MOCK_METHOD0(ClearObserver, void());
   MOCK_METHOD0(RegisterFrameSinkHierarchy, void());
   MOCK_METHOD0(UnregisterFrameSinkHierarchy, void());
+  MOCK_METHOD1(ReparentFrameSinkHierarchy, void(const viz::FrameSinkId&));
 
   viz::FrameSinkId frame_sink_id_ = viz::FrameSinkId(1, 1);
   viz::LocalSurfaceId local_surface_id_ = viz::LocalSurfaceId(
@@ -545,6 +546,7 @@ class WebMediaPlayerMSTest
     submitter_ptr_ = submitter_.get();
   }
   ~WebMediaPlayerMSTest() override {
+    player_->Shutdown();
     player_.reset();
     base::RunLoop().RunUntilIdle();
   }
@@ -698,6 +700,7 @@ class WebMediaPlayerMSTest
 
 void WebMediaPlayerMSTest::InitializeWebMediaPlayerMS() {
   enable_surface_layer_for_video_ = testing::get<0>(GetParam());
+  CHECK(!player_);
   player_ = std::make_unique<WebMediaPlayerMS>(
       nullptr, this, &delegate_, std::make_unique<media::NullMediaLog>(),
       scheduler::GetSingleThreadTaskRunnerForTesting(),
@@ -1922,6 +1925,26 @@ TEST_P(WebMediaPlayerMSTest, EnabledStateChangedForWebRtcAudio) {
   EXPECT_CALL(*audio_renderer, SetVolume(0.4));
   player_->EnabledStateChangedForWebRtcAudio(true);
   testing::Mock::VerifyAndClearExpectations(audio_renderer.get());
+}
+
+TEST_P(WebMediaPlayerMSTest, ReparentFrameSinkHierarchy) {
+  InitializeWebMediaPlayerMS();
+
+  MockMediaStreamVideoRenderer* provider = LoadAndGetFrameProvider(true);
+  const int kTestBrake = static_cast<int>(FrameType::TEST_BRAKE);
+  Vector<int> timestamps({0, kTestBrake});
+
+  provider->QueueFrames(timestamps);
+  message_loop_controller_.RunAndWaitForStatus(media::PIPELINE_OK);
+
+  if (enable_surface_layer_for_video_) {
+    EXPECT_CALL(*surface_layer_bridge_ptr_, ReparentFrameSinkHierarchy(_));
+  } else {
+    EXPECT_CALL(*surface_layer_bridge_ptr_, ReparentFrameSinkHierarchy(_))
+        .Times(0);
+  }
+  viz::FrameSinkId new_id(1, 2);
+  player_->ReparentFrameSinkHierarchy(new_id);
 }
 
 INSTANTIATE_TEST_SUITE_P(All,

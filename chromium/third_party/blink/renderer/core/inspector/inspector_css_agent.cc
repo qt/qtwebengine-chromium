@@ -58,6 +58,7 @@
 #include "third_party/blink/renderer/core/css/css_layer_statement_rule.h"
 #include "third_party/blink/renderer/core/css/css_math_function_value.h"
 #include "third_party/blink/renderer/core/css/css_media_rule.h"
+#include "third_party/blink/renderer/core/css/css_navigation_rule.h"
 #include "third_party/blink/renderer/core/css/css_pending_substitution_value.h"
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
 #include "third_party/blink/renderer/core/css/css_property_name.h"
@@ -531,6 +532,7 @@ class InspectorCSSAgent::ModifyRuleAction final
     kSetKeyframeKey,
     kSetPropertyName,
     kSetScopeRuleText,
+    kSetNavigationRuleText,
   };
 
   ModifyRuleAction(Type type,
@@ -576,6 +578,9 @@ class InspectorCSSAgent::ModifyRuleAction final
       case kSetScopeRuleText:
         return style_sheet_->SetScopeRuleText(new_range_, old_text_, nullptr,
                                               nullptr, exception_state);
+      case kSetNavigationRuleText:
+        return style_sheet_->SetNavigationRuleText(
+            new_range_, old_text_, nullptr, nullptr, exception_state);
       default:
         NOTREACHED();
     }
@@ -614,6 +619,10 @@ class InspectorCSSAgent::ModifyRuleAction final
         break;
       case kSetScopeRuleText:
         css_rule_ = style_sheet_->SetScopeRuleText(
+            old_range_, new_text_, &new_range_, &old_text_, exception_state);
+        break;
+      case kSetNavigationRuleText:
+        css_rule_ = style_sheet_->SetNavigationRuleText(
             old_range_, new_text_, &new_range_, &old_text_, exception_state);
         break;
       default:
@@ -821,6 +830,11 @@ CSSSupportsRule* InspectorCSSAgent::AsCSSSupportsRule(CSSRule* rule) {
 // static
 CSSScopeRule* InspectorCSSAgent::AsCSSScopeRule(CSSRule* rule) {
   return DynamicTo<CSSScopeRule>(rule);
+}
+
+// static
+CSSNavigationRule* InspectorCSSAgent::AsCSSNavigationRule(CSSRule* rule) {
+  return DynamicTo<CSSNavigationRule>(rule);
 }
 
 InspectorCSSAgent::InspectorCSSAgent(
@@ -1481,6 +1495,12 @@ protocol::Response InspectorCSSAgent::getMatchedStylesForNode(
     element->GetDocument().UpdateStyleAndLayoutForNode(
         element, DocumentUpdateReason::kInspector);
   }
+
+  // This must happen outside the InspectorGhostRules scope,
+  // so we can look at the unmodified stylesheets.
+  const HeapHashMap<Member<StyleRuleFunction>, Member<CSSFunctionRule>>
+      function_to_css_rule_map = BuildFunctionRuleMap(document);
+
   InspectorGhostRules ghost_rules;
   HeapVector<Member<CSSStyleSheet>> ghost_sheets;
 
@@ -1632,22 +1652,22 @@ protocol::Response InspectorCSSAgent::getMatchedStylesForNode(
     }
   }
 
-  DocumentStyleSheets::iterator css_style_sheets_for_document_it =
-      document_to_css_style_sheets_.find(&document);
-  if (css_style_sheets_for_document_it != document_to_css_style_sheets_.end() &&
-      resolver.MatchedRules()) {
+  if (resolver.MatchedRules()) {
     HeapHashMap<Member<const ScopedCSSName>, Member<CSSFunctionRule>>
         function_hash_map;
-    CollectReferencedFunctionRules(*css_style_sheets_for_document_it->value,
+    CollectReferencedFunctionRules(function_to_css_rule_map,
                                    *resolver.MatchedRules(), function_hash_map);
     if (!function_hash_map.empty()) {
       *css_function_rules =
           std::make_unique<protocol::Array<protocol::CSS::CSSFunctionRule>>();
       for (const auto& [scoped_name, rule] : function_hash_map) {
-        (*css_function_rules)->emplace_back(BuildObjectForFunctionRule(rule));
+        (*css_function_rules)
+            ->emplace_back(
+                BuildObjectForFunctionRule(rule, scoped_name->GetTreeScope()));
       }
     }
   }
+
   return protocol::Response::Success();
 }
 
@@ -2186,13 +2206,16 @@ InspectorCSSAgent::AnimationsForNode(Element* element,
   StyleResolver& style_resolver = document.GetStyleResolver();
   for (wtf_size_t i = 0;
        animation_data && i < animation_data->NameList().size(); ++i) {
-    AtomicString animation_name(animation_data->NameList()[i]);
-    if (animation_name == CSSAnimationData::InitialName())
+    const ScopedCSSName* scoped_name = animation_data->NameList()[i];
+    if (!scoped_name) {
       continue;
+    }
+    AtomicString animation_name(scoped_name->GetName());
 
     StyleRuleKeyframes* keyframes_rule =
         style_resolver
-            .FindKeyframesRule(element, animating_element, animation_name)
+            .FindKeyframesRule(element, animating_element, animation_name,
+                               scoped_name->GetTreeScope())
             .rule;
     if (!keyframes_rule) {
       continue;
@@ -2459,19 +2482,27 @@ protocol::Response InspectorCSSAgent::resolveValues(
     }
   }
 
-  if (property_name && CSSProperty::Get(property_name->Id()).IsShorthand()) {
-    return protocol::Response::ServerError(
-        "Property name should not be a shorthand.");
+  if (property_name) {
+    const CSSProperty& property = CSSProperty::Get(property_name->Id());
+    if (!property.IsProperty() || property.IsShorthand()) {
+      return protocol::Response::ServerError(
+          "Property name must be a longhand property.");
+    }
   }
 
   CSSParserLocalContext local_context =
       CSSParserLocalContext::CreateWithoutPropertyForInspector();
   *results = std::make_unique<protocol::Array<String>>();
   for (auto value : *values) {
-    CSSVariableData* data =
-        CSSVariableData::Create(value, /* is_animation_tainted= */ false,
-                                /* is_attr_tainted= */ false,
-                                /*needs_variable_resolution=*/true);
+    CSSParserTokenStream stream(value);
+    bool important_unused;
+    CSSVariableData* data = CSSVariableParser::ConsumeUnparsedDeclaration(
+        stream,
+        /*allow_important_annotation=*/false,
+        /*is_animation_tainted=*/false,
+        /*must_contain_variable_reference=*/false,
+        /*restricted_value=*/false,
+        /*comma_ends_declaration=*/false, important_unused, *parser_context);
     if (!data) {
       (*results)->emplace_back(value);
       continue;
@@ -2578,8 +2609,8 @@ protocol::Response InspectorCSSAgent::getLonghandProperties(
       MakeGarbageCollected<CSSParserContext>(kHTMLStandardMode,
                                              SecureContextMode::kSecureContext);
   auto local_context =
-      CSSParserLocalContext::CreateWithoutPropertyForInspector()
-          .WithCurrentShorthand(property.PropertyID());
+      CSSParserLocalContext::CreateWithoutPropertyForInspector();
+  local_context.SetCurrentShorthand(property.PropertyID());
 
   HeapVector<CSSPropertyValue, 64> css_longhand_properties;
   const auto* shorthand = DynamicTo<Shorthand>(property);
@@ -3148,6 +3179,36 @@ protocol::Response InspectorCSSAgent::setSupportsText(
   return InspectorDOMAgent::ToResponse(exception_state);
 }
 
+protocol::Response InspectorCSSAgent::setNavigationText(
+    const String& style_sheet_id,
+    std::unique_ptr<protocol::CSS::SourceRange> range,
+    const String& text,
+    std::unique_ptr<protocol::CSS::CSSNavigation>* result) {
+  FrontendOperationScope scope;
+  InspectorStyleSheet* inspector_style_sheet = nullptr;
+  protocol::Response response =
+      AssertInspectorStyleSheetForId(style_sheet_id, inspector_style_sheet);
+  if (!response.IsSuccess())
+    return response;
+  SourceRange text_range;
+  response =
+      JsonRangeToSourceRange(inspector_style_sheet, range.get(), &text_range);
+  if (!response.IsSuccess())
+    return response;
+
+  DummyExceptionStateForTesting exception_state;
+  ModifyRuleAction* action = MakeGarbageCollected<ModifyRuleAction>(
+      ModifyRuleAction::kSetNavigationRuleText, inspector_style_sheet, text_range,
+      text);
+  bool success = dom_agent_->History()->Perform(action, exception_state);
+  if (success) {
+    CSSNavigationRule* rule =
+        InspectorCSSAgent::AsCSSNavigationRule(action->TakeRule());
+    *result = BuildNavigationObject(rule);
+  }
+  return InspectorDOMAgent::ToResponse(exception_state);
+}
+
 protocol::Response InspectorCSSAgent::createStyleSheet(
     const String& frame_id,
     std::optional<bool> force,
@@ -3424,7 +3485,7 @@ std::unique_ptr<protocol::CSS::CSSMedia> InspectorCSSAgent::BuildMediaObject(
       continue;
     std::unique_ptr<protocol::CSS::MediaQuery> media_query =
         protocol::CSS::MediaQuery::create()
-            .setActive(media_evaluator->Eval(query))
+            .setActive(media_evaluator->Eval(query) == KleeneValue::kTrue)
             .setExpressions(std::move(expression_array))
             .build();
     media_list_array->emplace_back(std::move(media_query));
@@ -3703,6 +3764,41 @@ void InspectorCSSAgent::CollectStartingStylesFromRule(
   }
 }
 
+std::unique_ptr<protocol::CSS::CSSNavigation>
+InspectorCSSAgent::BuildNavigationObject(CSSNavigationRule* rule) {
+  std::unique_ptr<protocol::CSS::CSSNavigation> navigation_object =
+      protocol::CSS::CSSNavigation::create()
+          .setText(rule->ConditionTextInternal())
+          .build();
+
+  CSSStyleSheet* style_sheet = rule->parentStyleSheet();
+  auto it = css_style_sheet_to_inspector_style_sheet_.find(style_sheet);
+  if (it != css_style_sheet_to_inspector_style_sheet_.end()) {
+    InspectorStyleSheet* inspector_style_sheet = it->value;
+    navigation_object->setStyleSheetId(inspector_style_sheet->Id());
+  }
+
+  InspectorStyleSheet* inspector_style_sheet = BindStyleSheet(style_sheet);
+  navigation_object->setRange(
+      inspector_style_sheet->RuleHeaderSourceRange(rule));
+
+  if (Document* document = style_sheet->OwnerDocument()) {
+    navigation_object->setActive(rule->Evaluate(document));
+  }
+
+  return navigation_object;
+}
+
+void InspectorCSSAgent::CollectNavigationQueriesFromRule(
+    CSSRule* rule,
+    protocol::Array<protocol::CSS::CSSNavigation>* navigation_list,
+    protocol::Array<protocol::CSS::CSSRuleType>* rule_types) {
+  if (auto* navigation_rule = DynamicTo<CSSNavigationRule>(rule)) {
+    navigation_list->emplace_back(BuildNavigationObject(navigation_rule));
+    rule_types->emplace_back(protocol::CSS::CSSRuleTypeEnum::NavigationRule);
+  }
+}
+
 void InspectorCSSAgent::FillAncestorData(CSSRule* rule,
                                          protocol::CSS::CSSRule* result) {
   auto layers_list =
@@ -3719,6 +3815,8 @@ void InspectorCSSAgent::FillAncestorData(CSSRule* rule,
       std::make_unique<protocol::Array<protocol::CSS::CSSRuleType>>();
   auto starting_style_list =
       std::make_unique<protocol::Array<protocol::CSS::CSSStartingStyle>>();
+  auto navigation_queries_list =
+      std::make_unique<protocol::Array<protocol::CSS::CSSNavigation>>();
 
   CSSRule* parent_rule = rule;
   auto nesting_selectors = std::make_unique<protocol::Array<String>>();
@@ -3735,6 +3833,8 @@ void InspectorCSSAgent::FillAncestorData(CSSRule* rule,
                           rule_types_list.get());
     CollectStartingStylesFromRule(parent_rule, starting_style_list.get(),
                                   rule_types_list.get());
+    CollectNavigationQueriesFromRule(parent_rule, navigation_queries_list.get(),
+                                     rule_types_list.get());
 
     if (parent_rule != rule) {
       if (auto* style_rule = DynamicTo<CSSStyleRule>(parent_rule)) {
@@ -3766,6 +3866,7 @@ void InspectorCSSAgent::FillAncestorData(CSSRule* rule,
   result->setContainerQueries(std::move(container_queries_list));
   result->setRuleTypes(std::move(rule_types_list));
   result->setStartingStyles(std::move(starting_style_list));
+  result->setNavigations(std::move(navigation_queries_list));
   if (nesting_selectors->size() > 0) {
     result->setNestingSelectors(std::move(nesting_selectors));
   }
@@ -3861,6 +3962,14 @@ InspectorCSSAgent::BuildArrayForFunctionNodeChildren(CSSRuleList* rule_list) {
         function_node->setCondition(std::move(condition));
         break;
       }
+      case CSSRule::kNavigationRule: {
+        CSSNavigationRule* navigation_rule = To<CSSNavigationRule>(rule);
+        std::unique_ptr<protocol::CSS::CSSFunctionConditionNode> condition =
+            BuildObjectForFunctionConditionNode(navigation_rule);
+        condition->setNavigation(BuildNavigationObject(navigation_rule));
+        function_node->setCondition(std::move(condition));
+        break;
+      }
       default:
         DCHECK(false) << "Unexpected rule type: " << rule->GetType();
         break;
@@ -3871,7 +3980,8 @@ InspectorCSSAgent::BuildArrayForFunctionNodeChildren(CSSRuleList* rule_list) {
 }
 
 std::unique_ptr<protocol::CSS::CSSFunctionRule>
-InspectorCSSAgent::BuildObjectForFunctionRule(CSSFunctionRule* function_rule) {
+InspectorCSSAgent::BuildObjectForFunctionRule(CSSFunctionRule* function_rule,
+                                              const TreeScope* tree_scope) {
   InspectorStyleSheet* inspector_style_sheet =
       BindStyleSheet(function_rule->parentStyleSheet());
   std::unique_ptr<protocol::CSS::Value> name =
@@ -3904,6 +4014,10 @@ InspectorCSSAgent::BuildObjectForFunctionRule(CSSFunctionRule* function_rule) {
       !inspector_style_sheet->Id().empty()) {
     result->setStyleSheetId(inspector_style_sheet->Id());
   }
+  if (tree_scope) {
+    result->setOriginTreeScopeNodeId(tree_scope->RootNode().GetDomNodeId());
+  }
+
   return result;
 }
 
@@ -4537,7 +4651,7 @@ protocol::Response InspectorCSSAgent::setEffectivePropertyValueForNode(
   if (!source_data)
     return protocol::Response::ServerError("Can't find a source to edit");
 
-  Vector<StylePropertyShorthand, 4> shorthands;
+  MatchingShorthandsVector shorthands;
   getMatchingShorthandsForLonghand(css_property_name->Id(), &shorthands);
 
   String shorthand =
@@ -4574,8 +4688,9 @@ protocol::Response InspectorCSSAgent::setEffectivePropertyValueForNode(
     String new_property_text =
         StrCat({"\n", longhand, ": ", value,
                 (force_important ? " !important" : ""), ";"});
-    if (!style_text.empty() && !style_text.StripWhiteSpace().EndsWith(';'))
+    if (!style_text.empty() && !style_text.StripWhiteSpace().ends_with(';')) {
       new_property_text = StrCat({";", new_property_text});
+    }
     style_text = StrCat({style_text, new_property_text});
     change_range.start = body_range.end;
     change_range.end = body_range.end + new_property_text.length();
@@ -4758,9 +4873,35 @@ class TransitiveFunctionCollector {
 
 }  // namespace
 
+HeapHashMap<Member<StyleRuleFunction>, Member<CSSFunctionRule>>
+InspectorCSSAgent::BuildFunctionRuleMap(Document& document) {
+  DocumentStyleSheets::iterator it =
+      document_to_css_style_sheets_.find(&document);
+  if (it == document_to_css_style_sheets_.end()) {
+    return {};
+  }
+  return BuildFunctionRuleMap(*it->value);
+}
+
+// static
+HeapHashMap<Member<StyleRuleFunction>, Member<CSSFunctionRule>>
+InspectorCSSAgent::BuildFunctionRuleMap(
+    const HeapHashSet<Member<CSSStyleSheet>>& document_style_sheets) {
+  HeapHashMap<Member<StyleRuleFunction>, Member<CSSFunctionRule>> to_css_rule;
+  for (CSSStyleSheet* style_sheet : document_style_sheets) {
+    TraverseCSSRules<CSSFunctionRule>(
+        style_sheet, [&to_css_rule](CSSFunctionRule& rule) {
+          to_css_rule.insert(&rule.FunctionRule(), &rule);
+          return true;  // Keep traversing.
+        });
+  }
+  return to_css_rule;
+}
+
 // static
 void InspectorCSSAgent::CollectReferencedFunctionRules(
-    const HeapHashSet<Member<CSSStyleSheet>>& document_style_sheets,
+    const HeapHashMap<Member<StyleRuleFunction>, Member<CSSFunctionRule>>&
+        function_to_css_rule_map,
     const RuleIndexList& rule_list,
     HeapHashMap<Member<const ScopedCSSName>, Member<CSSFunctionRule>>& result) {
   TransitiveFunctionCollector collector;
@@ -4784,16 +4925,6 @@ void InspectorCSSAgent::CollectReferencedFunctionRules(
     return;
   }
 
-  // Build a mapping from StyleRuleFunction to CSSFunctionRule.
-  HeapHashMap<Member<StyleRuleFunction>, Member<CSSFunctionRule>> to_css_rule;
-  for (CSSStyleSheet* style_sheet : document_style_sheets) {
-    TraverseCSSRules<CSSFunctionRule>(
-        style_sheet, [&to_css_rule](CSSFunctionRule& rule) {
-          to_css_rule.insert(&rule.FunctionRule(), &rule);
-          return true;  // Keep traversing.
-        });
-  }
-
   // Emit the final results, which map ScopedCSSNames to CSSFunctionRules.
   for (const auto& [scoped_name, style_rule] : seen_functions) {
     if (!style_rule) {
@@ -4801,7 +4932,7 @@ void InspectorCSSAgent::CollectReferencedFunctionRules(
       // but no corresponding @function rule was found.
       continue;
     }
-    result.insert(scoped_name, to_css_rule.at(style_rule));
+    result.insert(scoped_name, function_to_css_rule_map.at(style_rule));
   }
 }
 

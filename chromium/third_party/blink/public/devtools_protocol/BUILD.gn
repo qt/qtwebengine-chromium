@@ -15,6 +15,7 @@ domains = [
   "domains/CSS.pdl",
   "domains/CacheStorage.pdl",
   "domains/Cast.pdl",
+  "domains/CrashReportContext.pdl",
   "domains/DOM.pdl",
   "domains/DOMDebugger.pdl",
   "domains/DOMSnapshot.pdl",
@@ -53,6 +54,7 @@ domains = [
   "domains/Tracing.pdl",
   "domains/WebAudio.pdl",
   "domains/WebAuthn.pdl",
+  "domains/WebMCP.pdl",
 ]
 
 action("protocol_compatibility_check") {

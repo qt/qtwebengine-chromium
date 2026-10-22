@@ -28,8 +28,10 @@
 #include "chrome/browser/extensions/extension_action_dispatcher.h"
 #include "chrome/browser/extensions/extension_action_runner.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/extensions/system_display/display_info_provider.h"
 #include "chrome/browser/favicon/favicon_utils.h"
 #include "chrome/browser/supervised_user/supervised_user_extensions_delegate_impl.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
@@ -47,6 +49,7 @@
 #include "extensions/browser/api/messaging/messaging_delegate.h"
 #include "extensions/browser/api/messaging/native_message_host.h"
 #include "extensions/browser/api/messaging/native_message_port.h"
+#include "extensions/browser/api/system_display/display_info_provider.h"
 #include "extensions/browser/api/virtual_keyboard_private/virtual_keyboard_delegate.h"
 #include "extensions/browser/api/web_request/web_request_info.h"
 #include "extensions/browser/extension_action.h"
@@ -230,7 +233,7 @@ void ChromeExtensionsAPIClient::NotifyWebRequestWithheld(
   // invoking the extension on a site grants access to the tab's origin if
   // and only if the extension requested it; without requesting the tab,
   // clicking on the extension won't grant access to the resource.
-  // https://crbug.com/891586.
+  // https://crbug.com/41418607.
   // TODO(crbug.com/40076508): We can remove this if extensions require host
   // permissions to the initiator, since then we'll never get into this type
   // of circumstance (the request would be blocked, rather than withheld).
@@ -433,6 +436,11 @@ ChromeExtensionsAPIClient::CreateSupervisedUserExtensionsDelegate(
       browser_context);
 }
 
+std::unique_ptr<DisplayInfoProvider>
+ChromeExtensionsAPIClient::CreateDisplayInfoProvider() const {
+  return CreateChromeDisplayInfoProvider();
+}
+
 MetricsPrivateDelegate* ChromeExtensionsAPIClient::GetMetricsPrivateDelegate() {
   if (!metrics_private_delegate_) {
     metrics_private_delegate_ =
@@ -513,6 +521,16 @@ void ChromeExtensionsAPIClient::SaveImageDataToClipboard(
       std::move(success_callback), std::move(error_callback));
 }
 #endif  // BUILDFLAG(IS_CHROMEOS)
+
+std::vector<KeyedServiceBaseFactory*>
+ChromeExtensionsAPIClient::GetFactoryDependencies() {
+  std::vector<KeyedServiceBaseFactory*> dependencies;
+#if !BUILDFLAG(IS_ANDROID)
+  dependencies.push_back(InstantServiceFactory::GetInstance());
+#endif
+  dependencies.push_back(SupervisedUserServiceFactory::GetInstance());
+  return dependencies;
+}
 
 std::unique_ptr<NativeMessagePortDispatcher>
 ChromeExtensionsAPIClient::CreateNativeMessagePortDispatcher(

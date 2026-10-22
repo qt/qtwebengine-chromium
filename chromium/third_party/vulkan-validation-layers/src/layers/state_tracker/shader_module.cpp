@@ -522,6 +522,9 @@ struct ParsedInfo {
     std::vector<const Instruction*> debug_global_variables;
 
     bool has_graph_constant_arm = false;  // detects if any are found OpGraphConstantARM
+    bool uses_tosa_1_0 = false;
+
+    uint32_t total_entry_points = 0;
 };
 
 // Built-in can be both on the OpVariable or a inside a OpTypeStruct for Block built-in.
@@ -584,6 +587,23 @@ bool EntryPoint::HasBuiltIn(spv::BuiltIn built_in) const {
     return false;
 }
 
+std::string EntryPoint::Describe() const {
+    std::stringstream ss;
+    ss << "[";
+    // For the common single shader, listing the name is not useful
+    if (!only_entry_point) {
+        ss << "EntryPoint \"" << name << "\", ";
+    }
+
+    if (is_data_graph) {
+        ss << "DataGraph";
+    } else {
+        ss << string_VkShaderStageFlagBits(stage);
+    }
+    ss << ']';
+    return ss.str().c_str();
+}
+
 vvl::unordered_set<uint32_t> EntryPoint::GetAccessibleIds(const Module& module_state, EntryPoint& entrypoint) {
     vvl::unordered_set<uint32_t> result_ids;
 
@@ -595,8 +615,8 @@ vvl::unordered_set<uint32_t> EntryPoint::GetAccessibleIds(const Module& module_s
     }
 
     std::unordered_map<uint32_t, uint32_t> entry_exit_pairs = {
-        { spv::OpFunction, spv::OpFunctionEnd },
-        { spv::OpGraphARM, spv::OpGraphEndARM },
+        {spv::OpFunction, spv::OpFunctionEnd},
+        {spv::OpGraphARM, spv::OpGraphEndARM},
     };
     worklist.insert(entrypoint.id);
     while (!worklist.empty()) {
@@ -693,7 +713,7 @@ std::vector<ResourceInterfaceVariable> EntryPoint::GetResourceInterfaceVariables
 
 std::vector<const Instruction*> EntryPoint::GetDataGraphConstants(const Module& module_state, EntryPoint& entrypoint,
                                                                   const ParsedInfo& parsed) {
-    std::vector<const Instruction *> constants;
+    std::vector<const Instruction*> constants;
     // Check to skip to not spend time if not using VK_ARM_data_graph
     if (parsed.has_graph_constant_arm) {
         for (const auto& accessible_id : entrypoint.accessible_ids) {
@@ -838,7 +858,9 @@ EntryPoint::EntryPoint(const Module& module_state, const Instruction& entrypoint
       accessible_ids(GetAccessibleIds(module_state, *this)),
       resource_interface_variables(GetResourceInterfaceVariables(module_state, *this, parsed)),
       stage_interface_variables(GetStageInterfaceVariables(module_state, *this, parsed)),
-      datagraph_constants(GetDataGraphConstants(module_state, *this, parsed)) {
+      datagraph_constants(GetDataGraphConstants(module_state, *this, parsed)),
+      uses_tosa_1_0(parsed.uses_tosa_1_0),
+      only_entry_point(parsed.total_entry_points == 1) {
     // Tried to just create this map in GetResourceInterfaceVariables() but ran into errors because the function is static
     for (const auto& variable : resource_interface_variables) {
         resource_interface_variable_map[variable.id] = &variable;
@@ -1202,6 +1224,8 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
                     if (ext_instruction == NonSemanticShaderDebugInfo100DebugGlobalVariable) {
                         parsed.debug_global_variables.emplace_back(&insn);
                     }
+                } else if (set == extended.tosa_001000_1) {
+                    parsed.uses_tosa_1_0 = true;
                 }
                 break;
             }
@@ -1225,11 +1249,13 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
                 break;
 
             case spv::OpExtInstImport: {
-                if (strcmp(insn.GetAsString(2), "GLSL.std.450") == 0) {
+                const char* ext_name = insn.GetAsString(2);
+                if (strcmp(ext_name, "GLSL.std.450") == 0) {
                     extended.glsl_std450 = insn.ResultId();
-                }
-                if (strcmp(insn.GetAsString(2), "NonSemantic.Shader.DebugInfo.100") == 0) {
+                } else if (strcmp(ext_name, "NonSemantic.Shader.DebugInfo.100") == 0) {
                     extended.shader_debug_info = insn.ResultId();
+                } else if (strncmp(ext_name, "TOSA.001000.1", strlen("TOSA.001000.1")) == 0) {
+                    extended.tosa_001000_1 = insn.ResultId();
                 }
                 break;
             }
@@ -1372,6 +1398,8 @@ Module::StaticData::StaticData(const Module& module_state, bool parse, Stateless
     }
 
     // Need to build the definitions table for FindDef before looking for which instructions each entry point uses
+    parsed.total_entry_points = (uint32_t)entry_point_instructions.size();
+    entry_points.reserve(parsed.total_entry_points);
     for (const auto& insn : entry_point_instructions) {
         entry_points.emplace_back(std::make_shared<EntryPoint>(module_state, *insn, parsed));
     }
@@ -1568,6 +1596,21 @@ std::string Module::DescribeInstruction(const Instruction& error_insn) const {
     ss << error_insn.Describe();
     ss << "\nError occurred at ";
     GetShaderSourceInfo(ss, words_, *last_line_inst);
+    return ss.str();
+}
+
+std::string Module::DescribeTypeInstruction(const Instruction& type_instr) const {
+    const NumericType numeric_type = GetNumericType(type_instr);
+    const uint32_t bit_width = type_instr.GetBitWidth();
+    const spv::FPEncoding encoding = type_instr.GetFPEncoding();
+
+    std::stringstream ss;
+    ss << "[" << string_NumericType(numeric_type) << ", " << bit_width;
+    // Currently (in SPIR-V) 8-bit floats must have an encoding, 16-bit can have it
+    if (numeric_type == NumericTypeFloat && (bit_width == 8 || bit_width == 16)) {
+        ss << ", " << string_SpvFPEncoding(encoding);
+    }
+    ss << "]";
     return ss.str();
 }
 
@@ -1800,14 +1843,12 @@ uint32_t Module::GetComponentsConsumedByType(const Instruction* insn) const {
 
 // characterizes a SPIR-V type appearing in an interface to a FF stage, for comparison to a VkFormat's characterization above.
 // also used for input attachments, as we statically know their format.
-NumericType Module::GetNumericType(uint32_t type) const {
-    const Instruction* insn = FindDef(type);
-
-    switch (insn->Opcode()) {
+NumericType Module::GetNumericType(const Instruction& insn) const {
+    switch (insn.Opcode()) {
         case spv::OpTypeBool:
             return NumericTypeBool;
         case spv::OpTypeInt:
-            return insn->Word(3) ? NumericTypeSint : NumericTypeUint;
+            return insn.Word(3) ? NumericTypeSint : NumericTypeUint;
         case spv::OpTypeFloat:
             return NumericTypeFloat;
         case spv::OpTypeVector:
@@ -1816,12 +1857,84 @@ NumericType Module::GetNumericType(uint32_t type) const {
         case spv::OpTypeArray:
         case spv::OpTypeRuntimeArray:
         case spv::OpTypeImage:
-            return GetNumericType(insn->Word(2));
+            return GetNumericType(*FindDef(insn.Word(2)));
         case spv::OpTypePointer:
-            return GetNumericType(insn->Word(3));
+            return GetNumericType(*FindDef(insn.Word(3)));
         default:
             return NumericTypeUnknown;
     }
+}
+
+// See compatibility table: vkspec.html#spirvenv-tensor-formats
+bool Module::IsTensorFormatCompatible(VkFormat format, const spirv::Instruction& type_inst) const {
+    NumericType numeric_type = GetNumericType(type_inst);
+    uint32_t bit_width = type_inst.GetBitWidth();
+    // Spirv uint is really "signless", i.e. we don't care about the sign
+    if (numeric_type == NumericTypeUint) {
+        if (bit_width == 8) {
+            return (format == VK_FORMAT_R8_UINT || format == VK_FORMAT_R8_SINT);
+        } else if (bit_width == 16) {
+            return (format == VK_FORMAT_R16_UINT || format == VK_FORMAT_R16_SINT);
+        } else if (bit_width == 32) {
+            return (format == VK_FORMAT_R32_UINT || format == VK_FORMAT_R32_SINT);
+        } else if (bit_width == 64) {
+            return (format == VK_FORMAT_R64_UINT || format == VK_FORMAT_R64_SINT);
+        }
+    }
+    // for non-int types sign isn't an issue and there is 1-to-1 correspondence
+    return format == GetTensorFormat(type_inst);
+}
+
+VkFormat Module::GetTensorFormat(const spirv::Instruction& type_inst) const {
+    NumericType numeric_type = GetNumericType(type_inst);
+    uint32_t bit_width = type_inst.GetBitWidth();
+    spv::FPEncoding encoding = type_inst.GetFPEncoding();
+
+    if (numeric_type == NumericTypeBool) {
+        return VK_FORMAT_R8_BOOL_ARM;
+    } else if (numeric_type == NumericTypeFloat) {
+        if (bit_width == 8) {
+            if (encoding == spv::FPEncodingFloat8E4M3EXT) {
+                return VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E4M3_ARM;
+            } else if (encoding == spv::FPEncodingFloat8E5M2EXT) {
+                return VK_FORMAT_R8_SFLOAT_FPENCODING_FLOAT8E5M2_ARM;
+            }
+        } else if (bit_width == 16) {
+            if (encoding == spv::FPEncodingBFloat16KHR) {
+                return VK_FORMAT_R16_SFLOAT_FPENCODING_BFLOAT16_ARM;
+            } else if (encoding == spv::FPEncodingMax) {
+                // encoding undefined for regular FP16
+                return VK_FORMAT_R16_SFLOAT;
+            }
+        } else if (bit_width == 32) {
+            return VK_FORMAT_R32_SFLOAT;
+        } else if (bit_width == 64) {
+            return VK_FORMAT_R64_SFLOAT;
+        }
+    } else if (numeric_type == NumericTypeSint) {
+        if (bit_width == 8) {
+            return VK_FORMAT_R8_SINT;
+        } else if (bit_width == 16) {
+            return VK_FORMAT_R16_SINT;
+        } else if (bit_width == 32) {
+            return VK_FORMAT_R32_SINT;
+        } else if (bit_width == 64) {
+            return VK_FORMAT_R64_SINT;
+        }
+    } else if (numeric_type == NumericTypeUint) {
+        if (bit_width == 8) {
+            return VK_FORMAT_R8_UINT;
+        } else if (bit_width == 16) {
+            return VK_FORMAT_R16_UINT;
+        } else if (bit_width == 32) {
+            return VK_FORMAT_R32_UINT;
+        } else if (bit_width == 64) {
+            return VK_FORMAT_R64_UINT;
+        }
+    }
+    // invalid [type, width, encoding] combination
+    assert(false);
+    return VK_FORMAT_UNDEFINED;
 }
 
 bool Module::HasRuntimeArray(uint32_t type_id) const {
@@ -1846,7 +1959,7 @@ std::string InterfaceSlot::Describe() const {
     return msg.str();
 }
 
-uint32_t GetFormatType(VkFormat format) {
+uint32_t GetFormatNumericType(VkFormat format) {
     if (vkuFormatIsSINT(format)) return NumericTypeSint;
     if (vkuFormatIsUINT(format)) return NumericTypeUint;
     if (vkuFormatIsBOOL(format)) return NumericTypeBool;
@@ -1863,29 +1976,6 @@ const char* string_NumericType(uint32_t type) {
     if (type == NumericTypeBool) return "BOOL";
     if (type == NumericTypeFloat) return "FLOAT";
     return "(none)";
-}
-
-VkFormat GetTensorFormat(NumericType numeric_type, uint32_t bit_width) {
-    if (numeric_type == NumericTypeBool) {
-        return VK_FORMAT_R8_BOOL_ARM;
-    } else if (numeric_type == NumericTypeFloat) {
-        if (bit_width == 16) return VK_FORMAT_R16_SFLOAT;
-        if (bit_width == 32) return VK_FORMAT_R32_SFLOAT;
-        if (bit_width == 64) return VK_FORMAT_R64_SFLOAT;
-    } else if (numeric_type == NumericTypeSint) {
-        if (bit_width == 8) return VK_FORMAT_R8_SINT;
-        if (bit_width == 16) return VK_FORMAT_R16_SINT;
-        if (bit_width == 32) return VK_FORMAT_R32_SINT;
-        if (bit_width == 64) return VK_FORMAT_R64_SINT;
-    } else if (numeric_type == NumericTypeUint) {
-        if (bit_width == 8) return VK_FORMAT_R8_UINT;
-        if (bit_width == 16) return VK_FORMAT_R16_UINT;
-        if (bit_width == 32) return VK_FORMAT_R32_UINT;
-        if (bit_width == 64) return VK_FORMAT_R64_UINT;
-    }
-    // invalid type, width combination
-    assert(false);
-    return VK_FORMAT_UNDEFINED;
 }
 
 const Instruction* VariableBase::FindDebugGlobalVariable(const VariableBase& variable, const Module& module_state,
@@ -1960,6 +2050,34 @@ std::string ResourceInterfaceVariable::DescribeDescriptor() const {
     if (!debug_name.empty()) {
         ss << ", variable \"" << debug_name << "\"";
     }
+    ss << "]";
+    return ss.str();
+}
+
+std::string StageInterfaceVariable::Describe() const {
+    assert(!is_built_in);
+    std::ostringstream ss;
+    ss << "[" << string_SpvStorageClass(storage_class) << " variable";
+
+    if (type_struct_info) {
+        // is a struct where each field has it's own location
+        if (!debug_name.empty()) {
+            ss << " \"" << debug_name << "\"";
+        }
+        // TODO - We don't track details about the member variables here (Location, Name)
+        // GLSL/HLSL/Slang seem to all generate non-structs anyway in practice
+        // If we decide to add, various test targeting VU 08733 can be used
+        ss << " is a struct with " << type_struct_info->members.size() << " members";
+    } else if (decorations.location != spirv::kInvalidValue) {
+        ss << ", Location " << decorations.location;
+        if (!debug_name.empty()) {
+            ss << ", \"" << debug_name << "\"";
+        }
+    } else {
+        assert(false);
+        ss << "INVALID, no location or struct";
+    }
+
     ss << "]";
     return ss.str();
 }
@@ -2044,11 +2162,12 @@ static uint32_t GetStructInterfaceSlots(const Module& module_state, std::shared_
         const uint32_t locations = module_state.GetLocationsConsumedByType(member_type);
 
         // If we have a |mat4x3| it is 12 components, but spread over the first 3 components of each Location
-        uint32_t vector_components = 0;
+        uint32_t column_components = 0;
         if (member_type->Opcode() == spv::OpTypeMatrix) {
             const Instruction* column_type = module_state.FindDef(member_type->Word(2));
-            vector_components = module_state.GetComponentsConsumedByType(column_type);
+            column_components = module_state.GetComponentsConsumedByType(column_type);
         }
+        const uint32_t padding_components = (4 - column_components % 4) % 4;
 
         // Info needed to test type matching later
         const Instruction* numerical_type = module_state.GetBaseTypeInstruction(member_type);
@@ -2056,12 +2175,13 @@ static uint32_t GetStructInterfaceSlots(const Module& module_state, std::shared_
         const uint32_t numerical_type_width = numerical_type->GetBitWidth();
 
         for (uint32_t j = 0; j < locations; j++) {
-            uint32_t matrix_offset = 0;
             for (uint32_t k = 0; k < components; k++) {
-                if (vector_components != 0 && j != 0 && j % vector_components == 0) {
-                    matrix_offset += (4 - vector_components);  // skip to next Location
+                // Skip padding for matrix columns
+                uint32_t component_offset = 0;
+                if (padding_components != 0) {
+                    component_offset = padding_components * (k / column_components);
                 }
-                slots.emplace_back(starting_location + locations_added, k + matrix_offset, numerical_type_opcode,
+                slots.emplace_back(starting_location + locations_added, k + component_offset, numerical_type_opcode,
                                    numerical_type_width);
             }
             locations_added++;
@@ -2096,11 +2216,12 @@ std::vector<InterfaceSlot> StageInterfaceVariable::GetInterfaceSlots(StageInterf
                 const uint32_t components = module_state.GetComponentsConsumedByType(member_type);
 
                 // If we have a |mat4x3| it is 12 components, but spread over the first 3 components of each Location
-                uint32_t vector_components = 0;
+                uint32_t column_components = 0;
                 if (member_type->Opcode() == spv::OpTypeMatrix) {
                     const Instruction* column_type = module_state.FindDef(member_type->Word(2));
-                    vector_components = module_state.GetComponentsConsumedByType(column_type);
+                    column_components = module_state.GetComponentsConsumedByType(column_type);
                 }
+                const uint32_t padding_components = (4 - column_components % 4) % 4;
 
                 // Info needed to test type matching later
                 const Instruction* numerical_type = module_state.GetBaseTypeInstruction(member_type);
@@ -2114,12 +2235,13 @@ std::vector<InterfaceSlot> StageInterfaceVariable::GetInterfaceSlots(StageInterf
                 }
                 const uint32_t numerical_type_width = numerical_type->GetBitWidth();
 
-                uint32_t matrix_offset = 0;
                 for (uint32_t j = 0; j < components; j++) {
-                    if (vector_components != 0 && j != 0 && j % vector_components == 0) {
-                        matrix_offset += (4 - vector_components);  // skip to next Location
+                    // Skip padding for matrix columns
+                    uint32_t component_offset = 0;
+                    if (padding_components != 0) {
+                        component_offset = padding_components * (j / column_components);
                     }
-                    slots.emplace_back(base_location, j + matrix_offset, numerical_type_opcode, numerical_type_width);
+                    slots.emplace_back(base_location, j + component_offset, numerical_type_opcode, numerical_type_width);
                 }
                 base_location++;  // If using, each members starts a new Location
             }
@@ -2144,23 +2266,25 @@ std::vector<InterfaceSlot> StageInterfaceVariable::GetInterfaceSlots(StageInterf
                     const uint32_t components = module_state.GetComponentsConsumedByType(member_type);
 
                     // If we have a |mat4x3| it is 12 components, but spread over the first 3 components of each Location
-                    uint32_t vector_components = 0;
+                    uint32_t column_components = 0;
                     if (member_type->Opcode() == spv::OpTypeMatrix) {
                         const Instruction* column_type = module_state.FindDef(member_type->Word(2));
-                        vector_components = module_state.GetComponentsConsumedByType(column_type);
+                        column_components = module_state.GetComponentsConsumedByType(column_type);
                     }
+                    const uint32_t padding_components = (4 - column_components % 4) % 4;
 
                     // Info needed to test type matching later
                     const Instruction* numerical_type = module_state.GetBaseTypeInstruction(member_type);
                     const uint32_t numerical_type_opcode = numerical_type->Opcode();
                     const uint32_t numerical_type_width = numerical_type->GetBitWidth();
 
-                    uint32_t matrix_offset = 0;
                     for (uint32_t j = 0; j < components; j++) {
-                        if (vector_components != 0 && j != 0 && j % vector_components == 0) {
-                            matrix_offset += (4 - vector_components);  // skip to next Location
+                        // Skip padding for matrix columns
+                        uint32_t component_offset = 0;
+                        if (padding_components != 0) {
+                            component_offset = padding_components * (j / column_components);
                         }
-                        slots.emplace_back(location, starting_component + j + matrix_offset, numerical_type_opcode,
+                        slots.emplace_back(location, starting_component + j + component_offset, numerical_type_opcode,
                                            numerical_type_width);
                     }
                 }
@@ -2324,9 +2448,10 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
 
     // Handle anything specific to the base type
     if (base_type.Opcode() == spv::OpTypeImage) {
+        const spirv::Instruction& element_type_instr = *module_state.FindDef(base_type.Word(2));
+        info.numeric_type = module_state.GetNumericType(element_type_instr);
+        info.bit_width = static_cast<uint8_t>(element_type_instr.GetBitWidth());
         info.vk_format = CompatibleSpirvImageFormat(base_type.Word(8));
-        info.numeric_type = module_state.GetNumericType(base_type.Word(2));
-        info.bit_width = (uint8_t)module_state.GetTypeBitsSize(&base_type);
 
         // Things marked regardless of the image being accessed or not
         const bool is_sampled_without_sampler = base_type.Word(7) == 2;  // Word(7) == Sampled
@@ -2420,9 +2545,10 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
         }
     } else if (base_type.Opcode() == spv::OpTypeTensorARM) {
         is_storage_tensor = true;
-        info.numeric_type = module_state.GetNumericType(base_type.Word(2));
-        info.bit_width = (uint8_t)module_state.GetTypeBitsSize(&base_type);
-        info.vk_format = GetTensorFormat(info.numeric_type, info.bit_width);
+        const spirv::Instruction& element_type_instr = *module_state.FindDef(base_type.Word(2));
+        info.numeric_type = module_state.GetNumericType(element_type_instr);
+        info.bit_width = static_cast<uint8_t>(element_type_instr.GetBitWidth());
+        info.vk_format = module_state.GetTensorFormat(element_type_instr);
         info.tensor_rank = module_state.GetConstantValueById(base_type.Word(3));
     } else if (base_type.Opcode() == spv::OpTypeSampler) {
         is_sampler = true;

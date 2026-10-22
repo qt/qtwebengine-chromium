@@ -31,8 +31,13 @@ BASE_FEATURE(kApiUserScriptsMultipleWorlds, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kApiOdfsConfigPrivate, base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kApiGlicPrivate, base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kApiEnterpriseReportingPrivateOnDataMaskingRulesTriggered,
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kApiGlicAccessFromGoogleWebpage,
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kApiProxyOverrideRulesPrivate, base::FEATURE_ENABLED_BY_DEFAULT);
 
@@ -52,9 +57,6 @@ BASE_FEATURE(kAllowWithholdingExtensionPermissionsOnInstall,
 
 BASE_FEATURE(kCheckingNoExtensionIdInExtensionIpcs,
              "EMF_NO_EXTENSION_ID_FOR_EXTENSION_SOURCE",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kSkipResetServiceWorkerURLLoaderFactories,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kEnableWebHidInWebView, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -137,7 +139,7 @@ BASE_FEATURE(kLaunchWindowsNativeHostsDirectly,
 BASE_FEATURE(kSafeBrowsingCrxAllowlistAutoDisable,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kStructuredCloningForMessaging, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kStructuredCloningForMessaging, base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kTelemetryExtensionPendingApprovalApi,
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -183,24 +185,19 @@ BASE_FEATURE(kDisableExtensionsOnChromeUrlsSwitch,
 #endif
 );
 
-BASE_FEATURE(kUserScriptUserExtensionToggle, base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kEnterpriseExtensionDOMActivityTelemetry,
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kDebuggerAPIRestrictedToDevMode,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kExtensionBrowserNamespaceAndPolyfillSupport,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kOptimizeServiceWorkerStartRequests,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAvoidCloneArgsOnExtensionFunctionDispatch,
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kExtensionContentVerificationUsesExtensionRoot,
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kContentVerifyJobUseJobVersionForHashing,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kEnableShouldShowPromotion, base::FEATURE_DISABLED_BY_DEFAULT);
@@ -208,13 +205,18 @@ BASE_FEATURE(kEnableShouldShowPromotion, base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kSearchEngineExplicitChoiceDialog,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE_PARAM(bool,
+                   kSearchEngineExplicitChoiceDialogEscapable,
+                   &kSearchEngineExplicitChoiceDialog,
+                   "escapable",
+                   false);
+
 BASE_FEATURE(kSearchEngineUnconditionalDialog,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kWebRequestPersistFilteredEvents,
+BASE_FEATURE(kWebRequestPersistFilteredEventsViaEventRouter,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kWebRequestAlternativeAddListener,
-             base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kOptimizeWebRequestProxy, base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace extensions_features

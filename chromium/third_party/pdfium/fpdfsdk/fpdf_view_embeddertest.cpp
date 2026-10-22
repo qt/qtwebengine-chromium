@@ -14,7 +14,7 @@
 
 #include "build/build_config.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
-#include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/fpdf_view_c_api_test.h"
 #include "public/cpp/fpdf_scopers.h"
@@ -168,7 +168,7 @@ class FPDFViewEmbedderTest : public EmbedderTest {
     EXPECT_TRUE(FPDFBitmap_FillRect(bitmap.get(), 0, 0, bitmap_width,
                                     bitmap_height, 0xFFFFFFFF));
     FPDF_RenderPageBitmapWithMatrix(bitmap.get(), page, &matrix, &rect, 0);
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(), expectation_png_name);
+    CompareBitmapWithExpectationSuffix(bitmap.get(), expectation_png_name);
   }
 
   void TestRenderPageBitmapWithFlags(FPDF_PAGE page,
@@ -176,7 +176,7 @@ class FPDFViewEmbedderTest : public EmbedderTest {
                                      std::string_view expectation_png_name) {
     ScopedFPDFBitmap bitmap = TestRenderPageBitmapWithFlagsImpl(page, flags);
     ASSERT_TRUE(bitmap);
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(), expectation_png_name);
+    CompareBitmapWithExpectationSuffix(bitmap.get(), expectation_png_name);
   }
 
   void TestRenderPageBitmapWithInternalMemory(
@@ -252,7 +252,7 @@ class FPDFViewEmbedderTest : public EmbedderTest {
 
     ScopedFPDFBitmap bitmap = SkPictureToPdfiumBitmap(
         std::move(picture), SkISize::Make(width, height));
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(), png_name);
+    CompareBitmapWithExpectationSuffix(bitmap.get(), png_name);
   }
 #endif  // defined(PDF_USE_SKIA)
 
@@ -303,10 +303,9 @@ class FPDFViewEmbedderTest : public EmbedderTest {
                                   bool fuzzy = false) {
     RenderPageToBitmap(page, bitmap);
     if (fuzzy) {
-      CompareBitmapToPngWithFuzzyExpectationSuffix(bitmap,
-                                                   expectation_png_name);
+      CompareBitmapWithFuzzyExpectationSuffix(bitmap, expectation_png_name);
     } else {
-      CompareBitmapToPngWithExpectationSuffix(bitmap, expectation_png_name);
+      CompareBitmapWithExpectationSuffix(bitmap, expectation_png_name);
     }
   }
 };
@@ -488,7 +487,7 @@ TEST_F(FPDFViewEmbedderTest, MultipleInitDestroy) {
 }
 
 TEST_F(FPDFViewEmbedderTest, RepeatedInitDestroy) {
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < 4400; ++i) {
     if (!OpenDocument("about_blank.pdf")) {
       ADD_FAILURE();
     }
@@ -1041,7 +1040,7 @@ TEST_F(FPDFViewEmbedderTest, FPDFRenderPageBitmapWithMatrix) {
   EXPECT_FLOAT_EQ(300, page_height);
 
   ScopedFPDFBitmap bitmap = RenderLoadedPage(page.get());
-  CompareBitmapToPngWithExpectationSuffix(bitmap.get(), pdfium::kRectanglesPng);
+  CompareBitmapWithExpectationSuffix(bitmap.get(), pdfium::kRectanglesPng);
 
   FS_RECTF page_rect{0, 0, page_width, page_height};
 
@@ -1602,7 +1601,7 @@ TEST_F(FPDFViewEmbedderTest, RenderManyRectanglesWithAndWithoutExternalMemory) {
                                                     pdfium::kManyRectanglesPng);
 
 #if defined(PDF_USE_SKIA)
-  if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+  if (CFX_GEModule::Get()->UseSkiaRenderer()) {
     TestRenderPageBitmapWithInternalMemory(page.get(), FPDFBitmap_BGRA_Premul,
                                            pdfium::kManyRectanglesPng);
     TestRenderPageBitmapWithInternalMemoryAndStride(
@@ -1978,7 +1977,7 @@ TEST_F(FPDFViewEmbedderTest, RenderXfaPage) {
 
 #if defined(PDF_USE_SKIA)
 TEST_F(FPDFViewEmbedderTest, RenderPageToSkp) {
-  if (!CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+  if (!CFX_GEModule::Get()->UseSkiaRenderer()) {
     GTEST_SKIP() << "FPDF_RenderPageSkp() only makes sense with Skia";
   }
 
@@ -1991,7 +1990,7 @@ TEST_F(FPDFViewEmbedderTest, RenderPageToSkp) {
 }
 
 TEST_F(FPDFViewEmbedderTest, RenderXfaPageToSkp) {
-  if (!CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+  if (!CFX_GEModule::Get()->UseSkiaRenderer()) {
     GTEST_SKIP() << "FPDF_RenderPageSkp() only makes sense with Skia";
   }
 
@@ -2008,13 +2007,15 @@ TEST_F(FPDFViewEmbedderTest, Bug2087) {
   FPDF_DestroyLibrary();
 
   std::string agg_checksum;
+#if defined(PDF_USE_AGG)
   const FPDF_LIBRARY_CONFIG kAggConfig = {
-      .version = 4,
+      .version = 5,
       .m_pUserFontPaths = nullptr,
       .m_pIsolate = nullptr,
       .m_v8EmbedderSlot = 0,
       .m_pPlatform = nullptr,
       .m_RendererType = FPDF_RENDERERTYPE_AGG,
+      .m_FontLibraryType = FPDF_FONTBACKENDTYPE_FREETYPE,
   };
   FPDF_InitLibraryWithConfig(&kAggConfig);
   ASSERT_TRUE(OpenDocument("rectangles.pdf"));
@@ -2025,6 +2026,7 @@ TEST_F(FPDFViewEmbedderTest, Bug2087) {
   }
   CloseDocument();
   FPDF_DestroyLibrary();
+#endif  // PDF_USE_AGG
 
   std::string skia_checksum;
   const FPDF_LIBRARY_CONFIG kSkiaConfig = {
@@ -2080,7 +2082,7 @@ TEST_F(FPDFViewEmbedderTest, RenderTransparencyOnWhiteBackground) {
   FPDF_RenderPageBitmap(bitmap.get(), page.get(), /*start_x=*/0,
                         /*start_y=*/0, kWidth, kHeight, /*rotate=*/0,
                         /*flags=*/0);
-  CompareBitmapToPng(bitmap.get(), pdfium::kBlankPage200x200Png);
+  CompareBitmap(bitmap.get(), pdfium::kBlankPage200x200Png);
 }
 
 TEST_F(FPDFViewEmbedderTest, Bug2112) {
@@ -2111,26 +2113,26 @@ TEST_F(FPDFViewEmbedderTest, BadFillRectInput) {
   ASSERT_TRUE(FPDFBitmap_FillRect(bitmap.get(), /*left=*/0, /*top=*/0,
                                   /*width=*/kWidth,
                                   /*height=*/kHeight, 0xFFFF0000));
-  CompareBitmapToPng(bitmap.get(), kExpectedFilename);
+  CompareBitmap(bitmap.get(), kExpectedFilename);
 
   // Empty rect dimensions is a no-op.
   ASSERT_TRUE(FPDFBitmap_FillRect(bitmap.get(), /*left=*/0, /*top=*/0,
                                   /*width=*/0,
                                   /*height=*/0, 0xFF0000FF));
-  CompareBitmapToPng(bitmap.get(), kExpectedFilename);
+  CompareBitmap(bitmap.get(), kExpectedFilename);
 
   // Rect dimension overflows are also no-ops.
   ASSERT_FALSE(FPDFBitmap_FillRect(
       bitmap.get(), /*left=*/std::numeric_limits<int>::max(),
       /*top=*/0, /*width=*/std::numeric_limits<int>::max(),
       /*height=*/kHeight, 0xFF0000FF));
-  CompareBitmapToPng(bitmap.get(), kExpectedFilename);
+  CompareBitmap(bitmap.get(), kExpectedFilename);
 
   ASSERT_FALSE(FPDFBitmap_FillRect(
       bitmap.get(), /*left=*/0,
       /*top=*/std::numeric_limits<int>::max(), /*width=*/kWidth,
       /*height=*/std::numeric_limits<int>::max(), 0xFF0000FF));
-  CompareBitmapToPng(bitmap.get(), kExpectedFilename);
+  CompareBitmap(bitmap.get(), kExpectedFilename);
 
   // Make sure null bitmap handle does not trigger a crash.
   ASSERT_FALSE(FPDFBitmap_FillRect(nullptr, 0, 0, kWidth, kHeight, 0xFF0000FF));
@@ -2141,12 +2143,14 @@ TEST_F(FPDFViewEmbedderTest, BitmapBGRAPremulFormat) {
   static constexpr int kHeight = 200;
   ScopedFPDFBitmap bitmap(
       FPDFBitmap_CreateEx(kWidth, kHeight, FPDFBitmap_BGRA_Premul, nullptr, 0));
-  if (CFX_DefaultRenderDevice::UseSkiaRenderer()) {
+#if defined(PDF_USE_SKIA)
+  if (CFX_GEModule::Get()->UseSkiaRenderer()) {
     ASSERT_TRUE(bitmap);
     EXPECT_EQ(FPDFBitmap_BGRA_Premul, FPDFBitmap_GetFormat(bitmap.get()));
-  } else {
-    ASSERT_FALSE(bitmap);
+    return;
   }
+#endif
+  ASSERT_FALSE(bitmap);
 }
 
 TEST_F(FPDFViewEmbedderTest, DocumentVersionInCatalog) {

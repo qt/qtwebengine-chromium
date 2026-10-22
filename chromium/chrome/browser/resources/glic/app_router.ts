@@ -8,7 +8,8 @@ import {FreAppController} from '/fre/fre_app_controller.js';
 import {getRequiredElement} from 'chrome://resources/js/util.js';
 
 import {BrowserProxyImpl} from './browser_proxy.js';
-import {type PanelStateKind, ProfileReadyState} from './glic.mojom-webui.js';
+import type {ZoomAction} from './glic.mojom-webui.js';
+import {PanelStateKind, ProfileReadyState} from './glic.mojom-webui.js';
 import {GlicAppController} from './glic_app_controller.js';
 
 export enum AppView {
@@ -29,6 +30,7 @@ export class AppRouter {
   private browserProxy: BrowserProxyImpl;
   private currentView: AppView|undefined;
   private currentPanelStateKind: PanelStateKind|undefined;
+  private instanceId: string|undefined;
 
   constructor() {
     this.glicContainer = getRequiredElement('glic-app-container');
@@ -38,6 +40,9 @@ export class AppRouter {
         this.intentToShow_.bind(this));
     this.browserProxy.pageCallbackRouter.updatePageState.addListener(
         this.updatePageState_.bind(this));
+    this.browserProxy.pageCallbackRouter.zoom.addListener(
+        this.zoom_.bind(this));
+    this.browserProxy.instanceId.subscribe(this.setInstanceId_.bind(this));
     // TODO(crbug.com/454120908): Remove this method after WebContents warming
     // is rolled out.
     this.browserProxy.pageCallbackRouter.setProfileReadyState.addListener(
@@ -107,6 +112,23 @@ export class AppRouter {
   private updatePageState_(panelStateKind: PanelStateKind) {
     this.currentPanelStateKind = panelStateKind;
     this.glicController?.updatePageState(panelStateKind);
+    this.updateTitle();
+  }
+
+  private setInstanceId_(instanceId: string) {
+    this.instanceId = instanceId;
+    this.updateTitle();
+  }
+
+  private updateTitle() {
+    document.title = `Gemini in Chrome ${
+        this.currentPanelStateKind !== PanelStateKind.kHidden ?
+            'Open' :
+            'Closed'} ${this.instanceId || ''}`;
+  }
+
+  private zoom_(zoomAction: ZoomAction) {
+    this.glicController?.zoom(zoomAction);
   }
 
   close(): void {

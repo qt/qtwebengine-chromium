@@ -29,13 +29,13 @@
 #define SRC_TINT_LANG_CORE_IR_VALIDATOR_H_
 
 #include <vector>
+
 #include "src/tint/utils/containers/enum_set.h"
 #include "src/tint/utils/result.h"
 
 // Forward declarations
 namespace tint::core::ir {
 class Module;
-class Function;
 }  // namespace tint::core::ir
 
 namespace tint::core::ir {
@@ -99,22 +99,20 @@ enum class Capability : uint8_t {
 /// Capabilities is a set of Capability
 using Capabilities = EnumSet<Capability>;
 
-/// Validates that a given IR module is correctly formed
+/// Validates the module @p ir is correctly formed
 /// @param mod the module to validate
 /// @param capabilities the optional capabilities that are allowed
-/// @returns success or failure
-Result<SuccessType> Validate(const Module& mod, Capabilities capabilities = {});
-
-/// Validates the module @p ir and dumps its contents if required by the build configuration.
-/// @param ir the module to transform
 /// @param msg the msg to accompany the output
-/// @param capabilities the optional capabilities that are allowed
-/// @param timing when the validation is run.
 /// @returns success or failure
-Result<SuccessType> ValidateAndDumpIfNeeded(const Module& ir,
-                                            const char* msg,
-                                            Capabilities capabilities = {},
-                                            std::string_view timing = "before");
+Result<SuccessType> Validate(const Module& mod,
+                             Capabilities capabilities = {},
+                             std::string_view msg = "");
+
+/// Validates the module @p ir is correctly formed, iff required by the build configuration.
+/// @param mod the module to transform
+/// @param capabilities the optional capabilities that are allowed
+/// @param msg the msg to accompany the output
+void AssertValid(const Module& mod, Capabilities capabilities = {}, std::string_view msg = "");
 
 }  // namespace tint::core::ir
 

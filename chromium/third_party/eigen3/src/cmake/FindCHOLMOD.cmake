@@ -1,10 +1,32 @@
 # CHOLMOD lib usually requires linking to a blas and lapack library.
 # It is up to the user of this module to find a BLAS and link to it.
+#
+# This module first tries to find CHOLMOD via its CMake config-mode package
+# (shipped with SuiteSparse >= 7.0). If that fails, it falls back to a
+# manual header/library search for compatibility with older installations.
 
 if (CHOLMOD_INCLUDES AND CHOLMOD_LIBRARIES)
   set(CHOLMOD_FIND_QUIETLY TRUE)
 endif ()
 
+# --- Try config-mode first (SuiteSparse >= 7.0) ---
+if(NOT CHOLMOD_INCLUDES OR NOT CHOLMOD_LIBRARIES)
+  find_package(CHOLMOD CONFIG QUIET)
+  if(CHOLMOD_FOUND AND TARGET SuiteSparse::CHOLMOD)
+    # Extract include dirs and libraries from the imported target so that the
+    # legacy variables expected by Eigen's build system are populated.
+    get_target_property(_cholmod_inc SuiteSparse::CHOLMOD INTERFACE_INCLUDE_DIRECTORIES)
+    if(_cholmod_inc)
+      set(CHOLMOD_INCLUDES "${_cholmod_inc}" CACHE PATH "CHOLMOD include directory")
+    endif()
+    set(CHOLMOD_LIBRARIES SuiteSparse::CHOLMOD CACHE STRING "CHOLMOD libraries")
+    # Mark as found and return early -- no need for the manual search below.
+    mark_as_advanced(CHOLMOD_INCLUDES CHOLMOD_LIBRARIES)
+    return()
+  endif()
+endif()
+
+# --- Fallback: manual search (SuiteSparse < 7.0 or no config package) ---
 find_path(CHOLMOD_INCLUDES
   NAMES
   cholmod.h
@@ -79,7 +101,7 @@ if(CHOLMOD_LIBRARIES)
   if (SUITESPARSE_LIBRARY)
     set(CHOLMOD_LIBRARIES ${CHOLMOD_LIBRARIES} ${SUITESPARSE_LIBRARY})
   endif ()
-  
+
 endif()
 
 include(FindPackageHandleStandardArgs)

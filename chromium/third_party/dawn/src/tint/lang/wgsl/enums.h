@@ -114,6 +114,7 @@ constexpr std::string_view kChromiumDiagnosticRuleStrings[] = {
 /// @see src/tint/lang/wgsl/wgsl.def for extension descriptions
 enum class Extension : uint8_t {
     kUndefined,
+    kAtomicVec2UMinMax,
     kChromiumDisableUniformityAnalysis,
     kChromiumExperimentalBarycentricCoord,
     kChromiumExperimentalFramebufferFetch,
@@ -148,6 +149,7 @@ auto& operator<<(STREAM& out, Extension value) {
 Extension ParseExtension(std::string_view str);
 
 constexpr std::string_view kExtensionStrings[] = {
+    "atomic_vec2u_min_max",
     "chromium_disable_uniformity_analysis",
     "chromium_experimental_barycentric_coord",
     "chromium_experimental_framebuffer_fetch",
@@ -164,7 +166,8 @@ constexpr std::string_view kExtensionStrings[] = {
 };
 
 /// All extensions
-static constexpr Extension kAllExtensions[] = {
+inline constexpr Extension kAllExtensions[] = {
+    Extension::kAtomicVec2UMinMax,
     Extension::kChromiumDisableUniformityAnalysis,
     Extension::kChromiumExperimentalBarycentricCoord,
     Extension::kChromiumExperimentalFramebufferFetch,
@@ -194,6 +197,7 @@ enum class LanguageFeature : uint8_t {
     kFilteringParameters,
     kFragmentDepth,
     kImmediateAddressSpace,
+    kLinearIndexing,
     kPacked4X8IntegerDotProduct,
     kPointerCompositeAccess,
     kReadonlyAndReadwriteStorageTextures,
@@ -203,6 +207,7 @@ enum class LanguageFeature : uint8_t {
     kSwizzleAssignment,
     kTexelBuffers,
     kTextureAndSamplerLet,
+    kTextureFormatsTier1,
     kUniformBufferStandardLayout,
     kUnrestrictedPointerParameters,
 };
@@ -227,6 +232,7 @@ constexpr std::string_view kLanguageFeatureStrings[] = {
     "filtering_parameters",
     "fragment_depth",
     "immediate_address_space",
+    "linear_indexing",
     "packed_4x8_integer_dot_product",
     "pointer_composite_access",
     "readonly_and_readwrite_storage_textures",
@@ -236,12 +242,13 @@ constexpr std::string_view kLanguageFeatureStrings[] = {
     "swizzle_assignment",
     "texel_buffers",
     "texture_and_sampler_let",
+    "texture_formats_tier1",
     "uniform_buffer_standard_layout",
     "unrestricted_pointer_parameters",
 };
 
 /// All features
-static constexpr LanguageFeature kAllLanguageFeatures[] = {
+inline constexpr LanguageFeature kAllLanguageFeatures[] = {
     LanguageFeature::kBufferView,
     LanguageFeature::kChromiumPrint,
     LanguageFeature::kChromiumTestingExperimental,
@@ -252,6 +259,7 @@ static constexpr LanguageFeature kAllLanguageFeatures[] = {
     LanguageFeature::kFilteringParameters,
     LanguageFeature::kFragmentDepth,
     LanguageFeature::kImmediateAddressSpace,
+    LanguageFeature::kLinearIndexing,
     LanguageFeature::kPacked4X8IntegerDotProduct,
     LanguageFeature::kPointerCompositeAccess,
     LanguageFeature::kReadonlyAndReadwriteStorageTextures,
@@ -261,6 +269,7 @@ static constexpr LanguageFeature kAllLanguageFeatures[] = {
     LanguageFeature::kSwizzleAssignment,
     LanguageFeature::kTexelBuffers,
     LanguageFeature::kTextureAndSamplerLet,
+    LanguageFeature::kTextureFormatsTier1,
     LanguageFeature::kUniformBufferStandardLayout,
     LanguageFeature::kUnrestrictedPointerParameters,
 };
@@ -436,6 +445,8 @@ enum class BuiltinFn : uint8_t {
     kAtomicXor,
     kAtomicExchange,
     kAtomicCompareExchangeWeak,
+    kAtomicStoreMax,
+    kAtomicStoreMin,
     kSubgroupBallot,
     kSubgroupElect,
     kSubgroupBroadcast,
@@ -469,9 +480,9 @@ enum class BuiltinFn : uint8_t {
     kSubgroupMatrixScalarSubtract,
     kSubgroupMatrixScalarMultiply,
     kBufferView,
+    kBufferArrayView,
     kBufferLength,
     kPrint,
-    kTintMaterialize,
     kHasResource,
     kGetResource,
     kNone,
@@ -619,6 +630,8 @@ constexpr BuiltinFn kBuiltinFns[] = {
     BuiltinFn::kAtomicXor,
     BuiltinFn::kAtomicExchange,
     BuiltinFn::kAtomicCompareExchangeWeak,
+    BuiltinFn::kAtomicStoreMax,
+    BuiltinFn::kAtomicStoreMin,
     BuiltinFn::kSubgroupBallot,
     BuiltinFn::kSubgroupElect,
     BuiltinFn::kSubgroupBroadcast,
@@ -652,9 +665,9 @@ constexpr BuiltinFn kBuiltinFns[] = {
     BuiltinFn::kSubgroupMatrixScalarSubtract,
     BuiltinFn::kSubgroupMatrixScalarMultiply,
     BuiltinFn::kBufferView,
+    BuiltinFn::kBufferArrayView,
     BuiltinFn::kBufferLength,
     BuiltinFn::kPrint,
-    BuiltinFn::kTintMaterialize,
     BuiltinFn::kHasResource,
     BuiltinFn::kGetResource,
 };
@@ -783,6 +796,8 @@ constexpr const char* kBuiltinFnStrings[] = {
     "atomicXor",
     "atomicExchange",
     "atomicCompareExchangeWeak",
+    "atomicStoreMax",
+    "atomicStoreMin",
     "subgroupBallot",
     "subgroupElect",
     "subgroupBroadcast",
@@ -816,9 +831,9 @@ constexpr const char* kBuiltinFnStrings[] = {
     "subgroupMatrixScalarSubtract",
     "subgroupMatrixScalarMultiply",
     "bufferView",
+    "bufferArrayView",
     "bufferLength",
     "print",
-    "__tint_materialize",
     "hasResource",
     "getResource",
 };

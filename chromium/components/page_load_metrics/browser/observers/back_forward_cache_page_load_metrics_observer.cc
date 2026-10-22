@@ -130,6 +130,7 @@ void BackForwardCachePageLoadMetricsObserver::OnRestoreFromBackForwardCache(
       GetDelegate().GetMainFrameRenderData().layout_shift_score;
   restored_layout_shift_score_ =
       GetDelegate().GetPageRenderData().layout_shift_score;
+  soft_navigation_count_ = 0;
   // HistoryNavigation is a singular event, and we share the same instance as
   // long as we use the same source ID.
   ukm::builders::HistoryNavigation builder(
@@ -269,6 +270,10 @@ void BackForwardCachePageLoadMetricsObserver::
   }
 }
 
+void BackForwardCachePageLoadMetricsObserver::OnSoftNavigation() {
+  soft_navigation_count_++;
+}
+
 page_load_metrics::PageLoadMetricsObserver::ObservePolicy
 BackForwardCachePageLoadMetricsObserver::FlushMetricsOnAppEnterBackground(
     const page_load_metrics::mojom::PageLoadTiming& timing) {
@@ -303,6 +308,11 @@ void BackForwardCachePageLoadMetricsObserver::RecordMetricsOnPageVisitEnd(
   MaybeRecordNormalizedResponsivenessMetrics();
 
   if (has_ever_entered_back_forward_cache_) {
+    ukm::builders::HistoryNavigation(
+        GetLastUkmSourceIdForBackForwardCacheRestore())
+        .SetSoftNavigationCount(soft_navigation_count_)
+        .Record(ukm::UkmRecorder::Get());
+
     page_load_metrics::RecordPageVisitFinalStatusForTiming(
         timing, GetDelegate(), GetLastUkmSourceIdForBackForwardCacheRestore());
     bool is_user_initiated_navigation =
@@ -337,15 +347,17 @@ void BackForwardCachePageLoadMetricsObserver::
       GetLastUkmSourceIdForBackForwardCacheRestore());
   builder
       .SetWorstUserInteractionLatencyAfterBackForwardCacheRestore_MaxEventDuration2(
-          inp_calculator.worst_latency().value().duration.InMilliseconds());
+          inp_calculator.worst_latency()
+              .value()
+              .max_event.duration.InMilliseconds());
   UmaHistogramCustomTimes(
       internal::
           kWorstUserInteractionLatency_MaxEventDuration_AfterBackForwardCacheRestore,
-      inp_calculator.worst_latency().value().duration, base::Milliseconds(1),
-      base::Seconds(60), 50);
+      inp_calculator.worst_latency().value().max_event.duration,
+      base::Milliseconds(1), base::Seconds(60), 50);
 
   base::TimeDelta high_percentile2_max_event_duration =
-      inp_calculator.ApproximateHighPercentile().value().duration;
+      inp_calculator.ApproximateHighPercentile().value().max_event.duration;
   builder
       .SetUserInteractionLatencyAfterBackForwardCacheRestore_HighPercentile2_MaxEventDuration(
           high_percentile2_max_event_duration.InMilliseconds());

@@ -36,12 +36,13 @@
 #include "state_tracker/shader_module.h"
 #include "state_tracker/cmd_buffer_state.h"
 #include "state_tracker/pipeline_state.h"
+#include "state_tracker/shader_stage_state.h"
 #include "utils/math_utils.h"
 #include "utils/vk_api_utils.h"
 #include "containers/container_utils.h"
 
 bool CoreChecks::ValidateDynamicStateIsSet(const LastBound& last_bound_state, const CBDynamicFlags& state_status_cb,
-                                           CBDynamicState dynamic_state, const vvl::DrawDispatchVuid& vuid) const {
+                                           CBDynamicState dynamic_state, const Location& loc) const {
     if (!state_status_cb[dynamic_state]) {
         LogObjectList objlist(last_bound_state.cb_state.Handle());
         const vvl::Pipeline* pipeline = last_bound_state.pipeline_state;
@@ -49,213 +50,214 @@ bool CoreChecks::ValidateDynamicStateIsSet(const LastBound& last_bound_state, co
             objlist.add(pipeline->Handle());
         }
 
-        const char* vuid_str = kVUIDUndefined;
+        vvl::ActionVUID vuid = vvl::ActionVUID::UNKNOWN;
         switch (dynamic_state) {
             case CB_DYNAMIC_STATE_DEPTH_COMPARE_OP:
-                vuid_str = vuid.dynamic_depth_compare_op_07845;
+                vuid = vvl::ActionVUID::DYNAMIC_DEPTH_COMPARE_OP_07845;
                 break;
             case CB_DYNAMIC_STATE_DEPTH_BIAS:
-                vuid_str = vuid.dynamic_depth_bias_07834;
+                vuid = vvl::ActionVUID::DYNAMIC_DEPTH_BIAS_07834;
                 break;
             case CB_DYNAMIC_STATE_DEPTH_BOUNDS:
-                vuid_str = vuid.dynamic_depth_bounds_07836;
+                vuid = vvl::ActionVUID::DYNAMIC_DEPTH_BOUNDS_07836;
                 break;
             case CB_DYNAMIC_STATE_CULL_MODE:
-                vuid_str = vuid.dynamic_cull_mode_07840;
+                vuid = vvl::ActionVUID::DYNAMIC_CULL_MODE_07840;
                 break;
             case CB_DYNAMIC_STATE_DEPTH_TEST_ENABLE:
-                vuid_str = vuid.dynamic_depth_test_enable_07843;
+                vuid = vvl::ActionVUID::DYNAMIC_DEPTH_TEST_ENABLE_07843;
                 break;
             case CB_DYNAMIC_STATE_DEPTH_WRITE_ENABLE:
-                vuid_str = vuid.dynamic_depth_write_enable_07844;
+                vuid = vvl::ActionVUID::DYNAMIC_DEPTH_WRITE_ENABLE_07844;
                 break;
             case CB_DYNAMIC_STATE_STENCIL_TEST_ENABLE:
-                vuid_str = vuid.dynamic_stencil_test_enable_07847;
+                vuid = vvl::ActionVUID::DYNAMIC_STENCIL_TEST_ENABLE_07847;
                 break;
             case CB_DYNAMIC_STATE_DEPTH_BIAS_ENABLE:
-                vuid_str = vuid.depth_bias_enable_04877;
+                vuid = vvl::ActionVUID::DYNAMIC_DEPTH_BIAS_ENABLE_04877;
                 break;
             case CB_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE:
-                vuid_str = vuid.dynamic_depth_bound_test_enable_07846;
+                vuid = vvl::ActionVUID::DYNAMIC_DEPTH_BOUND_TEST_ENABLE_07846;
                 break;
             case CB_DYNAMIC_STATE_STENCIL_COMPARE_MASK:
-                vuid_str = vuid.dynamic_stencil_compare_mask_07837;
+                vuid = vvl::ActionVUID::DYNAMIC_STENCIL_COMPARE_MASK_07837;
                 break;
             case CB_DYNAMIC_STATE_STENCIL_WRITE_MASK:
-                vuid_str = vuid.dynamic_stencil_write_mask_07838;
+                vuid = vvl::ActionVUID::DYNAMIC_STENCIL_WRITE_MASK_07838;
                 break;
             case CB_DYNAMIC_STATE_STENCIL_REFERENCE:
-                vuid_str = vuid.dynamic_stencil_reference_07839;
+                vuid = vvl::ActionVUID::DYNAMIC_STENCIL_REFERENCE_07839;
                 break;
             case CB_DYNAMIC_STATE_STENCIL_OP:
-                vuid_str = vuid.dynamic_stencil_op_07848;
+                vuid = vvl::ActionVUID::DYNAMIC_STENCIL_OP_07848;
                 break;
             case CB_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY:
-                vuid_str = vuid.dynamic_primitive_topology_07842;
+                vuid = vvl::ActionVUID::DYNAMIC_PRIMITIVE_TOPOLOGY_07842;
                 break;
             case CB_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE:
-                vuid_str = vuid.primitive_restart_enable_04879;
+                vuid = vvl::ActionVUID::DYNAMIC_PRIMITIVE_RESTART_ENABLE_04879;
                 break;
             case CB_DYNAMIC_STATE_VERTEX_INPUT_EXT:
-                vuid_str = vuid.vertex_input_04914;
+                vuid = vvl::ActionVUID::DYNAMIC_VERTEX_INPUT_04914;
                 break;
             case CB_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR:
-                vuid_str = vuid.set_fragment_shading_rate_09238;
+                vuid = vvl::ActionVUID::DYNAMIC_SET_FRAGMENT_SHADING_RATE_09238;
                 break;
             case CB_DYNAMIC_STATE_LOGIC_OP_EXT:
-                vuid_str = vuid.logic_op_04878;
+                vuid = vvl::ActionVUID::DYNAMIC_LOGIC_OP_04878;
                 break;
             case CB_DYNAMIC_STATE_POLYGON_MODE_EXT:
-                vuid_str = vuid.dynamic_polygon_mode_07621;
+                vuid = vvl::ActionVUID::DYNAMIC_POLYGON_MODE_07621;
                 break;
             case CB_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT:
-                vuid_str = vuid.dynamic_rasterization_samples_07622;
+                vuid = vvl::ActionVUID::DYNAMIC_RASTERIZATION_SAMPLES_07622;
                 break;
             case CB_DYNAMIC_STATE_SAMPLE_MASK_EXT:
-                vuid_str = vuid.dynamic_sample_mask_07623;
+                vuid = vvl::ActionVUID::DYNAMIC_SAMPLE_MASK_07623;
                 break;
             case CB_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT:
-                vuid_str = vuid.dynamic_alpha_to_coverage_enable_07624;
+                vuid = vvl::ActionVUID::DYNAMIC_ALPHA_TO_COVERAGE_ENABLE_07624;
                 break;
             case CB_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT:
-                vuid_str = vuid.dynamic_alpha_to_one_enable_07625;
+                vuid = vvl::ActionVUID::DYNAMIC_ALPHA_TO_ONE_ENABLE_07625;
                 break;
             case CB_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT:
-                vuid_str = vuid.dynamic_logic_op_enable_07626;
+                vuid = vvl::ActionVUID::DYNAMIC_LOGIC_OP_ENABLE_07626;
                 break;
             case CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE:
-                vuid_str = vuid.rasterizer_discard_enable_04876;
+                vuid = vvl::ActionVUID::DYNAMIC_RASTERIZER_DISCARD_ENABLE_04876;
                 break;
             case CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT:
-                vuid_str = vuid.dynamic_sample_locations_enable_07634;
+                vuid = vvl::ActionVUID::DYNAMIC_SAMPLE_LOCATIONS_ENABLE_07634;
                 break;
             case CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT:
-                vuid_str = vuid.dynamic_sample_locations_06666;
+                vuid = vvl::ActionVUID::DYNAMIC_SAMPLE_LOCATIONS_06666;
                 break;
             case CB_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT:
-                vuid_str = vuid.dynamic_attachment_feedback_loop_08877;
+                vuid = vvl::ActionVUID::DYNAMIC_ATTACHMENT_FEEDBACK_LOOP_08877;
                 break;
             case CB_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT:
-                vuid_str = vuid.dynamic_color_write_enable_07749;
+                vuid = vvl::ActionVUID::DYNAMIC_COLOR_WRITE_ENABLE_07749;
                 break;
             case CB_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT:
-                vuid_str = vuid.color_blend_enable_07627;
+                vuid = vvl::ActionVUID::DYNAMIC_COLOR_BLEND_ENABLE_07627;
                 break;
             case CB_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT:
-                vuid_str = vuid.color_write_mask_07629;
+                vuid = vvl::ActionVUID::DYNAMIC_COLOR_WRITE_MASK_07629;
                 break;
             case CB_DYNAMIC_STATE_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_EXT:
-                vuid_str = vuid.dynamic_depth_clip_negative_one_to_one_07639;
+                vuid = vvl::ActionVUID::DYNAMIC_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_07639;
                 break;
             case CB_DYNAMIC_STATE_DEPTH_CLAMP_RANGE_EXT:
-                vuid_str = vuid.dynamic_depth_clamp_control_09650;
+                vuid = vvl::ActionVUID::DYNAMIC_DEPTH_CLAMP_CONTROL_09650;
                 break;
             case CB_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT:
-                vuid_str = vuid.dynamic_depth_clip_enable_07633;
+                vuid = vvl::ActionVUID::DYNAMIC_DEPTH_CLIP_ENABLE_07633;
                 break;
             case CB_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT:
-                vuid_str = vuid.dynamic_depth_clamp_enable_07620;
+                vuid = vvl::ActionVUID::DYNAMIC_DEPTH_CLAMP_ENABLE_07620;
                 break;
             case CB_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV:
-                vuid_str = vuid.dynamic_exclusive_scissor_enable_07878;
+                vuid = vvl::ActionVUID::DYNAMIC_EXCLUSIVE_SCISSOR_ENABLE_07878;
                 break;
             case CB_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV:
-                vuid_str = vuid.dynamic_exclusive_scissor_07879;
+                vuid = vvl::ActionVUID::DYNAMIC_EXCLUSIVE_SCISSOR_07879;
                 break;
             case CB_DYNAMIC_STATE_TESSELLATION_DOMAIN_ORIGIN_EXT:
-                vuid_str = vuid.dynamic_tessellation_domain_origin_07619;
+                vuid = vvl::ActionVUID::DYNAMIC_TESSELLATION_DOMAIN_ORIGIN_07619;
                 break;
             case CB_DYNAMIC_STATE_RASTERIZATION_STREAM_EXT:
-                vuid_str = vuid.dynamic_rasterization_stream_07630;
+                vuid = vvl::ActionVUID::DYNAMIC_RASTERIZATION_STREAM_07630;
                 break;
             case CB_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT:
-                vuid_str = vuid.dynamic_conservative_rasterization_mode_07631;
+                vuid = vvl::ActionVUID::DYNAMIC_CONSERVATIVE_RASTERIZATION_MODE_07631;
                 break;
             case CB_DYNAMIC_STATE_EXTRA_PRIMITIVE_OVERESTIMATION_SIZE_EXT:
-                vuid_str = vuid.dynamic_extra_primitive_overestimation_size_07632;
+                vuid = vvl::ActionVUID::DYNAMIC_EXTRA_PRIMITIVE_OVERESTIMATION_SIZE_07632;
                 break;
             case CB_DYNAMIC_STATE_PROVOKING_VERTEX_MODE_EXT:
-                vuid_str = vuid.dynamic_provoking_vertex_mode_07636;
+                vuid = vvl::ActionVUID::DYNAMIC_PROVOKING_VERTEX_MODE_07636;
                 break;
             case CB_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE_NV:
-                vuid_str = vuid.dynamic_viewport_w_scaling_enable_07640;
+                vuid = vvl::ActionVUID::DYNAMIC_VIEWPORT_W_SCALING_ENABLE_07640;
                 break;
             case CB_DYNAMIC_STATE_VIEWPORT_SWIZZLE_NV:
-                vuid_str = vuid.dynamic_viewport_swizzle_07641;
+                vuid = vvl::ActionVUID::DYNAMIC_VIEWPORT_SWIZZLE_07641;
                 break;
             case CB_DYNAMIC_STATE_COVERAGE_TO_COLOR_ENABLE_NV:
-                vuid_str = vuid.dynamic_coverage_to_color_enable_07642;
+                vuid = vvl::ActionVUID::DYNAMIC_COVERAGE_TO_COLOR_ENABLE_07642;
                 break;
             case CB_DYNAMIC_STATE_COVERAGE_TO_COLOR_LOCATION_NV:
-                vuid_str = vuid.dynamic_coverage_to_color_location_07643;
+                vuid = vvl::ActionVUID::DYNAMIC_COVERAGE_TO_COLOR_LOCATION_07643;
                 break;
             case CB_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV:
-                vuid_str = vuid.dynamic_coverage_modulation_mode_07644;
+                vuid = vvl::ActionVUID::DYNAMIC_COVERAGE_MODULATION_MODE_07644;
                 break;
             case CB_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_ENABLE_NV:
-                vuid_str = vuid.dynamic_coverage_modulation_table_enable_07645;
+                vuid = vvl::ActionVUID::DYNAMIC_COVERAGE_MODULATION_TABLE_ENABLE_07645;
                 break;
             case CB_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_NV:
-                vuid_str = vuid.dynamic_coverage_modulation_table_07646;
+                vuid = vvl::ActionVUID::DYNAMIC_COVERAGE_MODULATION_TABLE_07646;
                 break;
             case CB_DYNAMIC_STATE_SHADING_RATE_IMAGE_ENABLE_NV:
-                vuid_str = vuid.dynamic_shading_rate_image_enable_07647;
+                vuid = vvl::ActionVUID::DYNAMIC_SHADING_RATE_IMAGE_ENABLE_07647;
                 break;
             case CB_DYNAMIC_STATE_REPRESENTATIVE_FRAGMENT_TEST_ENABLE_NV:
-                vuid_str = vuid.dynamic_representative_fragment_test_enable_07648;
+                vuid = vvl::ActionVUID::DYNAMIC_REPRESENTATIVE_FRAGMENT_TEST_ENABLE_07648;
                 break;
             case CB_DYNAMIC_STATE_COVERAGE_REDUCTION_MODE_NV:
-                vuid_str = vuid.dynamic_coverage_reduction_mode_07649;
+                vuid = vvl::ActionVUID::DYNAMIC_COVERAGE_REDUCTION_MODE_07649;
                 break;
             case CB_DYNAMIC_STATE_FRONT_FACE:
-                vuid_str = vuid.dynamic_front_face_07841;
+                vuid = vvl::ActionVUID::DYNAMIC_FRONT_FACE_07841;
                 break;
             case CB_DYNAMIC_STATE_VIEWPORT_WITH_COUNT:
-                vuid_str = vuid.viewport_count_03417;
+                vuid = vvl::ActionVUID::DYNAMIC_VIEWPORT_COUNT_03417;
                 break;
             case CB_DYNAMIC_STATE_SCISSOR_WITH_COUNT:
-                vuid_str = vuid.scissor_count_03418;
+                vuid = vvl::ActionVUID::DYNAMIC_SCISSOR_COUNT_03418;
                 break;
             case CB_DYNAMIC_STATE_VIEWPORT_COARSE_SAMPLE_ORDER_NV:
-                vuid_str = vuid.set_viewport_coarse_sample_order_09233;
+                vuid = vvl::ActionVUID::DYNAMIC_SET_VIEWPORT_COARSE_SAMPLE_ORDER_09233;
                 break;
             case CB_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV:
-                vuid_str = vuid.set_viewport_shading_rate_palette_09234;
+                vuid = vvl::ActionVUID::DYNAMIC_SET_VIEWPORT_SHADING_RATE_PALETTE_09234;
                 break;
             case CB_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV:
-                vuid_str = vuid.set_clip_space_w_scaling_04138;
+                vuid = vvl::ActionVUID::DYNAMIC_SET_CLIP_SPACE_W_SCALING_04138;
                 break;
             case CB_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT:
-                vuid_str = vuid.patch_control_points_04875;
+                vuid = vvl::ActionVUID::DYNAMIC_PATCH_CONTROL_POINTS_04875;
                 break;
             case CB_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT:
-                vuid_str = vuid.dynamic_discard_rectangle_enable_07880;
+                vuid = vvl::ActionVUID::DYNAMIC_DISCARD_RECTANGLE_ENABLE_07880;
                 break;
             case CB_DYNAMIC_STATE_DISCARD_RECTANGLE_MODE_EXT:
-                vuid_str = vuid.dynamic_discard_rectangle_mode_07881;
+                vuid = vvl::ActionVUID::DYNAMIC_DISCARD_RECTANGLE_MODE_07881;
                 break;
             case CB_DYNAMIC_STATE_LINE_STIPPLE:
-                vuid_str = vuid.dynamic_line_stipple_ext_07849;
+                vuid = vvl::ActionVUID::DYNAMIC_LINE_STIPPLE_EXT_07849;
                 break;
             case CB_DYNAMIC_STATE_LINE_WIDTH:
-                vuid_str = vuid.set_line_width_08617;
+                vuid = vvl::ActionVUID::DYNAMIC_SET_LINE_WIDTH_08617;
                 break;
             case CB_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE:
-                vuid_str = vuid.vertex_input_binding_stride_04913;
+                vuid = vvl::ActionVUID::DYNAMIC_VERTEX_INPUT_BINDING_STRIDE_04913;
                 break;
             case CB_DYNAMIC_STATE_LINE_RASTERIZATION_MODE_EXT:
-                vuid_str = vuid.set_line_rasterization_mode_08666;
+                vuid = vvl::ActionVUID::DYNAMIC_SET_LINE_RASTERIZATION_MODE_08666;
                 break;
             case CB_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT:
-                vuid_str = vuid.set_line_stipple_enable_08669;
+                vuid = vvl::ActionVUID::DYNAMIC_SET_LINE_STIPPLE_ENABLE_08669;
                 break;
             default:
                 assert(false);
                 break;
         }
 
-        return LogError(vuid_str, objlist, vuid.loc(), "%s state is dynamic, but the command buffer never called %s.\n%s%s",
-                        DynamicStateToString(dynamic_state), DescribeDynamicStateCommand(dynamic_state).c_str(),
+        return LogError(CreateActionVuid(loc.function, vuid), objlist, loc,
+                        "%s state is dynamic, but the command buffer never called %s.\n%s%s", DynamicStateToString(dynamic_state),
+                        DescribeDynamicStateCommand(dynamic_state).c_str(),
                         DescribeDynamicStateDependency(dynamic_state, pipeline).c_str(),
                         last_bound_state.cb_state.DescribeInvalidatedState(dynamic_state).c_str());
     }
@@ -272,7 +274,7 @@ static CBDynamicFlags GetDrawTimeDynamicStatus(const vvl::CommandBuffer& cb_stat
     }
 }
 
-bool CoreChecks::ValidateGraphicsDynamicStateSetStatus(const LastBound& last_bound_state, const vvl::DrawDispatchVuid& vuid) const {
+bool CoreChecks::ValidateGraphicsDynamicStateSetStatus(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
     const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
     const VkShaderStageFlags bound_stages = last_bound_state.GetAllActiveBoundStages();
@@ -290,228 +292,226 @@ bool CoreChecks::ValidateGraphicsDynamicStateSetStatus(const LastBound& last_bou
     // every bit set here represents the command buffer has called vkCmdSet*() for that state
     const CBDynamicFlags state_status_cb = GetDrawTimeDynamicStatus(cb_state, last_bound_state.pipeline_state);
 
-    skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE, vuid);
+    skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE, loc);
     if (!last_bound_state.IsRasterizationDisabled()) {
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_CULL_MODE, vuid);
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_TEST_ENABLE, vuid);
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_STENCIL_TEST_ENABLE, vuid);
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_BIAS_ENABLE, vuid);
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_POLYGON_MODE_EXT, vuid);
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT, vuid);
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_SAMPLE_MASK_EXT, vuid);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_CULL_MODE, loc);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_TEST_ENABLE, loc);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_STENCIL_TEST_ENABLE, loc);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_BIAS_ENABLE, loc);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_POLYGON_MODE_EXT, loc);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT, loc);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_SAMPLE_MASK_EXT, loc);
 
         if (last_bound_state.IsDepthTestEnable()) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_COMPARE_OP, vuid);
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_WRITE_ENABLE, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_COMPARE_OP, loc);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_WRITE_ENABLE, loc);
         }
         if (last_bound_state.IsDepthBiasEnable()) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_BIAS, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_BIAS, loc);
         }
         if (last_bound_state.IsDepthBoundTestEnable()) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_BOUNDS, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_BOUNDS, loc);
         }
         if (enabled_features.depthBounds) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE, loc);
         }
 
         if (last_bound_state.IsStencilTestEnable()) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_STENCIL_COMPARE_MASK, vuid);
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_STENCIL_WRITE_MASK, vuid);
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_STENCIL_REFERENCE, vuid);
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_STENCIL_OP, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_STENCIL_COMPARE_MASK, loc);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_STENCIL_WRITE_MASK, loc);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_STENCIL_REFERENCE, loc);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_STENCIL_OP, loc);
         }
 
         // TODO - Doesn't match up with spec
         if (last_bound_state.IsStencilTestEnable() || last_bound_state.GetCullMode() != VK_CULL_MODE_NONE) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_FRONT_FACE, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_FRONT_FACE, loc);
         }
 
         if (IsExtEnabled(extensions.vk_ext_sample_locations)) {
-            skip |=
-                ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT, loc);
             if (last_bound_state.IsSampleLocationsEnable()) {
-                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT, vuid);
+                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT, loc);
             }
         }
 
         if (enabled_features.depthClipEnable) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT, loc);
         }
         if (enabled_features.depthClipControl) {
             skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb,
-                                              CB_DYNAMIC_STATE_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_EXT, vuid);
+                                              CB_DYNAMIC_STATE_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE_EXT, loc);
         }
         if (enabled_features.depthClampControl) {
             if (last_bound_state.IsDepthClampEnable()) {
-                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_CLAMP_RANGE_EXT, vuid);
+                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_CLAMP_RANGE_EXT, loc);
             }
         }
         if (enabled_features.depthClamp) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT, loc);
         }
 
         if (enabled_features.alphaToOne) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT, loc);
         }
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT, vuid);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT, loc);
 
         if (IsExtEnabled(extensions.vk_ext_conservative_rasterization)) {
             skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb,
-                                              CB_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT, vuid);
+                                              CB_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT, loc);
             if (last_bound_state.GetConservativeRasterizationMode() == VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT) {
                 skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb,
-                                                  CB_DYNAMIC_STATE_EXTRA_PRIMITIVE_OVERESTIMATION_SIZE_EXT, vuid);
+                                                  CB_DYNAMIC_STATE_EXTRA_PRIMITIVE_OVERESTIMATION_SIZE_EXT, loc);
             }
         }
 
         if (IsExtEnabled(extensions.vk_nv_fragment_coverage_to_color)) {
-            skip |=
-                ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COVERAGE_TO_COLOR_ENABLE_NV, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COVERAGE_TO_COLOR_ENABLE_NV, loc);
             if (last_bound_state.IsCoverageToColorEnabled()) {
                 skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COVERAGE_TO_COLOR_LOCATION_NV,
-                                                  vuid);
+                                                  loc);
             }
         }
 
         if (enabled_features.shadingRateImage) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_SHADING_RATE_IMAGE_ENABLE_NV, vuid);
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VIEWPORT_COARSE_SAMPLE_ORDER_NV, vuid);
+            skip |=
+                ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_SHADING_RATE_IMAGE_ENABLE_NV, loc);
+            skip |=
+                ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VIEWPORT_COARSE_SAMPLE_ORDER_NV, loc);
 
             if (last_bound_state.IsShadingRateImageEnable()) {
                 skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb,
-                                                  CB_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV, vuid);
+                                                  CB_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV, loc);
             }
         }
 
         if (enabled_features.representativeFragmentTest) {
             skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb,
-                                              CB_DYNAMIC_STATE_REPRESENTATIVE_FRAGMENT_TEST_ENABLE_NV, vuid);
+                                              CB_DYNAMIC_STATE_REPRESENTATIVE_FRAGMENT_TEST_ENABLE_NV, loc);
         }
         if (enabled_features.coverageReductionMode) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COVERAGE_REDUCTION_MODE_NV, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COVERAGE_REDUCTION_MODE_NV, loc);
         }
 
         if (IsExtEnabled(extensions.vk_nv_framebuffer_mixed_samples)) {
-            skip |=
-                ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV, loc);
             if (last_bound_state.GetCoverageModulationMode() != VK_COVERAGE_MODULATION_MODE_NONE_NV) {
                 skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb,
-                                                  CB_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_ENABLE_NV, vuid);
+                                                  CB_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_ENABLE_NV, loc);
             }
             if (last_bound_state.IsCoverageModulationTableEnable()) {
                 skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_NV,
-                                                  vuid);
+                                                  loc);
             }
         }
 
         if (IsExtEnabled(extensions.vk_ext_discard_rectangles)) {
             skip |=
-                ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT, vuid);
+                ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT, loc);
             if (last_bound_state.IsDiscardRectangleEnable()) {
                 skip |=
-                    ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DISCARD_RECTANGLE_MODE_EXT, vuid);
+                    ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_DISCARD_RECTANGLE_MODE_EXT, loc);
             }
         }
 
         if (enabled_features.stippledRectangularLines || enabled_features.stippledBresenhamLines ||
             enabled_features.stippledSmoothLines) {
             if (last_bound_state.IsStippledLineEnable()) {
-                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LINE_STIPPLE, vuid);
+                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LINE_STIPPLE, loc);
             }
         }
 
         if (enabled_features.pipelineFragmentShadingRate) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR, loc);
         }
 
         const VkPrimitiveTopology topology = last_bound_state.GetRasterizationInputTopology();
         if (IsLineTopology(topology)) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LINE_WIDTH, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LINE_WIDTH, loc);
 
             const bool stippled_lines = enabled_features.stippledRectangularLines || enabled_features.stippledBresenhamLines ||
                                         enabled_features.stippledSmoothLines;
             if (stippled_lines) {
-                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LINE_RASTERIZATION_MODE_EXT,
-                                                  vuid);
                 skip |=
-                    ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT, vuid);
+                    ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LINE_RASTERIZATION_MODE_EXT, loc);
+                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT, loc);
             }
         }
 
         if (vertex_shader_bound) {
             if (IsExtEnabled(extensions.vk_ext_provoking_vertex)) {
                 skip |=
-                    ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_PROVOKING_VERTEX_MODE_EXT, vuid);
+                    ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_PROVOKING_VERTEX_MODE_EXT, loc);
             }
         }
 
         if (fragment_shader_bound) {
             if (enabled_features.logicOp) {
-                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT, vuid);
+                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT, loc);
             }
             if (last_bound_state.IsLogicOpEnabled()) {
-                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LOGIC_OP_EXT, vuid);
+                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_LOGIC_OP_EXT, loc);
             }
             if (enabled_features.attachmentFeedbackLoopDynamicState) {
                 skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb,
-                                                  CB_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT, vuid);
+                                                  CB_DYNAMIC_STATE_ATTACHMENT_FEEDBACK_LOOP_ENABLE_EXT, loc);
             }
             if (enabled_features.colorWriteEnable) {
-                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT, vuid);
+                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT, loc);
             }
 
             if (!cb_state.active_color_attachments_index.empty()) {
-                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT, vuid);
-                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT, vuid);
+                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT, loc);
+                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT, loc);
             }
         }
     }  // !IsRasterizationDisabled()
 
     auto& cb_sub_state = core::SubState(cb_state);
     if (cb_sub_state.viewport.inherited_depths.empty()) {
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VIEWPORT_WITH_COUNT, vuid);
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_SCISSOR_WITH_COUNT, vuid);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VIEWPORT_WITH_COUNT, loc);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_SCISSOR_WITH_COUNT, loc);
     }
 
     if (vertex_shader_bound) {
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY, vuid);
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE, vuid);
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VERTEX_INPUT_EXT, vuid);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY, loc);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE, loc);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VERTEX_INPUT_EXT, loc);
     }
 
     if (tese_shader_bound) {
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_TESSELLATION_DOMAIN_ORIGIN_EXT, vuid);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_TESSELLATION_DOMAIN_ORIGIN_EXT, loc);
     }
 
     if (tesc_shader_bound) {
         if (last_bound_state.GetVertexInputAssemblerTopology() == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT, loc);
         }
     }
 
     if (geom_shader_bound) {
         if (enabled_features.geometryStreams) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_RASTERIZATION_STREAM_EXT, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_RASTERIZATION_STREAM_EXT, loc);
         }
     }
 
     if (enabled_features.exclusiveScissor) {
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV, vuid);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV, loc);
         if (last_bound_state.IsExclusiveScissorEnabled()) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_NV, loc);
         }
     }
 
     if (IsExtEnabled(extensions.vk_nv_clip_space_w_scaling)) {
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE_NV, vuid);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE_NV, loc);
         if (last_bound_state.IsViewportWScalingEnable() && last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VIEWPORT_WITH_COUNT) &&
             last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV)) {
-            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV, vuid);
+            skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VIEWPORT_W_SCALING_NV, loc);
         }
     }
 
     if (IsExtEnabled(extensions.vk_nv_viewport_swizzle)) {
-        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VIEWPORT_SWIZZLE_NV, vuid);
+        skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VIEWPORT_SWIZZLE_NV, loc);
     }
 
     // VK_EXT_vertex_input_dynamic_state was never supported in shader object, so this check only happens for pipelines
@@ -519,19 +519,29 @@ bool CoreChecks::ValidateGraphicsDynamicStateSetStatus(const LastBound& last_bou
         if (!last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT) &&
             last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE)) {
             // The vertex buffer for DGC needs to be validated in GPU-AV
-            if (vuid.loc().function != vvl::Func::vkCmdExecuteGeneratedCommandsEXT) {
-                skip |= ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE,
-                                                  vuid);
+            if (loc.function != vvl::Func::vkCmdExecuteGeneratedCommandsEXT) {
+                skip |=
+                    ValidateDynamicStateIsSet(last_bound_state, state_status_cb, CB_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE, loc);
             }
         }
+    }
+
+    if (cb_state.stride_set_with_bind_vertex_buffer_3 &&
+        !last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE) &&
+        !last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT)) {
+        LogObjectList objlist(last_bound_state.cb_state.Handle());
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::BIND_VERTEX_BUFFERS_3_STRIDE_13118), objlist, loc,
+                         "vkCmdBindVertexBuffers3KHR() was called with at least one of VkBindVertexBuffer3InfoKHR::setStride being "
+                         "VK_TRUE, the pipeline %s was created without VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE or "
+                         "VK_DYNAMIC_STATE_VERTEX_INPUT_EXT dynamic states",
+                         FormatHandle(last_bound_state.pipeline_state->Handle()).c_str());
     }
 
     return skip;
 }
 
 bool CoreChecks::ValidateDrawDynamicStatePipelineRenderPass(const LastBound& last_bound_state, const vvl::Pipeline& pipeline,
-                                                            const vvl::RenderPass& rp_state,
-                                                            const vvl::DrawDispatchVuid& vuid) const {
+                                                            const vvl::RenderPass& rp_state, const Location& loc) const {
     bool skip = false;
 
     const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
@@ -543,7 +553,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineRenderPass(const LastBound& las
                 *subpass_rasterization_samples != cb_state.dynamic_state_value.rasterization_samples) {
                 const LogObjectList objlist(cb_state.Handle(), pipeline.Handle(), rp_state.Handle());
                 skip |= LogError(
-                    vuid.sample_locations_07471, objlist, vuid.loc(),
+                    CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_LOCATIONS_07471), objlist, loc,
                     "VkPhysicalDeviceFeatures::variableMultisampleRate is VK_FALSE and the rasterizationSamples set with "
                     "vkCmdSetRasterizationSamplesEXT() were %s but a previous draw used rasterization samples %" PRIu32 ".%s",
                     string_VkSampleCountFlagBits(cb_state.dynamic_state_value.rasterization_samples),
@@ -552,7 +562,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineRenderPass(const LastBound& las
             } else if ((cb_state.dynamic_state_value.rasterization_samples &
                         phys_dev_props.limits.framebufferNoAttachmentsSampleCounts) == 0) {
                 const LogObjectList objlist(cb_state.Handle(), pipeline.Handle(), rp_state.Handle());
-                skip |= LogError(vuid.sample_locations_07471, objlist, vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_LOCATIONS_07471), objlist, loc,
                                  "rasterizationSamples set with vkCmdSetRasterizationSamplesEXT() are %s but this bit is not in "
                                  "framebufferNoAttachmentsSampleCounts (%s).%s",
                                  string_VkSampleCountFlagBits(cb_state.dynamic_state_value.rasterization_samples),
@@ -563,15 +573,15 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineRenderPass(const LastBound& las
     }
 
     if (rp_state.UsesDynamicRendering()) {
-        skip |= ValidateDrawRenderingAttachmentLocation(cb_state, pipeline, vuid);
-        skip |= ValidateDrawRenderingInputAttachmentIndex(cb_state, pipeline, vuid);
+        skip |= ValidateDrawRenderingAttachmentLocation(cb_state, pipeline, loc);
+        skip |= ValidateDrawRenderingInputAttachmentIndex(cb_state, pipeline, loc);
     }
 
     return skip;
 }
 
 bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bound_state, const vvl::Pipeline& pipeline,
-                                                       const vvl::DrawDispatchVuid& vuid) const {
+                                                       const Location& loc) const {
     bool skip = false;
     const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
     const LogObjectList objlist(cb_state.Handle(), pipeline.Handle());
@@ -581,7 +591,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
             if (cb_state.dynamic_state_value.sample_locations_info.sampleLocationsPerPixel !=
                 pipeline.MultisampleState()->rasterizationSamples) {
                 skip |= LogError(
-                    vuid.sample_locations_07482, objlist, vuid.loc(),
+                    CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_LOCATIONS_07482), objlist, loc,
                     "sampleLocationsPerPixel set with vkCmdSetSampleLocationsEXT() was %s, but "
                     "VkPipelineMultisampleStateCreateInfo::rasterizationSamples from the pipeline was %s.%s",
                     string_VkSampleCountFlagBits(cb_state.dynamic_state_value.sample_locations_info.sampleLocationsPerPixel),
@@ -591,7 +601,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
         } else if (cb_state.dynamic_state_value.sample_locations_info.sampleLocationsPerPixel !=
                    cb_state.dynamic_state_value.rasterization_samples) {
             skip |=
-                LogError(vuid.sample_locations_07483, objlist, vuid.loc(),
+                LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_LOCATIONS_07483), objlist, loc,
                          "sampleLocationsPerPixel set with vkCmdSetSampleLocationsEXT() was %s, but "
                          "rasterizationSamples set with vkCmdSetRasterizationSamplesEXT() was %s.%s",
                          string_VkSampleCountFlagBits(cb_state.dynamic_state_value.sample_locations_info.sampleLocationsPerPixel),
@@ -611,7 +621,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
 
             if (!IsIntegerMultipleOf(multisample_prop.maxSampleLocationGridSize.width,
                                      sample_locations->sampleLocationsInfo.sampleLocationGridSize.width)) {
-                skip |= LogError(vuid.sample_locations_enable_07936, objlist, vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_LOCATIONS_ENABLE_07936), objlist, loc,
                                  "VkMultisamplePropertiesEXT::maxSampleLocationGridSize.width (%" PRIu32
                                  ") with rasterization samples %s is not evenly divided by "
                                  "VkMultisamplePropertiesEXT::sampleLocationGridSize.width (%" PRIu32 ").",
@@ -621,7 +631,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
             }
             if (!IsIntegerMultipleOf(multisample_prop.maxSampleLocationGridSize.height,
                                      sample_locations->sampleLocationsInfo.sampleLocationGridSize.height)) {
-                skip |= LogError(vuid.sample_locations_enable_07937, objlist, vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_LOCATIONS_ENABLE_07937), objlist, loc,
                                  "VkMultisamplePropertiesEXT::maxSampleLocationGridSize.height (%" PRIu32
                                  ") with rasterization samples %s is not evenly divided by "
                                  "VkMultisamplePropertiesEXT::sampleLocationGridSize.height (%" PRIu32 ").",
@@ -631,7 +641,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
             }
             if (sample_locations->sampleLocationsInfo.sampleLocationsPerPixel !=
                 cb_state.dynamic_state_value.rasterization_samples) {
-                skip |= LogError(vuid.sample_locations_enable_07938, objlist, vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_LOCATIONS_ENABLE_07938), objlist, loc,
                                  "Pipeline was created with "
                                  "VkPipelineSampleLocationsStateCreateInfoEXT::sampleLocationsInfo.sampleLocationsPerPixel %s "
                                  "which does not match rasterization samples (%s) set with vkCmdSetRasterizationSamplesEXT().",
@@ -645,7 +655,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
         if (!pipeline.IsDynamic(CB_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT)) {
             if (cb_state.dynamic_state_value.samples_mask_samples < pipeline.MultisampleState()->rasterizationSamples) {
                 skip |=
-                    LogError(vuid.sample_mask_07472, objlist, vuid.loc(),
+                    LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_MASK_07472), objlist, loc,
                              "Currently bound pipeline was created with VkPipelineMultisampleStateCreateInfo::rasterizationSamples "
                              "%s are greater than samples set with vkCmdSetSampleMaskEXT() were %s.%s",
                              string_VkSampleCountFlagBits(pipeline.MultisampleState()->rasterizationSamples),
@@ -653,7 +663,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
                              cb_state.DescribeInvalidatedState(CB_DYNAMIC_STATE_SAMPLE_MASK_EXT).c_str());
             }
         } else if (cb_state.dynamic_state_value.samples_mask_samples < cb_state.dynamic_state_value.rasterization_samples) {
-            skip |= LogError(vuid.sample_mask_07473, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_MASK_07473), objlist, loc,
                              "rasterizationSamples set with vkCmdSetRasterizationSamplesEXT() %s are greater than samples "
                              "set with vkCmdSetSampleMaskEXT() were %s.%s",
                              string_VkSampleCountFlagBits(cb_state.dynamic_state_value.rasterization_samples),
@@ -664,21 +674,22 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
 
     if (pipeline.IsDynamic(CB_DYNAMIC_STATE_RASTERIZATION_STREAM_EXT) &&
         !enabled_features.primitivesGeneratedQueryWithNonZeroStreams && cb_state.dynamic_state_value.rasterization_stream != 0) {
-        bool pgq_active = false;
         for (const auto& active_query : cb_state.active_queries) {
             auto query_pool_state = Get<vvl::QueryPool>(active_query.pool);
-            if (query_pool_state && query_pool_state->create_info.queryType == VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT) {
-                pgq_active = true;
-                break;
+            if (!query_pool_state || query_pool_state->create_info.queryType != VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT) {
+                continue;
             }
-        }
-        if (pgq_active) {
             skip |= LogError(
-                vuid.primitives_generated_query_07481, cb_state.Handle(), vuid.loc(),
-                "Query with type VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT is active and primitivesGeneratedQueryWithNonZeroStreams "
-                "feature is not enabled, but rasterizationStreams set with vkCmdSetRasterizationStreamEXT() was %" PRIu32 ".%s",
-                cb_state.dynamic_state_value.rasterization_stream,
+                CreateActionVuid(loc.function, vvl::ActionVUID::PRIMITIVES_GENERATED_QUERY_07481), cb_state.Handle(), loc,
+                "query %" PRIu32
+                " in %s with type VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT is active and the last call to "
+                "vkCmdSetRasterizationStreamEXT() set rasterizationStreams as %" PRIu32
+                " (non-zero), but the primitivesGeneratedQueryWithNonZeroStreams "
+                "feature was not enabled.%s",
+                active_query.slot, FormatHandle(active_query.pool).c_str(), cb_state.dynamic_state_value.rasterization_stream,
                 cb_state.DescribeInvalidatedState(CB_DYNAMIC_STATE_RASTERIZATION_STREAM_EXT).c_str());
+
+            break;  // only need to check the feature VUs once
         }
     }
 
@@ -697,14 +708,14 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
 
             if (depth_read && dyn_depth_write_enable && mode_early_fragment_test &&
                 cb_state.dynamic_state_value.depth_write_enable) {
-                skip |= LogError(vuid.dynamic_depth_enable_08715, objlist, vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DEPTH_ENABLE_08715), objlist, loc,
                                  "Fragment shader contains OpDepthAttachmentReadEXT, but depthWriteEnable parameter in the last "
                                  "call to vkCmdSetDepthWriteEnable is not false.");
             }
 
             if (stencil_read && dyn_stencil_write_mask && mode_early_fragment_test &&
                 ((cb_state.dynamic_state_value.write_mask_front != 0) || (cb_state.dynamic_state_value.write_mask_back != 0))) {
-                skip |= LogError(vuid.dynamic_stencil_write_mask_08716, objlist, vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::STENCIL_WRITE_MASK_08716), objlist, loc,
                                  "Fragment shader contains OpStencilAttachmentReadEXT, but writeMask parameter in the last "
                                  "call to vkCmdSetStencilWriteMask is not equal to 0 for both front (%" PRIu32
                                  ") and back (%" PRIu32 ").",
@@ -731,7 +742,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
         }
 
         if (!compatible_topology) {
-            skip |= LogError(vuid.primitive_topology_class_07500, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PRIMITIVE_TOPOLOGY_CLASS_07500), objlist, loc,
                              "the last primitive topology %s state set by vkCmdSetPrimitiveTopology is "
                              "not compatible with the pipeline topology %s.%s",
                              string_VkPrimitiveTopology(dynamic_topology), string_VkPrimitiveTopology(pipeline_topology),
@@ -743,7 +754,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineValue(const LastBound& last_bou
 }
 
 bool CoreChecks::ValidateDrawDynamicStatePipelineViewportScissor(const LastBound& last_bound_state, const vvl::Pipeline& pipeline,
-                                                                 const vvl::DrawDispatchVuid& vuid) const {
+                                                                 const Location& loc) const {
     bool skip = false;
     const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
     auto& cb_sub_state = core::SubState(cb_state);
@@ -764,7 +775,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineViewportScissor(const LastBound
             const auto required_viewports_mask = (1 << viewport_state->viewportCount) - 1;
             const auto missing_viewport_mask = ~cb_sub_state.viewport.mask & required_viewports_mask;
             if (missing_viewport_mask) {
-                skip |= LogError(vuid.dynamic_viewport_07831, objlist, vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::VIEWPORT_07831), objlist, loc,
                                  "Dynamic viewport(s) (0x%x) are used by pipeline state object, but were not provided via calls "
                                  "to vkCmdSetViewport().",
                                  missing_viewport_mask);
@@ -775,7 +786,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineViewportScissor(const LastBound
             const auto required_scissor_mask = (1 << viewport_state->scissorCount) - 1;
             const auto missing_scissor_mask = ~cb_sub_state.scissor.mask & required_scissor_mask;
             if (missing_scissor_mask) {
-                skip |= LogError(vuid.dynamic_scissor_07832, objlist, vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SCISSOR_07832), objlist, loc,
                                  "Dynamic scissor(s) (0x%x) are used by pipeline state object, but were not provided via calls "
                                  "to vkCmdSetScissor().",
                                  missing_scissor_mask);
@@ -788,7 +799,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineViewportScissor(const LastBound
         const uint32_t viewport_count = viewport_state->viewportCount;
         const uint32_t max_inherited = uint32_t(cb_sub_state.viewport.inherited_depths.size());
         if (viewport_count > max_inherited) {
-            skip |= LogError(vuid.dynamic_state_inherited_07850, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::STATE_INHERITED_07850), objlist, loc,
                              "Pipeline requires more viewports (%" PRIu32 ".) than inherited (viewportDepthCount = %" PRIu32 ".).",
                              viewport_count, max_inherited);
         }
@@ -797,29 +808,29 @@ bool CoreChecks::ValidateDrawDynamicStatePipelineViewportScissor(const LastBound
     return skip;
 }
 
-bool CoreChecks::ValidateDrawDynamicState(const LastBound& last_bound_state, const vvl::DrawDispatchVuid& vuid) const {
+bool CoreChecks::ValidateDrawDynamicState(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
 
-    skip |= ValidateGraphicsDynamicStateSetStatus(last_bound_state, vuid);
+    skip |= ValidateGraphicsDynamicStateSetStatus(last_bound_state, loc);
     // Dynamic state was not set, will produce garbage when trying to read to values
     if (skip) return skip;
 
     const auto pipeline_state = last_bound_state.pipeline_state;
     if (pipeline_state) {
-        skip |= ValidateDrawDynamicStatePipeline(last_bound_state, *pipeline_state, vuid);
+        skip |= ValidateDrawDynamicStatePipeline(last_bound_state, *pipeline_state, loc);
     }
 
-    skip |= ValidateDrawDynamicStateVertex(last_bound_state, vuid);
-    skip |= ValidateDrawDynamicStateFragment(last_bound_state, vuid);
+    skip |= ValidateDrawDynamicStateVertex(last_bound_state, loc);
+    skip |= ValidateDrawDynamicStateFragment(last_bound_state, loc);
 
     // Once we know for sure state was set, check value is valid
-    skip |= ValidateDrawDynamicStateValue(last_bound_state, vuid);
+    skip |= ValidateDrawDynamicStateValue(last_bound_state, loc);
 
     return skip;
 }
 
 bool CoreChecks::ValidateDrawDynamicStatePipeline(const LastBound& last_bound_state, const vvl::Pipeline& pipeline,
-                                                  const vvl::DrawDispatchVuid& vuid) const {
+                                                  const Location& loc) const {
     bool skip = false;
 
     const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
@@ -830,7 +841,7 @@ bool CoreChecks::ValidateDrawDynamicStatePipeline(const LastBound& last_bound_st
 
     if (unset_status_pipeline.any()) {
         const LogObjectList objlist(cb_state.Handle(), pipeline.Handle());
-        skip |= LogError(vuid.dynamic_state_setting_commands_08608, objlist, vuid.loc(),
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DYNAMIC_STATE_ALL_SET_08608), objlist, loc,
                          "%s doesn't set up %s, but since the vkCmdBindPipeline, the related dynamic state commands (%s) have been "
                          "called in this command buffer.",
                          FormatHandle(pipeline).c_str(), DynamicStatesToString(unset_status_pipeline).c_str(),
@@ -840,16 +851,16 @@ bool CoreChecks::ValidateDrawDynamicStatePipeline(const LastBound& last_bound_st
     }
 
     // Once we know for sure state was set, check value is valid
-    skip |= ValidateDrawDynamicStatePipelineValue(last_bound_state, pipeline, vuid);
-    skip |= ValidateDrawDynamicStatePipelineViewportScissor(last_bound_state, pipeline, vuid);
+    skip |= ValidateDrawDynamicStatePipelineValue(last_bound_state, pipeline, loc);
+    skip |= ValidateDrawDynamicStatePipelineViewportScissor(last_bound_state, pipeline, loc);
 
     if (const vvl::RenderPass* rp_state = last_bound_state.cb_state.active_render_pass.get()) {
-        skip |= ValidateDrawDynamicStatePipelineRenderPass(last_bound_state, pipeline, *rp_state, vuid);
+        skip |= ValidateDrawDynamicStatePipelineRenderPass(last_bound_state, pipeline, *rp_state, loc);
     }
     return skip;
 }
 
-bool CoreChecks::ValidateDrawDynamicStateVertex(const LastBound& last_bound_state, const vvl::DrawDispatchVuid& vuid) const {
+bool CoreChecks::ValidateDrawDynamicStateVertex(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
 
     if (!last_bound_state.IsStageBound(VK_SHADER_STAGE_VERTEX_BIT)) {
@@ -865,7 +876,7 @@ bool CoreChecks::ValidateDrawDynamicStateVertex(const LastBound& last_bound_stat
                           {VK_PRIMITIVE_TOPOLOGY_POINT_LIST, VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                            VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY})) {
                 skip |=
-                    LogError(vuid.primitive_restart_list_09637, cb_state.Handle(), vuid.loc(),
+                    LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PRIMITIVE_RESTART_09637), cb_state.Handle(), loc,
                              "%s is %s, the primitiveTopologyListRestart feature was not enabled, but "
                              "vkCmdSetPrimitiveRestartEnable last set primitiveRestartEnable to VK_TRUE.",
                              last_bound_state.DescribeVertexInputAssemblerTopology().c_str(), string_VkPrimitiveTopology(topology));
@@ -874,7 +885,7 @@ bool CoreChecks::ValidateDrawDynamicStateVertex(const LastBound& last_bound_stat
         if (!enabled_features.primitiveTopologyPatchListRestart) {
             if (topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) {
                 skip |= LogError(
-                    vuid.primitive_restart_patch_10909, cb_state.Handle(), vuid.loc(),
+                    CreateActionVuid(loc.function, vvl::ActionVUID::PRIMITIVE_RESTART_10909), cb_state.Handle(), loc,
                     "%s is VK_PRIMITIVE_TOPOLOGY_PATCH_LIST, the primitiveTopologyPatchListRestart feature was not enabled, but "
                     "vkCmdSetPrimitiveRestartEnable last set primitiveRestartEnable to VK_TRUE.",
                     last_bound_state.DescribeVertexInputAssemblerTopology().c_str());
@@ -882,25 +893,20 @@ bool CoreChecks::ValidateDrawDynamicStateVertex(const LastBound& last_bound_stat
         }
     }
 
-    const spirv::Module* vert_spirv_state = nullptr;
-    const spirv::EntryPoint* vert_entrypoint = nullptr;
+    const ShaderStageState* vert_state = nullptr;
     if (last_bound_state.pipeline_state) {
-        for (const auto& stage_state : last_bound_state.pipeline_state->stage_states) {
-            if (stage_state.GetStage() == VK_SHADER_STAGE_VERTEX_BIT) {
-                vert_spirv_state = stage_state.spirv_state.get();
-                vert_entrypoint = stage_state.entrypoint.get();
-            }
-        }
-    } else if (const auto& vertex_state = last_bound_state.GetShaderObjectState(ShaderObjectStage::VERTEX)) {
-        vert_spirv_state = vertex_state->spirv.get();
-        vert_entrypoint = vertex_state->entrypoint.get();
+        vert_state = last_bound_state.pipeline_state->GetShaderStageState(VK_SHADER_STAGE_VERTEX_BIT);
+    } else if (const auto& shader_object = last_bound_state.GetShaderObjectState(ShaderObjectStage::VERTEX)) {
+        vert_state = &shader_object->stage;
     }
-    if (!vert_spirv_state || !vert_entrypoint) {
+    if (!vert_state || !vert_state->HasSpirv()) {
         return skip;  // Mesh shader
     }
+    const spirv::Module& vert_spirv_state = *vert_state->spirv_state;
+    const spirv::EntryPoint& vert_entrypoint = *vert_state->entrypoint;
 
     if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT)) {
-        for (const auto* variable_ptr : vert_entrypoint->user_defined_interface_variables) {
+        for (const auto* variable_ptr : vert_entrypoint.user_defined_interface_variables) {
             // Validate only input locations
             if (variable_ptr->storage_class != spv::StorageClass::StorageClassInput) {
                 continue;
@@ -912,58 +918,60 @@ bool CoreChecks::ValidateDrawDynamicStateVertex(const LastBound& last_bound_stat
                 location_provided = true;
 
                 const uint32_t var_base_type_id = variable_ptr->base_type.ResultId();
-                const uint32_t attribute_type = spirv::GetFormatType(attrib->desc.format);
-                const uint32_t var_numeric_type = vert_spirv_state->GetNumericType(var_base_type_id);
-                const spirv::Instruction* var_base_type = vert_spirv_state->FindDef(var_base_type_id);
+                const uint32_t attribute_type = spirv::GetFormatNumericType(attrib->desc.format);
+                const spirv::Instruction* var_base_type = vert_spirv_state.FindDef(var_base_type_id);
+                const uint32_t var_numeric_type = vert_spirv_state.GetNumericType(*var_base_type);
 
                 const bool attribute64 = vkuFormatIs64bit(attrib->desc.format);
-                const bool shader64 = vert_spirv_state->GetBaseTypeInstruction(var_base_type)->GetBitWidth() == 64;
+                const bool shader64 = vert_spirv_state.GetBaseTypeInstruction(var_base_type)->GetBitWidth() == 64;
 
                 // first type check before doing 64-bit matching
                 if ((attribute_type & var_numeric_type) == 0) {
                     if (!enabled_features.legacyVertexAttributes || shader64) {
-                        skip |= LogError(vuid.vertex_input_08734, vert_spirv_state->handle(), vuid.loc(),
-                                         "vkCmdSetVertexInputEXT set pVertexAttributeDescriptions[%" PRIu32 "] (binding %" PRIu32
-                                         ", location %" PRIu32 ") with format %s but the vertex shader input is numeric type %s",
-                                         attrib->index, attrib->desc.binding, attrib->desc.location,
-                                         string_VkFormat(attrib->desc.format),
-                                         vert_spirv_state->DescribeType(var_base_type_id).c_str());
+                        skip |= LogError(
+                            CreateActionVuid(loc.function, vvl::ActionVUID::VERTEX_INPUT_08734), vert_spirv_state.handle(), loc,
+                            "vkCmdSetVertexInputEXT set pVertexAttributeDescriptions[%" PRIu32 "] (binding %" PRIu32
+                            ", location %" PRIu32 ") with format %s but the vertex shader %s is numeric type %s",
+                            attrib->index, attrib->desc.binding, attrib->desc.location, string_VkFormat(attrib->desc.format),
+                            variable_ptr->Describe().c_str(), vert_spirv_state.DescribeType(var_base_type_id).c_str());
                     }
                 } else if (attribute64 && !shader64) {
                     skip |= LogError(
-                        vuid.vertex_input_format_08936, vert_spirv_state->handle(), vuid.loc(),
+                        CreateActionVuid(loc.function, vvl::ActionVUID::VERTEX_INPUT_FORMAT_08936), vert_spirv_state.handle(), loc,
                         "vkCmdSetVertexInputEXT set pVertexAttributeDescriptions[%" PRIu32 "] (binding %" PRIu32
-                        ", location %" PRIu32 ") with a 64-bit format (%s) but the vertex shader input is 32-bit type (%s)",
+                        ", location %" PRIu32 ") with a 64-bit format (%s) but the vertex shader %s is a 32-bit type (%s)",
                         attrib->index, attrib->desc.binding, attrib->desc.location, string_VkFormat(attrib->desc.format),
-                        vert_spirv_state->DescribeType(var_base_type_id).c_str());
+                        variable_ptr->Describe().c_str(), vert_spirv_state.DescribeType(var_base_type_id).c_str());
                 } else if (!attribute64 && shader64) {
                     skip |= LogError(
-                        vuid.vertex_input_format_08937, vert_spirv_state->handle(), vuid.loc(),
+                        CreateActionVuid(loc.function, vvl::ActionVUID::VERTEX_INPUT_FORMAT_08937), vert_spirv_state.handle(), loc,
                         "vkCmdSetVertexInputEXT set pVertexAttributeDescriptions[%" PRIu32 "] (binding %" PRIu32
-                        ", location %" PRIu32 ") with a 32-bit format (%s) but the vertex shader input is 64-bit type (%s)",
+                        ", location %" PRIu32 ") with a 32-bit format (%s) but the vertex shader %s is a 64-bit type (%s)",
                         attrib->index, attrib->desc.binding, attrib->desc.location, string_VkFormat(attrib->desc.format),
-                        vert_spirv_state->DescribeType(var_base_type_id).c_str());
+                        variable_ptr->Describe().c_str(), vert_spirv_state.DescribeType(var_base_type_id).c_str());
                 } else if (attribute64 && shader64) {
                     const uint32_t attribute_components = vkuFormatComponentCount(attrib->desc.format);
-                    const uint32_t input_components = vert_spirv_state->GetNumComponentsInBaseType(&variable_ptr->base_type);
+                    const uint32_t input_components = vert_spirv_state.GetNumComponentsInBaseType(&variable_ptr->base_type);
                     if (attribute_components < input_components) {
-                        skip |= LogError(vuid.vertex_input_format_09203, vert_spirv_state->handle(), vuid.loc(),
+                        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::VERTEX_INPUT_FORMAT_09203),
+                                         vert_spirv_state.handle(), loc,
                                          "vkCmdSetVertexInputEXT set pVertexAttributeDescriptions[%" PRIu32 "] (binding %" PRIu32
                                          ", location %" PRIu32 ") with a %" PRIu32
-                                         "-wide 64-bit format (%s) but the vertex shader input is %" PRIu32
+                                         "-wide 64-bit format (%s) but the vertex shader %s is %" PRIu32
                                          "-wide. (64-bit vertex input don't have default values and require "
                                          "components to match what is used in the shader)",
                                          attrib->index, attrib->desc.binding, attrib->desc.location, attribute_components,
-                                         string_VkFormat(attrib->desc.format), input_components);
+                                         string_VkFormat(attrib->desc.format), variable_ptr->Describe().c_str(), input_components);
                     }
                 }
             }
             if (!location_provided && !enabled_features.vertexAttributeRobustness && !enabled_features.maintenance9) {
-                skip |= LogError(vuid.vertex_input_format_07939, vert_spirv_state->handle(), vuid.loc(),
-                                 "Vertex shader uses input at location %" PRIu32
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::VERTEX_INPUT_FORMAT_07939),
+                                 vert_spirv_state.handle(), loc,
+                                 "Vertex shader %s is using Location %" PRIu32
                                  ", but it was not provided with vkCmdSetVertexInputEXT(). (This can be valid if "
                                  "either the vertexAttributeRobustness or maintenance9 feature is enabled)",
-                                 variable_ptr->decorations.location);
+                                 variable_ptr->Describe().c_str(), variable_ptr->decorations.location);
             }
         }
     }
@@ -977,11 +985,11 @@ bool CoreChecks::ValidateDrawDynamicStateVertex(const LastBound& last_bound_stat
 
         if (((bound_stages & (VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT)) == 0) &&
             topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST) {
-            if (!vert_entrypoint->written_built_in_point_size && !enabled_features.maintenance5) {
-                skip |= LogError(vuid.primitive_topology_point_size_10748, cb_state.Handle(), vuid.loc(),
+            if (!vert_entrypoint.written_built_in_point_size && !enabled_features.maintenance5) {
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PRIMITIVE_TOPOLOGY_10748), cb_state.Handle(), loc,
                                  "The bound vertex shader (%s) has a PointSize that is not written to, but the bound topology "
                                  "is set to VK_PRIMITIVE_TOPOLOGY_POINT_LIST.",
-                                 FormatHandle(vert_spirv_state->handle()).c_str());
+                                 FormatHandle(vert_spirv_state.handle()).c_str());
             }
         }
 
@@ -989,11 +997,11 @@ bool CoreChecks::ValidateDrawDynamicStateVertex(const LastBound& last_bound_stat
         const bool patch_topology = topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
         if (tess_shader_bound && !patch_topology) {
             skip |= LogError(
-                vuid.primitive_topology_patch_list_10286, cb_state.Handle(), vuid.loc(),
+                CreateActionVuid(loc.function, vvl::ActionVUID::PRIMITIVE_TOPOLOGY_10286), cb_state.Handle(), loc,
                 "Tessellation shaders were bound, but the last call to vkCmdSetPrimitiveTopology set primitiveTopology to %s.",
                 string_VkPrimitiveTopology(topology));
         } else if (!tess_shader_bound && patch_topology) {
-            skip |= LogError(vuid.primitive_topology_patch_list_10747, cb_state.Handle(), vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PRIMITIVE_TOPOLOGY_10747), cb_state.Handle(), loc,
                              "Tessellation shaders were not bound, but the last call to vkCmdSetPrimitiveTopology set "
                              "primitiveTopology to VK_PRIMITIVE_TOPOLOGY_PATCH_LIST.");
         }
@@ -1002,22 +1010,19 @@ bool CoreChecks::ValidateDrawDynamicStateVertex(const LastBound& last_bound_stat
     return skip;
 }
 
-bool CoreChecks::ValidateDrawDynamicStateFragment(const LastBound& last_bound_state, const vvl::DrawDispatchVuid& vuid) const {
+bool CoreChecks::ValidateDrawDynamicStateFragment(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
 
-    const spirv::Module* frag_spirv_state = nullptr;
+    const ShaderStageState* frag_state = nullptr;
     if (last_bound_state.pipeline_state) {
-        for (const auto& stage_state : last_bound_state.pipeline_state->stage_states) {
-            if (stage_state.GetStage() == VK_SHADER_STAGE_FRAGMENT_BIT) {
-                frag_spirv_state = stage_state.spirv_state.get();
-            }
-        }
+        frag_state = last_bound_state.pipeline_state->GetShaderStageState(VK_SHADER_STAGE_FRAGMENT_BIT);
     } else if (const auto& fragment_state = last_bound_state.GetShaderObjectState(ShaderObjectStage::FRAGMENT)) {
-        frag_spirv_state = fragment_state->spirv.get();
+        frag_state = &fragment_state->stage;
     }
-    if (!frag_spirv_state) {
+    if (!frag_state || !frag_state->HasSpirv()) {
         return skip;  // no fragment shader used
     }
+    const spirv::Module& frag_spirv_state = *frag_state->spirv_state;
 
     const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
     if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT)) {
@@ -1030,8 +1035,8 @@ bool CoreChecks::ValidateDrawDynamicStateFragment(const LastBound& last_bound_st
                 DispatchGetPhysicalDeviceMultisamplePropertiesEXT(physical_device, rasterization_samples, &multisample_prop);
                 const auto& gridSize = cb_state.dynamic_state_value.sample_locations_info.sampleLocationGridSize;
                 if (!IsIntegerMultipleOf(multisample_prop.maxSampleLocationGridSize.width, gridSize.width)) {
-                    const LogObjectList objlist(cb_state.Handle(), frag_spirv_state->handle());
-                    skip |= LogError(vuid.sample_locations_enable_07485, objlist, vuid.loc(),
+                    const LogObjectList objlist(cb_state.Handle(), frag_spirv_state.handle());
+                    skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_LOCATION_07485), objlist, loc,
                                      "VkMultisamplePropertiesEXT::maxSampleLocationGridSize.width (%" PRIu32
                                      ") with rasterization samples %s is not evenly divided by "
                                      "sampleLocationsInfo.sampleLocationGridSize.width (%" PRIu32
@@ -1040,8 +1045,8 @@ bool CoreChecks::ValidateDrawDynamicStateFragment(const LastBound& last_bound_st
                                      string_VkSampleCountFlagBits(rasterization_samples), gridSize.width);
                 }
                 if (!IsIntegerMultipleOf(multisample_prop.maxSampleLocationGridSize.height, gridSize.height)) {
-                    const LogObjectList objlist(cb_state.Handle(), frag_spirv_state->handle());
-                    skip |= LogError(vuid.sample_locations_enable_07486, objlist, vuid.loc(),
+                    const LogObjectList objlist(cb_state.Handle(), frag_spirv_state.handle());
+                    skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_LOCATION_07486), objlist, loc,
                                      "VkMultisamplePropertiesEXT::maxSampleLocationGridSize.height (%" PRIu32
                                      ") with rasterization samples %s is not evenly divided by "
                                      "sampleLocationsInfo.sampleLocationGridSize.height (%" PRIu32
@@ -1050,9 +1055,9 @@ bool CoreChecks::ValidateDrawDynamicStateFragment(const LastBound& last_bound_st
                                      string_VkSampleCountFlagBits(rasterization_samples), gridSize.height);
                 }
             }
-            if (frag_spirv_state && frag_spirv_state->static_data_.uses_interpolate_at_sample) {
-                const LogObjectList objlist(cb_state.Handle(), frag_spirv_state->handle());
-                skip |= LogError(vuid.sample_locations_enable_07487, objlist, vuid.loc(),
+            if (frag_spirv_state.static_data_.uses_interpolate_at_sample) {
+                const LogObjectList objlist(cb_state.Handle(), frag_spirv_state.handle());
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SAMPLE_LOCATION_07487), objlist, loc,
                                  "sampleLocationsEnable set with vkCmdSetSampleLocationsEnableEXT() was VK_TRUE, but fragment "
                                  "shader uses InterpolateAtSample instruction.");
             }
@@ -1065,8 +1070,8 @@ bool CoreChecks::ValidateDrawDynamicStateFragment(const LastBound& last_bound_st
         const VkMultisampledRenderToSingleSampledInfoEXT* msrtss_info = rp_state->GetMSRTSSInfo(cb_state.GetActiveSubpass());
         if (msrtss_info && msrtss_info->multisampledRenderToSingleSampledEnable) {
             if (msrtss_info->rasterizationSamples != cb_state.dynamic_state_value.rasterization_samples) {
-                LogObjectList objlist(cb_state.Handle(), frag_spirv_state->handle());
-                skip |= LogError(vuid.rasterization_samples_09211, objlist, vuid.loc(),
+                LogObjectList objlist(cb_state.Handle(), frag_spirv_state.handle());
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::RASTERIZATION_SAMPLES_09211), objlist, loc,
                                  "VkMultisampledRenderToSingleSampledInfoEXT::multisampledRenderToSingleSampledEnable is VK_TRUE "
                                  "and VkMultisampledRenderToSingleSampledInfoEXT::rasterizationSamples are %s, but rasterization "
                                  "samples set with vkCmdSetRasterizationSamplesEXT() were %s.",
@@ -1081,7 +1086,7 @@ bool CoreChecks::ValidateDrawDynamicStateFragment(const LastBound& last_bound_st
 
 // Here we assume the dynamic state was set. These are draw time checks that things that normally checked at static pipeline
 // creation time
-bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state, const vvl::DrawDispatchVuid& vuid) const {
+bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
 
     const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
@@ -1110,8 +1115,9 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
                 if (!cb_state.dynamic_state_value.discard_rectangles.test(i)) {
                     const vvl::Field limit_name =
                         use_max_limit ? vvl::Field::maxDiscardRectangles : vvl::Field::discardRectangleCount;
-                    const char* vuid2 = use_max_limit ? vuid.set_discard_rectangle_09236 : vuid.dynamic_discard_rectangle_07751;
-                    skip |= LogError(vuid2, cb_state.Handle(), vuid.loc(),
+                    vvl::ActionVUID vuid =
+                        use_max_limit ? vvl::ActionVUID::DISCARD_RECTANGLE_09236 : vvl::ActionVUID::DISCARD_RECTANGLE_07751;
+                    skip |= LogError(CreateActionVuid(loc.function, vuid), cb_state.Handle(), loc,
                                      "vkCmdSetDiscardRectangleEXT was not set for discard rectangle index %" PRIu32
                                      " for this command buffer. It needs to be set once for each rectangle in %s (%" PRIu32 ").%s",
                                      i, String(limit_name), rect_limit,
@@ -1132,10 +1138,10 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
                                           .image_view->create_info.format;
                     if (!IsValueIn(format, {VK_FORMAT_R8_UINT, VK_FORMAT_R8_SINT, VK_FORMAT_R16_UINT, VK_FORMAT_R16_SINT,
                                             VK_FORMAT_R32_UINT, VK_FORMAT_R32_SINT})) {
-                        const char* vuid_string =
-                            has_pipeline ? vuid.set_coverage_to_color_location_07490 : vuid.set_coverage_to_color_location_09420;
+                        vvl::ActionVUID vuid =
+                            has_pipeline ? vvl::ActionVUID::COVERAGE_TO_COLOR_07490 : vvl::ActionVUID::COVERAGE_TO_COLOR_09420;
                         skip |=
-                            LogError(vuid_string, cb_state.Handle(), vuid.loc(),
+                            LogError(CreateActionVuid(loc.function, vuid), cb_state.Handle(), loc,
                                      "coverageToColorLocation (%" PRIu32
                                      ") set by vkCmdSetCoverageToColorLocationNV points to a color attachment with format %s.\n%s",
                                      cb_state.dynamic_state_value.coverage_to_color_location, string_VkFormat(format),
@@ -1155,11 +1161,11 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
                 const auto* attachment = attachment_info.image_view;
                 if (attachment && (attachment_info.IsColor() || attachment_info.IsDepthOrStencil()) &&
                     rasterization_samples != attachment->samples) {
-                    skip |=
-                        LogError(vuid.set_rasterization_samples_08644, cb_state.Handle(), vuid.loc(),
-                                 "%s was created with %s but the last call to vkCmdSetRasterizationSamplesEXT was set to %s.",
-                                 attachment_info.Describe(cb_state, i).c_str(), string_VkSampleCountFlagBits(attachment->samples),
-                                 string_VkSampleCountFlagBits(rasterization_samples));
+                    skip |= LogError(
+                        CreateActionVuid(loc.function, vvl::ActionVUID::SET_RASTERIZATION_SAMPLES_08644), cb_state.Handle(), loc,
+                        "%s was created with %s but the last call to vkCmdSetRasterizationSamplesEXT was set to %s.",
+                        attachment_info.Describe(cb_state, i).c_str(), string_VkSampleCountFlagBits(attachment->samples),
+                        string_VkSampleCountFlagBits(rasterization_samples));
                 }
             }
         }
@@ -1170,7 +1176,7 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
                 const VkPrimitiveTopology topology = last_bound_state.GetRasterizationInputTopology();
                 if (IsLineTopology(topology) || IsPointTopology(topology)) {
                     skip |= LogError(
-                        vuid.convervative_rasterization_07499, cb_state.Handle(), vuid.loc(),
+                        CreateActionVuid(loc.function, vvl::ActionVUID::CONVERVATIVE_RASTERIZATION_07499), cb_state.Handle(), loc,
                         "the rasterization input topology is %s and conservativePointAndLineRasterization is VK_FALSE, but "
                         "conservativeRasterizationMode set with vkCmdSetConservativeRasterizationModeEXT() was %s.%s",
                         string_VkPrimitiveTopology(topology),
@@ -1191,7 +1197,7 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
                 VkColorComponentFlags rgb = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT;
                 if ((color_write_mask & rgb) != rgb && (color_write_mask & rgb) != 0) {
                     skip |= LogError(
-                        vuid.color_write_mask_09116, cb_state.Handle(), vuid.loc(),
+                        CreateActionVuid(loc.function, vvl::ActionVUID::COLOR_WRITE_MASK_09116), cb_state.Handle(), loc,
                         "%s has format VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, but vkCmdSetColorWriteMaskEXT::pColorWriteMasks[%" PRIu32
                         "] is %s.",
                         attachment_info.Describe(cb_state, i).c_str(), color_index,
@@ -1211,7 +1217,7 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
             const bool sample_shading_enable =
                 pipeline_state && pipeline_state->MultisampleState() && pipeline_state->MultisampleState()->sampleShadingEnable;
             if (alpha_to_coverage_enable || alpha_to_one_enable || sample_shading_enable) {
-                skip |= LogError(vuid.line_rasterization_10608, cb_state.Handle(), vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::LINE_RASTERIZATION_10608), cb_state.Handle(), loc,
                                  "lineRasterizationMode is %s, but alphaToCoverageEnable (%s), alphaToOneEnable (%s) and "
                                  "sampleShadingEnable (%s) are not all VK_FALSE.",
                                  string_VkLineRasterizationMode(cb_state.dynamic_state_value.line_rasterization_mode),
@@ -1224,11 +1230,11 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
     if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VIEWPORT_WITH_COUNT)) {
         if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_SCISSOR_WITH_COUNT)) {
             if (cb_state.dynamic_state_value.viewport_count != cb_state.dynamic_state_value.scissor_count) {
-                skip |=
-                    LogError(vuid.viewport_and_scissor_with_count_03419, cb_state.Handle(), vuid.loc(),
-                             "viewportCount (%" PRIu32 ") set with vkCmdSetViewportWithCount is not equal to scissorCount (%" PRIu32
-                             ") set with vkCmdSetScissorWithCount",
-                             cb_state.dynamic_state_value.viewport_count, cb_state.dynamic_state_value.scissor_count);
+                skip |= LogError(
+                    CreateActionVuid(loc.function, vvl::ActionVUID::VIEWPORT_AND_SCISSOR_WITH_COUNT_03419), cb_state.Handle(), loc,
+                    "viewportCount (%" PRIu32 ") set with vkCmdSetViewportWithCount is not equal to scissorCount (%" PRIu32
+                    ") set with vkCmdSetScissorWithCount",
+                    cb_state.dynamic_state_value.viewport_count, cb_state.dynamic_state_value.scissor_count);
             }
         }
 
@@ -1237,7 +1243,7 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
                 last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VIEWPORT_SHADING_RATE_PALETTE_NV)) {
                 if (cb_state.dynamic_state_value.shading_rate_palette_count < cb_state.dynamic_state_value.viewport_count) {
                     skip |= LogError(
-                        vuid.shading_rate_palette_08637, cb_state.Handle(), vuid.loc(),
+                        CreateActionVuid(loc.function, vvl::ActionVUID::SHADING_RATE_PALETTE_08637), cb_state.Handle(), loc,
                         "viewportCount (%" PRIu32 ") set with vkCmdSetViewportWithCount is greater than viewportCount (%" PRIu32
                         ") set with vkCmdSetViewportShadingRatePaletteNV",
                         cb_state.dynamic_state_value.viewport_count, cb_state.dynamic_state_value.shading_rate_palette_count);
@@ -1248,8 +1254,9 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
         if (IsExtEnabled(extensions.vk_nv_viewport_swizzle) && last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VIEWPORT_SWIZZLE_NV)) {
             const uint32_t viewport_swizzle_count = last_bound_state.GetViewportSwizzleCount();
             if (viewport_swizzle_count < cb_state.dynamic_state_value.viewport_count) {
-                const char* vuid_string = has_pipeline ? vuid.set_viewport_swizzle_07493 : vuid.set_viewport_swizzle_09421;
-                skip |= LogError(vuid_string, cb_state.Handle(), vuid.loc(),
+                vvl::ActionVUID vuid =
+                    has_pipeline ? vvl::ActionVUID::SET_VIEWPORT_SWIZZLE_07493 : vvl::ActionVUID::SET_VIEWPORT_SWIZZLE_09421;
+                skip |= LogError(CreateActionVuid(loc.function, vuid), cb_state.Handle(), loc,
                                  "viewportCount (%" PRIu32
                                  ") set with vkCmdSetViewportWithCount is greater than viewportCount (%" PRIu32 ") set with %s",
                                  cb_state.dynamic_state_value.viewport_count, viewport_swizzle_count,
@@ -1262,7 +1269,7 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
             // There is no pipeline equivalent of vkCmdSetViewportWScalingNV
             if (cb_state.dynamic_state_value.viewport_w_scaling_count < cb_state.dynamic_state_value.viewport_count) {
                 skip |= LogError(
-                    vuid.viewport_w_scaling_08636, cb_state.Handle(), vuid.loc(),
+                    CreateActionVuid(loc.function, vvl::ActionVUID::VIEWPORT_W_SCALING_08636), cb_state.Handle(), loc,
                     "viewportCount (%" PRIu32 ") set with vkCmdSetViewportWithCount is greater than viewportCount (%" PRIu32
                     ") set with vkCmdSetViewportWScalingNV",
                     cb_state.dynamic_state_value.viewport_count, cb_state.dynamic_state_value.viewport_w_scaling_count);
@@ -1280,9 +1287,9 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
             } else {
                 objlist.add(last_bound_state.GetShaderObject(ShaderObjectStage::FRAGMENT));
             }
-            const char* vuid_string =
-                has_pipeline ? vuid.dynamic_alpha_to_coverage_component_08919 : vuid.alpha_component_word_08920;
-            skip |= LogError(vuid_string, objlist, vuid.loc(),
+            vvl::ActionVUID vuid =
+                has_pipeline ? vvl::ActionVUID::ALPHA_TO_COVERAGE_COMPONENT_08919 : vvl::ActionVUID::ALPHA_COMPONENT_WORD_08920;
+            skip |= LogError(CreateActionVuid(loc.function, vuid), objlist, loc,
                              "vkCmdSetAlphaToCoverageEnableEXT set alphaToCoverageEnable to true but the bound "
                              "fragment shader doesn't declare a variable that covers Location 0, Component 3 (alpha channel).");
         }
@@ -1294,14 +1301,14 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
             const uint32_t msb = (uint32_t)MostSignificantBit(view_mask);
             if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VIEWPORT_WITH_COUNT) &&
                 msb >= cb_state.dynamic_state_value.viewport_count) {
-                skip |= LogError(vuid.viewport_multiview_12262, cb_state.Handle(), vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::VIEWPORT_MULTIVIEW_12262), cb_state.Handle(), loc,
                                  "The current viewMask (0x%" PRIx32 ") most significant bit index (%" PRIu32
                                  ") is not less than viewportCount (%" PRIu32 ") set with vkCmdSetViewportWithCount",
                                  view_mask, msb, cb_state.dynamic_state_value.viewport_count);
             }
             if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_SCISSOR_WITH_COUNT) &&
                 msb >= cb_state.dynamic_state_value.scissor_count) {
-                skip |= LogError(vuid.scissor_multiview_12263, cb_state.Handle(), vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::SCISSOR_MULTIVIEW_12263), cb_state.Handle(), loc,
                                  "The current viewMask (0x%" PRIx32 ") most significant bit index (%" PRIu32
                                  ") is not less than scissorCount (%" PRIu32 ") set with vkCmdSetScissorWithCount",
                                  view_mask, msb, cb_state.dynamic_state_value.scissor_count);
@@ -1313,7 +1320,7 @@ bool CoreChecks::ValidateDrawDynamicStateValue(const LastBound& last_bound_state
 }
 
 bool CoreChecks::ValidateDrawRenderingAttachmentLocation(const vvl::CommandBuffer& cb_state, const vvl::Pipeline& pipeline_state,
-                                                         const vvl::DrawDispatchVuid& vuid) const {
+                                                         const Location& loc) const {
     bool skip = false;
     const uint32_t color_attachment_count = (uint32_t)cb_state.rendering_attachments.color_locations.size();
 
@@ -1353,7 +1360,8 @@ bool CoreChecks::ValidateDrawRenderingAttachmentLocation(const vvl::CommandBuffe
             } else {
                 ss << "was not called in this render pass so the index (" << i << ") is the implicit location";
             }
-            skip |= LogError(vuid.dynamic_rendering_local_location_09548, objlist, vuid.loc(), "%s", ss.str().c_str());
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DYNAMIC_RENDERING_LOCAL_LOCATION_09548), objlist, loc,
+                             "%s", ss.str().c_str());
             break;
         }
     }
@@ -1361,7 +1369,7 @@ bool CoreChecks::ValidateDrawRenderingAttachmentLocation(const vvl::CommandBuffe
 }
 
 bool CoreChecks::ValidateDrawRenderingInputAttachmentIndex(const vvl::CommandBuffer& cb_state, const vvl::Pipeline& pipeline_state,
-                                                           const vvl::DrawDispatchVuid& vuid) const {
+                                                           const Location& loc) const {
     bool skip = false;
     const uint32_t color_index_count = (uint32_t)cb_state.rendering_attachments.color_indexes.size();
 
@@ -1408,7 +1416,8 @@ bool CoreChecks::ValidateDrawRenderingInputAttachmentIndex(const vvl::CommandBuf
             } else {
                 ss << "was not called in this render pass so the index (" << i << ") is the implicit location";
             }
-            skip |= LogError(vuid.dynamic_rendering_local_index_09549, objlist, vuid.loc(), "%s", ss.str().c_str());
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DYNAMIC_RENDERING_LOCAL_INDEX_09549), objlist, loc,
+                             "%s", ss.str().c_str());
             break;
         }
     }
@@ -1427,7 +1436,8 @@ bool CoreChecks::ValidateDrawRenderingInputAttachmentIndex(const vvl::CommandBuf
         } else {
             ss << "was not called in this render pass so pDepthInputAttachmentIndex is implicitly NULL";
         }
-        skip |= LogError(vuid.dynamic_rendering_local_index_10927, objlist, vuid.loc(), "%s", ss.str().c_str());
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DYNAMIC_RENDERING_LOCAL_INDEX_10927), objlist, loc, "%s",
+                         ss.str().c_str());
     }
 
     if (!EqualValuesOrBothNull(pipeline_stencil_index, cb_state.rendering_attachments.stencil_index)) {
@@ -1445,20 +1455,21 @@ bool CoreChecks::ValidateDrawRenderingInputAttachmentIndex(const vvl::CommandBuf
         } else {
             ss << "was not called in this render pass so pStencilInputAttachmentIndex is implicitly NULL";
         }
-        skip |= LogError(vuid.dynamic_rendering_local_index_10928, objlist, vuid.loc(), "%s", ss.str().c_str());
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DYNAMIC_RENDERING_LOCAL_INDEX_10928), objlist, loc, "%s",
+                         ss.str().c_str());
     }
     return skip;
 }
 
 bool CoreChecks::ValidateTraceRaysDynamicStateSetStatus(const LastBound& last_bound_state, const vvl::Pipeline& pipeline,
-                                                        const vvl::DrawDispatchVuid& vuid) const {
+                                                        const Location& loc) const {
     bool skip = false;
     const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
 
     if (pipeline.IsDynamic(CB_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR)) {
         if (!cb_state.dynamic_state_status.rtx_stack_size_cb) {
             const LogObjectList objlist(cb_state.Handle(), pipeline.Handle());
-            skip |= LogError(vuid.ray_tracing_pipeline_stack_size_09458, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::RTX_STACK_SIZE_09458), objlist, loc,
                              "VK_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR state is dynamic, but the command buffer never "
                              "called vkCmdSetRayTracingPipelineStackSizeKHR().");
         }
@@ -1466,7 +1477,7 @@ bool CoreChecks::ValidateTraceRaysDynamicStateSetStatus(const LastBound& last_bo
         if (cb_state.dynamic_state_status.rtx_stack_size_pipeline) {
             const LogObjectList objlist(cb_state.Handle(), pipeline.Handle());
             skip |= LogError(
-                vuid.dynamic_state_setting_commands_08608, objlist, vuid.loc(),
+                CreateActionVuid(loc.function, vvl::ActionVUID::DYNAMIC_STATE_ALL_SET_08608), objlist, loc,
                 "%s doesn't set up VK_DYNAMIC_STATE_RAY_TRACING_PIPELINE_STACK_SIZE_KHR,  but since the vkCmdBindPipeline, the "
                 "related dynamic state commands (vkCmdSetRayTracingPipelineStackSizeKHR) have been called in this command buffer.",
                 FormatHandle(pipeline).c_str());
@@ -1531,7 +1542,7 @@ bool CoreChecks::PreCallValidateCmdSetViewportShadingRatePaletteNV(VkCommandBuff
     skip |= ValidateCmd(*cb_state, error_obj.location);
 
     for (uint32_t i = 0; i < viewportCount; ++i) {
-        auto *palette = &pShadingRatePalettes[i];
+        auto* palette = &pShadingRatePalettes[i];
         if (palette->shadingRatePaletteEntryCount == 0 ||
             palette->shadingRatePaletteEntryCount > phys_dev_ext_props.shading_rate_image_props.shadingRatePaletteSize) {
             skip |=
@@ -1629,7 +1640,8 @@ bool CoreChecks::PreCallValidateCmdSetDepthBias2EXT(VkCommandBuffer commandBuffe
                          "is %f (not 0.0f), but the depthBiasClamp feature was not enabled.", pDepthBiasInfo->depthBiasClamp);
     }
 
-    if (const auto *depth_bias_representation = vku::FindStructInPNextChain<VkDepthBiasRepresentationInfoEXT>(pDepthBiasInfo->pNext)) {
+    if (const auto* depth_bias_representation =
+            vku::FindStructInPNextChain<VkDepthBiasRepresentationInfoEXT>(pDepthBiasInfo->pNext)) {
         skip |= ValidateDepthBiasRepresentationInfo(error_obj.location, error_obj.objlist, *depth_bias_representation);
     }
 
@@ -2199,7 +2211,7 @@ bool CoreChecks::PreCallValidateCmdSetColorBlendEquationEXT(VkCommandBuffer comm
 
     for (uint32_t attachment = 0U; attachment < attachmentCount; ++attachment) {
         const Location equation_loc = error_obj.location.dot(Field::pColorBlendEquations, attachment);
-        VkColorBlendEquationEXT const &equation = pColorBlendEquations[attachment];
+        VkColorBlendEquationEXT const& equation = pColorBlendEquations[attachment];
         if (!enabled_features.dualSrcBlend) {
             if (IsSecondaryColorInputBlendFactor(equation.srcColorBlendFactor)) {
                 skip |= LogError(
@@ -2371,7 +2383,7 @@ bool CoreChecks::PreCallValidateCmdSetColorBlendAdvancedEXT(VkCommandBuffer comm
     skip |= ValidateCmd(*cb_state, error_obj.location);
 
     for (uint32_t attachment = 0U; attachment < attachmentCount; ++attachment) {
-        VkColorBlendAdvancedEXT const &advanced = pColorBlendAdvanced[attachment];
+        VkColorBlendAdvancedEXT const& advanced = pColorBlendAdvanced[attachment];
         if (advanced.srcPremultiplied == VK_TRUE &&
             !phys_dev_ext_props.blend_operation_advanced_props.advancedBlendNonPremultipliedSrcColor) {
             skip |= LogError("VUID-VkColorBlendAdvancedEXT-srcPremultiplied-07505", commandBuffer,

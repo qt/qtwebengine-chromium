@@ -26,9 +26,6 @@
 #include "third_party/blink/renderer/modules/webaudio/audio_node_input.h"
 
 #include <algorithm>
-#include <memory>
-
-#include "base/memory/ptr_util.h"
 #include "media/base/audio_bus.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_output.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_node_wiring.h"
@@ -39,7 +36,15 @@ AudioNodeInput::AudioNodeInput(AudioHandler& handler)
     : AudioSummingJunction(handler.Context()->GetDeferredTaskHandler()),
       handler_(handler) {
   // Set to mono by default.
-  internal_summing_bus_ = AudioBus::Create(1, RenderQuantumFrames());
+  internal_summing_bus_ = AudioBus::TryCreate(1, RenderQuantumFrames());
+  if (!internal_summing_bus_) {
+    handler.Context()->SetAllocationFailed();
+    // Allocate a minimal 1-frame bus. This guarantees `internal_summing_bus_`
+    // is non-null, satisfying C++ assumptions during node destruction,
+    // but uses almost zero memory.
+    internal_summing_bus_ = AudioBus::TryCreate(1, 0);
+    CHECK(internal_summing_bus_);
+  }
 }
 
 AudioNodeInput::~AudioNodeInput() {

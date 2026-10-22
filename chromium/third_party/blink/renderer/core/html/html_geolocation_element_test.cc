@@ -63,11 +63,11 @@ class LocalePlatformSupport : public TestingPlatformSupport {
       case IDS_PERMISSION_REQUEST_PRECISE_GEOLOCATION:
         return kPreciseGeolocationString;
       case IDS_PERMISSION_REQUEST_GEOLOCATION_pt_PT:
-        return WebString::FromUTF16(kGeolocationStringPt);
+        return WebString::FromUtf16(kGeolocationStringPt);
       case IDS_PERMISSION_REQUEST_GEOLOCATION_pt_BR:
-        return WebString::FromUTF16(kGeolocationStringBr);
+        return WebString::FromUtf16(kGeolocationStringBr);
       case IDS_PERMISSION_REQUEST_GEOLOCATION_ta:
-        return WebString::FromUTF16(kGeolocationStringTa);
+        return WebString::FromUtf16(kGeolocationStringTa);
       default:
         break;
     }
@@ -99,8 +99,6 @@ class HTMLGeolocationElementTestBase : public PageTestBase {
 TEST_F(HTMLGeolocationElementTestBase, GetTypeAttribute) {
   auto* geolocation_element =
       MakeGarbageCollected<HTMLGeolocationElement>(GetDocument());
-  EXPECT_EQ(AtomicString("geolocation"), geolocation_element->GetType());
-  geolocation_element->setType(AtomicString("camera"));
   EXPECT_EQ(AtomicString("geolocation"), geolocation_element->GetType());
 }
 

@@ -218,15 +218,7 @@ WireResult Server::DoBufferUpdateMappedData(Known<WGPUBuffer> buffer,
             return WireResult::Success;
         }
 
-        // TODO(https://issues.chromium.org/492456046): We would like to map only the `offset` and
-        // `size` here but the Chromium implementation of DeserializeDataUpdate uses `offset` to
-        // offset both the target data and it's shmem pointer. So the pointer passed in SetTarget
-        // must be for the start of the buffer. Fix this somehow when spanifying the interfaces but
-        // for now we need to duplicate the overflow check that's done in GetMappedRange.
-        mappedData -= offset;
-
-        // Note that offset + size was checked to not overflow in GetMappedRange above.
-        std::span<uint8_t> mappedRange = {mappedData, static_cast<size_t>(offset + size)};
+        std::span<uint8_t> mappedRange = {mappedData, static_cast<size_t>(size)};
 
         // However it is easy to check for misuses of the wire protocol to UpdateMappedData without
         // a WriteHandle.
@@ -234,14 +226,11 @@ WireResult Server::DoBufferUpdateMappedData(Known<WGPUBuffer> buffer,
             return WireResult::FatalError;
         }
 
-        // Deserialize the flush info and flush updated data from the handle into the target
-        // of the handle. The target is set via WriteHandle::SetTarget/SetDataLength.
-        mapState->writeHandle->SetDataLength(mappedRange.size());
-        mapState->writeHandle->SetTarget(mappedRange.data());
-
-        if (!mapState->writeHandle->DeserializeDataUpdate(
-                writeDataUpdateInfo, static_cast<size_t>(writeDataUpdateInfoLength),
-                static_cast<size_t>(offset), static_cast<size_t>(size))) {
+        // Deserialize the flush info and flush updated data from the handle into mappedRange.
+        std::span<const uint8_t> writeDataUpdateInfoSpan(writeDataUpdateInfo,
+                                                         writeDataUpdateInfoLength);
+        if (!mapState->writeHandle->DeserializeDataUpdate(writeDataUpdateInfoSpan, mappedRange,
+                                                          static_cast<size_t>(offset))) {
             return WireResult::FatalError;
         }
         return WireResult::Success;

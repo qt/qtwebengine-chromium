@@ -67,8 +67,7 @@ void lmpar(Matrix<Scalar, Dynamic, Dynamic> &r, const VectorXi &ipvt, const Matr
       l = ipvt[j];
       wa1[j] = diag[l] * (wa2[l] / dxnorm);
     }
-    // it's actually a triangularView.solveInplace(), though in a weird
-    // way:
+    // Triangular solve (forward substitution):
     for (j = 0; j < n; ++j) {
       Scalar sum = 0.;
       for (i = 0; i < j; ++i) sum += r(i, j) * wa1[i];
@@ -170,7 +169,6 @@ void lmpar2(const ColPivHouseholderQR<Matrix<Scalar, Dynamic, Dynamic> > &qr, co
   /* compute and store in x the gauss-newton direction. if the */
   /* jacobian is rank-deficient, obtain a least squares solution. */
 
-  //    const Index rank = qr.nonzeroPivots(); // exactly double(0.)
   const Index rank = qr.rank();  // use a threshold
   wa1 = qtb;
   wa1.tail(n - rank).setZero();

@@ -1,11 +1,17 @@
+# Copyright 2025 Google LLC
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Specializations for bf16 x86 dot kernel generators."""
 
 # pylint: disable=missing-class-docstring
 # pylint: disable=invalid-name
 
+from ynnpack.kernels.dot.generator.dot_base import generate_dot_kernels
 from ynnpack.kernels.dot.generator.x86 import x86
 from ynnpack.kernels.dot.generator.x86 import x86_avx
-from ynnpack.kernels.dot.generator.x86 import x86_avx512f
+from ynnpack.kernels.dot.generator.x86 import x86_avx512
 
 
 class x86_bf16_bf16_fp32(x86):
@@ -25,7 +31,7 @@ struct bfloat16 {{
   std::uint16_t value;
 }};
 
-YNN_INTRINSIC __m{self.bits}i unaligned_load_broadcast_bf32x2(const bfloat16* ptr) {{
+YNN_INTRINSIC __m{self.bits}i unaligned_load_broadcast_bf16x2(const bfloat16* ptr) {{
     int32_t value;
     memcpy(&value, ptr, sizeof(int32_t));
     return {self._mm()}_set1_epi32(value);
@@ -44,7 +50,7 @@ YNN_INTRINSIC __m{self.bits}i unaligned_load_broadcast_bf32x2(const bfloat16* pt
     cast = f"{self._mm()}_castsi{bits}_ps"
     a_ik = f"a_{i}_{k}_k2"
     return f"""
-__m{bits}i {a_ik} = unaligned_load_broadcast_bf32x2({ptr});
+__m{bits}i {a_ik} = unaligned_load_broadcast_bf16x2({ptr});
 __m{bits} a_{i}_{k+0} = {cast}({self._mm()}_slli_epi32({a_ik}, 16));
 __m{bits} a_{i}_{k+1} = {cast}({self._mm()}_and_si{bits}({a_ik}, {mask}));
 """
@@ -89,8 +95,9 @@ c_{i}_{j} = {self._mm()}_fmadd_ps(a_{i}_{k+0}, b_{k+0}_{j}, c_{i}_{j});
 """
 
 
-class x86_avx512f_bf16_bf16_fp32(x86_bf16_bf16_fp32, x86_avx512f):
-  def __init__(self, arch="avx512f", bits=512, tile_shape=(1, 16, 2)):
+class x86_avx512_bf16_bf16_fp32(x86_bf16_bf16_fp32, x86_avx512):
+
+  def __init__(self, arch="avx512", bits=512, tile_shape=(1, 16, 2)):
     super().__init__(arch, bits, tile_shape)
 
   def product(self, i, j, k):
@@ -100,7 +107,7 @@ c_{i}_{j} = {self._mm()}_fmadd_ps(a_{i}_{k+0}, b_{k+0}_{j}, c_{i}_{j});
 """
 
 
-class x86_avx512bf16_bf16_bf16_fp32(x86_bf16_bf16_fp32, x86_avx512f):
+class x86_avx512bf16_bf16_bf16_fp32(x86_bf16_bf16_fp32, x86_avx512):
   def __init__(self, arch="avx512bf16", bits=512, tile_shape=(1, 16, 2)):
     super().__init__(arch, bits, tile_shape)
 
@@ -136,3 +143,59 @@ __m{self.bits}bh a_{i}_{k} = reinterpret_cast<__m{self.bits}bh>({a});
         f"c_{i}_{j} = {self._mm()}_dpbf16_ps(c_{i}_{j}, a_{i}_{k},"
         f" b_{k}_{j});\n"
     )
+
+
+generate_dot_kernels(
+    x86_avx2_fma3_bf16_bf16_fp32(),
+    [
+        (1, 32, 2),
+        (2, 32, 2),
+        (2, 16, 2),
+        (3, 16, 2),
+        (4, 16, 2),
+        (5, 16, 2),
+        (8, 8, 2),
+        (10, 8, 2),
+        (12, 8, 2),
+    ],
+)
+
+generate_dot_kernels(
+    x86_avx512_bf16_bf16_fp32(),
+    [
+        (1, 64, 2),
+        (2, 64, 2),
+        (3, 64, 2),
+        (4, 64, 2),
+        (5, 64, 2),
+        (2, 32, 2),
+        (3, 32, 2),
+        (4, 32, 2),
+        (5, 32, 2),
+        (6, 32, 2),
+        (8, 32, 2),
+        (10, 32, 2),
+        (12, 32, 2),
+        (16, 16, 2),
+    ],
+)
+
+generate_dot_kernels(
+    x86_avx512bf16_bf16_bf16_fp32(),
+    [
+        (1, 64, 2),
+        (2, 64, 2),
+        (3, 64, 2),
+        (4, 64, 2),
+        (5, 64, 2),
+        (2, 32, 2),
+        (3, 32, 2),
+        (4, 32, 2),
+        (5, 32, 2),
+        (6, 32, 2),
+        (8, 32, 2),
+        (10, 32, 2),
+        (12, 32, 2),
+        (16, 16, 2),
+    ],
+)

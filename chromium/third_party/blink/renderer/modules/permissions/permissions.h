@@ -10,6 +10,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
+#include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/modules/permissions/permission_status_listener.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -26,6 +27,10 @@ class PermissionStatus;
 class ScriptState;
 class ScriptValue;
 enum class PermissionType;
+
+MODULES_EXPORT bool ArePermissionDescriptorsEquivalentForTesting(
+    const mojom::blink::PermissionDescriptor& left,
+    const mojom::blink::PermissionDescriptor& right);
 
 class Permissions final : public ScriptWrappable,
                           public Supplement<NavigatorBase>,
@@ -68,24 +73,24 @@ class Permissions final : public ScriptWrappable,
   void VerifyPermissionAndReturnStatus(
       ScriptPromiseResolverBase* resolver,
       mojom::blink::PermissionDescriptorPtr descriptor,
-      mojom::blink::PermissionStatus result);
+      mojom::blink::PermissionStatusWithDetailsPtr result);
   void VerifyPermissionsAndReturnStatus(
       ScriptPromiseResolverBase* resolver,
       Vector<mojom::blink::PermissionDescriptorPtr> descriptors,
       Vector<int> caller_index_to_internal_index,
       int last_verified_permission_index,
       bool is_bulk_request,
-      const Vector<mojom::blink::PermissionStatus>& results);
+      Vector<mojom::blink::PermissionStatusWithDetailsPtr> results);
 
   void PermissionVerificationComplete(
       ScriptPromiseResolverBase* resolver,
       Vector<mojom::blink::PermissionDescriptorPtr> descriptors,
       Vector<int> caller_index_to_internal_index,
-      const Vector<mojom::blink::PermissionStatus>& results,
+      Vector<mojom::blink::PermissionStatusWithDetailsPtr> results,
       mojom::blink::PermissionDescriptorPtr verification_descriptor,
       int internal_index_to_verify,
       bool is_bulk_request,
-      mojom::blink::PermissionStatus verification_result);
+      mojom::blink::PermissionStatusWithDetailsPtr verification_result);
 
   PermissionStatusListener* GetOrCreatePermissionStatusListener(
       mojom::blink::PermissionStatus status,

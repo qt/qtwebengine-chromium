@@ -94,18 +94,29 @@ SenderSessionMessenger::SenderSessionMessenger(MessagePort& message_port,
 
 void SenderSessionMessenger::SetHandler(ReceiverMessage::Type type,
                                         ReplyCallback cb) {
-  // Currently the only handler allowed is for RPC messages.
-  OSP_CHECK(type == ReceiverMessage::Type::kRpc);
-  rpc_callback_ = std::move(cb);
+  // Currently the only handlers allowed are for RPC and INPUT messages.
+  if (type == ReceiverMessage::Type::kRpc) {
+    rpc_callback_ = std::move(cb);
+  } else if (type == ReceiverMessage::Type::kInput) {
+    input_callback_ = std::move(cb);
+  } else {
+    OSP_NOTREACHED();
+  }
 }
 
 void SenderSessionMessenger::ResetHandler(ReceiverMessage::Type type) {
-  OSP_CHECK(type == ReceiverMessage::Type::kRpc);
-  rpc_callback_ = {};
+  if (type == ReceiverMessage::Type::kRpc) {
+    rpc_callback_ = {};
+  } else if (type == ReceiverMessage::Type::kInput) {
+    input_callback_ = {};
+  } else {
+    OSP_NOTREACHED();
+  }
 }
 
 Error SenderSessionMessenger::SendOutboundMessage(SenderMessage message) {
-  const auto namespace_ = (message.type == SenderMessage::Type::kRpc)
+  const auto namespace_ = (message.type == SenderMessage::Type::kRpc ||
+                           message.type == SenderMessage::Type::kInput)
                               ? kCastRemotingNamespace
                               : kCastWebrtcNamespace;
 
@@ -122,11 +133,19 @@ Error SenderSessionMessenger::SendRpcMessage(ByteView message) {
       std::vector<uint8_t>(message.begin(), message.end())});
 }
 
+Error SenderSessionMessenger::SendInputMessage(ByteView message) {
+  return SendOutboundMessage(SenderMessage{
+      openscreen::cast::SenderMessage::Type::kInput,
+      -1 /* sequence_number, unused by INPUT messages */, true /* valid */,
+      std::vector<uint8_t>(message.begin(), message.end())});
+}
+
 Error SenderSessionMessenger::SendRequest(SenderMessage message,
                                           ReceiverMessage::Type reply_type,
                                           ReplyCallback cb) {
-  // RPC messages are not meant to be request/reply.
+  // RPC and INPUT messages are not meant to be request/reply.
   OSP_CHECK(reply_type != ReceiverMessage::Type::kRpc);
+  OSP_CHECK(reply_type != ReceiverMessage::Type::kInput);
 
   if (!cb) {
     return Error(Error::Code::kParameterInvalid,
@@ -194,6 +213,12 @@ void SenderSessionMessenger::OnMessage(const std::string& source_id,
     } else {
       OSP_DLOG_INFO << "Received RPC message but no callback, dropping";
     }
+  } else if (receiver_message.value().type == ReceiverMessage::Type::kInput) {
+    if (input_callback_) {
+      input_callback_(receiver_message.value());
+    } else {
+      OSP_DLOG_INFO << "Received INPUT message but no callback, dropping";
+    }
   } else {
     const int sequence_number = receiver_message.value().sequence_number;
     auto it = awaiting_replies_.find(sequence_number);
@@ -229,6 +254,24 @@ void ReceiverSessionMessenger::ResetHandler(SenderMessage::Type type) {
   callbacks_.erase_key(type);
 }
 
+Error ReceiverSessionMessenger::SendRpcMessage(const std::string& source_id,
+                                               ByteView message) {
+  return SendMessage(
+      source_id,
+      ReceiverMessage{ReceiverMessage::Type::kRpc, -1 /* sequence_number */,
+                      true /* valid */,
+                      std::vector<uint8_t>(message.begin(), message.end())});
+}
+
+Error ReceiverSessionMessenger::SendInputMessage(const std::string& source_id,
+                                                 ByteView message) {
+  return SendMessage(
+      source_id,
+      ReceiverMessage{ReceiverMessage::Type::kInput, -1 /* sequence_number */,
+                      true /* valid */,
+                      std::vector<uint8_t>(message.begin(), message.end())});
+}
+
 Error ReceiverSessionMessenger::SendMessage(const std::string& source_id,
                                             ReceiverMessage message) {
   if (source_id.empty()) {
@@ -236,7 +279,8 @@ Error ReceiverSessionMessenger::SendMessage(const std::string& source_id,
                  "Cannot send a message without a current source ID.");
   }
 
-  const auto namespace_ = (message.type == ReceiverMessage::Type::kRpc)
+  const auto namespace_ = (message.type == ReceiverMessage::Type::kRpc ||
+                           message.type == ReceiverMessage::Type::kInput)
                               ? kCastRemotingNamespace
                               : kCastWebrtcNamespace;
 

@@ -46,7 +46,6 @@
 #include "dawn/native/Error.h"
 #include "dawn/native/Forward.h"
 #include "dawn/native/ObjectBase.h"
-
 #include "dawn/native/dawn_platform.h"
 
 namespace dawn::native {
@@ -140,8 +139,10 @@ class BindGroupLayoutInternalBase : public ApiObjectBase,
     BindingIndex GetDynamicBufferCount() const;
     uint32_t GetDynamicStorageBufferCount() const;
     uint32_t GetUnverifiedBufferCount() const;
+    uint32_t GetAPIStaticSamplerCount() const;
     uint32_t GetStaticSamplerCount() const;
     bool IsStorageBufferBinding(BindingIndex bindingIndex) const;
+    bool IsExternalTextureBinding(APIBindingIndex bindingIndex) const;
 
     uint32_t GetExternalTextureCount() const;
 
@@ -156,6 +157,7 @@ class BindGroupLayoutInternalBase : public ApiObjectBase,
     BeginEndRange<BindingIndex> GetStaticSamplerIndices() const;
     BeginEndRange<BindingIndex> GetNonStaticSamplerIndices() const;
     BeginEndRange<BindingIndex> GetInputAttachmentIndices() const;
+    BeginEndRange<APIBindingIndex> GetExternalTextureIndices() const;
 
     // Functions necessary for the unordered_set<BGLBase*>-based cache.
     size_t ComputeContentHash() override;
@@ -171,7 +173,9 @@ class BindGroupLayoutInternalBase : public ApiObjectBase,
     // used to get the stored counts.
     const BindingCounts& GetValidationBindingCounts() const;
 
-    uint32_t GetUnexpandedBindingCount() const;
+    // Returns the number of bindings that's expected in the BindGroupDescriptor for BindGroups
+    // created from this layout.
+    uint32_t GetBindingCountForBindGroupCreation() const;
 
     bool NeedsCrossBindingValidation() const;
 

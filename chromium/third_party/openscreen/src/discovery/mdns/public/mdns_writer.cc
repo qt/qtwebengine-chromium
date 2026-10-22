@@ -7,9 +7,9 @@
 #include <limits>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
-#include "absl/types/variant.h"
 #include "util/hashing.h"
 #include "util/osp_logging.h"
 #include "util/string_util.h"
@@ -20,7 +20,7 @@ namespace {
 
 std::vector<uint64_t> ComputeDomainNameSubhashes(const DomainName& name) {
   const std::vector<std::string>& labels = name.labels();
-  uint64_t hash_value = openscreen::kDefaultSeed;
+  uint64_t hash_value = kDefaultSeed;
   std::vector<uint64_t> subhashes(labels.size());
   for (size_t i = labels.size(); i-- > 0;) {
     hash_value = ComputeAggregateHash(hash_value,
@@ -258,7 +258,7 @@ bool MdnsWriter::Write(const IPAddress& address) {
 }
 
 bool MdnsWriter::Write(const Rdata& rdata) {
-  return absl::visit([this](const auto& r) { return this->Write(r); }, rdata);
+  return std::visit([this](const auto& r) { return this->Write(r); }, rdata);
 }
 
 bool MdnsWriter::Write(const Header& header) {

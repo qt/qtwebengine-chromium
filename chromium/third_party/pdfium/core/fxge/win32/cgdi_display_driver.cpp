@@ -12,10 +12,8 @@
 #include "core/fxcrt/check_op.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_system.h"
-#include "core/fxge/agg/cfx_agg_imagerenderer.h"
 #include "core/fxge/dib/cfx_dibbase.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
-#include "core/fxge/render_defines.h"
 #include "core/fxge/win32/cwin32_platform.h"
 
 CGdiDisplayDriver::CGdiDisplayDriver(HDC hDC)
@@ -23,18 +21,12 @@ CGdiDisplayDriver::CGdiDisplayDriver(HDC hDC)
   auto* pPlatform =
       static_cast<CWin32Platform*>(CFX_GEModule::Get()->GetPlatform());
   if (pPlatform->gdiplus_ext_.IsAvailable()) {
-    render_caps_ |= FXRC_ALPHA_PATH | FXRC_ALPHA_IMAGE;
+    render_cap_alpha_path_ = true;
+    render_cap_alpha_image_ = true;
   }
 }
 
 CGdiDisplayDriver::~CGdiDisplayDriver() = default;
-
-int CGdiDisplayDriver::GetDeviceCaps(int caps_id) const {
-  if (caps_id == FXDC_HORZ_SIZE || caps_id == FXDC_VERT_SIZE) {
-    return 0;
-  }
-  return CGdiDeviceDriver::GetDeviceCaps(caps_id);
-}
 
 bool CGdiDisplayDriver::GetDIBits(RetainPtr<CFX_DIBitmap> bitmap,
                                   int left,
@@ -93,8 +85,7 @@ bool CGdiDisplayDriver::SetDIBits(RetainPtr<const CFX_DIBBase> bitmap,
       if (!background->Create(width, height, FXDIB_Format::kBgrx) ||
           !GetDIBits(background, left, top) ||
           !background->CompositeMask(0, 0, width, height, std::move(bitmap),
-                                     color, 0, 0, BlendMode::kNormal, nullptr,
-                                     false)) {
+                                     color, 0, 0, BlendMode::kNormal)) {
         return false;
       }
       FX_RECT alpha_src_rect(0, 0, width, height);
@@ -115,7 +106,7 @@ bool CGdiDisplayDriver::SetDIBits(RetainPtr<const CFX_DIBBase> bitmap,
         !GetDIBits(rgb_bitmap, left, top) ||
         !rgb_bitmap->CompositeBitmap(0, 0, width, height, std::move(bitmap),
                                      src_rect.left, src_rect.top,
-                                     BlendMode::kNormal, nullptr, false)) {
+                                     BlendMode::kNormal)) {
       return false;
     }
     FX_RECT alpha_src_rect(0, 0, width, height);
@@ -193,7 +184,7 @@ bool CGdiDisplayDriver::StretchDIBits(RetainPtr<const CFX_DIBBase> bitmap,
                    image_rect.top + clip_rect.top) ||
         !background->CompositeMask(0, 0, clip_width, clip_height,
                                    std::move(bitmap), color, 0, 0,
-                                   BlendMode::kNormal, nullptr, false)) {
+                                   BlendMode::kNormal)) {
       return false;
     }
 

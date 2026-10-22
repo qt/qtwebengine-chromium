@@ -815,6 +815,9 @@ class QUICHE_EXPORT QuicConnection
   QuicByteCount GetFlowControlSendWindowSize(QuicStreamId id) override {
     return visitor_->GetFlowControlSendWindowSize(id);
   }
+  bool NextSpinBitToSend() override {
+    return spin_bit_enabled_ && default_path_.next_spin_bit;
+  }
   QuicPacketBuffer GetPacketBuffer() override;
   void OnSerializedPacket(SerializedPacket packet) override;
   void OnUnrecoverableError(QuicErrorCode error,
@@ -836,6 +839,7 @@ class QUICHE_EXPORT QuicConnection
   // QuicIdleNetworkDetector::Delegate
   void OnHandshakeTimeout() override;
   void OnIdleNetworkDetected() override;
+  void OnMemoryReductionTimeout() override;
 
   // QuicPingManager::Delegate
   void OnKeepAliveTimeout() override;
@@ -935,6 +939,12 @@ class QUICHE_EXPORT QuicConnection
   // Sets the handshake and idle state connection timeouts.
   void SetNetworkTimeouts(QuicTime::Delta handshake_timeout,
                           QuicTime::Delta idle_timeout);
+  // Trim memory usage when network has been idle for
+  // `memory_reduction_timeout`. The timeout only takes effect after handshake
+  // completes.
+  void SetMemoryReductionTimeout(QuicTime::Delta memory_reduction_timeout) {
+    idle_network_detector_.SetMemoryReductionTimeout(memory_reduction_timeout);
+  }
 
   void SetMultiPortProbingInterval(QuicTime::Delta probing_interval) {
     multi_port_probing_interval_ = probing_interval;
@@ -1458,10 +1468,6 @@ class QUICHE_EXPORT QuicConnection
     return packet_writer_params_.ecn_codepoint;
   }
 
-  bool quic_limit_new_streams_per_loop_2() const {
-    return quic_limit_new_streams_per_loop_2_;
-  }
-
   bool quic_close_on_idle_timeout() const {
     return quic_close_on_idle_timeout_;
   }
@@ -1514,6 +1520,10 @@ class QUICHE_EXPORT QuicConnection
   bool reliable_stream_reset_enabled() const {
     return framer_.process_reset_stream_at();
   }
+
+  // Returns true if the spin bit should be enabled per the RFC 9000 spin
+  // participation guidance.
+  bool ShouldEnableSpinBit() const;
 
  protected:
   // Calls cancel() on all the alarms owned by this connection.
@@ -1657,6 +1667,8 @@ class QUICHE_EXPORT QuicConnection
     // How many total PTOs have fired since the connection started sending ECN
     // on this path, but before an ECN-marked packet has been acked.
     uint8_t ecn_pto_count = 0;
+    // The value of the spin bit for the next packet to be sent on this path.
+    bool next_spin_bit = false;
   };
 
   using QueuedPacketList = std::list<SerializedPacket>;
@@ -2560,13 +2572,13 @@ class QUICHE_EXPORT QuicConnection
   // ReceivedPacketInfo.
   const bool store_one_dcid_ : 1;
 
-  const bool quic_limit_new_streams_per_loop_2_ : 1 =
-      GetQuicReloadableFlag(quic_limit_new_streams_per_loop_2);
   const bool quic_test_peer_addr_change_after_normalize_ : 1 =
       GetQuicReloadableFlag(quic_test_peer_addr_change_after_normalize);
   const bool quic_fix_timeouts_ : 1 = GetQuicReloadableFlag(quic_fix_timeouts);
   bool quic_close_on_idle_timeout_ : 1 =
       GetQuicReloadableFlag(quic_close_on_idle_timeout);
+  // True if spin bit is enabled for this connection.
+  bool spin_bit_enabled_ : 1 = ShouldEnableSpinBit();
 };
 
 }  // namespace quic

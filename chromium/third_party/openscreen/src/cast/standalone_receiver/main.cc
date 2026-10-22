@@ -29,6 +29,10 @@
 #include "util/trace_logging.h"
 #include "util/uuid.h"
 
+#if defined(USE_PERFETTO)
+#include "platform/impl/perfetto_trace_logging_platform.h"
+#endif
+
 namespace openscreen::cast {
 namespace {
 
@@ -69,11 +73,15 @@ options:
     -q, --disable-dscp: Disable DSCP packet prioritization, used for QoS over
                         the UDP socket connection.
 
-    -t, --tracing: Enable performance tracing logging.
+    -t, --tracing: Enable text based performance trace logging.
 
     -v, --verbose: Enable verbose logging.
 
     -x, --disable-discovery: Disable discovery.
+
+    -P, --perfetto: Enable Perfetto based performance trace logging.
+
+    -i, --enable-input-events: Enable the Input event API (receiver-to-sender).
 
 )";
 
@@ -122,11 +130,12 @@ struct Arguments {
   std::string developer_certificate_path;
   bool enable_discovery = true;
   bool enable_dscp = true;
+  bool enable_input_events = false;
   std::string friendly_name = "Cast Standalone Receiver";
   bool should_generate_credentials = false;
   std::string model_name = "cast_standalone_receiver";
   std::string private_key_path;
-  std::unique_ptr<TextTraceLoggingPlatform> trace_logger;
+  std::unique_ptr<TraceLoggingPlatform> trace_logger;
   bool is_verbose = false;
 };
 
@@ -139,6 +148,7 @@ std::optional<Arguments> ParseArgs(int argc, char* argv[]) {
       {"developer-certificate", required_argument, nullptr, 'd'},
       {"disable-discovery", no_argument, nullptr, 'x'},
       {"disable-dscp", no_argument, nullptr, 'q'},
+      {"enable-input-events", no_argument, nullptr, 'i'},
       {"friendly-name", required_argument, nullptr, 'f'},
       {"generate-credentials", no_argument, nullptr, 'g'},
       {"help", no_argument, nullptr, 'h'},
@@ -146,11 +156,14 @@ std::optional<Arguments> ParseArgs(int argc, char* argv[]) {
       {"private-key", required_argument, nullptr, 'p'},
       {"tracing", no_argument, nullptr, 't'},
       {"verbose", no_argument, nullptr, 'v'},
+#if defined(USE_PERFETTO)
+      {"perfetto", no_argument, nullptr, 'P'},
+#endif
       {nullptr, 0, nullptr, 0}};
 
   Arguments args;
   int ch = -1;
-  while ((ch = getopt_long(argc, argv, "d:f:ghm:p:qtvx", kArgumentOptions,
+  while ((ch = getopt_long(argc, argv, "d:f:ghim:p:qtvxP", kArgumentOptions,
                            nullptr)) != -1) {
     switch (ch) {
       case 'd':
@@ -164,6 +177,9 @@ std::optional<Arguments> ParseArgs(int argc, char* argv[]) {
         break;
       case 'h':
         return {};
+      case 'i':
+        args.enable_input_events = true;
+        break;
       case 'm':
         args.model_name = get_opt::optarg;
         break;
@@ -182,6 +198,11 @@ std::optional<Arguments> ParseArgs(int argc, char* argv[]) {
       case 'x':
         args.enable_discovery = false;
         break;
+#if defined(USE_PERFETTO)
+      case 'P':
+        args.trace_logger = std::make_unique<PerfettoTraceLoggingPlatform>();
+        break;
+#endif
     }
   }
 
@@ -240,7 +261,8 @@ int RunStandaloneReceiver(int argc, char* argv[]) {
       CastService::Configuration{
           *task_runner, interface, std::move(creds.value()),
           Uuid::GenerateRandomV4().AsLowercaseString(), args->friendly_name,
-          args->model_name, args->enable_discovery});
+          args->model_name, args->enable_discovery, args->enable_dscp,
+          args->enable_input_events});
   PlatformClientPosix::ShutDown();
 
   return 0;

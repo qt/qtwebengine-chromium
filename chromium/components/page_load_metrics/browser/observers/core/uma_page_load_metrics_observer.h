@@ -39,6 +39,7 @@ extern const char kHistogramFirstInputTimestamp4[];
 extern const char kHistogramFirstPaint[];
 extern const char kHistogramFirstImagePaint[];
 extern const char kHistogramDomContentLoaded[];
+extern const char kHistogramActualNavigationStartToDOMContentLoaded[];
 extern const char kHistogramParseStartToDOMContentLoaded[];
 extern const char kHistogramLoad[];
 extern const char kHistogramFirstContentfulPaint[];
@@ -156,6 +157,9 @@ class UmaPageLoadMetricsObserver
 
   // page_load_metrics::PageLoadMetricsObserver:
   const char* GetObserverName() const override;
+  ObservePolicy OnStart(content::NavigationHandle* navigation_handle,
+                        const GURL& currently_committed_url,
+                        bool started_in_foreground) override;
   ObservePolicy OnFencedFramesStart(
       content::NavigationHandle* navigation_handle,
       const GURL& currently_committed_url) override;
@@ -204,6 +208,14 @@ class UmaPageLoadMetricsObserver
       content::NavigationHandle* navigation_handle) override;
 
  private:
+  // Stores the information of the most recently begun trace event that has
+  // not yet ended.
+  struct TraceBeginEvent {
+    std::string_view name;
+    int64_t navigation_id;
+    base::TimeTicks begin_time;
+  };
+
   void RecordNavigationTimingHistograms();
   void RecordTimingHistograms(
       const page_load_metrics::mojom::PageLoadTiming& main_frame_timing);
@@ -220,6 +232,22 @@ class UmaPageLoadMetricsObserver
   void EmitLCPTraceEvent(base::TimeDelta largest_contentful_paint_timing);
 
   void EmitInstantTraceEvent(base::TimeDelta duration, const char event_name[]);
+
+  perfetto::NamedTrack GetPageLoadTimelineTrack() const;
+
+  void EmitPageLoadTimelineTraceEventBegin(const char* name,
+                                           base::TimeTicks begin);
+
+  void EmitPageLoadTimelineTraceEventEnd(
+      const char* name,
+      base::TimeTicks end,
+      std::optional<base::TimeDelta> before_unload_dialog_duration =
+          std::nullopt);
+
+  void EmitPageLoadTimelineTraceEventsAfterParseStart(
+      const page_load_metrics::mojom::PageLoadTiming& main_frame_timing,
+      const page_load_metrics::ContentfulPaintTimingInfo&
+          all_frames_largest_contentful_paint);
 
   content::NavigationHandleTiming navigation_handle_timing_;
 
@@ -246,6 +274,8 @@ class UmaPageLoadMetricsObserver
 
   bool received_first_subresource_load_ = false;
   base::TimeDelta total_subresource_load_time_;
+
+  std::optional<TraceBeginEvent> trace_begin_event_;
 };
 
 #endif  // COMPONENTS_PAGE_LOAD_METRICS_BROWSER_OBSERVERS_CORE_UMA_PAGE_LOAD_METRICS_OBSERVER_H_

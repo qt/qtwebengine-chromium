@@ -49,6 +49,7 @@ proto_library(
     srcs = ["verification_record.proto"],
     deps = [
         ":access_policy_proto",
+        ":payload_transparency_proto",
         "@oak//proto/attestation:endorsement_proto",
         "@oak//proto/attestation:evidence_proto",
     ],
@@ -71,14 +72,50 @@ cc_proto_library(
 )
 
 proto_library(
+    name = "key_proto",
+    srcs = ["key.proto"],
+)
+
+cc_proto_library(
+    name = "key_cc_proto",
+    deps = [":key_proto"],
+)
+
+py_proto_library(
+    name = "key_py_pb2",
+    deps = [":key_proto"],
+)
+
+proto_library(
     name = "payload_metadata_proto",
     srcs = ["payload_metadata.proto"],
-    deps = ["//fcp/client:event_time_range_proto"],
+    deps = [
+        "//fcp/client:event_time_range_proto",
+    ],
 )
 
 cc_proto_library(
     name = "payload_metadata_cc_proto",
     deps = [":payload_metadata_proto"],
+)
+
+proto_library(
+    name = "payload_transparency_proto",
+    srcs = ["payload_transparency.proto"],
+    deps = [
+        ":key_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "payload_transparency_cc_proto",
+    deps = [":payload_transparency_proto"],
+)
+
+java_proto_library(
+    name = "payload_transparency_java_proto",
+    deps = [":payload_transparency_proto"],
 )
 
 proto_library(
@@ -89,23 +126,6 @@ proto_library(
 cc_proto_library(
     name = "aggregation_client_payload_cc_proto",
     deps = [":aggregation_client_payload_proto"],
-)
-
-proto_library(
-    name = "ledger_proto",
-    srcs = ["ledger.proto"],
-    deps = [
-        "@com_google_protobuf//:duration_proto",
-        "@com_google_protobuf//:timestamp_proto",
-        "@oak//proto/attestation:endorsement_proto",
-        "@oak//proto/attestation:evidence_proto",
-        "@oak//proto/micro_rpc:options_proto",
-    ],
-)
-
-cc_proto_library(
-    name = "ledger_cc_proto",
-    deps = [":ledger_proto"],
 )
 
 proto_library(
@@ -203,6 +223,7 @@ proto_library(
     deps = [
         ":access_policy_proto",
         ":private_inference_proto",
+        ":private_logger_uploads_config_proto",
         "@com_google_protobuf//:any_proto",
         "@org_tensorflow_federated//tensorflow_federated/cc/core/impl/aggregation/protocol:configuration_proto",
     ],
@@ -239,6 +260,31 @@ cc_proto_library(
     deps = [":blob_data_proto"],
 )
 
+proto_library(
+    name = "sentence_transformers_config_proto",
+    srcs = ["sentence_transformers_config.proto"],
+)
+
+py_proto_library(
+    name = "sentence_transformers_config_py_pb2",
+    deps = [":sentence_transformers_config_proto"],
+)
+
+cc_proto_library(
+    name = "sentence_transformers_config_cc_proto",
+    deps = [":sentence_transformers_config_proto"],
+)
+
+proto_library(
+    name = "nn_histogram_config_proto",
+    srcs = ["nn_histogram_config.proto"],
+)
+
+cc_proto_library(
+    name = "nn_histogram_config_cc_proto",
+    deps = [":nn_histogram_config_proto"],
+)
+
 # --------------------------------------------------------------------
 # signed_endorsements.proto
 
@@ -246,6 +292,7 @@ proto_library(
     name = "signed_endorsements_proto",
     srcs = ["signed_endorsements.proto"],
     deps = [
+        ":payload_transparency_proto",
         "@oak//proto/attestation:endorsement_proto",
     ],
 )
@@ -272,6 +319,7 @@ proto_library(
     name = "access_policy_endorsement_options_proto",
     srcs = ["access_policy_endorsement_options.proto"],
     deps = [
+        ":key_proto",
         "@oak//proto/attestation:reference_value_proto",
     ],
 )
@@ -289,6 +337,20 @@ java_proto_library(
 py_proto_library(
     name = "access_policy_endorsement_options_py_pb2",
     deps = [":access_policy_endorsement_options_proto"],
+)
+
+proto_library(
+    name = "attestation_transparency_service_proto",
+    srcs = ["attestation_transparency_service.proto"],
+    deps = [
+        ":payload_transparency_proto",
+        "@oak//proto/session:session_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "attestation_transparency_service_cc_proto",
+    deps = [":attestation_transparency_service_proto"],
 )
 
 proto_library(
@@ -394,6 +456,7 @@ proto_library(
     name = "kms_proto",
     srcs = ["kms.proto"],
     deps = [
+        ":payload_transparency_proto",
         "@com_google_googleapis//google/rpc:status_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:duration_proto",
@@ -491,4 +554,41 @@ tf_proto_library(
 alias(
     name = "windowing_schedule_py_pb2",
     actual = "windowing_schedule_proto_py",
+)
+
+proto_library(
+    name = "message_description_proto",
+    srcs = ["message_description.proto"],
+)
+
+cc_proto_library(
+    name = "message_description_cc_proto",
+    deps = [":message_description_proto"],
+)
+
+proto_library(
+    name = "tee_payload_metadata_proto",
+    srcs = ["tee_payload_metadata.proto"],
+    deps = [
+        ":private_logger_uploads_config_proto",
+        "//fcp/client:event_time_range_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "tee_payload_metadata_cc_proto",
+    deps = [":tee_payload_metadata_proto"],
+)
+
+proto_library(
+    name = "private_logger_uploads_config_proto",
+    srcs = ["private_logger_uploads_config.proto"],
+    deps = [
+        ":message_description_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "private_logger_uploads_config_cc_proto",
+    deps = [":private_logger_uploads_config_proto"],
 )

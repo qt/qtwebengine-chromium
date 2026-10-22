@@ -58,9 +58,12 @@ export const markdownLinks = new Map<string, string>([
   ['signatureHeader', 'https://www.rfc-editor.org/rfc/rfc9421.html#name-the-signature-http-field'],
   ['signatureInputHeader', 'https://www.rfc-editor.org/rfc/rfc9421.html#name-the-signature-input-http-fi'],
   ['signatureParameters', 'https://www.rfc-editor.org/rfc/rfc9421.html#name-signature-parameters'],
-  ['sfDictionary', 'https://www.rfc-editor.org/rfc/rfc8941.html#name-dictionaries'],
   ['sfByteSequence', 'https://www.rfc-editor.org/rfc/rfc8941.html#name-byte-sequences'],
+  ['sfDictionary', 'https://www.rfc-editor.org/rfc/rfc8941.html#name-dictionaries'],
   ['sfInnerList', 'https://www.rfc-editor.org/rfc/rfc8941.html#name-inner-lists'],
+  ['sfList', 'https://www.rfc-editor.org/rfc/rfc8941.html#name-lists'],
+  ['sfString', 'https://www.rfc-editor.org/rfc/rfc8941.html#name-strings'],
+  ['sfToken', 'https://www.rfc-editor.org/rfc/rfc8941.html#name-tokens'],
   ['componentParameterSf', 'https://www.rfc-editor.org/rfc/rfc9421.html#name-strict-serialization-of-htt'],
   ['componentParameterReq', 'https://www.rfc-editor.org/rfc/rfc9421.html#content-request-response'],
   [
@@ -74,6 +77,12 @@ export const markdownLinks = new Map<string, string>([
     'https://privacysandbox.com/news/update-on-plans-for-privacy-sandbox-technologies/',
     'https://privacysandbox.com/news/update-on-plans-for-privacy-sandbox-technologies/'
   ],
+  ['urlPatternSpec', 'https://urlpattern.spec.whatwg.org/'],
+  [
+    'SelectivePermissionsInterventionIssue',
+    'https://issues.chromium.org/issues/new?component=1456114&title=Selective%20Permissions%20Intervention%20Breakage:%20%3Cyour%20domain%20here%3E&template=0',
+  ],
+  ['ChromeFilterlistRepository', 'https://github.com/chromium/chromium-ads-detection'],
 ]);
 
 export const getMarkdownLink = (key: string): string => {

@@ -104,7 +104,7 @@ bool FrameCollector::CollectRtpPacket(const RtpPacketParser::ParseResult& part,
 void FrameCollector::GetMissingPackets(std::vector<PacketNack>* nacks) const {
   OSP_CHECK(!frame_.frame_id.is_null());
 
-  if (num_missing_packets_ == 0) {
+  if (is_complete()) {
     return;
   }
 
@@ -122,34 +122,33 @@ void FrameCollector::GetMissingPackets(std::vector<PacketNack>* nacks) const {
   }
 }
 
-const EncryptedFrame& FrameCollector::PeekAtAssembledFrame() {
-  OSP_CHECK_EQ(num_missing_packets_, 0);
-
-  if (!frame_.data.data()) {
-    // Allocate the frame's payload buffer once, right-sized to the sum of all
-    // chunk sizes.
-    frame_.owned_data_.reserve(
-        std::accumulate(chunks_.cbegin(), chunks_.cend(), size_t{0},
-                        [](size_t num_bytes_so_far, const PayloadChunk& chunk) {
-                          return num_bytes_so_far + chunk.payload.size();
-                        }));
-    // Now, populate the frame's payload buffer with each chunk of data.
-    for (const PayloadChunk& chunk : chunks_) {
-      frame_.owned_data_.insert(frame_.owned_data_.end(), chunk.payload.begin(),
-                                chunk.payload.end());
-    }
-    frame_.data = frame_.owned_data_;
-  }
-
+const EncodedFrame& FrameCollector::PeekFrameMetadata() const {
+  OSP_CHECK(is_complete());
   return frame_;
+}
+
+size_t FrameCollector::GetFramePayloadSize() const {
+  OSP_CHECK(is_complete());
+  return std::accumulate(
+      chunks_.cbegin(), chunks_.cend(), size_t{0},
+      [](size_t num_bytes_so_far, const PayloadChunk& chunk) {
+        return num_bytes_so_far + chunk.payload.size();
+      });
+}
+
+std::vector<ByteView> FrameCollector::GetPayloadChunks() const {
+  OSP_CHECK(is_complete());
+  std::vector<ByteView> result;
+  result.reserve(chunks_.size());
+  for (const PayloadChunk& chunk : chunks_) {
+    result.push_back(chunk.payload);
+  }
+  return result;
 }
 
 void FrameCollector::Reset() {
   num_missing_packets_ = kUnknownNumberOfPackets;
-  frame_.frame_id = FrameId();
-  frame_.owned_data_.clear();
-  frame_.owned_data_.shrink_to_fit();
-  frame_.data = ByteView();
+  frame_ = EncodedFrame();
   chunks_.clear();
 }
 

@@ -31,7 +31,7 @@ class MatrixPower;
  * MatrixPower::operator() and related functions and most of the
  * time this is the only way it is used.
  */
-/* TODO This class is only used by MatrixPower, so it should be nested
+/* TODO: This class is only used by MatrixPower, so it should be nested
  * into MatrixPower, like MatrixPower::ReturnValue. However, my
  * compiler complained about unused template parameter in the
  * following declaration in namespace internal.
@@ -178,14 +178,17 @@ void MatrixPowerAtomic<MatrixType>::compute2x2(ResultType& res, RealScalar p) co
 
   for (Index i = 1; i < m_A.cols(); ++i) {
     res.coeffRef(i, i) = pow(m_A.coeff(i, i), p);
-    if (m_A.coeff(i - 1, i - 1) == m_A.coeff(i, i))
-      res.coeffRef(i - 1, i) = p * pow(m_A.coeff(i, i), p - 1);
-    else if (2 * abs(m_A.coeff(i - 1, i - 1)) < abs(m_A.coeff(i, i)) ||
-             2 * abs(m_A.coeff(i, i)) < abs(m_A.coeff(i - 1, i - 1)))
-      res.coeffRef(i - 1, i) =
-          (res.coeff(i, i) - res.coeff(i - 1, i - 1)) / (m_A.coeff(i, i) - m_A.coeff(i - 1, i - 1));
+    Scalar a = m_A.coeff(i - 1, i - 1);
+    Scalar b = m_A.coeff(i, i);
+    Scalar diff = b - a;
+    // Use the derivative formula when eigenvalues are nearly equal to avoid
+    // catastrophic cancellation in the difference quotient.
+    if (abs(diff) <= RealScalar(2) * (std::numeric_limits<RealScalar>::epsilon)() * (std::max)(abs(a), abs(b)))
+      res.coeffRef(i - 1, i) = p * pow(b, p - 1);
+    else if (2 * abs(a) < abs(b) || 2 * abs(b) < abs(a))
+      res.coeffRef(i - 1, i) = (res.coeff(i, i) - res.coeff(i - 1, i - 1)) / diff;
     else
-      res.coeffRef(i - 1, i) = computeSuperDiag(m_A.coeff(i, i), m_A.coeff(i - 1, i - 1), p);
+      res.coeffRef(i - 1, i) = computeSuperDiag(b, a, p);
     res.coeffRef(i - 1, i) *= m_A.coeff(i - 1, i);
   }
 }

@@ -575,8 +575,6 @@ pub fn codec_versions() -> String {
         "android_mediacodec".into(),
         #[cfg(feature = "dav1d")]
         codecs::dav1d::Dav1d::version(),
-        #[cfg(feature = "libgav1")]
-        codecs::libgav1::Libgav1::version(),
         #[cfg(feature = "avm")]
         codecs::avm::Avm::version(),
         #[cfg(feature = "jpegxl")]

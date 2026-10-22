@@ -118,56 +118,57 @@ Json::Value AspectRatioConstraintToJson(AspectRatioConstraint aspect_ratio) {
                          .value(kScalingSender));
 }
 
-bool TryParseAspectRatioConstraint(const Json::Value& value,
-                                   AspectRatioConstraint* out) {
+std::optional<AspectRatioConstraint> TryParseAspectRatioConstraint(
+    const Json::Value& value) {
   std::string aspect_ratio;
   if (!json::TryParseString(value, &aspect_ratio)) {
-    return false;
+    return std::nullopt;
   }
 
   ErrorOr<AspectRatioConstraint> constraint =
       GetEnum(kAspectRatioConstraintNames, aspect_ratio);
   if (constraint.is_error()) {
-    return false;
+    return std::nullopt;
   }
-  *out = constraint.value();
-  return true;
+  return constraint.value();
 }
 
 template <typename T>
-bool ParseOptional(const Json::Value& value, std::optional<T>* out) {
-  // It's fine if the value is empty.
+ErrorOr<std::optional<T>> ParseOptional(const Json::Value& value) {
   if (!value) {
-    return true;
+    return std::optional<T>{};
   }
-  T tentative_out;
-  if (!T::TryParse(value, &tentative_out)) {
-    return false;
+  auto out = T::TryParse(value);
+  if (out.is_error()) {
+    return out.error();
   }
-  *out = tentative_out;
-  return true;
+  return std::optional<T>{std::move(out.value())};
 }
 
 }  // namespace
 
 // static
-bool AspectRatio::TryParse(const Json::Value& value, AspectRatio* out) {
+ErrorOr<AspectRatio> AspectRatio::TryParse(const Json::Value& value) {
   std::string parsed_value;
   if (!json::TryParseString(value, &parsed_value)) {
-    return false;
+    return Error(Error::Code::kJsonParseError, "Invalid aspect ratio string");
   }
 
   std::vector<std::string_view> fields =
       string_util::Split(parsed_value, kAspectRatioDelimiter);
   if (fields.size() != 2) {
-    return false;
+    return Error(Error::Code::kJsonParseError, "Invalid aspect ratio format");
   }
 
-  if (!string_parse::ParseAsciiNumber(fields[0], out->width) ||
-      !string_parse::ParseAsciiNumber(fields[1], out->height)) {
-    return false;
+  AspectRatio out;
+  if (!string_parse::ParseAsciiNumber(fields[0], out.width) ||
+      !string_parse::ParseAsciiNumber(fields[1], out.height)) {
+    return Error(Error::Code::kJsonParseError, "Invalid aspect ratio values");
   }
-  return out->IsValid();
+  if (!out.IsValid()) {
+    return Error(Error::Code::kJsonParseError, "Invalid aspect ratio");
+  }
+  return out;
 }
 
 bool AspectRatio::IsValid() const {
@@ -175,23 +176,26 @@ bool AspectRatio::IsValid() const {
 }
 
 // static
-bool AudioConstraints::TryParse(const Json::Value& root,
-                                AudioConstraints* out) {
-  if (!json::TryParseInt(root[kMaxSampleRate], &(out->max_sample_rate)) ||
-      !json::TryParseInt(root[kMaxChannels], &(out->max_channels)) ||
-      !json::TryParseInt(root[kMaxBitRate], &(out->max_bit_rate))) {
-    return false;
+ErrorOr<AudioConstraints> AudioConstraints::TryParse(const Json::Value& root) {
+  AudioConstraints out;
+  if (!json::TryParseInt(root[kMaxSampleRate], &out.max_sample_rate) ||
+      !json::TryParseInt(root[kMaxChannels], &out.max_channels) ||
+      !json::TryParseInt(root[kMaxBitRate], &out.max_bit_rate)) {
+    return Error(Error::Code::kJsonParseError, "Invalid audio constraints");
   }
 
   std::chrono::milliseconds max_delay;
   if (json::TryParseMilliseconds(root[kMaxDelay], &max_delay)) {
-    out->max_delay = max_delay;
+    out.max_delay = max_delay;
   }
 
-  if (!json::TryParseInt(root[kMinBitRate], &(out->min_bit_rate))) {
-    out->min_bit_rate = kDefaultAudioMinBitRate;
+  if (!json::TryParseInt(root[kMinBitRate], &out.min_bit_rate)) {
+    out.min_bit_rate = kDefaultAudioMinBitRate;
   }
-  return out->IsValid();
+  if (!out.IsValid()) {
+    return Error(Error::Code::kJsonParseError, "Invalid audio constraints");
+  }
+  return out;
 }
 
 Json::Value AudioConstraints::ToJson() const {
@@ -213,29 +217,43 @@ bool AudioConstraints::IsValid() const {
 }
 
 // static
-bool VideoConstraints::TryParse(const Json::Value& root,
-                                VideoConstraints* out) {
-  if (!Dimensions::TryParse(root[kMaxDimensions], &(out->max_dimensions)) ||
-      !json::TryParseInt(root[kMaxBitRate], &(out->max_bit_rate)) ||
-      !ParseOptional<Dimensions>(root[kMinResolution],
-                                 &(out->min_resolution))) {
-    return false;
+ErrorOr<VideoConstraints> VideoConstraints::TryParse(const Json::Value& root) {
+  VideoConstraints out;
+
+  auto max_dimensions = Dimensions::TryParse(root[kMaxDimensions]);
+  if (max_dimensions.is_error()) {
+    return max_dimensions.error();
   }
+  out.max_dimensions = std::move(max_dimensions.value());
+
+  if (!json::TryParseInt(root[kMaxBitRate], &out.max_bit_rate)) {
+    return Error(Error::Code::kJsonParseError,
+                 "Invalid video constraints: missing maxBitRate");
+  }
+
+  auto min_resolution = ParseOptional<Dimensions>(root[kMinResolution]);
+  if (min_resolution.is_error()) {
+    return min_resolution.error();
+  }
+  out.min_resolution = std::move(min_resolution.value());
 
   std::chrono::milliseconds max_delay;
   if (json::TryParseMilliseconds(root[kMaxDelay], &max_delay)) {
-    out->max_delay = max_delay;
+    out.max_delay = max_delay;
   }
 
   double max_pixels_per_second;
   if (json::TryParseDouble(root[kMaxPixelsPerSecond], &max_pixels_per_second)) {
-    out->max_pixels_per_second = max_pixels_per_second;
+    out.max_pixels_per_second = max_pixels_per_second;
   }
 
-  if (!json::TryParseInt(root[kMinBitRate], &(out->min_bit_rate))) {
-    out->min_bit_rate = kDefaultVideoMinBitRate;
+  if (!json::TryParseInt(root[kMinBitRate], &out.min_bit_rate)) {
+    out.min_bit_rate = kDefaultVideoMinBitRate;
   }
-  return out->IsValid();
+  if (!out.IsValid()) {
+    return Error(Error::Code::kJsonParseError, "Invalid video constraints");
+  }
+  return out;
 }
 
 bool VideoConstraints::IsValid() const {
@@ -268,12 +286,25 @@ Json::Value VideoConstraints::ToJson() const {
 }
 
 // static
-bool Constraints::TryParse(const Json::Value& root, Constraints* out) {
-  if (!AudioConstraints::TryParse(root[kAudio], &(out->audio)) ||
-      !VideoConstraints::TryParse(root[kVideo], &(out->video))) {
-    return false;
+ErrorOr<Constraints> Constraints::TryParse(const Json::Value& root) {
+  Constraints out;
+
+  auto audio = AudioConstraints::TryParse(root[kAudio]);
+  if (audio.is_error()) {
+    return audio.error();
   }
-  return out->IsValid();
+  out.audio = std::move(audio.value());
+
+  auto video = VideoConstraints::TryParse(root[kVideo]);
+  if (video.is_error()) {
+    return video.error();
+  }
+  out.video = std::move(video.value());
+
+  if (!out.IsValid()) {
+    return Error(Error::Code::kJsonParseError, "Invalid constraints");
+  }
+  return out;
 }
 
 bool Constraints::IsValid() const {
@@ -289,22 +320,33 @@ Json::Value Constraints::ToJson() const {
 }
 
 // static
-bool DisplayDescription::TryParse(const Json::Value& root,
-                                  DisplayDescription* out) {
-  if (!ParseOptional<Dimensions>(root[kDimensions], &(out->dimensions)) ||
-      !ParseOptional<AspectRatio>(root[kAspectRatio], &(out->aspect_ratio))) {
-    return false;
-  }
+ErrorOr<DisplayDescription> DisplayDescription::TryParse(
+    const Json::Value& root) {
+  DisplayDescription out;
 
-  AspectRatioConstraint constraint;
-  if (TryParseAspectRatioConstraint(root[kScaling], &constraint)) {
-    out->aspect_ratio_constraint =
-        std::optional<AspectRatioConstraint>(std::move(constraint));
+  auto dimensions = ParseOptional<Dimensions>(root[kDimensions]);
+  if (dimensions.is_error()) {
+    return dimensions.error();
+  }
+  out.dimensions = std::move(dimensions.value());
+
+  auto aspect_ratio = ParseOptional<AspectRatio>(root[kAspectRatio]);
+  if (aspect_ratio.is_error()) {
+    return aspect_ratio.error();
+  }
+  out.aspect_ratio = std::move(aspect_ratio.value());
+
+  auto constraint = TryParseAspectRatioConstraint(root[kScaling]);
+  if (constraint.has_value()) {
+    out.aspect_ratio_constraint = constraint.value();
   } else {
-    out->aspect_ratio_constraint = std::nullopt;
+    out.aspect_ratio_constraint = std::nullopt;
   }
 
-  return out->IsValid();
+  if (!out.IsValid()) {
+    return Error(Error::Code::kJsonParseError, "Invalid display description");
+  }
+  return out;
 }
 
 bool DisplayDescription::IsValid() const {
@@ -347,23 +389,38 @@ Json::Value DisplayDescription::ToJson() const {
   return root;
 }
 
-bool Answer::TryParse(const Json::Value& root, Answer* out) {
-  if (!json::TryParseInt(root[kUdpPort], &(out->udp_port)) ||
-      !json::TryParseIntArray(root[kSendIndexes], &(out->send_indexes)) ||
-      !json::TryParseUintArray(root[kSsrcs], &(out->ssrcs)) ||
-      !ParseOptional<Constraints>(root[kConstraints], &(out->constraints)) ||
-      !ParseOptional<DisplayDescription>(root[kDisplay], &(out->display))) {
-    return false;
+ErrorOr<Answer> Answer::TryParse(const Json::Value& root) {
+  Answer out;
+  if (!json::TryParseInt(root[kUdpPort], &out.udp_port) ||
+      !json::TryParseIntArray(root[kSendIndexes], &out.send_indexes) ||
+      !json::TryParseUintArray(root[kSsrcs], &out.ssrcs)) {
+    return Error(Error::Code::kJsonParseError,
+                 "Invalid answer: missing or invalid mandatory fields");
   }
 
-  // These function set to empty array if not present, so we can ignore
+  auto constraints = ParseOptional<Constraints>(root[kConstraints]);
+  if (constraints.is_error()) {
+    return constraints.error();
+  }
+  out.constraints = std::move(constraints.value());
+
+  auto display = ParseOptional<DisplayDescription>(root[kDisplay]);
+  if (display.is_error()) {
+    return display.error();
+  }
+  out.display = std::move(display.value());
+
+  // These functions set to empty array if not present, so we can ignore
   // the return value for optional values.
   json::TryParseIntArray(root[kReceiverRtcpEventLog],
-                         &(out->receiver_rtcp_event_log));
-  json::TryParseIntArray(root[kReceiverRtcpDscp], &(out->receiver_rtcp_dscp));
-  json::TryParseStringArray(root[kRtpExtensions], &(out->rtp_extensions));
+                         &out.receiver_rtcp_event_log);
+  json::TryParseIntArray(root[kReceiverRtcpDscp], &out.receiver_rtcp_dscp);
+  json::TryParseNestedStringArray(root[kRtpExtensions], &out.rtp_extensions);
 
-  return out->IsValid();
+  if (!out.IsValid()) {
+    return Error(Error::Code::kJsonParseError, "Invalid answer");
+  }
+  return out;
 }
 
 bool Answer::IsValid() const {
@@ -409,7 +466,7 @@ Json::Value Answer::ToJson() const {
     root[kReceiverRtcpDscp] = json::PrimitiveVectorToJson(receiver_rtcp_dscp);
   }
   if (!rtp_extensions.empty()) {
-    root[kRtpExtensions] = json::PrimitiveVectorToJson(rtp_extensions);
+    root[kRtpExtensions] = json::NestedStringArrayToJson(rtp_extensions);
   }
   return root;
 }

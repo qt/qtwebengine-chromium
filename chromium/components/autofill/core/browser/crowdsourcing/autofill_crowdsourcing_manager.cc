@@ -19,7 +19,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/rand_util.h"
@@ -28,6 +27,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/crowdsourcing/autofill_crowdsourcing_encoding.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
@@ -320,8 +320,8 @@ size_t CountActiveFieldsInForms(const std::vector<FormData>& forms) {
 
 std::string FieldTypeToString(uint32_t type) {
   return base::StrCat(
-      {base::NumberToString(type), std::string("/"),
-       FieldTypeToStringView(ToSafeFieldType(type, UNKNOWN_TYPE))});
+      {base::NumberToString(type), "/",
+       FieldTypeToStringView(ToSafeFieldType(type).value_or(UNKNOWN_TYPE))});
 }
 
 LogBuffer& operator<<(LogBuffer& out, const AutofillPageQueryRequest& query) {
@@ -480,7 +480,7 @@ bool ShouldThrottleUpload(FormSignature form_signature,
   // event pref to set the appropriate bit.
   const bool is_first_upload_for_event = ((value & mask) == 0);
   if (is_first_upload_for_event) {
-    ScopedDictPrefUpdate update(pref_service, std::string(preference));
+    ScopedDictPrefUpdate update(pref_service, preference);
     update->Set(key, value | mask);
   }
 
@@ -1089,6 +1089,21 @@ void AutofillCrowdsourcingManager::OnSimpleLoaderComplete(
     base::UmaHistogramCounts100000(
         GetMetricName(request_data.request_type, "FailingPayloadSize"),
         request_data.payload.length());
+
+#if !BUILDFLAG(IS_ANDROID)
+    if (base::FeatureList::IsEnabled(
+            features::debug::kAutofillOverridePredictions) &&
+        request_data.callback) {
+      // When overriding server predictions, the callback requires a non null
+      // response, so sending an empty (non null) response is enough to allow
+      // server prediction overrides to be applied.
+      std::move(request_data.callback)
+          .Release()
+          .Run(QueryResponse(/*response=*/"",
+                             std::move(request_data.form_signatures)));
+      return;
+    }
+#endif
 
     // If the failure was a client error don't retry.
     if (response_code >= 400 && response_code <= 499) {

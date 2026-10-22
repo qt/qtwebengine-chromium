@@ -25,7 +25,9 @@ function createCallbacks(editor: TextEditor.TextEditor.TextEditor): AiCodeComple
       clearCachedRequest: () => void,
       rpcGlobalId?: Host.AidaClient.RpcGlobalId,
       sampleId?: number,
-    }|null) => editor.dispatch({effects: TextEditor.Config.setAiAutoCompleteSuggestion.of(args)}),
+    }|null) => editor.dispatch({
+      effects: TextEditor.Config.setAiAutoCompleteSuggestion.of(args as unknown as TextEditor.Config.ActiveSuggestion)
+    }),
   };
 }
 

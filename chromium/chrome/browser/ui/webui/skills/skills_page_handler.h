@@ -9,6 +9,7 @@
 #include "chrome/browser/skills/skills_ui_tab_controller_interface.h"
 #include "chrome/browser/ui/webui/skills/skills.mojom.h"
 #include "components/skills/public/skills_service.h"
+#include "components/skills/public/skills_types.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 
@@ -57,14 +58,23 @@ class SkillsPageHandler : public skills::mojom::PageHandler,
 
   // skills::SkillsService::Observer:
   void OnSkillUpdated(std::string_view skill_id,
-                      SkillsService::UpdateSource update_source) override;
+                      SkillsService::UpdateSource update_source,
+                      bool is_position_changed) override;
   void OnDiscoverySkillsUpdated(
-      const SkillsService::SkillsMap* skills_map) override;
+      const FirstPartySkillData* first_party_skill_data) override;
   void OnSkillsServiceShuttingDown() override;
+  void OnTemporarySkillDisplay(
+      std::string_view skill_id,
+      SkillsService::DisplayState display_state) override;
+  bool Require1PSkillRefresh() override;
 
   bool Is1PDownloadTimerRunning() const {
     return first_party_download_timer_.IsRunning();
   }
+
+  void RecordSkillsManagementAction(
+      skills::mojom::SkillsManagementPage page,
+      skills::mojom::SkillsManagementAction action) override;
 
  private:
   // Triggered if a first party skills download was requested but didn't

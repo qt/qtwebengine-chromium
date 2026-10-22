@@ -4,7 +4,9 @@
 
 #include "chrome/browser/ui/webui/cr_components/history_embeddings/history_embeddings_handler.h"
 
+#include "base/check.h"
 #include "base/i18n/time_formatting.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -15,14 +17,15 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_navigator_params.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/hats/hats_service.h"
 #include "chrome/browser/ui/hats/hats_service_factory.h"
 #include "chrome/browser/ui/user_education/browser_user_education_interface.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/url_constants.h"
 #include "components/history_clusters/core/history_clusters_util.h"
-#include "components/history_embeddings/history_embeddings_features.h"
-#include "components/history_embeddings/history_embeddings_service.h"
+#include "components/history_embeddings/content/history_embeddings_service.h"
+#include "components/history_embeddings/core/history_embeddings_features.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/url_formatter/url_formatter.h"
 #include "history_embeddings_handler.h"
@@ -259,7 +262,7 @@ void HistoryEmbeddingsHandler::SetUserFeedback(
   user_feedback_ = OptimizationFeedbackFromMojoUserFeedback(user_feedback);
   if (user_feedback ==
       history_embeddings::mojom::UserFeedback::kUserFeedbackNegative) {
-    Browser* browser = chrome::FindLastActive();
+    BrowserWindowInterface* browser = chrome::FindLastActive();
     if (!browser) {
       return;
     }

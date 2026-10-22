@@ -1,6 +1,7 @@
 Name: Highway: C++ library for SIMD
 Short Name: highway
 URL: https://github.com/google/highway
+Version: N/A
 Update Mechanism: Manual
 Revision: e92c12750d18c372867809b882dd3ec6874ecc73
 License: BSD-3-Clause

@@ -11,7 +11,7 @@
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkVertices.h"
 #include "include/private/base/SkTArray.h"
-#include "src/gpu/AtlasTypes.h"
+#include "src/gpu/MaskFormat.h"
 #include "src/gpu/graphite/Renderer.h"
 
 namespace skgpu::graphite {
@@ -67,6 +67,10 @@ enum class PathRendererStrategy {
     // supports 16 and 8 sample SW-emulated MSAA. Clipping paths are rendered using kTessellation.
     kComputeMSAA16,
     kComputeMSAA8,
+
+    // Runs the SparseStrips pipeline with SW-emulated MSAA with rasterization on the CPU. Clipping
+    // paths are rendered using kTessellation.
+    kCPUSparseStripsMSAA8,
 };
 
 /**
@@ -107,12 +111,12 @@ public:
     // ** Specialized renderers that are used regardless of general path rendering strategy.
 
     // Atlased text rendering
-    const Renderer* bitmapText(bool useLCDText, skgpu::MaskFormat format) const {
+    const Renderer* bitmapText(bool useLCDText, MaskFormat format) const {
         // We use 565 here to represent all LCD rendering, regardless of texture format
         if (useLCDText) {
-            return &fBitmapText[(int)skgpu::MaskFormat::kA565];
+            return &fBitmapText[(int)MaskFormat::kA565];
         }
-        SkASSERT(format != skgpu::MaskFormat::kA565);
+        SkASSERT(format != MaskFormat::kA565);
         return &fBitmapText[(int)format];
     }
     const Renderer* sdfText(bool useLCDText) const { return &fSDFText[useLCDText]; }

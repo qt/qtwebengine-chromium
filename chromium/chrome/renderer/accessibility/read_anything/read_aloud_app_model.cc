@@ -87,7 +87,7 @@ void ReadAloudAppModel::ResetGranularityIndex() {
 void ReadAloudAppModel::InitAXPositionWithNode(
     ui::AXNode* ax_node,
     const ui::AXTreeID& active_tree_id) {
-  if (IsTsTextSegmentationEnabled()) {
+  if (!features::IsReadAnythingReadAloudPhraseHighlightingEnabled()) {
     return;
   }
 
@@ -119,7 +119,7 @@ a11y::ReadAloudCurrentGranularity ReadAloudAppModel::GetCurrentText(
     bool is_pdf,
     bool is_docs,
     const std::set<ui::AXNodeID>* current_nodes) {
-  if (IsTsTextSegmentationEnabled()) {
+  if (!features::IsReadAnythingReadAloudPhraseHighlightingEnabled()) {
     return a11y::ReadAloudCurrentGranularity();
   }
   while (processed_granularities_on_current_page_.size() <=
@@ -146,7 +146,7 @@ void ReadAloudAppModel::PreprocessTextForSpeech(
     bool is_pdf,
     bool is_docs,
     const std::set<ui::AXNodeID>* current_nodes) {
-  if (IsTsTextSegmentationEnabled()) {
+  if (!features::IsReadAnythingReadAloudPhraseHighlightingEnabled()) {
     return;
   }
   a11y::ReadAloudCurrentGranularity current_granularity =
@@ -600,7 +600,7 @@ ReadAloudAppModel::GetNextValidPositionFromCurrentPosition(
 }
 
 int ReadAloudAppModel::GetCurrentTextStartIndex(const ui::AXNodeID& node_id) {
-  if (IsTsTextSegmentationEnabled() ||
+  if (!features::IsReadAnythingReadAloudPhraseHighlightingEnabled() ||
       processed_granularities_on_current_page_.size() < 1 ||
       processed_granularity_index_ >=
           processed_granularities_on_current_page_.size()) {
@@ -618,7 +618,7 @@ int ReadAloudAppModel::GetCurrentTextStartIndex(const ui::AXNodeID& node_id) {
 }
 
 int ReadAloudAppModel::GetCurrentTextEndIndex(const ui::AXNodeID& node_id) {
-  if (IsTsTextSegmentationEnabled() ||
+  if (!features::IsReadAnythingReadAloudPhraseHighlightingEnabled() ||
       processed_granularities_on_current_page_.size() < 1 ||
       processed_granularity_index_ >=
           processed_granularities_on_current_page_.size()) {
@@ -651,7 +651,7 @@ bool ReadAloudAppModel::NodeBeenOrWillBeSpoken(
 }
 
 void ReadAloudAppModel::ResetReadAloudState() {
-  if (IsTsTextSegmentationEnabled()) {
+  if (!features::IsReadAnythingReadAloudPhraseHighlightingEnabled()) {
     return;
   }
 
@@ -771,10 +771,6 @@ void ReadAloudAppModel::IncrementMetric(const std::string& metric_name) {
 }
 
 void ReadAloudAppModel::LogSpeechStop(ReadAloudStopSource source) {
-  if (!features::IsReadAnythingReadAloudEnabled()) {
-    return;
-  }
-
   base::UmaHistogramEnumeration(kSpeechStopSourceHistogramName, source);
   // If speech started but audio is not playing yet when speech is stopped, log
   // the audio delay indicating that the user may have stopped speech because
@@ -785,18 +781,10 @@ void ReadAloudAppModel::LogSpeechStop(ReadAloudStopSource source) {
 }
 
 void ReadAloudAppModel::LogAudioDelay(bool success) {
-  if (!features::IsReadAnythingReadAloudEnabled()) {
-    return;
-  }
-
   const base::TimeDelta delay = base::TimeTicks::Now() - speech_active_time_ms_;
   if (success) {
     base::UmaHistogramLongTimes(kAudioStartTimeSuccessHistogramName, delay);
   } else {
     base::UmaHistogramLongTimes(kAudioStartTimeFailureHistogramName, delay);
   }
-}
-
-bool ReadAloudAppModel::IsTsTextSegmentationEnabled() const {
-  return features::IsReadAnythingReadAloudTSTextSegmentationEnabled();
 }

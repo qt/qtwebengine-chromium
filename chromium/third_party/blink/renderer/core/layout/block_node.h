@@ -133,14 +133,14 @@ class CORE_EXPORT BlockNode : public LayoutInputNode {
   bool IsInlineLevel() const;
   bool IsInTopOrViewTransitionLayer() const;
 
+  bool IsMulticolContainer() const { return box_->IsMulticolContainer(); }
+
   // Returns the aspect ratio of a replaced element.
   LogicalSize GetReplacedAspectRatio() const;
 
   bool MayContainAnchor() const { return box_->MayContainAnchor(); }
 
-  bool IsOverscrollAreaParentPseudoElement() const {
-    return box_->IsPseudo(kPseudoIdOverscrollAreaParent);
-  }
+  bool IsOverscrollAreaParent() const { return box_->IsOverscrollAreaParent(); }
 
   bool HasLeftOverflow() const { return box_->HasLeftOverflow(); }
   bool HasTopOverflow() const { return box_->HasTopOverflow(); }

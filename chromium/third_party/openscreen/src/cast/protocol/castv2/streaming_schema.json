@@ -21,7 +21,10 @@
     },
     "rtp_extensions": {
       "type": "array",
-      "items": {"type": "string", "enum": ["adaptive_playout_delay"]}
+      "items": {
+        "type": "string",
+        "enum": ["adaptive_playout_delay", "input_events"]
+      }
     },
     "stream": {
       "properties": {
@@ -166,7 +169,12 @@
           "type": "array",
           "items": {"type": "integer", "minimum": 0}
         },
-        "rtpExtensions": {"$ref": "#/definitions/rtp_extensions"}
+        "rtpExtensions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/rtp_extensions"
+          }
+        }
       },
       "required": ["udpPort", "sendIndexes", "ssrcs"]
     },
@@ -214,7 +222,8 @@
         "STATUS_RESPONSE",
         "GET_CAPABILITIES",
         "CAPABILITIES_RESPONSE",
-        "RPC"
+        "RPC",
+        "INPUT"
       ]
     }
   },
@@ -271,6 +280,12 @@
         "properties": {"type": {"const": "RPC"}, "result": {"const": "ok"}}
       },
       "then": {"required": ["rpc"]}
+    },
+    {
+      "if": {
+        "properties": {"type": {"const": "INPUT"}, "result": {"const": "ok"}}
+      },
+      "then": {"required": ["input"]}
     }
   ]
 }

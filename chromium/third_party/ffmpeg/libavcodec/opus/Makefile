@@ -5,6 +5,7 @@ OBJS-$(CONFIG_OPUS_DECODER) +=  \
     opus/dec.o                  \
     opus/dec_celt.o             \
     opus/celt.o                 \
+    opus/frame_duration_tab.o   \
     opus/pvq.o                  \
     opus/silk.o                 \
     opus/tab.o                  \
@@ -14,6 +15,7 @@ OBJS-$(CONFIG_OPUS_DECODER) +=  \
 
 
 OBJS-$(CONFIG_OPUS_PARSER) +=   \
+    opus/frame_duration_tab.o   \
     opus/parser.o               \
     opus/parse.o                \
 
@@ -26,5 +28,7 @@ OBJS-$(CONFIG_OPUS_ENCODER) +=  \
     opus/rc.o                   \
     opus/tab.o                  \
 
+STLIBOBJS-$(CONFIG_MATROSKA_MUXER)   += opus/frame_duration_tab.o
+STLIBOBJS-$(CONFIG_WEBM_MUXER)       += opus/frame_duration_tab.o
 
 libavcodec/opus/%.o: CPPFLAGS += -I$(SRC_PATH)/libavcodec/

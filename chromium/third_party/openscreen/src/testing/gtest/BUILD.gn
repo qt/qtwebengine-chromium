@@ -1,0 +1,15 @@
+# Copyright 2026 The Chromium Authors
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Lightweight wrapper groupsk for use with Perfetto, which expects to be able to
+# find tests here.
+group("gtest") {
+  testonly = true
+  public_deps = [ "//third_party/googletest:gtest" ]
+}
+
+group("gtest_main") {
+  testonly = true
+  public_deps = [ "//third_party/googletest:gtest_main" ]
+}

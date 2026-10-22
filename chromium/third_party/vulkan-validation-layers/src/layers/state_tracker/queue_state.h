@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Copyright (C) 2015-2024 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
@@ -69,8 +69,9 @@ struct QueueSubmission {
     std::vector<SemaphoreInfo> signal_semaphores;
     std::shared_ptr<Fence> fence;
     bool has_external_fence = false;
-    // Swapchain handle if this submission represents QueuePresent request
-    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+
+    // Swapchain is not null if this submission represents QueuePresent request
+    std::shared_ptr<Swapchain> swapchain;
     std::shared_ptr<const vvl::Image> swapchain_image;
 
     LocationCapture loc;
@@ -129,30 +130,28 @@ static inline std::chrono::time_point<std::chrono::steady_clock> GetCondWaitTime
     return std::chrono::steady_clock::now() + std::chrono::seconds(timeout_seconds);
 }
 
-struct PreSubmitResult {
-    uint64_t last_submission_seq = 0;
-    uint64_t submission_seq = 0;
-};
-
 class Queue : public StateObject, public SubStateManager<QueueSubState> {
   public:
-    Queue(DeviceState &dev_data, VkQueue handle, uint32_t family_index, uint32_t queue_index, VkDeviceQueueCreateFlags flags,
-          const VkQueueFamilyProperties &queueFamilyProperties)
+    Queue(DeviceState& device_state, VkQueue handle, uint32_t family_index, uint32_t queue_index, VkDeviceQueueCreateFlags flags,
+          const VkQueueFamilyProperties& queue_family_properties)
         : StateObject(handle, kVulkanObjectTypeQueue),
           queue_family_index(family_index),
           queue_index(queue_index),
           create_flags(flags),
-          queue_family_properties(queueFamilyProperties),
-          dev_data_(dev_data) {}
+          device_state_(device_state),
+          queue_family_properties_(queue_family_properties) {}
 
     ~Queue() { Destroy(); }
     void Destroy() override;
 
     VkQueue VkHandle() const { return handle_.Cast<VkQueue>(); }
+    VkQueueFlags GetQueueFlags() const { return queue_family_properties_.queueFlags; }
 
-    // called from the various PreCallRecordQueueSubmit() methods
-    PreSubmitResult PreSubmit(std::vector<QueueSubmission> &&submissions);
-    // called from the various PostCallRecordQueueSubmit() methods
+    // Called from the various PreCallRecordQueueSubmit() methods.
+    // Returns seq number associated with the last QueueSubmission batch
+    uint64_t PreSubmit(std::vector<QueueSubmission>&& submissions);
+
+    // Called from the various PostCallRecordQueueSubmit() methods
     void PostSubmit();
 
     // Tell the queue thread that submissions up to and including the submission with
@@ -180,7 +179,6 @@ class Queue : public StateObject, public SubStateManager<QueueSubState> {
     const uint32_t queue_index;
 
     const VkDeviceQueueCreateFlags create_flags;
-    const VkQueueFamilyProperties queue_family_properties;
 
     // Track command buffer label stack accross all command buffers submitted to this queue.
     // Access to this variable relies on external queue synchronization.
@@ -204,19 +202,16 @@ class Queue : public StateObject, public SubStateManager<QueueSubState> {
     const std::deque<QueueSubmission> &Submissions() { return submissions_; }
 
   protected:
-    // called from the various PostCallRecordQueueSubmit() methods
-    void PostSubmit(QueueSubmission &submission);
-
     // called when the worker thread decides a submissions has finished executing
     void Retire(QueueSubmission &submission);
 
   private:
+    DeviceState& device_state_;
+    const VkQueueFamilyProperties queue_family_properties_;
     uint32_t timeline_wait_count_ = 0;
 
     void ThreadFunc();
     QueueSubmission *NextSubmission();
-
-    DeviceState &dev_data_;
 
     // state related to submitting to the queue, all data members must
     // be accessed with lock_ held

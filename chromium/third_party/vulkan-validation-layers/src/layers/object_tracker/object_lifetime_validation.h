@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
- * Copyright (C) 2015-2025 Google Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
+ * Copyright (C) 2015-2026 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -149,22 +149,22 @@ class Tracker : public Logger {
     bool is_device_maintenance4_enabled_ = false;
 };
 
-class Instance : public vvl::base::Instance {
+class Instance : public vvl::BaseInstance {
   public:
-    using BaseClass = vvl::base::Instance;
     using Func = vvl::Func;
     using Struct = vvl::Struct;
     using Field = vvl::Field;
 
     Tracker tracker;
 
-    Instance(vvl::dispatch::Instance *dispatch);
+    Instance(vvl::DispatchInstance* dispatch);
     ~Instance();
 
     void DestroyLeakedObjects();
     bool ReportUndestroyedObjects(const Location &loc) const;
-    bool ReportLeakedObjects(VulkanObjectType object_type, const std::string &error_code,
-                                     const Location &loc) const;
+    void FindLeakedObjects(VulkanObjectType object_type, std::vector<VulkanTypedHandle>& leaked_list) const;
+    bool ReportLeakedObjects(std::vector<VulkanTypedHandle>& leaked_list, const Location& loc) const;
+
     void AllocateDisplayKHR(VkPhysicalDevice physical_device, VkDisplayKHR display, const Location &loc);
 
     // helper methods for tracker
@@ -190,8 +190,7 @@ class Instance : public vvl::base::Instance {
 #include "generated/object_tracker_instance_methods.h"
 };
 
-class Device : public vvl::base::Device {
-    using BaseClass = vvl::base::Device;
+class Device : public vvl::BaseDevice {
     using Func = vvl::Func;
     using Struct = vvl::Struct;
     using Field = vvl::Field;
@@ -211,15 +210,15 @@ class Device : public vvl::base::Device {
     ObjectMapGPL linked_graphics_pipeline_map;
 
     // Constructor for object lifetime tracking
-    Device(vvl::dispatch::Device *dev, Instance *instance);
+    Device(vvl::DispatchDevice *dev, Instance *instance);
     ~Device();
 
     void FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) override;
 
     void DestroyLeakedObjects();
     bool ReportUndestroyedObjects(const Location &loc) const;
-    bool ReportLeakedObjects(VulkanObjectType object_type, const std::string &error_code,
-                                     const Location &loc) const;
+    void FindLeakedObjects(VulkanObjectType object_type, std::vector<VulkanTypedHandle>& leaked_list) const;
+    bool ReportLeakedObjects(std::vector<VulkanTypedHandle>& leaked_list, const Location& loc) const;
 
     void CreateQueue(VkQueue vkObj, const Location &loc);
     void AllocateCommandBuffer(const VkCommandPool command_pool, const VkCommandBuffer command_buffer, VkCommandBufferLevel level,

@@ -8,6 +8,7 @@ import "cc/mojom/browser_controls_offset_tag_modifications.mojom";
 import "cc/mojom/browser_controls_state.mojom";
 import "cc/mojom/overscroll_behavior.mojom";
 import "cc/mojom/touch_action.mojom";
+import "mojo/public/mojom/base/big_buffer.mojom";
 import "mojo/public/mojom/base/string16.mojom";
 import "mojo/public/mojom/base/time.mojom";
 import "third_party/blink/public/mojom/input/gesture_event.mojom";
@@ -306,7 +307,6 @@ interface WidgetInputHandlerHost {
 // interface. If frame input actions are dispatched the WidgetInputHandler
 // should be fetched via the associated interface request so that input calls
 // remain in order. See https://goo.gl/x4ee8A for more details.
-[DirectReceiver]
 interface FrameWidgetInputHandler {
   // Adds text decorations between a given valid start and end offsets in the
   // currently focused editable field.
@@ -372,6 +372,11 @@ interface FrameWidgetInputHandler {
   Paste();
 
   PasteAndMatchStyle();
+
+  // Dispatches a paste event with the given image bytes and file extension to
+  // the currently focused frame. |image_bytes| should be non-empty.
+  PasteFromImageBytes(mojo_base.mojom.BigBuffer image_bytes,
+                      string media_format) => (bool success);
 
   Delete();
 
@@ -461,7 +466,6 @@ enum FocusState {
 // an input interface for an associated Widget object. See
 // FrameWidgetInputHandler
 // for an interface at the frame level.
-[DirectReceiver]
 interface WidgetInputHandler {
   // Tells widget focus has been changed.
   SetFocus(FocusState state);

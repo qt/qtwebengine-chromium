@@ -90,5 +90,5 @@ export function validateAsStructuredHeadersString(value: string, errorString: st
   if (parsedResult.kind === ResultKind.ERROR) {
     return {valid: false, errorMessage: errorString};
   }
-  return {valid: true, errorMessage: undefined};
+  return {valid: true};
 }

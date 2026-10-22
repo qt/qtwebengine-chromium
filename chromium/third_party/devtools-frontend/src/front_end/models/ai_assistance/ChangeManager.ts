@@ -9,6 +9,8 @@ import type * as Protocol from '../../generated/protocol.js';
 
 export interface Change {
   groupId: string;
+  // Optional turn ID to group changes from the same turn.
+  turnId?: number;
   // Optional about where in the source the selector was defined.
   sourceLocation?: string;
   // Selector used by the page or a simple selector as the fallback.
@@ -17,6 +19,7 @@ export interface Change {
   simpleSelector?: string;
   className: string;
   styles: Record<string, string>;
+  backendNodeId?: Protocol.DOM.BackendNodeId;
 }
 
 function formatStyles(styles: Record<string, string>, indent = 2): string {
@@ -101,6 +104,7 @@ export class ChangeManager {
       // it currently causes crashes in the Styles tab when duplicate selectors exist (crbug.com/393515428).
       // This workaround avoids that crash.
       existingChange.groupId = change.groupId;
+      existingChange.turnId = change.turnId;
     } else {
       changes.push({
         ...change,
@@ -113,13 +117,25 @@ export class ChangeManager {
     return content;
   }
 
-  formatChangesForPatching(groupId: string, includeSourceLocation = false): string {
+  formatChangesForPatching(groupId: string, includeMetadata = false): string {
     return Array.from(this.#stylesheetChanges.values())
         .flatMap(
             changesPerStylesheet => changesPerStylesheet.filter(change => change.groupId === groupId)
-                                        .map(change => this.#formatChange(change, includeSourceLocation)))
+                                        .map(change => this.#formatChange(change, includeMetadata)))
         .filter(change => change !== '')
         .join('\n\n');
+  }
+
+  getChangedNodesForGroupId(groupId: string, turnId?: number): Protocol.DOM.BackendNodeId[] {
+    const nodes = new Set<Protocol.DOM.BackendNodeId>();
+    for (const changes of this.#stylesheetChanges.values()) {
+      for (const change of changes) {
+        if (change.groupId === groupId && change.backendNodeId && (turnId === undefined || change.turnId === turnId)) {
+          nodes.add(change.backendNodeId);
+        }
+      }
+    }
+    return Array.from(nodes);
   }
 
   #formatChangesForInspectorStylesheet(changes: Change[]): string {
@@ -134,13 +150,13 @@ ${formatStyles(change.styles, 4)}
         .join('\n');
   }
 
-  #formatChange(change: Change, includeSourceLocation = false): string {
+  #formatChange(change: Change, includeMetadata = false): string {
     const sourceLocation =
-        includeSourceLocation && change.sourceLocation ? `/* related resource: ${change.sourceLocation} */\n` : '';
-    // TODO: includeSourceLocation indicates whether we are using Patch
+        includeMetadata && change.sourceLocation ? `/* related resource: ${change.sourceLocation} */\n` : '';
+    // TODO: includeMetadata indicates whether we are using Patch
     // agent. If needed we can have an separate knob.
     const simpleSelector =
-        includeSourceLocation && change.simpleSelector ? ` /* the element was ${change.simpleSelector} */` : '';
+        includeMetadata && change.simpleSelector ? ` /* the element was ${change.simpleSelector} */` : '';
     return `${sourceLocation}${change.selector} {${simpleSelector}
 ${formatStyles(change.styles)}
 }`;

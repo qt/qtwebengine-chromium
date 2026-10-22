@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/auto_reset.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/scoped_observation.h"
@@ -29,6 +30,13 @@ namespace views {
 namespace {
 
 using ::ui::mojom::DragOperation;
+
+// Process-global re-entrancy guard. DesktopDragDropClientOzone is per
+// top-level window, so the per-instance drag_context_ check below does not
+// catch a second window starting a drag while the first window's nested
+// RunMoveLoop is pumping tasks. On X11 that lets a compromised renderer steal
+// the global XdndSelection mid-drag. Mirrors desktop_drag_drop_client_win.cc.
+bool g_is_dragging = false;
 
 // The minimum alpha required so we would treat the pixel as visible.
 constexpr uint32_t kMinAlpha = 32;
@@ -111,7 +119,7 @@ void PerformDrop(aura::client::DragDropDelegate::DropCallback drop_cb,
     std::move(drop_cb).Run(std::move(data_to_drop), output_drag_op,
                            /*drag_image_layer_owner=*/nullptr);
   }
-  base::IgnoreResult(drag_cancel.Release());
+  std::ignore = drag_cancel.Release();
 }
 
 }  // namespace
@@ -124,6 +132,13 @@ DesktopDragDropClientOzone::DesktopDragDropClientOzone(
     aura::Window* root_window,
     ui::WmDragHandler* drag_handler)
     : root_window_(root_window), drag_handler_(drag_handler) {}
+
+// static
+base::AutoReset<bool>
+DesktopDragDropClientOzone::ScopedSuppressForWindowMove() {
+  DCHECK(!g_is_dragging);
+  return base::AutoReset<bool>(&g_is_dragging, true);
+}
 
 DesktopDragDropClientOzone::~DesktopDragDropClientOzone() {
   ResetDragDropTarget();
@@ -141,6 +156,13 @@ DragOperation DesktopDragDropClientOzone::StartDragAndDrop(
   if (!drag_handler_) {
     return DragOperation::kNone;
   }
+
+  // A renderer can send LocalFrameHost::StartDragging at any time, so reject
+  // (rather than CHECK) re-entrant drags from a second top-level window.
+  if (g_is_dragging) {
+    return DragOperation::kNone;
+  }
+  base::AutoReset<bool> drag_scoper(&g_is_dragging, true);
 
   DCHECK(!drag_context_);
   drag_context_ = std::make_unique<DragContext>();

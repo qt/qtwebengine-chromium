@@ -32,8 +32,6 @@
 #include <type_traits>
 #include <vector>
 
-#include "dawn/native/dawn_platform.h"
-
 #include "dawn/native/CommandAllocator.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/Forward.h"
@@ -41,6 +39,7 @@
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/PassResourceUsage.h"
 #include "dawn/native/Texture.h"
+#include "dawn/native/dawn_platform.h"
 
 namespace dawn::native {
 
@@ -93,7 +92,10 @@ bool IsCompleteSubresourceCopiedTo(const TextureBase* texture,
 SubresourceRange GetSubresourcesAffectedByCopy(const TextureCopy& copy,
                                                const TexelExtent3D& copySize);
 
-void LazyClearRenderPassAttachments(DeviceBase* device, BeginRenderPassCmd* renderPass);
+using LazyClearTexture3DHelper = std::function<MaybeError(TextureBase*, const SubresourceRange&)>;
+MaybeError LazyClearRenderPassAttachments(DeviceBase* device,
+                                          BeginRenderPassCmd* renderPass,
+                                          LazyClearTexture3DHelper clearTexture);
 
 bool IsFullBufferOverwrittenInTextureToBufferCopy(const CopyTextureToBufferCmd* copy);
 bool IsFullBufferOverwrittenInTextureToBufferCopy(const TextureCopy& source,

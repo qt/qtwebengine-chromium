@@ -30,6 +30,7 @@
 #include "base/test/bind.h"
 #include "base/test/scoped_path_override.h"
 #include "base/test/task_environment.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "base/version.h"
 #include "build/branding_buildflags.h"
@@ -113,6 +114,8 @@ class MockUpdateClient : public UpdateClient {
                      bool(const std::string& id, CrxUpdateItem* update_item));
   MOCK_CONST_METHOD1(IsUpdating, bool(const std::string& id));
   MOCK_METHOD0(Stop, void());
+  MOCK_METHOD2(CleanupStaleDownloads,
+               void(base::Time older_than, base::OnceClosure callback));
 
  private:
   ~MockUpdateClient() override = default;
@@ -262,6 +265,7 @@ void ComponentInstallerTest::Unpack(const base::FilePath& crx_path) {
       std::vector<uint8_t>(std::begin(kSha256Hash), std::end(kSha256Hash)),
       crx_path, config_->GetUnzipperFactory()->Create(),
       crx_file::VerifierFormat::CRX3,
+      /*is_foreground=*/true,
       base::BindOnce(&ComponentInstallerTest::UnpackComplete,
                      base::Unretained(this)));
   RunThreads();

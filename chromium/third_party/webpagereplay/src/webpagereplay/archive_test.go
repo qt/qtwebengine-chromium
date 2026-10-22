@@ -5,9 +5,11 @@
 package webpagereplay
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"testing"
 )
 
@@ -463,6 +465,241 @@ func TestAdd(t *testing.T) {
 		t.Fatalf("Expected 1 requests in archive a")
 	}
 
+}
+
+func TestArchiveClone(t *testing.T) {
+	val := 0.123
+	original := Archive{
+		Requests: map[string]map[string][]*ArchivedRequest{
+			"host": {"url": {&ArchivedRequest{}}},
+		},
+		Certs: map[string][]byte{
+			"host": {1, 2, 3},
+		},
+		NegotiatedProtocol: map[string]string{
+			"host": "h2",
+		},
+		DeterministicTimeSeedMs:              12345,
+		ConstantMathRandomResult:             &val,
+		ServeResponseInChronologicalSequence: true,
+		CurrentSessionId:                     10,
+		DisableFuzzyURLMatching:              true,
+		Metadata:                             "test metadata",
+		InjectedScripts: map[string]string{
+			"s1.js": "var x = 1;",
+		},
+	}
+
+	clone := original.cloneFieldsExceptRequests()
+
+	expectEqual := func(fieldName string) {
+		t.Helper()
+		origField := reflect.ValueOf(original).FieldByName(fieldName).Interface()
+		cloneField := reflect.ValueOf(clone).FieldByName(fieldName).Interface()
+		if !reflect.DeepEqual(origField, cloneField) {
+			t.Errorf("%s mismatch: got %v, want %v", fieldName, cloneField, origField)
+		}
+	}
+
+	// Note that cloneFieldsExceptRequests() ends with "except requests."
+	// Ensure they are NOT cloned.
+	if len(clone.Requests) != 0 {
+		t.Errorf("Requests should be empty in clone, got %v", clone.Requests)
+	}
+
+	// Ensure all other fields are correctly cloned.
+	expectEqual("Certs")
+	expectEqual("NegotiatedProtocol")
+	expectEqual("DeterministicTimeSeedMs")
+	expectEqual("ConstantMathRandomResult")
+	expectEqual("ServeResponseInChronologicalSequence")
+	expectEqual("CurrentSessionId")
+	expectEqual("DisableFuzzyURLMatching")
+	expectEqual("Metadata")
+	expectEqual("InjectedScripts")
+
+	// Some extra tests for fields that can assume more than one class of value.
+	original.ConstantMathRandomResult = nil
+	clone2 := original.cloneFieldsExceptRequests()
+	if clone2.ConstantMathRandomResult != nil {
+		t.Errorf("ConstantMathRandomResult should be nil, got %v",
+			clone2.ConstantMathRandomResult)
+	}
+}
+
+func TestArchiveCloneIndependence(t *testing.T) {
+	val := 0.123
+	original := Archive{
+		Requests: map[string]map[string][]*ArchivedRequest{
+			"host": {"url": {&ArchivedRequest{}}},
+		},
+		Certs: map[string][]byte{
+			"host": {1, 2, 3},
+		},
+		NegotiatedProtocol: map[string]string{
+			"host": "h2",
+		},
+		DeterministicTimeSeedMs:              12345,
+		ConstantMathRandomResult:             &val,
+		ServeResponseInChronologicalSequence: true,
+		CurrentSessionId:                     10,
+		DisableFuzzyURLMatching:              true,
+		Metadata:                             "test metadata",
+		InjectedScripts: map[string]string{
+			"s1.js": "var x = 1;",
+		},
+	}
+
+	clone := original.cloneFieldsExceptRequests()
+
+	expectUnequal := func(fieldName string) {
+		t.Helper()
+		origField := reflect.ValueOf(original).FieldByName(fieldName).Interface()
+		cloneField := reflect.ValueOf(clone).FieldByName(fieldName).Interface()
+		if reflect.DeepEqual(origField, cloneField) {
+			t.Errorf("Modifying clone's %s modified original", fieldName)
+		}
+	}
+
+	clone.Requests["new-host"] = map[string][]*ArchivedRequest{}
+	expectUnequal("Requests")
+
+	clone.Certs["host"][0] = 99
+	expectUnequal("Certs")
+
+	clone.NegotiatedProtocol["host"] = "http/1.1"
+	expectUnequal("NegotiatedProtocol")
+
+	clone.DeterministicTimeSeedMs = 54321
+	expectUnequal("DeterministicTimeSeedMs")
+
+	*clone.ConstantMathRandomResult = 0.456
+	expectUnequal("ConstantMathRandomResult")
+
+	clone.ServeResponseInChronologicalSequence = false
+	expectUnequal("ServeResponseInChronologicalSequence")
+
+	clone.CurrentSessionId = 20
+	expectUnequal("CurrentSessionId")
+
+	clone.DisableFuzzyURLMatching = false
+	expectUnequal("DisableFuzzyURLMatching")
+
+	clone.Metadata = "modified metadata"
+	expectUnequal("Metadata")
+
+	clone.InjectedScripts["s1.js"] = "modified"
+	expectUnequal("InjectedScripts")
+}
+
+func TestArchiveMetadata(t *testing.T) {
+	original := Archive{
+		Metadata: "test metadata\nwith multiple lines",
+		Requests: make(map[string]map[string][]*ArchivedRequest),
+	}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	var unmarshalled Archive
+	if err := json.Unmarshal(data, &unmarshalled); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	if original.Metadata != unmarshalled.Metadata {
+		t.Errorf("Metadata mismatch: got %v, want %v",
+			unmarshalled.Metadata, original.Metadata)
+	}
+}
+
+func TestArchiveJSON_DeterministicTimeSeedMs(t *testing.T) {
+	original := Archive{
+		DeterministicTimeSeedMs: 67890,
+		Requests:                make(map[string]map[string][]*ArchivedRequest),
+	}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	var unmarshalled Archive
+	if err := json.Unmarshal(data, &unmarshalled); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	if original.DeterministicTimeSeedMs != unmarshalled.DeterministicTimeSeedMs {
+		t.Errorf("DeterministicTimeSeedMs mismatch: got %v, want %v",
+			unmarshalled.DeterministicTimeSeedMs, original.DeterministicTimeSeedMs)
+	}
+}
+
+func TestArchiveJSON_WithConstantMathRandomResult(t *testing.T) {
+	val := 0.456
+	original := Archive{
+		ConstantMathRandomResult: &val,
+		Requests:                 make(map[string]map[string][]*ArchivedRequest),
+	}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	var unmarshalled Archive
+	if err := json.Unmarshal(data, &unmarshalled); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	if unmarshalled.ConstantMathRandomResult == nil ||
+		*original.ConstantMathRandomResult !=
+			*unmarshalled.ConstantMathRandomResult {
+		t.Errorf("ConstantMathRandomResult mismatch: got %v, want %v",
+			unmarshalled.ConstantMathRandomResult, original.ConstantMathRandomResult)
+	}
+}
+
+func TestArchiveJSON_WithoutConstantMathRandomResult(t *testing.T) {
+	original := Archive{
+		ConstantMathRandomResult: nil,
+		Requests:                 make(map[string]map[string][]*ArchivedRequest),
+	}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	var unmarshalled Archive
+	if err := json.Unmarshal(data, &unmarshalled); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	if unmarshalled.ConstantMathRandomResult != nil {
+		t.Errorf("ConstantMathRandomResult should be nil, got %v",
+			unmarshalled.ConstantMathRandomResult)
+	}
+}
+
+func TestArchiveJSON_InjectedScripts(t *testing.T) {
+	original := newArchive()
+	original.InjectedScripts = map[string]string{
+		"s1.js": "var x = 1;",
+		"s2.js": "var y = 2;",
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	var unmarshalled Archive
+	if err := json.Unmarshal(data, &unmarshalled); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	if !reflect.DeepEqual(unmarshalled.InjectedScripts, original.InjectedScripts) {
+		t.Errorf("InjectedScripts mismatch in unmarshalled: got %v, want %v",
+			unmarshalled.InjectedScripts, original.InjectedScripts)
+	}
 }
 
 func TestTrim(t *testing.T) {

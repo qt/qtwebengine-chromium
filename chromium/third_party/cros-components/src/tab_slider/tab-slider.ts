@@ -6,9 +6,9 @@
 
 import {css, CSSResultGroup, html, LitElement, nothing} from 'lit';
 
-import {isRTL, shadowPiercingActiveElement} from '../helpers/helpers';
+import {isRTL, shadowPiercingActiveElement} from '../helpers/helpers.js';
 
-import {isTabSliderItem, TabSliderItem, TabSliderItemSelectedChangedEvent, TabSliderItemTriggeredEvent} from './tab-slider-item';
+import {isTabSliderItem, TabSliderItem, TabSliderItemSelectedChangedEvent, TabSliderItemTriggeredEvent} from './tab-slider-item.js';
 
 /**
  * The padding between `cros-tab-slider` and `cros-tab-slider-item`s.

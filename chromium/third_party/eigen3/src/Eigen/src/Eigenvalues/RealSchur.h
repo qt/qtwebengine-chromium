@@ -207,7 +207,7 @@ class RealSchur {
   }
 
   /** \brief Returns the maximum number of iterations. */
-  Index getMaxIterations() { return m_maxIters; }
+  Index getMaxIterations() const { return m_maxIters; }
 
   /** \brief Maximum number of iterations per row.
    *
@@ -343,7 +343,7 @@ RealSchur<MatrixType>& RealSchur<MatrixType>::computeFromHessenberg(const HessMa
 template <typename MatrixType>
 inline typename MatrixType::Scalar RealSchur<MatrixType>::computeNormOfT() {
   const Index size = m_matT.cols();
-  // FIXME to be efficient the following would requires a triangular reduxion code
+  // FIXME: a triangular reduction would be more efficient here.
   // Scalar norm = m_matT.upper().cwiseAbs().sum()
   //               + m_matT.bottomLeftCorner(size-1,size-1).diagonal().cwiseAbs().sum();
   Scalar norm(0);

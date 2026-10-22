@@ -17,7 +17,6 @@
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "chrome/test/base/chrome_render_view_test.h"
-#include "read_anything_app_model.h"
 #include "read_anything_test_utils.h"
 #include "services/strings/grit/services_strings.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -109,15 +108,6 @@ class ReadAnythingAppModelTest : public ChromeRenderViewTest {
         tree_id, const_cast<std::vector<ui::AXTreeUpdate>&>(updates), events);
   }
 
-  void EnableReadAloud() {
-    scoped_feature_list_.InitAndEnableFeature(features::kReadAnythingReadAloud);
-  }
-
-  void DisableReadAloud() {
-    scoped_feature_list_.InitAndDisableFeature(
-        features::kReadAnythingReadAloud);
-  }
-
   std::set<ui::AXNodeID> GetNotIgnoredIds(base::span<const ui::AXNodeID> ids) {
     std::set<ui::AXNodeID> set;
     for (auto id : ids) {
@@ -151,6 +141,17 @@ class ReadAnythingAppModelTest : public ChromeRenderViewTest {
     return child_ids;
   }
 
+  ui::AXTreeID SetupTree(const std::string& url) {
+    ui::AXTreeID tree_id = ui::AXTreeID::CreateNewAXTreeID();
+    ui::AXTreeUpdate update;
+    test::SetUpdateTreeID(&update, tree_id);
+    ui::AXNodeData root = test::LinkNode(/* id= */ 1, url);
+    update.root_id = root.id;
+    update.nodes = {std::move(root)};
+    ApplyAccessibilityUpdates(tree_id, {std::move(update)});
+    return tree_id;
+  }
+
   ui::AXTreeID tree_id_;
 
  private:
@@ -175,11 +176,12 @@ TEST_F(ReadAnythingAppModelTest, OnSettingsRestoredFromPrefs) {
   bool links_enabled = false;
   bool images_enabled = true;
   auto color = read_anything::mojom::Colors::kDark;
-  auto line_focus = read_anything::mojom::LineFocus::kMediumCursorWindow;
+  auto line_focus_enabled_mode =
+      read_anything::mojom::LineFocus::kMediumCursorWindow;
 
   model().OnSettingsRestoredFromPrefs(line_spacing, letter_spacing, font_name,
                                       font_size, links_enabled, images_enabled,
-                                      color, line_focus);
+                                      color, line_focus_enabled_mode, false);
 
   EXPECT_EQ(line_spacing, model().line_spacing());
   EXPECT_EQ(letter_spacing, model().letter_spacing());
@@ -188,6 +190,8 @@ TEST_F(ReadAnythingAppModelTest, OnSettingsRestoredFromPrefs) {
   EXPECT_EQ(links_enabled, model().links_enabled());
   EXPECT_EQ(images_enabled, model().images_enabled());
   EXPECT_EQ(color, model().color_theme());
+  EXPECT_EQ(line_focus_enabled_mode, model().last_non_disabled_line_focus());
+  EXPECT_FALSE(model().line_focus_enabled());
 }
 
 TEST_F(ReadAnythingAppModelTest, ResetLineFocusSession_ResetsToStartingValue) {
@@ -756,10 +760,10 @@ TEST_F(ReadAnythingAppModelTest, Reset_ResetsState) {
 
   ApplyAccessibilityUpdates(tree_id_, {std::move(update)});
   ProcessDisplayNodes({3, 4});
-  model().set_distillation_in_progress(true);
+  model().set_screen2x_distiller_running(true);
 
   // Assert initial state before model().Resetting.
-  ASSERT_TRUE(model().distillation_in_progress());
+  ASSERT_TRUE(model().screen2x_distiller_running());
 
   ASSERT_TRUE(model().display_node_ids().contains(1));
   ASSERT_TRUE(model().display_node_ids().contains(3));
@@ -770,7 +774,7 @@ TEST_F(ReadAnythingAppModelTest, Reset_ResetsState) {
   model().Reset({1, 2});
 
   // Assert model().Reset state.
-  ASSERT_FALSE(model().distillation_in_progress());
+  ASSERT_FALSE(model().screen2x_distiller_running());
 
   ASSERT_TRUE(std::ranges::contains(model().content_node_ids(), 1));
   ASSERT_TRUE(std::ranges::contains(model().content_node_ids(), 2));
@@ -1742,37 +1746,7 @@ TEST_F(ReadAnythingAppModelTest, PdfEvents_DontSetRequiresDistillation) {
   ASSERT_FALSE(model().requires_distillation());
 }
 
-TEST_F(ReadAnythingAppModelTest, LastExpandedNodeNamedChanged_TriggersRedraw) {
-  DisableReadAloud();
-  ui::AXTreeUpdate initial_update;
-  test::SetUpdateTreeID(&initial_update, tree_id_);
-  static constexpr int kInitialId = 2;
-  ui::AXNodeData initial_node = test::TextNode(kInitialId, u"Old Name");
-  initial_update.nodes = {std::move(initial_node)};
-  ApplyAccessibilityUpdates(tree_id_, {std::move(initial_update)});
-
-  ui::AXTreeUpdate update;
-  test::SetUpdateTreeID(&update, tree_id_);
-  ui::AXNodeData updated_node = test::TextNode(kInitialId, u"New Name");
-  update.nodes = {std::move(updated_node)};
-  model().set_last_expanded_node_id(kInitialId);
-  EXPECT_EQ(model().last_expanded_node_id(), kInitialId);
-  ApplyAccessibilityUpdates(tree_id_, {std::move(update)});
-
-  EXPECT_FALSE(model().requires_post_process_selection());
-  EXPECT_TRUE(model().redraw_required());
-  EXPECT_EQ(model().last_expanded_node_id(), ui::kInvalidAXNodeID);
-  // Check selection reset.
-  EXPECT_FALSE(model().has_selection());
-  EXPECT_EQ(model().start_offset(), -1);
-  EXPECT_EQ(model().end_offset(), -1);
-  EXPECT_EQ(model().start_node_id(), ui::kInvalidAXNodeID);
-  EXPECT_EQ(model().end_node_id(), ui::kInvalidAXNodeID);
-  EXPECT_TRUE(model().selection_node_ids().empty());
-}
-
 TEST_F(ReadAnythingAppModelTest, Expand_NodeDoesNotExist_Redistills) {
-  EnableReadAloud();
   ui::AXTreeUpdate initial_update;
   test::SetUpdateTreeID(&initial_update, tree_id_);
   static constexpr int kInitialId = 2;
@@ -1797,7 +1771,6 @@ TEST_F(ReadAnythingAppModelTest, Expand_NodeDoesNotExist_Redistills) {
 }
 
 TEST_F(ReadAnythingAppModelTest, Expand_NodeDoesExist_Redraws) {
-  EnableReadAloud();
   ui::AXTreeUpdate initial_update;
   test::SetUpdateTreeID(&initial_update, tree_id_);
   static constexpr int kInitialId = 2;
@@ -1820,7 +1793,6 @@ TEST_F(ReadAnythingAppModelTest, Expand_NodeDoesExist_Redraws) {
 }
 
 TEST_F(ReadAnythingAppModelTest, Collapse_Redraws) {
-  EnableReadAloud();
   ui::AXTreeUpdate initial_update;
   test::SetUpdateTreeID(&initial_update, tree_id_);
   static constexpr int kInitialId = 2;
@@ -2264,4 +2236,145 @@ TEST_F(ReadAnythingAppModelReadabilityTest,
 
   const auto& result = model().ax_tree_anchors();
   ASSERT_TRUE(result.empty());
+}
+
+TEST_F(ReadAnythingAppModelTest, IsWhatsNew_FalseForOtherPage) {
+  ui::AXTreeID tree_id = SetupTree("https://www.google.com");
+  model().SetRootTreeId(tree_id);
+  model().SetActiveTreeId(tree_id);
+
+  EXPECT_FALSE(model().IsWhatsNew());
+}
+#if !BUILDFLAG(IS_CHROMEOS)
+TEST_F(ReadAnythingAppModelTest, IsWhatsNew_TrueForWhatsNewPage) {
+  ui::AXTreeID tree_id = SetupTree("chrome://whats-new/");
+  model().SetRootTreeId(tree_id);
+  model().SetActiveTreeId(tree_id);
+
+  EXPECT_TRUE(model().IsWhatsNew());
+}
+
+TEST_F(ReadAnythingAppModelTest, IsWhatsNew_TrueWhenActiveIsChild) {
+  ui::AXTreeID root_id = SetupTree("chrome://whats-new/");
+  ui::AXTreeID child_id = SetupTree("https://www.google.com/child");
+
+  model().SetRootTreeId(root_id);
+  model().SetActiveTreeId(child_id);
+
+  EXPECT_TRUE(model().IsWhatsNew());
+}
+
+TEST_F(ReadAnythingAppModelTest, HasSelection_UsesRootOnWhatsNew) {
+  ui::AXTreeID root_id = SetupTree("chrome://whats-new/");
+  ui::AXTreeID child_id = SetupTree("https://www.google.com/child");
+
+  // Add node 2 to root tree.
+  ui::AXTreeUpdate root_update;
+  test::SetUpdateTreeID(&root_update, root_id);
+  ui::AXNodeData root_node = test::LinkNode(1, "chrome://whats-new/");
+  root_node.child_ids = {2};
+  root_update.root_id = 1;
+  root_update.nodes = {root_node, test::TextNode(2, u"Root Text")};
+  ApplyAccessibilityUpdates(root_id, {std::move(root_update)});
+
+  // Add node 2 to child tree so GetUnignoredSelection succeeds.
+  ui::AXTreeUpdate child_update;
+  test::SetUpdateTreeID(&child_update, child_id);
+  ui::AXNodeData child_root = test::TextNode(1, u"Child Root");
+  child_root.child_ids = {2};
+  child_update.root_id = 1;
+  child_update.nodes = {child_root, test::TextNode(2, u"Child Text")};
+  ApplyAccessibilityUpdates(child_id, {std::move(child_update)});
+
+  model().SetRootTreeId(root_id);
+  model().SetActiveTreeId(child_id);
+
+  // Set selection on the CHILD tree.
+  ui::AXTreeUpdate sel_update;
+  test::SetUpdateTreeID(&sel_update, child_id);
+  sel_update.tree_data.sel_anchor_object_id = 1;
+  sel_update.tree_data.sel_focus_object_id = 2;
+  sel_update.tree_data.sel_anchor_offset = 0;
+  sel_update.tree_data.sel_focus_offset = 1;
+  sel_update.has_tree_data = true;
+  ApplyAccessibilityUpdates(child_id, {std::move(sel_update)});
+
+  model().PostProcessSelection();
+
+  // On What's New page, has_selection() should check the root tree.
+  // Since IDs 1 and 2 exist in both, it should return true.
+  EXPECT_TRUE(model().has_selection());
+}
+
+TEST_F(ReadAnythingAppModelTest,
+       HasSelection_ReturnsFalseOnWhatsNewIfNoRootNode) {
+  ui::AXTreeID root_id = SetupTree("chrome://whats-new/");
+  ui::AXTreeID child_id = SetupTree("https://www.google.com/child");
+
+  // child_id tree has node 2.
+  ui::AXTreeUpdate child_update;
+  test::SetUpdateTreeID(&child_update, child_id);
+  ui::AXNodeData child_root = test::TextNode(1, u"Child Root");
+  child_root.child_ids = {2};
+  child_update.root_id = 1;
+  child_update.nodes = {child_root, test::TextNode(2, u"Child Text")};
+  ApplyAccessibilityUpdates(child_id, {std::move(child_update)});
+
+  // root_id tree does NOT have node 2 (SetupTree only added node 1).
+
+  model().SetRootTreeId(root_id);
+  model().SetActiveTreeId(child_id);
+
+  // Set selection on the CHILD tree nodes 1 and 2.
+  ui::AXTreeUpdate sel_update;
+  test::SetUpdateTreeID(&sel_update, child_id);
+  sel_update.tree_data.sel_anchor_object_id = 1;
+  sel_update.tree_data.sel_focus_object_id = 2;
+  sel_update.tree_data.sel_anchor_offset = 0;
+  sel_update.tree_data.sel_focus_offset = 1;
+  sel_update.has_tree_data = true;
+  ApplyAccessibilityUpdates(child_id, {std::move(sel_update)});
+
+  model().PostProcessSelection();
+
+  // On What's New page, has_selection() should check the root tree.
+  // Since node 2 is not in root tree, it should return FALSE.
+  EXPECT_FALSE(model().has_selection());
+}
+
+TEST_F(ReadAnythingAppModelTest,
+       CheckedStateChanged_TriggersDistillationOnWhatsNew) {
+  ui::AXTreeID tree_id = SetupTree("chrome://whats-new/");
+  model().SetRootTreeId(tree_id);
+  model().SetActiveTreeId(tree_id);
+
+  ui::AXEvent checked_event;
+  checked_event.event_type = ax::mojom::Event::kCheckedStateChanged;
+
+  std::vector<ui::AXTreeUpdate> updates;
+  std::vector<ui::AXEvent> events = {checked_event};
+
+  model().set_requires_distillation(false);
+  model().ApplyAccessibilityUpdates(tree_id, updates, events);
+
+  EXPECT_TRUE(model().requires_distillation());
+}
+#endif
+
+TEST_F(ReadAnythingAppModelTest,
+       CheckedStateChanged_DoesNotTriggerDistillationOnOther) {
+  ui::AXTreeID tree_id = SetupTree("https://www.google.com");
+  model().SetRootTreeId(tree_id);
+  model().SetActiveTreeId(tree_id);
+
+  ui::AXEvent checked_event;
+  checked_event.event_type = ax::mojom::Event::kCheckedStateChanged;
+
+  std::vector<ui::AXTreeUpdate> updates;
+  std::vector<ui::AXEvent> events = {checked_event};
+
+  model().set_requires_distillation(false);
+  model().ApplyAccessibilityUpdates(tree_id, updates, events);
+
+  EXPECT_FALSE(model().requires_distillation());
 }

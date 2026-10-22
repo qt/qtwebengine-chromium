@@ -45,14 +45,20 @@ class FrameCollector {
   // packet ID.
   void GetMissingPackets(std::vector<PacketNack>* nacks) const;
 
-  // Returns a read-only reference to the completely-collected frame, assembling
-  // it if necessary. The caller should reset the FrameCollector (see Reset()
-  // below) to free-up memory once it has finished reading from the returned
-  // frame.
-  //
+  // Returns the metadata for the completely-collected frame.
   // Precondition: is_complete() must return true before this method can be
   // called.
-  const EncryptedFrame& PeekAtAssembledFrame();
+  const EncodedFrame& PeekFrameMetadata() const;
+
+  // Returns the total size of the payload for the frame.
+  // Precondition: is_complete() must return true before this method can be
+  // called.
+  size_t GetFramePayloadSize() const;
+
+  // Returns the collected payload chunks in order.
+  // Precondition: is_complete() must return true before this method can be
+  // called.
+  std::vector<ByteView> GetPayloadChunks() const;
 
   // Resets the FrameCollector back to its initial state, freeing-up memory.
   void Reset();
@@ -68,10 +74,8 @@ class FrameCollector {
     bool has_data() const { return !!payload.data(); }
   };
 
-  // Storage for frame metadata and data. Once the frame has been completely
-  // collected and assembled, `frame_.data` is set to non-null, and this is
-  // exposed externally (read-only).
-  EncryptedFrame frame_;
+  // Storage for frame metadata.
+  EncodedFrame frame_;
 
   // The number of packets needed to complete the frame, or the maximum int if
   // this is not yet known.

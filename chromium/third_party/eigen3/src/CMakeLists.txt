@@ -74,9 +74,6 @@ if (EIGEN_BUILD_BLAS OR EIGEN_BUILD_LAPACK)
   endif()
 endif()
 
-option(EIGEN_BUILD_BTL "Build benchmark suite" OFF)
-option(EIGEN_BUILD_SPBENCH "Build sparse benchmark suite" OFF)
-option(EIGEN_BUILD_AOCL_BENCH "Build AOCL benchmark" OFF)
 # Avoid building docs if included from another project.
 # Building documentation requires creating and running executables on the host
 # platform.  We shouldn't do this if cross-compiling.
@@ -93,7 +90,7 @@ if(NOT WIN32 OR NOT CMAKE_HOST_SYSTEM_NAME MATCHES Windows)
 endif()
 option(EIGEN_BUILD_CMAKE_PACKAGE "Enables the creation of EigenConfig.cmake and related files" ${PROJECT_IS_TOP_LEVEL})
 
-if (EIGEN_BUILD_TESTING OR EIGEN_BUILD_BLAS OR EIGEN_BUILD_LAPACK OR EIGEN_BUILT_BTL OR EIGEN_BUILD_BTL OR EIGEN_BUILD_SPBENCH OR EIGEN_BUILD_DOC OR EIGEN_BUILD_DEMOS)
+if (EIGEN_BUILD_TESTING OR EIGEN_BUILD_BLAS OR EIGEN_BUILD_LAPACK OR EIGEN_BUILD_DOC OR EIGEN_BUILD_DEMOS)
   set(EIGEN_IS_BUILDING_ ON)
 endif()
 
@@ -417,6 +414,7 @@ if (EIGEN_BUILD_TESTING)
     ei_add_cxx_compiler_flag("-Wno-psabi")
     ei_add_cxx_compiler_flag("-Wno-variadic-macros")
     ei_add_cxx_compiler_flag("-Wno-long-long")
+    ei_add_cxx_compiler_flag("-Wno-pass-failed")          # disable clang's warning for unrolling when the loop count is dynamic.
     ei_add_cxx_compiler_flag("-fno-common")
     ei_add_cxx_compiler_flag("-fstrict-aliasing")
     ei_add_cxx_compiler_flag("-wd981")                    # disable ICC's "operands are evaluated in unspecified order" remark
@@ -425,6 +423,17 @@ if (EIGEN_BUILD_TESTING)
     # Clang emits warnings about unused flag.
     if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       ei_add_cxx_compiler_flag("-fno-check-new")
+    endif()
+
+    # GCC 12+ emits false-positive -Warray-bounds, -Wmaybe-uninitialized,
+    # -Wstringop-overread, and -Wnonnull warnings at -O2/-O3 in heavily
+    # templated code with mixed static/dynamic sizes.  These are well-known
+    # compiler bugs (see GCC PR 109394, 106247, 105329, 98610, among others).
+    if (CMAKE_COMPILER_IS_GNUCXX)
+      ei_add_cxx_compiler_flag("-Wno-array-bounds")
+      ei_add_cxx_compiler_flag("-Wno-maybe-uninitialized")
+      ei_add_cxx_compiler_flag("-Wno-stringop-overread")
+      ei_add_cxx_compiler_flag("-Wno-nonnull")
     endif()
 
 
@@ -753,66 +762,6 @@ if(EIGEN_BUILD_DOC)
   add_subdirectory(doc EXCLUDE_FROM_ALL)
 endif()
 
-# TODO: consider also replacing EIGEN_BUILD_BTL by a custom target "make btl"?
-if(EIGEN_BUILD_BTL)
-  add_subdirectory(bench/btl EXCLUDE_FROM_ALL)
-endif()
-
-if(NOT WIN32 AND EIGEN_BUILD_SPBENCH)
-  add_subdirectory(bench/spbench EXCLUDE_FROM_ALL)
-endif()
-#--------------------------------------------------------------------------------------#
-#                      AOCL BENCHMARK BUILD SECTION                                    #
-#--------------------------------------------------------------------------------------#
-if(EIGEN_BUILD_AOCL_BENCH)
-  # Allow users to override the default architecture
-  set(EIGEN_AOCL_BENCH_ARCH "znver5" CACHE STRING "Target architecture for AOCL benchmark")
-  add_executable(benchmark_aocl EXCLUDE_FROM_ALL bench/benchmark_aocl.cpp)
-  include(CheckCXXCompilerFlag)
-  check_cxx_compiler_flag("-march=${EIGEN_AOCL_BENCH_ARCH}" COMPILER_SUPPORTS_AOCL_ARCH)
-  if(COMPILER_SUPPORTS_AOCL_ARCH)
-    target_compile_options(benchmark_aocl PRIVATE -O3 -Wno-shadow -march=${EIGEN_AOCL_BENCH_ARCH})
-  else()
-    message(WARNING "${EIGEN_AOCL_BENCH_ARCH} architecture not supported by compiler")
-    target_compile_options(benchmark_aocl PRIVATE -O3)
-  endif()
-
-  # Add custom flags if provided
-  if(EIGEN_AOCL_BENCH_FLAGS)
-    separate_arguments(CUSTOM_FLAGS NATIVE_COMMAND "${EIGEN_AOCL_BENCH_FLAGS}")
-    target_compile_options(benchmark_aocl PRIVATE ${CUSTOM_FLAGS})
-    # Check if OpenMP is requested in custom flags and link it
-    string(FIND "${EIGEN_AOCL_BENCH_FLAGS}" "-fopenmp" OPENMP_REQUESTED)
-    if(NOT OPENMP_REQUESTED EQUAL -1)
-      find_package(OpenMP)
-      if(OpenMP_CXX_FOUND)
-        target_link_libraries(benchmark_aocl OpenMP::OpenMP_CXX)
-      else()
-        # Generic fallback: let compiler handle OpenMP linking
-        if(MSVC)
-          target_compile_options(benchmark_aocl PRIVATE "/openmp")
-        else()
-          target_compile_options(benchmark_aocl PRIVATE "-fopenmp")
-          target_link_options(benchmark_aocl PRIVATE "-fopenmp")
-        endif()
-        message(STATUS "Using compiler OpenMP flags as fallback")
-      endif()
-    endif()
-  endif()
-
-  target_include_directories(benchmark_aocl PRIVATE ${INCLUDE_INSTALL_DIR})
-  if(EIGEN_AOCL_BENCH_USE_MT)
-    target_compile_definitions(benchmark_aocl PRIVATE EIGEN_USE_AOCL_MT)
-  else()
-    target_compile_definitions(benchmark_aocl PRIVATE EIGEN_USE_AOCL_ALL)
-  endif()
-  target_link_libraries(benchmark_aocl Eigen3::Eigen)
-  if(EIGEN_STANDARD_LIBRARIES_TO_LINK_TO)
-    target_link_libraries(benchmark_aocl ${EIGEN_STANDARD_LIBRARIES_TO_LINK_TO})
-  endif()
-endif()
-#----------------------------------------------------------------------------------------#
-
 if (EIGEN_BUILD_DEMOS)
   add_subdirectory(demos EXCLUDE_FROM_ALL)
 endif()
@@ -860,9 +809,6 @@ if(PROJECT_IS_TOP_LEVEL)
   endif()
   if (EIGEN_BUILD_LAPACK)
     message(STATUS "lapack      | Build LAPACK subset library (not the same thing as Eigen)")
-  endif()
-  if(EIGEN_BUILD_AOCL_BENCH)
-    message(STATUS "benchmark_aocl | Build AOCL benchmark executable")
   endif()
   message(STATUS "------------+--------------------------------------------------------------")
   message(STATUS "")

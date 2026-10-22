@@ -86,6 +86,7 @@ NONINCLUSIVE_LANGUAGE_REGEXES = [
 
 LINT_FILTERS = []
 
+
 def _NonInclusiveFileFilter(file):
     """Filters files that are exempt from the non-inclusive language check."""
     filter_list = [
@@ -111,7 +112,7 @@ def _NonInclusiveFileFilter(file):
         "src/tint/transform/canonicalize_entry_point_io.cc",  # External URL
         "test/tint/samples/compute_boids.wgsl",  # External URL
         "third_party/gn/dxc/BUILD.gn",  # Third party file
-        "third_party/khronos/EGL-Registry/api/KHR/khrplatform.h",  # Third party file
+        "third_party/EGL-Registry/src/api/KHR/khrplatform.h",  # Third party file
         "tools/roll-all",  # Branch name
         "tools/src/container/key.go",  # External URL
         "go.sum",  # External URL
@@ -276,23 +277,6 @@ def CheckNoStaleGen(input_api, output_api):
     return results
 
 
-def CheckGeneratedJsonUpToDate(input_api, output_api):
-    """Verifies that generated JSON files match .pyl contents.
-
-    Run on DEPS changes since changes to the //testing entry can cause Swarming
-    dimensions to be out of date.
-    """
-    if 'DEPS' not in input_api.AffectedFiles(include_deletes=True):
-        return []
-
-    sys.path += [input_api.change.RepositoryRoot()]
-
-    import test_spec_presubmit_support
-
-    return test_spec_presubmit_support.validate_test_specs(
-        input_api, output_api)
-
-
 def CheckWebgpuHeaderDiff(input_api, output_api):
     """Checks that generated WebGPU C Headers are not stale."""
     results = []
@@ -387,9 +371,7 @@ def CheckChange(input_api, output_api):
     # Check for formatting.
     results.extend(
         input_api.canned_checks.CheckPatchFormatted(
-            input_api,
-            output_api,
-            result_factory=result_factory))
+            input_api, output_api, result_factory=result_factory))
     results.extend(
         input_api.canned_checks.CheckGNFormatted(input_api, output_api))
     results.extend(

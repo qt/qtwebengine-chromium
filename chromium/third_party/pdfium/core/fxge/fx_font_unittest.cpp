@@ -36,7 +36,7 @@ TEST(FXFontTest, ReadFontNameFromMicrosoftEntries) {
   std::string test_data_dir = PathService::GetTestDataDir();
   ASSERT_FALSE(test_data_dir.empty());
 
-  CFX_FontMapper font_mapper(nullptr);
+  CFX_FontMapper font_mapper;
 
   {
     // |folder_font_info| has to be deallocated before the |font_mapper| or we

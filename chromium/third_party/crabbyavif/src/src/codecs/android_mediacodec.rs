@@ -343,11 +343,7 @@ fn get_codec_initializers(config: &DecoderConfig) -> Vec<CodecInitializer> {
         }
     }
     let dav1d = String::from("c2.android.av1-dav1d.decoder");
-    let gav1 = String::from("c2.android.av1.decoder");
     let hevc = String::from("c2.android.hevc.decoder");
-    // As of Sep 2024, c2.android.av1.decoder is the only known decoder to support 12-bit AV1. So
-    // prefer that for 12 bit images.
-    let prefer_gav1 = config.depth == 12;
     let mime_type = match config.codec_config.compression_format() {
         CompressionFormat::Avif => MediaCodec::AV1_MIME,
         CompressionFormat::Heic => MediaCodec::HEVC_MIME,
@@ -357,41 +353,25 @@ fn get_codec_initializers(config: &DecoderConfig) -> Vec<CodecInitializer> {
     let prefer_hw = false;
     #[cfg(android_soong)]
     let prefer_hw = prefer_hardware_decoder(config);
-    match (
-        prefer_hw,
-        config.codec_config.compression_format(),
-        prefer_gav1,
-    ) {
-        (true, CompressionFormat::Heic, _) => vec![
+    match (prefer_hw, config.codec_config.compression_format()) {
+        (true, CompressionFormat::Heic) => vec![
             CodecInitializer::ByMimeType(mime_type.to_string()),
             CodecInitializer::ByName(hevc),
         ],
-        (false, CompressionFormat::Heic, _) => vec![
+        (false, CompressionFormat::Heic) => vec![
             CodecInitializer::ByName(hevc),
             CodecInitializer::ByMimeType(mime_type.to_string()),
         ],
-        (true, CompressionFormat::Avif, true) => vec![
-            CodecInitializer::ByName(gav1),
+        (true, CompressionFormat::Avif) => vec![
             CodecInitializer::ByMimeType(mime_type.to_string()),
             CodecInitializer::ByName(dav1d),
         ],
-        (true, CompressionFormat::Avif, false) => vec![
-            CodecInitializer::ByMimeType(mime_type.to_string()),
+        (false, CompressionFormat::Avif) => vec![
             CodecInitializer::ByName(dav1d),
-            CodecInitializer::ByName(gav1),
-        ],
-        (false, CompressionFormat::Avif, true) => vec![
-            CodecInitializer::ByName(gav1),
-            CodecInitializer::ByName(dav1d),
-            CodecInitializer::ByMimeType(mime_type.to_string()),
-        ],
-        (false, CompressionFormat::Avif, false) => vec![
-            CodecInitializer::ByName(dav1d),
-            CodecInitializer::ByName(gav1),
             CodecInitializer::ByMimeType(mime_type.to_string()),
         ],
         #[cfg(feature = "jpegxl")]
-        (_, CompressionFormat::JpegXl, _) => unreachable!(),
+        (_, CompressionFormat::JpegXl) => unreachable!(),
     }
 }
 

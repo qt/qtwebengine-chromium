@@ -4,74 +4,66 @@
 
 import {html} from '//resources/lit/v3_0/lit.rollup.js';
 
-import {ToolMode as ComposeboxToolMode} from './composebox_query.mojom-webui.js';
+import {hasAllowedInputs} from './common.js';
 import type {ComposeboxElement} from './composebox.js';
-import {getHtml as getSubmitButtonHtml} from './composebox_submit_button.html.js';
-import {getHtml as getToolChipsHtml} from './composebox_tool_chips.html.js';
 
 export function getHtml(this: ComposeboxElement) {
   // clang-format off
   return html`
 <div class="context-menu-container" id="contextMenuContainer"
     part="context-menu-and-tools"
-    @mousedown="${this.onContextMenuContainerMouseDown_}"
+    @mousedown="${this.onContextMenuContainerMousedown_}"
     @click="${this.onContextMenuContainerClick_}">
   ${this.showMenuOnClick ? html`
     <cr-composebox-contextual-entrypoint-and-menu
         id="contextEntrypoint"
         part="composebox-entrypoint"
-        exportparts="context-menu-entrypoint-icon"
+        exportparts="context-menu-entrypoint-icon, entrypoint-button"
         class="upload-button no-overlap"
-        @add-tab-context="${this.addTabContext_}"
-        @delete-tab-context="${this.onDeleteFile_}"
-        @tool-click="${this.onToolClick_}"
-        @deep-search-click="${this.handleDeepSearchClick_}"
-        @create-image-click="${this.handleImageGenClick_}"
-        @model-click="${this.onModelClick_}"
-        @get-tab-preview="${this.getTabPreview_}"
+        @add-tab-context="${this.onAddTabContext_}"
+        @delete-tab-context="${this.onDeleteTabContext_}"
+        @tool-click="${this.onToolClick}"
+        @model-click="${this.onModelClick}"
+        @get-tab-preview="${this.onGetTabPreview}"
         @context-menu-closed="${this.onContextMenuClosed_ }"
         @context-menu-opened="${this.onContextMenuOpened_}"
-        .showModelPicker="${this.showModelPicker_}"
-        .inputState="${this.inputState_}"
+        @open-image-upload="${this.onOpenImageUpload}"
+        @open-file-upload="${this.onOpenFileUpload}"
+        .inputState="${this.inputState}"
         .searchboxLayoutMode="${this.searchboxLayoutMode}"
-        .tabSuggestions="${this.tabSuggestions_}"
-        .inCreateImageMode="${
-            this.activeToolMode_ === ComposeboxToolMode.kImageGen}"
-        .hasImageFiles="${this.hasImageFiles_()}"
-        .disabledTabIds="${this.addedTabsIds_}"
-        .fileNum="${this.files_.size}"
-        ?upload-button-disabled="${this.uploadButtonDisabled_}"
-        ?show-context-menu-description="${this.showContextMenuDescription_}">
+        .tabSuggestions="${this.tabSuggestions}"
+        .hasImageFiles="${this.hasImageFiles()}"
+        .disabledTabIds="${this.addedTabsIds}"
+        .fileNum="${this.files.size}"
+        ?upload-button-disabled="${this.uploadButtonDisabled}"
+        ?show-context-menu-description="${this.showContextMenuDescription}">
     </cr-composebox-contextual-entrypoint-and-menu>
-  ` : html`
+  ` : (hasAllowedInputs(this.inputState, this.usePecApi) ? html`
     <cr-composebox-contextual-entrypoint-button
         id="contextEntrypoint"
         part="composebox-entrypoint"
-        exportparts="context-menu-entrypoint-icon"
+        exportparts="context-menu-entrypoint-icon, entrypoint-button"
         class="upload-button no-overlap"
-        .inputState="${this.inputState_}"
-        ?upload-button-disabled="${this.uploadButtonDisabled_}"
-        ?show-context-menu-description="${this.showContextMenuDescription_}">
+        .inputState="${this.inputState}"
+        ?upload-button-disabled="${this.uploadButtonDisabled}"
+        ?show-context-menu-description="${this.showContextMenuDescription}">
     </cr-composebox-contextual-entrypoint-button>
-  `}
-  ${this.searchboxLayoutMode === 'Compact' && this.shouldShowVoiceSearch_() ? html`
+  ` : '')}
+  ${this.searchboxLayoutMode === 'Compact' && this.shouldShowVoiceSearch() ? html`
     <cr-icon-button id="voiceSearchButton" class="voice-icon"
         part="voice-icon" iron-icon="cr:mic"
-        @click="${this.openAimVoiceSearch_}"
+        @click="${this.onVoiceSearchButtonClick_}"
         title="${this.i18n('voiceSearchButtonLabel')}">
     </cr-icon-button>
   ` : ''}
-  ${this.searchboxLayoutMode !== 'Compact' ? getToolChipsHtml.bind(this)() : ''}
-  ${this.searchboxLayoutMode === 'TallTopContext' ? html`
-    ${this.shouldShowVoiceSearch_() ? html`
-      <cr-icon-button id="voiceSearchButton" class="voice-icon"
-          part="voice-icon" iron-icon="cr:mic"
-          @click="${this.openAimVoiceSearch_}"
-          title="${this.i18n('voiceSearchButtonLabel')}">
-      </cr-icon-button>
-    ` : ''}
-    ${this.shouldShowSubmitButton_ ? html`
-      ${getSubmitButtonHtml.bind(this)()}
+  ${this.searchboxLayoutMode !== 'Compact' ? html`
+    ${this.inToolMode ? html`
+      <cr-composebox-tool-chip
+        exportparts="tool-chip-label"
+        .inputState="${this.inputState}"
+        .isCanvasQuerySubmitted="${this.isCanvasQuerySubmitted}"
+        @tool-click="${this.onToolClick}">
+      </cr-composebox-tool-chip>
     ` : ''}
   ` : ''}
 </div>

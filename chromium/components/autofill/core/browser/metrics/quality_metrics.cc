@@ -4,13 +4,13 @@
 
 #include "components/autofill/core/browser/metrics/quality_metrics.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
-#include "base/containers/flat_map.h"
-#include "base/containers/span.h"
 #include "base/i18n/char_iterator.h"
 #include "base/metrics/histogram_functions.h"
+#include "components/autofill/core/browser/autofill_browser_util.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/data_quality/autofill_data_util.h"
 #include "components/autofill/core/browser/data_quality/validation.h"
@@ -27,7 +27,6 @@
 #include "components/autofill/core/common/autofill_data_validation.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_util.h"
-#include "components/optimization_guide/machine_learning_tflite_buildflags.h"
 #include "third_party/icu/source/common/unicode/uscript.h"
 
 namespace autofill::autofill_metrics {
@@ -37,33 +36,32 @@ namespace {
 void LogPerfectFillingMetric(const FormStructure& form) {
   // Denotes whether for a given FillingProduct, the form has a field which was
   // last filled with this product (and maybe user/JS edited afterwards).
-  const base::flat_map<FillingProduct, bool> filling_product_was_used =
-      base::MakeFlatMap<FillingProduct, bool>(
-          base::span<const FillingProduct, 2>(
-              {FillingProduct::kAddress, FillingProduct::kCreditCard}),
-          {}, [&form](FillingProduct filling_product) {
-            return std::make_pair(
-                filling_product,
-                std::ranges::any_of(
-                    form, [&filling_product](const auto& field) {
-                      return field->filling_product() == filling_product;
-                    }));
-          });
+  const bool has_address = std::ranges::any_of(form, [](const auto& field) {
+    return field->filling_product() == FillingProduct::kAddress;
+  });
+  const bool has_credit_card = std::ranges::any_of(form, [](const auto& field) {
+    return field->filling_product() == FillingProduct::kCreditCard;
+  });
+
+  if (!has_address && !has_credit_card) {
+    return;
+  }
+
   // A perfectly filled form is submitted as it was filled from Autofill
   // without subsequent changes. This means that in a perfect filling
   // scenario, a field is either autofilled, empty, has value at page load or
   // has value set by JS.
-  const bool perfect_filling = IsFormPerfectlyFilled(form.ToFormData());
+  const bool perfect_filling = IsFormStructurePerfectlyFilled(form);
 
   // The perfect filling metric is only recorded if Autofill was used on at
   // least one field. This conditions this metric on Assistance, Readiness and
   // Acceptance. Perfect filling is recorded for addresses and credit cards
   // separately.
-  if (filling_product_was_used.at(FillingProduct::kAddress)) {
+  if (has_address) {
     AutofillMetrics::LogAutofillPerfectFilling(/*is_address=*/true,
                                                perfect_filling);
   }
-  if (filling_product_was_used.at(FillingProduct::kCreditCard)) {
+  if (has_credit_card) {
     AutofillMetrics::LogAutofillPerfectFilling(/*is_address=*/false,
                                                perfect_filling);
   }
@@ -81,9 +79,11 @@ void LogDurationMetrics(
       std::ranges::count_if(form, &FieldHasMeaningfulPossibleFieldTypes,
                             &std::unique_ptr<AutofillField>::operator*);
   bool form_has_autofilled_fields = std::ranges::any_of(
-      form, [](const auto& field) { return field->is_autofilled(); });
-  bool has_observed_one_time_code_field =
-      std::ranges::any_of(form, [](const auto& field) {
+      form.fields(), [](const std::unique_ptr<AutofillField>& field) {
+        return field->last_modifier() == FieldModifier::kAutofill;
+      });
+  bool has_observed_one_time_code_field = std::ranges::any_of(
+      form.fields(), [](const std::unique_ptr<AutofillField>& field) {
         return field->html_type() == HtmlFieldType::kOneTimeCode;
       });
   if (num_detected_field_types >= kMinRequiredFieldsForHeuristics ||
@@ -180,6 +180,7 @@ void LogPredictionMetrics(
   const QualityMetricType metric_type =
       observed_submission ? TYPE_SUBMISSION : TYPE_NO_SUBMISSION;
   for (const std::unique_ptr<AutofillField>& field : form) {
+    LogFieldTypeAtSubmissionMetrics(*field);
     LogHeuristicPredictionQualityMetrics(form_interactions_ukm_logger,
                                          source_id, form, *field, metric_type,
                                          now);
@@ -189,6 +190,7 @@ void LogPredictionMetrics(
                                        form, *field, metric_type, now);
     LogEmailFieldPredictionMetrics(*field);
     LogFieldPredictionOverlapMetrics(*field);
+    LogPhoneNumberDetectionExperimentMetrics(*field);
   }
 }
 
@@ -214,12 +216,12 @@ void LogFillingMetrics(
 
   FieldTypeSet autofilled_field_types;
   for (const std::unique_ptr<AutofillField>& field : form) {
-    if (field->is_autofilled() || field->previously_autofilled()) {
+    if (field->all_modifiers().contains(FieldModifier::kAutofill)) {
       AutofillMetrics::LogEditedAutofilledFieldAtSubmission(
           form_interactions_ukm_logger, source_id, form, *field);
     }
     if (FieldHasMeaningfulPossibleFieldTypes(*field) &&
-        field->is_autofilled()) {
+        field->last_modifier() == FieldModifier::kAutofill) {
       autofilled_field_types.insert_all(field->Type().GetTypes());
     }
   }

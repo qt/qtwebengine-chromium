@@ -33,6 +33,10 @@
 #include "util/string_util.h"
 #include "util/stringprintf.h"
 
+#if defined(USE_PERFETTO)
+#include "platform/impl/perfetto_trace_logging_platform.h"
+#endif
+
 namespace openscreen::cast {
 namespace {
 
@@ -82,9 +86,13 @@ options:
 
     -r, --remoting: Enable remoting content instead of mirroring.
 
-    -t, --tracing: Enable performance tracing logging.
+    -t, --tracing: Enable text based performance trace logging.
 
     -v, --verbose: Enable verbose logging.
+
+    -P, --perfetto: Enable perfetto based performance trace logging.
+
+    -i, --enable-input-events: Enable receiving input events from the receiver.
 
 )";
 
@@ -137,9 +145,10 @@ struct Arguments {
   std::string developer_certificate_path;
   bool use_android_rtp_hack = false;
   bool use_remoting = false;
+  bool enable_input_events = false;
   bool is_verbose = false;
   VideoCodec codec = VideoCodec::kVp8;
-  std::unique_ptr<TextTraceLoggingPlatform> trace_logger;
+  std::unique_ptr<TraceLoggingPlatform> trace_logger;
   bool enable_dscp = true;
 };
 
@@ -152,18 +161,22 @@ std::optional<Arguments> ParseArgs(int argc, char* argv[]) {
       {"android-hack", no_argument, nullptr, 'a'},
       {"codec", required_argument, nullptr, 'c'},
       {"developer-certificate", required_argument, nullptr, 'd'},
+      {"enable-input-events", no_argument, nullptr, 'i'},
       {"help", no_argument, nullptr, 'h'},
       {"max-bitrate", required_argument, nullptr, 'm'},
       {"no-looping", no_argument, nullptr, 'n'},
       {"disable-dscp", no_argument, nullptr, 'q'},
       {"remoting", no_argument, nullptr, 'r'},
       {"tracing", no_argument, nullptr, 't'},
+#if defined(USE_PERFETTO)
+      {"perfetto", no_argument, nullptr, 'P'},
+#endif
       {"verbose", no_argument, nullptr, 'v'},
       {nullptr, 0, nullptr, 0}};
 
   Arguments args;
   int ch = -1;
-  while ((ch = getopt_long(argc, argv, "ac:d:hm:nqrtv", kArgumentOptions,
+  while ((ch = getopt_long(argc, argv, "ac:d:him:nqrtvP", kArgumentOptions,
                            nullptr)) != -1) {
     switch (ch) {
       case 'a':
@@ -184,6 +197,9 @@ std::optional<Arguments> ParseArgs(int argc, char* argv[]) {
         break;
       case 'd':
         args.developer_certificate_path = get_opt::optarg;
+        break;
+      case 'i':
+        args.enable_input_events = true;
         break;
       case 'q':
         args.enable_dscp = false;
@@ -206,6 +222,11 @@ std::optional<Arguments> ParseArgs(int argc, char* argv[]) {
           return std::nullopt;
         }
         break;
+#if defined(USE_PERFETTO)
+      case 'P':
+        args.trace_logger = std::make_unique<PerfettoTraceLoggingPlatform>();
+        break;
+#endif
     }
   }
 
@@ -282,7 +303,8 @@ int StandaloneSenderMain(int argc, char* argv[]) {
                          .use_remoting = args->use_remoting,
                          .should_loop_video = args->should_loop_video,
                          .codec = args->codec,
-                         .enable_dscp = args->enable_dscp});
+                         .enable_dscp = args->enable_dscp,
+                         .enable_input_events = args->enable_input_events});
   });
 
   // Run the event loop until SIGINT (e.g., CTRL-C at the console) or

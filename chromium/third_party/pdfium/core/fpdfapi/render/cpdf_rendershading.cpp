@@ -1034,7 +1034,7 @@ void CPDF_RenderShading::Draw(CFX_RenderDevice* pDevice,
         mtMatrix.TransformRect(dict->GetRectFor("BBox")).GetOuterRect());
   }
 #if defined(PDF_USE_SKIA)
-  if ((pDevice->GetDeviceCaps(FXDC_RENDER_CAPS) & FXRC_SHADING) &&
+  if (pDevice->RenderCapShading() &&
       pDevice->DrawShading(*pPattern, mtMatrix, clip_rect_bbox, alpha)) {
     return;
   }

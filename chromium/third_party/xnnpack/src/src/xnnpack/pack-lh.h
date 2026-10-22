@@ -99,6 +99,10 @@ extern "C" {
 // configs and microkernels), which would need to have special treatment to
 // avoid a circular dependency.
 XNN_INTERNAL const struct xnn_pack_lh_config*
+xnn_init_f16_qdint8_row_sums_pack_lh_config();
+XNN_INTERNAL const struct xnn_pack_lh_config*
+xnn_init_f16_qduint8_row_sums_pack_lh_config();
+XNN_INTERNAL const struct xnn_pack_lh_config*
 xnn_init_f16_qdint8_pack_lh_config();
 XNN_INTERNAL const struct xnn_pack_lh_config*
 xnn_init_f16_qduint8_pack_lh_config();
@@ -106,6 +110,8 @@ XNN_INTERNAL const struct xnn_pack_lh_config*
 xnn_init_f32_qdint8_pack_lh_config();
 XNN_INTERNAL const struct xnn_pack_lh_config*
 xnn_init_f32_qdint8_row_sums_pack_lh_config();
+XNN_INTERNAL const struct xnn_pack_lh_config*
+xnn_init_f32_qduint8_row_sums_pack_lh_config();
 XNN_INTERNAL const struct xnn_pack_lh_config*
 xnn_init_f32_qduint8_pack_lh_config();
 

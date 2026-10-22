@@ -608,15 +608,15 @@ if(aom_config("CONFIG_AV1_HIGHBITDEPTH") eq "yes") {
   specialize qw/av1_convolve_y_sr sse2 avx2 neon neon_dotprod neon_i8mm rvv/;
   specialize qw/av1_convolve_y_sr_intrabc neon rvv/;
   specialize qw/av1_convolve_2d_scale sse4_1 neon neon_dotprod neon_i8mm/;
-  specialize qw/av1_dist_wtd_convolve_2d ssse3 avx2 neon neon_dotprod neon_i8mm/;
-  specialize qw/av1_dist_wtd_convolve_2d_copy sse2 avx2 neon/;
-  specialize qw/av1_dist_wtd_convolve_x sse2 avx2 neon neon_dotprod neon_i8mm/;
-  specialize qw/av1_dist_wtd_convolve_y sse2 avx2 neon neon_dotprod neon_i8mm/;
+  specialize qw/av1_dist_wtd_convolve_2d ssse3 avx2 neon neon_dotprod neon_i8mm rvv/;
+  specialize qw/av1_dist_wtd_convolve_2d_copy sse2 avx2 neon rvv/;
+  specialize qw/av1_dist_wtd_convolve_x sse2 avx2 neon neon_dotprod neon_i8mm rvv/;
+  specialize qw/av1_dist_wtd_convolve_y sse2 avx2 neon neon_dotprod neon_i8mm rvv/;
   if(aom_config("CONFIG_AV1_HIGHBITDEPTH") eq "yes") {
-    specialize qw/av1_highbd_dist_wtd_convolve_2d sse4_1 avx2 neon sve2/;
-    specialize qw/av1_highbd_dist_wtd_convolve_x sse4_1 avx2 neon sve2/;
-    specialize qw/av1_highbd_dist_wtd_convolve_y sse4_1 avx2 neon sve2/;
-    specialize qw/av1_highbd_dist_wtd_convolve_2d_copy sse4_1 avx2 neon/;
+    specialize qw/av1_highbd_dist_wtd_convolve_2d sse4_1 avx2 neon sve2 rvv/;
+    specialize qw/av1_highbd_dist_wtd_convolve_x sse4_1 avx2 neon sve2 rvv/;
+    specialize qw/av1_highbd_dist_wtd_convolve_y sse4_1 avx2 neon sve2 rvv/;
+    specialize qw/av1_highbd_dist_wtd_convolve_2d_copy sse4_1 avx2 neon rvv/;
     specialize qw/av1_highbd_convolve_2d_sr ssse3 avx2 neon sve2 rvv/;
     specialize qw/av1_highbd_convolve_2d_sr_intrabc neon rvv/;
     specialize qw/av1_highbd_convolve_x_sr ssse3 avx2 neon sve2 rvv/;

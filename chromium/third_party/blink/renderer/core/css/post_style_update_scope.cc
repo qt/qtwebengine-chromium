@@ -42,12 +42,17 @@ PostStyleUpdateScope::~PostStyleUpdateScope() {
 }
 
 bool PostStyleUpdateScope::Apply() {
+  if (current_ != this) {
+    // We only record and apply updates in the outermost scope (reflected by
+    // current_).
+    return false;
+  }
+
   if (ApplyPseudo()) {
     return true;
   }
   ApplyAnimations();
-  document_.RemoveFinishedTopLayerElements();
-  return false;
+  return document_.RemoveFinishedTopLayerElements();
 }
 
 bool PostStyleUpdateScope::ApplyPseudo() {
@@ -82,8 +87,6 @@ void PostStyleUpdateScope::ApplyAnimations() {
     element_animations->CssAnimations().MaybeApplyPendingUpdate(element.Get());
   }
 
-  // NOTE(crbug.com/446159591): With AnimationTrigger enabled, we see renderer
-  // hang reports. This hang should be fixed before enabling AnimationTrigger.
   // NOTE: We avoid performing the trigger attachments if we know we still need
   // to run layout because the trigger names (and scopes) are made visible by
   // propagating them through the fragment tree which happens during layout.
@@ -91,14 +94,6 @@ void PostStyleUpdateScope::ApplyAnimations() {
   // trigger names and scopes.
   if (RuntimeEnabledFeatures::AnimationTriggerEnabled() &&
       !document_.View()->NeedsLayout()) {
-    // TODO(crbug.com/469286970): This is too late a point at which to figure
-    // out which animations are attached to which triggers as a trigger might
-    // already be in a tripped state and should be playing an animation whose
-    // effect should be reflected in getComputedstyle. This results in
-    // producing a frame with a flash-of-no-animation where the animation
-    // should be playing. We should move some of this logic to the style
-    // calculation code so that when we apply pending updates above we account
-    // for animations that should already be triggered.
     document_.GetDocumentAnimations().UpdateAnimationTriggerAttachments();
   }
 
@@ -111,6 +106,14 @@ void PostStyleUpdateScope::AnimationData::SetPendingUpdate(
     const CSSAnimationUpdate& update) {
   element.EnsureElementAnimations().CssAnimations().SetPendingUpdate(update);
   elements_with_pending_updates_.insert(&element);
+}
+
+void PostStyleUpdateScope::SetPendingUpdateForTesting(
+    Element& element,
+    const CSSAnimationUpdate& update) {
+  if (AnimationData* data = CurrentAnimationData()) {
+    data->SetPendingUpdate(element, update);
+  }
 }
 
 void PostStyleUpdateScope::AnimationData::StoreOldStyleIfNeeded(

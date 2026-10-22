@@ -63,13 +63,16 @@ FileSystemAccessWatcherManager::FileSystemAccessWatcherManager(
     FileSystemAccessManagerImpl* manager,
     base::PassKey<FileSystemAccessManagerImpl> /*pass_key*/)
     : manager_(manager),
-      bucket_path_watcher_(std::make_unique<FileSystemAccessBucketPathWatcher>(
-          base::WrapRefCounted(manager_->context()),
-          base::PassKey<FileSystemAccessWatcherManager>())) {
+      bucket_path_watcher_(
+          base::MakeRefCounted<FileSystemAccessBucketPathWatcher>(
+              base::WrapRefCounted(manager_->context()),
+              base::PassKey<FileSystemAccessWatcherManager>())) {
   RegisterSource(bucket_path_watcher_.get());
 }
 
-FileSystemAccessWatcherManager::~FileSystemAccessWatcherManager() = default;
+FileSystemAccessWatcherManager::~FileSystemAccessWatcherManager() {
+  bucket_path_watcher_->Disable();
+}
 
 void FileSystemAccessWatcherManager::BindObserverHost(
     const BindingContext& binding_context,
@@ -305,7 +308,8 @@ void FileSystemAccessWatcherManager::RemoveObserver(
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     return source->scope().Contains(newly_unobserved_scope) &&
            std::ranges::none_of(
-               observation_groups_, [&source](const auto& observation) {
+               observation_groups_.GetReentrantRange(),
+               [&source](const auto& observation) {
                  return source->scope().Contains(observation.scope());
                });
   });

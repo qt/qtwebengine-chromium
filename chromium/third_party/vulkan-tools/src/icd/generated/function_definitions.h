@@ -2508,6 +2508,100 @@ static VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit2KHR(VkQueue queue, uint32_t su
     // Not a CREATE or DESTROY function
     return VK_SUCCESS;
 }
+static VKAPI_ATTR void VKAPI_CALL CmdBindIndexBuffer3KHR(VkCommandBuffer commandBuffer, const VkBindIndexBuffer3InfoKHR* pInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdBindVertexBuffers3KHR(VkCommandBuffer commandBuffer, uint32_t firstBinding,
+                                                           uint32_t bindingCount, const VkBindVertexBuffer3InfoKHR* pBindingInfos) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdDrawIndirect2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdDrawIndexedIndirect2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdDispatchIndirect2KHR(VkCommandBuffer commandBuffer, const VkDispatchIndirect2InfoKHR* pInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryKHR(VkCommandBuffer commandBuffer,
+                                                   const VkCopyDeviceMemoryInfoKHR* pCopyMemoryInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryToImageKHR(VkCommandBuffer commandBuffer,
+                                                          const VkCopyDeviceMemoryImageInfoKHR* pCopyMemoryInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdCopyImageToMemoryKHR(VkCommandBuffer commandBuffer,
+                                                          const VkCopyDeviceMemoryImageInfoKHR* pCopyMemoryInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdUpdateMemoryKHR(VkCommandBuffer commandBuffer, const VkDeviceAddressRangeKHR* pDstRange,
+                                                     VkAddressCommandFlagsKHR dstFlags, VkDeviceSize dataSize, const void* pData) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdFillMemoryKHR(VkCommandBuffer commandBuffer, const VkDeviceAddressRangeKHR* pDstRange,
+                                                   VkAddressCommandFlagsKHR dstFlags, uint32_t data) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdCopyQueryPoolResultsToMemoryKHR(VkCommandBuffer commandBuffer, VkQueryPool queryPool,
+                                                                     uint32_t firstQuery, uint32_t queryCount,
+                                                                     const VkStridedDeviceAddressRangeKHR* pDstRange,
+                                                                     VkAddressCommandFlagsKHR dstFlags,
+                                                                     VkQueryResultFlags queryResultFlags) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdDrawIndirectCount2KHR(VkCommandBuffer commandBuffer,
+                                                           const VkDrawIndirectCount2InfoKHR* pInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdDrawIndexedIndirectCount2KHR(VkCommandBuffer commandBuffer,
+                                                                  const VkDrawIndirectCount2InfoKHR* pInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdBeginConditionalRendering2EXT(
+    VkCommandBuffer commandBuffer, const VkConditionalRenderingBeginInfo2EXT* pConditionalRenderingBegin) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdBindTransformFeedbackBuffers2EXT(VkCommandBuffer commandBuffer, uint32_t firstBinding,
+                                                                      uint32_t bindingCount,
+                                                                      const VkBindTransformFeedbackBuffer2InfoEXT* pBindingInfos) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdBeginTransformFeedback2EXT(VkCommandBuffer commandBuffer, uint32_t firstCounterRange,
+                                                                uint32_t counterRangeCount,
+                                                                const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfos) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdEndTransformFeedback2EXT(VkCommandBuffer commandBuffer, uint32_t firstCounterRange,
+                                                              uint32_t counterRangeCount,
+                                                              const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfos) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdDrawIndirectByteCount2EXT(VkCommandBuffer commandBuffer, uint32_t instanceCount,
+                                                               uint32_t firstInstance,
+                                                               const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfo,
+                                                               uint32_t counterOffset, uint32_t vertexStride) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdDrawMeshTasksIndirect2EXT(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdDrawMeshTasksIndirectCount2EXT(VkCommandBuffer commandBuffer,
+                                                                    const VkDrawIndirectCount2InfoKHR* pInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdWriteMarkerToMemoryAMD(VkCommandBuffer commandBuffer, const VkMemoryMarkerInfoAMD* pInfo) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructure2KHR(VkDevice device,
+                                                                      const VkAccelerationStructureCreateInfo2KHR* pCreateInfo,
+                                                                      const VkAllocationCallbacks* pAllocator,
+                                                                      VkAccelerationStructureKHR* pAccelerationStructure) {
+    unique_lock_t lock(global_lock);
+    *pAccelerationStructure = (VkAccelerationStructureKHR)global_unique_handle++;
+    return VK_SUCCESS;
+}
 static VKAPI_ATTR void VKAPI_CALL CmdCopyBuffer2KHR(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo) {
     // Not a CREATE or DESTROY function
 }
@@ -2571,8 +2665,13 @@ static VKAPI_ATTR VkResult VKAPI_CALL CreatePipelineBinariesKHR(VkDevice device,
                                                                 const VkAllocationCallbacks* pAllocator,
                                                                 VkPipelineBinaryHandlesInfoKHR* pBinaries) {
     unique_lock_t lock(global_lock);
-    for (uint32_t i = 0; i < pBinaries->pipelineBinaryCount; ++i) {
-        pBinaries->pPipelineBinaries[i] = (VkPipelineBinaryKHR)global_unique_handle++;
+    if (pBinaries->pPipelineBinaries != nullptr) {
+        for (uint32_t i = 0; i < pBinaries->pipelineBinaryCount; ++i) {
+            pBinaries->pPipelineBinaries[i] = (VkPipelineBinaryKHR)global_unique_handle++;
+        }
+    } else {
+        // In this case, we need to return a return count, let's set it to 3
+        pBinaries->pipelineBinaryCount = 3;
     }
     return VK_SUCCESS;
 }
@@ -2582,13 +2681,23 @@ static VKAPI_ATTR void VKAPI_CALL DestroyPipelineBinaryKHR(VkDevice device, VkPi
 }
 static VKAPI_ATTR VkResult VKAPI_CALL GetPipelineKeyKHR(VkDevice device, const VkPipelineCreateInfoKHR* pPipelineCreateInfo,
                                                         VkPipelineBinaryKeyKHR* pPipelineKey) {
-    // Not a CREATE or DESTROY function
+    if (pPipelineKey != nullptr) {
+        pPipelineKey->keySize = 16;
+        std::memset(pPipelineKey->key, 0x12, pPipelineKey->keySize);
+    }
     return VK_SUCCESS;
 }
 static VKAPI_ATTR VkResult VKAPI_CALL GetPipelineBinaryDataKHR(VkDevice device, const VkPipelineBinaryDataInfoKHR* pInfo,
                                                                VkPipelineBinaryKeyKHR* pPipelineBinaryKey,
                                                                size_t* pPipelineBinaryDataSize, void* pPipelineBinaryData) {
-    // Not a CREATE or DESTROY function
+    static uint32_t fake_size = 64;
+    if (pPipelineBinaryDataSize != nullptr) {
+        if (pPipelineBinaryData == nullptr) {
+            *pPipelineBinaryDataSize = fake_size;
+        } else {
+            std::memset(pPipelineBinaryData, 0xABCD, fake_size);
+        }
+    }
     return VK_SUCCESS;
 }
 static VKAPI_ATTR VkResult VKAPI_CALL ReleaseCapturedPipelineDataKHR(VkDevice device,
@@ -2675,6 +2784,15 @@ static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryIndirectKHR(VkCommandBuffer comma
 static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryToImageIndirectKHR(
     VkCommandBuffer commandBuffer, const VkCopyMemoryToImageIndirectInfoKHR* pCopyMemoryToImageIndirectInfo) {
     // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR VkResult VKAPI_CALL GetDeviceFaultReportsKHR(VkDevice device, uint64_t timeout, uint32_t* pFaultCounts,
+                                                               VkDeviceFaultInfoKHR* pFaultInfo) {
+    // Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR VkResult VKAPI_CALL GetDeviceFaultDebugInfoKHR(VkDevice device, VkDeviceFaultDebugInfoKHR* pDebugInfo) {
+    // Not a CREATE or DESTROY function
+    return VK_SUCCESS;
 }
 static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2KHR(VkCommandBuffer commandBuffer,
                                                       const VkRenderingEndInfoKHR* pRenderingEndInfo) {
@@ -4444,6 +4562,40 @@ static VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDeviceQueueFamilyPerforma
     // Not a CREATE or DESTROY function
     return VK_SUCCESS;
 }
+static VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDeviceShaderInstrumentationMetricsARM(
+    VkPhysicalDevice physicalDevice, uint32_t* pDescriptionCount, VkShaderInstrumentationMetricDescriptionARM* pDescriptions) {
+    // Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR VkResult VKAPI_CALL CreateShaderInstrumentationARM(VkDevice device,
+                                                                     const VkShaderInstrumentationCreateInfoARM* pCreateInfo,
+                                                                     const VkAllocationCallbacks* pAllocator,
+                                                                     VkShaderInstrumentationARM* pInstrumentation) {
+    unique_lock_t lock(global_lock);
+    *pInstrumentation = (VkShaderInstrumentationARM)global_unique_handle++;
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL DestroyShaderInstrumentationARM(VkDevice device, VkShaderInstrumentationARM instrumentation,
+                                                                  const VkAllocationCallbacks* pAllocator) {
+    // Destroy object
+}
+static VKAPI_ATTR void VKAPI_CALL CmdBeginShaderInstrumentationARM(VkCommandBuffer commandBuffer,
+                                                                   VkShaderInstrumentationARM instrumentation) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR void VKAPI_CALL CmdEndShaderInstrumentationARM(VkCommandBuffer commandBuffer) {
+    // Not a CREATE or DESTROY function
+}
+static VKAPI_ATTR VkResult VKAPI_CALL GetShaderInstrumentationValuesARM(VkDevice device, VkShaderInstrumentationARM instrumentation,
+                                                                        uint32_t* pMetricBlockCount, void* pMetricValues,
+                                                                        VkShaderInstrumentationValuesFlagsARM flags) {
+    // Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+static VKAPI_ATTR void VKAPI_CALL ClearShaderInstrumentationMetricsARM(VkDevice device,
+                                                                       VkShaderInstrumentationARM instrumentation) {
+    // Not a CREATE or DESTROY function
+}
 static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2EXT(VkCommandBuffer commandBuffer,
                                                       const VkRenderingEndInfoKHR* pRenderingEndInfo) {
     // Not a CREATE or DESTROY function
@@ -4465,7 +4617,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL CreateUbmSurfaceSEC(VkInstance instance, c
 }
 static VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice,
                                                                                  uint32_t queueFamilyIndex,
-                                                                                 struct ubm_device* ubm_device) {
+                                                                                 struct ubm_device* device) {
     // Not a CREATE or DESTROY function
     return VK_SUCCESS;
 }

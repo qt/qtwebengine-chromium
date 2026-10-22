@@ -53,17 +53,26 @@ def CPrint(msg_type, msg_string):
 # Check clang-formatting of source code diff
 def VerifyClangFormatSource(commit, target_files):
     target_refspec = f'{commit}^...{commit}'
-    retval = 0
-    good_file_pattern = re.compile(r'.*\\.(cpp|cc|c\+\+|cxx|c|h|hpp)$')
+    good_file_pattern = re.compile(r'.*\.(cpp|cc|c\+\+|cxx|c|h|hpp)$')
     diff_files_list = [item for item in target_files if good_file_pattern.search(item)]
     diff_files = ' '.join([str(elem) for elem in diff_files_list])
     retval = 0
     if diff_files != '':
         git_diff = subprocess.Popen(('git', 'diff', '-U0', target_refspec, '--', diff_files), stdout=subprocess.PIPE)
         diff_files_data = subprocess.check_output(('python3', repo_relative('scripts/clang-format-diff.py'), '-p1', '-style=file'), stdin=git_diff.stdout)
+
         diff_files_data = diff_files_data.decode('utf-8')
         if diff_files_data != '':
             CPrint('ERR_MSG', "\nFound formatting errors!")
+            CPrint('HELP_MSG', "\nClang Format 22.1.x is required (version 23 seems to works as well) ... clang-format broke since version 18 unfortunately")
+            CPrint('HELP_MSG', "\nFor Windows:")
+            CPrint('CONTENT', "  https://github.com/llvm/llvm-project/releases/tag/llvmorg-22.1.1 provides a binary to grab")
+            CPrint('HELP_MSG', "\nFor Visual Studio:")
+            CPrint('CONTENT', "  Navigate to \"Text Editor\" > \"C/C++\" > \"Formatting\" > \"General\" and find \"Use custom clang-format.exe file\"")
+            CPrint('HELP_MSG', "\nFor Linux:")
+            CPrint('CONTENT', "  You should be able to find it in your package manager (sudo apt search clang-format)\n  Or run\n     wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 22")
+            CPrint('HELP_MSG', "\nTo set for the project:")
+            CPrint('CONTENT', "  git config clang-format.binary clang-format-22")
             CPrint('CONTENT', "\n" + diff_files_data)
             retval = 1
     return retval
@@ -72,6 +81,7 @@ def VerifyClangFormatSource(commit, target_files):
 # Check no trailing white spaces!
 def VerifyTrailingWhiteSpace(target_files):
     whitespace_pattern = re.compile(r'[ \t]+$', flags=re.MULTILINE)
+    found_any = False
     for file_path in target_files:
         full_path = repo_relative(file_path)
         if not os.path.isfile(full_path):
@@ -80,13 +90,13 @@ def VerifyTrailingWhiteSpace(target_files):
             with open(repo_relative(full_path), 'r', encoding='utf-8', errors='ignore') as f:
                 for line_number, line in enumerate(f, 1):
                     if whitespace_pattern.search(line):
-                        print(f"-------------- WHITE SPACE! --------------\nFound trailing white space in {file_path} at line {line_number}")
-                        return 1
+                        print(f"Trailing white space in {file_path} at line {line_number}")
+                        found_any = True
         except FileNotFoundError:
             print(f"Warning: File not found at '{file_path}'. Skipping.")
         except Exception as e:
             print(f"Error reading file '{file_path}': {e}")
-    return 0
+    return 1 if found_any else 0
 #
 #
 # Check copyright dates for modified files
@@ -174,11 +184,11 @@ def VerifyCommitMessageFormat(commit):
                         CPrint('ERR_MSG', "The first word of the subject line after the ':' character must be capitalized.")
                         CPrint('CONTENT',  f"     '{msg_line_text}'\n")
                         retval = 1
-            # Check that first character of subject line is not capitalized
-            if msg_line_text[0].isupper():
-                CPrint('ERR_MSG', "The first word of the subject line must be lower case.")
-                CPrint('CONTENT', f"     '{msg_line_text}'\n")
-                retval = 1
+                # Check that first character of subject line is not capitalized
+                if msg_line_text[0].isupper():
+                    CPrint('ERR_MSG', "The first word of the subject line must be lower case.")
+                    CPrint('CONTENT', f"     '{msg_line_text}'\n")
+                    retval = 1
         elif msg_cur_line == 2:
             # Commit message must have a blank line between subject and body
             if line_length != 0:

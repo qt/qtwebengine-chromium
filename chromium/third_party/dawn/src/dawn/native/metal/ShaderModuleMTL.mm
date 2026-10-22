@@ -27,6 +27,10 @@
 
 #include "dawn/native/metal/ShaderModuleMTL.h"
 
+#include <tint/tint.h>
+
+#include <sstream>
+
 #include "dawn/common/MatchVariant.h"
 #include "dawn/common/Math.h"
 #include "dawn/common/Range.h"
@@ -46,10 +50,6 @@
 #include "dawn/platform/DawnPlatform.h"
 #include "dawn/platform/metrics/HistogramMacros.h"
 #include "dawn/platform/tracing/TraceEvent.h"
-
-#include <tint/tint.h>
-
-#include <sstream>
 
 namespace dawn::native::metal {
 namespace {
@@ -166,18 +166,25 @@ std::unordered_map<uint32_t, tint::msl::writer::ArgumentBufferInfo> GenerateArgu
         return {};
     }
 
-    // TODO(363031535): The dynamic offsets should all move to be immediates and contained into a
-    // single buffer.
     std::unordered_map<uint32_t, tint::msl::writer::ArgumentBufferInfo> info = {};
 
     uint32_t curBufferIdx = kArgumentBufferSlotMax;
     for (BindGroupIndex group : layout->GetBindGroupLayoutsMask()) {
         const BindGroupLayout* bgl = ToBackend(layout->GetBindGroupLayout(group));
 
-        // Node, this buffer index value needs to match up to the value set in the
-        // CommandBufferMTL #argument-buffer-index
+        // Note, both of these buffer index values need to match up to the value set in the
+        // CommandBufferMTL #argument-buffer-and-dynamic-offsets-buffer-indices
+        uint32_t argumentBufferIdx = curBufferIdx--;
+        // TODO(crbug.com/363031535): The dynamic offsets should all be in a single grouping
+        // which is in the immediates buffer.
+        std::optional<uint32_t> dynamicOffsetsBufferIdx = std::nullopt;
+        if (uint32_t(bgl->GetDynamicBufferCount()) > 0u) {
+            dynamicOffsetsBufferIdx = curBufferIdx--;
+        }
+
         tint::msl::writer::ArgumentBufferInfo argBufferInfo = {
-            .id = curBufferIdx--,
+            .id = argumentBufferIdx,
+            .dynamic_buffer_id = dynamicOffsetsBufferIdx,
         };
 
         uint32_t curDynamicOffset = 0;
@@ -189,10 +196,8 @@ std::unordered_map<uint32_t, tint::msl::writer::ArgumentBufferInfo> GenerateArgu
                 bindingInfo.bindingLayout,  //
                 [&](const BufferBindingInfo& binding) {
                     if (binding.hasDynamicOffset) {
-                        argBufferInfo.dynamic_buffer_id = curBufferIdx--;
-
                         argBufferInfo.binding_info_to_offset_index.insert(
-                            {static_cast<uint32_t>(bindingInfo.binding), curDynamicOffset++});
+                            {uint32_t(bindingIndex), curDynamicOffset++});
                     }
                 },
                 [&](const SamplerBindingInfo& bindingInfo) {},
@@ -225,10 +230,17 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
 
     tint::Bindings bindings =
         GenerateBindingRemapping(layout, stage, [&](BindGroupIndex group, BindingIndex index) {
-            return tint::BindingPoint{
-                .group = useArgumentBuffers ? uint32_t(group) : 0,
-                .binding = layout->GetBindingIndexInfo(stage)[group][index],
-            };
+            if (useArgumentBuffers) {
+                return tint::BindingPoint{
+                    .group = uint32_t(group),
+                    .binding = ToMTLArgumentBufferIndex(index),
+                };
+            } else {
+                return tint::BindingPoint{
+                    .group = 0,
+                    .binding = layout->GetBindingIndexInfo(stage)[group][index],
+                };
+            }
         });
 
     tint::msl::writer::ArrayLengthOptions arrayLengthFromConstants =
@@ -341,6 +353,12 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
         device->IsToggleEnabled(Toggle::MetalPolyfillUnpack2x16snorm);
     req.tintOptions.workarounds.polyfill_unpack_2x16_unorm =
         device->IsToggleEnabled(Toggle::MetalPolyfillUnpack2x16unorm);
+    req.tintOptions.workarounds.polyfill_tanh_f16 =
+        device->IsToggleEnabled(Toggle::MetalPolyfillTanhF16);
+    req.tintOptions.workarounds.replace_workgroup_bool_with_u32 =
+        device->IsToggleEnabled(Toggle::MetalReplaceWorkgroupBoolWithU32);
+    req.tintOptions.workarounds.collapse_subgroup_min_max =
+        device->IsToggleEnabled(Toggle::CollapseSubgroupMinMax);
 
     req.tintOptions.extensions.disable_demote_to_helper =
         device->IsToggleEnabled(Toggle::DisableDemoteToHelper);
@@ -358,15 +376,20 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
             // Requires Tint Program here right before actual using.
             auto shaderModule = r.inputProgram.UnsafeGetValue();
             auto inputProgram = shaderModule->GetTintProgram();
+            auto device = shaderModule->GetDevice();
             const tint::Program* tintInputProgram = &(inputProgram->program);
             // Convert the AST program to an IR module.
             tint::Result<tint::core::ir::Module> ir;
             {
                 SCOPED_DAWN_HISTOGRAM_TIMER_MICROS(r.platform.UnsafeGetValue(),
                                                    "ShaderModuleProgramToIR");
-                ir = tint::wgsl::reader::ProgramToLoweredIR(
-                    *tintInputProgram,
-                    shaderModule->GetDevice()->GetTintInternalCompilerErrorCallback());
+                tint::wgsl::reader::IROptions irOptions{
+                    .ice_callback = device->GetTintInternalCompilerErrorCallback(),
+                    .dump_ir_when_validating = device->IsToggleEnabled(Toggle::DumpTintIR),
+                    .enable_validation_asserts =
+                        device->IsToggleEnabled(Toggle::EnableTintIRValidationAsserts),
+                };
+                ir = tint::wgsl::reader::ProgramToLoweredIR(*tintInputProgram, irOptions);
                 DAWN_INVALID_IF(ir != tint::Success,
                                 "An error occurred while generating Tint IR\n%s",
                                 ir.Failure().reason);
@@ -410,12 +433,11 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
             // category. -Wunused-variable in particular comes up a lot in generated code, and
             // some (old?) Metal drivers accidentally treat it as a MTLLibraryErrorCompileError
             // instead of a warning.
-            msl = R"(
-                    #ifdef __clang__
-                    #pragma clang diagnostic ignored "-Wall"
-                    #endif
-                )" +
-                  math_mode_heading + msl;
+            msl = R"(#ifdef __clang__
+#pragma clang diagnostic ignored "-Wall"
+#endif
+)" + math_mode_heading +
+                  msl;
 
             return MslCompilation{{
                 std::move(msl),

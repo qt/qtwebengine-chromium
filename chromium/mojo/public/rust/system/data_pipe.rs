@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 chromium::import! {
-  "//mojo/public/rust/system:ffi_bindings" as mojo_ffi;
+  "//mojo/public/rust/c_mojo_api" as mojo_ffi;
 }
 
 use crate::mojo_types::declare_trappable_typed_handle;
 use mojo_ffi::data_pipe;
-use mojo_ffi::{MojoResult, UntypedHandle};
+use mojo_ffi::MojoResult;
 
 // FOR_RELEASE: Make these arguments to the functions instead of bitfields
 pub use data_pipe::{ReadFlags, WriteFlags};
@@ -16,11 +16,11 @@ pub use data_pipe::{ReadFlags, WriteFlags};
 declare_trappable_typed_handle!(DataPipeProducerHandle);
 declare_trappable_typed_handle!(DataPipeConsumerHandle);
 
-/// FOR_RELEASE: These impls are a fine starting point, but we can replace them
-/// with more ergonomic interfaces:
-/// - Implement Read/BufRead/Write/etc instead of standalone functions.
-/// - Split `read_with_flags` into multiple functions (read, peek, query,
-///   discard).
+// FOR_RELEASE: These impls are a fine starting point, but we can replace them
+// with more ergonomic interfaces:
+// - Implement Read/BufRead/Write/etc instead of standalone functions.
+// - Split `read_with_flags` into multiple functions (read, peek, query,
+//   discard).
 
 impl DataPipeConsumerHandle {
     pub fn read_with_flags(

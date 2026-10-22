@@ -12,14 +12,110 @@
 #import <GameController/GameController.h>
 #include <string.h>
 
+#include <memory>
 #include <string>
 
+#include "base/containers/flat_map.h"
 #include "base/feature_list.h"
+#include "base/functional/bind.h"
 #include "base/mac/mac_util.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
+#include "device/gamepad/game_controller_gamepad.h"
+#include "device/gamepad/gamepad_pad_state_provider.h"
 #include "device/gamepad/gamepad_standard_mappings.h"
+#include "device/gamepad/gamepad_uma.h"
+#include "device/gamepad/public/cpp/gamepad.h"
 #include "device/gamepad/public/cpp/gamepad_features.h"
+#include "device/gamepad/public/mojom/gamepad.mojom.h"
+
+@interface GameControllerNotificationHandler : NSObject
+- (instancetype)
+    initWithImpl:(base::WeakPtr<device::GameControllerDataFetcherMac::
+                                    GameControllerDataFetcherMacImpl>)impl
+      taskRunner:(scoped_refptr<base::SingleThreadTaskRunner>)runner;
+- (void)onControllerDidConnect:(NSNotification*)notification;
+- (void)onControllerDidDisconnect:(NSNotification*)notification;
+@end
+
+namespace device {
+
+struct GameControllerDataFetcherMac::GameControllerDataFetcherMacImpl {
+  explicit GameControllerDataFetcherMacImpl(GameControllerDataFetcherMac* owner)
+      : owner_(owner), weak_factory_(this) {}
+
+  void OnGameControllerConnect(GCController* controller);
+  void OnGameControllerDisconnect(GCController* controller);
+
+  static void RegisterOnMainThread(
+      base::WeakPtr<GameControllerDataFetcherMacImpl> impl,
+      scoped_refptr<base::SingleThreadTaskRunner> polling_task_runner);
+  static void UnregisterOnMainThread(
+      GameControllerNotificationHandler* handler);
+
+  // The owning fetcher, used to access shared state like `GetPadState`.
+  const raw_ptr<GameControllerDataFetcherMac> owner_;
+
+  GameControllerNotificationHandler* __strong notification_handler_;
+  base::flat_map<GCController*, int> controller_to_source_id_;
+  base::flat_map<int, std::unique_ptr<GameControllerGamepad>> gamepads_;
+
+  base::WeakPtrFactory<GameControllerDataFetcherMacImpl> weak_factory_;
+};
+
+}  // namespace device
+
+@implementation GameControllerNotificationHandler {
+ @private
+  base::WeakPtr<
+      device::GameControllerDataFetcherMac::GameControllerDataFetcherMacImpl>
+      _implWeak;
+  scoped_refptr<base::SingleThreadTaskRunner> _pollingTaskRunner;
+}
+
+- (instancetype)
+    initWithImpl:(base::WeakPtr<device::GameControllerDataFetcherMac::
+                                    GameControllerDataFetcherMacImpl>)impl
+      taskRunner:(scoped_refptr<base::SingleThreadTaskRunner>)runner {
+  self = [super init];
+  if (self) {
+    _implWeak = impl;
+    _pollingTaskRunner = runner;
+  }
+  return self;
+}
+
+- (void)onControllerDidConnect:(NSNotification*)notification {
+  _pollingTaskRunner->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](base::WeakPtr<device::GameControllerDataFetcherMac::
+                               GameControllerDataFetcherMacImpl> impl,
+             id controller) {
+            if (impl) {
+              impl->OnGameControllerConnect(controller);
+            }
+          },
+          _implWeak, notification.object));
+}
+
+- (void)onControllerDidDisconnect:(NSNotification*)notification {
+  _pollingTaskRunner->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](base::WeakPtr<device::GameControllerDataFetcherMac::
+                               GameControllerDataFetcherMacImpl> impl,
+             id controller) {
+            if (impl) {
+              impl->OnGameControllerDisconnect(controller);
+            }
+          },
+          _implWeak, notification.object));
+}
+@end
 
 namespace device {
 
@@ -27,11 +123,13 @@ namespace {
 
 const int kGCControllerPlayerIndexCount = 4;
 
-// Returns true if |controller| should be enumerated by this data fetcher.
-bool IsSupported(GCController* controller) {
+// Returns GameControllerMacOutcome::kSuccess if |controller| should be
+// enumerated by this data fetcher. Otherwise returns the reason it should not
+// be enumerated.
+GameControllerMacOutcome GetSupportOutcome(GCController* controller) {
   // We only support the extendedGamepad profile.
   if (!controller.extendedGamepad) {
-    return false;
+    return GameControllerMacOutcome::kNoExtendedGamepad;
   }
 
   // In macOS 10.15, support for some console gamepads was added to the Game
@@ -40,46 +138,212 @@ bool IsSupported(GCController* controller) {
   // supported in Chrome through other data fetchers and must be blocked here to
   // avoid double-enumeration.
   NSString* product_category = controller.productCategory;
-  if ([product_category isEqualToString:@"HID"] ||
-      [product_category isEqualToString:@"DualShock 4"] ||
-      [product_category isEqualToString:@"DualSense"] ||
-      [product_category isEqualToString:@"Switch Pro Controller"] ||
+  if ([product_category isEqualToString:@"Switch Pro Controller"] ||
       [product_category isEqualToString:@"Nintendo Switch JoyCon (L/R)"]) {
-    return false;
+    return GameControllerMacOutcome::kIsNintendoGamepad;
+  }
+
+  if ([product_category isEqualToString:@"HID"]) {
+    return GameControllerMacOutcome::kIsHidDevice;
   }
 
   if (!base::FeatureList::IsEnabled(
           features::kXboxUseGameControllerDataFetcherMac) &&
       [product_category isEqualToString:@"Xbox One"]) {
-    return false;
+    return GameControllerMacOutcome::kXboxFeatureDisabled;
   }
 
-  return true;
-}
-
-void SetOptionalButton(Gamepad& pad,
-                       int button_index,
-                       GCControllerButtonInput* button) {
-  if (button) {
-    pad.buttons[button_index].pressed = button.isPressed;
-    pad.buttons[button_index].value = button.value;
-  } else {
-    pad.buttons[button_index].pressed = false;
-    pad.buttons[button_index].value = 0.0f;
+  if (!base::FeatureList::IsEnabled(
+          features::kPlayStationUseGameControllerDataFetcherMac) &&
+      ([product_category isEqualToString:@"DualShock 4"] ||
+       [product_category isEqualToString:@"DualSense"])) {
+    return GameControllerMacOutcome::kPlayStationFeatureDisabled;
   }
+
+  return GameControllerMacOutcome::kSuccess;
 }
 
 }  // namespace
 
-GameControllerDataFetcherMac::GameControllerDataFetcherMac() = default;
+void GameControllerDataFetcherMac::GameControllerDataFetcherMacImpl::
+    OnGameControllerConnect(GCController* controller) {
+  DCHECK(owner_->polling_task_runner_->RunsTasksInCurrentSequence());
+  GameControllerMacOutcome outcome = GetSupportOutcome(controller);
+  if (outcome != GameControllerMacOutcome::kSuccess) {
+    RecordGameControllerMacOutcome(outcome);
+    return;
+  }
 
-GameControllerDataFetcherMac::~GameControllerDataFetcherMac() = default;
+  // Ignore controllers that have already been connected to.
+  if (controller_to_source_id_.find(controller) !=
+      controller_to_source_id_.end()) {
+    RecordGameControllerMacOutcome(GameControllerMacOutcome::kAlreadyConnected);
+    return;
+  }
+
+  // Assign a new unique source ID.
+  const int source_id = owner_->next_source_id_++;
+  controller_to_source_id_[controller] = source_id;
+
+  auto gamepad = std::make_unique<GameControllerGamepad>(controller);
+
+  if (base::FeatureList::IsEnabled(
+          features::kClaimDuplicateGamepadsProductIdentifier)) {
+    // Claim gamepads enumerated by this datafetcher to avoid
+    // double-enumeration in GamepadPlatformDataFetcherMac.
+    std::string vendor_name = base::SysNSStringToUTF8(controller.vendorName);
+    owner_->ClaimProductIdentifier(vendor_name);
+  }
+
+  // Initialize the pad state if a slot is available. If not, GetGamepadData
+  // will try again during the next polling cycle.
+  PadState* state = owner_->GetPadState(owner_->next_source_id_);
+  if (state) {
+    state->is_initialized = true;
+    gamepad->InitializeStaticData(state->data);
+    RecordGameControllerMacOutcome(GameControllerMacOutcome::kSuccess);
+  } else {
+    RecordGameControllerMacOutcome(GameControllerMacOutcome::kNoSlotAvailable);
+  }
+
+  // Store the gamepad object.
+  owner_->impl_->gamepads_.emplace(source_id, std::move(gamepad));
+}
+
+void GameControllerDataFetcherMac::GameControllerDataFetcherMacImpl::
+    OnGameControllerDisconnect(GCController* controller) {
+  DCHECK(owner_->polling_task_runner_->RunsTasksInCurrentSequence());
+  auto it = controller_to_source_id_.find(controller);
+  if (it == controller_to_source_id_.end()) {
+    return;
+  }
+
+  const int source_id = it->second;
+
+  // Mark the pad as disconnected
+  PadState* state = owner_->GetPadState(source_id);
+  if (state) {
+    state->data.connected = false;
+  }
+
+  // Shut down haptics and remove the gamepad object
+  auto gamepad_it = owner_->impl_->gamepads_.find(source_id);
+  if (gamepad_it != owner_->impl_->gamepads_.end()) {
+    gamepad_it->second->Shutdown();
+    owner_->impl_->gamepads_.erase(gamepad_it);
+  }
+
+  controller_to_source_id_.erase(it);
+}
+
+void GameControllerDataFetcherMac::GameControllerDataFetcherMacImpl::
+    RegisterOnMainThread(
+        base::WeakPtr<GameControllerDataFetcherMacImpl> impl,
+        scoped_refptr<base::SingleThreadTaskRunner> polling_task_runner) {
+  GameControllerNotificationHandler* handler =
+      [[GameControllerNotificationHandler alloc]
+          initWithImpl:impl
+            taskRunner:polling_task_runner];
+
+  // Register for gamepad connection and disconnection notifications.
+  // The notifications will fire for already-connected controllers once we
+  // register.
+  [[NSNotificationCenter defaultCenter]
+      addObserver:handler
+         selector:@selector(onControllerDidConnect:)
+             name:GCControllerDidConnectNotification
+           object:nil];
+  [[NSNotificationCenter defaultCenter]
+      addObserver:handler
+         selector:@selector(onControllerDidDisconnect:)
+             name:GCControllerDidDisconnectNotification
+           object:nil];
+
+  polling_task_runner->PostTask(
+      FROM_HERE, base::BindOnce(
+                     [](base::WeakPtr<GameControllerDataFetcherMacImpl> impl,
+                        GameControllerNotificationHandler* handler) {
+                       if (impl) {
+                         impl->notification_handler_ = handler;
+                       }
+                     },
+                     impl, handler));
+}
+
+void GameControllerDataFetcherMac::GameControllerDataFetcherMacImpl::
+    UnregisterOnMainThread(GameControllerNotificationHandler* handler) {
+  [[NSNotificationCenter defaultCenter] removeObserver:handler];
+}
+
+GameControllerDataFetcherMac::GameControllerDataFetcherMac()
+    : impl_(std::make_unique<GameControllerDataFetcherMacImpl>(this)),
+      main_task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()) {}
+
+GameControllerDataFetcherMac::~GameControllerDataFetcherMac() {
+  if (base::FeatureList::IsEnabled(
+          features::kXboxUseGameControllerDataFetcherMac) ||
+      base::FeatureList::IsEnabled(
+          features::kPlayStationUseGameControllerDataFetcherMac)) {
+    GameControllerNotificationHandler* handler = impl_->notification_handler_;
+    impl_->notification_handler_ = nil;
+    main_task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            &GameControllerDataFetcherMacImpl::UnregisterOnMainThread,
+            handler));
+
+    for (auto& entry : impl_->gamepads_) {
+      if (entry.second) {
+        entry.second->Shutdown();
+      }
+    }
+  }
+}
+
+void GameControllerDataFetcherMac::OnAddedToProvider() {
+  if (base::FeatureList::IsEnabled(
+          features::kXboxUseGameControllerDataFetcherMac) ||
+      base::FeatureList::IsEnabled(
+          features::kPlayStationUseGameControllerDataFetcherMac)) {
+    polling_task_runner_ = base::SingleThreadTaskRunner::GetCurrentDefault();
+    main_task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(&GameControllerDataFetcherMacImpl::RegisterOnMainThread,
+                       impl_->weak_factory_.GetWeakPtr(),
+                       polling_task_runner_));
+  }
+}
 
 GamepadSource GameControllerDataFetcherMac::source() {
   return Factory::static_source();
 }
 
 void GameControllerDataFetcherMac::GetGamepadData(bool) {
+  if (base::FeatureList::IsEnabled(
+          features::kXboxUseGameControllerDataFetcherMac) ||
+      base::FeatureList::IsEnabled(
+          features::kPlayStationUseGameControllerDataFetcherMac)) {
+    for (const auto& entry : impl_->gamepads_) {
+      const int source_id = entry.first;
+
+      PadState* state = GetPadState(source_id);
+
+      if (!state) {
+        continue;
+      }
+
+      if (!state->is_initialized) {
+        state->is_initialized = true;
+        entry.second->InitializeStaticData(state->data);
+      }
+
+      state->data.timestamp = CurrentTimeInMicroseconds();
+      entry.second->UpdateState(state->data);
+    }
+
+    return;
+  }
+
   NSArray* controllers = [GCController controllers];
 
   // In the first pass, record which player indices are still in use so unused
@@ -87,8 +351,9 @@ void GameControllerDataFetcherMac::GetGamepadData(bool) {
   bool player_indices[Gamepads::kItemsLengthCap];
   std::fill(player_indices, player_indices + Gamepads::kItemsLengthCap, false);
   for (GCController* controller in controllers) {
-    if (!IsSupported(controller))
+    if (GetSupportOutcome(controller) != GameControllerMacOutcome::kSuccess) {
       continue;
+    }
 
     int player_index = controller.playerIndex;
     if (player_index != GCControllerPlayerIndexUnset)
@@ -103,8 +368,9 @@ void GameControllerDataFetcherMac::GetGamepadData(bool) {
   // In the second pass, assign indices to newly connected gamepads and fetch
   // the gamepad state.
   for (GCController* controller in controllers) {
-    if (!IsSupported(controller))
+    if (GetSupportOutcome(controller) != GameControllerMacOutcome::kSuccess) {
       continue;
+    }
 
     int player_index = controller.playerIndex;
     if (player_index == GCControllerPlayerIndexUnset) {
@@ -170,34 +436,6 @@ void GameControllerDataFetcherMac::GetGamepadData(bool) {
     BUTTON(BUTTON_INDEX_DPAD_LEFT, extended_gamepad.dpad.left);
     BUTTON(BUTTON_INDEX_DPAD_RIGHT, extended_gamepad.dpad.right);
 
-    if (base::FeatureList::IsEnabled(
-            features::kXboxUseGameControllerDataFetcherMac)) {
-      pad.buttons_length = BUTTON_INDEX_COUNT;
-      BUTTON(BUTTON_INDEX_START, extended_gamepad.buttonMenu);
-
-      SetOptionalButton(pad, BUTTON_INDEX_META, extended_gamepad.buttonHome);
-      SetOptionalButton(pad, BUTTON_INDEX_BACK_SELECT,
-                        extended_gamepad.buttonOptions);
-      SetOptionalButton(pad, BUTTON_INDEX_LEFT_THUMBSTICK,
-                        extended_gamepad.leftThumbstickButton);
-      SetOptionalButton(pad, BUTTON_INDEX_RIGHT_THUMBSTICK,
-                        extended_gamepad.rightThumbstickButton);
-
-      if ([extended_gamepad isKindOfClass:[GCXboxGamepad class]]) {
-        GCXboxGamepad* xbox_gamepad = (GCXboxGamepad*)extended_gamepad;
-
-        // Game controller framework detection of the share button over USB
-        // depends on the device firmware. In our investigation, a controller
-        // with bcdDevice=1281 (v5.1) worked, while one with bcdDevice=1289
-        // (v5.9) did not. Bug filed: FB21568043.
-        SetOptionalButton(pad, XBOX_SERIES_X_BUTTON_SHARE,
-                          xbox_gamepad.buttonShare);
-        if (xbox_gamepad.buttonShare) {
-          pad.buttons_length = XBOX_SERIES_X_BUTTON_COUNT;
-        }
-      }
-    }
-
 #undef BUTTON
   }
 }
@@ -208,6 +446,55 @@ int GameControllerDataFetcherMac::NextUnusedPlayerIndex() {
       return i;
   }
   return GCControllerPlayerIndexUnset;
+}
+
+void GameControllerDataFetcherMac::PlayEffect(
+    int source_id,
+    mojom::GamepadHapticEffectType type,
+    mojom::GamepadEffectParametersPtr params,
+    mojom::GamepadHapticsManager::PlayVibrationEffectOnceCallback callback,
+    scoped_refptr<base::SequencedTaskRunner> callback_runner) {
+  if (!base::FeatureList::IsEnabled(
+          features::kXboxUseGameControllerDataFetcherMac) &&
+      !base::FeatureList::IsEnabled(
+          features::kPlayStationUseGameControllerDataFetcherMac)) {
+    RunVibrationCallback(
+        std::move(callback), std::move(callback_runner),
+        mojom::GamepadHapticsResult::GamepadHapticsResultNotSupported);
+    return;
+  }
+  auto it = impl_->gamepads_.find(source_id);
+  if (it != impl_->gamepads_.end()) {
+    it->second->PlayEffect(type, std::move(params), std::move(callback),
+                           std::move(callback_runner));
+  } else {
+    RunVibrationCallback(
+        std::move(callback), std::move(callback_runner),
+        mojom::GamepadHapticsResult::GamepadHapticsResultNotSupported);
+  }
+}
+
+void GameControllerDataFetcherMac::ResetVibration(
+    int source_id,
+    mojom::GamepadHapticsManager::ResetVibrationActuatorCallback callback,
+    scoped_refptr<base::SequencedTaskRunner> callback_runner) {
+  if (!base::FeatureList::IsEnabled(
+          features::kXboxUseGameControllerDataFetcherMac) &&
+      !base::FeatureList::IsEnabled(
+          features::kPlayStationUseGameControllerDataFetcherMac)) {
+    RunVibrationCallback(
+        std::move(callback), std::move(callback_runner),
+        mojom::GamepadHapticsResult::GamepadHapticsResultNotSupported);
+    return;
+  }
+  auto it = impl_->gamepads_.find(source_id);
+  if (it != impl_->gamepads_.end()) {
+    it->second->ResetVibration(std::move(callback), std::move(callback_runner));
+  } else {
+    RunVibrationCallback(
+        std::move(callback), std::move(callback_runner),
+        mojom::GamepadHapticsResult::GamepadHapticsResultComplete);
+  }
 }
 
 }  // namespace device

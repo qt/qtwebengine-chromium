@@ -21,7 +21,6 @@
 #include "src/xnnpack/microparams.h"
 #include "src/xnnpack/node-type.h"
 #include "src/xnnpack/operator-type.h"
-#include "src/xnnpack/pack.h"
 #include <pthreadpool.h>
 
 #ifdef __cplusplus
@@ -351,7 +350,6 @@ struct xnn_operator {
     struct slice_context slice;
     struct spmm_context spmm;
     struct subconv_context subconv;
-    struct subgemm_context subgemm;
     struct transpose_context transpose;
     struct floating_point_softmax_context floating_point_softmax;
     struct u8_softmax_context u8_softmax;

@@ -214,6 +214,21 @@ receive asynchronous events and data.
   can then call `ConsumeNextFrame()` to retrieve the frame data for decoding and
   playback.
 
+### Input Event API
+
+The Input Event API allows a `Receiver` to send input events (like mouse or
+keyboard events) back to the `Sender`. This is a unidirectional flow from
+receiver to sender.
+
+- [**`cast::InputProducer`**](./input_producer.h): Used by the receiver to send
+  events. It is available via the `ConfiguredReceivers` struct during session
+  negotiation.
+- [**`cast::InputConsumer`**](./input_consumer.h): Used by the sender to receive
+  events. Applications set an `InputConsumer::Client` on the `SenderSession`.
+
+Support for input events is negotiated during the Offer/Answer exchange via the
+`rtp_extensions` field ("input_events").
+
 ## Advanced Topics
 
 ### A Note on Packet Routers

@@ -46,7 +46,7 @@ String ContentType::Parameter(StringView parameter_name) const {
     if (separator_pos != kNotFound) {
       StringView attribute =
           StringView(stripped_parameter, 0, separator_pos).StripWhiteSpace();
-      if (EqualIgnoringASCIICase(attribute, parameter_name)) {
+      if (EqualIgnoringAsciiCase(attribute, parameter_name)) {
         return StringView(stripped_parameter, separator_pos + 1)
             .StripWhiteSpace()
             .ToString()
@@ -62,7 +62,7 @@ String ContentType::GetType() const {
   // "type" can have parameters after a semi-colon, strip them
   const wtf_size_t semicolon_index = type_.find(';');
   if (semicolon_index != kNotFound) {
-    return type_.Left(semicolon_index).StripWhiteSpace();
+    return type_.subview(0, semicolon_index).StripWhiteSpace().ToString();
   }
   return type_;
 }

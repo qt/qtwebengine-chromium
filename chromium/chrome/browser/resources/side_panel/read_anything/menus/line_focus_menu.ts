@@ -6,9 +6,11 @@ import './simple_action_menu.js';
 
 import {WebUiListenerMixinLit} from '//resources/cr_elements/web_ui_listener_mixin_lit.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
-import {CrLitElement, type PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
+import {CrLitElement} from '//resources/lit/v3_0/lit.rollup.js';
+import type {PropertyValues} from '//resources/lit/v3_0/lit.rollup.js';
 
-import {DEFAULT_SETTINGS, getLineFocusValues, LineFocusMovement, LineFocusStyle, type SettingsPrefs, type ShowAtConfigPrefs, ToolbarEvent} from '../content/read_anything_types.js';
+import {DEFAULT_SETTINGS, getLineFocusValues, LineFocusMovement, LineFocusStyle, ToolbarEvent} from '../content/read_anything_types.js';
+import type {SettingsPrefs, ShowAtConfigPrefs} from '../content/read_anything_types.js';
 import {ReadAnythingSettingsChange} from '../shared/metrics_browser_proxy.js';
 import {ReadAnythingLogger} from '../shared/read_anything_logger.js';
 
@@ -39,11 +41,15 @@ export class LineFocusMenuElement extends LineFocusMenuElementBase implements
     return {
       settingsPrefs: {type: Object},
       nonModal: {type: Boolean},
+      lineFocusStyle: {type: Object},
+      lineFocusMovement: {type: Number},
     };
   }
 
   accessor settingsPrefs: SettingsPrefs = DEFAULT_SETTINGS;
   accessor nonModal: boolean = false;
+  accessor lineFocusStyle: LineFocusStyle|null = null;
+  accessor lineFocusMovement: LineFocusMovement|null = null;
 
   private styleOptions_: Array<MenuStateItem<LineFocusStyle>> = [
     {
@@ -105,6 +111,22 @@ export class LineFocusMenuElement extends LineFocusMenuElementBase implements
     if (changedProperties.has('settingsPrefs')) {
       this.restoreFromPrefs_();
     }
+
+    if (changedProperties.has('lineFocusStyle') &&
+        this.lineFocusStyle !== null) {
+      this.updateOptionsForStyle_(this.lineFocusStyle);
+    }
+    if (changedProperties.has('lineFocusMovement') &&
+        this.lineFocusMovement !== null) {
+      this.updateOptionsForMovement_(this.lineFocusMovement);
+    }
+    if (changedProperties.has('lineFocusStyle') ||
+        changedProperties.has('lineFocusMovement')) {
+      this.options_ = [
+        ...this.styleOptions_,
+        ...this.movementOptions_,
+      ];
+    }
   }
 
   open(anchor: HTMLElement, showAtConfig?: ShowAtConfigPrefs) {
@@ -119,12 +141,8 @@ export class LineFocusMenuElement extends LineFocusMenuElementBase implements
     const lineFocusValues = getLineFocusValues();
     const lineFocus = lineFocusValues[this.settingsPrefs['lineFocus']];
     if (lineFocus) {
-      this.styleOptions_.forEach(option => {
-        option.selected = option.data === lineFocus.style;
-      });
-      this.movementOptions_.forEach(option => {
-        option.selected = option.data === lineFocus.movement;
-      });
+      this.updateOptionsForStyle_(lineFocus.style);
+      this.updateOptionsForMovement_(lineFocus.movement);
       this.options_ = [
         ...this.styleOptions_,
         ...this.movementOptions_,
@@ -132,28 +150,26 @@ export class LineFocusMenuElement extends LineFocusMenuElementBase implements
     }
   }
 
-  protected onLineFocusStyleChange_(
-      event: CustomEvent<{data: LineFocusStyle}>) {
-    this.onLineFocusChange_(
-        this.styleOptions_, event.detail.data,
+  protected onLineFocusStyleChange_() {
+    this.logger_.logTextSettingsChange(
         ReadAnythingSettingsChange.LINE_FOCUS_STYLE_CHANGE);
   }
 
-  protected onLineFocusMovementChange_(
-      event: CustomEvent<{data: LineFocusMovement}>) {
-    this.onLineFocusChange_(
-        this.movementOptions_, event.detail.data,
+  protected onLineFocusMovementChange_() {
+    this.logger_.logTextSettingsChange(
         ReadAnythingSettingsChange.LINE_FOCUS_MOVEMENT_CHANGE);
   }
 
-  private onLineFocusChange_(
-      options: Array<MenuStateItem<LineFocusStyle|LineFocusMovement>>,
-      data: LineFocusStyle|LineFocusMovement,
-      logValue: ReadAnythingSettingsChange) {
-    options.forEach(option => {
-      option.selected = option.data === data;
+  private updateOptionsForStyle_(newStyle: LineFocusStyle) {
+    this.styleOptions_.forEach(option => {
+      option.selected = option.data === newStyle;
     });
-    this.logger_.logTextSettingsChange(logValue);
+  }
+
+  private updateOptionsForMovement_(newMovement: LineFocusMovement) {
+    this.movementOptions_.forEach(option => {
+      option.selected = option.data === newMovement;
+    });
   }
 }
 

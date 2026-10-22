@@ -22,7 +22,7 @@
 
 // NOLINTBEGIN
 
-// This file contains methods for class vvl::dispatch::Instance  and it is designed to ONLY be
+// This file contains methods for class DispatchInstance  and it is designed to ONLY be
 // included into dispatch_object.h.
 
 #pragma once
@@ -296,11 +296,13 @@ VkResult EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM(VkPhys
                                                                           uint32_t queueFamilyIndex, uint32_t* pCounterCount,
                                                                           VkPerformanceCounterARM* pCounters,
                                                                           VkPerformanceCounterDescriptionARM* pCounterDescriptions);
+VkResult EnumeratePhysicalDeviceShaderInstrumentationMetricsARM(VkPhysicalDevice physicalDevice, uint32_t* pDescriptionCount,
+                                                                VkShaderInstrumentationMetricDescriptionARM* pDescriptions);
 #ifdef VK_USE_PLATFORM_UBM_SEC
 VkResult CreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,
                              const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface);
 VkBool32 GetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
-                                                    struct ubm_device* ubm_device);
+                                                    struct ubm_device* device);
 #endif  // VK_USE_PLATFORM_UBM_SEC
 
 // NOLINTEND

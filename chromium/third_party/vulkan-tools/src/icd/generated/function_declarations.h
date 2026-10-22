@@ -173,7 +173,9 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_KHR_vulkan_memory_model", VK_KHR_VULKAN_MEMORY_MODEL_SPEC_VERSION},
     {"VK_KHR_shader_terminate_invocation", VK_KHR_SHADER_TERMINATE_INVOCATION_SPEC_VERSION},
     {"VK_KHR_fragment_shading_rate", VK_KHR_FRAGMENT_SHADING_RATE_SPEC_VERSION},
+    {"VK_KHR_shader_constant_data", VK_KHR_SHADER_CONSTANT_DATA_SPEC_VERSION},
     {"VK_KHR_dynamic_rendering_local_read", VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_SPEC_VERSION},
+    {"VK_KHR_shader_abort", VK_KHR_SHADER_ABORT_SPEC_VERSION},
     {"VK_KHR_shader_quad_control", VK_KHR_SHADER_QUAD_CONTROL_SPEC_VERSION},
     {"VK_KHR_spirv_1_4", VK_KHR_SPIRV_1_4_SPEC_VERSION},
     {"VK_KHR_separate_depth_stencil_layouts", VK_KHR_SEPARATE_DEPTH_STENCIL_LAYOUTS_SPEC_VERSION},
@@ -189,6 +191,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_KHR_present_id", VK_KHR_PRESENT_ID_SPEC_VERSION},
     {"VK_KHR_video_encode_queue", VK_KHR_VIDEO_ENCODE_QUEUE_SPEC_VERSION},
     {"VK_KHR_synchronization2", VK_KHR_SYNCHRONIZATION_2_SPEC_VERSION},
+    {"VK_KHR_device_address_commands", VK_KHR_DEVICE_ADDRESS_COMMANDS_SPEC_VERSION},
     {"VK_KHR_fragment_shader_barycentric", VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_SPEC_VERSION},
     {"VK_KHR_shader_subgroup_uniform_control_flow", VK_KHR_SHADER_SUBGROUP_UNIFORM_CONTROL_FLOW_SPEC_VERSION},
     {"VK_KHR_zero_initialize_workgroup_memory", VK_KHR_ZERO_INITIALIZE_WORKGROUP_MEMORY_SPEC_VERSION},
@@ -227,6 +230,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_KHR_video_encode_quantization_map", VK_KHR_VIDEO_ENCODE_QUANTIZATION_MAP_SPEC_VERSION},
     {"VK_KHR_shader_relaxed_extended_instruction", VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_SPEC_VERSION},
     {"VK_KHR_maintenance7", VK_KHR_MAINTENANCE_7_SPEC_VERSION},
+    {"VK_KHR_device_fault", VK_KHR_DEVICE_FAULT_SPEC_VERSION},
     {"VK_KHR_maintenance8", VK_KHR_MAINTENANCE_8_SPEC_VERSION},
     {"VK_KHR_shader_fma", VK_KHR_SHADER_FMA_SPEC_VERSION},
     {"VK_KHR_maintenance9", VK_KHR_MAINTENANCE_9_SPEC_VERSION},
@@ -533,12 +537,11 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_EXT_external_memory_metal", VK_EXT_EXTERNAL_MEMORY_METAL_SPEC_VERSION},
 #endif
     {"VK_ARM_performance_counters_by_region", VK_ARM_PERFORMANCE_COUNTERS_BY_REGION_SPEC_VERSION},
+    {"VK_ARM_shader_instrumentation", VK_ARM_SHADER_INSTRUMENTATION_SPEC_VERSION},
     {"VK_EXT_vertex_attribute_robustness", VK_EXT_VERTEX_ATTRIBUTE_ROBUSTNESS_SPEC_VERSION},
     {"VK_ARM_format_pack", VK_ARM_FORMAT_PACK_SPEC_VERSION},
     {"VK_VALVE_fragment_density_map_layered", VK_VALVE_FRAGMENT_DENSITY_MAP_LAYERED_SPEC_VERSION},
-#ifdef VK_ENABLE_BETA_EXTENSIONS
     {"VK_NV_present_metering", VK_NV_PRESENT_METERING_SPEC_VERSION},
-#endif
     {"VK_EXT_fragment_density_map_offset", VK_EXT_FRAGMENT_DENSITY_MAP_OFFSET_SPEC_VERSION},
     {"VK_EXT_zero_initialize_device_memory", VK_EXT_ZERO_INITIALIZE_DEVICE_MEMORY_SPEC_VERSION},
     {"VK_EXT_shader_64bit_indexing", VK_EXT_SHADER_64BIT_INDEXING_SPEC_VERSION},
@@ -549,6 +552,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_EXT_shader_uniform_buffer_unsized_array", VK_EXT_SHADER_UNIFORM_BUFFER_UNSIZED_ARRAY_SPEC_VERSION},
     {"VK_NV_compute_occupancy_priority", VK_NV_COMPUTE_OCCUPANCY_PRIORITY_SPEC_VERSION},
     {"VK_EXT_shader_subgroup_partitioned", VK_EXT_SHADER_SUBGROUP_PARTITIONED_SPEC_VERSION},
+    {"VK_VALVE_shader_mixed_float_dot_product", VK_VALVE_SHADER_MIXED_FLOAT_DOT_PRODUCT_SPEC_VERSION},
     {"VK_KHR_acceleration_structure", VK_KHR_ACCELERATION_STRUCTURE_SPEC_VERSION},
     {"VK_KHR_ray_tracing_pipeline", VK_KHR_RAY_TRACING_PIPELINE_SPEC_VERSION},
     {"VK_KHR_ray_query", VK_KHR_RAY_QUERY_SPEC_VERSION},
@@ -1691,6 +1695,74 @@ static VKAPI_ATTR void VKAPI_CALL CmdWriteTimestamp2KHR(VkCommandBuffer commandB
 static VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits,
                                                       VkFence fence);
 
+static VKAPI_ATTR void VKAPI_CALL CmdBindIndexBuffer3KHR(VkCommandBuffer commandBuffer, const VkBindIndexBuffer3InfoKHR* pInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdBindVertexBuffers3KHR(VkCommandBuffer commandBuffer, uint32_t firstBinding,
+                                                           uint32_t bindingCount, const VkBindVertexBuffer3InfoKHR* pBindingInfos);
+
+static VKAPI_ATTR void VKAPI_CALL CmdDrawIndirect2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdDrawIndexedIndirect2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdDispatchIndirect2KHR(VkCommandBuffer commandBuffer, const VkDispatchIndirect2InfoKHR* pInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryKHR(VkCommandBuffer commandBuffer, const VkCopyDeviceMemoryInfoKHR* pCopyMemoryInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryToImageKHR(VkCommandBuffer commandBuffer,
+                                                          const VkCopyDeviceMemoryImageInfoKHR* pCopyMemoryInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdCopyImageToMemoryKHR(VkCommandBuffer commandBuffer,
+                                                          const VkCopyDeviceMemoryImageInfoKHR* pCopyMemoryInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdUpdateMemoryKHR(VkCommandBuffer commandBuffer, const VkDeviceAddressRangeKHR* pDstRange,
+                                                     VkAddressCommandFlagsKHR dstFlags, VkDeviceSize dataSize, const void* pData);
+
+static VKAPI_ATTR void VKAPI_CALL CmdFillMemoryKHR(VkCommandBuffer commandBuffer, const VkDeviceAddressRangeKHR* pDstRange,
+                                                   VkAddressCommandFlagsKHR dstFlags, uint32_t data);
+
+static VKAPI_ATTR void VKAPI_CALL CmdCopyQueryPoolResultsToMemoryKHR(VkCommandBuffer commandBuffer, VkQueryPool queryPool,
+                                                                     uint32_t firstQuery, uint32_t queryCount,
+                                                                     const VkStridedDeviceAddressRangeKHR* pDstRange,
+                                                                     VkAddressCommandFlagsKHR dstFlags,
+                                                                     VkQueryResultFlags queryResultFlags);
+
+static VKAPI_ATTR void VKAPI_CALL CmdDrawIndirectCount2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirectCount2InfoKHR* pInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdDrawIndexedIndirectCount2KHR(VkCommandBuffer commandBuffer,
+                                                                  const VkDrawIndirectCount2InfoKHR* pInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdBeginConditionalRendering2EXT(
+    VkCommandBuffer commandBuffer, const VkConditionalRenderingBeginInfo2EXT* pConditionalRenderingBegin);
+
+static VKAPI_ATTR void VKAPI_CALL CmdBindTransformFeedbackBuffers2EXT(VkCommandBuffer commandBuffer, uint32_t firstBinding,
+                                                                      uint32_t bindingCount,
+                                                                      const VkBindTransformFeedbackBuffer2InfoEXT* pBindingInfos);
+
+static VKAPI_ATTR void VKAPI_CALL CmdBeginTransformFeedback2EXT(VkCommandBuffer commandBuffer, uint32_t firstCounterRange,
+                                                                uint32_t counterRangeCount,
+                                                                const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfos);
+
+static VKAPI_ATTR void VKAPI_CALL CmdEndTransformFeedback2EXT(VkCommandBuffer commandBuffer, uint32_t firstCounterRange,
+                                                              uint32_t counterRangeCount,
+                                                              const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfos);
+
+static VKAPI_ATTR void VKAPI_CALL CmdDrawIndirectByteCount2EXT(VkCommandBuffer commandBuffer, uint32_t instanceCount,
+                                                               uint32_t firstInstance,
+                                                               const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfo,
+                                                               uint32_t counterOffset, uint32_t vertexStride);
+
+static VKAPI_ATTR void VKAPI_CALL CmdDrawMeshTasksIndirect2EXT(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdDrawMeshTasksIndirectCount2EXT(VkCommandBuffer commandBuffer,
+                                                                    const VkDrawIndirectCount2InfoKHR* pInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdWriteMarkerToMemoryAMD(VkCommandBuffer commandBuffer, const VkMemoryMarkerInfoAMD* pInfo);
+
+static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructure2KHR(VkDevice device,
+                                                                      const VkAccelerationStructureCreateInfo2KHR* pCreateInfo,
+                                                                      const VkAllocationCallbacks* pAllocator,
+                                                                      VkAccelerationStructureKHR* pAccelerationStructure);
+
 static VKAPI_ATTR void VKAPI_CALL CmdCopyBuffer2KHR(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo);
 
 static VKAPI_ATTR void VKAPI_CALL CmdCopyImage2KHR(VkCommandBuffer commandBuffer, const VkCopyImageInfo2* pCopyImageInfo);
@@ -1792,6 +1864,11 @@ static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryIndirectKHR(VkCommandBuffer comma
 
 static VKAPI_ATTR void VKAPI_CALL CmdCopyMemoryToImageIndirectKHR(
     VkCommandBuffer commandBuffer, const VkCopyMemoryToImageIndirectInfoKHR* pCopyMemoryToImageIndirectInfo);
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetDeviceFaultReportsKHR(VkDevice device, uint64_t timeout, uint32_t* pFaultCounts,
+                                                               VkDeviceFaultInfoKHR* pFaultInfo);
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetDeviceFaultDebugInfoKHR(VkDevice device, VkDeviceFaultDebugInfoKHR* pDebugInfo);
 
 static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2KHR(VkCommandBuffer commandBuffer,
                                                       const VkRenderingEndInfoKHR* pRenderingEndInfo);
@@ -2955,6 +3032,28 @@ static VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDeviceQueueFamilyPerforma
     VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t* pCounterCount, VkPerformanceCounterARM* pCounters,
     VkPerformanceCounterDescriptionARM* pCounterDescriptions);
 
+static VKAPI_ATTR VkResult VKAPI_CALL EnumeratePhysicalDeviceShaderInstrumentationMetricsARM(
+    VkPhysicalDevice physicalDevice, uint32_t* pDescriptionCount, VkShaderInstrumentationMetricDescriptionARM* pDescriptions);
+
+static VKAPI_ATTR VkResult VKAPI_CALL CreateShaderInstrumentationARM(VkDevice device,
+                                                                     const VkShaderInstrumentationCreateInfoARM* pCreateInfo,
+                                                                     const VkAllocationCallbacks* pAllocator,
+                                                                     VkShaderInstrumentationARM* pInstrumentation);
+
+static VKAPI_ATTR void VKAPI_CALL DestroyShaderInstrumentationARM(VkDevice device, VkShaderInstrumentationARM instrumentation,
+                                                                  const VkAllocationCallbacks* pAllocator);
+
+static VKAPI_ATTR void VKAPI_CALL CmdBeginShaderInstrumentationARM(VkCommandBuffer commandBuffer,
+                                                                   VkShaderInstrumentationARM instrumentation);
+
+static VKAPI_ATTR void VKAPI_CALL CmdEndShaderInstrumentationARM(VkCommandBuffer commandBuffer);
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetShaderInstrumentationValuesARM(VkDevice device, VkShaderInstrumentationARM instrumentation,
+                                                                        uint32_t* pMetricBlockCount, void* pMetricValues,
+                                                                        VkShaderInstrumentationValuesFlagsARM flags);
+
+static VKAPI_ATTR void VKAPI_CALL ClearShaderInstrumentationMetricsARM(VkDevice device, VkShaderInstrumentationARM instrumentation);
+
 static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2EXT(VkCommandBuffer commandBuffer,
                                                       const VkRenderingEndInfoKHR* pRenderingEndInfo);
 
@@ -2970,7 +3069,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL CreateUbmSurfaceSEC(VkInstance instance, c
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice,
                                                                                  uint32_t queueFamilyIndex,
-                                                                                 struct ubm_device* ubm_device);
+                                                                                 struct ubm_device* device);
 #endif /* VK_USE_PLATFORM_UBM_SEC */
 static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructureKHR(VkDevice device,
                                                                      const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
@@ -3470,6 +3569,28 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkCmdPipelineBarrier2KHR", (void*)CmdPipelineBarrier2KHR},
     {"vkCmdWriteTimestamp2KHR", (void*)CmdWriteTimestamp2KHR},
     {"vkQueueSubmit2KHR", (void*)QueueSubmit2KHR},
+    {"vkCmdBindIndexBuffer3KHR", (void*)CmdBindIndexBuffer3KHR},
+    {"vkCmdBindVertexBuffers3KHR", (void*)CmdBindVertexBuffers3KHR},
+    {"vkCmdDrawIndirect2KHR", (void*)CmdDrawIndirect2KHR},
+    {"vkCmdDrawIndexedIndirect2KHR", (void*)CmdDrawIndexedIndirect2KHR},
+    {"vkCmdDispatchIndirect2KHR", (void*)CmdDispatchIndirect2KHR},
+    {"vkCmdCopyMemoryKHR", (void*)CmdCopyMemoryKHR},
+    {"vkCmdCopyMemoryToImageKHR", (void*)CmdCopyMemoryToImageKHR},
+    {"vkCmdCopyImageToMemoryKHR", (void*)CmdCopyImageToMemoryKHR},
+    {"vkCmdUpdateMemoryKHR", (void*)CmdUpdateMemoryKHR},
+    {"vkCmdFillMemoryKHR", (void*)CmdFillMemoryKHR},
+    {"vkCmdCopyQueryPoolResultsToMemoryKHR", (void*)CmdCopyQueryPoolResultsToMemoryKHR},
+    {"vkCmdDrawIndirectCount2KHR", (void*)CmdDrawIndirectCount2KHR},
+    {"vkCmdDrawIndexedIndirectCount2KHR", (void*)CmdDrawIndexedIndirectCount2KHR},
+    {"vkCmdBeginConditionalRendering2EXT", (void*)CmdBeginConditionalRendering2EXT},
+    {"vkCmdBindTransformFeedbackBuffers2EXT", (void*)CmdBindTransformFeedbackBuffers2EXT},
+    {"vkCmdBeginTransformFeedback2EXT", (void*)CmdBeginTransformFeedback2EXT},
+    {"vkCmdEndTransformFeedback2EXT", (void*)CmdEndTransformFeedback2EXT},
+    {"vkCmdDrawIndirectByteCount2EXT", (void*)CmdDrawIndirectByteCount2EXT},
+    {"vkCmdDrawMeshTasksIndirect2EXT", (void*)CmdDrawMeshTasksIndirect2EXT},
+    {"vkCmdDrawMeshTasksIndirectCount2EXT", (void*)CmdDrawMeshTasksIndirectCount2EXT},
+    {"vkCmdWriteMarkerToMemoryAMD", (void*)CmdWriteMarkerToMemoryAMD},
+    {"vkCreateAccelerationStructure2KHR", (void*)CreateAccelerationStructure2KHR},
     {"vkCmdCopyBuffer2KHR", (void*)CmdCopyBuffer2KHR},
     {"vkCmdCopyImage2KHR", (void*)CmdCopyImage2KHR},
     {"vkCmdCopyBufferToImage2KHR", (void*)CmdCopyBufferToImage2KHR},
@@ -3503,6 +3624,8 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkCmdBindDescriptorBufferEmbeddedSamplers2EXT", (void*)CmdBindDescriptorBufferEmbeddedSamplers2EXT},
     {"vkCmdCopyMemoryIndirectKHR", (void*)CmdCopyMemoryIndirectKHR},
     {"vkCmdCopyMemoryToImageIndirectKHR", (void*)CmdCopyMemoryToImageIndirectKHR},
+    {"vkGetDeviceFaultReportsKHR", (void*)GetDeviceFaultReportsKHR},
+    {"vkGetDeviceFaultDebugInfoKHR", (void*)GetDeviceFaultDebugInfoKHR},
     {"vkCmdEndRendering2KHR", (void*)CmdEndRendering2KHR},
     {"vkCreateDebugReportCallbackEXT", (void*)CreateDebugReportCallbackEXT},
     {"vkDestroyDebugReportCallbackEXT", (void*)DestroyDebugReportCallbackEXT},
@@ -3963,6 +4086,13 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
 #endif
     {"vkEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM",
      (void*)EnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM},
+    {"vkEnumeratePhysicalDeviceShaderInstrumentationMetricsARM", (void*)EnumeratePhysicalDeviceShaderInstrumentationMetricsARM},
+    {"vkCreateShaderInstrumentationARM", (void*)CreateShaderInstrumentationARM},
+    {"vkDestroyShaderInstrumentationARM", (void*)DestroyShaderInstrumentationARM},
+    {"vkCmdBeginShaderInstrumentationARM", (void*)CmdBeginShaderInstrumentationARM},
+    {"vkCmdEndShaderInstrumentationARM", (void*)CmdEndShaderInstrumentationARM},
+    {"vkGetShaderInstrumentationValuesARM", (void*)GetShaderInstrumentationValuesARM},
+    {"vkClearShaderInstrumentationMetricsARM", (void*)ClearShaderInstrumentationMetricsARM},
     {"vkCmdEndRendering2EXT", (void*)CmdEndRendering2EXT},
     {"vkCmdBeginCustomResolveEXT", (void*)CmdBeginCustomResolveEXT},
     {"vkCmdSetComputeOccupancyPriorityNV", (void*)CmdSetComputeOccupancyPriorityNV},

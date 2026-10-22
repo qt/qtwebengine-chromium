@@ -94,6 +94,7 @@ class PLATFORM_EXPORT BitmapImage final : public Image {
   bool IsLazyDecoded() override;
   size_t FrameCount() override;
   PaintImage PaintImageForCurrentFrame() override;
+  PaintImage PaintImageForCurrentFrameWithInfo(const ImageNodeAnimationInfo*);
   ImageOrientation Orientation() const override;
 
   PaintImage PaintImageForTesting();
@@ -136,7 +137,11 @@ class PLATFORM_EXPORT BitmapImage final : public Image {
             const gfx::RectF& src_rect,
             const ImageDrawOptions&) override;
 
-  PaintImage CreatePaintImage();
+  PaintImage CreatePaintImage(
+      PaintImage::Id paint_id,
+      PaintImage::Id sync_animation_id,
+      PaintImage::AnimationSequenceId sync_animation_sequence_id,
+      int image_animation_repetition_count);
   void UpdateSize() const;
 
   // Called to wipe out the entire frame buffer cache and tell the image
@@ -161,16 +166,26 @@ class PLATFORM_EXPORT BitmapImage final : public Image {
   mutable gfx::Size size_;  // The size to use for the overall image (will just
                             // be the size of the first image).
   mutable gfx::Size density_corrected_size_;
+  struct ImageAnimationData {
+    ImageAnimationEnum previous_image_animation = ImageAnimationEnum::kNormal;
+    // When image-animation is 'normal', all DOM nodes sharing this image
+    // animate in sync and therefore share the same PaintImage Id.
+    // When image-animation is 'paused' or 'running', each element may have an
+    // independent animation timeline. This map tracks the PaintImage Id and
+    // animation sequence Id for each such DOM node. The animation timeline is
+    // managed by the animation controller. The sequence Id is used to pass sync
+    // update information to the animation controller.
+    PaintImage::Id non_normal_paint_id = PaintImage::kInvalidId;
+    PaintImage::AnimationSequenceId non_normal_sequence_id = 0;
+  };
+  HashMap<DOMNodeId, ImageAnimationData> image_animation_map_;
 
   // This caches the PaintImage created with the last updated encoded data to
   // ensure re-use of generated decodes. This is cleared each time the encoded
   // data is updated in DataChanged.
+  // Separated from image_animation_map_ due to the cached frames and image
+  // animation map has different lifycycle.
   HashMap<DOMNodeId, PaintImage> cached_frames_;
-  // Reserved ids for non-running frames.
-  const DOMNodeId NORMAL_CACHED_FRAME_ID = -2;
-  const DOMNodeId PAUSED_CACHED_FRAME_ID = -3;
-
-  HashMap<DOMNodeId, ImageAnimationEnum> image_animation_map_;
 
   // Whether or not we can play animation.
   mojom::blink::ImageAnimationPolicy animation_policy_ =
@@ -187,21 +202,12 @@ class PLATFORM_EXPORT BitmapImage final : public Image {
 
   bool default_frame_has_alpha_ : 1;
 
-  // TODO(crbug.com/429459566): PaintImageForCurrentFrame is an overridden
-  // function that is broadly used. Will change this to
-  // PaintImageForCurrentFrame's optional argument in separated CL.
-  raw_ptr<ImageNodeAnimationInfo> current_image_node_animation_info_ = nullptr;
-
   RepetitionCountStatus repetition_count_status_;
   int repetition_count_;  // How many total animation loops we should do.  This
                           // will be cAnimationNone if this image type is
                           // incapable of animation.
 
   size_t frame_count_;
-  // The paused image will produce the first frame of animated image.
-  // This would possibly change via this issue [1].
-  // [1] https://github.com/webplatformco/project-image-animation/issues/2
-  PaintImage::Id paused_image_paint_image_id_ = -1;
 
   PaintImage::AnimationSequenceId reset_animation_sequence_id_ = 0;
 };

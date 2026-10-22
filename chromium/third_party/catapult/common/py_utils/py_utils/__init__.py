@@ -19,6 +19,16 @@ def GetCatapultDir():
   return os.path.normpath(
       os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
+def GetWebPageReplayDir():
+  # When catapult is pulled into a different repository (say chromium), the
+  # webpagereplay dependency might be outside of the catapult directory (unless
+  # DEPS are recursively pulled).
+  internal_path = os.path.abspath(os.path.join(
+    GetCatapultDir(), 'third_party', 'webpagereplay'))
+  external_path = os.path.abspath(os.path.join(
+    GetCatapultDir(), '..', 'webpagereplay'))
+  return external_path if os.path.exists(external_path) else internal_path
+
 
 def IsRunningOnCrosDevice():
   """Returns True if we're on a ChromeOS device."""

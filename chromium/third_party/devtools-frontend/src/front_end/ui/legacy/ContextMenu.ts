@@ -122,8 +122,6 @@ export class Item {
           label: this.label,
           isExperimentalFeature: this.previewFeature,
           enabled: !this.disabled,
-          checked: undefined,
-          subItems: undefined,
           tooltip: this.#tooltip,
           jslogContext: this.jslogContext,
           featureName: this.featureName,
@@ -145,11 +143,6 @@ export class Item {
       case 'separator': {
         return {
           type: 'separator',
-          id: undefined,
-          label: undefined,
-          enabled: undefined,
-          checked: undefined,
-          subItems: undefined,
         };
       }
       case 'checkbox': {
@@ -160,7 +153,6 @@ export class Item {
           checked: Boolean(this.checked),
           isExperimentalFeature: this.previewFeature,
           enabled: !this.disabled,
-          subItems: undefined,
           tooltip: this.#tooltip,
           jslogContext: this.jslogContext,
         };
@@ -512,8 +504,6 @@ export class SubMenu extends Item {
       isExperimentalFeature: this.previewFeature,
       enabled: !this.disabled,
       subItems: [],
-      id: undefined,
-      checked: undefined,
       jslogContext: this.jslogContext,
       featureName: this.featureName,
     };
@@ -532,11 +522,6 @@ export class SubMenu extends Item {
         }
         result.subItems.push({
           type: 'separator',
-          id: undefined,
-          subItems: undefined,
-          checked: undefined,
-          enabled: undefined,
-          label: undefined,
         });
       }
     }
@@ -1157,8 +1142,7 @@ export function registerProvider<T>(registration: ProviderRegistration<T>): void
 async function loadApplicableRegisteredProviders(target: unknown): Promise<Array<Provider<unknown>>> {
   const providers: Array<Provider<unknown>> = [];
   for (const providerRegistration of registeredProviders) {
-    if (!Root.Runtime.Runtime.isDescriptorEnabled(
-            {experiment: providerRegistration.experiment, condition: undefined})) {
+    if (!Root.Runtime.Runtime.isDescriptorEnabled({experiment: providerRegistration.experiment})) {
       continue;
     }
     if (providerRegistration.contextTypes) {

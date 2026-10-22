@@ -832,10 +832,6 @@ class gemm_class {
 
     // n-remainders.
     if (n & 4 && max_b_unroll > 4) nloop<a_unroll, 4, max_b_unroll>(aa, ao, bo, co1, co2);
-#if 0
-        if (n & 2 && max_b_unroll > 2) nloop<a_unroll, 2, max_b_unroll>(aa, ao, bo, co1, co2);
-        if (n & 1 && max_b_unroll > 1) nloop<a_unroll, 1, max_b_unroll>(aa, ao, bo, co1, co2);
-#else
     // Copy kernels don't support tails of n = 2 for single/double precision.
     // Loop over ones.
     int n_rem = 2 * ((n & 2) != 0) + 1 * ((n & 1) != 0);
@@ -843,7 +839,6 @@ class gemm_class {
       nloop<a_unroll, 1, max_b_unroll>(aa, ao, bo, co1, co2);
       n_rem--;
     }
-#endif
 
     // Advance A matrix pointer.
     a = ao + a_unroll * (a_stride - k - a_off);
@@ -982,12 +977,12 @@ struct gemm_pack_rhs<Scalar, Index, DataMapper, 8, ColMajor, Conjugate, PanelMod
   typedef typename DataMapper::LinearMapper LinearMapper;
   enum { PacketSize = packet_traits<Scalar>::size };
   EIGEN_DONT_INLINE void operator()(Scalar* blockB, const DataMapper& rhs, Index depth, Index cols, Index stride = 0,
-                                    Index offset = 0);
+                                    Index offset = 0) const;
 };
 
 template <typename Scalar, typename Index, typename DataMapper, bool Conjugate, bool PanelMode>
 EIGEN_DONT_INLINE void gemm_pack_rhs<Scalar, Index, DataMapper, 8, ColMajor, Conjugate, PanelMode>::operator()(
-    Scalar* blockB, const DataMapper& rhs, Index depth, Index cols, Index stride, Index offset) {
+    Scalar* blockB, const DataMapper& rhs, Index depth, Index cols, Index stride, Index offset) const {
   constexpr int nr = 8;
   EIGEN_ASM_COMMENT("EIGEN PRODUCT PACK RHS COLMAJOR");
   EIGEN_UNUSED_VARIABLE(stride);
@@ -1064,7 +1059,7 @@ EIGEN_DONT_INLINE void gemm_pack_rhs<Scalar, Index, DataMapper, 8, ColMajor, Con
       const LinearMapper dm3 = rhs.getLinearMapper(0, j2 + 3);
 
       Index k = 0;
-      if ((PacketSize % 4) == 0)  // TODO enable vectorized transposition for PacketSize==2 ??
+      if ((PacketSize % 4) == 0)  // TODO: enable vectorized transposition for PacketSize==2.
       {
         for (; k < peeled_k; k += PacketSize) {
           PacketBlock<Packet, (PacketSize % 4) == 0 ? 4 : PacketSize> kernel;
@@ -1116,7 +1111,7 @@ struct gemm_pack_rhs<Scalar, Index, DataMapper, 8, RowMajor, Conjugate, PanelMod
     QuarterPacketSize = unpacket_traits<QuarterPacket>::size
   };
   EIGEN_DONT_INLINE void operator()(Scalar* blockB, const DataMapper& rhs, Index depth, Index cols, Index stride = 0,
-                                    Index offset = 0) {
+                                    Index offset = 0) const {
     constexpr int nr = 8;
     EIGEN_ASM_COMMENT("EIGEN PRODUCT PACK RHS ROWMAJOR");
     EIGEN_UNUSED_VARIABLE(stride);
@@ -1216,13 +1211,13 @@ template <typename Scalar, typename Index, typename DataMapper, int mr, bool Con
 struct gebp_kernel<Scalar, Scalar, Index, DataMapper, mr, 8, ConjugateLhs, ConjugateRhs> {
   EIGEN_ALWAYS_INLINE void operator()(const DataMapper& res, const Scalar* blockA, const Scalar* blockB, Index rows,
                                       Index depth, Index cols, Scalar alpha, Index strideA = -1, Index strideB = -1,
-                                      Index offsetA = 0, Index offsetB = 0);
+                                      Index offsetA = 0, Index offsetB = 0) const;
 };
 
 template <typename Scalar, typename Index, typename DataMapper, int mr, bool ConjugateLhs, bool ConjugateRhs>
 EIGEN_ALWAYS_INLINE void gebp_kernel<Scalar, Scalar, Index, DataMapper, mr, 8, ConjugateLhs, ConjugateRhs>::operator()(
     const DataMapper& res, const Scalar* blockA, const Scalar* blockB, Index rows, Index depth, Index cols,
-    Scalar alpha, Index strideA, Index strideB, Index offsetA, Index offsetB) {
+    Scalar alpha, Index strideA, Index strideB, Index offsetA, Index offsetB) const {
   if (res.incr() == 1) {
     if (alpha == 1) {
       gemm_kern_avx512<Scalar, mr, 8, true, false, true>(rows, cols, depth, &alpha, blockA, blockB, (Scalar*)res.data(),

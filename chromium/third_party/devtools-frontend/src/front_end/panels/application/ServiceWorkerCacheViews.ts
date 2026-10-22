@@ -11,11 +11,9 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
-import * as LegacyWrapper from '../../ui/components/legacy_wrapper/legacy_wrapper.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
-import * as NetworkComponents from '../network/components/components.js';
 import * as Network from '../network/network.js';
 
 import * as ApplicationComponents from './components/components.js';
@@ -180,7 +178,7 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
     this.dataGrid = this.createDataGrid();
     const dataGridWidget = this.dataGrid.asWidget();
     this.splitWidget.setSidebarWidget(dataGridWidget);
-    dataGridWidget.setMinimumSize(0, 250);
+    dataGridWidget.setMinimumSize(0, 100);
   }
 
   override wasShown(): void {
@@ -212,8 +210,8 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
   }
 
   private createDataGrid(): DataGrid.DataGrid.DataGridImpl<DataGridNode> {
-    const columns = ([
-      {id: 'number', title: '#', sortable: false, width: '3px'},
+    const columns: DataGrid.DataGrid.ColumnDescriptor[] = [
+      {id: 'number', title: '#' as Common.UIString.LocalizedString, sortable: false, width: '3px'},
       {id: 'name', title: i18nString(UIStrings.name), weight: 4, sortable: true},
       {
         id: 'response-type',
@@ -239,7 +237,7 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
         sortable: true,
       },
       {id: 'vary-header', title: i18n.i18n.lockedString('Vary Header'), weight: 1, sortable: true},
-    ] as DataGrid.DataGrid.ColumnDescriptor[]);
+    ];
     const dataGrid = new DataGrid.DataGrid.DataGridImpl({
       displayName: i18nString(UIStrings.serviceWorkerCache),
       columns,
@@ -542,10 +540,9 @@ export class RequestView extends UI.Widget.VBox {
     this.resourceViewTabSetting =
         Common.Settings.Settings.instance().createSetting('cache-storage-view-tab', 'preview');
 
-    this.tabbedPane.appendTab(
-        'headers', i18nString(UIStrings.headers),
-        LegacyWrapper.LegacyWrapper.legacyWrapper(
-            UI.Widget.VBox, new NetworkComponents.RequestHeadersView.RequestHeadersView(request)));
+    const requestHeadersView = new Network.RequestHeadersView.RequestHeadersView();
+    requestHeadersView.request = request;
+    this.tabbedPane.appendTab('headers', i18nString(UIStrings.headers), requestHeadersView);
     this.tabbedPane.appendTab(
         'preview', i18nString(UIStrings.preview), new Network.RequestPreviewView.RequestPreviewView(request));
     this.tabbedPane.show(this.element);

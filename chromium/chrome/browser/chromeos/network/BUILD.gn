@@ -14,13 +14,12 @@ static_library("network") {
 
   deps = [
     "//base",
-    "//chrome/browser:browser_process",
     "//chrome/browser/prefs",
     "//chrome/browser/ui:browser_navigator_params_headers",
+    "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/dialogs:browser_dialogs",
     "//chrome/common:constants",
     "//chromeos/ash/components/network",
-    "//chromeos/crosapi/mojom",
     "//components/device_event_log",
     "//components/policy/core/common:common_constants",
     "//components/prefs",
@@ -44,6 +43,7 @@ source_set("browser_tests") {
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui",
     "//chrome/browser/ui:browser_navigator_params_headers",
+    "//chrome/browser/ui/browser_window",
     "//chrome/test:test_support_ui",
     "//components/captive_portal/content",
     "//content/test:test_support",

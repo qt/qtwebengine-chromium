@@ -60,7 +60,8 @@ For instance, one might limit the C++ version to C++14 by defining EIGEN_MAX_CPP
 functions by defining EIGEN_HAS_C99_MATH=1.
 
  - \b EIGEN_HAS_C99_MATH - controls the usage of C99 math functions such as erf, erfc, lgamma, etc.
- - \b EIGEN_HAS_STD_RESULT_OF - defines whether std::result_of is supported
+ - \b EIGEN_HAS_STD_INVOKE_RESULT - controls the usage of \c std::invoke_result (C++17). When disabled,
+   \c std::result_of is used as a fallback.
  - \b EIGEN_NO_IO - Disables any usage and support for `<iostreams>`.
 
 \section TopicPreprocessorDirectivesAssertions Assertions
@@ -103,8 +104,9 @@ run time. However, these assertions do cost time and can thus be turned off.
    this threshold raises a compile time assertion. Use 0 to set no limit. Default is 128 KB.
  - \b \c EIGEN_NO_CUDA - disables CUDA support when defined. Might be useful in .cu files for which Eigen is used on the host only,
    and never called from device code.
+ - \b \c EIGEN_NO_HIP - disables HIP support when defined. Analogous to \c EIGEN_NO_CUDA for AMD's HIP compiler.
  - \b \c EIGEN_STRONG_INLINE - This macro is used to qualify critical functions and methods that we expect the compiler to inline.
-   By default it is defined to \c __forceinline for MSVC and ICC, and to \c inline for other compilers. A tipical usage is to
+   By default it is defined to \c __forceinline for MSVC and ICC, and to \c inline for other compilers. A typical usage is to
    define it to \c inline for MSVC users wanting faster compilation times, at the risk of performance degradations in some rare
    cases for which MSVC inliner fails to do a good job.
  - \b \c EIGEN_DEFAULT_L1_CACHE_SIZE - Sets the default L1 cache size that is used in Eigen's GEBP kernel when the correct cache size cannot be determined at runtime.
@@ -126,9 +128,7 @@ following macros are supported; none of them are defined by default.
 
  - \b EIGEN_ARRAY_PLUGIN - filename of plugin for extending the Array class.
  - \b EIGEN_ARRAYBASE_PLUGIN - filename of plugin for extending the ArrayBase class.
- - \b EIGEN_CWISE_PLUGIN - filename of plugin for extending the Cwise class.
  - \b EIGEN_DENSEBASE_PLUGIN - filename of plugin for extending the DenseBase class.
- - \b EIGEN_DYNAMICSPARSEMATRIX_PLUGIN - filename of plugin for extending the DynamicSparseMatrix class.
  - \b EIGEN_FUNCTORS_PLUGIN - filename of plugin for adding new functors and specializations of functor_traits.
  - \b EIGEN_MAPBASE_PLUGIN - filename of plugin for extending the MapBase class.
  - \b EIGEN_MATRIX_PLUGIN - filename of plugin for extending the Matrix class.

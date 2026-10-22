@@ -8,6 +8,7 @@ source_set("ios") {
   sources = [
     "ios_passkey_client.h",
     "ios_passkey_client.mm",
+    "ios_passkey_client_commands.h",
     "ios_webauthn_credentials_delegate.h",
     "ios_webauthn_credentials_delegate.mm",
     "ios_webauthn_credentials_delegate_factory.h",
@@ -30,7 +31,6 @@ source_set("ios") {
     "//components/autofill/ios/browser",
     "//components/password_manager/core/browser",
     "//components/password_manager/core/browser:passkey_credential",
-    "//components/password_manager/ios",
     "//components/webauthn/core/browser:client_data",
     "//components/webauthn/core/browser:common_utils",
     "//components/webauthn/core/browser:passkey_model",

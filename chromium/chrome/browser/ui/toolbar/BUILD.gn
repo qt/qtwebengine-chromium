@@ -75,6 +75,7 @@ source_set("toolbar") {
       "//chrome/browser/ui:tab_search_feature",
       "//chrome/browser/ui:ui_features",
       "//chrome/browser/ui/actions:actions_headers",
+      "//chrome/browser/ui/tabs:tab_strip",
       "//components/user_education/common",
     ]
   }
@@ -123,11 +124,17 @@ source_set("impl") {
       "//chrome/app/vector_icons",
       "//chrome/browser:browser_process",
       "//chrome/browser/favicon",
+      "//chrome/browser/feedback",
       "//chrome/browser/feedback:feedback_impl",
+      "//chrome/browser/glic",
+      "//chrome/browser/glic/browser_ui",
+      "//chrome/browser/glic/resources:grit",
+      "//chrome/browser/glic/resources:grit_grit",
       "//chrome/browser/media/router:media_router_feature",
       "//chrome/browser/prefs",
       "//chrome/browser/profiles",
       "//chrome/browser/profiles:profile",
+      "//chrome/browser/profiles:profile_manager",
       "//chrome/browser/profiles:profile_util",
       "//chrome/browser/search",
       "//chrome/browser/search/background",
@@ -152,9 +159,9 @@ source_set("impl") {
       "//chrome/browser/ui/tabs:tab_model",
       "//chrome/browser/ui/tabs:tab_strip",
       "//chrome/browser/ui/tabs/back_to_opener",
-      "//chrome/browser/ui/tabs/organization",
       "//chrome/browser/ui/toolbar/chrome_labs",
       "//chrome/browser/ui/user_education",
+      "//chrome/browser/ui/views/tabs/vertical",
       "//chrome/browser/ui/web_applications:launch_utils",
       "//chrome/browser/ui/webui/whats_new",
       "//chrome/browser/upgrade_detector",
@@ -219,13 +226,6 @@ source_set("impl") {
         "//chrome/browser/ui/webui/signin:signin_utils",
       ]
     }
-    if (enable_glic) {
-      deps += [
-        "//chrome/browser/glic",
-        "//chrome/browser/glic/resources:grit",
-        "//chrome/browser/glic/resources:grit_grit",
-      ]
-    }
   }
 
   if (enable_extensions_core) {
@@ -271,7 +271,6 @@ if (!is_android) {
       "app_menu_icon_controller_unittest.cc",
       "app_menu_model_unittest.cc",
       "back_forward_menu_model_unittest.cc",
-      "location_bar_model_unittest.cc",
       "toolbar_actions_model_unittest.cc",
     ]
     deps = [
@@ -282,6 +281,7 @@ if (!is_android) {
       "//build:branding_buildflags",
       "//chrome/app:command_ids",
       "//chrome/app:generated_resources",
+      "//chrome/browser:browser_features",
       "//chrome/browser/autocomplete",
       "//chrome/browser/extensions",
       "//chrome/browser/extensions:test_support",
@@ -290,6 +290,7 @@ if (!is_android) {
       "//chrome/browser/history",
       "//chrome/browser/prefs",
       "//chrome/browser/profiles:profile",
+      "//chrome/browser/sharing_hub",
       "//chrome/browser/signin",
       "//chrome/browser/ui:ui_features",
       "//chrome/browser/ui/browser_window",
@@ -301,7 +302,6 @@ if (!is_android) {
       "//chrome/browser/ui/tabs:tab_model",
       "//chrome/browser/ui/tabs:tab_strip",
       "//chrome/browser/ui/tabs/back_to_opener",
-      "//chrome/browser/ui/tabs/organization",
       "//chrome/browser/upgrade_detector",
       "//chrome/common",
       "//chrome/common:chrome_features",
@@ -360,6 +360,7 @@ if (!is_android) {
     defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
     sources = [
       "chrome_location_bar_model_delegate_browsertest.cc",
+      "location_bar_model_browsertest.cc",
       "toolbar_actions_model_browsertest.cc",
     ]
     deps = [

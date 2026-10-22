@@ -6,7 +6,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2017-2024 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2017-2025 Sebastian Pipping <sebastian@pipping.org>
 # Copyright (c) 2017      Rolf Eike Beer <eike@sf-mail.de>
 # Copyright (c) 2019      Mohammed Khajapasha <mohammed.khajapasha@intel.com>
 # Copyright (c) 2019      Manish, Kumar <manish3.kumar@intel.com>
@@ -39,7 +39,7 @@ if [[ ${RUNNER_OS} = macOS ]]; then
     latest_brew_python3_bin="$(ls -1d /usr/local/Cellar/python/3.*/bin | sort -n | tail -n1)"
     export PATH="${latest_brew_python3_bin}${PATH:+:}${PATH}"
 elif [[ ${RUNNER_OS} = Linux ]]; then
-    export PATH="/usr/lib/llvm-19/bin:${PATH}"
+    export PATH="/usr/lib/llvm-21/bin:${PATH}"
 else
     echo "Unsupported RUNNER_OS \"${RUNNER_OS}\"." >&2
     exit 1

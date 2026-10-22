@@ -8,13 +8,15 @@
 //! module need to know the type of the data they're parsing. Their job is to
 //! take an encoded value and produce a MojomValue of the corresponding type.
 //!
-//! These functions encode knowledge of Mojom's wire format, and are independent
-//! of any particular message.
-
-// IMPORTANT! These functions require the input MojomTypes to have
-// their fields in wire order. Use pack_mojom_type in pack.rs to ensure this.
-// In the future, we'll probably need a separate type for wire order, since
-// (at the very least) MojomType can't handle bitfields.
+//! See `//docs/mojo/wire_format_spec.md` for details on the wire encoding.
+//!
+//! The structure of this file mirrors the AST structure: there is generally one
+//! function for each AST type. The "core" functionality is in
+//! `parse_structured_body`, which is called by various more specialized
+//! functions (`deparse_struct`, `deparse_array`, etc). Each of those functions
+//! operates by transforming their particular object into something that looks
+//! like a struct, so it can then be parsed by the same code as other
+//! structured data.
 
 use crate::ast::*;
 use crate::errors::*;
@@ -22,8 +24,14 @@ use crate::parse_primitives::*;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use itertools::Itertools;
+
 /// Parse a type without nested data, i.e. anything but a struct or array
-fn parse_leaf_element(data: &mut ParserData, ty: &PackedLeafType) -> ParsingResult<MojomValue> {
+fn parse_leaf_element(
+    data: &mut ParserData,
+    ty: &PackedLeafType,
+    is_nullable: bool,
+) -> ParsingResult<MojomValue> {
     match ty {
         PackedLeafType::Bool => Ok(MojomValue::Bool(parse_u8(data)? == 1)),
         PackedLeafType::UInt8 => Ok(MojomValue::UInt8(parse_u8(data)?)),
@@ -37,12 +45,38 @@ fn parse_leaf_element(data: &mut ParserData, ty: &PackedLeafType) -> ParsingResu
         PackedLeafType::Float32 => Ok(MojomValue::Float32(parse_f32(data)?.into())),
         PackedLeafType::Float64 => Ok(MojomValue::Float64(parse_f64(data)?.into())),
         PackedLeafType::Enum { is_valid } => {
-            let value = parse_u32(data)?;
+            let value = parse_i32(data)?;
             if is_valid.call(value) {
                 Ok(MojomValue::Enum(value))
             } else {
                 // Report the error starting before the 32 bits we just parsed
                 Err(ParsingError::invalid_discriminant(data.bytes_parsed() - 4, value))
+            }
+        }
+        PackedLeafType::Handle => {
+            // On the wire, handles are represented as a 32-bit index into the
+            // message's attached handle array, which is part of `data`.
+            let idx_u32 = parse_u32(data)?;
+            let idx: usize = idx_u32.try_into().unwrap();
+
+            // This value indicates the handle is `None`.
+            if idx_u32 == 0xffffffff {
+                if is_nullable {
+                    return Ok(MojomValue::Nullable(None));
+                } else {
+                    return Err(ParsingError::invalid_handle_index(data.bytes_parsed() - 4, idx));
+                }
+            };
+
+            let handle = data
+                .take_handle(idx)
+                .ok_or_else(|| ParsingError::invalid_handle_index(data.bytes_parsed() - 4, idx))?;
+            let handle_val = MojomValue::Handle(handle);
+
+            if is_nullable {
+                return Ok(MojomValue::Nullable(Some(Box::new(handle_val))));
+            } else {
+                return Ok(handle_val);
             }
         }
     }
@@ -63,25 +97,14 @@ fn skip_to_alignment(data: &mut ParserData, alignment: usize) -> ParsingResult<(
     }
 }
 
-/// Check if the parsed keys for a map have duplicates, and error out if so
-fn check_for_duplicate_keys(offset: usize, keys: &[MojomValue]) -> ParsingResult<()> {
-    // Check by inserting the keys into a hashset.
-    // insert returns false if the value was already present.
-    // Note that inserting references still compares the underlying values.
-    let mut unique_keys = std::collections::HashSet::new();
-    let mut dup = MojomValue::Bool(false);
-    let dup_exists = keys.iter().any(|item| {
-        if !unique_keys.insert(item) {
-            dup = item.clone();
-            true
-        } else {
-            false
-        }
-    });
-    if dup_exists {
-        Err(ParsingError::duplicate_map_key(offset, dup))
+/// Check if the parsed keys for a map have duplicates, and error out if so.
+///
+/// This function promises not to mutate `keys` if it returns `Ok()`.
+fn check_for_duplicate_keys(offset: usize, keys: &mut [MojomValue]) -> ParsingResult<()> {
+    if let Some(dup) = keys.iter_mut().duplicates().next() {
+        return Err(ParsingError::duplicate_map_key(offset, std::mem::take(dup)));
     } else {
-        Ok(())
+        return Ok(());
     }
 }
 
@@ -102,15 +125,13 @@ struct NestedDataInfo<'a> {
     expected_offset: usize,
     /// Tracks whether this pointer was contained in a union, and if so what
     /// its discriminant was, and whether the outer union was nullable.
-    union_discriminant: Option<(u32, bool)>,
+    union_discriminant: Option<(i32, bool)>,
     /// Tracks whether the pointer was nullable (if so, we should wrap the
     /// parsed result in an option.)
     was_nullable: bool,
 }
 
 /// Parse a 32-bit size as part of a struct or array header
-/// FOR_RELEASE: Maybe make a (slightly) more general parse_header function
-/// which parses this and the following 4 bytes as well.
 pub fn parse_size(
     data: &mut ParserData,
     is_array: bool,
@@ -198,7 +219,11 @@ fn parse_array(
         return parse_string(data, size_in_bytes, num_elements);
     }
 
-    // Make up dummy field names for debugging.
+    // An array body is equivalent to a struct body with `num_elements` copies of
+    // its field.
+    let array_body = crate::pack::pack_array_body(element_type, num_elements);
+
+    // We also need to provide dummy field names for debugging purposes.
     let num_tag_bitfields = if element_type.is_nullable_primitive() {
         // Nullable primitives need some bitfields at the beginning to hold
         // the tag bits; one bitfield for every 8 elements.
@@ -206,12 +231,18 @@ fn parse_array(
     } else {
         0
     };
+    // If the array elements are bools, then they are packed into bitfields, and
+    // each bitfield has a name instead of each boolean.
+    let num_named_elements =
+        if let MojomWireType::Leaf { leaf_type: PackedLeafType::Bool, .. } = &**element_type {
+            num_elements.div_ceil(8)
+        } else {
+            num_elements
+        };
     let tag_names = (0..num_tag_bitfields).map(|idx| format!("Array_Tags_{idx}"));
-    let elt_names = (0..num_elements).map(|idx| format!("Array_Element_{idx}"));
+    let elt_names = (0..num_named_elements).map(|idx| format!("Array_Element_{idx}"));
     let field_names = tag_names.chain(elt_names).collect::<Vec<_>>();
-    // An array body is equivalent to a struct body with `num_elements` copies of
-    // its field
-    let array_body = crate::pack::pack_array_body(element_type, num_elements);
+
     let (_names, parsed_fields) = parse_structured_body(
         data,
         None,
@@ -250,9 +281,9 @@ fn parse_array(
 fn parse_union<'a>(
     data: &mut ParserData,
     mut enclosing_nested_data_list: Option<&mut Vec<NestedDataInfo<'a>>>,
-    variants: &'a BTreeMap<u32, MojomWireType>,
+    variants: &'a BTreeMap<i32, MojomWireType>,
     is_nullable: bool,
-) -> ParsingResult<(u32, Option<MojomValue>)> {
+) -> ParsingResult<(i32, Option<MojomValue>)> {
     // Parse the union header
     let size_in_bytes = parse_size(data, false, is_nullable)?;
 
@@ -264,7 +295,7 @@ fn parse_union<'a>(
         return Ok((0, Some(MojomValue::Nullable(None))));
     }
 
-    let tag = parse_u32(data)?;
+    let tag = parse_i32(data)?;
 
     let field_ty = match variants.get(&tag) {
         Some(wire_ty) => wire_ty,
@@ -321,32 +352,7 @@ fn parse_map(
     // Maps are encoded as a struct containing a pair of arrays, one for
     // the keys and one for the corresponding values.
     let field_names = ["map_keys".to_string(), "map_values".to_string()];
-    // FOR_RELEASE: This code is duplicated in deparse_values, maybe abstract
-    // it out.
-    let fields = [
-        StructuredBodyElement::SingleValue(
-            0,
-            MojomWireType::Pointer {
-                nested_data_type: PackedStructuredType::Array {
-                    // This clone is cheap because it's in an Arc
-                    element_type: key_type.clone(),
-                    array_type: PackedArrayType::UnsizedArray,
-                },
-                is_nullable: false,
-            },
-        ),
-        StructuredBodyElement::SingleValue(
-            1,
-            MojomWireType::Pointer {
-                nested_data_type: PackedStructuredType::Array {
-                    // This clone is cheap because it's in an Arc
-                    element_type: value_type.clone(),
-                    array_type: PackedArrayType::UnsizedArray,
-                },
-                is_nullable: false,
-            },
-        ),
-    ];
+    let fields = convert_map_ty_to_struct_fields(key_type, value_type);
     let parsed_arrays = parse_struct(data, &field_names, &fields, 2)?;
     let parsed_fields = match parsed_arrays {
         MojomValue::Struct(_, fields) => fields,
@@ -357,7 +363,7 @@ fn parse_map(
     };
     let [keys, values] = parsed_fields.try_into().unwrap();
     match (keys, values) {
-        (MojomValue::Array(keys), MojomValue::Array(values)) => {
+        (MojomValue::Array(mut keys), MojomValue::Array(values)) => {
             if keys.len() != values.len() {
                 return Err(ParsingError::mismatched_map(
                     initial_bytes_parsed,
@@ -367,7 +373,7 @@ fn parse_map(
             }
             // Map bodies are 24 bytes, and the key array immediately follows them.
             let key_offset = initial_bytes_parsed + 24;
-            check_for_duplicate_keys(key_offset, &keys)?;
+            check_for_duplicate_keys(key_offset, &mut keys)?;
             let map_val = keys.into_iter().zip(values).collect();
             Ok(MojomValue::Map(map_val))
         }
@@ -398,8 +404,6 @@ fn parse_string(
     Ok(MojomValue::String(rust_string))
 }
 
-const DUMMY_MOJOMVALUE: MojomValue = MojomValue::Int8(0);
-
 /// Create a MojomValue::Nullable out of the given value, if appropriate.
 ///
 /// Our parser handles nullable primitives as follows: first, we read the tag
@@ -419,31 +423,41 @@ fn wrap_nullable_primitive(
     match ret_values[ordinal] {
         MojomValue::Bool(false) => MojomValue::Nullable(None),
         MojomValue::Bool(true) => MojomValue::Nullable(Some(Box::new(parsed_value))),
-        DUMMY_MOJOMVALUE => parsed_value,
+        MojomValue::Invalid => parsed_value,
         _ => panic!("We tried to overwrite an already-parsed value!"),
     }
 }
 
-/// Parse the body of a struct, array, or union, having already consumed its
-/// header to figure out its expected size and what fields it has.
+/// Parse the body of a structured data value (struct, array, or union).
 ///
-/// The enclosing_nested_data_list argument is only used for a special case
-/// involving unions. See the documentation of parse_union for details.
+/// This function is generic over the different kinds of structured data; all
+/// structured data ends up calling it. A structured data body is comprised of
+/// several different fields, which have been packed according to the packing
+/// algorithm (in pack.rs).
 ///
-/// FOR_RELEASE: This function has a lot of arguments, document them more
-/// explicitly. Also maybe explain higher up the general parsing strategy
-/// (all structured data calls this one way or another)
+/// The `fields` parameter contains the fields on the wire in the order we
+/// expect to encounter them. The `field_names` parameter contains the name of
+/// each of these fields, for debugging purposes. The `num_elements_in_value`
+/// parameter contains the number of fields we expect to have _after_ parsing,
+/// which may be smaller than the length of `fields` (e.g. because nullable
+/// primitives get split into two fields on the wire).
+///
+/// This function assumes we have already consumed and interpreted the
+/// data's header, so we know how big the body is supposed to be
+/// (`expected_size_in_bytes`).
+///
+/// The `enclosing_nested_data_list` argument is only used for a special case
+/// involving unions. See the documentation of `parse_union` for details.
 fn parse_structured_body<'a, 'b, IterT, BitfieldT>(
     data: &mut ParserData,
     enclosing_nested_data_list: Option<&mut Vec<NestedDataInfo<'a>>>,
     expected_size_in_bytes: usize,
-    // FOR_RELEASE: See if we can put names into the iterator too
     field_names: &[String],
     fields: IterT,
     num_elements_in_value: usize,
 ) -> ParsingResult<(Vec<String>, Vec<MojomValue>)>
 where
-    BitfieldT: std::borrow::Borrow<BitfieldOrdinals>,
+    BitfieldT: std::borrow::Borrow<BitfieldOrdinals> + std::fmt::Debug,
     IterT: Iterator<Item = StructuredBodyElementRef<'a, BitfieldT>>,
 {
     // Start counting from the beginning of the header which we already parsed
@@ -459,17 +473,14 @@ where
     // by index. We have to provide dummy values since rust won't allow
     // uninitialized memory.
     let mut ret_names: Vec<String> = vec![String::new(); num_elements_in_value];
-    let mut ret_values: Vec<MojomValue> = vec![DUMMY_MOJOMVALUE; num_elements_in_value];
+    let mut ret_values: Vec<MojomValue> =
+        (0..num_elements_in_value).map(|_| MojomValue::Invalid).collect();
 
-    for (index, struct_ref_element) in fields.enumerate() {
+    let named_fields = Itertools::zip_eq(field_names.iter(), fields);
+
+    for (name, struct_ref_element) in named_fields {
         // Make sure we're at the right alignment for this field
         skip_to_alignment(data, struct_ref_element.alignment())?;
-
-        // FOR_RELEASE: It would be nice to use zip_eq from itertools instead of
-        // pulling out the name by index, if itertools gets approved for chromium
-        let name = field_names
-            .get(index)
-            .expect("parse_structured_body: field_names should have the same length as fields");
 
         match struct_ref_element {
             StructuredBodyElement::Bitfield(ordinals) => {
@@ -514,10 +525,15 @@ where
                         nested_data_list.push(nested_info);
                     }
                     // Nested leaf data, just parse it
-                    MojomWireType::Leaf { leaf_type, .. } => {
-                        let parsed_value = parse_leaf_element(data, leaf_type)?;
-                        let parsed_value =
-                            wrap_nullable_primitive(&ret_values, ordinal, parsed_value);
+                    MojomWireType::Leaf { leaf_type, is_nullable } => {
+                        let mut parsed_value = parse_leaf_element(data, leaf_type, *is_nullable)?;
+
+                        // Handles have their own special nullability markers,
+                        // which are checked in `parse_leaf_element`.
+                        if leaf_type != &PackedLeafType::Handle {
+                            parsed_value =
+                                wrap_nullable_primitive(&ret_values, ordinal, parsed_value);
+                        }
                         ret_names[ordinal] = name.clone();
                         ret_values[ordinal] = parsed_value;
                     }
@@ -621,6 +637,10 @@ where
         ret_names[nested_data.ordinal] = nested_data.field_name;
         ret_values[nested_data.ordinal] = parsed_data;
     }
+
+    // All structured bodies end at an 8-byte alignment
+    skip_to_alignment(data, 8)?;
+
     Ok((ret_names, ret_values))
 }
 
@@ -630,12 +650,16 @@ where
 /// some mojom types, since e.g. booleans can't be parsed individually.
 pub fn parse_single_value_for_testing(
     data: &[u8],
+    handles: &mut [Option<UntypedHandle>],
     wire_type: &MojomWireType,
 ) -> ParsingResult<MojomValue> {
-    let mut data = ParserData::new(data);
+    let mut data = ParserData::new(data, handles);
     match wire_type {
         MojomWireType::Leaf { leaf_type, is_nullable: false } => {
-            parse_leaf_element(&mut data, leaf_type)
+            parse_leaf_element(&mut data, leaf_type, false)
+        }
+        MojomWireType::Leaf { leaf_type: PackedLeafType::Handle, is_nullable } => {
+            parse_leaf_element(&mut data, &PackedLeafType::Handle, *is_nullable)
         }
         MojomWireType::Pointer { nested_data_type, is_nullable: false } => match nested_data_type {
             PackedStructuredType::Struct {
@@ -671,9 +695,10 @@ pub fn parse_single_value_for_testing(
 /// unparsed bytes.
 pub fn parse_top_level_value<'a>(
     data_slice: &'a [u8],
+    handles: &'a mut [Option<UntypedHandle>],
     ty: &MojomWireType,
 ) -> ParsingResult<(&'a [u8], MojomValue)> {
-    let mut data = ParserData::new(data_slice);
+    let mut data = ParserData::new(data_slice, handles);
     match ty {
         MojomWireType::Pointer {
             nested_data_type:

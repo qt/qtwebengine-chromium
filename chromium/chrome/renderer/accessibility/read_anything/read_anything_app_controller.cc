@@ -25,6 +25,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "chrome/common/read_anything/read_anything.mojom-shared.h"
 #include "chrome/common/read_anything/read_anything_util.h"
 #include "chrome/renderer/accessibility/ax_tree_distiller.h"
 #include "chrome/renderer/accessibility/phrase_segmentation/dependency_parser_model.h"
@@ -458,7 +459,6 @@ ReadAnythingAppController::ReadAnythingAppController(
 }
 
 ReadAnythingAppController::~ReadAnythingAppController() {
-  RecordNumSelections();
   post_user_entry_draw_timer_->Stop();
 }
 
@@ -466,26 +466,12 @@ void ReadAnythingAppController::OnDestruct() {
   self_.Clear();
 }
 
-void ReadAnythingAppController::OnNodeDataChanged(
-    ui::AXTree* tree,
-    const ui::AXNodeData& old_node_data,
-    const ui::AXNodeData& new_node_data) {
-  if (!IsReadAloudEnabled() && tree->GetAXTreeID() == model_.active_tree_id()) {
-    if (old_node_data.HasState(ax::mojom::State::kExpanded) !=
-            new_node_data.HasState(ax::mojom::State::kExpanded) ||
-        old_node_data.HasState(ax::mojom::State::kCollapsed) !=
-            new_node_data.HasState(ax::mojom::State::kCollapsed)) {
-      model_.set_last_expanded_node_id(new_node_data.id);
-    }
-  }
-}
-
 void ReadAnythingAppController::OnNodeWillBeDeleted(ui::AXTree* tree,
                                                     ui::AXNode* node) {
   ui::AXNodeID node_id = CHECK_DEREF(node).id();
   if (model_.GetCurrentlyVisibleNodes()->contains(node_id)) {
     displayed_nodes_pending_deletion_.insert(node_id);
-    if (IsReadAloudEnabled() && !read_aloud_model_.speech_playing()) {
+    if (!read_aloud_model_.speech_playing()) {
       ExecuteJavaScript("chrome.readingMode.onNodeWillBeDeleted(" +
                         base::ToString(node_id) + ")");
     }
@@ -512,12 +498,8 @@ void ReadAnythingAppController::OnNodeDeleted(ui::AXTree* tree,
     return;
   }
 
-  // Instead of redrawing everything when Read aloud is enabled, we inform
-  // the webui that the node is being deleted and it will adjust on that
-  // side. See OnNodeWillBeDeleted.
-  if (!IsReadAloudEnabled()) {
-    Draw(false);
-  }
+  // Instead of redrawing everything, inform the webui that the node is being
+  // deleted and it will adjust on that side. See OnNodeWillBeDeleted.
   if (model_.has_selection()) {
     DrawSelection();
   }
@@ -552,7 +534,9 @@ void ReadAnythingAppController::OnStringAttributeChanged(
     const std::string& old_value,
     const std::string& new_value) {
   // Return early when the images flag is disabled to avoid potential crashes.
-  if (!features::IsReadAnythingImagesViaAlgorithmEnabled()) {
+  if (!features::IsReadAnythingImagesViaAlgorithmEnabled() ||
+      features::IsReadAnythingWithReadabilityEnabled() ||
+      attr != ax::mojom::StringAttribute::kUrl) {
     return;
   }
 
@@ -563,14 +547,28 @@ void ReadAnythingAppController::OnStringAttributeChanged(
   // When the src for an image changes (e.g if an image was lazy loaded and
   // previously had a placeholder image), request the updated image. The info
   // will be returned via OnImageDataDownloaded.
-  if (attr == ax::mojom::StringAttribute::kUrl &&
-      rm_node->GetRole() == ax::mojom::Role::kImage) {
+  if (rm_node->GetRole() == ax::mojom::Role::kImage) {
     RequestImageData(node->id());
   }
 }
 
 bool ReadAnythingAppController::IsUpdateProcessingPaused() const {
-  if (model_.distillation_in_progress() || read_aloud_model_.speech_playing()) {
+  if (model_.screen2x_distiller_running() ||
+      read_aloud_model_.speech_playing()) {
+    return true;
+  }
+
+  // Don't trigger distillation if reading mode isn't shown.
+  if (IsHidden()) {
+    return true;
+  }
+
+  // Update processing should also be considered paused when Readability
+  // is in the process of distilling the page.
+  if (model_.is_readability_next_distillation_method() &&
+      model_.distillation_state() ==
+          read_anything::mojom::ReadAnythingDistillationState::
+              kDistillationInProgress) {
     return true;
   }
 
@@ -590,7 +588,7 @@ bool ReadAnythingAppController::IsUpdateProcessingPaused() const {
 }
 
 void ReadAnythingAppController::ProcessPendingUpdatesIfAllowed() {
-  if (IsUpdateProcessingPaused()) {
+  if (IsUpdateProcessingPaused() || !model_.ContainsActiveTree()) {
     return;
   }
 
@@ -603,17 +601,8 @@ void ReadAnythingAppController::AccessibilityEventReceived(
     const std::vector<ui::AXTreeUpdate>& updates,
     const std::vector<ui::AXEvent>& events) {
   model_.PrepareForAXTreeUpdates(tree_id);
-  if (IsReadabilityEnabled() && IsReadabilityWithLinksEnabled() &&
-      model_.should_extract_anchors_from_tree_for_readability()) {
-    model_.ApplyAccessibilityUpdates(
-        tree_id, const_cast<std::vector<ui::AXTreeUpdate>&>(updates),
-        const_cast<std::vector<ui::AXEvent>&>(events));
-    // If the tree is not ready, ProcessAXTreeAnchors will do an early return
-    // and wait for the next update until it is able to process the tree.
-    bool didProcessAnchors = model_.ProcessAXTreeAnchors();
-    if (didProcessAnchors) {
-      ExecuteJavaScript("chrome.readingMode.onAnchorsReadyForReadability();");
-    }
+  if (model_.should_apply_accessibility_updates_for_readability_links()) {
+    ApplyAccessibilityUpdatesForReadabilityLinks(tree_id, updates, events);
     return;
   }
 
@@ -743,13 +732,11 @@ void ReadAnythingAppController::OnActiveAXTreeIDChanged(
     return;
   }
   VLOG(1) << "On active tree changed with new id: " << tree_id;
-  RecordNumSelections();
 
   // If the previous tree was not unknown (e.g. this is not the first tree
-  // seen), log the words that were seen on the previous tree.
+  // seen), log session metrics for the previous tree.
   if (model_.active_tree_id() != ui::AXTreeIDUnknown()) {
-    RecordEstimatedWordsSeen();
-    RecordEstimatedWordsHeard();
+    RecordSessionMetricsIfShownOrRecentlyHidden();
   }
 
   // Cancel any running draw timers.
@@ -759,7 +746,7 @@ void ReadAnythingAppController::OnActiveAXTreeIDChanged(
   model_.SetUkmSourceIdForTree(tree_id, ukm_source_id);
   model_.set_is_pdf(is_pdf);
 
-  if (IsReadAloudEnabled() && read_aloud_model_.speech_playing()) {
+  if (read_aloud_model_.speech_playing()) {
     model_.SetUrlInformationCallback(
         base::BindOnce(&ReadAnythingAppController::OnUrlInformationSet,
                        weak_ptr_factory_.GetWeakPtr()));
@@ -796,9 +783,12 @@ void ReadAnythingAppController::OnActiveAXTreeIDChanged(
 
 ReadAnythingAppModel::DistillationMethod
 ReadAnythingAppController::GetInitialDistillationMethod(bool is_pdf) const {
-  // If |is_pdf| = true, override IsReadAnythingWithReadabilityEnabled flag and
-  // return kScreen2x.
-  return is_pdf || !features::IsReadAnythingWithReadabilityEnabled()
+  // If |is_pdf| = true, or if phrase highlighting is enabled, override
+  // IsReadAnythingWithReadabilityEnabled flag and return kScreen2x.
+  // TODO: crbug.com/444029483- Update the phrase highlighting implementation
+  // so that it works with Readability.
+  return is_pdf || !features::IsReadAnythingWithReadabilityEnabled() ||
+                 features::IsReadAnythingReadAloudPhraseHighlightingEnabled()
              ? ReadAnythingAppModel::DistillationMethod::kScreen2x
              : ReadAnythingAppModel::DistillationMethod::kReadability;
 }
@@ -830,7 +820,7 @@ void ReadAnythingAppController::DistillNewTree() {
 
 void ReadAnythingAppController::RecordDistillationSuccess() {
   read_anything::mojom::DistillationStatus distillationStatus;
-  if (model_.distillation_in_progress()) {
+  if (model_.screen2x_distiller_running()) {
     distillationStatus =
         distillationsCompleted_ > 0
             ? read_anything::mojom::DistillationStatus::kRestarted
@@ -865,12 +855,9 @@ void ReadAnythingAppController::RecordEstimatedWordsSeen() {
 }
 
 void ReadAnythingAppController::RecordEstimatedWordsHeard() {
-  if (IsReadAloudEnabled()) {
-    VLOG(1) << "Words heard: " << model_.words_heard();
-    base::UmaHistogramCustomCounts(kWordsHeardHistogramName,
-                                   model_.words_heard(), 1, kMaxWordsConsumed,
-                                   kWordsConsumedBuckets);
-  }
+  VLOG(1) << "Words heard: " << model_.words_heard();
+  base::UmaHistogramCustomCounts(kWordsHeardHistogramName, model_.words_heard(),
+                                 1, kMaxWordsConsumed, kWordsConsumedBuckets);
   model_.set_words_heard(0);
 }
 
@@ -938,7 +925,7 @@ void ReadAnythingAppController::Distill(bool for_training_data) {
                         : tree_lang);
   }
   CHECK(serializer.SerializeChanges(tree->root(), &snapshot));
-  model_.set_distillation_in_progress(true);
+  model_.set_screen2x_distiller_running(true);
   if (features::IsImmersiveReadAnythingEnabled()) {
     SetDistillationState(read_anything::mojom::ReadAnythingDistillationState::
                              kDistillationInProgress);
@@ -956,7 +943,7 @@ void ReadAnythingAppController::OnAXTreeDistilled(
   // happen after a long time of inactivity. In this case, we shouldn't reset
   // the model since the last state is still the correct state and clearing the
   // model causes issues for read aloud.
-  if (IsReadAloudEnabled() && !model_.distillation_in_progress() &&
+  if (!model_.screen2x_distiller_running() &&
       tree_id == ui::AXTreeIDUnknown() && content_node_ids.empty()) {
     VLOG(1) << "Distillation terminated after the main content extractor "
                "disconnected";
@@ -966,7 +953,7 @@ void ReadAnythingAppController::OnAXTreeDistilled(
   // Reset distillation in progress, because distillation just finished. This
   // is needed for the IsUpdateProcessingPaused check below, because it will
   // consider the processing pipeline paused if distillation is in progress.
-  model_.set_distillation_in_progress(false);
+  model_.set_screen2x_distiller_running(false);
 
   // Update active distillation method now that screen2x distillation has
   // finished.
@@ -1070,7 +1057,7 @@ void ReadAnythingAppController::OnAXTreeDistilled(
   // AXNode's language code is BCP 47. Only the base language is needed to
   // record the metric.
   std::string language = model_.GetActiveTree()->root()->GetLanguage();
-  if (!language.empty()) {
+  if (!language.empty() && !IsHidden()) {
     base::UmaHistogramSparse(
         "Accessibility.ReadAnything.Language",
         base::HashMetricName(language::ExtractBaseLanguage(language)));
@@ -1130,15 +1117,21 @@ void ReadAnythingAppController::Draw(bool recompute_display_nodes) {
   if (IsGoogleDocs() && !model_.page_finished_loading()) {
     return;
   }
+
+  // TODO: crbug.com/463940276- Long-term, we should ensure that Draw is
+  // not being called at all when reading mode is hidden.
+  // Don't attempt to draw if reading mode is hidden.
+  if (IsHidden()) {
+    return;
+  }
+
   if (recompute_display_nodes && !model_.content_node_ids().empty()) {
     model_.ComputeDisplayNodeIdsForDistilledTree();
 
     // If we need to recompute which nodes are displayed, reset read aloud as
     // we previously preprocessed the previous nodes and should re-process the
     // new ones.
-    if (IsReadAloudEnabled()) {
-      read_aloud_model_.ResetReadAloudState();
-    }
+    read_aloud_model_.ResetReadAloudState();
   } else {
     VLOG(1) << "Not recomputing display nodes, content node size: "
             << model_.content_node_ids().size();
@@ -1152,7 +1145,7 @@ void ReadAnythingAppController::DrawSelection() {
   // Reset read aloud state if a selection has been made in case the selected
   // nodes weren't previously distilled. Resetting isn't necessary if the
   // selection nodes were included in the distilled content.
-  if (IsReadAloudEnabled() && !model_.selection_node_ids().empty() &&
+  if (!model_.selection_node_ids().empty() &&
       !model_.SelectionNodesContainedInDistilledContent()) {
     read_aloud_model_.ResetReadAloudState();
   }
@@ -1167,6 +1160,9 @@ void ReadAnythingAppController::DrawEmptyState() {
 }
 
 void ReadAnythingAppController::LogEmptyState() {
+  if (IsHidden()) {
+    return;
+  }
   base::UmaHistogramEnumeration(ReadAnythingAppModel::kEmptyStateHistogramName,
                                 ReadAnythingAppModel::EmptyState::kShown);
 }
@@ -1183,13 +1179,14 @@ void ReadAnythingAppController::OnSettingsRestoredFromPrefs(
     base::DictValue voices,
     base::ListValue languages_enabled_in_pref,
     read_anything::mojom::HighlightGranularity granularity,
-    read_anything::mojom::LineFocus line_focus) {
+    read_anything::mojom::LineFocus last_non_disabled_line_focus,
+    bool line_focus_enabled) {
   read_aloud_model_.OnSettingsRestoredFromPrefs(
       speech_rate, &languages_enabled_in_pref, &voices, granularity);
   bool needs_redraw_for_links = model_.links_enabled() != links_enabled;
-  model_.OnSettingsRestoredFromPrefs(line_spacing, letter_spacing, font,
-                                     font_size, links_enabled, images_enabled,
-                                     color, line_focus);
+  model_.OnSettingsRestoredFromPrefs(
+      line_spacing, letter_spacing, font, font_size, links_enabled,
+      images_enabled, color, last_non_disabled_line_focus, line_focus_enabled);
   ExecuteJavaScript("chrome.readingMode.restoreSettingsFromPrefs();");
   // Only redraw if there is an active tree.
   if (needs_redraw_for_links &&
@@ -1222,6 +1219,8 @@ gin::ObjectTemplateBuilder ReadAnythingAppController::GetObjectTemplateBuilder(
       .SetProperty("startOffset", &ReadAnythingAppController::StartOffset)
       .SetProperty("endNodeId", &ReadAnythingAppController::EndNodeId)
       .SetProperty("endOffset", &ReadAnythingAppController::EndOffset)
+      .SetProperty("hasValidSelection",
+                   &ReadAnythingAppController::HasValidSelection)
       .SetProperty("fontName", &ReadAnythingAppController::FontName)
       .SetProperty("fontSize", &ReadAnythingAppController::FontSize)
       .SetProperty("linksEnabled", &ReadAnythingAppController::LinksEnabled)
@@ -1245,7 +1244,9 @@ gin::ObjectTemplateBuilder ReadAnythingAppController::GetObjectTemplateBuilder(
       .SetProperty("colorTheme", &ReadAnythingAppController::ColorTheme)
       .SetProperty("highlightGranularity",
                    &ReadAnythingAppController::HighlightGranularity)
-      .SetProperty("lineFocus", &ReadAnythingAppController::LineFocus)
+      .SetProperty("lastNonDisabledLineFocus",
+                   &ReadAnythingAppController::LastNonDisabledLineFocus)
+      .SetProperty("isLineFocusOn", &ReadAnythingAppController::IsLineFocusOn)
       .SetProperty("defaultTheme", &ReadAnythingAppController::DefaultTheme)
       .SetProperty("lightTheme", &ReadAnythingAppController::LightTheme)
       .SetProperty("darkTheme", &ReadAnythingAppController::DarkTheme)
@@ -1253,11 +1254,10 @@ gin::ObjectTemplateBuilder ReadAnythingAppController::GetObjectTemplateBuilder(
       .SetProperty("blueTheme", &ReadAnythingAppController::BlueTheme)
       .SetProperty("highContrastTheme",
                    &ReadAnythingAppController::HighContrastTheme)
-      .SetProperty("lowContrastTheme",
-                   &ReadAnythingAppController::LowContrastTheme)
-      .SetProperty("sepiaLightTheme",
-                   &ReadAnythingAppController::SepiaLightTheme)
-      .SetProperty("sepiaDarkTheme", &ReadAnythingAppController::SepiaDarkTheme)
+      .SetProperty("lowContrastLightTheme",
+                   &ReadAnythingAppController::LowContrastLightTheme)
+      .SetProperty("lowContrastDarkTheme",
+                   &ReadAnythingAppController::LowContrastDarkTheme)
       .SetProperty("autoHighlighting",
                    &ReadAnythingAppController::AutoHighlighting)
       .SetProperty("wordHighlighting",
@@ -1300,6 +1300,8 @@ gin::ObjectTemplateBuilder ReadAnythingAppController::GetObjectTemplateBuilder(
       .SetProperty("lineFocusCursorLine",
                    &ReadAnythingAppController::LineFocusCursorLine)
       .SetProperty("maxLineWidth", &ReadAnythingAppController::MaxLineWidth)
+      .SetProperty("inHiddenPresentationState",
+                   &ReadAnythingAppController::InHiddenPresentationState)
       .SetProperty("inSidePanelPresentationState",
                    &ReadAnythingAppController::InSidePanelPresentationState)
       .SetProperty(
@@ -1307,12 +1309,8 @@ gin::ObjectTemplateBuilder ReadAnythingAppController::GetObjectTemplateBuilder(
           &ReadAnythingAppController::InImmersiveOverlayPresentationState)
       .SetProperty("speechRate", &ReadAnythingAppController::SpeechRate)
       .SetProperty("isGoogleDocs", &ReadAnythingAppController::IsGoogleDocs)
-      .SetProperty("isReadAloudEnabled",
-                   &ReadAnythingAppController::IsReadAloudEnabled)
       .SetProperty("isImmersiveEnabled",
                    &ReadAnythingAppController::IsImmersiveEnabled)
-      .SetProperty("isTsTextSegmentationEnabled",
-                   &ReadAnythingAppController::IsTsTextSegmentationEnabled)
       .SetProperty("isReadabilityEnabled",
                    &ReadAnythingAppController::IsReadabilityEnabled)
       .SetProperty("activeDistillationMethod",
@@ -1467,15 +1465,21 @@ gin::ObjectTemplateBuilder ReadAnythingAppController::GetObjectTemplateBuilder(
       .SetMethod("close", &ReadAnythingAppController::CloseUI)
       .SetMethod("togglePinState", &ReadAnythingAppController::TogglePinState)
       .SetMethod("sendPinStateRequest",
-                 &ReadAnythingAppController::SendPinStateRequest);
+                 &ReadAnythingAppController::SendPinStateRequest)
+      .SetMethod("onSpeechEngineStalled",
+                 &ReadAnythingAppController::OnSpeechEngineStalled);
 }
 
 ui::AXNodeID ReadAnythingAppController::RootId() const {
   ui::AXSerializableTree* tree = model_.GetActiveTree();
   // Fail gracefully if RootId() is ever called with an invalid active tree.
   DUMP_WILL_BE_CHECK(tree);
+  if (!tree) {
+    return ui::kInvalidAXNodeID;
+  }
+
   DUMP_WILL_BE_CHECK(tree->root());
-  if (!tree || !tree->root()) {
+  if (!tree->root()) {
     return ui::kInvalidAXNodeID;
   }
   return tree->root()->id();
@@ -1495,6 +1499,10 @@ ui::AXNodeID ReadAnythingAppController::EndNodeId() const {
 
 int ReadAnythingAppController::EndOffset() const {
   return model_.end_offset();
+}
+
+bool ReadAnythingAppController::HasValidSelection() const {
+  return model_.has_selection();
 }
 
 std::string ReadAnythingAppController::FontName() const {
@@ -1562,10 +1570,14 @@ int ReadAnythingAppController::HighlightGranularity() const {
   return read_aloud_model_.highlight_granularity();
 }
 
-int ReadAnythingAppController::LineFocus() const {
+int ReadAnythingAppController::LastNonDisabledLineFocus() const {
   return IsLineFocusEnabled()
-             ? std::to_underlying(model_.line_focus())
+             ? std::to_underlying(model_.last_non_disabled_line_focus())
              : std::to_underlying(read_anything::mojom::LineFocus::kOff);
+}
+
+bool ReadAnythingAppController::IsLineFocusOn() const {
+  return IsLineFocusEnabled() && model_.line_focus_enabled();
 }
 
 int ReadAnythingAppController::StandardLineSpacing() const {
@@ -1616,16 +1628,12 @@ int ReadAnythingAppController::HighContrastTheme() const {
   return std::to_underlying(read_anything::mojom::Colors::kHighContrast);
 }
 
-int ReadAnythingAppController::LowContrastTheme() const {
-  return std::to_underlying(read_anything::mojom::Colors::kLowContrast);
+int ReadAnythingAppController::LowContrastLightTheme() const {
+  return std::to_underlying(read_anything::mojom::Colors::kLowContrastLight);
 }
 
-int ReadAnythingAppController::SepiaLightTheme() const {
-  return std::to_underlying(read_anything::mojom::Colors::kSepiaLight);
-}
-
-int ReadAnythingAppController::SepiaDarkTheme() const {
-  return std::to_underlying(read_anything::mojom::Colors::kSepiaDark);
+int ReadAnythingAppController::LowContrastDarkTheme() const {
+  return std::to_underlying(read_anything::mojom::Colors::kLowContrastDark);
 }
 
 bool ReadAnythingAppController::IsHighlightOn() {
@@ -1728,6 +1736,11 @@ int ReadAnythingAppController::MaxLineWidth() const {
   return a11y::kMaxLineWidth;
 }
 
+int ReadAnythingAppController::InHiddenPresentationState() const {
+  return std::to_underlying(
+      read_anything::mojom::ReadAnythingPresentationState::kInactive);
+}
+
 int ReadAnythingAppController::InSidePanelPresentationState() const {
   return std::to_underlying(
       read_anything::mojom::ReadAnythingPresentationState::kInSidePanel);
@@ -1783,7 +1796,10 @@ std::string ReadAnythingAppController::GetLanguage(
 std::u16string ReadAnythingAppController::GetTextContent(
     ui::AXNodeID ax_node_id) const {
   ui::AXNode* ax_node = model_.GetAXNode(ax_node_id);
-  CHECK(ax_node);
+  DUMP_WILL_BE_CHECK(ax_node);
+  if (!ax_node) {
+    return std::u16string();
+  }
 
   return a11y::GetTextContent(ax_node, model_.is_pdf(), IsGoogleDocs());
 }
@@ -1791,7 +1807,10 @@ std::u16string ReadAnythingAppController::GetTextContent(
 std::u16string ReadAnythingAppController::GetPrefixText(
     ui::AXNodeID ax_node_id) const {
   ui::AXNode* ax_node = model_.GetAXNode(ax_node_id);
-  CHECK(ax_node);
+  DUMP_WILL_BE_CHECK(ax_node);
+  if (!ax_node) {
+    return std::u16string();
+  }
 
   return a11y::GetPrefixText(ax_node, model_.is_pdf(), IsGoogleDocs());
 }
@@ -1924,22 +1943,15 @@ bool ReadAnythingAppController::IsLeafNode(ui::AXNodeID ax_node_id) const {
   return ax_node->IsLeaf();
 }
 
-bool ReadAnythingAppController::IsReadAloudEnabled() const {
-  return features::IsReadAnythingReadAloudEnabled();
-}
-
 bool ReadAnythingAppController::IsImmersiveEnabled() const {
   return features::IsImmersiveReadAnythingEnabled();
-}
-
-bool ReadAnythingAppController::IsTsTextSegmentationEnabled() const {
-  return features::IsReadAnythingReadAloudTSTextSegmentationEnabled();
 }
 
 // Returns true if the experimental flag allowing testing with alternative
 // distillation methods such as Readability.js is enabled.
 bool ReadAnythingAppController::IsReadabilityEnabled() const {
-  return features::IsReadAnythingWithReadabilityEnabled();
+  return features::IsReadAnythingWithReadabilityEnabled() &&
+         !features::IsReadAnythingReadAloudPhraseHighlightingEnabled();
 }
 
 bool ReadAnythingAppController::IsLineFocusEnabled() const {
@@ -1968,13 +1980,16 @@ std::vector<std::string> ReadAnythingAppController::GetSupportedFonts() {
 
 std::string ReadAnythingAppController::GetValidatedFontName(
     const std::string& font) const {
-  if (!std::ranges::contains(GetAllFonts(), font)) {
-    return GetAllFonts().front();
+  std::string validated_font = font;
+  if (!std::ranges::contains(model_.supported_fonts(), validated_font)) {
+    validated_font = model_.supported_fonts().front();
   }
-  if (font == "Serif" || font == "Sans-serif") {
-    return base::ToLowerASCII(font);
+  if (validated_font == "Serif" || validated_font == "Sans-serif") {
+    return base::ToLowerASCII(validated_font);
   }
-  return font.contains(' ') ? base::StrCat({"\"", font, "\""}) : font;
+  return validated_font.contains(' ')
+             ? base::StrCat({"\"", validated_font, "\""})
+             : validated_font;
 }
 
 std::vector<std::string> ReadAnythingAppController::GetAllFonts() const {
@@ -1997,6 +2012,11 @@ void ReadAnythingAppController::OnImageDataDownloaded(
   // If the tree has changed since the request, do nothing with the downloaded
   // image.
   if (tree_id != model_.active_tree_id()) {
+    return;
+  }
+  // If the image no longer exists on the tree, do nothing with the downloaded
+  // image.
+  if (!model_.GetAXNode(node_id)) {
     return;
   }
   // Temporarily store the image so that javascript can fetch it.
@@ -2039,7 +2059,10 @@ v8::Local<v8::Value> ReadAnythingAppController::GetImageBitmap(
     // Create an object with the image data and height, as well as a scale
     // factor.
     ui::AXNode* node = model_.GetAXNode(node_id);
-    CHECK(node);
+    DUMP_WILL_BE_CHECK(node);
+    if (!node) {
+      return v8::Undefined(isolate);
+    }
     int width = bitmap.width();
     int height = bitmap.height();
     float scale = (node->data().relative_bounds.bounds.width()) / width;
@@ -2154,6 +2177,12 @@ void ReadAnythingAppController::OnNoTextContent() {
 
 void ReadAnythingAppController::OnDistilled(int word_count) {
   model_.set_words_distilled(word_count);
+  if (model_.current_content_distillation_method() ==
+      ReadAnythingAppModel::DistillationMethod::kReadability) {
+    base::UmaHistogramCustomCounts(
+        "Accessibility.ReadAnything.WordsDistilledByReadability", word_count, 1,
+        kMaxWordsConsumed, kWordsConsumedBuckets);
+  }
 }
 
 void ReadAnythingAppController::UpdateWordsSeen(int words_seen) {
@@ -2194,7 +2223,7 @@ void ReadAnythingAppController::OnLinkClicked(ui::AXNodeID ax_node_id) const {
   // the tree may have changed in an unexpected way.
   // TODO(crbug.com/40802192): Consider how to show this in a more
   // user-friendly way.
-  if (model_.distillation_in_progress()) {
+  if (model_.screen2x_distiller_running()) {
     return;
   }
   page_handler_->OnLinkClicked(model_.active_tree_id(), ax_node_id);
@@ -2271,7 +2300,12 @@ void ReadAnythingAppController::OnLineFocusChanged(int line_focus) {
   if (const auto maybe_enum =
           ToEnum<read_anything::mojom::LineFocus>(line_focus)) {
     page_handler_->OnLineFocusChanged(maybe_enum.value());
-    model_.set_line_focus(maybe_enum.value());
+    bool line_focus_on =
+        maybe_enum.value() != read_anything::mojom::LineFocus::kOff;
+    model_.set_line_focus_enabled(line_focus_on);
+    if (line_focus_on) {
+      model_.set_last_non_disabled_line_focus(maybe_enum.value());
+    }
   }
 }
 
@@ -2313,7 +2347,7 @@ void ReadAnythingAppController::OnSelectionChange(ui::AXNodeID anchor_node_id,
   // the tree may have changed in an unexpected way.
   // TODO(crbug.com/40802192): Consider how to show this in a more
   // user-friendly way.
-  if (model_.distillation_in_progress()) {
+  if (model_.screen2x_distiller_running()) {
     return;
   }
 
@@ -2432,9 +2466,8 @@ void ReadAnythingAppController::OnDeviceLocked() {
     read_aloud_model_.LogSpeechStop(
         ReadAloudAppModel::ReadAloudStopSource::kLockChromeosDevice);
   }
-  LogLineFocusSession();
-  RecordEstimatedWordsSeen();
-  RecordEstimatedWordsHeard();
+
+  RecordSessionMetricsIfShownOrRecentlyHidden();
   // Signal to the WebUI that the device has been locked. We'll only receive
   // this callback on ChromeOS.
   ExecuteJavaScript("chrome.readingMode.onLockScreen();");
@@ -2460,9 +2493,14 @@ void ReadAnythingAppController::OnReadingModeHidden(bool tab_active) {
           ReadAloudAppModel::ReadAloudStopSource::kCloseReadingMode);
     }
   }
-  LogLineFocusSession();
-  RecordEstimatedWordsSeen();
-  RecordEstimatedWordsHeard();
+
+  // Since it's known that reading mode was just hidden, ensure that metrics
+  // are still logged.
+  RecordSessionMetricsIfShownOrRecentlyHidden(/*just_hidden=*/true);
+}
+
+void ReadAnythingAppController::OnSpeechEngineStalled() {
+  page_handler_->OnSpeechEngineStalled();
 }
 
 void ReadAnythingAppController::OnTabWillDetach() {
@@ -2472,9 +2510,7 @@ void ReadAnythingAppController::OnTabWillDetach() {
         ReadAloudAppModel::ReadAloudStopSource::kCloseTabOrWindow);
     ReadingModeWillClose();
   }
-  LogLineFocusSession();
-  RecordEstimatedWordsSeen();
-  RecordEstimatedWordsHeard();
+  RecordSessionMetricsIfShownOrRecentlyHidden();
 }
 
 void ReadAnythingAppController::ReadingModeWillClose() {
@@ -2661,10 +2697,6 @@ void ReadAnythingAppController::IncrementMetricCount(
 }
 
 void ReadAnythingAppController::LogSpeechStop(int source) {
-  if (!IsReadAloudEnabled()) {
-    return;
-  }
-
   // Don't log speech stopping if the reading mode panel is going to hide. That
   // case is logged separately.
   if (model_.will_hide()) {
@@ -2675,6 +2707,20 @@ void ReadAnythingAppController::LogSpeechStop(int source) {
           ToEnum<ReadAloudAppModel::ReadAloudStopSource>(source)) {
     read_aloud_model_.LogSpeechStop(maybe_enum.value());
   }
+}
+
+void ReadAnythingAppController::RecordSessionMetricsIfShownOrRecentlyHidden(
+    bool just_hidden) {
+  // Don't log session metrics if reading mode is hidden unless it is known
+  // that it was just hidden.
+  if (!just_hidden && IsHidden()) {
+    return;
+  }
+
+  LogLineFocusSession();
+  RecordNumSelections();
+  RecordEstimatedWordsHeard();
+  RecordEstimatedWordsSeen();
 }
 
 void ReadAnythingAppController::StartLineFocusSession() {
@@ -2846,6 +2892,7 @@ void ReadAnythingAppController::UpdateContent(const std::string& title,
   if (!features::IsReadAnythingWithReadabilityEnabled()) {
     return;
   }
+
   dom_distiller_title_ = title;
   dom_distiller_content_html_ = content;
 
@@ -2859,14 +2906,13 @@ void ReadAnythingAppController::UpdateContent(const std::string& title,
   // If readability distillation returns empty content, consider distillation as
   // failure and default to Screen2X distillation.
   if (dom_distiller_content_html_.empty()) {
-    // TODO(crbug.com/477090618): Record Readability failure metric.
     model_.set_next_distillation_method(
         ReadAnythingAppModel::DistillationMethod::kScreen2x);
 
-    // Only update distillation required if we have an active tree, otherwise
-    // wait for event to distill.
+    // Only attempt distillation if we have an active tree, otherwise only
+    // update the model and wait for event to distill.
+    model_.set_requires_distillation(true);
     if (model_.ContainsActiveTree()) {
-      model_.set_requires_distillation(true);
       DistillNewTree();
     }
     return;
@@ -2897,4 +2943,25 @@ void ReadAnythingAppController::OnReadabilityDistillationStateChanged(
   // model, which then circles back to the ReadAnythingUntrustedPageHandler to
   // update the distillation state in the ReadAnythingController.
   SetDistillationState(new_state);
+}
+
+void ReadAnythingAppController::ApplyAccessibilityUpdatesForReadabilityLinks(
+    const ui::AXTreeID& tree_id,
+    const std::vector<ui::AXTreeUpdate>& updates,
+    const std::vector<ui::AXEvent>& events) {
+  model_.ApplyAccessibilityUpdates(
+      tree_id, const_cast<std::vector<ui::AXTreeUpdate>&>(updates),
+      const_cast<std::vector<ui::AXEvent>&>(events));
+  // If the tree is not ready, ProcessAXTreeAnchors will do an early return
+  // and wait for the next update until it is able to process the tree.
+  bool didProcessAnchors = model_.ProcessAXTreeAnchors();
+  if (didProcessAnchors) {
+    ExecuteJavaScript("chrome.readingMode.onAnchorsReadyForReadability();");
+  }
+}
+
+bool ReadAnythingAppController::IsHidden() const {
+  return IsImmersiveEnabled() &&
+         model_.active_presentation_state() ==
+             read_anything::mojom::ReadAnythingPresentationState::kInactive;
 }

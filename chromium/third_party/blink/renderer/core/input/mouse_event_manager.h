@@ -93,6 +93,7 @@ class CORE_EXPORT MouseEventManager final
 
   void NodeChildrenWillBeRemoved(ContainerNode&);
   void NodeWillBeRemoved(Node&);
+  void HandlePseudoElementRemoval(PseudoElement&);
 
   void SendBoundaryEvents(EventTarget* exited_target,
                           bool original_exited_target_removed,
@@ -168,7 +169,6 @@ class CORE_EXPORT MouseEventManager final
   bool MouseDownMayStartDrag();
 
   void RecomputeMouseHoverStateIfNeeded();
-  void RecomputeMouseHoverState();
 
   void MarkHoverStateDirty();
   void ReportDragEnd();
@@ -218,7 +218,8 @@ class CORE_EXPORT MouseEventManager final
   bool HoverStateDirty();
 
   // NOTE: If adding a new field to this class please ensure that it is
-  // cleared in |MouseEventManager::clear()|.
+  // cleared in |MouseEventManager::clear()| and updated in
+  // |MouseEventManager::HandlePseudoElementRemoval()| if it's a target.
 
   const Member<LocalFrame> frame_;
   Member<ScrollManager> scroll_manager_;
@@ -246,8 +247,8 @@ class CORE_EXPORT MouseEventManager final
   unsigned svg_pan_ : 1;
   unsigned mouse_down_may_start_drag_ : 1;
 
-  // Tracks the element that received the last mousedown event.  This is cleared
-  // on mouseup.
+  // Tracks the element that received the last mousedown event. For
+  // hit-testable pseudos, this is the pseudo itself. Cleared on mouseup.
   Member<Element> mousedown_element_;
   Member<Node> mouse_press_node_;
 

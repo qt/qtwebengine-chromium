@@ -36,7 +36,6 @@
 #include "src/tint/lang/core/constant/splat.h"
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/ir/access.h"
-#include "src/tint/lang/core/ir/bitcast.h"
 #include "src/tint/lang/core/ir/break_if.h"
 #include "src/tint/lang/core/ir/construct.h"
 #include "src/tint/lang/core/ir/continue.h"
@@ -83,6 +82,7 @@
 #include "src/tint/lang/core/type/sampler.h"
 #include "src/tint/lang/core/type/storage_texture.h"
 #include "src/tint/lang/core/type/u32.h"
+#include "src/tint/lang/core/type/u64.h"
 #include "src/tint/lang/core/type/u8.h"
 #include "src/tint/lang/core/type/void.h"
 #include "src/tint/utils/internal_limits.h"
@@ -217,7 +217,6 @@ struct Encoder {
         tint::Switch(
             inst_in,  //
             [&](const ir::Access* i) { InstructionAccess(*inst_out.mutable_access(), i); },
-            [&](const ir::Bitcast* i) { InstructionBitcast(*inst_out.mutable_bitcast(), i); },
             [&](const ir::BreakIf* i) { InstructionBreakIf(*inst_out.mutable_break_if(), i); },
             [&](const ir::CoreBinary* i) { InstructionBinary(*inst_out.mutable_binary(), i); },
             [&](const ir::CoreBuiltinCall* i) {
@@ -269,8 +268,6 @@ struct Encoder {
     void InstructionBinary(pb::InstructionBinary& binary_out, const ir::CoreBinary* binary_in) {
         binary_out.set_op(BinaryOp(binary_in->Op()));
     }
-
-    void InstructionBitcast(pb::InstructionBitcast&, const ir::Bitcast*) {}
 
     void InstructionBreakIf(pb::InstructionBreakIf& breakif_out, const ir::BreakIf* breakif_in) {
         auto num_next_iter_values = static_cast<uint32_t>(breakif_in->NextIterValues().size());
@@ -387,6 +384,7 @@ struct Encoder {
                 [&](const core::type::U32*) { type_out.set_basic(pb::TypeBasic::u32); },
                 [&](const core::type::F32*) { type_out.set_basic(pb::TypeBasic::f32); },
                 [&](const core::type::F16*) { type_out.set_basic(pb::TypeBasic::f16); },
+                [&](const core::type::U64*) { type_out.set_basic(pb::TypeBasic::u64); },
                 [&](const core::type::I8*) { type_out.set_basic((pb::TypeBasic::i8)); },
                 [&](const core::type::U8*) { type_out.set_basic((pb::TypeBasic::u8)); },
                 [&](const core::type::Vector* v) { TypeVector(*type_out.mutable_vector(), v); },
@@ -537,6 +535,7 @@ struct Encoder {
     void TypeSampledTexture(pb::TypeSampledTexture& texture_out,
                             const core::type::SampledTexture* texture_in) {
         texture_out.set_dimension(TextureDimension(texture_in->Dim()));
+        texture_out.set_filterable(pb::TextureFilterable(texture_in->Filterable()));
         texture_out.set_sub_type(Type(texture_in->Type()));
     }
 
@@ -573,6 +572,7 @@ struct Encoder {
 
     void TypeSampler(pb::TypeSampler& sampler_out, const core::type::Sampler* sampler_in) {
         sampler_out.set_kind(SamplerKind(sampler_in->Kind()));
+        sampler_out.set_filtering(pb::SamplerFiltering(sampler_in->Filtering()));
     }
 
     void TypeSubgroupMatrix(pb::TypeSubgroupMatrix& subgroup_matrix_out,
@@ -1073,6 +1073,8 @@ struct Encoder {
                 return pb::BuiltinValue::front_facing;
             case core::BuiltinValue::kGlobalInvocationId:
                 return pb::BuiltinValue::global_invocation_id;
+            case core::BuiltinValue::kGlobalInvocationIndex:
+                return pb::BuiltinValue::global_invocation_index;
             case core::BuiltinValue::kInstanceIndex:
                 return pb::BuiltinValue::instance_index;
             case core::BuiltinValue::kLocalInvocationId:
@@ -1099,6 +1101,8 @@ struct Encoder {
                 return pb::BuiltinValue::vertex_index;
             case core::BuiltinValue::kWorkgroupId:
                 return pb::BuiltinValue::workgroup_id;
+            case core::BuiltinValue::kWorkgroupIndex:
+                return pb::BuiltinValue::workgroup_index;
             case core::BuiltinValue::kClipDistances:
                 return pb::BuiltinValue::clip_distances;
             case core::BuiltinValue::kPrimitiveIndex:
@@ -1135,6 +1139,8 @@ struct Encoder {
                 return pb::BuiltinFn::atan2;
             case core::BuiltinFn::kAtanh:
                 return pb::BuiltinFn::atanh;
+            case core::BuiltinFn::kBitcast:
+                return pb::BuiltinFn::bitcast;
             case core::BuiltinFn::kCeil:
                 return pb::BuiltinFn::ceil;
             case core::BuiltinFn::kClamp:
@@ -1351,6 +1357,10 @@ struct Encoder {
                 return pb::BuiltinFn::atomic_exchange;
             case core::BuiltinFn::kAtomicCompareExchangeWeak:
                 return pb::BuiltinFn::atomic_compare_exchange_weak;
+            case core::BuiltinFn::kAtomicStoreMin:
+                return pb::BuiltinFn::atomic_store_min;
+            case core::BuiltinFn::kAtomicStoreMax:
+                return pb::BuiltinFn::atomic_store_max;
             case core::BuiltinFn::kSubgroupBallot:
                 return pb::BuiltinFn::subgroup_ballot;
             case core::BuiltinFn::kSubgroupElect:
@@ -1427,6 +1437,8 @@ struct Encoder {
                 return pb::BuiltinFn::buffer_view;
             case core::BuiltinFn::kBufferLength:
                 return pb::BuiltinFn::buffer_length;
+            case core::BuiltinFn::kBufferArrayView:
+                return pb::BuiltinFn::buffer_array_view;
             case core::BuiltinFn::kNone:
                 break;
         }

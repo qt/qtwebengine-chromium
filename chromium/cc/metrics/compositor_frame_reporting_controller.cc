@@ -9,17 +9,13 @@
 
 #include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
-#include "base/metrics/histogram_macros.h"
-#include "cc/base/features.h"
 #include "cc/metrics/compositor_frame_reporter.h"
 #include "cc/metrics/frame_sequence_tracker_collection.h"
-#include "cc/metrics/latency_ukm_reporter.h"
 #include "cc/metrics/scroll_jank_dropped_frame_tracker.h"
 #include "cc/metrics/scroll_jank_v4_processor.h"
 #include "cc/scheduler/scheduler_state_machine.h"
 #include "components/viz/common/frame_timing_details.h"
 #include "components/viz/common/quads/compositor_frame_metadata.h"
-#include "services/metrics/public/cpp/ukm_recorder.h"
 #include "services/tracing/public/cpp/perfetto/macros.h"
 
 namespace cc {
@@ -29,29 +25,15 @@ using FrameTerminationStatus = CompositorFrameReporter::FrameTerminationStatus;
 
 CompositorFrameReportingController::CompositorFrameReportingController(
     bool should_report_histograms,
-    bool should_report_ukm,
     int layer_tree_host_id,
     bool is_trees_in_viz_client)
     : should_report_histograms_(should_report_histograms),
       layer_tree_host_id_(layer_tree_host_id),
       is_trees_in_viz_client_(is_trees_in_viz_client),
-      latency_ukm_reporter_(std::make_unique<LatencyUkmReporter>()),
       predictor_jank_tracker_(std::make_unique<PredictorJankTracker>()),
       scroll_jank_dropped_frame_tracker_(
           std::make_unique<ScrollJankDroppedFrameTracker>()),
-      scroll_jank_ukm_reporter_(std::make_unique<ScrollJankUkmReporter>()),
       scroll_jank_v4_processor_(std::make_unique<ScrollJankV4Processor>()) {
-  if (should_report_ukm) {
-    // UKM metrics should be reported if and only if `latency_ukm_reporter` is
-    // set on `global_trackers_`.
-    global_trackers_.latency_ukm_reporter = latency_ukm_reporter_.get();
-
-    global_trackers_.scroll_jank_ukm_reporter = scroll_jank_ukm_reporter_.get();
-    predictor_jank_tracker_->set_scroll_jank_ukm_reporter(
-        scroll_jank_ukm_reporter_.get());
-    scroll_jank_dropped_frame_tracker_->set_scroll_jank_ukm_reporter(
-        scroll_jank_ukm_reporter_.get());
-  }
   global_trackers_.predictor_jank_tracker = predictor_jank_tracker_.get();
   global_trackers_.scroll_jank_dropped_frame_tracker =
       scroll_jank_dropped_frame_tracker_.get();
@@ -71,8 +53,6 @@ CompositorFrameReportingController::~CompositorFrameReportingController() {
                                   Now());
   }
 
-  predictor_jank_tracker_->set_scroll_jank_ukm_reporter(nullptr);
-  scroll_jank_dropped_frame_tracker_->set_scroll_jank_ukm_reporter(nullptr);
   if (global_trackers_.frame_sorter) {
     if (global_trackers_.frame_sequence_trackers) {
       global_trackers_.frame_sorter->RemoveObserver(
@@ -283,8 +263,19 @@ void CompositorFrameReportingController::DidSubmitCompositorFrame(
     SubmitInfo& submit_info,
     const viz::BeginFrameId& current_frame_id,
     const viz::BeginFrameId& last_activated_frame_id) {
+  const auto& active = reporters_[PipelineStage::kActivate];
+  // When frame production is underinterrupted newly activated `frame_id` will
+  // be different from the last submission. However, during a context loss we
+  // can lose our connection to the GPU Process. This can lead to the recreation
+  // of `AsyncLayerTreeFrameSink` which is the source of Manual BeginFrames. In
+  // such scenarios the `last_activated_frame_id` and `last_submitted_frame_id_`
+  // can be the same. We may then have a new `Active` reporter which matches the
+  // previous frame. We treat these as new activations.
   bool is_activated_frame_new =
-      (last_activated_frame_id != last_submitted_frame_id_);
+      (last_activated_frame_id != last_submitted_frame_id_) ||
+      (last_submitted_frame_id_.source_id ==
+           viz::BeginFrameArgs::kManualSourceId &&
+       active && active->frame_id() == last_activated_frame_id);
   uint64_t active_tree_staleness = current_frame_id.sequence_number -
                                    last_activated_frame_id.sequence_number;
 
@@ -310,7 +301,12 @@ void CompositorFrameReportingController::DidSubmitCompositorFrame(
     main_reporter = std::move(reporters_[PipelineStage::kActivate]);
     last_submitted_frame_id_ = last_activated_frame_id;
   } else {
-    DCHECK(!reporters_[PipelineStage::kActivate]);
+    DCHECK(!reporters_[PipelineStage::kActivate])
+        << "Active frame_id "
+        << reporters_[PipelineStage::kActivate]->frame_id().ToString()
+        << " last_activated_frame_id " << last_activated_frame_id.ToString()
+        << " last_submitted_frame_id_ " << last_submitted_frame_id_.ToString()
+        << " current_frame_id " << current_frame_id.ToString();
   }
 
   // |main_reporter| can be for a previous BeginFrameArgs (i.e. not for
@@ -802,22 +798,6 @@ CompositorFrameReportingController::RestoreReporterAtBeginImpl(
   if (commit_reporter && commit_reporter->frame_id() == id)
     return commit_reporter->CopyReporterAtBeginImplStage();
   return nullptr;
-}
-
-void CompositorFrameReportingController::InitializeUkmManager(
-    std::unique_ptr<ukm::UkmRecorder> recorder) {
-  latency_ukm_reporter_->InitializeUkmManager(std::move(recorder));
-  // TODO(crbug/334977830): the mix of `GlobalMetricsTrackers` and `raw_ptr` is
-  // making ownership harder to follow. We should clean this all up.
-  //
-  // The order of reporters is strictly managed to guarantee their lifetimes.
-  // `latency_ukm_reporter_` outlives `scroll_jank_ukm_reporter_`.
-  scroll_jank_ukm_reporter_->set_ukm_manager(
-      latency_ukm_reporter_->ukm_manager());
-}
-
-void CompositorFrameReportingController::SetSourceId(ukm::SourceId source_id) {
-  latency_ukm_reporter_->SetSourceId(source_id);
 }
 
 CompositorFrameReporter*

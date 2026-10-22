@@ -282,6 +282,26 @@ export class ListControl<T> {
     return false;
   }
 
+  selectFirstItem(center?: boolean): boolean {
+    const index = this.findFirstSelectable(0, +1, false);
+    if (index !== -1) {
+      this.scrollIntoView(index, center);
+      this.select(index);
+      return true;
+    }
+    return false;
+  }
+
+  selectLastItem(center?: boolean): boolean {
+    const index = this.findFirstSelectable(this.model.length - 1, -1, false);
+    if (index !== -1) {
+      this.scrollIntoView(index, center);
+      this.select(index);
+      return true;
+    }
+    return false;
+  }
+
   private scrollIntoView(index: number, center?: boolean): void {
     if (this.mode === ListMode.NonViewport) {
       this.elementAtIndex(index).scrollIntoViewIfNeeded(Boolean(center));
@@ -328,6 +348,12 @@ export class ListControl<T> {
       case 'PageDown':
         selected = this.selectItemNextPage(false);
         break;
+      case 'Home':
+        selected = this.selectFirstItem();
+        break;
+      case 'End':
+        selected = this.selectLastItem();
+        break;
     }
     if (selected) {
       event.consume(true);
@@ -363,8 +389,11 @@ export class ListControl<T> {
     if (!element) {
       element = this.delegate.createElementForItem(item);
       if (!element.hasAttribute('jslog')) {
-        element.setAttribute(
-            'jslog', `${VisualLogging.item().track({click: true, keydown: 'ArrowUp|ArrowDown|PageUp|PageDown'})}`);
+        element.setAttribute('jslog', `${VisualLogging.item().track({
+                               click: true,
+                               resize: true,
+                               keydown: 'ArrowUp|ArrowDown|PageUp|PageDown|Home|End'
+                             })}`);
       }
       this.itemToElement.set(item, element);
       this.updateElementARIA(element, index);

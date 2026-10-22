@@ -51,8 +51,8 @@ export class EventsTimelineTreeView extends TimelineTreeView {
     return [...super.filters(), ...this.filtersControl.filters()];
   }
 
-  override updateContents(selection: TimelineSelection): void {
-    super.updateContents(selection);
+  override set activeSelection(selection: TimelineSelection) {
+    super.activeSelection = selection;
     if (selectionIsEvent(selection)) {
       this.selectEvent(selection.event, true);
     }
@@ -87,13 +87,13 @@ export class EventsTimelineTreeView extends TimelineTreeView {
   }
 
   override populateColumns(columns: DataGrid.DataGrid.ColumnDescriptor[]): void {
-    columns.push(({
+    columns.push({
       id: 'start-time',
       title: i18nString(UIStrings.startTime),
       width: '80px',
       fixedWidth: true,
       sortable: true,
-    } as DataGrid.DataGrid.ColumnDescriptor));
+    });
     super.populateColumns(columns);
     columns.filter(c => c.fixedWidth).forEach(c => {
       c.width = '80px';
@@ -106,7 +106,7 @@ export class EventsTimelineTreeView extends TimelineTreeView {
   }
 
   override showDetailsForNode(node: Trace.Extras.TraceTree.Node): boolean {
-    const parsedTrace = this.parsedTrace();
+    const parsedTrace = this.parsedTrace;
     if (!parsedTrace) {
       return false;
     }

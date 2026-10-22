@@ -99,6 +99,27 @@ const std::string &GetImageMipLevelVUID(const Location &loc);
 const std::string &GetImageArrayLayerRangeVUID(const Location &loc);
 const std::string &GetImageImageLayoutVUID(const Location &loc);
 
+const char* GetSurfaceSupportVUID(const Location& loc);
+const char* GetRenderPassCompatibilityVUID(const Location& loc);
+const char* GetDispatchIndirectProtectVUID(const Location& loc);
+
+enum class BuildASError {
+    IsBuilt_03667,
+    SameCount_03758,
+    SameFlags_03759,
+    SameType_03760,
+    SameType_03761,
+    SameFlags_03762,
+    TriangleVertexFormat_03763,
+    TriangleMaxVertex_03764,
+    TriangleIndexType_03765,
+    TriangleTransformData_03766,
+    TriangleTransformData_03767,
+    DstTop_03699,
+    DstBottom_03700,
+};
+const char* GetBuildASVUID(const Location& loc, BuildASError error);
+
 enum class SubresourceRangeError {
     BaseMip_01486,
     MipCount_01724,
@@ -120,5 +141,16 @@ enum class SpirvInterfaceVariableError {
     PushConstantRange_10069,
 };
 const char *GetSpirvInterfaceVariableVUID(const Location &loc, SpirvInterfaceVariableError error);
+
+enum class DeviceAddressCommandError {
+    CompletelyBound_13097,
+    Protected_13098,
+    Protected_13099,
+    Storage_13122,
+    Storage_13123,
+    Xfb_13124,
+    Xfb_13125,
+};
+const std::string GetDeviceAddressCommandVUID(const Location& loc, DeviceAddressCommandError error);
 
 }  // namespace vvl

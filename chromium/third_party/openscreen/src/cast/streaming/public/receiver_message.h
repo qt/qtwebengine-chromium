@@ -9,9 +9,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
-#include "absl/types/variant.h"
 #include "cast/streaming/public/answer_messages.h"
 #include "json/value.h"
 #include "util/osp_logging.h"
@@ -90,6 +90,9 @@ struct ReceiverMessage {
 
     // Rpc binary messages. The payload is base64-encoded.
     kRpc,
+
+    // Input-related binary messages. The payload is base64-encoded.
+    kInput,
   };
 
   static ErrorOr<ReceiverMessage> Parse(const Json::Value& value);
@@ -101,11 +104,11 @@ struct ReceiverMessage {
 
   bool valid = false;
 
-  absl::variant<absl::monostate,
-                Answer,
-                std::vector<uint8_t>,  // Binary-encoded RPC message.
-                ReceiverCapability,
-                ReceiverError>
+  std::variant<std::monostate,
+               Answer,
+               std::vector<uint8_t>,  // Binary-encoded protobuf message.
+               ReceiverCapability,
+               ReceiverError>
       body;
 };
 

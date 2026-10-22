@@ -3,8 +3,11 @@
 // found in the LICENSE file.
 
 import * as AgentProject from './AgentProject.js';
+import * as AccessibilityAgent from './agents/AccessibilityAgent.js';
 import * as AiAgent from './agents/AiAgent.js';
+import * as BreakpointDebuggerAgent from './agents/BreakpointDebuggerAgent.js';
 import * as ContextSelectionAgent from './agents/ContextSelectionAgent.js';
+import * as ConversationSummaryAgent from './agents/ConversationSummaryAgent.js';
 import * as FileAgent from './agents/FileAgent.js';
 import * as NetworkAgent from './agents/NetworkAgent.js';
 import * as PatchAgent from './agents/PatchAgent.js';
@@ -16,8 +19,8 @@ import * as AiHistoryStorage from './AiHistoryStorage.js';
 import * as AiUtils from './AiUtils.js';
 import * as BuiltInAi from './BuiltInAi.js';
 import * as ChangeManager from './ChangeManager.js';
-import * as ConversationHandler from './ConversationHandler.js';
 import * as FileFormatter from './data_formatters/FileFormatter.js';
+import * as LighthouseFormatter from './data_formatters/LighthouseFormatter.js';
 import * as NetworkRequestFormatter from './data_formatters/NetworkRequestFormatter.js';
 import * as PerformanceInsightFormatter from './data_formatters/PerformanceInsightFormatter.js';
 import * as PerformanceTraceFormatter from './data_formatters/PerformanceTraceFormatter.js';
@@ -31,6 +34,7 @@ import * as AIContext from './performance/AIContext.js';
 import * as AIQueries from './performance/AIQueries.js';
 
 export {
+  AccessibilityAgent,
   AgentProject,
   AiAgent,
   AICallTree,
@@ -39,16 +43,18 @@ export {
   AiHistoryStorage,
   AIQueries,
   AiUtils,
+  BreakpointDebuggerAgent,
   BuiltInAi,
   ChangeManager,
   ContextSelectionAgent,
-  ConversationHandler,
+  ConversationSummaryAgent,
   Debug,
   EvaluateAction,
   ExtensionScope,
   FileAgent,
   FileFormatter,
   Injected,
+  LighthouseFormatter,
   NetworkAgent,
   NetworkRequestFormatter,
   PatchAgent,

@@ -19,6 +19,7 @@
  * limitations under the License.
  */
 #pragma once
+#include <memory>
 #include "state_tracker/state_object.h"
 #include "state_tracker/image_layout_map.h"
 #include "state_tracker/pipeline_library_state.h"
@@ -27,10 +28,10 @@
 #include "state_tracker/bind_point.h"
 #include "state_tracker/query_state.h"
 #include "state_tracker/vertex_index_buffer_state.h"
+#include "state_tracker/device_range_state.h"
 #include "error_message/error_location.h"
 #include "utils/sync_utils.h"
 #include "generated/dynamic_state_helper.h"
-#include "containers/range_map.h"
 
 struct Location;
 
@@ -483,6 +484,9 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     //  dependencies that have been broken : either destroyed objects, or updated descriptor sets
     vvl::unordered_set<std::shared_ptr<StateObject>> object_bindings;
     vvl::unordered_map<VulkanTypedHandle, LogObjectList> broken_bindings;
+    // We need a way to save the non-VkHandle state in BufferAddressRange when it is destroyed
+    // For most cases, this is going to be empty
+    std::unique_ptr<vvl::InternalDeviceRange> broken_internal_device_range;
 
     std::vector<TensorBarrier> tensor_barriers;
 
@@ -543,6 +547,10 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     bool conditional_rendering_inside_render_pass{false};
     uint32_t conditional_rendering_subpass{0};
 
+    // vkCmdBindVertexBuffers3KHR
+    bool bind_vertex_buffer_3_used{false};
+    bool stride_set_with_bind_vertex_buffer_3{false};
+
     std::shared_ptr<vvl::DeviceMemory> bound_tile_memory;
 
     // VK_EXT_descriptor_buffer
@@ -586,8 +594,8 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
         }
     } descriptor_heap;
 
-    void SetDescriptorMode(vvl::DescriptorMode new_mode);
-    void InvalidateDescriptorMode(vvl::DescriptorMode invalidate_mode);
+    void SetDescriptorMode(vvl::DescriptorMode new_mode, vvl::Func function);
+    void InvalidateDescriptorMode(vvl::DescriptorMode invalidate_mode, vvl::Func function);
 
     mutable std::shared_mutex lock;
     ReadLockGuard ReadLock() const { return ReadLockGuard(lock); }
@@ -649,6 +657,9 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
     void RecordResetQueryPool(VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount, const Location &loc);
     void RecordCopyQueryPoolResults(VkQueryPool queryPool, VkBuffer dstBuffer, uint32_t firstQuery, uint32_t queryCount,
                                     VkDeviceSize dstOffset, VkDeviceSize stride, VkQueryResultFlags flags, const Location &loc);
+    void RecordCopyQueryPoolResultsToMemory(VkQueryPool queryPool, uint32_t firstQuery, uint32_t queryCount,
+                                            const VkStridedDeviceAddressRangeKHR* pDstRange, VkAddressCommandFlagsKHR dstFlags,
+                                            VkQueryResultFlags queryResultFlags, const Location& loc);
     void RecordWriteAccelerationStructuresProperties(VkQueryPool queryPool, uint32_t firstQuery,
                                                      uint32_t accelerationStructureCount, const Location &loc);
     bool UpdatesQuery(const QueryObject &query_obj) const;
@@ -715,6 +726,11 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
                                  uint32_t region_count, const VkBufferImageCopy *regions, const Location &loc);
     void RecordCopyImageToBuffer2(vvl::Image &src_image_state, vvl::Buffer &dst_buffer_state, VkImageLayout src_image_layout,
                                   uint32_t region_count, const VkBufferImageCopy2 *regions, const Location &loc);
+    void RecordCopyImageToMemory(vvl::Image& src_image_state, uint32_t region_count, const VkDeviceMemoryImageCopyKHR* regions,
+                                 const Location& loc);
+    void RecordCopyMemoryToImage(vvl::Image& dst_image_state, uint32_t region_count, const VkDeviceMemoryImageCopyKHR* regions,
+                                 const Location& loc);
+    void RecordCopyMemory(uint32_t region_count, const VkDeviceMemoryCopyKHR* regions, const Location& loc);
     void RecordBlitImage(vvl::Image &src_image_state, vvl::Image &dst_image_state, VkImageLayout src_image_layout,
                          VkImageLayout dst_image_layout, uint32_t region_count, const VkImageBlit *regions, const Location &loc);
     void RecordBlitImage2(vvl::Image &src_image_state, vvl::Image &dst_image_state, VkImageLayout src_image_layout,
@@ -732,6 +748,8 @@ class CommandBuffer : public RefcountedStateObject, public SubStateManager<Comma
                                 const VkClearRect *pRects, const Location &loc);
     void RecordFillBuffer(vvl::Buffer &buffer_state, VkDeviceSize offset, VkDeviceSize size, const Location &loc);
     void RecordUpdateBuffer(vvl::Buffer &buffer_state, VkDeviceSize offset, VkDeviceSize size, const Location &loc);
+    void RecordFillMemory(VkDeviceAddressRangeKHR range, const Location& loc);
+    void RecordUpdateMemory(VkDeviceAddressRangeKHR range, const Location& loc);
 
     void RecordSetEvent(VkEvent event, VkPipelineStageFlags2KHR stageMask, const VkDependencyInfo *dependency_info,
                         const Location &loc);
@@ -875,6 +893,10 @@ class CommandBufferSubState {
     virtual void RecordCopyImageToBuffer2(vvl::Image &src_image_state, vvl::Buffer &dst_buffer_state,
                                           VkImageLayout src_image_layout, uint32_t region_count, const VkBufferImageCopy2 *regions,
                                           const Location &loc) {}
+    virtual void RecordCopyImageToMemory(vvl::Image& src_image_state, uint32_t region_count,
+                                         const VkDeviceMemoryImageCopyKHR* regions, const Location& loc) {}
+    virtual void RecordCopyMemoryToImage(vvl::Image& dst_image_state, uint32_t region_count,
+                                         const VkDeviceMemoryImageCopyKHR* regions, const Location& loc) {}
     virtual void RecordBlitImage(vvl::Image &src_image_state, vvl::Image &dst_image_state, VkImageLayout src_image_layout,
                                  VkImageLayout dst_image_layout, uint32_t region_count, const VkImageBlit *regions,
                                  const Location &loc) {}
@@ -926,6 +948,8 @@ class CommandBufferSubState {
     virtual void RecordCopyQueryPoolResults(vvl::QueryPool &pool_state, vvl::Buffer &dst_buffer_state, uint32_t first_query,
                                             uint32_t query_count, VkDeviceSize dst_offset, VkDeviceSize stride,
                                             VkQueryResultFlags flags, const Location &loc) {}
+    virtual void RecordCopyQueryPoolResultsToMemory(vvl::QueryPool& pool_state, uint32_t first_query, uint32_t query_count,
+                                                    VkQueryResultFlags flags, const Location& loc) {}
     virtual void RecordWriteAccelerationStructuresProperties(VkQueryPool queryPool, uint32_t firstQuery,
                                                              uint32_t accelerationStructureCount, const Location &loc) {}
     virtual void RecordVideoInlineQueries(const VkVideoInlineQueryInfoKHR &query_info) {}

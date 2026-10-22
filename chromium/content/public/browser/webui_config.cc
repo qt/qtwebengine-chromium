@@ -21,4 +21,12 @@ bool WebUIConfig::ShouldHandleURL(const GURL& url) {
   return true;
 }
 
+bool WebUIConfig::ShouldCrashOnJavascriptErrorInDevelopmentBuild() const {
+  return false;
+}
+
+bool WebUIConfig::ShouldKeepVisibleUntilFirstVisuallyNonEmptyPaint() {
+  return false;
+}
+
 }  // namespace content

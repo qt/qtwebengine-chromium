@@ -137,6 +137,9 @@ ResultOrError<UnpackedPtr<TexelBufferViewDescriptor>> ValidateTexelBufferViewDes
     DAWN_TRY_ASSIGN(formatInfo, ValidateTexelBufferFormat(buffer->GetDevice(), desc->format));
     uint32_t texelSize = formatInfo->GetAspectInfo(Aspect::Color).block.byteSize;
 
+    DAWN_INVALID_IF(desc->offset % kTexelBufferOffsetAlignment != 0,
+                    "Texel buffer view offset (%u) must be a multiple of %u.", desc->offset,
+                    kTexelBufferOffsetAlignment);
     DAWN_INVALID_IF(desc->offset % texelSize != 0,
                     "Texel buffer view offset (%u) must be %u-byte aligned.", desc->offset,
                     texelSize);
@@ -299,11 +302,12 @@ class BufferBase::MapAsyncEvent final : public EventManager::TrackedEvent {
         //    but otherwise this finishes on the same path as #2.
         // 4. Event was created for an error and `mBuffer` was always null. This uses
         //    `mErrorMessage`` and `mStatus` as set in the constructor when running the callback.
+        RecursiveMutex::AutoLock lock;
         Ref<BufferBase> buffer = mBuffer.Promote();
         if (buffer) {
             // Locking the mutex provides synchronization so that either path #1 or #2 is taken if
             // Complete() and Unmap() race on different threads.
-            Mutex::AutoLock lock(&buffer->mPendingMapMutex);
+            lock = RecursiveMutex::AutoLock(&buffer->mPendingMapMutex);
             if (mStatus == WGPUMapAsyncStatus_Success) {
                 // Complete() happened before Unmap().
                 DAWN_ASSERT(buffer->mPendingMapEvent);
@@ -500,6 +504,11 @@ void BufferBase::DestroyImpl(DestroyReason reason) {
     }
 
     mTexelBufferViews.Destroy(DestroyReason::EarlyDestroy);
+}
+
+std::optional<DeviceGuard> BufferBase::UseDeviceGuardForDestroy() {
+    // Backends with thread-safe DestroyImpl() methods can override this to return nullopt.
+    return GetDevice()->GetGuard();
 }
 
 // static
@@ -799,7 +808,7 @@ void* BufferBase::GetMappedPointer() {
     if (!IsMappedState(mState.load(std::memory_order::acquire))) {
         return nullptr;
     }
-    return mMappedPointer;
+    return mMappedPointer.get();
 }
 
 void* BufferBase::GetMappedRange(size_t offset, size_t size, bool writable) {
@@ -811,6 +820,7 @@ void* BufferBase::GetMappedRange(size_t offset, size_t size, bool writable) {
 }
 
 void BufferBase::APIDestroy() {
+    auto deviceGuard = UseDeviceGuardForDestroy();
     Destroy();
 }
 
@@ -895,7 +905,7 @@ MaybeError BufferBase::UnmapInternal(bool forDestroy) {
     if (state == BufferState::PendingMap) {
         Ref<MapAsyncEvent> event;
         {
-            Mutex::AutoLock lock(&mPendingMapMutex);
+            RecursiveMutex::AutoLock lock(&mPendingMapMutex);
             // `mPendingMapEvent` is always reset while holding the mutex. If Complete() ran and
             // already reset the event then map is about to complete. If not, reset here and do an
             // early unmap.
@@ -926,6 +936,14 @@ MaybeError BufferBase::UnmapInternal(bool forDestroy) {
         mState.wait(BufferState::PendingMap, std::memory_order::acquire);
     }
 
+    // Wait for any active MapAsyncEvent callback to finish. Just acquiring and releasing the lock
+    // is sufficient because MapAsyncEvent::Complete transitions the state and holds the lock
+    // throughout the state transition and the callback exactly once, therefore if we can acquire
+    // the lock, the callback must have completed.
+    {
+        RecursiveMutex::AutoLock lock(&mPendingMapMutex);
+    }
+
     DAWN_TRY(Unmap(forDestroy));
     return {};
 }
@@ -945,22 +963,25 @@ MaybeError BufferBase::ValidateMapAsync(wgpu::MapMode mode, size_t offset, size_
                     "Mapping range (offset:%u, size: %u) doesn't fit in the size (%u) of %s.",
                     offset, size, mSize, this);
 
-    bool isReadMode = mode & wgpu::MapMode::Read;
-    bool isWriteMode = mode & wgpu::MapMode::Write;
-    DAWN_INVALID_IF(!(isReadMode ^ isWriteMode), "Map mode (%s) is not one of %s or %s.", mode,
-                    wgpu::MapMode::Write, wgpu::MapMode::Read);
-
-    if (mode & wgpu::MapMode::Read) {
-        DAWN_INVALID_IF(!(mInternalUsage & wgpu::BufferUsage::MapRead),
-                        "The buffer usages (%s) do not contain %s.", mInternalUsage,
-                        wgpu::BufferUsage::MapRead);
-    } else {
-        DAWN_ASSERT(mode & wgpu::MapMode::Write);
-        DAWN_INVALID_IF(!(mInternalUsage & wgpu::BufferUsage::MapWrite),
-                        "The buffer usages (%s) do not contain %s.", mInternalUsage,
-                        wgpu::BufferUsage::MapWrite);
+    // If/when we allow multiple map modes at the same time for a map call, relax the restrictions
+    // that using a switch/case implicitly implies for the bitmask.
+    switch (mode) {
+        case wgpu::MapMode::Read: {
+            DAWN_INVALID_IF(!(mInternalUsage & wgpu::BufferUsage::MapRead),
+                            "The buffer usages (%s) do not contain %s.", mInternalUsage,
+                            wgpu::BufferUsage::MapRead);
+            break;
+        }
+        case wgpu::MapMode::Write: {
+            DAWN_INVALID_IF(!(mInternalUsage & wgpu::BufferUsage::MapWrite),
+                            "The buffer usages (%s) do not contain %s.", mInternalUsage,
+                            wgpu::BufferUsage::MapWrite);
+            break;
+        }
+        default:
+            return DAWN_VALIDATION_ERROR("Map mode (%s) is not one of %s or %s.", mode,
+                                         wgpu::MapMode::Write, wgpu::MapMode::Read);
     }
-
     return {};
 }
 

@@ -12,6 +12,7 @@
 #include "components/autofill/core/common/form_data_test_api.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 
 namespace autofill::autofill_metrics {
 namespace {
@@ -125,11 +126,12 @@ TEST_F(PerFillMetricsTest, RefillTriggerReason_FormChanged) {
 // Test that for a form that was seen and filled, OnSelectFieldOptionsDidChange
 // triggers a refill, RefillTriggerReason metric gets reported.
 TEST_F(PerFillMetricsTest, RefillTriggerReason_OnSelectFieldOptionsDidChange) {
-  FormData form =
-      test::GetFormData({.fields = {{.role = CREDIT_CARD_NAME_FULL},
-                                    {.role = CREDIT_CARD_NUMBER},
-                                    {.role = CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR,
-                                     .autocomplete_attribute = "cc-exp"}}});
+  FormData form = test::GetFormData(
+      {.fields = {{.role = CREDIT_CARD_NAME_FULL},
+                  {.role = CREDIT_CARD_NUMBER},
+                  {.role = CREDIT_CARD_EXP_DATE_2_DIGIT_YEAR,
+                   .autocomplete_attribute = "cc-exp",
+                   .form_control_type = FormControlType::kSelectOne}}});
   SeeForm({form});
 
   CreditCard credit_card = test::GetCreditCard();
@@ -161,7 +163,9 @@ TEST_F(PerFillMetricsTest,
   // Simulate that JavaScript modifies the expiration date field incorrectly.
   FormData form_after_js_modification = form;
   test_api(form_after_js_modification).field(2).set_value(u"04 / 20");
-  test_api(form_after_js_modification).field(2).set_is_autofilled(true);
+  test_api(form_after_js_modification)
+      .field(2)
+      .set_is_autofilled_according_to_renderer(false);
 
   base::HistogramTester histogram_tester;
   autofill_manager().OnJavaScriptChangedAutofilledValue(
@@ -193,7 +197,7 @@ TEST_F(PerFillMetricsTest, ModifiedFieldsCount) {
                    mojom::ActionPersistence action_persistence,
                    base::span<const FormFieldData> data, const FillId& fill_id,
                    bool supports_refill, const url::Origin& triggered_origin,
-                   const base::flat_map<FieldGlobalId, FieldType>&,
+                   const absl::flat_hash_map<FieldGlobalId, FieldType>&,
                    const Section&) {
         return base::ToVector(data, &FormFieldData::global_id);
       });

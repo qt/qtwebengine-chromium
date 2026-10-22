@@ -167,16 +167,18 @@ export function tsconfigJsonPath() {
 }
 
 export function downloadedChromeBinaryPath() {
+  const arch = os.arch() === 'arm64' ? 'arm64' : 'x64';
   const paths = {
-    linux: path.join('chrome-linux', 'chrome'),
+    linux: path.join('chrome-linux', 'chrome-linux64', 'chrome'),
     darwin: path.join(
-        'chrome-mac',
+        `chrome-mac-${arch}`,
+        `chrome-mac-${arch}`,
         'Google Chrome for Testing.app',
         'Contents',
         'MacOS',
         'Google Chrome for Testing',
         ),
-    win32: path.join('chrome-win', 'chrome.exe'),
+    win32: path.join('chrome-win', 'chrome-win64', 'chrome.exe'),
   };
   return path.join(devToolsThirdPartyPath(), 'chrome', paths[os.platform()]);
 }

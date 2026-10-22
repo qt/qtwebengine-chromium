@@ -45,7 +45,7 @@ def _apply_mac_cmake_builder_defaults(kwargs):
     # x64 used for the builders since historically Dawn has tested Mac/CMake on
     # x64 and tests are run on the same machine as compilation.
     kwargs.setdefault("cpu", cpu.X86_64)
-    kwargs.setdefault("os", os.MAC_DEFAULT)
+    kwargs.setdefault("os", os.MAC_15)
     return kwargs
 
 def _apply_win_cmake_builder_defaults(kwargs):

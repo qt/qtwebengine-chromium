@@ -7,7 +7,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Logs from '../../models/logs/logs.js';
 import {assertScreenshot, dispatchClickEvent, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
-import {createTarget, registerNoopActions, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
+import {createTarget, registerNoopActions} from '../../testing/EnvironmentHelpers.js';
 import {expectCall} from '../../testing/ExpectStubCall.js';
 import {describeWithMockConnection, setMockConnectionResponseHandler} from '../../testing/MockConnection.js';
 import {createViewFunctionStub} from '../../testing/ViewFunctionHelpers.js';
@@ -18,134 +18,108 @@ import * as Network from './network.js';
 
 const {urlString} = Platform.DevToolsPath;
 
-for (const individualThrottlingEnabled of [false, true]) {
-  describeWithMockConnection(
-      `RequestConditionsDrawer${individualThrottlingEnabled ? ' with individual request throttling enabled' : ''}`,
-      () => {
-        beforeEach(() => {
-          updateHostConfig({devToolsIndividualRequestThrottling: {enabled: individualThrottlingEnabled}});
-          setMockConnectionResponseHandler('Debugger.enable', () => ({} as Protocol.Debugger.EnableResponse));
-          setMockConnectionResponseHandler(
-              'Storage.getStorageKey', () => ({} as Protocol.Storage.GetStorageKeyResponse));
-          registerNoopActions([
-            'network.add-network-request-blocking-pattern',
-            'network.remove-all-network-request-blocking-patterns',
-          ]);
-          SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true}).requestConditions.conditionsEnabled =
-              (true);
-          sinon.stub(SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions, 'applyConditions')
-              .returns(false);
-        });
+describeWithMockConnection(`RequestConditionsDrawer with individual request throttling enabled`, () => {
+  beforeEach(() => {
+    setMockConnectionResponseHandler('Debugger.enable', () => ({} as Protocol.Debugger.EnableResponse));
+    setMockConnectionResponseHandler('Storage.getStorageKey', () => ({} as Protocol.Storage.GetStorageKeyResponse));
+    registerNoopActions([
+      'network.add-network-request-blocking-pattern',
+      'network.remove-all-network-request-blocking-patterns',
+    ]);
+    SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true}).requestConditions.conditionsEnabled =
+        (true);
+    sinon.stub(SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions, 'applyConditions')
+        .returns(false);
+  });
 
-        it('shows a placeholder', async () => {
-          const requestConditionsDrawer = new Network.RequestConditionsDrawer.RequestConditionsDrawer();
-          renderElementIntoDOM(requestConditionsDrawer);
-          await requestConditionsDrawer.updateComplete;
-          const blockedElement = requestConditionsDrawer.contentElement.querySelector('.blocked-urls');
-          const placeholder = blockedElement?.shadowRoot?.querySelector('.empty-state');
-          assert.exists(placeholder);
-          assert.deepEqual(
-              placeholder.querySelector('.empty-state-header')?.textContent,
-              individualThrottlingEnabled ? 'Nothing throttled or blocked' : 'No blocked network requests');
-          assert.deepEqual(
-              placeholder.querySelector('.empty-state-description > span')?.textContent,
-              individualThrottlingEnabled ?
-                  'To throttle or block a network request, add a rule here manually or via the network panel\'s context menu. Learn more' :
-                  'Add a pattern by clicking on the \"Add pattern\" button.');
+  it('shows a placeholder', async () => {
+    const requestConditionsDrawer = new Network.RequestConditionsDrawer.RequestConditionsDrawer();
+    renderElementIntoDOM(requestConditionsDrawer);
+    await requestConditionsDrawer.updateComplete;
+    const blockedElement = requestConditionsDrawer.contentElement.querySelector('.blocked-urls');
+    const placeholder = blockedElement?.shadowRoot?.querySelector('.empty-state');
+    assert.exists(placeholder);
+    assert.deepEqual(placeholder.querySelector('.empty-state-header')?.textContent, 'Nothing throttled or blocked');
+    assert.deepEqual(
+        placeholder.querySelector('.empty-state-description > span')?.textContent,
+        'To throttle or block a network request, add a rule here manually or via the network panel\'s context menu. Learn more');
 
-          if (individualThrottlingEnabled) {
-            await assertScreenshot('request_conditions/throttling_placeholder.png');
-          } else {
-            await assertScreenshot('request_conditions/placeholder.png');
-          }
-        });
+    await assertScreenshot('request_conditions/throttling_placeholder.png');
+  });
 
-        it('Add pattern button triggers showing the editor view', async () => {
-          const requestConditionsDrawer = new Network.RequestConditionsDrawer.RequestConditionsDrawer();
-          renderElementIntoDOM(requestConditionsDrawer);
-          await requestConditionsDrawer.updateComplete;
-          const blockedElement = requestConditionsDrawer.contentElement.querySelector('.blocked-urls');
-          const list = blockedElement?.shadowRoot?.querySelector('.list');
-          const placeholder = list?.querySelector('.empty-state');
+  it('Add pattern button triggers showing the editor view', async () => {
+    const requestConditionsDrawer = new Network.RequestConditionsDrawer.RequestConditionsDrawer();
+    renderElementIntoDOM(requestConditionsDrawer);
+    await requestConditionsDrawer.updateComplete;
+    const blockedElement = requestConditionsDrawer.contentElement.querySelector('.blocked-urls');
+    const list = blockedElement?.shadowRoot?.querySelector('.list');
+    const placeholder = list?.querySelector('.empty-state');
 
-          const button = placeholder?.querySelector('devtools-button');
-          assert.exists(button);
+    const button = placeholder?.querySelector('devtools-button');
+    assert.exists(button);
 
-          assert.isNull(list?.querySelector('.editor-content'));
-          dispatchClickEvent(button);
-          await requestConditionsDrawer.updateComplete;
-          assert.exists(list?.querySelector('.editor-content'));
+    assert.isNull(list?.querySelector('.editor-content'));
+    dispatchClickEvent(button);
+    await requestConditionsDrawer.updateComplete;
+    assert.exists(list?.querySelector('.editor-content'));
 
-          if (individualThrottlingEnabled) {
-            await assertScreenshot('request_conditions/throttling_editor.png');
-          } else {
-            await assertScreenshot('request_conditions/editor.png');
-          }
-        });
+    await assertScreenshot('request_conditions/throttling_editor.png');
+  });
 
-        describe('affected counts', () => {
-          const updatesOnRequestFinishedEvent = (inScope: boolean) => async () => {
-            const target = createTarget();
-            SDK.TargetManager.TargetManager.instance().setScopeTarget(inScope ? target : null);
-            const networkManager = target.model(SDK.NetworkManager.NetworkManager);
+  describe('affected counts', () => {
+    const updatesOnRequestFinishedEvent = (inScope: boolean) => async () => {
+      const target = createTarget();
+      SDK.TargetManager.TargetManager.instance().setScopeTarget(inScope ? target : null);
+      const networkManager = target.model(SDK.NetworkManager.NetworkManager);
 
-            SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.add(
-                SDK.NetworkManager.RequestCondition.createFromSetting({url: '*', enabled: true}));
-            const requestConditionsDrawer = new Network.RequestConditionsDrawer.RequestConditionsDrawer();
-            renderElementIntoDOM(requestConditionsDrawer);
-            await requestConditionsDrawer.updateComplete;
-            assert.exists(networkManager);
-            const list = requestConditionsDrawer.contentElement.querySelector('.blocked-urls')?.shadowRoot;
-            const countWidget =
-                list?.querySelector<UI.Widget.WidgetElement<UI.Widget.Widget>>('.blocked-url-count')?.getWidget();
-            assert.exists(countWidget);
-            const updateStub = sinon.spy(countWidget, 'requestUpdate');
+      SDK.NetworkManager.MultitargetNetworkManager.instance().requestConditions.add(
+          SDK.NetworkManager.RequestCondition.createFromSetting({url: '*', enabled: true}));
+      const requestConditionsDrawer = new Network.RequestConditionsDrawer.RequestConditionsDrawer();
+      renderElementIntoDOM(requestConditionsDrawer);
+      await requestConditionsDrawer.updateComplete;
+      assert.exists(networkManager);
+      const list = requestConditionsDrawer.contentElement.querySelector('.blocked-urls')?.shadowRoot;
+      const countWidget =
+          list?.querySelector<UI.Widget.WidgetElement<UI.Widget.Widget>>('.blocked-url-count')?.getWidget();
+      assert.exists(countWidget);
+      const updateStub = sinon.spy(countWidget, 'requestUpdate');
 
-            const request = new SDK.NetworkRequest.NetworkRequest(
-                '', undefined, urlString`http://example.com`, urlString`http://example.com`, null, null, null);
-            request.setBlockedReason(Protocol.Network.BlockedReason.Inspector);
+      const request = new SDK.NetworkRequest.NetworkRequest(
+          '', undefined, urlString`http://example.com`, urlString`http://example.com`, null, null, null);
+      request.setBlockedReason(Protocol.Network.BlockedReason.Inspector);
 
-            networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.RequestFinished, request);
+      networkManager.dispatchEventToListeners(SDK.NetworkManager.Events.RequestFinished, request);
 
-            assert.strictEqual(updateStub.calledOnce, inScope);
-            if (inScope) {
-              await countWidget.updateComplete;
-              if (individualThrottlingEnabled) {
-                await assertScreenshot(`request_conditions/throttling_blocked-matched.png`);
-              } else {
-                await assertScreenshot(`request_conditions/blocked-matched.png`);
-              }
-            } else if (individualThrottlingEnabled) {
-              await assertScreenshot(`request_conditions/throttling_blocked-not-matched.png`);
-            } else {
-              await assertScreenshot(`request_conditions/blocked-not-matched.png`);
-            }
-          };
+      assert.strictEqual(updateStub.calledOnce, inScope);
+      if (inScope) {
+        await countWidget.updateComplete;
+        await assertScreenshot(`request_conditions/throttling_blocked-matched.png`);
+      } else {
+        await assertScreenshot(`request_conditions/throttling_blocked-not-matched.png`);
+      }
+    };
 
-          it('are updated upon RequestFinished event (when target is in scope)', updatesOnRequestFinishedEvent(true));
-          it('are updated upon RequestFinished event (when target is out of scope)',
-             updatesOnRequestFinishedEvent(false));
+    it('are updated upon RequestFinished event (when target is in scope)', updatesOnRequestFinishedEvent(true));
+    it('are updated upon RequestFinished event (when target is out of scope)', updatesOnRequestFinishedEvent(false));
 
-          it('are updated upon Reset event', async () => {
-            const viewFunction = createViewFunctionStub(Network.RequestConditionsDrawer.AffectedCountWidget);
-            const widget = new Network.RequestConditionsDrawer.AffectedCountWidget(undefined, viewFunction);
-            widget.condition = SDK.NetworkManager.RequestCondition.createFromSetting({url: '*', enabled: true});
-            widget.drawer = sinon.createStubInstance(Network.RequestConditionsDrawer.RequestConditionsDrawer);
-            await viewFunction.nextInput;
-            renderElementIntoDOM(widget);
+    it('are updated upon Reset event', async () => {
+      const viewFunction = createViewFunctionStub(Network.RequestConditionsDrawer.AffectedCountWidget);
+      const widget = new Network.RequestConditionsDrawer.AffectedCountWidget(undefined, viewFunction);
+      widget.condition = SDK.NetworkManager.RequestCondition.createFromSetting({url: '*', enabled: true});
+      widget.lookUpRequestCount = sinon.stub();
+      await viewFunction.nextInput;
+      renderElementIntoDOM(widget);
 
-            Logs.NetworkLog.NetworkLog.instance().dispatchEventToListeners(
-                Logs.NetworkLog.Events.Reset, {clearIfPreserved: true});
-            await viewFunction.nextInput;
-          });
-        });
-      });
-}
+      Logs.NetworkLog.NetworkLog.instance().dispatchEventToListeners(
+          Logs.NetworkLog.Events.Reset, {clearIfPreserved: true});
+      await viewFunction.nextInput;
+    });
+  });
+});
 
 describeWithMockConnection('RequestConditionsDrawer', () => {
   beforeEach(() => {
     SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
-    updateHostConfig({devToolsIndividualRequestThrottling: {enabled: true}});
   });
 
   describe('shows information for upgrading wildcard patterns to URLPatterns', () => {

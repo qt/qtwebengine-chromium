@@ -85,8 +85,7 @@ template <>
 struct GPU_IPC_COMMON_EXPORT EnumTraits<gpu::mojom::SkiaBackendType,
                                         gpu::SkiaBackendType> {
   static gpu::mojom::SkiaBackendType ToMojom(gpu::SkiaBackendType type);
-  static bool FromMojom(gpu::mojom::SkiaBackendType input,
-                        gpu::SkiaBackendType* out);
+  static gpu::SkiaBackendType FromMojom(gpu::mojom::SkiaBackendType input);
 };
 
 template <>
@@ -94,8 +93,7 @@ struct GPU_IPC_COMMON_EXPORT EnumTraits<gpu::mojom::VideoCodecProfile,
                                         gpu::VideoCodecProfile> {
   static gpu::mojom::VideoCodecProfile ToMojom(
       gpu::VideoCodecProfile video_codec_profile);
-  static bool FromMojom(gpu::mojom::VideoCodecProfile input,
-                        gpu::VideoCodecProfile* out);
+  static gpu::VideoCodecProfile FromMojom(gpu::mojom::VideoCodecProfile input);
 };
 
 template <>
@@ -178,61 +176,12 @@ struct GPU_IPC_COMMON_EXPORT StructTraits<
   }
 };
 
-template <>
-struct GPU_IPC_COMMON_EXPORT EnumTraits<gpu::mojom::ImageDecodeAcceleratorType,
-                                        gpu::ImageDecodeAcceleratorType> {
-  static gpu::mojom::ImageDecodeAcceleratorType ToMojom(
-      gpu::ImageDecodeAcceleratorType image_type);
-  static bool FromMojom(gpu::mojom::ImageDecodeAcceleratorType input,
-                        gpu::ImageDecodeAcceleratorType* out);
-};
-
-template <>
-struct GPU_IPC_COMMON_EXPORT EnumTraits<
-    gpu::mojom::ImageDecodeAcceleratorSubsampling,
-    gpu::ImageDecodeAcceleratorSubsampling> {
-  static gpu::mojom::ImageDecodeAcceleratorSubsampling ToMojom(
-      gpu::ImageDecodeAcceleratorSubsampling subsampling);
-  static bool FromMojom(gpu::mojom::ImageDecodeAcceleratorSubsampling input,
-                        gpu::ImageDecodeAcceleratorSubsampling* out);
-};
-
-template <>
-struct GPU_IPC_COMMON_EXPORT StructTraits<
-    gpu::mojom::ImageDecodeAcceleratorSupportedProfileDataView,
-    gpu::ImageDecodeAcceleratorSupportedProfile> {
-  static bool Read(
-      gpu::mojom::ImageDecodeAcceleratorSupportedProfileDataView data,
-      gpu::ImageDecodeAcceleratorSupportedProfile* out);
-
-  static gpu::ImageDecodeAcceleratorType image_type(
-      const gpu::ImageDecodeAcceleratorSupportedProfile& input) {
-    return input.image_type;
-  }
-
-  static const gfx::Size& min_encoded_dimensions(
-      const gpu::ImageDecodeAcceleratorSupportedProfile& input) {
-    return input.min_encoded_dimensions;
-  }
-
-  static const gfx::Size& max_encoded_dimensions(
-      const gpu::ImageDecodeAcceleratorSupportedProfile& input) {
-    return input.max_encoded_dimensions;
-  }
-
-  static std::vector<gpu::ImageDecodeAcceleratorSubsampling> subsamplings(
-      const gpu::ImageDecodeAcceleratorSupportedProfile& input) {
-    return input.subsamplings;
-  }
-};
-
 #if BUILDFLAG(IS_WIN)
 template <>
 struct GPU_IPC_COMMON_EXPORT EnumTraits<gpu::mojom::OverlaySupport,
                                         gpu::OverlaySupport> {
   static gpu::mojom::OverlaySupport ToMojom(gpu::OverlaySupport support);
-  static bool FromMojom(gpu::mojom::OverlaySupport input,
-                        gpu::OverlaySupport* out);
+  static gpu::OverlaySupport FromMojom(gpu::mojom::OverlaySupport input);
 };
 
 template <>

@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <variant>
 
 #include "discovery/common/config.h"
 #include "discovery/mdns/impl/mdns_probe_manager.h"
@@ -243,7 +244,7 @@ Error MdnsPublisher::RemoveRecord(const MdnsRecord& record,
 bool MdnsPublisher::IsRecordNameClaimed(const MdnsRecord& record) const {
   const DomainName& name =
       record.dns_type() == DnsType::kPTR
-          ? absl::get<PtrRecordRdata>(record.rdata()).ptr_domain()
+          ? std::get<PtrRecordRdata>(record.rdata()).ptr_domain()
           : record.name();
   return ownership_manager_.IsDomainClaimed(name);
 }

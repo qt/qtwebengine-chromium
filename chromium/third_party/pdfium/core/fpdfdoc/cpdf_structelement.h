@@ -26,6 +26,7 @@ class CPDF_StructElement final : public Retainable {
   ByteString GetObjType() const;
   WideString GetAltText() const;
   WideString GetActualText() const;
+  WideString GetExpansion() const;
   WideString GetTitle() const;
   std::optional<WideString> GetID() const;
   std::optional<WideString> GetLang() const;

@@ -546,7 +546,7 @@ String DOMWindow::CrossDomainAccessErrorMessage(
   // there isn't anything else to show other than "null" for its origin.
   KURL target_url = local_dom_window
                         ? local_dom_window->Url()
-                        : KURL(NullURL(), target_origin->ToString());
+                        : KURL(NullUrl(), target_origin->ToString());
   using SandboxFlags = network::mojom::blink::WebSandboxFlags;
   if (GetFrame()->GetSecurityContext()->IsSandboxed(SandboxFlags::kOrigin) ||
       accessing_window->IsSandboxed(SandboxFlags::kOrigin)) {
@@ -720,8 +720,16 @@ void DOMWindow::focus(v8::Isolate* isolate) {
   } else {
     DCHECK(IsMainThread());
 
-    // Allow focus if the request is coming from our opener window.
-    allow_focus = opener() && opener() != this && incumbent_window == opener();
+    if (incumbent_window == this) {
+      // Allow self-focus requests if the frame has appropriate privilege.
+      allow_focus =
+          originating_frame && originating_frame->GetSettings() &&
+          originating_frame->GetSettings()->GetAllowUnrestrictedWindowFocus();
+    } else {
+      // Allow focus if the request is coming from our opener window.
+      allow_focus =
+          opener() && opener() != this && incumbent_window == opener();
+    }
 
     // Also allow focus from a user activation on a document picture-in-picture
     // window opened by this window. In this case, we determine the originating
@@ -1048,8 +1056,8 @@ void DOMWindow::DoPostMessage(scoped_refptr<SerializedScriptValue> message,
   mojom::blink::DelegatedCapability delegated_capability =
       mojom::blink::DelegatedCapability::kNone;
   if (options->hasDelegate()) {
-    Vector<String> capability_list;
-    options->delegate().Split(' ', capability_list);
+    Vector<StringView> capability_list =
+        StringView(options->delegate()).SplitSkippingEmpty(' ');
     if (capability_list.Contains("payment")) {
       delegated_capability = mojom::blink::DelegatedCapability::kPaymentRequest;
     } else if (capability_list.Contains("fullscreen")) {

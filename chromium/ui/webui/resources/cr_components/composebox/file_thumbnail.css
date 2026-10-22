@@ -8,7 +8,7 @@
  * #css_wrapper_metadata_end */
 
 :host {
-  --image-chip-border-radius_: 8px;
+  --image-chip-border-radius_: var(--file-chip-border-radius, 8px);
 }
 
 @keyframes spin {
@@ -43,7 +43,7 @@
   width: 100%;
 }
 
-#imgChip {
+.img-chip {
   aspect-ratio: 1 / 1;
   align-items: center;
   border-radius: var(--image-chip-border-radius_);
@@ -64,7 +64,8 @@
   width: 100%;
 }
 
-#removeImgButton {
+#removeImgButton,
+#removeInjectedInputImgButton {
   --cr-icon-button-fill-color:
       var(--color-composebox-file-image-overlay-icon-color, white);
   /* This defines width and height. No need to manually define it. */
@@ -84,7 +85,7 @@
 .chip {
   align-items: center;
   background-color: var(--color-composebox-file-chip-background);
-  border-radius: 8px;
+  border-radius: var(--file-chip-border-radius, 8px);
   display: flex;
   gap: var(--file-chip-internal-gap, 6px);
   height: var(--file-chip-height, 44px);
@@ -103,7 +104,7 @@
 .thumbnail {
   align-items: center;
   background-color: var(--color-composebox-file-chip-favicon-background);
-  border-radius: var(--file-chip-border-radius, 4px);
+  border-radius: var(--file-thumbnail-border-radius, 4px);
   box-sizing: var(--file-chip-thumbnail-box-sizing, content-box);
   display: flex;
   flex-shrink: 0;
@@ -135,6 +136,14 @@
   color: var(--color-composebox-pdf-chip-icon-border);
   height: var(--pdf-icon-size, 100%);
   width: var(--pdf-icon-size, 100%);
+}
+
+.document-icon {
+  background-color: var(--color-composebox-background);
+  box-sizing: border-box;
+  color: var(--color-composebox-document-chip-icon);
+  height: var(--document-icon-size, 100%);
+  width: var(--document-icon-size, 100%);
 }
 
 .injected-input-icon {
@@ -175,7 +184,7 @@
     var(--color-composebox-file-carousel-remove-gradient-start) 85.29%,
     var(--color-composebox-file-carousel-remove-gradient-end) 123.53%
   );
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--file-chip-border-radius, 8px) var(--file-chip-border-radius, 8px) 0;
   display: var(--file-chip-gradient-protection-display, block);
   inline-size: var(--gradient-protection-width, 56px);
   inset-block: 0;
@@ -239,8 +248,8 @@
   white-space: nowrap;
 }
 
-#imgChip:hover .img-overlay,
-#imgChip:focus-within .img-overlay,
+.img-chip:hover .img-overlay,
+.img-chip:focus-within .img-overlay,
 .chip:hover .overlay,
 .chip:focus-within .overlay {
   opacity: 1;
@@ -263,7 +272,7 @@
 #spinnerOverlay {
   align-items: center;
   background-color: rgba(255, 255, 255, 0.5);
-  border-radius: var(--file-chip-border-radius, 50%);
+  border-radius: var(--file-thumbnail-border-radius, 50%);
   display: flex;
   height: 100%;
   justify-content: center;
@@ -273,7 +282,7 @@
   width: 100%;
 }
 
-#imgChip #spinnerOverlay {
+.img-chip #spinnerOverlay {
   border-radius: var(--image-chip-border-radius_);
 }
 
@@ -301,9 +310,10 @@ cr-spinner {
   white-space: nowrap;
 }
 
+
 @media (forced-colors: active) {
   .chip,
-  #imgChip {
+  .img-chip {
     border: 1px solid ButtonText;
   }
   .remove-button {
@@ -312,4 +322,74 @@ cr-spinner {
     border: 1px solid ButtonText;
     box-sizing: border-box;
   }
+}
+
+@keyframes slide-out {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(30px);
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes shrink-out {
+  0% {
+    opacity: 1;
+    width: var(--file-chip-width, 154px);
+    margin-inline-end: 0;
+  }
+  100% {
+    opacity: 0;
+    width: 0;
+    /* Offset the gap to avoid a glitch. */
+    margin-inline-end: calc(0px - var(--composebox-thumbnail-gap, 6px));
+  }
+}
+
+:host(.exiting) {
+  animation: var(--cr-composebox-file-thumbnail-exit-animation, none);
+}
+
+:host(.exiting:last-of-type) {
+  animation: var(--cr-composebox-file-thumbnail-exit-animation-last, none);
+}
+
+:host(.exiting:only-of-type) {
+  animation: none;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateY(30px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+:host(.entering) {
+  animation: var(--cr-composebox-file-thumbnail-entry-animation, none);
+}
+
+:host(.entering:first-of-type) {
+  animation: none;
 }

@@ -154,9 +154,11 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
     // global screen coordinates. Wayland, for example, disallow it by design.
     bool supports_global_screen_coordinates = true;
 
-    // Whether the platform supports system/shell integrated color picker
-    // dialog. An example is XDG Desktop Portal provided PickColor dialog.
-    bool supports_color_picker_dialog = true;
+    // Indicates that the platform exposes webgpu via interop gl interop with
+    // vulkan.
+    // TODO(https://crbug.com/500609035): Remove when active gpu device info is
+    // passed to media.
+    bool webgpu_on_vulkan_via_gl_interop = false;
   };
 
   // Groups platform properties that can only be known at run time.

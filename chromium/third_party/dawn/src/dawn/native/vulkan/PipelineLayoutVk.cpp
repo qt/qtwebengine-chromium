@@ -50,7 +50,7 @@ ResultOrError<Ref<PipelineLayout>> PipelineLayout::Create(
 }
 
 ResultOrError<Ref<RefCountedVkHandle<VkPipelineLayout>>> PipelineLayout::CreateVkPipelineLayout(
-    uint32_t immediateConstantSize) {
+    const Specialization& specialization) {
     // Compute the array of VkDescriptorSetLayouts that will be chained in the create info.
     ityp::array<BindGroupIndex, VkDescriptorSetLayout, size_t(kMaxBindGroupsTyped) + 1> setLayouts;
 
@@ -66,7 +66,9 @@ ResultOrError<Ref<RefCountedVkHandle<VkPipelineLayout>>> PipelineLayout::CreateV
     BindGroupIndex highestBindGroupIndex = GetHighestBitIndexPlusOne(bindGroupMask);
     for (BindGroupIndex i : Range(highestBindGroupIndex)) {
         if (bindGroupMask[i]) {
-            setLayouts[startOfBindGroups + i] = ToBackend(GetBindGroupLayout(i))->GetHandle();
+            DAWN_TRY_ASSIGN(setLayouts[startOfBindGroups + i],
+                            ToBackend(GetBindGroupLayout(i))
+                                ->GetOrCreateSpecializedHandle(specialization.bindGroups[i]));
         } else {
             setLayouts[startOfBindGroups + i] =
                 ToBackend(GetDevice()->GetEmptyBindGroupLayout()->GetInternalBindGroupLayout())
@@ -84,10 +86,10 @@ ResultOrError<Ref<RefCountedVkHandle<VkPipelineLayout>>> PipelineLayout::CreateV
     createInfo.pPushConstantRanges = nullptr;
 
     VkPushConstantRange pushConstantRange;
-    if (immediateConstantSize > 0) {
-        pushConstantRange.stageFlags = kImmediateDataRangeShaderStage;
+    if (specialization.pushConstantBytes > 0) {
+        pushConstantRange.stageFlags = kImmediateShaderStages;
         pushConstantRange.offset = 0;
-        pushConstantRange.size = immediateConstantSize;
+        pushConstantRange.size = specialization.pushConstantBytes;
         createInfo.pushConstantRangeCount = 1;
         createInfo.pPushConstantRanges = &pushConstantRange;
     }
@@ -125,13 +127,11 @@ MaybeError PipelineLayout::Initialize() {
 }
 
 ResultOrError<Ref<RefCountedVkHandle<VkPipelineLayout>>> PipelineLayout::GetOrCreateVkLayoutObject(
-    const ImmediateConstantMask& immediateConstantMask) {
+    const Specialization& specialization) {
     // Check cache
     Ref<RefCountedVkHandle<VkPipelineLayout>> pipelineLayoutVk;
-    uint32_t immediateConstantSize =
-        immediateConstantMask.count() * kImmediateConstantElementByteSize;
     mVkPipelineLayouts.Use([&](auto vkPipelineLayouts) {
-        auto it = vkPipelineLayouts->find(immediateConstantSize);
+        auto it = vkPipelineLayouts->find(specialization);
         if (it != vkPipelineLayouts->end()) {
             pipelineLayoutVk = it->second;
         }
@@ -141,16 +141,12 @@ ResultOrError<Ref<RefCountedVkHandle<VkPipelineLayout>>> PipelineLayout::GetOrCr
         return pipelineLayoutVk;
     }
 
-    DAWN_TRY_ASSIGN(pipelineLayoutVk, CreateVkPipelineLayout(immediateConstantSize));
+    DAWN_TRY_ASSIGN(pipelineLayoutVk, CreateVkPipelineLayout(specialization));
 
     return mVkPipelineLayouts.Use([&](auto vkPipelineLayouts) {
-        return vkPipelineLayouts->insert({immediateConstantSize, std::move(pipelineLayoutVk)})
+        return vkPipelineLayouts->insert({specialization, std::move(pipelineLayoutVk)})
             .first->second;
     });
-}
-
-VkShaderStageFlags PipelineLayout::GetImmediateDataRangeStage() const {
-    return kImmediateDataRangeShaderStage;
 }
 
 PipelineLayout::~PipelineLayout() = default;

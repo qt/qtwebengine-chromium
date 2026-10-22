@@ -9,6 +9,7 @@ import {drawLayoutFlexContainerHighlight, type FlexContainerHighlight} from './h
 import {drawLayoutGridHighlight, type GridHighlight} from './highlight_grid_common.js';
 import {drawIsolatedElementHighlight, type IsolatedElementHighlight} from './highlight_isolated_element.js';
 import {drawScrollSnapHighlight, type ScrollSnapHighlight} from './highlight_scroll_snap.js';
+import type {GreenDevAnchorsHighlight, GreenDevAnchorsOverlay} from './tool_green_dev_anchors.js';
 
 export interface PersistentToolMessage {
   highlightType: string;
@@ -65,11 +66,17 @@ export class PersistentOverlay extends Overlay {
     initialHeight: number,
   }>();
   private dragHandler?: DragResizeHandler;
+  private greenDevAnchorsOverlay?: GreenDevAnchorsOverlay;
+
+  setGreenDevAnchorsOverlay(greenDevAnchorsOverlay: GreenDevAnchorsOverlay) {
+    this.greenDevAnchorsOverlay = greenDevAnchorsOverlay;
+  }
 
   override reset(data: ResetData) {
     super.reset(data);
     this.gridLabelState.gridLayerCounter = 0;
     this.gridLabels.innerHTML = '';
+    this.greenDevAnchorsOverlay?.reset(data);
   }
 
   renderGridMarkup() {
@@ -127,6 +134,13 @@ export class PersistentOverlay extends Overlay {
     this.context.save();
     drawContainerQueryHighlight(highlight, this.context, this.emulationScaleFactor);
     this.context.restore();
+  }
+
+  drawGreenDevFloatyAnchors(highlights: GreenDevAnchorsHighlight[]) {
+    if (this.greenDevAnchorsOverlay && !this.greenDevAnchorsOverlay.installed) {
+      this.greenDevAnchorsOverlay.install();
+    }
+    this.greenDevAnchorsOverlay?.drawGreenDevAnchors(highlights);
   }
 
   drawIsolatedElementHighlight(highlight: IsolatedElementHighlight) {

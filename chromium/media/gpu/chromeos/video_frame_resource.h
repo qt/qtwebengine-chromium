@@ -31,7 +31,7 @@ class VideoFrameResource : public FrameResource {
 
   // FrameResource implementation.
   VideoFrameResource* AsVideoFrameResource() override;
-  bool IsMappable() const override;
+  bool HasDirectCpuAccess() const override;
   const uint8_t* data(size_t plane) const override;
   uint8_t* writable_data(size_t plane) override;
   const uint8_t* visible_data(size_t plane) const override;
@@ -45,7 +45,7 @@ class VideoFrameResource : public FrameResource {
   scoped_refptr<gpu::ClientSharedImage> GetSharedImage() const override;
   const VideoFrameLayout& layout() const override;
   VideoPixelFormat format() const override;
-  int stride(size_t plane) const override;
+  size_t stride(size_t plane) const override;
   VideoFrame::StorageType storage_type() const override;
   int row_bytes(size_t plane) const override;
   const gfx::Size& coded_size() const override;

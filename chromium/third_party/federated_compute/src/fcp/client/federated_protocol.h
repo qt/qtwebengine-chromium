@@ -21,6 +21,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -51,8 +52,14 @@ namespace client {
 // * N QuantizedTensors, whose string keys must map to the tensor names
 //   provided in the server's CheckinResponse's SideChannelExecutionInfo.
 using TFCheckpoint = std::string;
-// Data type used to represent Federated Compute wire format checkpoint.
-using FCCheckpoint = absl::Cord;
+// A Federated Compute wire format checkpoint and its metadata.
+struct FederatedComputeCheckpoint {
+  absl::Cord payload;
+  std::optional<fcp::confidentialcompute::PayloadMetadata> metadata;
+};
+// Data type used to represent multiple Federated Compute wire format
+// checkpoints and their metadata.
+using FCCheckpoints = std::vector<FederatedComputeCheckpoint>;
 struct QuantizedTensor {
   std::vector<uint64_t> values;
   int32_t bitwidth = 0;
@@ -73,16 +80,32 @@ struct QuantizedTensor {
 class ComputationResults
     : public absl::node_hash_map<
           std::string,
-          std::variant<TFCheckpoint, QuantizedTensor, FCCheckpoint>> {
+          std::variant<TFCheckpoint, QuantizedTensor, FCCheckpoints>> {
  public:
   using Base = absl::node_hash_map<
-      std::string, std::variant<TFCheckpoint, QuantizedTensor, FCCheckpoint>>;
+      std::string, std::variant<TFCheckpoint, QuantizedTensor, FCCheckpoints>>;
   using Base::Base;
   using Base::operator=;
   ComputationResults(const ComputationResults&) = delete;
   ComputationResults& operator=(const ComputationResults&) = delete;
   ComputationResults(ComputationResults&&) = default;
   ComputationResults& operator=(ComputationResults&&) = default;
+};
+
+enum class ReportOutcome { kSuccess, kPartialSuccess, kFailure };
+
+struct ReportResult {
+  ReportOutcome outcome = ReportOutcome::kSuccess;
+  // If the outcome is kPartialSuccess, this will contain the status of the
+  // last error that occurred during the report.
+  absl::Status status = absl::OkStatus();
+
+  // Creates a kSuccess or kFailure ReportResult based on the provided status.
+  static ReportResult FromStatus(absl::Status status) {
+    return ReportResult{.outcome = status.ok() ? ReportOutcome::kSuccess
+                                               : ReportOutcome::kFailure,
+                        .status = std::move(status)};
+  }
 };
 
 // An interface that represents a single Federated Compute protocol session.
@@ -197,6 +220,20 @@ class FederatedProtocol {
     absl::Cord signed_endorsements;
   };
 
+  // Metadata for Willow aggregation.
+  struct WillowAggInfo {
+    // The serialized `secure_aggregation.willow.InputSpec` proto that will be
+    // used to encode the client's contribution.
+    absl::Cord input_spec;
+    // The maximum size of the Cartesian product of input spec domains. This is
+    // used by the Willow library in conjunction with the input_spec.
+    int64_t max_flattened_domain_size;
+    // The maximum number of clients that can participate in the aggregation.
+    // This is used by the Willow library to compute the right cryptographic
+    // parameters.
+    int64_t max_number_of_clients;
+  };
+
   // A task assignment, consisting of task payloads, a URI template to download
   // federated select task slices with (if the plan uses federated select), a
   // session identifier, and SecAgg-related metadata.
@@ -210,6 +247,9 @@ class FederatedProtocol {
     // Only populated when the task will be aggregated using the confidential
     // aggregation protocol.
     std::optional<ConfidentialAggInfo> confidential_agg_info;
+    // Only populated when the task will be aggregated using the Willow
+    // aggregation protocol.
+    std::optional<WillowAggInfo> willow_agg_info;
     std::string task_name;
     // Unique identifier for the task when the task is assigned via multiple
     // task assignment.
@@ -305,19 +345,18 @@ class FederatedProtocol {
       const std::function<void(size_t)>& payload_uris_received_callback,
       const std::optional<std::string>& attestation_measurement) = 0;
 
-  // Reports the result of a federated computation to the server. Must only be
+  // Reports the results of a federated computation to the server. Must only be
   // called once and after a successful call to Checkin().
   // @param results the ComputationResults of a task.
   // @param plan_duration the duration for executing the plan in the plan
   //        engine. Does not include time spent on downloading the plan.
   // @param task_identifier the identifier of the task, this field is only
   //        filled when the task is assigned via multiple task assignment.
-  // @param payload_metadata the metadata of the payload, to be included in each
-  // uploaded data blob header.
   // Returns:
-  // - On success, OK.
-  // - On error (e.g. an interruption, network error, or other unexpected
-  //   error):
+  // - On success, kSuccess outcome.
+  // - On failure of all uploads (e.g. an interruption, network error, or other
+  //   unexpected error):
+  //   - kFailure outcome.
   //   - ABORTED when one of the I/O operations got aborted by the server.
   //   - CANCELLED when one of the I/O operations was interrupted by the client
   //     (possibly due to a positive result from the should_abort callback).
@@ -325,10 +364,12 @@ class FederatedProtocol {
   //     message.
   //   - INTERNAL for other unexpected client-side errors.
   //   - any server-provided error code.
-  virtual absl::Status ReportCompleted(
+  // - On failure of some uploads:
+  //   - kPartialSuccess outcome.
+  //   - The error status of the last failed upload.
+  virtual ReportResult ReportCompleted(
       ComputationResults results, absl::Duration plan_duration,
-      std::optional<std::string> task_identifier,
-      std::optional<confidentialcompute::PayloadMetadata> payload_metadata) = 0;
+      std::optional<std::string> task_identifier) = 0;
 
   // Reports the unsuccessful result of a federated computation to the server.
   // Must only be called once and after a successful call to Checkin().

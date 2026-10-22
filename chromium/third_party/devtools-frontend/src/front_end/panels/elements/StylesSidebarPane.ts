@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 /* eslint-disable @devtools/no-imperative-dom-api */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 /*
  * Copyright (C) 2007 Apple Inc.  All rights reserved.
@@ -42,13 +43,17 @@ import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as AiCodeCompletion from '../../models/ai_code_completion/ai_code_completion.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import type * as ComputedStyle from '../../models/computed_style/computed_style.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
+import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 import {createIcon, Icon} from '../../ui/kit/kit.js';
 import * as InlineEditor from '../../ui/legacy/components/inline_editor/inline_editor.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {render} from '../../ui/lit/lit.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 import * as PanelsCommon from '../common/common.js';
 
@@ -59,6 +64,7 @@ import {ImagePreviewPopover} from './ImagePreviewPopover.js';
 import * as LayersWidget from './LayersWidget.js';
 import {StyleEditorWidget} from './StyleEditorWidget.js';
 import {
+  type ActiveAiSuggestionProperty,
   AtRuleSection,
   BlankStylePropertiesSection,
   FunctionRuleSection,
@@ -70,6 +76,8 @@ import {
 } from './StylePropertiesSection.js';
 import {StylePropertyHighlighter} from './StylePropertyHighlighter.js';
 import type {StylePropertyTreeElement} from './StylePropertyTreeElement.js';
+import * as StylesAiCodeCompletionProvider from './StylesAiCodeCompletionProvider.js';
+import type {StylesContainer} from './StylesContainer.js';
 import stylesSidebarPaneStyles from './stylesSidebarPane.css.js';
 import {WebCustomData} from './WebCustomData.js';
 
@@ -161,8 +169,12 @@ const HIGHLIGHTABLE_PROPERTIES = [
   {mode: 'flexibility', properties: ['flex', 'flex-basis', 'flex-grow', 'flex-shrink']},
 ];
 
+const DISCLAIMER_TOOLTIP_ID = 'styles-ai-code-completion-disclaimer-tooltip';
+const SPINNER_TOOLTIP_ID = 'styles-ai-code-completion-spinner-tooltip';
+const CITATIONS_TOOLTIP_ID = 'styles-ai-code-completion-citations-tooltip';
+
 export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventTypes, typeof ElementsSidebarPane>(
-    ElementsSidebarPane) {
+    ElementsSidebarPane) implements StylesContainer {
   private matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles|null = null;
   private currentToolbarPane: UI.Widget.Widget|null = null;
   private animatedToolbarPane: UI.Widget.Widget|null = null;
@@ -184,6 +196,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   private userOperation = false;
   isEditingStyle = false;
   #filterRegex: RegExp|null = null;
+  #isRegex = false;
+  #filterText = '';
   private isActivePropertyHighlighted = false;
   private initialUpdateCompleted = false;
   hasMatchedStyles = false;
@@ -203,6 +217,11 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   activeCSSAngle: InlineEditor.CSSAngle.CSSAngle|null = null;
   #updateAbortController?: AbortController;
   #updateComputedStylesAbortController?: AbortController;
+
+  aiCodeCompletionConfig?: TextEditor.AiCodeCompletionProvider.AiCodeCompletionConfig;
+  aiCodeCompletionProvider?: StylesAiCodeCompletionProvider.StylesAiCodeCompletionProvider;
+  #aiCodeCompletionSummaryToolbarContainer?: HTMLElement;
+  #aiCodeCompletionSummaryToolbar?: PanelsCommon.AiCodeCompletionSummaryToolbar;
 
   constructor(computedStyleModel: ComputedStyle.ComputedStyleModel.ComputedStyleModel) {
     super(computedStyleModel, {delegatesFocus: true});
@@ -230,19 +249,45 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.contentElement.addEventListener('copy', this.clipboardCopy.bind(this));
 
     this.boundOnScroll = this.onScroll.bind(this);
-    this.imagePreviewPopover = new ImagePreviewPopover(this.contentElement, event => {
-      const link = event.composedPath()[0];
-      if (link instanceof Element) {
-        return link;
-      }
-      return null;
-    }, () => this.node());
+    this.imagePreviewPopover = new ImagePreviewPopover(
+        this.contentElement,
+        event => {
+          const link = event.composedPath()[0];
+          if (link instanceof Element) {
+            return link;
+          }
+          return null;
+        },
+        async () => {
+          const features = await Components.ImagePreview.loadPrecomputedFeatures(this.node());
+          return features;
+        });
 
     UI.ViewManager.ViewManager.instance().addEventListener(UI.ViewManager.Events.VIEW_VISIBILITY_CHANGED, event => {
       if (event.data.revealedViewId === 'animations' || event.data.hiddenViewId === 'animations') {
         this.#scheduleResetUpdateIfNotEditing();
       }
     });
+
+    const devtoolsLocale = i18n.DevToolsLocale.DevToolsLocale.instance();
+    if (AiCodeCompletion.AiCodeCompletion.AiCodeCompletion.isAiCodeCompletionStylesEnabled(devtoolsLocale.locale)) {
+      this.aiCodeCompletionConfig = {
+        completionContext: {},
+        generationContext: {},
+        onFeatureEnabled: () => {
+          this.#createAiCodeCompletionSummaryToolbar();
+        },
+        onFeatureDisabled: () => {
+          this.#cleanupAiCodeCompletion();
+        },
+        onSuggestionAccepted: this.#onAiCodeCompletionSuggestionAccepted.bind(this),
+        onRequestTriggered: this.#onAiCodeCompletionRequestTriggered.bind(this),
+        onResponseReceived: this.#onAiCodeCompletionResponseReceived.bind(this),
+        panel: AiCodeCompletion.AiCodeCompletion.ContextFlavor.STYLES,
+      };
+      this.aiCodeCompletionProvider =
+          StylesAiCodeCompletionProvider.StylesAiCodeCompletionProvider.createInstance(this.aiCodeCompletionConfig);
+    }
   }
 
   get webCustomData(): WebCustomData|undefined {
@@ -264,73 +309,6 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
   setUserOperation(userOperation: boolean): void {
     this.userOperation = userOperation;
-  }
-
-  static ignoreErrorsForProperty(property: SDK.CSSProperty.CSSProperty): boolean {
-    function hasUnknownVendorPrefix(string: string): boolean {
-      return !string.startsWith('-webkit-') && /^[-_][\w\d]+-\w/.test(string);
-    }
-
-    const name = property.name.toLowerCase();
-
-    // IE hack.
-    if (name.charAt(0) === '_') {
-      return true;
-    }
-
-    // IE has a different format for this.
-    if (name === 'filter') {
-      return true;
-    }
-
-    // Common IE-specific property prefix.
-    if (name.startsWith('scrollbar-')) {
-      return true;
-    }
-    if (hasUnknownVendorPrefix(name)) {
-      return true;
-    }
-
-    const value = property.value.toLowerCase();
-
-    // IE hack.
-    if (value.endsWith('\\9')) {
-      return true;
-    }
-    if (hasUnknownVendorPrefix(value)) {
-      return true;
-    }
-
-    return false;
-  }
-
-  static formatLeadingProperties(section: StylePropertiesSection): {
-    allDeclarationText: string,
-    ruleText: string,
-  } {
-    const selectorText = section.headerText();
-    const indent = Common.Settings.Settings.instance().moduleSetting('text-editor-indent').get();
-
-    const style = section.style();
-    const lines: string[] = [];
-
-    // Invalid property should also be copied.
-    // For example: *display: inline.
-    for (const property of style.leadingProperties()) {
-      if (property.disabled) {
-        lines.push(`${indent}/* ${property.name}: ${property.value}; */`);
-      } else {
-        lines.push(`${indent}${property.name}: ${property.value};`);
-      }
-    }
-
-    const allDeclarationText: string = lines.join('\n');
-    const ruleText = `${selectorText} {\n${allDeclarationText}\n}`;
-
-    return {
-      allDeclarationText,
-      ruleText,
-    };
   }
 
   revealProperty(cssProperty: SDK.CSSProperty.CSSProperty): void {
@@ -370,7 +348,6 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   forceUpdate(): void {
     this.needsForceUpdate = true;
     this.#swatchPopoverHelper.hide();
-    this.#updateAbortController?.abort();
     this.resetCache();
     this.requestUpdate();
   }
@@ -486,9 +463,28 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }
   }
 
+  #buildFilterRegex(text: string): RegExp|null {
+    if (!text) {
+      return null;
+    }
+    if (this.#isRegex) {
+      try {
+        return new RegExp(text, 'i');
+      } catch {
+        // Invalid regex: fall through to plain-text matching.
+      }
+    }
+    return new RegExp(Platform.StringUtilities.escapeForRegExp(text), 'i');
+  }
+
   private onFilterChanged(event: Common.EventTarget.EventTargetEvent<string>): void {
-    const regex = event.data ? new RegExp(Platform.StringUtilities.escapeForRegExp(event.data), 'i') : null;
-    this.setFilter(regex);
+    this.#filterText = event.data;
+    this.setFilter(this.#buildFilterRegex(event.data));
+  }
+
+  private onRegexToggled(): void {
+    this.#isRegex = !this.#isRegex;
+    this.setFilter(this.#buildFilterRegex(this.#filterText));
   }
 
   setFilter(regex: RegExp|null): void {
@@ -540,10 +536,8 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     this.nodeStylesUpdatedForTest(node, false);
   }
 
-  override async performUpdate(): Promise<void> {
-    this.#updateAbortController?.abort();
-    this.#updateAbortController = new AbortController();
-    await this.#innerDoUpdate(this.#updateAbortController.signal);
+  override async performUpdate(signal?: AbortSignal): Promise<void> {
+    await this.#innerDoUpdate(signal);
 
     // Hide all popovers when scrolling.
     // Styles and Computed panels both have popover (e.g. imagePreviewPopover),
@@ -559,10 +553,10 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }
   }
 
-  async #innerDoUpdate(signal: AbortSignal): Promise<void> {
+  async #innerDoUpdate(signal?: AbortSignal): Promise<void> {
     if (!this.initialUpdateCompleted) {
       window.setTimeout(() => {
-        if (signal.aborted) {
+        if (signal?.aborted) {
           return;
         }
         if (!this.initialUpdateCompleted) {
@@ -574,9 +568,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
     const matchedStyles = await this.fetchMatchedCascade();
 
-    if (signal.aborted) {
-      return;
-    }
+    signal?.throwIfAborted();
 
     this.matchedStyles = matchedStyles;
     const nodeId = this.node()?.id;
@@ -587,16 +579,12 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       this.fetchComputedStyleExtraFieldsFor(nodeId)
     ]);
 
-    if (signal.aborted) {
-      return;
-    }
+    signal?.throwIfAborted();
 
     await this.innerRebuildUpdate(
         signal, this.matchedStyles, computedStyles, parentsComputedStyles, computedStyleExtraFields);
 
-    if (signal.aborted) {
-      return;
-    }
+    signal?.throwIfAborted();
 
     if (!this.initialUpdateCompleted) {
       this.initialUpdateCompleted = true;
@@ -748,10 +736,6 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       return;
     }
 
-    if (!UI.ViewManager.ViewManager.instance().isViewVisible('animations')) {
-      return;
-    }
-
     void this.computedStyleUpdateThrottler.schedule(async () => {
       await this.#updateAnimatedStyles();
       this.handledComputedStyleChangedForTest();
@@ -774,12 +758,24 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   #scheduleResetUpdateIfNotEditing(): void {
     this.scheduleResetUpdateIfNotEditingCalledForTest();
 
+    // Don't schedule if editing; the edit completion will handle the update.
+    if (this.userOperation || this.isEditingStyle) {
+      return;
+    }
+
     void this.resetUpdateThrottler.schedule(async () => {
       this.#resetUpdateIfNotEditing();
     });
   }
 
   scheduleResetUpdateIfNotEditingCalledForTest(): void {
+  }
+
+  #hasAnimatedStyles(animatedStyles: Protocol.CSS.GetAnimatedStylesForNodeResponse): boolean {
+    return Boolean(
+        animatedStyles.animationStyles?.length || animatedStyles.transitionsStyle?.cssProperties.length ||
+        animatedStyles.inherited?.some(
+            inherited => inherited.animationStyles?.length || inherited.transitionsStyle?.cssProperties.length));
   }
 
   async #updateAnimatedStyles(): Promise<void> {
@@ -794,6 +790,18 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
     const animatedStyles = await this.cssModel()?.getAnimatedStylesForNode(nodeId);
     if (!animatedStyles) {
+      return;
+    }
+
+    if (!this.#hasAnimatedStyles(animatedStyles)) {
+      // A computed style change that doesn't correspond to any animation is
+      // likely to be a change in the matched styles. In this case, we should
+      // update the matched styles.
+      this.#scheduleResetUpdateIfNotEditing();
+      return;
+    }
+
+    if (!UI.ViewManager.ViewManager.instance().isViewVisible('animations')) {
       return;
     }
 
@@ -936,7 +944,7 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
   }
 
   private async innerRebuildUpdate(
-      signal: AbortSignal, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles|null,
+      signal: AbortSignal|undefined, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles|null,
       computedStyles: Map<string, string>|null, parentsComputedStyles: Map<string, string>|null,
       computedStyleExtraFields: Protocol.CSS.ComputedStyleExtraFields|null): Promise<void> {
     // ElementsSidebarPane's throttler schedules this method. Usually,
@@ -964,12 +972,10 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     }
 
     const blocks = await this.rebuildSectionsForMatchedStyleRules(
-        (matchedStyles as SDK.CSSMatchedStyles.CSSMatchedStyles), computedStyles, parentsComputedStyles,
+        signal, (matchedStyles as SDK.CSSMatchedStyles.CSSMatchedStyles), computedStyles, parentsComputedStyles,
         computedStyleExtraFields);
 
-    if (signal.aborted) {
-      return;
-    }
+    signal?.throwIfAborted();
 
     this.sectionBlocks = blocks;
 
@@ -1051,12 +1057,12 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       parentsComputedStyles: Map<string, string>|null,
       computedStyleExtraFields: Protocol.CSS.ComputedStyleExtraFields|null): Promise<SectionBlock[]> {
     return this.rebuildSectionsForMatchedStyleRules(
-        matchedStyles, computedStyles, parentsComputedStyles, computedStyleExtraFields);
+        undefined, matchedStyles, computedStyles, parentsComputedStyles, computedStyleExtraFields);
   }
 
   private async rebuildSectionsForMatchedStyleRules(
-      matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles, computedStyles: Map<string, string>|null,
-      parentsComputedStyles: Map<string, string>|null,
+      signal: AbortSignal|undefined, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
+      computedStyles: Map<string, string>|null, parentsComputedStyles: Map<string, string>|null,
       computedStyleExtraFields: Protocol.CSS.ComputedStyleExtraFields|null): Promise<SectionBlock[]> {
     if (this.idleCallbackManager) {
       this.idleCallbackManager.discard();
@@ -1110,6 +1116,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       const lastBlock = blocks[blocks.length - 1];
       if (lastBlock && (!isTransitionOrAnimationStyle || style.allProperties().length > 0)) {
         this.idleCallbackManager.schedule(() => {
+          if (signal?.aborted) {
+            return;
+          }
           const section = new StylePropertiesSection(
               this, matchedStyles, style, sectionIdx, computedStyles, parentsComputedStyles, computedStyleExtraFields);
           sectionIdx++;
@@ -1183,6 +1192,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
         addLayerSeparator(style);
         const lastBlock = blocks[blocks.length - 1];
         this.idleCallbackManager.schedule(() => {
+          if (signal?.aborted) {
+            return;
+          }
           const section = new HighlightPseudoStylePropertiesSection(
               this, matchedStyles, style, sectionIdx, computedStyles, parentsComputedStyles, computedStyleExtraFields);
           sectionIdx++;
@@ -1195,6 +1207,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       const block = SectionBlock.createKeyframesBlock(keyframesRule.name().text);
       for (const keyframe of keyframesRule.keyframes()) {
         this.idleCallbackManager.schedule(() => {
+          if (signal?.aborted) {
+            return;
+          }
           block.sections.push(new KeyframePropertiesSection(this, matchedStyles, keyframe.style, sectionIdx));
           sectionIdx++;
         });
@@ -1208,6 +1223,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       const block = SectionBlock.createAtRuleBlock(expandedByDefault);
       for (const atRule of atRules) {
         this.idleCallbackManager.schedule(() => {
+          if (signal?.aborted) {
+            return;
+          }
           block.sections.push(new AtRuleSection(this, matchedStyles, atRule.style, sectionIdx, expandedByDefault));
           sectionIdx++;
         });
@@ -1218,6 +1236,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     for (const positionTryRule of matchedStyles.positionTryRules()) {
       const block = SectionBlock.createPositionTryBlock(positionTryRule.name().text);
       this.idleCallbackManager.schedule(() => {
+        if (signal?.aborted) {
+          return;
+        }
         block.sections.push(new PositionTryRuleSection(
             this, matchedStyles, positionTryRule.style, sectionIdx, positionTryRule.active()));
         sectionIdx++;
@@ -1230,6 +1251,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       const block = SectionBlock.createRegisteredPropertiesBlock(expandedByDefault);
       for (const propertyRule of matchedStyles.registeredProperties()) {
         this.idleCallbackManager.schedule(() => {
+          if (signal?.aborted) {
+            return;
+          }
           block.sections.push(new RegisteredPropertiesSection(
               this, matchedStyles, propertyRule.style(), sectionIdx, propertyRule.propertyName(), expandedByDefault));
           sectionIdx++;
@@ -1243,6 +1267,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
       const block = SectionBlock.createFunctionBlock(expandedByDefault);
       for (const functionRule of matchedStyles.functionRules()) {
         this.idleCallbackManager.schedule(() => {
+          if (signal?.aborted) {
+            return;
+          }
           block.sections.push(new FunctionRuleSection(
               this, matchedStyles, functionRule.style, functionRule.children(), sectionIdx,
               functionRule.nameWithParameters(), expandedByDefault));
@@ -1392,7 +1419,9 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     const hbox = container.createChild('div', 'hbox styles-sidebar-pane-toolbar');
     const toolbar = hbox.createChild('devtools-toolbar', 'styles-pane-toolbar');
     toolbar.role = 'presentation';
-    const filterInput = new UI.Toolbar.ToolbarFilter(undefined, 1, 1, undefined, undefined, false);
+    const filterInput = new UI.Toolbar.ToolbarFilter(
+        undefined, 1, 1, undefined, undefined, false, undefined, undefined, /* showRegexToggle=*/ true,
+        this.onRegexToggled.bind(this));
     filterInput.addEventListener(UI.Toolbar.ToolbarInput.Event.TEXT_CHANGED, this.onFilterChanged, this);
     toolbar.appendToolbarItem(filterInput);
     void toolbar.appendItemsAtLocation('styles-sidebarpane-toolbar');
@@ -1425,6 +1454,14 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
     if (this.toolbar) {
       this.toolbar.appendToolbarItem(item);
     }
+  }
+
+  addStyleUpdateListener(listener: () => void): void {
+    this.addEventListener(Events.STYLES_UPDATE_COMPLETED, listener);
+  }
+
+  removeStyleUpdateListener(listener: () => void): void {
+    this.removeEventListener(Events.STYLES_UPDATE_COMPLETED, listener);
   }
 
   private startToolbarPaneAnimation(widget: UI.Widget.Widget|null): void {
@@ -1520,6 +1557,45 @@ export class StylesSidebarPane extends Common.ObjectWrapper.eventMixin<EventType
 
     return button;
   }
+
+  #cleanupAiCodeCompletion(): void {
+    this.#aiCodeCompletionSummaryToolbarContainer?.remove();
+    this.#aiCodeCompletionSummaryToolbarContainer = undefined;
+    this.#aiCodeCompletionSummaryToolbar = undefined;
+  }
+
+  #createAiCodeCompletionSummaryToolbar(): void {
+    if (this.#aiCodeCompletionSummaryToolbar) {
+      return;
+    }
+    this.#aiCodeCompletionSummaryToolbar = new PanelsCommon.AiCodeCompletionSummaryToolbar({
+      citationsTooltipId: CITATIONS_TOOLTIP_ID,
+      disclaimerTooltipId: DISCLAIMER_TOOLTIP_ID,
+      spinnerTooltipId: SPINNER_TOOLTIP_ID,
+      panel: AiCodeCompletion.AiCodeCompletion.ContextFlavor.STYLES,
+    });
+    const containingPane = this.contentElement.enclosingNodeOrSelfWithClass('style-panes-wrapper') as HTMLElement;
+    this.#aiCodeCompletionSummaryToolbarContainer =
+        containingPane.createChild('div', 'ai-code-completion-summary-toolbar-container');
+    this.#aiCodeCompletionSummaryToolbarContainer.role = 'toolbar';
+    this.#aiCodeCompletionSummaryToolbar.show(this.#aiCodeCompletionSummaryToolbarContainer, undefined, true);
+  }
+
+  #onAiCodeCompletionSuggestionAccepted(citations: Host.AidaClient.Citation[]): void {
+    if (!this.#aiCodeCompletionSummaryToolbar || citations.length === 0) {
+      return;
+    }
+    const citationsUri = citations.map(citation => citation.uri).filter((uri): uri is string => Boolean(uri));
+    this.#aiCodeCompletionSummaryToolbar.updateCitations(citationsUri);
+  }
+
+  #onAiCodeCompletionRequestTriggered(): void {
+    this.#aiCodeCompletionSummaryToolbar?.setLoading(true);
+  }
+
+  #onAiCodeCompletionResponseReceived(): void {
+    this.#aiCodeCompletionSummaryToolbar?.setLoading(false);
+  }
 }
 
 export const enum Events {
@@ -1594,11 +1670,8 @@ export class SectionBlock {
     const pseudoArgumentString = pseudoArgument ? `(${pseudoArgument})` : '';
     const pseudoTypeString = `${pseudoType}${pseudoArgumentString}`;
     UI.UIUtils.createTextChild(separatorElement, i18nString(UIStrings.inheritedFromSPseudoOf, {PH1: pseudoTypeString}));
-    const link = PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(node, {
-      preventKeyboardFocus: true,
-      tooltip: undefined,
-    });
-    separatorElement.appendChild(link);
+    const link = PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(node, {preventKeyboardFocus: true});
+    render(link, separatorElement);
     return new SectionBlock(separatorElement);
   }
 
@@ -1649,9 +1722,8 @@ export class SectionBlock {
     UI.UIUtils.createTextChild(separatorElement, i18nString(UIStrings.inheritedFroms));
     const link = PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(node, {
       preventKeyboardFocus: true,
-      tooltip: undefined,
     });
-    separatorElement.appendChild(link);
+    render(link, separatorElement);
     return new SectionBlock(separatorElement);
   }
 
@@ -1753,6 +1825,13 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
   private treeElement: StylePropertyTreeElement;
   private isEditingName: boolean;
   private readonly cssVariables: string[];
+  aiCodeCompletionProvider?: StylesAiCodeCompletionProvider.StylesAiCodeCompletionProvider;
+  private activeAiSuggestionInfo?:
+      {citations: Host.AidaClient.Citation[], rpcGlobalId?: Host.AidaClient.RpcGlobalId, sampleId?: number};
+
+  #debouncedTriggerAiCodeCompletion = Common.Debouncer.debounce(() => {
+    void this.triggerAiCodeCompletion();
+  }, TextEditor.AiCodeCompletionProvider.AIDA_REQUEST_DEBOUNCE_TIMEOUT_MS);
 
   constructor(treeElement: StylePropertyTreeElement, isEditingName: boolean, completions: string[] = []) {
     // Use the same callback both for applyItemCallback and acceptItemCallback.
@@ -1811,6 +1890,15 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
         }
       }
     }
+
+    const stylesContainer = this.treeElement.stylesContainer();
+    if (stylesContainer instanceof StylesSidebarPane) {
+      this.aiCodeCompletionProvider = stylesContainer.aiCodeCompletionProvider;
+      if (this.aiCodeCompletionProvider) {
+        this.aiCodeCompletionProvider.getCompletionHint = this.getCompletionHint.bind(this);
+        this.aiCodeCompletionProvider.setAiAutoCompletion = this.setAiAutoCompletion.bind(this);
+      }
+    }
   }
 
   override onKeyDown(event: Event): void {
@@ -1820,6 +1908,9 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
       case 'ArrowDown':
       case 'PageUp':
       case 'PageDown':
+        if (this.aiCodeCompletionProvider && this.treeElement.section().activeAiSuggestion) {
+          this.setAiAutoCompletion(null);
+        }
         if (!this.isSuggestBoxVisible() && this.handleNameOrValueUpDown(keyboardEvent)) {
           keyboardEvent.preventDefault();
           return;
@@ -1833,6 +1924,11 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
         this.tabKeyPressed();
         keyboardEvent.preventDefault();
         return;
+      case 'Escape':
+        if (this.#handleEscape(keyboardEvent)) {
+          return;
+        }
+        break;
       case ' ':
         if (this.isEditingName) {
           // Since property names cannot contain a space
@@ -1855,9 +1951,35 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
   }
 
   override tabKeyPressed(): boolean {
-    this.acceptAutoComplete();
+    if (this.aiCodeCompletionProvider) {
+      return this.acceptCodeComplete();
+    }
 
+    this.acceptAutoComplete();
     // Always tab to the next field.
+    return false;
+  }
+
+  override onInput(event: Event): void {
+    super.onInput(event);
+    if (this.aiCodeCompletionProvider) {
+      this.#updateAiCodeSuggestion();
+      this.#debouncedTriggerAiCodeCompletion();
+    }
+  }
+
+  #handleEscape(keyboardEvent: KeyboardEvent): boolean {
+    if (!this.aiCodeCompletionProvider || !this.treeElement.section().activeAiSuggestion) {
+      return false;
+    }
+    keyboardEvent.preventDefault();
+    if (this.isSuggestBoxVisible()) {
+      this.suggestBox?.hide();
+      // Required for ensuring the suggestion is not cleared.
+      keyboardEvent.consume(true);
+      return true;
+    }
+    this.setAiAutoCompletion(null);
     return false;
   }
 
@@ -1955,14 +2077,6 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
     if (!this.isEditingName && !results.length && query.length > 1 && '!important'.startsWith(lowerQuery)) {
       results.push({
         text: '!important',
-        title: undefined,
-        subtitle: undefined,
-        priority: undefined,
-        isSecondary: undefined,
-        subtitleRenderer: undefined,
-        selectionRange: undefined,
-        hideGhostText: undefined,
-        iconElement: undefined,
       });
     }
     const userEnteredText = query.replace('-', '');
@@ -2038,14 +2152,6 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
       const index = completion.toLowerCase().indexOf(lowerQuery);
       const result: CompletionResult = {
         text: completion,
-        title: undefined,
-        subtitle: undefined,
-        priority: undefined,
-        isSecondary: undefined,
-        subtitleRenderer: undefined,
-        selectionRange: undefined,
-        hideGhostText: undefined,
-        iconElement: undefined,
         isCSSVariableColor: false,
       };
       if (variable) {
@@ -2074,7 +2180,7 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
 
     function colorSwatchRenderer(color: Common.Color.Color): Element {
       const swatch = new InlineEditor.ColorSwatch.ColorSwatch();
-      swatch.color = color;
+      swatch.renderColor(color);
       swatch.style.pointerEvents = 'none';
       return swatch;
     }
@@ -2086,6 +2192,197 @@ export class CSSPropertyPrompt extends UI.TextPrompt.TextPrompt {
       subtitleElement.title = `${computedValue}`;
       return subtitleElement;
     }
+  }
+
+  #updateAiCodeSuggestion(): void {
+    const activeAiSuggestion = this.treeElement.section().activeAiSuggestion;
+    if (!activeAiSuggestion) {
+      return;
+    }
+
+    const userInput = this.text();
+    const selection = this.element().getComponentSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const cursorOffset = range.endOffset;
+    const currentAiSuggestedText = this.#getAiSuggestionForCurrentPrompt();
+    if (!currentAiSuggestedText?.startsWith(userInput) || cursorOffset < activeAiSuggestion.cursorPosition) {
+      this.setAiAutoCompletion(null);
+      return;
+    }
+    const hint = this.getCompletionHint();
+    if (!hint) {
+      return;
+    }
+    const textWithTopSuggestion = userInput + hint;
+    if (textWithTopSuggestion && !currentAiSuggestedText.startsWith(textWithTopSuggestion)) {
+      this.setAiAutoCompletion(null);
+      return;
+    }
+  }
+
+  private async triggerAiCodeCompletion(): Promise<void> {
+    const selection = this.element().getComponentSelection();
+    if (!this.aiCodeCompletionProvider || !selection || selection.rangeCount === 0) {
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    const userInput = this.text();
+    // Only trigger if caret is at end of text content
+    if (range.endOffset < userInput.length) {
+      return;
+    }
+    const cssModel = this.treeElement.stylesContainer().cssModel();
+    if (!cssModel) {
+      return;
+    }
+    await this.aiCodeCompletionProvider.triggerAiCodeCompletion(
+        userInput, range.endOffset, this.isEditingName, this.treeElement.property, cssModel);
+  }
+
+  private setAiAutoCompletion(args: {
+    text: string,
+    from: number,
+    startTime: number,
+    onImpression: (rpcGlobalId: Host.AidaClient.RpcGlobalId, latency: number, sampleId?: number) => void,
+    clearCachedRequest: () => void,
+    citations: Host.AidaClient.Citation[],
+    rpcGlobalId?: Host.AidaClient.RpcGlobalId,
+    sampleId?: number,
+  }|null): void {
+    if (!args) {
+      this.treeElement.section().activeAiSuggestion = undefined;
+      this.activeAiSuggestionInfo = undefined;
+      return;
+    }
+
+    this.treeElement.section().activeAiSuggestion = {
+      text: args.text,
+      properties: this.#getAiSuggestedProperties(args.text),
+      cursorPosition: args.from,
+      clearCachedRequest: args.clearCachedRequest,
+      cssProperty: this.treeElement.property,
+    };
+    this.activeAiSuggestionInfo = {citations: args.citations, rpcGlobalId: args.rpcGlobalId, sampleId: args.sampleId};
+    const latency = performance.now() - args.startTime;
+    if (args.rpcGlobalId) {
+      args.onImpression(args.rpcGlobalId, latency, args.sampleId);
+    }
+  }
+
+  #getAiSuggestedProperties(suggestionText: string): ActiveAiSuggestionProperty[] {
+    const cssParser = CodeMirror.css.cssLanguage.parser.configure({top: 'Styles'});
+    const parsed = cssParser.parse(suggestionText);
+    const properties: ActiveAiSuggestionProperty[] = [];
+    parsed.iterate({
+      enter: node => {
+        if (node.name === 'Declaration') {
+          let name = '';
+          let value = '';
+
+          const cursor = node.node.cursor();
+          if (cursor.firstChild()) {
+            do {
+              if (cursor.name === ':') {
+                name = suggestionText.slice(node.from, cursor.from);
+                value = suggestionText.slice(cursor.to + 1, node.to);
+              }
+            } while (cursor.nextSibling());
+          }
+
+          if (name && value) {
+            properties.push({
+              name: name.trim(),
+              value: value.trim(),
+            });
+          }
+        }
+      }
+    });
+    return properties;
+  }
+
+  /**
+   * Extracts the remaining portion of the suggestion text that follows the
+   * user's current input.
+   */
+  private getCompletionHint(): string|null {
+    const topSuggestion = this.isSuggestBoxVisible() ? this.suggestBox?.completion() : null;
+    const suggestionText = topSuggestion?.text;
+    if (!suggestionText) {
+      return null;
+    }
+    const userInput = this.text();
+    let completionHint = suggestionText;
+    // Iterate from the longest possible overlap down to the shortest
+    for (let i = Math.min(userInput.length, suggestionText.length); i > 0; i--) {
+      const overlapCandidate = suggestionText.substring(0, i);
+      if (userInput.endsWith(overlapCandidate)) {
+        completionHint = suggestionText.slice(i);
+        break;
+      }
+    }
+    return completionHint;
+  }
+
+  private acceptCodeComplete(): boolean {
+    if (this.isSuggestBoxVisible()) {
+      // accept the suggestion from the traditional autocomplete menu
+      this.acceptAutoComplete();
+
+      const textAfterAccept = this.text();
+      if (!this.treeElement.section().activeAiSuggestion?.properties.length) {
+        this.setAiAutoCompletion(null);
+        // Tab to the next field as suggestion is no longer valid
+        return false;
+      }
+
+      const suggestionForCurrentPrompt = this.#getAiSuggestionForCurrentPrompt();
+      if (!suggestionForCurrentPrompt?.startsWith(textAfterAccept)) {
+        this.setAiAutoCompletion(null);
+        // Tab to the next field as suggestion is no longer valid
+        return false;
+      }
+
+      if (suggestionForCurrentPrompt !== textAfterAccept) {
+        // Re-apply the ghost text for the remainder
+        this.applySuggestion({text: suggestionForCurrentPrompt}, true);
+      }
+      return true;
+    }
+
+    if (!this.treeElement.section().activeAiSuggestion) {
+      // Tab to the next field.
+      return false;
+    }
+
+    void this.commitAiSuggestion();
+    return true;
+  }
+
+  async commitAiSuggestion(): Promise<void> {
+    await this.treeElement.section().commitActiveAiSuggestion();
+    if (this.activeAiSuggestionInfo) {
+      this.aiCodeCompletionProvider?.onSuggestionAccepted(
+          this.activeAiSuggestionInfo.citations, this.activeAiSuggestionInfo.rpcGlobalId,
+          this.activeAiSuggestionInfo.sampleId);
+    }
+    // Clear state and return
+    this.setAiAutoCompletion(null);
+  }
+
+  #getAiSuggestionForCurrentPrompt(): string|undefined {
+    const suggestionForCurrentElement = this.treeElement.section().activeAiSuggestion?.properties[0];
+    if (!suggestionForCurrentElement) {
+      return;
+    }
+
+    const suggestionForCurrentPrompt =
+        this.isEditingName ? suggestionForCurrentElement.name : suggestionForCurrentElement.value;
+    return suggestionForCurrentPrompt;
   }
 }
 

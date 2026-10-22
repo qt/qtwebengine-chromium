@@ -28,6 +28,11 @@ struct MemoryHeapInfo {
 
 `wgpu::MemoryHeapInfo::size` is the size that should be allocated out of this heap. Allocating more than this may result in poor performance or may deterministically run out of memory.
 
+## DRM properties
+
+`wgpu::FeatureName:AdapterPropertiesDRM`, currently only available on Vulkan (but could be added on OpenGL / ES), allows querying Linux DRM information about the adapter.
+
+`wgpu::AdapterPropertiesDRM` may be chained on `wgpu::AdapterInfo` in a call to `wgpu::Adapter::GetInfo` or `wgpu::Device::GetAdapterInfo` in order to query DRM information on the adapter.
 
 ## D3D
 

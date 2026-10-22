@@ -5,8 +5,8 @@
 #include "services/network/public/cpp/permissions_policy/permissions_policy.h"
 
 #include <optional>
-#include <unordered_set>
 
+#include "base/containers/flat_set.h"
 #include "base/feature_list.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/gtest_util.h"
@@ -3323,7 +3323,7 @@ class DeprecateUnloadTest : public PermissionsPolicyTest {
 TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedHosts_Empty) {
   // Make sure the default is the empty string.
   ASSERT_EQ(network::features::kDeprecateUnloadAllowlist.Get(), "");
-  EXPECT_EQ(std::unordered_set<std::string>({}),
+  EXPECT_EQ(base::flat_set<std::string>({}),
             network::UnloadDeprecationAllowedHosts());
 }
 
@@ -3334,7 +3334,7 @@ TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedHosts_Simple) {
                                 /*bucket=*/std::nullopt,
                                 /*origin_allowlist=*/"testing1,testing2");
 
-  EXPECT_EQ(std::unordered_set<std::string>({"testing1", "testing2"}),
+  EXPECT_EQ(base::flat_set<std::string>({"testing1", "testing2"}),
             network::UnloadDeprecationAllowedHosts());
 }
 
@@ -3346,7 +3346,7 @@ TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedHosts_Messy) {
       /*bucket=*/std::nullopt,
       /*origin_allowlist=*/"testing1,, testing2,testing1");
 
-  EXPECT_EQ(std::unordered_set<std::string>({"testing1", "testing2"}),
+  EXPECT_EQ(base::flat_set<std::string>({"testing1", "testing2"}),
             network::UnloadDeprecationAllowedHosts());
 }
 
@@ -3435,12 +3435,28 @@ TEST_F(DeprecateUnloadTest, UnloadDeprecationAllowedForOrigin_100Percent) {
 }
 
 // When the rollout is at 0% with an allowlist, no host should be allowed,
-// including the one on the list.
+// except the ones on the list.
 TEST_F(DeprecateUnloadTest,
        UnloadDeprecationAllowedForOrigin_0PercentAndAllowList) {
   base::test::ScopedFeatureList feature_list;
   EnableDeprecateUnloadFeatures(feature_list, /*percent=*/0,
                                 /*bucket=*/0,
+                                /*origin_allowlist=*/http_origin1_.host());
+  EXPECT_TRUE(network::UnloadDeprecationAllowedForOrigin(http_origin1_));
+  EXPECT_TRUE(network::UnloadDeprecationAllowedForOrigin(
+      http_origin1_.DeriveNewOpaqueOrigin()));
+  // http_origin2 is not on the allow list.
+  EXPECT_FALSE(network::UnloadDeprecationAllowedForOrigin(http_origin2_));
+}
+
+// When the rollout is at 0% with an allowlist, no host should be allowed,
+// except the ones on the list. The absence of a bucket should make no
+// difference.
+TEST_F(DeprecateUnloadTest,
+       UnloadDeprecationAllowedForOrigin_0PercentAndAllowListWithoutBucket) {
+  base::test::ScopedFeatureList feature_list;
+  EnableDeprecateUnloadFeatures(feature_list, /*percent=*/0,
+                                /*bucket=*/std::nullopt,
                                 /*origin_allowlist=*/http_origin1_.host());
   EXPECT_TRUE(network::UnloadDeprecationAllowedForOrigin(http_origin1_));
   EXPECT_TRUE(network::UnloadDeprecationAllowedForOrigin(

@@ -52,7 +52,6 @@ class GLSurface;
 }  // namespace gl
 
 namespace viz {
-class MetalContextProvider;
 class VulkanContextProvider;
 }  // namespace viz
 
@@ -68,6 +67,7 @@ class GpuDriverBugWorkarounds;
 class GpuProcessShmCount;
 class ServiceTransferCache;
 class GraphiteSharedContext;
+struct GpuFeatureInfo;
 
 namespace gles2 {
 class FeatureInfo;
@@ -110,7 +110,6 @@ class GPU_GLES2_EXPORT SharedContextState
       ContextLostCallback context_lost_callback,
       GrContextType gr_context_type,
       viz::VulkanContextProvider* vulkan_context_provider = nullptr,
-      viz::MetalContextProvider* metal_context_provider = nullptr,
       DawnContextProvider* dawn_context_provider = nullptr,
       scoped_refptr<gpu::MemoryTracker::Observer> peak_memory_monitor = nullptr,
       bool direct_rendering_display_compositor_enabled = false,
@@ -135,7 +134,6 @@ class GPU_GLES2_EXPORT SharedContextState
     return gr_context_type_ == GrContextType::kVulkan;
   }
   bool IsGraphiteDawn() const;
-  bool IsGraphiteMetal() const;
   bool IsGraphiteDawnMetal() const;
   bool IsGraphiteDawnD3D() const;
   bool IsGraphiteDawnD3D11() const;
@@ -143,7 +141,9 @@ class GPU_GLES2_EXPORT SharedContextState
   bool IsGraphiteDawnVulkanSwiftShader() const;
 
   bool InitializeGL(const GpuPreferences& gpu_preferences,
-                    scoped_refptr<gles2::FeatureInfo> feature_info);
+                    const GpuDriverBugWorkarounds& gpu_driver_bug_workarounds,
+                    const GpuFeatureInfo& gpu_feature_info);
+
   bool IsGLInitialized() const { return !!feature_info_; }
 
   void FlushAndSubmit(bool sync_to_cpu);
@@ -183,9 +183,6 @@ class GPU_GLES2_EXPORT SharedContextState
   viz::VulkanContextProvider* vk_context_provider() const {
     return vk_context_provider_;
   }
-  viz::MetalContextProvider* metal_context_provider() const {
-    return metal_context_provider_;
-  }
   DawnContextProvider* dawn_context_provider() const {
     return dawn_context_provider_;
   }
@@ -201,6 +198,14 @@ class GPU_GLES2_EXPORT SharedContextState
   // Graphite recorder for Viz compositor thread, used by SkiaOutputSurfaceImpl.
   skgpu::graphite::Recorder* viz_compositor_graphite_recorder() const {
     return viz_compositor_graphite_recorder_.get();
+  }
+  // Returns the Graphite cache controller for the Viz compositor thread.
+  // This is a weak pointer that is invalidated and dereferenced on the Viz
+  // compositor thread. Returned as a pointer to the WeakPtr so that the caller
+  // can create a new cache controller if needed.
+  base::WeakPtr<raster::GraphiteCacheController>*
+  viz_compositor_graphite_cache_controller_weak_ptr() {
+    return &viz_compositor_graphite_cache_controller_;
   }
   GrContextType gr_context_type() const { return gr_context_type_; }
   // Handles Skia-reported shader compilation errors.
@@ -300,12 +305,16 @@ class GPU_GLES2_EXPORT SharedContextState
  private:
   friend class base::RefCounted<SharedContextState>;
   friend class raster::RasterDecoderTestBase;
+  FRIEND_TEST_ALL_PREFIXES(SharedContextStateTest, InitFailsIfLostContext);
   FRIEND_TEST_ALL_PREFIXES(SharedContextStateTest,
                            GLOptionsProviderSetsCustomOptions);
   FRIEND_TEST_ALL_PREFIXES(SharedContextStateTest,
                            VulkanOptionsProviderSetsCustomOptions);
 
   ~SharedContextState() override;
+
+  bool InitializeGLWithFeatureInfo(
+      scoped_refptr<gles2::FeatureInfo> feature_info);
 
   bool InitializeGanesh(
       const GpuPreferences& gpu_preferences,
@@ -352,7 +361,6 @@ class GPU_GLES2_EXPORT SharedContextState
   scoped_refptr<MemoryTracker> memory_tracker_;
   gpu::MemoryTypeTracker memory_type_tracker_;
   const raw_ptr<viz::VulkanContextProvider> vk_context_provider_ = nullptr;
-  const raw_ptr<viz::MetalContextProvider> metal_context_provider_ = nullptr;
   const raw_ptr<DawnContextProvider> dawn_context_provider_ = nullptr;
   raw_ptr<const GrContextOptionsProvider> gr_context_options_provider_ =
       nullptr;
@@ -414,6 +422,12 @@ class GPU_GLES2_EXPORT SharedContextState
   // |gpu_main_graphite_recorder_|.
   scoped_refptr<raster::GraphiteCacheController>
       gpu_main_graphite_cache_controller_;
+
+  // The graphite cache controller for |viz_compositor_graphite_recorder_|.
+  // Held as a weak pointer that is invalidated and dereferenced on the Viz
+  // compositor thread.
+  base::WeakPtr<raster::GraphiteCacheController>
+      viz_compositor_graphite_cache_controller_;
 
   std::optional<int> max_texture_size_;
 

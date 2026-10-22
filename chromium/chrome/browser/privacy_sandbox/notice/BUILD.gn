@@ -24,6 +24,7 @@ source_set("core") {
     "notice_storage.cc",
   ]
   public = [
+    "deprecated_notices.h",
     "notice_model.h",
     "notice_storage.h",
   ]
@@ -52,7 +53,9 @@ source_set("interfaces") {
 
 source_set("catalog") {
   sources = [ "notice_catalog.cc" ]
-  public = [ "notice_catalog.h" ]
+  public = [
+    "notice_catalog.h",
+  ]
   deps = [
     ":core",
     ":notice_definitions",
@@ -212,10 +215,6 @@ source_set("unit_tests") {
     sources += [ "desktop_view_manager_unittest.cc" ]
     deps += [ ":desktop_view_manager" ]
   }
-
-  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-  # enable the diagnostic by removing this line.
-  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("browser_tests") {

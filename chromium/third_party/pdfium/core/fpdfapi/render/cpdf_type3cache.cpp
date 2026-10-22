@@ -164,8 +164,5 @@ std::unique_ptr<CFX_GlyphBitmap> CPDF_Type3Cache::RenderGlyph(
   if (!pResBitmap) {
     return nullptr;
   }
-
-  auto pGlyph = std::make_unique<CFX_GlyphBitmap>(left, -top);
-  pGlyph->GetBitmap()->TakeOver(std::move(pResBitmap));
-  return pGlyph;
+  return std::make_unique<CFX_GlyphBitmap>(left, -top, std::move(pResBitmap));
 }

@@ -6,6 +6,7 @@
 
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "discovery/dnssd/impl/constants.h"
@@ -145,7 +146,7 @@ DomainName GetDomainName(const InstanceKey& key) {
 
 DomainName GetDomainName(const MdnsRecord& record) {
   return IsPtrRecord(record)
-             ? absl::get<PtrRecordRdata>(record.rdata()).ptr_domain()
+             ? std::get<PtrRecordRdata>(record.rdata()).ptr_domain()
              : record.name();
 }
 

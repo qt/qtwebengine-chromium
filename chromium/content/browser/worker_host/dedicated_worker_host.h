@@ -16,7 +16,9 @@
 #include "content/browser/buckets/bucket_context.h"
 #include "content/browser/locks/lock_manager.h"
 #include "content/browser/renderer_host/code_cache_host_impl.h"
+#include "content/browser/renderer_host/policy_container_host.h"
 #include "content/browser/security/dip/document_isolation_policy_reporter.h"
+#include "content/browser/worker_host/worker_script_fetcher.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/dedicated_worker_creator.h"
 #include "content/public/browser/global_routing_id.h"
@@ -102,6 +104,9 @@ class CONTENT_EXPORT DedicatedWorkerHost final
   //   must be specified.
   // - `creator_client_security_state` specifies the client security state of
   //   the creator frame or worker. It must not be nullptr.
+  // - `creator_policies` specifies the security policies of the creator.
+  // - `creator_network_restrictions_id` specifies the network restrictions of
+  //    the creator as per its connection allowlists.
   DedicatedWorkerHost(
       DedicatedWorkerServiceImpl* service,
       const blink::DedicatedWorkerToken& token,
@@ -109,10 +114,14 @@ class CONTENT_EXPORT DedicatedWorkerHost final
       DedicatedWorkerCreator creator,
       GlobalRenderFrameHostId ancestor_render_frame_host_id,
       const blink::StorageKey& creator_storage_key,
+      const blink::StorageKey& worker_storage_key,
       const url::Origin& renderer_origin,
       const net::IsolationInfo& isolation_info,
       network::mojom::ClientSecurityStatePtr creator_client_security_state,
+      const PolicyContainerPolicies& creator_policies,
       base::WeakPtr<CrossOriginEmbedderPolicyReporter> creator_coep_reporter,
+      const std::optional<base::UnguessableToken>&
+          creator_network_restrictions_id,
       mojo::PendingReceiver<blink::mojom::DedicatedWorkerHost> host,
       net::StorageAccessApiStatus storage_access_api_status);
 
@@ -126,13 +135,28 @@ class CONTENT_EXPORT DedicatedWorkerHost final
 
   const blink::DedicatedWorkerToken& GetToken() const { return token_; }
   RenderProcessHost* GetProcessHost() const { return worker_process_host_; }
-  const blink::StorageKey& GetStorageKey() const { return storage_key_; }
+  const blink::StorageKey& GetWorkerStorageKey() const {
+    return worker_storage_key_;
+  }
   const GlobalRenderFrameHostId& GetAncestorRenderFrameHostId() const {
     return ancestor_render_frame_host_id_;
   }
   DedicatedWorkerCreator GetCreator() const { return creator_; }
   const std::optional<GURL>& GetFinalResponseURL() const {
     return final_response_url_;
+  }
+
+  const base::UnguessableToken& network_restrictions_id() const {
+    return network_restrictions_id_;
+  }
+
+  const std::optional<base::UnguessableToken>& creator_network_restrictions_id()
+      const {
+    return creator_network_restrictions_id_;
+  }
+
+  const PolicyContainerPolicies& creator_policies() const {
+    return creator_policies_;
   }
 
   void CreateContentSecurityNotifier(
@@ -344,16 +368,16 @@ class CONTENT_EXPORT DedicatedWorkerHost final
   const url::Origin creator_origin_;
 
   // The origin used by this dedicated worker on the renderer side. This will
-  // almost always be the same as `storage_key_`'s origin, except in the case of
-  // data: URL workers, as described in the linked bug.
-  // TODO(crbug.com/40051700): Make the storage key's origin always match this,
-  // so that we can stop tracking this separately.
+  // almost always be the same as `worker_storage_key_`'s origin, except in the
+  // case of data: URL workers when the feature is disabled.
+  // TODO(crbug.com/40051700): Remove this when the feature is enabled by
+  // default.
   const url::Origin renderer_origin_;
 
   // The storage key of this worker. This is used for storage partitioning and
   // for retrieving the origin of this worker
   // (https://html.spec.whatwg.org/C/#concept-settings-object-origin).
-  const blink::StorageKey storage_key_;
+  const blink::StorageKey worker_storage_key_;
 
   // The IsolationInfo associated with this worker. Same as that of the
   // frame or the worker that created this worker.
@@ -440,6 +464,16 @@ class CONTENT_EXPORT DedicatedWorkerHost final
   // been granted storage access when the dedicated worker was created, which
   // also grants storage access to the dedicated worker.
   net::StorageAccessApiStatus storage_access_api_status_;
+
+  // Nonce used to restrict network traffic for this worker.
+  const base::UnguessableToken network_restrictions_id_;
+
+  // Nonce used to restrict network traffic for the main script fetch of this
+  // worker.
+  const std::optional<base::UnguessableToken> creator_network_restrictions_id_;
+
+  // The policies of the creator context. Used for inheritance.
+  const PolicyContainerPolicies creator_policies_;
 
   base::WeakPtrFactory<DedicatedWorkerHost> weak_factory_{this};
 };

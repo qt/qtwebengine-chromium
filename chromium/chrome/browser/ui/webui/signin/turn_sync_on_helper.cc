@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/check.h"
-#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
@@ -183,9 +182,8 @@ TurnSyncOnHelper::TurnSyncOnHelper(
 
   // This class should be unreachable if `kReplaceSyncPromosWithSignInPromos` is
   // enabled.
-  CHECK(
-      !base::FeatureList::IsEnabled(syncer::kReplaceSyncPromosWithSignInPromos),
-      base::NotFatalUntil::M144);
+  CHECK(!syncer::IsReplaceSyncPromosWithSignInPromosEnabled(),
+        base::NotFatalUntil::M144);
 
   // Cancel any existing helper.
   AttachToProfile();
@@ -575,8 +573,7 @@ void TurnSyncOnHelper::FinishSyncSetupAndDelete(
                                                  signin::ConsentLevel::kSync,
                                                  signin_access_point_);
       if (auto* sync_service = GetSyncService()) {
-        sync_service->GetUserSettings()->SetInitialSyncFeatureSetupComplete(
-            syncer::SyncFirstSetupCompleteSource::BASIC_FLOW);
+        sync_service->GetUserSettings()->SetInitialSyncFeatureSetupComplete();
       }
       if (consent_service) {
         consent_service->SetUrlKeyedAnonymizedDataCollectionEnabled(true);
@@ -656,7 +653,8 @@ void TurnSyncOnHelper::AbortAndDelete() {
   if (!initial_primary_account_.empty() &&
       identity_manager_->HasAccountWithRefreshToken(initial_primary_account_)) {
     identity_manager_->GetPrimaryAccountMutator()->SetPrimaryAccount(
-        initial_primary_account_, signin::ConsentLevel::kSignin);
+        initial_primary_account_, signin::ConsentLevel::kSignin,
+        signin_metrics::AccessPoint::kWebSignin);
   }
 
   switch (signin_aborted_mode_) {

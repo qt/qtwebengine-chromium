@@ -38,7 +38,6 @@
 #include "dawn/native/ImmediateConstantsLayout.h"
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/Pipeline.h"
-
 #include "dawn/native/dawn_platform.h"
 
 namespace dawn::native {
@@ -134,16 +133,17 @@ class RenderPipelineBase : public PipelineBase,
     uint32_t GetSampleCount() const;
     uint32_t GetSampleMask() const;
     bool IsAlphaToCoverageEnabled() const;
+    bool UseSampleRateShading() const;
 
     // Shader builtin getters
     bool WritesDepth() const;
     bool WritesStencil() const;
     bool UsesFragDepth() const;
     bool UsesFragPosition() const;
-    bool IsFragMultiSampled() const;
     bool UsesSampleIndex() const;
     bool UsesVertexIndex() const;
     bool UsesInstanceIndex() const;
+    bool UsesFramebufferFetch() const;
 
     const AttachmentState* GetAttachmentState() const;
 
@@ -161,6 +161,10 @@ class RenderPipelineBase : public PipelineBase,
 
   private:
     RenderPipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag, StringView label);
+
+    MaybeError InitializeWithShaders() final;
+    // Overridden by backends to perform their initialization steps.
+    virtual MaybeError InitializeImpl() = 0;
 
     // Vertex state
     uint32_t mVertexBufferCount;
@@ -184,10 +188,11 @@ class RenderPipelineBase : public PipelineBase,
     bool mWritesStencil = false;
     bool mUsesFragDepth = false;
     bool mUsesFragPosition = false;
-    bool mIsFragMultiSampled = false;
+    bool mUseSampleRateShading = false;
     bool mUsesSampleIndex = false;
     bool mUsesVertexIndex = false;
     bool mUsesInstanceIndex = false;
+    bool mUsesFramebufferFetch = false;
 };
 
 }  // namespace dawn::native

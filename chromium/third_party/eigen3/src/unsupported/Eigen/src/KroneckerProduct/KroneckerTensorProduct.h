@@ -70,7 +70,7 @@ class KroneckerProductBase : public ReturnByValue<Derived> {
  *
  * This class is the return value of kroneckerProduct(MatrixBase,
  * MatrixBase). Use the function rather than construct this class
- * directly to avoid specifying template prarameters.
+ * directly to avoid specifying template parameters.
  *
  * \tparam Lhs  Type of the left-hand side, a matrix expression.
  * \tparam Rhs  Type of the rignt-hand side, a matrix expression.
@@ -101,7 +101,7 @@ class KroneckerProduct : public KroneckerProductBase<KroneckerProduct<Lhs, Rhs> 
  *
  * This class is the return value of kroneckerProduct(EigenBase,
  * EigenBase). Use the function rather than construct this class
- * directly to avoid specifying template prarameters.
+ * directly to avoid specifying template parameters.
  *
  * \tparam Lhs  Type of the left-hand side, a matrix expression.
  * \tparam Rhs  Type of the rignt-hand side, a matrix expression.
@@ -153,7 +153,7 @@ void KroneckerProductSparse<Lhs, Rhs>::evalTo(Dest& dst) const {
 
   // compute number of non-zeros per innervectors of dst
   {
-    // TODO VectorXi is not necessarily big enough!
+    // TODO: VectorXi is not necessarily big enough!
     VectorXi nnzA = VectorXi::Zero(Dest::IsRowMajor ? m_A.rows() : m_A.cols());
     for (Index kA = 0; kA < m_A.outerSize(); ++kA)
       for (LhsInnerIterator itA(lhs1, kA); itA; ++itA) nnzA(Dest::IsRowMajor ? itA.row() : itA.col())++;

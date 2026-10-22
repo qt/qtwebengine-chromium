@@ -27,7 +27,6 @@ type MessageIds = 'doubleSlashInImportPath'|'missingExtension'|'invalidRelativeU
     'incorrectSameNamespaceTestImport';
 
 const FRONT_END_DIRECTORY = path.join(
-    // @ts-expect-error
     import.meta.dirname,
     '..',
     '..',
@@ -36,7 +35,6 @@ const FRONT_END_DIRECTORY = path.join(
 );
 const THIRD_PARTY_DIRECTORY = path.join(FRONT_END_DIRECTORY, 'third_party');
 const INSPECTOR_OVERLAY_DIRECTORY = path.join(
-    // @ts-expect-error
     import.meta.dirname,
     '..',
     '..',

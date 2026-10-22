@@ -20,11 +20,13 @@
 #include "error_message/error_strings.h"
 #include "utils/math_utils.h"
 
+using vvl::Func;
+
 namespace syncval {
 
 constexpr VkAccessFlags2 kAllAccesses = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
 
-static const char *string_SyncHazard(SyncHazard hazard) {
+static const char* string_SyncHazard(SyncHazard hazard) {
     switch (hazard) {
         case SyncHazard::NONE:
             return "NONE";
@@ -65,14 +67,14 @@ static bool IsHazardVsRead(SyncHazard hazard) {
     }
 }
 
-static auto SortKeyValues(const std::vector<ReportProperties::NameValue> &name_values) {
+static auto SortKeyValues(const std::vector<ReportProperties::NameValue>& name_values) {
     const std::vector<std::string> std_properties = {
         kPropertyMessageType,   kPropertyHazardType, kPropertyAccess,       kPropertyPriorAccess, kPropertyReadBarriers,
         kPropertyWriteBarriers, kPropertyCommand,    kPropertyPriorCommand, kPropertyDebugRegion, kPropertyPriorDebugRegion};
     const uint32_t other_properties_order = uint32_t(std_properties.size());
     const uint32_t debug_properties_order = other_properties_order + 1;
 
-    auto get_sort_order = [&](const std::string &key) -> uint32_t {
+    auto get_sort_order = [&](const std::string& key) -> uint32_t {
         // at first put standard properties
         auto std_it = std::find(std_properties.begin(), std_properties.end(), key);
         if (std_it != std_properties.end()) {
@@ -80,14 +82,14 @@ static auto SortKeyValues(const std::vector<ReportProperties::NameValue> &name_v
             return std_order;
         }
         // debug properties are at the end
-        const char *debug_properties[] = {kPropertySeqNo, kPropertyResetNo, kPropertyBatchTag};
+        const char* debug_properties[] = {kPropertySeqNo, kPropertyResetNo, kPropertyBatchTag};
         if (IsValueIn(key, debug_properties)) {
             return debug_properties_order;
         }
         return other_properties_order;
     };
     auto sorted = name_values;
-    std::stable_sort(sorted.begin(), sorted.end(), [&get_sort_order](const auto &a, const auto &b) {
+    std::stable_sort(sorted.begin(), sorted.end(), [&get_sort_order](const auto& a, const auto& b) {
         const uint32_t a_order = get_sort_order(a.name);
         const uint32_t b_order = get_sort_order(b.name);
         // Sort ordering groups
@@ -101,7 +103,7 @@ static auto SortKeyValues(const std::vector<ReportProperties::NameValue> &name_v
     return sorted;
 }
 
-static std::string FormatAccessProperty(const SyncAccessInfo &access) {
+static std::string FormatAccessProperty(const SyncAccessInfo& access) {
     constexpr std::array special_accesses = {SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_ACQUIRE_READ_SYNCVAL,
                                              SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_PRESENTED_SYNCVAL, SYNC_IMAGE_LAYOUT_TRANSITION,
                                              SYNC_QUEUE_FAMILY_OWNERSHIP_TRANSFER};
@@ -117,11 +119,11 @@ static std::string FormatAccessProperty(const SyncAccessInfo &access) {
     return ss.str();
 }
 
-static void GetAccessProperties(const HazardResult &hazard_result, const SyncValidator &device, VkQueueFlags allowed_queue_flags,
-                                ReportProperties &properties) {
-    const HazardResult::HazardState &hazard = hazard_result.State();
-    const SyncAccessInfo &access_info = GetAccessInfo(hazard.access_index);
-    const SyncAccessInfo &prior_access_info = GetAccessInfo(hazard.prior_access_index);
+static void GetAccessProperties(const HazardResult& hazard_result, const SyncValidator& device, VkQueueFlags allowed_queue_flags,
+                                ReportProperties& properties) {
+    const HazardResult::HazardState& hazard = hazard_result.State();
+    const SyncAccessInfo& access_info = GetAccessInfo(hazard.access_index);
+    const SyncAccessInfo& prior_access_info = GetAccessInfo(hazard.prior_access_index);
 
     if (!hazard.recorded_access.get()) {
         properties.Add(kPropertyAccess, FormatAccessProperty(access_info));
@@ -139,7 +141,7 @@ static void GetAccessProperties(const HazardResult &hazard_result, const SyncVal
     }
 }
 
-static void GetPriorUsageProperties(const ResourceUsageInfo &prior_usage_info, ReportProperties &properties) {
+static void GetPriorUsageProperties(const ResourceUsageInfo& prior_usage_info, ReportProperties& properties) {
     properties.Add(kPropertyPriorCommand, vvl::String(prior_usage_info.command));
 
     if (!prior_usage_info.debug_region_name.empty()) {
@@ -163,7 +165,7 @@ static void GetPriorUsageProperties(const ResourceUsageInfo &prior_usage_info, R
 
 static VkPipelineStageFlags2 GetAllowedStages(VkQueueFlags queue_flags, VkPipelineStageFlagBits2 disabled_stages) {
     VkPipelineStageFlags2 allowed_stages = 0;
-    for (const auto &[queue_flag, stages] : syncAllCommandStagesByQueueFlags()) {
+    for (const auto& [queue_flag, stages] : syncAllCommandStagesByQueueFlags()) {
         if (queue_flag & queue_flags) {
             allowed_stages |= (stages & ~disabled_stages);
         }
@@ -171,12 +173,12 @@ static VkPipelineStageFlags2 GetAllowedStages(VkQueueFlags queue_flags, VkPipeli
     return allowed_stages;
 }
 
-static SyncAccessFlags FilterSyncAccessesByAllowedVkStages(const SyncAccessFlags &accesses, VkPipelineStageFlags2 allowed_stages,
+static SyncAccessFlags FilterSyncAccessesByAllowedVkStages(const SyncAccessFlags& accesses, VkPipelineStageFlags2 allowed_stages,
                                                            VkAccessFlags2 disabled_accesses) {
     SyncAccessFlags filtered_accesses = accesses;
-    const auto &access_infos = GetSyncAccessInfos();
+    const auto& access_infos = GetSyncAccessInfos();
     for (size_t i = 0; i < access_infos.size(); i++) {
-        const SyncAccessInfo &access_info = access_infos[i];
+        const SyncAccessInfo& access_info = access_infos[i];
         const bool is_stage_allowed = (access_info.stage_mask & allowed_stages) != 0;
         const bool is_access_allowed = (access_info.access_mask & disabled_accesses) == 0;
         if (!is_stage_allowed || !is_access_allowed) {
@@ -186,11 +188,11 @@ static SyncAccessFlags FilterSyncAccessesByAllowedVkStages(const SyncAccessFlags
     return filtered_accesses;
 }
 
-static SyncAccessFlags FilterSyncAccessesByAllowedVkAccesses(const SyncAccessFlags &accesses, VkAccessFlags2 allowed_vk_accesses) {
+static SyncAccessFlags FilterSyncAccessesByAllowedVkAccesses(const SyncAccessFlags& accesses, VkAccessFlags2 allowed_vk_accesses) {
     SyncAccessFlags filtered_accesses = accesses;
-    const auto &access_infos = GetSyncAccessInfos();
+    const auto& access_infos = GetSyncAccessInfos();
     for (size_t i = 0; i < access_infos.size(); i++) {
-        const SyncAccessInfo &access_info = access_infos[i];
+        const SyncAccessInfo& access_info = access_infos[i];
         if (filtered_accesses[i]) {
             const bool is_access_allowed = (access_info.access_mask & allowed_vk_accesses) != 0;
             if (!is_access_allowed) {
@@ -202,7 +204,7 @@ static SyncAccessFlags FilterSyncAccessesByAllowedVkAccesses(const SyncAccessFla
 }
 
 // If mask contains ALL of expand_bits, then clear these bits and add a meta_mask
-static void ReplaceExpandBitsWithMetaMask(VkFlags64 &mask, VkFlags64 expand_bits, VkFlags64 meta_mask) {
+static void ReplaceExpandBitsWithMetaMask(VkFlags64& mask, VkFlags64 expand_bits, VkFlags64 meta_mask) {
     if (expand_bits && (mask & expand_bits) == expand_bits) {
         mask &= ~expand_bits;
         mask |= meta_mask;
@@ -210,7 +212,7 @@ static void ReplaceExpandBitsWithMetaMask(VkFlags64 &mask, VkFlags64 expand_bits
 }
 
 static std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSyncAccessesToCompactVkForm(
-    const SyncAccessFlags &sync_accesses, const SyncValidator &device, VkQueueFlags allowed_queue_flags) {
+    const SyncAccessFlags& sync_accesses, const SyncValidator& device, VkQueueFlags allowed_queue_flags) {
     if (sync_accesses.none()) {
         return {};
     }
@@ -246,7 +248,7 @@ static std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSync
         } else {
             for (size_t i = 0; i < filtered_accesses.size(); i++) {
                 if (filtered_accesses[i]) {
-                    const SyncAccessInfo &info = GetSyncAccessInfos()[i];
+                    const SyncAccessInfo& info = GetSyncAccessInfos()[i];
                     stage_to_accesses[info.stage_mask] |= info.access_mask;
                 }
             }
@@ -264,7 +266,7 @@ static std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSync
     VkPipelineStageFlags2 stages_with_all_supported_accesses = 0;
     VkAccessFlags2 all_accesses = 0;  // accesses for the above stages
 
-    for (const auto &entry : accesses_to_stages) {
+    for (const auto& entry : accesses_to_stages) {
         VkAccessFlags2 accesses = entry.first;
         VkPipelineStageFlags2 stages = entry.second;
 
@@ -297,7 +299,7 @@ static std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSync
         result.emplace_back(stages, accesses);
     }
     if (stages_with_all_supported_accesses) {
-        if (IsSingleBitSet(stages_with_all_supported_accesses) && GetBitSetCount(all_accesses) <= 2) {
+        if (IsSingleBitSet(stages_with_all_supported_accesses) && CountSetBits(all_accesses) <= 2) {
             // For simple configurations (1 stage and at most 2 accesses) don't use ALL accesses shortcut
             result.emplace_back(stages_with_all_supported_accesses, all_accesses);
         } else {
@@ -312,13 +314,13 @@ static std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSync
 // Given that access is hazardous, we check if at least stage or access part of it is covered
 // by the synchronization. If applied synchronization covers at least stage or access component
 // then we can provide more precise message by focusing on the other component.
-static std::pair<bool, bool> GetPartialProtectedInfo(const SyncAccessInfo &access, const SyncAccessFlags &write_barriers,
-                                                     const CommandExecutionContext &context) {
+static std::pair<bool, bool> GetPartialProtectedInfo(const SyncAccessInfo& access, const SyncAccessFlags& write_barriers,
+                                                     const CommandExecutionContext& context) {
     const auto protected_stage_access_pairs =
         ConvertSyncAccessesToCompactVkForm(write_barriers, context.GetSyncState(), context.GetQueueFlags());
     bool is_stage_protected = false;
     bool is_access_protected = false;
-    for (const auto &protected_stage_access : protected_stage_access_pairs) {
+    for (const auto& protected_stage_access : protected_stage_access_pairs) {
         if (protected_stage_access.first & access.stage_mask) {
             is_stage_protected = true;
         }
@@ -329,18 +331,18 @@ static std::pair<bool, bool> GetPartialProtectedInfo(const SyncAccessInfo &acces
     return std::make_pair(is_stage_protected, is_access_protected);
 }
 
-static void ReportLayoutTransitionSynchronizationInsight(std::ostringstream &ss, bool needs_execution_dependency,
+static void ReportLayoutTransitionSynchronizationInsight(std::ostringstream& ss, bool needs_execution_dependency,
                                                          VkPipelineStageFlags2 read_barriers = 0) {
     // TODO: analyse exact form of API is used (render pass layout transition, image barrier layout transition) and
     // print instructions for specific situation. Now we describe all possibilities.
     const std::string barrier_src_stage = string_VkPipelineStageFlags2(read_barriers);
     if (needs_execution_dependency) {
-        ss << "\nVulkan insight: If the layout transition is done via an image barrier, consider including " << barrier_src_stage
+        ss << "\nHint: If the layout transition is done via an image barrier, consider including " << barrier_src_stage
            << " in srcStageMask. If the transition occurs as part of the render pass begin operation, consider specifying an "
               "external subpass dependency (VK_SUBPASS_EXTERNAL) with srcStageMask that includes "
            << barrier_src_stage << ", or perform the transition in a separate image barrier before the render pass begins.";
     } else {
-        ss << "\nVulkan insight: If the layout transition is done via an image barrier, ensure srcStageMask and srcAccessMask "
+        ss << "\nHint: If the layout transition is done via an image barrier, ensure srcStageMask and srcAccessMask "
               "synchronize with the accesses mentioned above. If the transition occurs as part of the render pass begin operation, "
               "consider specifying an external subpass dependency (VK_SUBPASS_EXTERNAL) with srcStageMask and srcAccessMask that "
               "synchronize with those accesses, or perform the transition in a separate image barrier before the render pass "
@@ -348,10 +350,10 @@ static void ReportLayoutTransitionSynchronizationInsight(std::ostringstream &ss,
     }
 }
 
-static void ReportAcquireImageSynchronizationInsight(std::ostringstream &ss) {
-    ss << "\nVulkan insight: If a submit command waits on a semaphore signaled by AcquireNextImage command at specific pipeline "
-          "stages, this error can occur if the layout transition barrier does not create an execution dependency with those stages "
-          "(for example, by including them in the barrier's srcStageMask).";
+static void ReportAcquireImageSynchronizationInsight(std::ostringstream& ss) {
+    ss << "\nHint: If a submit command waits on a semaphore signaled by AcquireNextImage command at specific pipeline stages, this "
+          "error can occur if the layout transition barrier does not create an execution dependency with those stages (for "
+          "example, by including them in the barrier's srcStageMask).";
 }
 
 void ReportProperties::Add(std::string_view property_name, std::string_view value) {
@@ -370,7 +372,7 @@ std::string ReportProperties::FormatExtraPropertiesSection() const {
     std::ostringstream ss;
     ss << "[Extra properties]\n";
     bool first = true;
-    for (const NameValue &property : sorted) {
+    for (const NameValue& property : sorted) {
         if (!first) {
             ss << "\n";
         }
@@ -380,8 +382,8 @@ std::string ReportProperties::FormatExtraPropertiesSection() const {
     return ss.str();
 }
 
-ReportProperties GetErrorMessageProperties(const HazardResult &hazard, const CommandExecutionContext &context, vvl::Func command,
-                                           const char *message_type, const AdditionalMessageInfo &additional_info) {
+ReportProperties GetErrorMessageProperties(const HazardResult& hazard, const CommandExecutionContext& context, vvl::Func command,
+                                           const char* message_type, const AdditionalMessageInfo& additional_info) {
     ReportProperties properties;
     properties.Add(kPropertyMessageType, message_type);
     properties.Add(kPropertyHazardType, string_SyncHazard(hazard.Hazard()));
@@ -393,19 +395,19 @@ ReportProperties GetErrorMessageProperties(const HazardResult &hazard, const Com
         ResourceUsageInfo prior_usage_info = context.GetResourceUsageInfo(hazard.TagEx());
         GetPriorUsageProperties(prior_usage_info, properties);
     }
-    for (const auto &property : additional_info.properties.name_values) {
+    for (const auto& property : additional_info.properties.name_values) {
         properties.Add(property.name, property.value);
     }
     return properties;
 }
 
-std::string FormatErrorMessage(const HazardResult &hazard, const CommandExecutionContext &context, vvl::Func command,
-                               const std::string &resouce_description, const AdditionalMessageInfo &additional_info) {
+std::string FormatErrorMessage(const HazardResult& hazard, const CommandExecutionContext& context, vvl::Func command,
+                               const std::string& resouce_description, const AdditionalMessageInfo& additional_info) {
     const SyncHazard hazard_type = hazard.Hazard();
     const SyncHazardInfo hazard_info = GetSyncHazardInfo(hazard_type);
 
-    const SyncAccessInfo &access = GetAccessInfo(hazard.State().access_index);
-    const SyncAccessInfo &prior_access = GetAccessInfo(hazard.State().prior_access_index);
+    const SyncAccessInfo& access = GetAccessInfo(hazard.State().access_index);
+    const SyncAccessInfo& prior_access = GetAccessInfo(hazard.State().prior_access_index);
 
     const SyncAccessFlags write_barriers = hazard.State().access_state->GetWriteBarriers();
     VkPipelineStageFlags2 read_barriers = hazard.State().access_state->GetReadBarriers(hazard.State().prior_access_index);
@@ -436,30 +438,57 @@ std::string FormatErrorMessage(const HazardResult &hazard, const CommandExecutio
     }
     ss << " " << resouce_description << ", which was previously ";
     if (prior_access.access_index == SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_ACQUIRE_READ_SYNCVAL) {
-        ss << "accessed by ";
+        ss << "accessed ";
     } else if (hazard_info.IsPriorWrite()) {
         if (prior_access.access_index == SYNC_IMAGE_LAYOUT_TRANSITION) {
-            ss << "written during an image layout transition initiated by ";
+            ss << "written during an image layout transition initiated ";
         } else {
-            ss << "written by ";
+            ss << "written ";
         }
     } else {
-        ss << "read by ";
+        ss << "read ";
     }
     if (hazard.Tag() == kInvalidTag) {
-        // Invalid tag for prior access means the same command performed ILT before loadOp access
-        ss << "the same command";
+        // Invalid tag for prior access means the same command performed ILT before loadOp,
+        // resolve before ILT or ILT after storeOp.
+        ss << "by the same command";
     } else {
         const ResourceUsageInfo prior_usage_info = context.GetResourceUsageInfo(hazard.TagEx());
-        if (prior_usage_info.command == command) {
-            ss << "another ";
-        }
-        ss << vvl::String(prior_usage_info.command);
-        if (!prior_usage_info.debug_region_name.empty()) {
-            ss << "[" << prior_usage_info.debug_region_name << "]";
-        }
-        if (prior_usage_info.command == command) {
-            ss << " command";
+        const vvl::Func prior_command = prior_usage_info.command;
+        if (prior_usage_info.sub_command_type == SubCommandType::kLoadOp) {
+            if (prior_usage_info.subpass != vvl::kNoIndex32) {
+                ss << "at the beginning of subpass " << prior_usage_info.subpass << " ";
+            } else {
+                ss << "at the beginning of the render pass instance ";
+            }
+            ss << "(" << vvl::String(prior_command) << ") ";
+            ss << "by the attachment loadOp";
+        } else if (prior_usage_info.sub_command_type == SubCommandType::kStoreOp ||
+                   prior_usage_info.sub_command_type == SubCommandType::kResolveOp) {
+            if (prior_usage_info.subpass != vvl::kNoIndex32) {
+                ss << "at the end of subpass " << prior_usage_info.subpass << " ";
+            } else {
+                ss << "at the end of the render pass instance ";
+            }
+            ss << "(" << vvl::String(prior_command) << ") ";
+            if (prior_usage_info.sub_command_type == SubCommandType::kStoreOp) {
+                ss << "by the attachment storeOp";
+            } else {
+                assert(prior_usage_info.sub_command_type == SubCommandType::kResolveOp);
+                ss << "during resolve operation";
+            }
+        } else {
+            ss << "by ";
+            if (prior_usage_info.command == command) {
+                ss << "another ";
+            }
+            ss << vvl::String(prior_usage_info.command);
+            if (!prior_usage_info.debug_region_name.empty()) {
+                ss << "[" << prior_usage_info.debug_region_name << "]";
+            }
+            if (prior_usage_info.command == command) {
+                ss << " command";
+            }
         }
     }
     if (!additional_info.brief_description_end_text.empty()) {
@@ -475,10 +504,10 @@ std::string FormatErrorMessage(const HazardResult &hazard, const CommandExecutio
     // Synchronization information
     ss << "\n";
     if (missing_synchronization) {
-        const char *access_type = hazard_info.IsWrite() ? "write" : "read";
-        const char *prior_access_type = hazard_info.IsPriorWrite() ? "write" : "read";
+        const char* access_type = hazard_info.IsWrite() ? "write" : "read";
+        const char* prior_access_type = hazard_info.IsPriorWrite() ? "write" : "read";
 
-        auto get_special_access_name = [](SyncAccessIndex access) -> const char * {
+        auto get_special_access_name = [](SyncAccessIndex access) -> const char* {
             if (access == SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_ACQUIRE_READ_SYNCVAL) {
                 return "swapchain image acquire operation";
             } else if (access == SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_PRESENTED_SYNCVAL) {
@@ -492,7 +521,7 @@ std::string FormatErrorMessage(const HazardResult &hazard, const CommandExecutio
         };
 
         ss << "No sufficient synchronization is present to ensure that a ";
-        if (const char *special_access_name = get_special_access_name(access.access_index)) {
+        if (const char* special_access_name = get_special_access_name(access.access_index)) {
             ss << special_access_name;
         } else {
             assert(access.access_mask != VK_ACCESS_2_NONE);
@@ -502,7 +531,7 @@ std::string FormatErrorMessage(const HazardResult &hazard, const CommandExecutio
         }
 
         ss << " does not conflict with a prior ";
-        if (const char *special_access_name = get_special_access_name(prior_access.access_index)) {
+        if (const char* special_access_name = get_special_access_name(prior_access.access_index)) {
             ss << special_access_name;
         } else {
             assert(prior_access.access_mask != VK_ACCESS_2_NONE);
@@ -553,7 +582,21 @@ std::string FormatErrorMessage(const HazardResult &hazard, const CommandExecutio
 
     // Give a hint for WAR hazard
     if (IsValueIn(hazard_type, {WRITE_AFTER_READ, WRITE_RACING_READ, PRESENT_AFTER_READ})) {
-        ss << "\nVulkan insight: An execution dependency is sufficient to prevent this hazard.";
+        ss << "\nHint: An execution dependency is sufficient to prevent this hazard.";
+    }
+    // Give a hint about how to fix a layout transition hazard with the previous access.
+    // Skip async and special hazard types (consider WAR and WAW only)
+    if (IsValueIn(command, {Func::vkCmdPipelineBarrier, Func::vkCmdPipelineBarrier2, Func::vkCmdPipelineBarrier2KHR}) &&
+        IsValueIn(hazard_type, {WRITE_AFTER_READ, WRITE_AFTER_WRITE}) &&
+        prior_access.stage_mask != VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL) {
+        if (hazard_type == WRITE_AFTER_READ) {
+            ss << "\nHint: Ensure that srcStageMask includes " << string_VkPipelineStageFlagBits2(prior_access.stage_mask);
+        } else {
+            ss << "\nHint: Ensure that srcStageMask includes " << string_VkPipelineStageFlagBits2(prior_access.stage_mask)
+               << " and srcAccessMask includes " << string_VkAccessFlagBits2(prior_access.access_mask);
+        }
+        ss << ". The source side of the barrier protects layout transition writes from previous accesses, and the destination side "
+              "cannot introduce this specific hazard.";
     }
 
     if (!additional_info.message_end_text.empty()) {
@@ -562,7 +605,7 @@ std::string FormatErrorMessage(const HazardResult &hazard, const CommandExecutio
     return ss.str();
 }
 
-std::string FormatSyncAccesses(const SyncAccessFlags &sync_accesses, const SyncValidator &device, VkQueueFlags allowed_queue_flags,
+std::string FormatSyncAccesses(const SyncAccessFlags& sync_accesses, const SyncValidator& device, VkQueueFlags allowed_queue_flags,
                                bool format_as_extra_property) {
     const auto report_accesses = ConvertSyncAccessesToCompactVkForm(sync_accesses, device, allowed_queue_flags);
     if (report_accesses.empty()) {
@@ -570,7 +613,7 @@ std::string FormatSyncAccesses(const SyncAccessFlags &sync_accesses, const SyncV
     }
     std::ostringstream out;
     bool first = true;
-    for (const auto &[stages, accesses] : report_accesses) {
+    for (const auto& [stages, accesses] : report_accesses) {
         if (!first) {
             out << (format_as_extra_property ? ":" : ", ");
         }
@@ -592,7 +635,7 @@ std::string FormatSyncAccesses(const SyncAccessFlags &sync_accesses, const SyncV
     return out.str();
 }
 
-void FormatVideoPictureResouce(const Logger &logger, const VkVideoPictureResourceInfoKHR &video_picture, std::ostringstream &ss) {
+void FormatVideoPictureResouce(const Logger& logger, const VkVideoPictureResourceInfoKHR& video_picture, std::ostringstream& ss) {
     ss << "{";
     ss << logger.FormatHandle(video_picture.imageViewBinding);
     ss << ", codedOffset (" << string_VkOffset2D(video_picture.codedOffset) << ")";
@@ -601,28 +644,30 @@ void FormatVideoPictureResouce(const Logger &logger, const VkVideoPictureResourc
     ss << "}";
 }
 
-void FormatVideoQuantizationMap(const Logger &logger, const VkVideoEncodeQuantizationMapInfoKHR &quantization_map,
-                                std::ostringstream &ss) {
+void FormatVideoQuantizationMap(const Logger& logger, const VkVideoEncodeQuantizationMapInfoKHR& quantization_map,
+                                std::ostringstream& ss) {
     ss << "{";
     ss << logger.FormatHandle(quantization_map.quantizationMap);
     ss << ", quantizationMapExtent (" << string_VkExtent2D(quantization_map.quantizationMapExtent) << ")";
     ss << "}";
 }
 
-static ResourceUsageInfo GetResourceUsageInfoFromRecord(ResourceUsageTagEx tag_ex, const ResourceUsageRecord &record,
-                                                        const DebugNameProvider *debug_name_provider) {
+static ResourceUsageInfo GetResourceUsageInfoFromRecord(ResourceUsageTagEx tag_ex, const ResourceUsageRecord& record,
+                                                        const DebugNameProvider* debug_name_provider) {
     ResourceUsageInfo info;
     if (record.alt_usage) {
         info.command = record.alt_usage.GetCommand();
     } else {
         info.command = record.command;
         info.command_seq = record.seq_num;
+        info.sub_command_type = record.sub_command_type;
+        info.subpass = record.subpass;
         info.command_buffer_reset_count = record.reset_count;
 
         // Associated resource
         if (tag_ex.handle_index != vvl::kNoIndex32) {
-            auto &cb_context = SubState(*record.cb_state);
-            const auto &handle_records = cb_context.access_context.GetHandleRecords();
+            auto& cb_context = SubState(*record.cb_state);
+            const auto& handle_records = cb_context.access_context.GetHandleRecords();
 
             // Command buffer can be in inconsistent state due to unhandled core validation error (core validation is disabled).
             // In this case the goal is not to crash, no guarantees that reported information (handle index) makes sense.
@@ -642,7 +687,7 @@ static ResourceUsageInfo GetResourceUsageInfoFromRecord(ResourceUsageTagEx tag_e
 }
 
 ResourceUsageInfo CommandBufferAccessContext::GetResourceUsageInfo(ResourceUsageTagEx tag_ex) const {
-    const ResourceUsageRecord &record = (*access_log_)[tag_ex.tag];
+    const ResourceUsageRecord& record = (*access_log_)[tag_ex.tag];
     const auto debug_name_provider = (record.label_command_index == vvl::kNoIndex32) ? nullptr : this;
     return GetResourceUsageInfoFromRecord(tag_ex, record, debug_name_provider);
 }
@@ -652,12 +697,12 @@ ResourceUsageInfo QueueBatchContext::GetResourceUsageInfo(ResourceUsageTagEx tag
     if (!access.IsValid()) {
         return {};
     }
-    const ResourceUsageRecord &record = *access.record;
+    const ResourceUsageRecord& record = *access.record;
     ResourceUsageInfo info = GetResourceUsageInfoFromRecord(tag_ex, record, access.debug_name_provider);
 
-    const BatchAccessLog::BatchRecord &batch = *access.batch;
-    if (batch.queue) {
-        info.queue = batch.queue->GetQueueState();
+    const BatchAccessLog::BatchRecord& batch = *access.batch;
+    if (batch.queue_state) {
+        info.queue = batch.queue_state->GetQueue();
         info.submit_index = batch.submit_index;
         info.batch_index = batch.batch_index;
         info.batch_base_tag = batch.base_tag;

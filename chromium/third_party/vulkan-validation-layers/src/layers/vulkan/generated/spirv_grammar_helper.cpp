@@ -759,6 +759,8 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpTypeBufferEXT";
         case spv::OpBufferPointerEXT:
             return "OpBufferPointerEXT";
+        case spv::OpAbortKHR:
+            return "OpAbortKHR";
         case spv::OpUntypedImageTexelPointerEXT:
             return "OpUntypedImageTexelPointerEXT";
         case spv::OpMemberDecorateIdEXT:
@@ -1167,6 +1169,12 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpGroupLogicalXorKHR";
         case spv::OpRoundFToTF32INTEL:
             return "OpRoundFToTF32INTEL";
+        case spv::OpFDot2MixAcc32VALVE:
+            return "OpFDot2MixAcc32VALVE";
+        case spv::OpFDot2MixAcc16VALVE:
+            return "OpFDot2MixAcc16VALVE";
+        case spv::OpFDot4MixAcc32VALVE:
+            return "OpFDot4MixAcc32VALVE";
 
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case spv::OpAllocateNodePayloadsAMDX:
@@ -1185,6 +1193,10 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpConstantStringAMDX";
         case spv::OpSpecConstantStringAMDX:
             return "OpSpecConstantStringAMDX";
+        case spv::OpPoisonKHR:
+            return "OpPoisonKHR";
+        case spv::OpFreezeKHR:
+            return "OpFreezeKHR";
         case spv::OpConditionalExtensionINTEL:
             return "OpConditionalExtensionINTEL";
         case spv::OpConditionalEntryPointINTEL:
@@ -1521,6 +1533,8 @@ const char* string_SpvExecutionMode(uint32_t execution_mode) {
             return "MaxNumWorkgroupsAMDX";
         case spv::ExecutionModeSharesInputWithAMDX:
             return "SharesInputWithAMDX";
+        case spv::ExecutionModeArithmeticPoisonKHR:
+            return "ArithmeticPoisonKHR";
 #endif
         default:
             return "Unknown Execution Mode";
@@ -2146,16 +2160,81 @@ static const char* string_SpvCooperativeMatrixOperandsMask(spv::CooperativeMatri
 }
 
 std::string string_SpvCooperativeMatrixOperands(uint32_t mask) {
-    std::string ret;
-    while (mask) {
-        if (mask & 1) {
-            if (!ret.empty()) ret.append("|");
-            ret.append(string_SpvCooperativeMatrixOperandsMask(static_cast<spv::CooperativeMatrixOperandsMask>(1U << mask)));
-        }
-        mask >>= 1;
+    if (mask == 0) {
+        return "CooperativeMatrixOperandsMask(0)";
     }
-    if (ret.empty()) ret.append("CooperativeMatrixOperandsMask(0)");
+    std::string ret;
+    for (uint32_t bit = 1; mask != 0; bit <<= 1, mask >>= 1) {
+        if (mask & 1) {
+            if (!ret.empty()) {
+                ret.append("|");
+            }
+            ret.append(string_SpvCooperativeMatrixOperandsMask(static_cast<spv::CooperativeMatrixOperandsMask>(bit)));
+        }
+    }
     return ret;
+}
+
+static const char* string_SpvRayFlagsBit(spv::RayFlagsMask mask) {
+    switch (mask) {
+        case spv::RayFlagsMaskNone:
+            return "None";
+        case spv::RayFlagsOpaqueKHRMask:
+            return "OpaqueKHR";
+        case spv::RayFlagsNoOpaqueKHRMask:
+            return "NoOpaqueKHR";
+        case spv::RayFlagsTerminateOnFirstHitKHRMask:
+            return "TerminateOnFirstHitKHR";
+        case spv::RayFlagsSkipClosestHitShaderKHRMask:
+            return "SkipClosestHitShaderKHR";
+        case spv::RayFlagsCullBackFacingTrianglesKHRMask:
+            return "CullBackFacingTrianglesKHR";
+        case spv::RayFlagsCullFrontFacingTrianglesKHRMask:
+            return "CullFrontFacingTrianglesKHR";
+        case spv::RayFlagsCullOpaqueKHRMask:
+            return "CullOpaqueKHR";
+        case spv::RayFlagsCullNoOpaqueKHRMask:
+            return "CullNoOpaqueKHR";
+        case spv::RayFlagsSkipTrianglesKHRMask:
+            return "SkipTrianglesKHR";
+        case spv::RayFlagsSkipAABBsKHRMask:
+            return "SkipAABBsKHR";
+        case spv::RayFlagsForceOpacityMicromap2StateEXTMask:
+            return "ForceOpacityMicromap2StateEXT";
+
+        default:
+            return "Unknown RayFlagsMask";
+    }
+}
+
+std::string string_SpvRayFlagsMask(uint32_t mask) {
+    if (mask == 0) {
+        return "RayFlagsMask(0)";
+    }
+    std::string ret;
+    for (uint32_t bit = 1; mask != 0; bit <<= 1, mask >>= 1) {
+        if (mask & 1) {
+            if (!ret.empty()) {
+                ret.append("|");
+            }
+            ret.append(string_SpvRayFlagsBit(static_cast<spv::RayFlagsMask>(bit)));
+        }
+    }
+    return ret;
+}
+
+const char* string_SpvFPEncoding(spv::FPEncoding value) {
+    switch (value) {
+        case spv::FPEncodingBFloat16KHR:
+            return "BFloat16KHR";
+        case spv::FPEncodingFloat8E4M3EXT:
+            return "Float8E4M3EXT";
+        case spv::FPEncodingFloat8E5M2EXT:
+            return "Float8E5M2EXT";
+
+        default:
+            return "IEEE-754";  // default for 16-bit
+    }
 }
 
 const OperandInfo& GetOperandInfo(uint32_t opcode) {
@@ -2526,6 +2605,7 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpGroupNonUniformQuadAnyKHR, {{OperandKind::Id}}},
         {spv::OpTypeBufferEXT, {{OperandKind::ValueEnum}}},
         {spv::OpBufferPointerEXT, {{OperandKind::Id}}},
+        {spv::OpAbortKHR, {{OperandKind::Id, OperandKind::Id}}},
         {spv::OpUntypedImageTexelPointerEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpMemberDecorateIdEXT, {{OperandKind::Id, OperandKind::Literal, OperandKind::ValueEnum}}},
         {spv::OpConstantSizeOfEXT, {{OperandKind::Id}}},
@@ -2730,6 +2810,9 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpGroupLogicalOrKHR, {{OperandKind::Id, OperandKind::ValueEnum, OperandKind::Id}}},
         {spv::OpGroupLogicalXorKHR, {{OperandKind::Id, OperandKind::ValueEnum, OperandKind::Id}}},
         {spv::OpRoundFToTF32INTEL, {{OperandKind::Id}}},
+        {spv::OpFDot2MixAcc32VALVE, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpFDot2MixAcc16VALVE, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpFDot4MixAcc32VALVE, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
     };  // clang-format on
 
     auto info = kOperandTable.find(opcode);

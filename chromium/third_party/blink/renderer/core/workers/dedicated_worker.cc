@@ -60,6 +60,7 @@
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher_properties.h"
+#include "third_party/blink/renderer/platform/runtime_feature_state/runtime_feature_state_override_context.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
@@ -93,8 +94,9 @@ DedicatedWorker* DedicatedWorker::Create(
     return nullptr;
   }
 
-  if (context->IsWorkerGlobalScope())
+  if (context->IsWorkerGlobalScope()) {
     UseCounter::Count(context, WebFeature::kNestedDedicatedWorker);
+  }
 
   DedicatedWorker* worker = MakeGarbageCollected<DedicatedWorker>(
       context, script_request_url, options);
@@ -152,8 +154,9 @@ void DedicatedWorker::postMessage(ScriptState* script_state,
                                   HeapVector<ScriptObject> transfer,
                                   ExceptionState& exception_state) {
   PostMessageOptions* options = PostMessageOptions::Create();
-  if (!transfer.empty())
+  if (!transfer.empty()) {
     options->setTransfer(std::move(transfer));
+  }
   postMessage(script_state, message, options, exception_state);
 }
 
@@ -162,8 +165,9 @@ void DedicatedWorker::postMessage(ScriptState* script_state,
                                   const PostMessageOptions* options,
                                   ExceptionState& exception_state) {
   DCHECK(!GetExecutionContext() || GetExecutionContext()->IsContextThread());
-  if (!GetExecutionContext())
+  if (!GetExecutionContext()) {
     return;
+  }
 
   BlinkTransferableMessage transferable_message;
   Transferables transferables;
@@ -171,8 +175,9 @@ void DedicatedWorker::postMessage(ScriptState* script_state,
       PostMessageHelper::SerializeMessageByMove(script_state->GetIsolate(),
                                                 message, options, transferables,
                                                 exception_state);
-  if (exception_state.HadException())
+  if (exception_state.HadException()) {
     return;
+  }
   DCHECK(serialized_message);
   transferable_message.message = serialized_message;
   transferable_message.sender_origin =
@@ -182,8 +187,9 @@ void DedicatedWorker::postMessage(ScriptState* script_state,
   transferable_message.ports = MessagePort::DisentanglePorts(
       ExecutionContext::From(script_state), transferables.message_ports,
       exception_state);
-  if (exception_state.HadException())
+  if (exception_state.HadException()) {
     return;
+  }
   transferable_message.user_activation =
       PostMessageHelper::CreateUserActivationSnapshot(GetExecutionContext(),
                                                       options);
@@ -318,8 +324,9 @@ void DedicatedWorker::terminate() {
 
 void DedicatedWorker::ContextDestroyed() {
   DCHECK(GetExecutionContext()->IsContextThread());
-  if (classic_script_loader_)
+  if (classic_script_loader_) {
     classic_script_loader_->Cancel();
+  }
   factory_client_.reset();
   terminate();
 }
@@ -362,6 +369,7 @@ void DedicatedWorker::OnScriptLoadStarted(
   ContinueStart(script_request_url_, std::move(worker_main_script_load_params),
                 network::mojom::ReferrerPolicy::kDefault,
                 Vector<network::mojom::blink::ContentSecurityPolicyPtr>(),
+                DocumentPolicy::DocumentPolicyBundle{},
                 std::move(back_forward_cache_controller_host),
                 std::move(coep_reporting_observer),
                 std::move(dip_reporting_observer));
@@ -388,8 +396,9 @@ DedicatedWorker::CreateWebContentSettingsClient() {
   } else if (GetExecutionContext()->IsWorkerGlobalScope()) {
     WebContentSettingsClient* web_worker_content_settings_client =
         To<WorkerGlobalScope>(GetExecutionContext())->ContentSettingsClient();
-    if (web_worker_content_settings_client)
+    if (web_worker_content_settings_client) {
       return web_worker_content_settings_client->Clone();
+    }
   }
   return nullptr;
 }
@@ -428,6 +437,7 @@ void DedicatedWorker::OnFinished(
             ? mojo::Clone(classic_script_loader_->GetContentSecurityPolicy()
                               ->GetParsedPolicies())
             : Vector<network::mojom::blink::ContentSecurityPolicyPtr>(),
+        classic_script_loader_->GetDocumentPolicy(),
         std::move(back_forward_cache_controller_host),
         /*coep_reporting_observer=*/mojo::NullReceiver(),
         /*dip_reporting_observer=*/mojo::NullReceiver());
@@ -445,6 +455,7 @@ void DedicatedWorker::ContinueStart(
     network::mojom::ReferrerPolicy referrer_policy,
     Vector<network::mojom::blink::ContentSecurityPolicyPtr>
         response_content_security_policies,
+    DocumentPolicy::DocumentPolicyBundle response_document_policy,
     mojo::PendingRemote<mojom::blink::BackForwardCacheControllerHost>
         back_forward_cache_controller_host,
     mojo::PendingReceiver<mojom::blink::ReportingObserver>
@@ -469,6 +480,7 @@ void DedicatedWorker::ContinueStart(
                      std::move(worker_main_script_load_params),
                      std::move(referrer_policy),
                      std::move(response_content_security_policies),
+                     std::move(response_document_policy),
                      std::move(back_forward_cache_controller_host),
                      std::move(coep_reporting_observer),
                      std::move(dip_reporting_observer)),
@@ -478,6 +490,7 @@ void DedicatedWorker::ContinueStart(
   ContinueStartInternal(
       script_url, std::move(worker_main_script_load_params),
       std::move(referrer_policy), std::move(response_content_security_policies),
+      std::move(response_document_policy),
       std::move(back_forward_cache_controller_host),
       std::move(coep_reporting_observer), std::move(dip_reporting_observer));
 }
@@ -489,6 +502,7 @@ void DedicatedWorker::ContinueStartInternal(
     network::mojom::ReferrerPolicy referrer_policy,
     Vector<network::mojom::blink::ContentSecurityPolicyPtr>
         response_content_security_policies,
+    DocumentPolicy::DocumentPolicyBundle document_policy,
     mojo::PendingRemote<mojom::blink::BackForwardCacheControllerHost>
         back_forward_cache_controller_host,
     mojo::PendingReceiver<mojom::blink::ReportingObserver>
@@ -503,7 +517,7 @@ void DedicatedWorker::ContinueStartInternal(
       CreateGlobalScopeCreationParams(
           script_url, referrer_policy,
           std::move(response_content_security_policies),
-          std::move(coep_reporting_observer),
+          std::move(document_policy), std::move(coep_reporting_observer),
           std::move(dip_reporting_observer)),
       std::move(worker_main_script_load_params), options_, script_url,
       *outside_fetch_client_settings_object_, v8_stack_trace_id_, token_,
@@ -541,6 +555,7 @@ DedicatedWorker::CreateGlobalScopeCreationParams(
     network::mojom::ReferrerPolicy referrer_policy,
     Vector<network::mojom::blink::ContentSecurityPolicyPtr>
         response_content_security_policies,
+    DocumentPolicy::DocumentPolicyBundle document_policy,
     mojo::PendingReceiver<mojom::blink::ReportingObserver>
         coep_reporting_observer,
     mojo::PendingReceiver<mojom::blink::ReportingObserver>
@@ -590,7 +605,7 @@ DedicatedWorker::CreateGlobalScopeCreationParams(
       mojo::Clone(
           execution_context->GetContentSecurityPolicy()->GetParsedPolicies()),
       std::move(response_content_security_policies), referrer_policy,
-      execution_context->GetSecurityOrigin(),
+      std::move(document_policy), execution_context->GetSecurityOrigin(),
       execution_context->IsSecureContext(), execution_context->GetHttpsState(),
       MakeGarbageCollected<WorkerClients>(), CreateWebContentSettingsClient(),
       OriginTrialContext::GetInheritedTrialFeatures(execution_context).get(),
@@ -606,6 +621,9 @@ DedicatedWorker::CreateGlobalScopeCreationParams(
       execution_context->GetExecutionContextToken(),
       execution_context->CrossOriginIsolatedCapability(),
       execution_context->IsIsolatedContext(),
+      /*direct_sockets_force_enabled_in_parent=*/
+      execution_context->GetRuntimeFeatureStateOverrideContext()
+          ->IsDirectSocketsForceEnabled(),
       /*interface_registry=*/nullptr,
       std::move(agent_group_scheduler_compositor_task_runner),
       top_level_frame_security_origin,

@@ -57,6 +57,45 @@
     return float2half(METHOD<PACKET_F>(half2float(_x)));                                                   \
   }
 
+#define EIGEN_INSTANTIATE_GENERIC_MATH_FUNCS_F16(PACKET_F, PACKET_F16) \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pcos)                      \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, psin)                      \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, psinh)                     \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pcosh)                     \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pasinh)                    \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pacosh)                    \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pexp)                      \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pexp2)                     \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pexpm1)                    \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, plog)                      \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, plog1p)                    \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, plog2)                     \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, plog10)                    \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, preciprocal)               \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, prsqrt)                    \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pcbrt)                     \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, psqrt)                     \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, ptanh)
+
+// F16 wrappers for unsupported/SpecialFunctions.
+#define EIGEN_INSTANTIATE_SPECIAL_FUNCS_F16(PACKET_F, PACKET_F16) \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, perf)                 \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pndtri)
+
+#define EIGEN_INSTANTIATE_BESSEL_FUNCS_F16(PACKET_F, PACKET_F16) \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_i0)          \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_i0e)         \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_i1)          \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_i1e)         \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_j0)          \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_j1)          \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_k0)          \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_k0e)         \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_k1)          \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_k1e)         \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_y0)          \
+  F16_PACKET_FUNCTION(PACKET_F, PACKET_F16, pbessel_y1)
+
 namespace Eigen {
 
 struct half;
@@ -267,6 +306,8 @@ struct numeric_limits_half_impl {
   static _EIGEN_MAYBE_CONSTEXPR Eigen::half denorm_min() { return Eigen::half_impl::raw_uint16_to_half(0x0001); }
 };
 
+// Redundant out-of-class definitions are required pre-C++17 but deprecated since.
+#if EIGEN_COMP_CXXVER < 17
 template <typename T>
 constexpr const bool numeric_limits_half_impl<T>::is_specialized;
 template <typename T>
@@ -316,6 +357,7 @@ template <typename T>
 constexpr const bool numeric_limits_half_impl<T>::traps;
 template <typename T>
 constexpr const bool numeric_limits_half_impl<T>::tinyness_before;
+#endif
 }  // end namespace half_impl
 }  // end namespace Eigen
 
@@ -508,7 +550,7 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC half& operator/=(half& a, const half& b) {
 // fp16 uses 1 sign bit, 5 exponent bits, and 10 mantissa bits. The bit pattern conveys NaN when all the exponent
 // bits (5) are set, and at least one mantissa bit is set. The sign bit is irrelevant for determining NaN. To check for
 // NaN, clear the sign bit and check if the integral representation is greater than 01111100000000. To test
-// for non-NaN, clear the sign bit and check if the integeral representation is less than or equal to 01111100000000.
+// for non-NaN, clear the sign bit and check if the integral representation is less than or equal to 01111100000000.
 
 // convert sign-magnitude representation to two's complement
 EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC int16_t mapToSigned(uint16_t a) {
@@ -956,8 +998,9 @@ EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC uint16_t bit_cast<uint16_t, Eigen::half>(c
 }
 
 // Specialize multiply-add to match packet operations and reduce conversions to/from float.
-template<>
-EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::half madd<Eigen::half>(const Eigen::half& x, const Eigen::half& y, const Eigen::half& z) {
+template <>
+EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::half madd<Eigen::half>(const Eigen::half& x, const Eigen::half& y,
+                                                                    const Eigen::half& z) {
   return Eigen::half(static_cast<float>(x) * static_cast<float>(y) + static_cast<float>(z));
 }
 

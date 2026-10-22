@@ -1,1 +1,2 @@
-#include "../../../Eigen/ThreadPool"  // IWYU pragma: export
+// Forwarding header for backward compatibility.
+#include "../ThreadPool"  // IWYU pragma: export

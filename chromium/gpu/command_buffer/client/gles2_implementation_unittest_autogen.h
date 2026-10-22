@@ -2942,9 +2942,9 @@ TEST_F(GLES2ImplementationTest, FramebufferMemorylessPixelLocalStorageANGLE) {
     cmds::FramebufferMemorylessPixelLocalStorageANGLE cmd;
   };
   Cmds expected;
-  expected.cmd.Init(1, 2);
+  expected.cmd.Init(1, 2, 3);
 
-  gl_->FramebufferMemorylessPixelLocalStorageANGLE(1, 2);
+  gl_->FramebufferMemorylessPixelLocalStorageANGLE(1, 2, 3);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
@@ -2953,9 +2953,9 @@ TEST_F(GLES2ImplementationTest, FramebufferTexturePixelLocalStorageANGLE) {
     cmds::FramebufferTexturePixelLocalStorageANGLE cmd;
   };
   Cmds expected;
-  expected.cmd.Init(1, 2, 3, 4);
+  expected.cmd.Init(1, 2, 3, 4, 5);
 
-  gl_->FramebufferTexturePixelLocalStorageANGLE(1, 2, 3, 4);
+  gl_->FramebufferTexturePixelLocalStorageANGLE(1, 2, 3, 4, 5);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
@@ -3043,6 +3043,17 @@ TEST_F(GLES2ImplementationTest, EndPixelLocalStorageANGLE) {
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
+TEST_F(GLES2ImplementationTest, EndPixelLocalStorageImplicitANGLE) {
+  struct Cmds {
+    cmds::EndPixelLocalStorageImplicitANGLE cmd;
+  };
+  Cmds expected;
+  expected.cmd.Init();
+
+  gl_->EndPixelLocalStorageImplicitANGLE();
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
 TEST_F(GLES2ImplementationTest, PixelLocalStorageBarrierANGLE) {
   struct Cmds {
     cmds::PixelLocalStorageBarrierANGLE cmd;
@@ -3112,6 +3123,26 @@ TEST_F(GLES2ImplementationTest,
       .WillOnce(SetMemory(result1.ptr, SizedResultHelper<ResultType>(1)))
       .RetiresOnSaturation();
   gl_->GetFramebufferPixelLocalStorageParameterivANGLE(123, 2, &result);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+  EXPECT_EQ(static_cast<ResultType>(1), result);
+}
+
+TEST_F(GLES2ImplementationTest,
+       GetFramebufferPixelLocalStorageParameteruivANGLE) {
+  struct Cmds {
+    cmds::GetFramebufferPixelLocalStorageParameteruivANGLE cmd;
+  };
+  typedef cmds::GetFramebufferPixelLocalStorageParameteruivANGLE::Result::Type
+      ResultType;
+  ResultType result = 0;
+  Cmds expected;
+  ExpectedMemoryInfo result1 =
+      GetExpectedResultMemory(sizeof(uint32_t) + sizeof(ResultType));
+  expected.cmd.Init(123, 2, result1.id, result1.offset);
+  EXPECT_CALL(*command_buffer(), OnFlush())
+      .WillOnce(SetMemory(result1.ptr, SizedResultHelper<ResultType>(1)))
+      .RetiresOnSaturation();
+  gl_->GetFramebufferPixelLocalStorageParameteruivANGLE(123, 2, &result);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
   EXPECT_EQ(static_cast<ResultType>(1), result);
 }

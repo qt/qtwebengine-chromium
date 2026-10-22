@@ -7,11 +7,13 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/text.h"
+#include "third_party/blink/renderer/core/dom/tree_scope.h"
 #include "third_party/blink/renderer/core/events/gesture_event.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/html_dialog_element.h"
+#include "third_party/blink/renderer/core/html/html_map_element.h"
 #include "third_party/blink/renderer/core/layout/hit_test_location.h"
 #include "third_party/blink/renderer/core/layout/hit_test_request.h"
 #include "third_party/blink/renderer/core/page/page_animator.h"
@@ -256,119 +258,6 @@ TEST_F(HTMLElementTest,
       GetDocument().GetPage()->Animator().has_inline_style_mutation_for_test());
 }
 
-TEST_F(HTMLElementTest, MayBeImplicitAnchor) {
-  SetBodyInnerHTML(R"HTML(
-    <div id="anchor1"></div>
-    <div id="anchor2"></div>
-    <div id="target" anchor="anchor1"></div>
-  )HTML");
-
-  Element* anchor1 = GetDocument().getElementById(AtomicString("anchor1"));
-  Element* anchor2 = GetDocument().getElementById(AtomicString("anchor2"));
-  HTMLElement* target =
-      To<HTMLElement>(GetDocument().getElementById(AtomicString("target")));
-
-  EXPECT_EQ(target->anchorElement(), anchor1);
-  EXPECT_TRUE(anchor1->MayBeImplicitAnchor());
-  EXPECT_FALSE(anchor2->MayBeImplicitAnchor());
-
-  target->setAttribute(html_names::kAnchorAttr, AtomicString("anchor2"));
-
-  EXPECT_EQ(target->anchorElement(), anchor2);
-  EXPECT_TRUE(anchor1->MayBeImplicitAnchor());
-  EXPECT_TRUE(anchor2->MayBeImplicitAnchor());
-
-  target->removeAttribute(html_names::kAnchorAttr);
-
-  EXPECT_FALSE(target->anchorElement());
-  EXPECT_TRUE(anchor1->MayBeImplicitAnchor());
-  EXPECT_TRUE(anchor2->MayBeImplicitAnchor());
-}
-
-TEST_F(HTMLElementTest, MayBeImplicitAnchorViaElementAttr) {
-  SetBodyInnerHTML(R"HTML(
-    <div id="anchor1"></div>
-    <div id="anchor2"></div>
-    <div id="target" anchor="anchor1"></div>
-  )HTML");
-
-  Element* anchor1 = GetDocument().getElementById(AtomicString("anchor1"));
-  Element* anchor2 = GetDocument().getElementById(AtomicString("anchor2"));
-  HTMLElement* target =
-      To<HTMLElement>(GetDocument().getElementById(AtomicString("target")));
-
-  EXPECT_EQ(target->anchorElement(), anchor1);
-  EXPECT_TRUE(anchor1->MayBeImplicitAnchor());
-  EXPECT_FALSE(anchor2->MayBeImplicitAnchor());
-
-  target->setAnchorElementForBinding(anchor2);
-
-  EXPECT_EQ(target->anchorElement(), anchor2);
-  EXPECT_TRUE(anchor1->MayBeImplicitAnchor());
-  EXPECT_TRUE(anchor2->MayBeImplicitAnchor());
-
-  target->setAnchorElementForBinding(nullptr);
-
-  EXPECT_FALSE(target->anchorElement());
-  EXPECT_TRUE(anchor1->MayBeImplicitAnchor());
-  EXPECT_TRUE(anchor2->MayBeImplicitAnchor());
-
-  target->setAttribute(html_names::kAnchorAttr, AtomicString("anchor1"));
-
-  EXPECT_EQ(target->anchorElement(), anchor1);
-  EXPECT_TRUE(anchor1->MayBeImplicitAnchor());
-  EXPECT_TRUE(anchor2->MayBeImplicitAnchor());
-}
-
-TEST_F(HTMLElementTest, ImplicitAnchorIdChange) {
-  SetBodyInnerHTML(R"HTML(
-    <div id="anchor1"></div>
-    <div id="anchor2"></div>
-    <div id="target" anchor="anchor1"></div>
-  )HTML");
-
-  Element* anchor1 = GetDocument().getElementById(AtomicString("anchor1"));
-  Element* anchor2 = GetDocument().getElementById(AtomicString("anchor2"));
-  HTMLElement* target =
-      To<HTMLElement>(GetDocument().getElementById(AtomicString("target")));
-
-  EXPECT_EQ(target->anchorElement(), anchor1);
-  EXPECT_TRUE(anchor1->MayBeImplicitAnchor());
-  EXPECT_FALSE(anchor2->MayBeImplicitAnchor());
-
-  anchor1->setAttribute(html_names::kIdAttr, AtomicString("anchor2"));
-  anchor2->setAttribute(html_names::kIdAttr, AtomicString("anchor1"));
-
-  EXPECT_EQ(target->anchorElement(), anchor2);
-  EXPECT_TRUE(anchor1->MayBeImplicitAnchor());
-  EXPECT_TRUE(anchor2->MayBeImplicitAnchor());
-}
-
-TEST_F(HTMLElementTest, ImplicitlyAnchorElementConnected) {
-  SetBodyInnerHTML("<div id=anchor></div>");
-
-  Element* anchor = GetDocument().getElementById(AtomicString("anchor"));
-
-  HTMLElement* target1 = To<HTMLElement>(
-      GetDocument().CreateElementForBinding(AtomicString("div")));
-  target1->setAttribute(html_names::kAnchorAttr, AtomicString("anchor"));
-
-  HTMLElement* target2 = To<HTMLElement>(
-      GetDocument().CreateElementForBinding(AtomicString("div")));
-  target2->setAnchorElementForBinding(anchor);
-
-  EXPECT_FALSE(target1->anchorElement());
-  EXPECT_FALSE(target2->anchorElement());
-  EXPECT_FALSE(anchor->MayBeImplicitAnchor());
-
-  GetDocument().body()->appendChild(target1);
-  GetDocument().body()->appendChild(target2);
-
-  EXPECT_EQ(target1->anchorElement(), anchor);
-  EXPECT_EQ(target2->anchorElement(), anchor);
-  EXPECT_TRUE(anchor->MayBeImplicitAnchor());
-}
-
 TEST_F(HTMLElementTest, PopoverTopLayerRemovalTiming) {
   SetBodyInnerHTML(R"HTML(
     <div id="target" popover></div>
@@ -526,6 +415,41 @@ TEST_F(HTMLElementTest, InterestForLongPressCrash) {
   GestureEvent* blink_gesture_event =
       GestureEvent::Create(GetDocument().domWindow(), gesture_event);
   btn->DispatchEvent(*blink_gesture_event);
+}
+
+TEST_F(HTMLElementTest, MapElementDynamicIdAndNameChanges) {
+  SetBodyInnerHTML(R"HTML(
+    <map id="map_id" name="map_name"></map>
+  )HTML");
+
+  auto* map =
+      To<HTMLMapElement>(GetDocument().getElementById(AtomicString("map_id")));
+  ASSERT_TRUE(map);
+
+  TreeScope& scope = GetDocument();
+  EXPECT_EQ(map, scope.GetImageMap("#map_id"));
+  EXPECT_EQ(map, scope.GetImageMap("#map_name"));
+
+  // Change id, should be accessible by new id and old name
+  map->setAttribute(html_names::kIdAttr, AtomicString("new_id"));
+  EXPECT_EQ(nullptr, scope.GetImageMap("#map_id"));
+  EXPECT_EQ(map, scope.GetImageMap("#map_name"));
+  EXPECT_EQ(map, scope.GetImageMap("#new_id"));
+
+  // Change name, should only be accessible by new id and new name
+  map->setAttribute(html_names::kNameAttr, AtomicString("new_name"));
+  EXPECT_EQ(nullptr, scope.GetImageMap("#map_name"));
+  EXPECT_EQ(map, scope.GetImageMap("#new_id"));
+  EXPECT_EQ(map, scope.GetImageMap("#new_name"));
+
+  // Clear name, should only be accessible by id
+  map->removeAttribute(html_names::kNameAttr);
+  EXPECT_EQ(nullptr, scope.GetImageMap("#new_name"));
+  EXPECT_EQ(map, scope.GetImageMap("#new_id"));
+
+  // Clear id, should not be accessible by anything
+  map->removeAttribute(html_names::kIdAttr);
+  EXPECT_EQ(nullptr, scope.GetImageMap("#new_id"));
 }
 
 }  // namespace blink

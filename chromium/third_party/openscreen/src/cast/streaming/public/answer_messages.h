@@ -35,7 +35,7 @@ namespace openscreen::cast {
 // (3) IsValid. Used by both TryParse and ToJson to ensure that the
 //     object is in a good state.
 struct AudioConstraints {
-  static bool TryParse(const Json::Value& value, AudioConstraints* out);
+  static ErrorOr<AudioConstraints> TryParse(const Json::Value& value);
   Json::Value ToJson() const;
   bool IsValid() const;
 
@@ -47,7 +47,7 @@ struct AudioConstraints {
 };
 
 struct VideoConstraints {
-  static bool TryParse(const Json::Value& value, VideoConstraints* out);
+  static ErrorOr<VideoConstraints> TryParse(const Json::Value& value);
   Json::Value ToJson() const;
   bool IsValid() const;
 
@@ -60,7 +60,7 @@ struct VideoConstraints {
 };
 
 struct Constraints {
-  static bool TryParse(const Json::Value& value, Constraints* out);
+  static ErrorOr<Constraints> TryParse(const Json::Value& value);
   Json::Value ToJson() const;
   bool IsValid() const;
 
@@ -74,7 +74,7 @@ struct Constraints {
 enum class AspectRatioConstraint : uint8_t { kVariable = 0, kFixed };
 
 struct AspectRatio {
-  static bool TryParse(const Json::Value& value, AspectRatio* out);
+  static ErrorOr<AspectRatio> TryParse(const Json::Value& value);
   bool IsValid() const;
 
   bool operator==(const AspectRatio& other) const {
@@ -86,7 +86,7 @@ struct AspectRatio {
 };
 
 struct DisplayDescription {
-  static bool TryParse(const Json::Value& value, DisplayDescription* out);
+  static ErrorOr<DisplayDescription> TryParse(const Json::Value& value);
   Json::Value ToJson() const;
   bool IsValid() const;
 
@@ -98,7 +98,7 @@ struct DisplayDescription {
 };
 
 struct Answer {
-  static bool TryParse(const Json::Value& value, Answer* out);
+  static ErrorOr<Answer> TryParse(const Json::Value& value);
   Json::Value ToJson() const;
   bool IsValid() const;
 
@@ -114,7 +114,7 @@ struct Answer {
   std::vector<int> receiver_rtcp_dscp;
 
   // RTP extensions should be empty, but not null.
-  std::vector<std::string> rtp_extensions = {};
+  std::vector<std::vector<std::string>> rtp_extensions = {};
 };
 
 }  // namespace openscreen::cast

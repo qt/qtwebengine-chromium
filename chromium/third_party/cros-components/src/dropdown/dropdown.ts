@@ -8,7 +8,7 @@ import '@material/web/select/outlined-select.js';
 
 import {MdOutlinedSelect} from '@material/web/select/outlined-select.js';
 import {css, CSSResultGroup, html, LitElement, nothing, PropertyValues} from 'lit';
-import {ifDefined} from 'lit/directives/if-defined';
+import {ifDefined} from 'lit/directives/if-defined.js';
 
 /**
  * Dropdowns have two variants that differ only by the container background,

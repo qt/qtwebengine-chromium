@@ -19,7 +19,6 @@
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
 #include "chrome/browser/nearby_sharing/common/nearby_share_prefs.h"
 #include "chrome/browser/nearby_sharing/nearby_sharing_service_factory.h"
-#include "chrome/common/webui_url_constants.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/ash/components/multidevice/remote_device_test_util.h"
 #include "chromeos/ash/components/phonehub/fake_browser_tabs_model_provider.h"
@@ -195,16 +194,10 @@ void VerifyPageContentDict(
   std::optional<int> phone_hub_camera_roll_state =
       page_content_dict.FindInt("phoneHubCameraRollState");
   ASSERT_TRUE(phone_hub_camera_roll_state);
-  if (base::FeatureList::IsEnabled(ash::features::kPhoneHubCameraRoll)) {
-    it = feature_states_map.find(
-        multidevice_setup::mojom::Feature::kPhoneHubCameraRoll);
-    EXPECT_EQ(static_cast<int>(it->second), *phone_hub_camera_roll_state);
-  } else {
-    EXPECT_EQ(
-        static_cast<int>(
-            multidevice_setup::mojom::FeatureState::kNotSupportedByChromebook),
-        *phone_hub_camera_roll_state);
-  }
+
+  it = feature_states_map.find(
+      multidevice_setup::mojom::Feature::kPhoneHubCameraRoll);
+  EXPECT_EQ(static_cast<int>(it->second), *phone_hub_camera_roll_state);
 
   std::optional<int> phone_hub_task_continuation_state =
       page_content_dict.FindInt("phoneHubTaskContinuationState");
@@ -252,8 +245,7 @@ void VerifyPageContentDict(
 
   EXPECT_THAT(
       page_content_dict.FindBool("isPhoneHubPermissionsDialogSupported"),
-      Optional(features::IsEcheSWAEnabled() ||
-               features::IsPhoneHubCameraRollEnabled()));
+      Optional(true));
 
   EXPECT_THAT(page_content_dict.FindInt("cameraRollAccessStatus"),
               Optional(expected_is_camera_roll_access_status_granted_ ? 2 : 1));
@@ -1263,19 +1255,6 @@ TEST_F(MultideviceHandlerTest, PageContentDataWhenEcheSWADisabled) {
       feature_states_map = GenerateDefaultFeatureStatesMap();
 
   feature_states_map[multidevice_setup::mojom::Feature::kEche] =
-      multidevice_setup::mojom::FeatureState::kProhibitedByPolicy;
-  SimulateFeatureStatesUpdate(feature_states_map);
-}
-
-TEST_F(MultideviceHandlerTest, PageContentDataWhenPhoneHubCameraRollDisabled) {
-  InitWithFeatures(
-      /* enabled_features */ {ash::features::kPhoneHub},
-      /* disabled_features */ {ash::features::kPhoneHubCameraRoll});
-
-  multidevice_setup::MultiDeviceSetupClient::FeatureStatesMap
-      feature_states_map = GenerateDefaultFeatureStatesMap();
-
-  feature_states_map[multidevice_setup::mojom::Feature::kPhoneHubCameraRoll] =
       multidevice_setup::mojom::FeatureState::kProhibitedByPolicy;
   SimulateFeatureStatesUpdate(feature_states_map);
 }

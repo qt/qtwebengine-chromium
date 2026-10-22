@@ -37,6 +37,8 @@ static_library("replay") {
     "BlitBufferToDepthTexture.h",
     "Capture.cpp",
     "Capture.h",
+    "CaptureWalker.cpp",
+    "CaptureWalker.h",
     "Deserialization.cpp",
     "Deserialization.h",
     "Error.cpp",

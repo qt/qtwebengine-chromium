@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 import 'chrome://resources/cr_elements/cr_button/cr_button.js';
-import 'chrome://resources/cr_elements/cr_icons.css.js';
 import 'chrome://resources/cr_elements/cr_shared_style.css.js';
 import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import 'chrome://resources/cr_elements/cr_shared_vars.css.js';
@@ -82,7 +81,7 @@ export class PromoCardElement extends PromoCardElementBase {
 
   // Trigger update on the list.
   private propagateShouldShowPromo_(shouldShow: boolean) {
-    this.fire('on-should-show-promo-card', {shouldShowPromoCard: shouldShow});
+    this.fire('should-show-promo-card', {shouldShowPromoCard: shouldShow});
   }
 }
 

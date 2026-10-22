@@ -51,4 +51,26 @@ void SigninBridge::OpenAccountPickerBottomSheet(
                                                  continue_url, account_id);
 }
 
+void SigninBridge::StartUpdateCredentialsFlow(TabAndroid* tab,
+                                              const GURL& continue_url,
+                                              const CoreAccountId& account_id) {
+  if (!tab) {
+    return;
+  }
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_SigninBridge_startUpdateCredentialsFlow(env, tab->GetJavaObject(),
+                                               continue_url, account_id);
+}
+
+void SigninBridge::WaitForCookiesAndRedirect(TabAndroid* tab,
+                                             const GURL& continue_url,
+                                             const CoreAccountId& account_id) {
+  if (!tab) {
+    return;
+  }
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_SigninBridge_waitForCookiesAndRedirect(env, tab->GetJavaObject(),
+                                              continue_url, account_id);
+}
+
 DEFINE_JNI(SigninBridge)

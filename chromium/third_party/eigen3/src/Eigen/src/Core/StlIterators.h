@@ -28,7 +28,7 @@ class indexed_based_stl_iterator_base {
   typedef indexed_based_stl_iterator_base<typename traits::non_const_iterator> non_const_iterator;
   typedef indexed_based_stl_iterator_base<typename traits::const_iterator> const_iterator;
   typedef std::conditional_t<internal::is_const<XprType>::value, non_const_iterator, const_iterator> other_iterator;
-  // NOTE: in C++03 we cannot declare friend classes through typedefs because we need to write friend class:
+
   friend class indexed_based_stl_iterator_base<typename traits::const_iterator>;
   friend class indexed_based_stl_iterator_base<typename traits::non_const_iterator>;
 
@@ -174,7 +174,7 @@ class indexed_based_stl_reverse_iterator_base {
   typedef indexed_based_stl_reverse_iterator_base<typename traits::non_const_iterator> non_const_iterator;
   typedef indexed_based_stl_reverse_iterator_base<typename traits::const_iterator> const_iterator;
   typedef std::conditional_t<internal::is_const<XprType>::value, non_const_iterator, const_iterator> other_iterator;
-  // NOTE: in C++03 we cannot declare friend classes through typedefs because we need to write friend class:
+
   friend class indexed_based_stl_reverse_iterator_base<typename traits::const_iterator>;
   friend class indexed_based_stl_reverse_iterator_base<typename traits::non_const_iterator>;
 
@@ -318,7 +318,7 @@ class pointer_based_stl_iterator {
   typedef pointer_based_stl_iterator<std::remove_const_t<XprType>> non_const_iterator;
   typedef pointer_based_stl_iterator<std::add_const_t<XprType>> const_iterator;
   typedef std::conditional_t<internal::is_const<XprType>::value, non_const_iterator, const_iterator> other_iterator;
-  // NOTE: in C++03 we cannot declare friend classes through typedefs because we need to write friend class:
+
   friend class pointer_based_stl_iterator<std::add_const_t<XprType>>;
   friend class pointer_based_stl_iterator<std::remove_const_t<XprType>>;
 
@@ -449,7 +449,7 @@ class generic_randaccess_stl_iterator
   using Base::m_index;
   using Base::mp_xpr;
 
-  // TODO currently const Transpose/Reshape expressions never returns const references,
+  // TODO: currently const Transpose/Reshape expressions never returns const references,
   // so lets return by value too.
   // typedef std::conditional_t<bool(has_direct_access), const value_type&, const value_type> read_only_ref_t;
   typedef const value_type read_only_ref_t;

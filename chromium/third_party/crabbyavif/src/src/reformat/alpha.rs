@@ -20,6 +20,7 @@ use super::rgb;
 use crate::image::Plane;
 use crate::internal_utils::*;
 use crate::reformat::rgb::Format;
+use crate::utils::pixels::Pixels;
 use crate::*;
 
 fn premultiply_u8(pixel: u8, alpha: u8) -> u8 {
@@ -337,58 +338,54 @@ impl rgb::Image {
 
 impl image::Image {
     pub(crate) fn alpha_to_full_range(&mut self) -> AvifResult<()> {
-        if self.planes[3].is_none() {
-            return Ok(());
-        }
-        let width = self.width as usize;
-        let depth = self.depth;
-        if self.planes[3].unwrap_ref().is_pointer() {
-            let src = image::Image {
-                width: self.width,
-                height: self.height,
-                depth: self.depth,
-                yuv_format: self.yuv_format,
-                planes: [
-                    None,
-                    None,
-                    None,
-                    Some(self.planes[3].unwrap_ref().try_clone()?),
-                ],
-                row_bytes: [0, 0, 0, self.row_bytes[3]],
-                ..image::Image::default()
-            };
-            self.allocate_planes(Category::Alpha)?;
-            if depth > 8 {
-                for y in 0..self.height {
-                    let src_row = src.row16_exact(Plane::A, y)?;
-                    let dst_row = self.row16_exact_mut(Plane::A, y)?;
-                    for x in 0..width {
-                        dst_row[x] = limited_to_full_y(depth, src_row[x]);
-                    }
-                }
-            } else {
+        match self.planes[3] {
+            // The pixels are not owned. Allocate a new buffer and scale values.
+            Some(Pixels::Pointer(slice)) => {
+                let mut src = self.shallow_clone();
+                src.planes[3] = Some(utils::pixels::Pixels::Pointer(slice));
+                src.row_bytes[3] = self.row_bytes[3];
+                self.allocate_planes(Category::Alpha)?;
                 for y in 0..self.height {
                     let src_row = src.row_exact(Plane::A, y)?;
                     let dst_row = self.row_exact_mut(Plane::A, y)?;
-                    for x in 0..width {
+                    for x in 0..src.width as usize {
                         dst_row[x] = limited_to_full_y(8, src_row[x] as u16) as u8;
                     }
                 }
             }
-        } else if depth > 8 {
-            for y in 0..self.height {
-                let row = self.row16_exact_mut(Plane::A, y)?;
-                for pixel in row {
-                    *pixel = limited_to_full_y(depth, *pixel);
+            Some(Pixels::Pointer16(slice)) => {
+                let mut src = self.shallow_clone();
+                src.planes[3] = Some(utils::pixels::Pixels::Pointer16(slice));
+                src.row_bytes[3] = self.row_bytes[3];
+                self.allocate_planes(Category::Alpha)?;
+                for y in 0..self.height {
+                    let src_row = src.row16_exact(Plane::A, y)?;
+                    let dst_row = self.row16_exact_mut(Plane::A, y)?;
+                    for x in 0..src.width as usize {
+                        dst_row[x] = limited_to_full_y(src.depth, src_row[x]);
+                    }
                 }
             }
-        } else {
-            for y in 0..self.height {
-                let row = self.row_exact_mut(Plane::A, y)?;
-                for pixel in row {
-                    *pixel = limited_to_full_y(8, *pixel as u16) as u8;
+
+            // The pixels are owned. Scale values in place.
+            Some(Pixels::Buffer(_)) => {
+                for y in 0..self.height {
+                    let row = self.row_exact_mut(Plane::A, y)?;
+                    for pixel in row {
+                        *pixel = limited_to_full_y(8, *pixel as u16) as u8;
+                    }
                 }
             }
+            Some(Pixels::Buffer16(_)) => {
+                let depth = self.depth;
+                for y in 0..self.height {
+                    let row = self.row16_exact_mut(Plane::A, y)?;
+                    for pixel in row {
+                        *pixel = limited_to_full_y(depth, *pixel);
+                    }
+                }
+            }
+            None => (),
         }
         Ok(())
     }

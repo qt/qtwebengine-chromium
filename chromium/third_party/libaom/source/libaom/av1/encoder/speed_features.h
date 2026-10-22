@@ -1023,7 +1023,7 @@ typedef struct INTER_MODE_SPEED_FEATURES {
   int alt_ref_search_fp;
 
   // Prune reference frames for single prediction modes based on temporal
-  // distance and pred MV SAD. Feasible values are 0, 1, 2. The feature is
+  // distance and pred MV SAD. Feasible values are 0-4. The feature is
   // disabled for 0. An increasing value indicates more aggressive pruning
   // threshold.
   int prune_single_ref;
@@ -1159,7 +1159,9 @@ typedef struct INTER_MODE_SPEED_FEATURES {
 
   // Prune inter modes based on tpl stats
   // 0 : no pruning
-  // 1 - 3 indicate increasing aggressiveness in order.
+  // 1 : Allow pruning of LAST2 frame
+  // 2 - 4: Allow pruning of all reference frames with increased aggressiveness
+  // of pruning in order
   int prune_inter_modes_based_on_tpl;
 
   // Skip NEARMV and NEAR_NEARMV modes using ref frames of above and left
@@ -1237,6 +1239,12 @@ typedef struct INTER_MODE_SPEED_FEATURES {
   // that encoder decisions are biased against local obmc, favoring low
   // complexity modes.
   float bias_obmc_mode_rd_scale_pct;
+
+  // Avoid further evaluation of compound modes using top estimate RD Costs of
+  // compound average.
+  // Values are 0 (not used),1 - 3 with progressively increasing
+  // aggressiveness, i.e., decreasing number of top candidates.
+  int skip_cmp_using_top_cmp_avg_est_rd_lvl;
 } INTER_MODE_SPEED_FEATURES;
 
 typedef struct INTERP_FILTER_SPEED_FEATURES {
@@ -1458,6 +1466,12 @@ typedef struct TX_SPEED_FEATURES {
   // for speed 3, 4, 5, 6, 7 and 8 on a typical image dataset with coding
   // performance change less than 0.004%.
   bool use_rd_based_breakout_for_intra_tx_search;
+
+  // Prune RD evaluation of transform split using RD Costs of transform no-split
+  // of inter modes that are evaluated so far.
+  // Values are 0 (not used),  1 - 2 with progressively increasing
+  // aggressiveness, i.e., decreasing number of top candidates
+  int prune_inter_tx_split_rd_eval_lvl;
 } TX_SPEED_FEATURES;
 
 typedef struct RD_CALC_SPEED_FEATURES {

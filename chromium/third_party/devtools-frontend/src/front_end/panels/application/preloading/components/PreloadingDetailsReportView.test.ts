@@ -5,7 +5,7 @@
 import * as Platform from '../../../../core/platform/platform.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
 import * as Protocol from '../../../../generated/protocol.js';
-import type * as Logs from '../../../../models/logs/logs.js';
+import * as Logs from '../../../../models/logs/logs.js';
 import {
   getCleanTextContentFromElements,
   getElementWithinComponent,
@@ -114,6 +114,36 @@ describeWithEnvironment('PreloadingDetailsReportView', () => {
       ['Status', 'Speculative load is running.'],
       ['Rule set', 'example.com/'],
     ]);
+  });
+
+  it('renders prerendering details with form submission', async () => {
+    const url = urlString`https://example.com/prerendered.html`;
+    const data: PreloadingComponents.PreloadingDetailsReportView.PreloadingDetailsReportViewData = {
+      pipeline: SDK.PreloadingModel.PreloadPipeline.newFromAttemptsForTesting([
+        {
+          action: Protocol.Preload.SpeculationAction.Prerender,
+          key: {
+            loaderId: 'loaderId' as Protocol.Network.LoaderId,
+            action: Protocol.Preload.SpeculationAction.Prerender,
+            url,
+            formSubmission: true,
+          },
+          pipelineId: 'pipelineId:1' as Protocol.Preload.PreloadPipelineId,
+          status: SDK.PreloadingModel.PreloadingStatus.RUNNING,
+          prerenderStatus: null,
+          disallowedMojoInterface: null,
+          mismatchedHeaders: null,
+          ruleSetIds: ['ruleSetId'] as Protocol.Preload.RuleSetId[],
+          nodeIds: [1] as Protocol.DOM.BackendNodeId[],
+        },
+      ]),
+      ruleSets: [],
+      pageURL: urlString`https://example.com/`,
+    };
+
+    const report = await renderPreloadingDetailsReportView(data);
+
+    assert.isTrue(report.shadowRoot?.textContent?.includes('Form submissionYes'));
   });
 
   it('renders prerendering details with target hint blank', async () => {
@@ -404,6 +434,134 @@ describeWithEnvironment('PreloadingDetailsReportView', () => {
       ['Action', 'Prefetch'],
       ['Status', 'Speculative load failed.'],
       ['Failure reason', 'The prefetch failed because of a non-2xx HTTP response status code.'],
+      ['Rule set', 'example.com/'],
+    ]);
+  });
+
+  it('renders prefetch details with status code for non-2xx', async () => {
+    const fakeRequestResolver = {
+      waitFor: (_requestId: Protocol.Network.RequestId) => {
+        return Promise.reject();
+      },
+    } as unknown as Logs.RequestResolver.RequestResolver;
+
+    const requestId = 'requestId:1' as Protocol.Network.RequestId;
+    sinon.stub(Logs.NetworkLog.NetworkLog.instance(), 'requestsForId').withArgs(requestId).returns([
+      {statusCode: 404} as SDK.NetworkRequest.NetworkRequest,
+    ]);
+
+    const url = urlString`https://example.com/prefetch.html`;
+    const data: PreloadingComponents.PreloadingDetailsReportView.PreloadingDetailsReportViewData = {
+      pipeline: SDK.PreloadingModel.PreloadPipeline.newFromAttemptsForTesting([{
+        action: Protocol.Preload.SpeculationAction.Prefetch,
+        key: {
+          loaderId: 'loaderId' as Protocol.Network.LoaderId,
+          action: Protocol.Preload.SpeculationAction.Prefetch,
+          url,
+          targetHint: undefined,
+        },
+        pipelineId: 'pipelineId:1' as Protocol.Preload.PreloadPipelineId,
+        status: SDK.PreloadingModel.PreloadingStatus.FAILURE,
+        prefetchStatus: Protocol.Preload.PrefetchStatus.PrefetchFailedNon2XX,
+        requestId,
+        ruleSetIds: ['ruleSetId'] as Protocol.Preload.RuleSetId[],
+        nodeIds: [1] as Protocol.DOM.BackendNodeId[],
+      }]),
+      ruleSets: [
+        {
+          id: 'ruleSetId' as Protocol.Preload.RuleSetId,
+          loaderId: 'loaderId' as Protocol.Network.LoaderId,
+          sourceText: `
+{
+  "prefetch": [
+    {
+      "source": "list",
+      "urls": ["/subresource.js"]
+    }
+  ]
+}
+`,
+        },
+      ],
+      pageURL: urlString`https://example.com/`,
+      requestResolver: fakeRequestResolver,
+    };
+
+    const component = await renderPreloadingDetailsReportView(data);
+    const report = getElementWithinComponent(component, 'devtools-report', ReportView.ReportView.Report);
+
+    const keys = getCleanTextContentFromElements(report, 'devtools-report-key');
+    const values = getCleanTextContentFromElements(report, 'devtools-report-value');
+    assert.deepEqual(zip2(keys, values), [
+      ['URL', ''],
+      ['Action', 'Prefetch'],
+      ['Status', 'Speculative load failed.'],
+      ['Failure reason', 'The prefetch failed because of a non-2xx HTTP response status code (404).'],
+      ['Rule set', 'example.com/'],
+    ]);
+  });
+
+  it('renders prerender details with status code for non-2xx', async () => {
+    const url = urlString`https://example.com/prerendered.html`;
+
+    const fakeRequest = {statusCode: 404} as SDK.NetworkRequest.NetworkRequest;
+    const fakeNetworkManager = {requestForLoaderId: () => fakeRequest} as unknown as SDK.NetworkManager.NetworkManager;
+    const fakeFrame = {
+      loaderId: 'loaderId' as Protocol.Network.LoaderId,
+      resourceTreeModel: () => ({
+        target: () => ({
+          model: () => fakeNetworkManager,
+        }),
+      }),
+    } as unknown as SDK.ResourceTreeModel.ResourceTreeFrame;
+    sinon.stub(SDK.ResourceTreeModel.ResourceTreeModel, 'frames').returns([fakeFrame]);
+
+    const data: PreloadingComponents.PreloadingDetailsReportView.PreloadingDetailsReportViewData = {
+      pipeline: SDK.PreloadingModel.PreloadPipeline.newFromAttemptsForTesting([{
+        action: Protocol.Preload.SpeculationAction.Prerender,
+        key: {
+          loaderId: 'loaderId' as Protocol.Network.LoaderId,
+          action: Protocol.Preload.SpeculationAction.Prerender,
+          url,
+          targetHint: undefined,
+        },
+        pipelineId: 'pipelineId:1' as Protocol.Preload.PreloadPipelineId,
+        status: SDK.PreloadingModel.PreloadingStatus.FAILURE,
+        prerenderStatus: Protocol.Preload.PrerenderFinalStatus.NavigationBadHttpStatus,
+        disallowedMojoInterface: null,
+        mismatchedHeaders: null,
+        ruleSetIds: ['ruleSetId'] as Protocol.Preload.RuleSetId[],
+        nodeIds: [1] as Protocol.DOM.BackendNodeId[],
+      }]),
+      ruleSets: [
+        {
+          id: 'ruleSetId' as Protocol.Preload.RuleSetId,
+          loaderId: 'loaderId' as Protocol.Network.LoaderId,
+          sourceText: `
+{
+  "prerender": [
+    {
+      "source": "list",
+      "urls": ["/prerendered.html"]
+    }
+  ]
+}
+`,
+        },
+      ],
+      pageURL: urlString`https://example.com/`,
+    };
+
+    const component = await renderPreloadingDetailsReportView(data);
+    const report = getElementWithinComponent(component, 'devtools-report', ReportView.ReportView.Report);
+
+    const keys = getCleanTextContentFromElements(report, 'devtools-report-key');
+    const values = getCleanTextContentFromElements(report, 'devtools-report-value');
+    assert.deepEqual(zip2(keys, values), [
+      ['URL', url],
+      ['Action', 'Prerender'],
+      ['Status', 'Speculative load failed.'],
+      ['Failure reason', 'The prerendering navigation failed because of a non-2xx HTTP response status code (404).'],
       ['Rule set', 'example.com/'],
     ]);
   });

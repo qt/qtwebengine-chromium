@@ -5,10 +5,13 @@
 #ifndef COMPONENTS_ENTERPRISE_DATA_CONTROLS_CORE_BROWSER_RULES_SERVICE_BASE_H_
 #define COMPONENTS_ENTERPRISE_DATA_CONTROLS_CORE_BROWSER_RULES_SERVICE_BASE_H_
 
+#include "base/observer_list.h"
+#include "base/observer_list_types.h"
 #include "components/enterprise/data_controls/core/browser/rule.h"
 #include "components/enterprise/data_controls/core/browser/verdict.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/prefs/pref_change_registrar.h"
+#include "url/gurl.h"
 
 class PrefService;
 
@@ -19,8 +22,16 @@ namespace data_controls {
 // internal logic to track updates made to that policy.
 class RulesServiceBase : public KeyedService {
  public:
+  class Observer : public base::CheckedObserver {
+   public:
+    virtual void OnRulesUpdated() {}
+  };
+
   explicit RulesServiceBase(PrefService* pref_service);
   ~RulesServiceBase() override;
+
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
 
   // Returns a clipboard verdict only based the source of the copy, without
   // making any special destination assumptions. This is meant to trigger rules
@@ -37,6 +48,15 @@ class RulesServiceBase : public KeyedService {
 
   // Returns a verdict to be applied to a specific file download.
   virtual Verdict GetDownloadVerdict(const GURL& download_url) const;
+
+  // Returns true if rules indicate screenshots should be blocked. Only the
+  // "block" level is supported, a "warn" screenshot rule will not make this
+  // function return true.
+  virtual bool BlockScreenshots(const GURL& url) const;
+
+  // Returns true if there is any active Data Controls rule that applies a
+  // blocking 'screenshot' restriction.
+  bool HasBlockingScreenshotRule() const;
 
  protected:
   // Returns a `Verdict` corresponding to all triggered Data Control rules given
@@ -62,6 +82,8 @@ class RulesServiceBase : public KeyedService {
 
   // List of rules created from the "DataControlsRules" policy.
   std::vector<Rule> rules_;
+
+  base::ObserverList<Observer> observers_;
 };
 
 }  // namespace data_controls

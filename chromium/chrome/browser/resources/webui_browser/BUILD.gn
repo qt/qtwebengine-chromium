@@ -17,12 +17,12 @@ build_webui("build") {
     "bookmark_bar.html.ts",
     "bookmark_bar.ts",
     "bookmark_bar_browser_proxy.ts",
-    "bookmark_element.html.ts",
-    "bookmark_element.ts",
+    "bookmark.html.ts",
+    "bookmark.ts",
     "browser_proxy.ts",
     "content_region.ts",
-    "extension_element.html.ts",
-    "extension_element.ts",
+    "extension.html.ts",
+    "extension.ts",
     "extensions_bar.ts",
     "icons.html.ts",
     "side_panel.html.ts",
@@ -33,14 +33,15 @@ build_webui("build") {
     "tab_strip/tab_strip.html.ts",
     "tab_strip/tab_strip.ts",
     "webui_browser.ts",
+    "webview.html.ts",
     "webview.ts",
   ]
 
   css_files = [
     "app.css",
-    "bookmark_element.css",
+    "bookmark.css",
     "content_region.css",
-    "extension_element.css",
+    "extension.css",
     "extensions_bar.css",
     "side_panel.css",
     "tab_strip/tab.css",
@@ -51,7 +52,7 @@ build_webui("build") {
   mojo_files = [
     # TODO(crbug.com/439641430): fix mojo ts bindings to account for cross
     # reference import issue.
-    "$root_gen_dir/chrome/browser/ui/webui/tabs/tabs.mojom-webui.ts",
+    "$root_gen_dir/components/tabs/public/mojom/tabs.mojom-webui.ts",
     "$root_gen_dir/chrome/browser/ui/webui_browser/bookmark_bar.mojom-webui.ts",
     "$root_gen_dir/chrome/browser/ui/webui_browser/browser.mojom-webui.ts",
     "$root_gen_dir/chrome/browser/ui/webui_browser/extensions_bar.mojom-webui.ts",
@@ -62,11 +63,11 @@ build_webui("build") {
   ]
 
   mojo_files_deps = [
-    "//chrome/browser/ui/webui/tabs:mojo_bindings_ts__generator",
     "//chrome/browser/ui/webui_browser:browser_mojo_bindings_ts__generator",
     "//components/browser_apis/tab_strip:mojom_ts__copy_converters",
     "//components/browser_apis/tab_strip:mojom_ts__generator",
     "//components/tab_groups/public/mojom:mojo_bindings_ts__generator",
+    "//components/tabs/public/mojom:mojom_ts__generator",
   ]
 
   webui_context_type = "trusted"

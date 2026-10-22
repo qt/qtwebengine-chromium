@@ -175,7 +175,8 @@ bool BestPractices::ValidateIndexBufferArm(const bp_state::CommandBufferSubState
     bool skip = false;
 
     // check for sparse/underutilised index buffer, and post-transform cache thrashing
-    const auto ib_state = Get<vvl::Buffer>(cb_state.base.index_buffer_binding.buffer);
+    // TODO - Handle https://gitlab.khronos.org/vulkan/Vulkan-ValidationLayers/-/issues/45
+    const auto ib_state = Get<vvl::Buffer>(cb_state.base.index_buffer_binding.Buffer());
     // If the maintenance6 feature is enabled, buffer can be VK_NULL_HANDLE. If buffer is VK_NULL_HANDLE and the nullDescriptor
     // feature is enabled, every index fetched results in a value of zero.
     if (!ib_state) {
@@ -193,7 +194,7 @@ bool BestPractices::ValidateIndexBufferArm(const bp_state::CommandBufferSubState
 
     // no point checking index buffer if the memory is nonexistant/unmapped, or if there is no graphics pipeline bound to this CB
     if (ib_mem) {
-        const uint32_t scan_stride = IndexTypeSize(ib_type);
+        const uint32_t scan_stride = IndexTypeByteSize(ib_type);
         // Check if all indices are within the memory allocation size, if robustness is enabled they might not be
         if ((firstIndex + indexCount) * scan_stride > ib_memory_state->allocate_info.allocationSize) {
             return skip;
@@ -599,8 +600,7 @@ void BestPractices::UpdateBoundDescriptorSets(bp_state::CommandBufferSubState& c
                         break;
                     }
                     case vvl::DescriptorClass::ImageSampler: {
-                        if (const auto image_sampler_descriptor =
-                                static_cast<const vvl::ImageSamplerDescriptor*>(descriptor)) {
+                        if (const auto image_sampler_descriptor = static_cast<const vvl::ImageSamplerDescriptor*>(descriptor)) {
                             image_view = image_sampler_descriptor->GetImageView();
                         }
                         break;

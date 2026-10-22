@@ -58,11 +58,55 @@ struct A2AInvokePaymentAppMetricsTestParam {
 TEST(FacilitatedPaymentsMetricsTest, LogPixCodeCopied) {
   base::HistogramTester histogram_tester;
 
-  LogPixCodeCopied(ukm::UkmRecorder::GetNewSourceID());
+  LogPixCodeCopied(ukm::UkmRecorder::GetNewSourceID(), /*has_iframe=*/false);
 
   histogram_tester.ExpectUniqueSample("FacilitatedPayments.Pix.PixCodeCopied",
                                       /*sample=*/true,
                                       /*expected_bucket_count=*/1);
+}
+
+TEST(FacilitatedPaymentsMetricsTest, LogPixCodeCopiedInIframe) {
+  base::HistogramTester histogram_tester;
+
+  LogPixCodeCopiedInIframe();
+
+  histogram_tester.ExpectUniqueSample(
+      "FacilitatedPayments.Pix.PixCodeCopied.Iframe",
+      /*sample=*/true,
+      /*expected_bucket_count=*/1);
+}
+
+class FacilitatedPaymentsMetricsPixIframeUrlTypeTest
+    : public testing::TestWithParam<PixIframeUrlType> {};
+
+TEST_P(FacilitatedPaymentsMetricsPixIframeUrlTypeTest, LogPixIframeUrlType) {
+  base::HistogramTester histogram_tester;
+
+  LogPixIframeUrlType(GetParam());
+
+  histogram_tester.ExpectUniqueSample("FacilitatedPayments.Pix.Iframe.UrlType",
+                                      /*sample=*/GetParam(),
+                                      /*expected_bucket_count=*/1);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    FacilitatedPaymentsMetricsTest,
+    FacilitatedPaymentsMetricsPixIframeUrlTypeTest,
+    testing::Values(PixIframeUrlType::kOtherNonEmptyUrl,
+                    PixIframeUrlType::kAboutBlank,
+                    PixIframeUrlType::kEmpty,
+                    PixIframeUrlType::kAboutSrcDoc,
+                    PixIframeUrlType::kNonEmptyAndSameOriginAsMainFrame));
+
+TEST(FacilitatedPaymentsMetricsTest, LogPixIframeIsSameOrigin) {
+  base::HistogramTester histogram_tester;
+
+  LogPixIframeIsSameOriginAsMainFrame(/*is_same_origin=*/true);
+
+  histogram_tester.ExpectUniqueSample(
+      "FacilitatedPayments.Pix.Iframe.IsSameOrigin",
+      /*sample=*/true,
+      /*expected_bucket_count=*/1);
 }
 
 TEST(FacilitatedPaymentsMetricsTest, LogEwalletPaymentLinkDetected) {
@@ -238,6 +282,25 @@ TEST(FacilitatedPaymentsMetricsTest, LogPixTransactionResultAndLatency) {
                       GetPurchaseActionResultString(result), ".Latency"}),
         /*sample=*/10,
         /*expected_count=*/1);
+  }
+}
+
+TEST(FacilitatedPaymentsMetricsTest, LogPixTransactionResultPerFrameType) {
+  for (PurchaseActionResult result :
+       {PurchaseActionResult::kResultOk, PurchaseActionResult::kCouldNotInvoke,
+        PurchaseActionResult::kResultCanceled}) {
+    for (bool pix_code_is_in_iframe : {true, false}) {
+      base::HistogramTester histogram_tester;
+
+      LogPixTransactionResultPerFrameType(pix_code_is_in_iframe, result);
+
+      histogram_tester.ExpectUniqueSample(
+          base::StrCat({"FacilitatedPayments.Pix.Transaction",
+                        pix_code_is_in_iframe ? ".Iframe" : ".MainFrame", ".",
+                        GetPurchaseActionResultString(result)}),
+          /*sample=*/true,
+          /*expected_bucket_count=*/1);
+    }
   }
 }
 
@@ -506,7 +569,8 @@ INSTANTIATE_TEST_SUITE_P(
                     PixFlowExitedReason::kFrameNotActive,
                     PixFlowExitedReason::kCctWithGboardAsDefaultIme,
                     PixFlowExitedReason::kStaticCode,
-                    PixFlowExitedReason::kIframeUrlNotAllowlisted));
+                    PixFlowExitedReason::kIframeUrlNotAllowlisted,
+                    PixFlowExitedReason::kFlowAlreadyStarted));
 
 class FacilitatedPaymentsMetricsUkmTest : public testing::Test {
  public:
@@ -518,13 +582,15 @@ class FacilitatedPaymentsMetricsUkmTest : public testing::Test {
 };
 
 TEST_F(FacilitatedPaymentsMetricsUkmTest, LogPixCodeCopied) {
-  LogPixCodeCopied(ukm::UkmRecorder::GetNewSourceID());
+  LogPixCodeCopied(ukm::UkmRecorder::GetNewSourceID(), /*has_iframe=*/true);
 
   auto ukm_entries = ukm_recorder_.GetEntries(
       ukm::builders::FacilitatedPayments_PixCodeCopied::kEntryName,
-      {ukm::builders::FacilitatedPayments_PixCodeCopied::kPixCodeCopiedName});
+      {ukm::builders::FacilitatedPayments_PixCodeCopied::kPixCodeCopiedName,
+       ukm::builders::FacilitatedPayments_PixCodeCopied::kHasIframeName});
   ASSERT_EQ(ukm_entries.size(), 1UL);
   EXPECT_EQ(ukm_entries[0].metrics.at("PixCodeCopied"), true);
+  EXPECT_EQ(ukm_entries[0].metrics.at("HasIframe"), true);
 }
 
 TEST_F(FacilitatedPaymentsMetricsUkmTest, LogEwalletPaymentLinkDetectedUkm) {

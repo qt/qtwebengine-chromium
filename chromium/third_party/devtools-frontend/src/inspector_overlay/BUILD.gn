@@ -22,6 +22,8 @@ action("build_inspector_overlay") {
     "$target_gen_dir/highlight_isolated_element.js",
     "$target_gen_dir/highlight_scroll_snap.js",
     "$target_gen_dir/tool_persistent.js",
+    "$target_gen_dir/tool_green_dev_anchors.js",
+    "$target_gen_dir/tool_green_dev_anchors.css",
     "$target_gen_dir/tool_grid.css",
     "$target_gen_dir/tool_highlight.js",
     "$target_gen_dir/tool_highlight.css",
@@ -43,7 +45,7 @@ action("build_inspector_overlay") {
 
   args = [
     "main.js",
-    "82000",  # max_size in bytes
+    "85000",  # max_size in bytes
     "--input_path",
     rebase_path(target_gen_dir, root_build_dir),
     "--output_path",
@@ -67,6 +69,7 @@ copy("copy_resources") {
 copy("copy_css_to_gen") {
   sources = [
     "common.css",
+    "tool_green_dev_anchors.css",
     "tool_grid.css",
     "tool_highlight.css",
     "tool_paused.css",
@@ -89,6 +92,7 @@ ts_library("inspector_overlay") {
     "highlight_isolated_element.ts",
     "highlight_scroll_snap.ts",
     "main.ts",
+    "tool_green_dev_anchors.ts",
     "tool_highlight.ts",
     "tool_paused.ts",
     "tool_persistent.ts",
@@ -109,6 +113,7 @@ ts_library("unittests") {
     "css_grid_label_helpers.test.ts",
     "highlight_common.test.ts",
     "highlight_flex_common.test.ts",
+    "highlight_grid_common.test.ts",
     "tool_highlight.test.ts",
     "tool_source_order.test.ts",
     "tool_window_controls.test.ts",

@@ -48,6 +48,9 @@ namespace tint::wgsl {
 /// @param str the string to parse
 /// @returns the parsed enum, or Extension::kUndefined if the string could not be parsed.
 Extension ParseExtension(std::string_view str) {
+    if (str == "atomic_vec2u_min_max") {
+        return Extension::kAtomicVec2UMinMax;
+    }
     if (str == "chromium_disable_uniformity_analysis") {
         return Extension::kChromiumDisableUniformityAnalysis;
     }
@@ -93,6 +96,8 @@ std::string_view ToString(Extension value) {
     switch (value) {
         case Extension::kUndefined:
             return "undefined";
+        case Extension::kAtomicVec2UMinMax:
+            return "atomic_vec2u_min_max";
         case Extension::kChromiumDisableUniformityAnalysis:
             return "chromium_disable_uniformity_analysis";
         case Extension::kChromiumExperimentalBarycentricCoord:
@@ -205,6 +210,9 @@ LanguageFeature ParseLanguageFeature(std::string_view str) {
     if (str == "immediate_address_space") {
         return LanguageFeature::kImmediateAddressSpace;
     }
+    if (str == "linear_indexing") {
+        return LanguageFeature::kLinearIndexing;
+    }
     if (str == "packed_4x8_integer_dot_product") {
         return LanguageFeature::kPacked4X8IntegerDotProduct;
     }
@@ -231,6 +239,9 @@ LanguageFeature ParseLanguageFeature(std::string_view str) {
     }
     if (str == "texture_and_sampler_let") {
         return LanguageFeature::kTextureAndSamplerLet;
+    }
+    if (str == "texture_formats_tier1") {
+        return LanguageFeature::kTextureFormatsTier1;
     }
     if (str == "uniform_buffer_standard_layout") {
         return LanguageFeature::kUniformBufferStandardLayout;
@@ -264,6 +275,8 @@ std::string_view ToString(LanguageFeature value) {
             return "fragment_depth";
         case LanguageFeature::kImmediateAddressSpace:
             return "immediate_address_space";
+        case LanguageFeature::kLinearIndexing:
+            return "linear_indexing";
         case LanguageFeature::kPacked4X8IntegerDotProduct:
             return "packed_4x8_integer_dot_product";
         case LanguageFeature::kPointerCompositeAccess:
@@ -282,6 +295,8 @@ std::string_view ToString(LanguageFeature value) {
             return "texel_buffers";
         case LanguageFeature::kTextureAndSamplerLet:
             return "texture_and_sampler_let";
+        case LanguageFeature::kTextureFormatsTier1:
+            return "texture_formats_tier1";
         case LanguageFeature::kUniformBufferStandardLayout:
             return "uniform_buffer_standard_layout";
         case LanguageFeature::kUnrestrictedPointerParameters:
@@ -705,6 +720,12 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     if (name == "atomicCompareExchangeWeak") {
         return BuiltinFn::kAtomicCompareExchangeWeak;
     }
+    if (name == "atomicStoreMax") {
+        return BuiltinFn::kAtomicStoreMax;
+    }
+    if (name == "atomicStoreMin") {
+        return BuiltinFn::kAtomicStoreMin;
+    }
     if (name == "subgroupBallot") {
         return BuiltinFn::kSubgroupBallot;
     }
@@ -804,14 +825,14 @@ BuiltinFn ParseBuiltinFn(std::string_view name) {
     if (name == "bufferView") {
         return BuiltinFn::kBufferView;
     }
+    if (name == "bufferArrayView") {
+        return BuiltinFn::kBufferArrayView;
+    }
     if (name == "bufferLength") {
         return BuiltinFn::kBufferLength;
     }
     if (name == "print") {
         return BuiltinFn::kPrint;
-    }
-    if (name == "__tint_materialize") {
-        return BuiltinFn::kTintMaterialize;
     }
     if (name == "hasResource") {
         return BuiltinFn::kHasResource;
@@ -1070,6 +1091,10 @@ const char* str(BuiltinFn i) {
             return "atomicExchange";
         case BuiltinFn::kAtomicCompareExchangeWeak:
             return "atomicCompareExchangeWeak";
+        case BuiltinFn::kAtomicStoreMax:
+            return "atomicStoreMax";
+        case BuiltinFn::kAtomicStoreMin:
+            return "atomicStoreMin";
         case BuiltinFn::kSubgroupBallot:
             return "subgroupBallot";
         case BuiltinFn::kSubgroupElect:
@@ -1136,12 +1161,12 @@ const char* str(BuiltinFn i) {
             return "subgroupMatrixScalarMultiply";
         case BuiltinFn::kBufferView:
             return "bufferView";
+        case BuiltinFn::kBufferArrayView:
+            return "bufferArrayView";
         case BuiltinFn::kBufferLength:
             return "bufferLength";
         case BuiltinFn::kPrint:
             return "print";
-        case BuiltinFn::kTintMaterialize:
-            return "__tint_materialize";
         case BuiltinFn::kHasResource:
             return "hasResource";
         case BuiltinFn::kGetResource:

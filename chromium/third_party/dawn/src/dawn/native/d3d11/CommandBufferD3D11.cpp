@@ -641,10 +641,19 @@ MaybeError CommandBuffer::ExecuteRenderPass(
         // Skip the clear as it will be handled by the workaround.
         colorAttachment.loadOp = wgpu::LoadOp::Load;
         // Mark the resource as initialized to avoid the lazy clear.
-        SubresourceRange range = colorAttachment.view->GetSubresourceRange();
-        colorAttachment.view->GetTexture()->SetIsSubresourceContentInitialized(true, range);
+        // For 3D textures, the view range covers the entire mip level (all depth slices), but
+        // the workaround only clears a single slice. So we must not mark it as initialized
+        // here, and let LazyClearRenderPassAttachments handle the initialization of the
+        // other slices.
+        if (colorAttachment.view->GetTexture()->GetDimension() != wgpu::TextureDimension::e3D) {
+            SubresourceRange range = colorAttachment.view->GetSubresourceRange();
+            colorAttachment.view->GetTexture()->SetIsSubresourceContentInitialized(true, range);
+        }
     }
-    LazyClearRenderPassAttachments(GetDevice(), renderPass);
+    DAWN_TRY(LazyClearRenderPassAttachments(
+        GetDevice(), renderPass, [&](TextureBase* texture, const SubresourceRange& range) {
+            return ToBackend(texture)->EnsureSubresourceContentInitialized(commandContext, range);
+        }));
 
     auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext3();
     // Hold ID3D11RenderTargetView ComPtr to make attachments alive.
@@ -892,35 +901,58 @@ MaybeError CommandBuffer::ExecuteRenderPass(
         switch (type) {
             case Command::EndRenderPass: {
                 mCommands.NextCommand<EndRenderPassCmd>();
+
                 d3d11DeviceContext->OMSetRenderTargets(0, nullptr, nullptr);
 
-                if (renderPass->attachmentState->GetSampleCount() <= 1) {
+                if (renderPass->attachmentState->GetSampleCount() > 1) {
+                    // Resolve multisampled textures.
+                    for (auto i : renderPass->attachmentState->GetColorAttachmentsMask()) {
+                        const auto& attachment = renderPass->colorAttachments[i];
+                        if (!attachment.resolveTarget.Get()) {
+                            continue;
+                        }
+
+                        DAWN_ASSERT(attachment.view->GetAspects() == Aspect::Color);
+                        DAWN_ASSERT(attachment.resolveTarget->GetAspects() == Aspect::Color);
+
+                        Texture* resolveTexture = ToBackend(attachment.resolveTarget->GetTexture());
+                        Texture* colorTexture = ToBackend(attachment.view->GetTexture());
+                        uint32_t dstSubresource = resolveTexture->GetSubresourceIndex(
+                            attachment.resolveTarget->GetBaseMipLevel(),
+                            attachment.resolveTarget->GetBaseArrayLayer(), Aspect::Color);
+                        uint32_t srcSubresource = colorTexture->GetSubresourceIndex(
+                            attachment.view->GetBaseMipLevel(),
+                            attachment.view->GetBaseArrayLayer(), Aspect::Color);
+                        d3d11DeviceContext->ResolveSubresource(
+                            resolveTexture->GetD3D11Resource(), dstSubresource,
+                            colorTexture->GetD3D11Resource(), srcSubresource,
+                            d3d::DXGITextureFormat(GetDevice(),
+                                                   attachment.resolveTarget->GetFormat().format));
+                    }
+                }
+
+                if (!GetDevice()->IsToggleEnabled(Toggle::D3D11UseDiscardView)) {
                     return {};
                 }
 
-                // Resolve multisampled textures.
+                // Discard render pass' attachments having StoreOp::Discard.
                 for (auto i : renderPass->attachmentState->GetColorAttachmentsMask()) {
-                    const auto& attachment = renderPass->colorAttachments[i];
-                    if (!attachment.resolveTarget.Get()) {
-                        continue;
+                    if (renderPass->colorAttachments[i].storeOp == wgpu::StoreOp::Discard) {
+                        d3d11DeviceContext->DiscardView(d3d11RenderTargetViews[i]);
                     }
+                }
 
-                    DAWN_ASSERT(attachment.view->GetAspects() == Aspect::Color);
-                    DAWN_ASSERT(attachment.resolveTarget->GetAspects() == Aspect::Color);
-
-                    Texture* resolveTexture = ToBackend(attachment.resolveTarget->GetTexture());
-                    Texture* colorTexture = ToBackend(attachment.view->GetTexture());
-                    uint32_t dstSubresource = resolveTexture->GetSubresourceIndex(
-                        attachment.resolveTarget->GetBaseMipLevel(),
-                        attachment.resolveTarget->GetBaseArrayLayer(), Aspect::Color);
-                    uint32_t srcSubresource = colorTexture->GetSubresourceIndex(
-                        attachment.view->GetBaseMipLevel(), attachment.view->GetBaseArrayLayer(),
-                        Aspect::Color);
-                    d3d11DeviceContext->ResolveSubresource(
-                        resolveTexture->GetD3D11Resource(), dstSubresource,
-                        colorTexture->GetD3D11Resource(), srcSubresource,
-                        d3d::DXGITextureFormat(GetDevice(),
-                                               attachment.resolveTarget->GetFormat().format));
+                if (renderPass->attachmentState->HasDepthStencilAttachment()) {
+                    auto* attachmentInfo = &renderPass->depthStencilAttachment;
+                    const Format& attachmentFormat =
+                        attachmentInfo->view->GetTexture()->GetFormat();
+                    bool discardDepth = !attachmentFormat.HasDepth() ||
+                                        attachmentInfo->depthStoreOp == wgpu::StoreOp::Discard;
+                    bool discardStencil = !attachmentFormat.HasStencil() ||
+                                          attachmentInfo->stencilStoreOp == wgpu::StoreOp::Discard;
+                    if (discardDepth && discardStencil) {
+                        d3d11DeviceContext->DiscardView(d3d11DepthStencilView);
+                    }
                 }
 
                 return {};

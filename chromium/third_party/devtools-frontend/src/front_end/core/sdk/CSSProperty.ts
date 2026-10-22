@@ -225,7 +225,7 @@ export class CSSProperty extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
     const range = this.range.relativeTo(this.ownerStyle.range.startLine, this.ownerStyle.range.startColumn);
     const indentation = this.ownerStyle.cssText ?
         this.detectIndentation(this.ownerStyle.cssText) :
-        Common.Settings.Settings.instance().moduleSetting('text-editor-indent').get();
+        this.ownerStyle.cssModel().target().targetManager().settings.moduleSetting('text-editor-indent').get();
     const endIndentation = this.ownerStyle.cssText ? indentation.substring(0, this.ownerStyle.range.endColumn) : '';
     const text = new TextUtils.Text.Text(this.ownerStyle.cssText || '');
     const newStyleText = text.replaceRange(range, Platform.StringUtilities.sprintf(';%s;', propertyText));
@@ -377,5 +377,43 @@ export class CSSProperty extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
 
   getLonghandProperties(): CSSProperty[] {
     return this.#longhandProperties;
+  }
+
+  ignoreErrors(): boolean {
+    function hasUnknownVendorPrefix(string: string): boolean {
+      return !string.startsWith('-webkit-') && /^[-_][\w\d]+-\w/.test(string);
+    }
+
+    const name = this.name.toLowerCase();
+
+    // IE hack.
+    if (name.charAt(0) === '_') {
+      return true;
+    }
+
+    // IE has a different format for this.
+    if (name === 'filter') {
+      return true;
+    }
+
+    // Common IE-specific property prefix.
+    if (name.startsWith('scrollbar-')) {
+      return true;
+    }
+    if (hasUnknownVendorPrefix(name)) {
+      return true;
+    }
+
+    const value = this.value.toLowerCase();
+
+    // IE hack.
+    if (value.endsWith('\\9')) {
+      return true;
+    }
+    if (hasUnknownVendorPrefix(value)) {
+      return true;
+    }
+
+    return false;
   }
 }

@@ -50,10 +50,10 @@ void FormDataAndroid::OnFormFieldDidChange(size_t index,
   fields_[index]->OnFormFieldDidChange(value);
 }
 
-bool FormDataAndroid::GetFieldIndex(const FormFieldData& field, size_t* index) {
+bool FormDataAndroid::GetSimilarFieldIndex(const FormFieldData& field,
+                                           size_t* index) {
   for (size_t i = 0; i < form_.fields().size(); ++i) {
-    if (FormFieldData::IdenticalAndEquivalentDomElements(
-            form_.fields()[i], field, {FormFieldData::Exclusion::kValue})) {
+    if (fields_[i]->SimilarFieldAs(field)) {
       *index = i;
       return true;
     }
@@ -61,10 +61,10 @@ bool FormDataAndroid::GetFieldIndex(const FormFieldData& field, size_t* index) {
   return false;
 }
 
-bool FormDataAndroid::GetSimilarFieldIndex(const FormFieldData& field,
-                                           size_t* index) {
+bool FormDataAndroid::GetFieldByGlobalId(const FormFieldData& field,
+                                         size_t* index) {
   for (size_t i = 0; i < form_.fields().size(); ++i) {
-    if (fields_[i]->SimilarFieldAs(field)) {
+    if (fields_[i]->global_id() == field.global_id()) {
       *index = i;
       return true;
     }
@@ -110,7 +110,7 @@ void FormDataAndroid::UpdateFieldTypes(const FormStructure& form_structure) {
       std::vector<FieldType> server_predictions;
       for (const auto& prediction : autofill_field->server_predictions()) {
         server_predictions.emplace_back(
-            ToSafeFieldType(prediction.type(), NO_SERVER_DATA));
+            ToSafeFieldType(prediction.type()).value_or(NO_SERVER_DATA));
       }
       std::string_view overall_type = [&] {
         if (HtmlFieldType html_field_type = autofill_field->html_type();

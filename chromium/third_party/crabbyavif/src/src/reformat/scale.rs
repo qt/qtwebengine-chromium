@@ -14,6 +14,7 @@
 
 use crate::image::*;
 use crate::internal_utils::*;
+use crate::utils::pixels::Pixels;
 use crate::*;
 
 use libyuv_sys::bindings::*;
@@ -27,75 +28,70 @@ impl Image {
             return AvifError::invalid_argument();
         }
         let planes = category.planes();
-        let src =
-            if category != Category::Alpha && self.yuv_format == PixelFormat::AndroidP010 {
-                // P010 images cannot be scaled using ScalePlane_12 since the U and V planes are
-                // interleaved. Convert them into I010 and then scale each plane using
-                // ScalePlane_12.
-                let mut i010 = image::Image {
-                    width: self.width,
-                    height: self.height,
-                    depth: 10,
-                    yuv_format: PixelFormat::Yuv420,
-                    ..image::Image::default()
-                };
-                i010.allocate_planes(Category::Color)?;
-                let src_y_pd = self.plane_data(Plane::Y).unwrap();
-                let src_uv_pd = self.plane_data(Plane::U).unwrap();
-                let src_y = self.planes[Plane::Y.as_usize()].unwrap_ref().ptr16();
-                let src_uv = self.planes[Plane::U.as_usize()].unwrap_ref().ptr16();
-                let dst_y_pd = i010.plane_data(Plane::Y).unwrap();
-                let dst_u_pd = i010.plane_data(Plane::U).unwrap();
-                let dst_v_pd = i010.plane_data(Plane::V).unwrap();
-                let dst_y = i010.planes[Plane::Y.as_usize()].unwrap_mut().ptr16_mut();
-                let dst_u = i010.planes[Plane::U.as_usize()].unwrap_mut().ptr16_mut();
-                let dst_v = i010.planes[Plane::V.as_usize()].unwrap_mut().ptr16_mut();
-                // SAFETY: This function calls into libyuv which is a C++ library. We pass in
-                // pointers and strides to rust slices that are guaranteed to be valid.
-                let ret = unsafe {
-                    P010ToI010(
-                        src_y,
-                        i32_from_u32(src_y_pd.row_bytes / 2)?,
-                        src_uv,
-                        i32_from_u32(src_uv_pd.row_bytes / 2)?,
-                        dst_y,
-                        i32_from_u32(dst_y_pd.row_bytes / 2)?,
-                        dst_u,
-                        i32_from_u32(dst_u_pd.row_bytes / 2)?,
-                        dst_v,
-                        i32_from_u32(dst_v_pd.row_bytes / 2)?,
-                        i32_from_u32(self.width)?,
-                        i32_from_u32(self.height)?,
-                    )
-                };
-                if ret != 0 {
-                    return AvifError::reformat_failed();
-                }
-                i010
-            } else {
-                image::Image {
-                    width: self.width,
-                    height: self.height,
-                    depth: self.depth,
-                    yuv_format: self.yuv_format,
-                    planes: self
-                        .planes
-                        .as_ref()
-                        .iter()
-                        .map(|plane| {
-                            if plane.is_some() {
-                                plane.unwrap_ref().try_clone().ok()
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .unwrap(),
-                    row_bytes: self.row_bytes,
-                    ..image::Image::default()
-                }
+        let src = if category != Category::Alpha && self.yuv_format == PixelFormat::AndroidP010 {
+            // P010 images cannot be scaled using ScalePlane_12 since the U and V planes are
+            // interleaved. Convert them into I010 and then scale each plane using
+            // ScalePlane_12.
+            let mut i010 = image::Image {
+                width: self.width,
+                height: self.height,
+                depth: 10,
+                yuv_format: PixelFormat::Yuv420,
+                ..image::Image::default()
             };
+            i010.allocate_planes(Category::Color)?;
+            let src_y_pd = self.plane_data(Plane::Y).unwrap();
+            let src_uv_pd = self.plane_data(Plane::U).unwrap();
+            let src_y = self.planes[Plane::Y.as_usize()].unwrap_ref().ptr16();
+            let src_uv = self.planes[Plane::U.as_usize()].unwrap_ref().ptr16();
+            let dst_y_pd = i010.plane_data(Plane::Y).unwrap();
+            let dst_u_pd = i010.plane_data(Plane::U).unwrap();
+            let dst_v_pd = i010.plane_data(Plane::V).unwrap();
+            let dst_y = i010.planes[Plane::Y.as_usize()].unwrap_mut().ptr16_mut();
+            let dst_u = i010.planes[Plane::U.as_usize()].unwrap_mut().ptr16_mut();
+            let dst_v = i010.planes[Plane::V.as_usize()].unwrap_mut().ptr16_mut();
+            // SAFETY: This function calls into libyuv which is a C++ library. We pass in
+            // pointers and strides to rust slices that are guaranteed to be valid.
+            let ret = unsafe {
+                P010ToI010(
+                    src_y,
+                    i32_from_u32(src_y_pd.row_bytes / 2)?,
+                    src_uv,
+                    i32_from_u32(src_uv_pd.row_bytes / 2)?,
+                    dst_y,
+                    i32_from_u32(dst_y_pd.row_bytes / 2)?,
+                    dst_u,
+                    i32_from_u32(dst_u_pd.row_bytes / 2)?,
+                    dst_v,
+                    i32_from_u32(dst_v_pd.row_bytes / 2)?,
+                    i32_from_u32(self.width)?,
+                    i32_from_u32(self.height)?,
+                )
+            };
+            if ret != 0 {
+                return AvifError::reformat_failed();
+            }
+            i010
+        } else {
+            let mut src = self.shallow_clone();
+            for plane in ALL_PLANES {
+                if let Some(self_plane) = &self.planes[plane.as_usize()] {
+                    src.planes[plane.as_usize()] = Some(match self_plane {
+                        // Pixel values are already stored elsewhere. Reuse the pointer.
+                        Pixels::Pointer(p) => Pixels::Pointer(*p),
+                        Pixels::Pointer16(p) => Pixels::Pointer16(*p),
+                        // Pixel values must be duplicated.
+                        // Note that a temporary destination instead of a
+                        // temporary source would avoid this allocation.
+                        // This simpler logic is kept for convenience.
+                        Pixels::Buffer(b) => Pixels::Buffer(b.try_clone()?),
+                        Pixels::Buffer16(b) => Pixels::Buffer16(b.try_clone()?),
+                    });
+                    src.row_bytes[plane.as_usize()] = self.row_bytes[plane.as_usize()];
+                }
+            }
+            src
+        };
 
         let scale_factor = self.width / width;
         self.width = width;
@@ -252,7 +248,6 @@ mod tests {
                 Pixels::Buffer(values.to_vec())
             });
             yuv.row_bytes[plane.as_usize()] = 2;
-            yuv.image_owns_planes[plane.as_usize()] = !is_pointer_input;
         }
         let categories: &[Category] =
             if use_alpha { &[Category::Color, Category::Alpha] } else { &[Category::Color] };

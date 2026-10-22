@@ -76,6 +76,8 @@ class array : private ::std::array<Value, Size> {
 
     using Base::back;
     using Base::front;
+
+    bool operator==(const array<Index, Value, Size>& other) const = default;
 };
 
 }  // namespace dawn::ityp

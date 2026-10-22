@@ -314,8 +314,7 @@ angle::Result ContextMtl::drawTriFanArraysWithBaseVertex(const gl::Context *cont
     if (mTriFanArraysIndexBuffer == nullptr || mTriFanArraysIndexBuffer->size() < indexBufferSize)
     {
         // Re-generate a new index buffer, which the first index will be zero.
-        ANGLE_TRY(
-            mtl::Buffer::MakeBuffer(this, indexBufferSize, nullptr, &mTriFanArraysIndexBuffer));
+        ANGLE_TRY(mtl::Buffer::MakeBuffer(this, indexBufferSize, &mTriFanArraysIndexBuffer));
         ANGLE_TRY(getDisplay()->getUtils().generateTriFanBufferFromArrays(
             this, {0, static_cast<uint32_t>(count), mTriFanArraysIndexBuffer, 0}));
     }
@@ -666,7 +665,7 @@ angle::Result ContextMtl::drawArraysProvokingVertexImpl(const gl::Context *conte
                                                         GLuint baseInstance)
 {
 
-    size_t outIndexCount               = 0;
+    uint32_t outIndexCount             = 0;
     size_t outIndexOffset              = 0;
     gl::DrawElementsType convertedType = gl::DrawElementsType::UnsignedInt;
     gl::PrimitiveMode outIndexMode     = gl::PrimitiveMode::InvalidEnum;
@@ -675,7 +674,6 @@ angle::Result ContextMtl::drawArraysProvokingVertexImpl(const gl::Context *conte
     ANGLE_TRY(mProvokingVertexHelper.generateIndexBuffer(
         mtl::GetImpl(context), first, count, mode, convertedType, outIndexCount, outIndexOffset,
         outIndexMode, drawIdxBuffer));
-    GLsizei outIndexCounti32 = static_cast<GLsizei>(outIndexCount);
 
     // Note: we don't need to pass the generated index buffer to ContextMtl::setupDraw.
     // Because setupDraw only needs to operate on the original vertex buffers & PrimitiveMode.
@@ -722,20 +720,20 @@ angle::Result ContextMtl::drawArraysProvokingVertexImpl(const gl::Context *conte
             MTLIndexType mtlIdxType  = mtl::GetIndexType(convertedType);                           \
             if (instances == 0)                                                                    \
             {                                                                                      \
-                mRenderEncoder.drawIndexed(mtlType, outIndexCounti32, mtlIdxType, drawIdxBuffer,   \
+                mRenderEncoder.drawIndexed(mtlType, outIndexCount, mtlIdxType, drawIdxBuffer,      \
                                            outIndexOffset);                                        \
             }                                                                                      \
             else                                                                                   \
             {                                                                                      \
                 if (baseInstance == 0)                                                             \
                 {                                                                                  \
-                    mRenderEncoder.drawIndexedInstanced(mtlType, outIndexCounti32, mtlIdxType,     \
+                    mRenderEncoder.drawIndexedInstanced(mtlType, outIndexCount, mtlIdxType,        \
                                                         drawIdxBuffer, outIndexOffset, instances); \
                 }                                                                                  \
                 else                                                                               \
                 {                                                                                  \
                     mRenderEncoder.drawIndexedInstancedBaseVertexBaseInstance(                     \
-                        mtlType, outIndexCounti32, mtlIdxType, drawIdxBuffer, outIndexOffset,      \
+                        mtlType, outIndexCount, mtlIdxType, drawIdxBuffer, outIndexOffset,         \
                         instances, 0, baseInstance);                                               \
                 }                                                                                  \
             }                                                                                      \
@@ -790,17 +788,14 @@ angle::Result ContextMtl::drawElementsImpl(const gl::Context *context,
 
     size_t provokingVertexAdditionalOffset = 0;
 
+    gl::PrimitiveMode originalMode = mode;
     if (requiresIndexRewrite(context->getState(), mode))
     {
-        size_t outIndexCount      = 0;
-        gl::PrimitiveMode newMode = gl::PrimitiveMode::InvalidEnum;
+        // Line strips and triangle strips are rewritten to flat line arrays and tri arrays.
         ANGLE_TRY(mProvokingVertexHelper.preconditionIndexBuffer(
             mtl::GetImpl(context), idxBuffer, count, convertedOffset,
-            mState.isPrimitiveRestartEnabled(), mode, convertedType, outIndexCount,
-            provokingVertexAdditionalOffset, newMode, drawIdxBuffer));
-        // Line strips and triangle strips are rewritten to flat line arrays and tri arrays.
-        convertedCounti32 = (uint32_t)outIndexCount;
-        mode              = newMode;
+            mState.isPrimitiveRestartEnabled(), mode, convertedType, convertedCounti32,
+            provokingVertexAdditionalOffset, mode, drawIdxBuffer));
     }
     else
     {
@@ -811,8 +806,10 @@ angle::Result ContextMtl::drawElementsImpl(const gl::Context *context,
     // indices.
     // It's safe to use idxBuffer in this case, as it will contain the same count and restart ranges
     // as drawIdxBuffer.
-    const std::vector<DrawCommandRange> drawCommands = mVertexArray->getDrawIndices(
-        context, type, convertedType, mode, idxBuffer, convertedCounti32, convertedOffset);
+    const std::vector<DrawCommandRange> drawCommands =
+        mVertexArray->getDrawIndices(context, type, convertedType, originalMode, mode, idxBuffer,
+                                     (uint32_t)count, convertedOffset);
+
     bool isNoOp = false;
     ANGLE_TRY(setupDraw(context, mode, 0, count, instances, type, indices, false, &isNoOp));
     if (!isNoOp)
@@ -1528,7 +1525,7 @@ FenceNVImpl *ContextMtl::createFenceNV()
 {
     return new FenceNVMtl();
 }
-SyncImpl *ContextMtl::createSync()
+SyncImpl *ContextMtl::createSync(const gl::Context *)
 {
     return new SyncMtl();
 }

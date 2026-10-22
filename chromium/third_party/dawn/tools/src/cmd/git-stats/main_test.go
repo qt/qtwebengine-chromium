@@ -49,7 +49,8 @@ func TestShouldConsiderLinesOfFile(t *testing.T) {
 		{"src/tint/lang/core/baz.otherextension", true},
 		{"test/tint/baz.txt", false},
 		{"third_party/gn/webgpu-cts/test_list.txt", false},
-		{"third_party/khronos/qux.h", false},
+		{"third_party/OpenGL-Registry/src/qux.h", false},
+		{"third_party/EGL-Registry/src/qux.h", false},
 		{"webgpu-cts/a/b/c.js", false},
 		{"src/external/petamoriken/a.h", false},
 	}

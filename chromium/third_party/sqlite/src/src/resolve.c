@@ -373,10 +373,13 @@ static int lookupName(
               if( cnt>0 ){
                 if( pItem->fg.isUsing==0
                  || sqlite3IdListIndex(pItem->u3.pUsing, zCol)<0
+                 || pMatch==pItem
                 ){
                   /* Two or more tables have the same column name which is
-                  ** not joined by USING.  This is an error.  Signal as much
-                  ** by clearing pFJMatch and letting cnt go above 1. */
+                  ** not joined by USING. Or, a single table has two columns
+                  ** that match a USING term (if pMatch==pItem). These are both
+                  ** "ambiguous column name" errors. Signal as much by clearing
+                  ** pFJMatch and letting cnt go above 1. */
                   sqlite3ExprListDelete(db, pFJMatch);
                   pFJMatch = 0;
                 }else
@@ -926,8 +929,8 @@ static void notValidImpl(
 
 /*
 ** Expression p should encode a floating point value between 1.0 and 0.0.
-** Return 1024 times this value.  Or return -1 if p is not a floating point
-** value between 1.0 and 0.0.
+** Return 134,217,728 (2^27) times this value.  Or return -1 if p is not
+** a floating point value between 1.0 and 0.0.
 */
 static int exprProbability(Expr *p){
   double r = -1.0;
@@ -1358,11 +1361,13 @@ static int resolveExprStep(Walker *pWalker, Expr *pExpr){
       return WRC_Prune;
     }
 #ifndef SQLITE_OMIT_SUBQUERY
+    case TK_EXISTS:
     case TK_SELECT:
-    case TK_EXISTS:  testcase( pExpr->op==TK_EXISTS );
 #endif
     case TK_IN: {
       testcase( pExpr->op==TK_IN );
+      testcase( pExpr->op==TK_EXISTS );
+      testcase( pExpr->op==TK_SELECT );
       if( ExprUseXSelect(pExpr) ){
         int nRef = pNC->nRef;
         testcase( pNC->ncFlags & NC_IsCheck );
@@ -1370,6 +1375,7 @@ static int resolveExprStep(Walker *pWalker, Expr *pExpr){
         testcase( pNC->ncFlags & NC_IdxExpr );
         testcase( pNC->ncFlags & NC_GenCol );
         assert( pExpr->x.pSelect );
+        if( pExpr->op==TK_EXISTS )  pParse->bHasExists = 1;
         if( pNC->ncFlags & NC_SelfRef ){
           notValidImpl(pParse, pNC, "subqueries", pExpr, pExpr);
         }else{
@@ -2073,6 +2079,14 @@ static int resolveSelectStep(Walker *pWalker, Select *p){
       return WRC_Abort;
     }
 
+    /* If the SELECT statement contains ON clauses that were moved into
+    ** the WHERE clause, go through and verify that none of the terms
+    ** in the ON clauses reference tables to the right of the ON clause. */
+    if( (p->selFlags & SF_OnToWhere) ){
+      sqlite3SelectCheckOnClauses(pParse, p);
+      if( pParse->nErr ) return WRC_Abort;
+    }
+
     /* Advance to the next term of the compound
     */
     p = p->pPrior;
@@ -2280,14 +2294,17 @@ int sqlite3ResolveSelfReference(
   SrcList *pSrc;                  /* Fake SrcList for pParse->pNewTable */
   NameContext sNC;                /* Name context for pParse->pNewTable */
   int rc;
-  u8 srcSpace[SZ_SRCLIST_1];     /* Memory space for the fake SrcList */
+  union {
+    SrcList sSrc;
+    u8 srcSpace[SZ_SRCLIST_1];     /* Memory space for the fake SrcList */
+  } uSrc;
 
   assert( type==0 || pTab!=0 );
   assert( type==NC_IsCheck || type==NC_PartIdx || type==NC_IdxExpr
           || type==NC_GenCol || pTab==0 );
   memset(&sNC, 0, sizeof(sNC));
-  pSrc = (SrcList*)srcSpace;
-  memset(pSrc, 0, SZ_SRCLIST_1);
+  memset(&uSrc, 0, sizeof(uSrc));
+  pSrc = &uSrc.sSrc;
   if( pTab ){
     pSrc->nSrc = 1;
     pSrc->a[0].zName = pTab->zName;

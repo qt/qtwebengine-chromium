@@ -8,6 +8,7 @@ import * as BackgroundServiceModel from './BackgroundServiceModel.js';
 import * as BackgroundServiceView from './BackgroundServiceView.js';
 import * as BounceTrackingMitigationsTreeElement from './BounceTrackingMitigationsTreeElement.js';
 import * as CookieItemsView from './CookieItemsView.js';
+import * as CrashReportContextView from './CrashReportContextView.js';
 import * as DeviceBoundSessionsModel from './DeviceBoundSessionsModel.js';
 import * as DeviceBoundSessionsTreeElement from './DeviceBoundSessionsTreeElement.js';
 import * as DeviceBoundSessionsView from './DeviceBoundSessionsView.js';
@@ -26,6 +27,7 @@ import * as OpenedWindowDetailsView from './OpenedWindowDetailsView.js';
 import * as OriginTrialTreeView from './OriginTrialTreeView.js';
 import * as PreloadingView from './preloading/PreloadingView.js';
 import * as PreloadingTreeElement from './PreloadingTreeElement.js';
+import * as ReportingApiTreeElement from './ReportingApiTreeElement.js';
 import * as ReportingApiView from './ReportingApiView.js';
 import * as ResourcesPanel from './ResourcesPanel.js';
 import * as ServiceWorkerCacheViews from './ServiceWorkerCacheViews.js';
@@ -40,6 +42,8 @@ import * as StorageBucketsTreeElement from './StorageBucketsTreeElement.js';
 import * as StorageItemsToolbar from './StorageItemsToolbar.js';
 import * as StorageView from './StorageView.js';
 import * as TrustTokensTreeElement from './TrustTokensTreeElement.js';
+import * as WebMCPTreeElement from './WebMCPTreeElement.js';
+import * as WebMCPView from './WebMCPView.js';
 
 export {
   ApplicationPanelSidebar,
@@ -48,6 +52,7 @@ export {
   BackgroundServiceView,
   BounceTrackingMitigationsTreeElement,
   CookieItemsView,
+  CrashReportContextView,
   DeviceBoundSessionsModel,
   DeviceBoundSessionsTreeElement,
   DeviceBoundSessionsView,
@@ -66,6 +71,7 @@ export {
   OriginTrialTreeView,
   PreloadingTreeElement,
   PreloadingView,
+  ReportingApiTreeElement,
   ReportingApiView,
   ResourcesPanel,
   ServiceWorkerCacheViews,
@@ -80,4 +86,6 @@ export {
   StorageItemsToolbar,
   StorageView,
   TrustTokensTreeElement,
+  WebMCPTreeElement,
+  WebMCPView,
 };

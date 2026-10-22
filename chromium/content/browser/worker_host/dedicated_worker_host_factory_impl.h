@@ -6,9 +6,11 @@
 #define CONTENT_BROWSER_WORKER_HOST_DEDICATED_WORKER_HOST_FACTORY_IMPL_H_
 
 #include "content/browser/network/cross_origin_embedder_policy_reporter.h"
+#include "content/browser/renderer_host/policy_container_host.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/dedicated_worker_creator.h"
 #include "content/public/browser/global_routing_id.h"
+#include "content/public/common/child_process_id.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "net/base/isolation_info.h"
 #include "net/storage_access_api/status.h"
@@ -33,14 +35,20 @@ class CONTENT_EXPORT DedicatedWorkerHostFactoryImpl
 
   // `creator_client_security_state` specifies the client security state of
   // the creator frame or worker. Must not be nullptr.
+  // `creator_policies` specifies the security policies of the creator.
+  // `creator_network_restrictions_id` specifies the network restrictions of
+  // the creator as per its connection allowlists.
   DedicatedWorkerHostFactoryImpl(
-      int worker_process_id,
+      ChildProcessId worker_process_id,
       DedicatedWorkerCreator creator,
       GlobalRenderFrameHostId ancestor_render_frame_host_id,
       const blink::StorageKey& creator_storage_key,
       const net::IsolationInfo& isolation_info,
       network::mojom::ClientSecurityStatePtr creator_client_security_state,
-      base::WeakPtr<CrossOriginEmbedderPolicyReporter> creator_coep_reporter);
+      const PolicyContainerPolicies& creator_policies,
+      base::WeakPtr<CrossOriginEmbedderPolicyReporter> creator_coep_reporter,
+      const std::optional<base::UnguessableToken>&
+          creator_network_restrictions_id);
 
   DedicatedWorkerHostFactoryImpl(const DedicatedWorkerHostFactoryImpl&) =
       delete;
@@ -63,7 +71,7 @@ class CONTENT_EXPORT DedicatedWorkerHostFactoryImpl
 
  private:
   // The ID of the RenderProcessHost where the worker will live.
-  const int worker_process_id_;
+  const ChildProcessId worker_process_id_;
 
   // See comments on the corresponding members of DedicatedWorkerHost.
   const DedicatedWorkerCreator creator_;
@@ -79,7 +87,12 @@ class CONTENT_EXPORT DedicatedWorkerHostFactoryImpl
   // `CreateWorkerHostAndStartScriptLoad()` is called. Nullptr afterwards.
   network::mojom::ClientSecurityStatePtr creator_client_security_state_;
 
+  // The policies of the creator context.
+  const PolicyContainerPolicies creator_policies_;
+
   base::WeakPtr<CrossOriginEmbedderPolicyReporter> creator_coep_reporter_;
+
+  const std::optional<base::UnguessableToken> creator_network_restrictions_id_;
 };
 
 }  // namespace content

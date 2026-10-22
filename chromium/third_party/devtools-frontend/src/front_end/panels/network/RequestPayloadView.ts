@@ -51,7 +51,8 @@ import requestPayloadViewStyles from './requestPayloadView.css.js';
 import {ShowMoreDetailsWidget} from './ShowMoreDetailsWidget.js';
 
 const {classMap} = Directives;
-const {widgetConfig} = UI.Widget;
+const {widget} = UI.Widget;
+const {ifExpanded} = UI.TreeOutline;
 const UIStrings = {
   /**
    * @description A context menu item Payload View of the Network panel to copy a parsed value.
@@ -145,7 +146,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
 
   const createSourceText = (text: string): TemplateResult => html`<li role=treeitem
       @contextmenu=${copyValueContextmenu(i18nString(UIStrings.copyPayload), () => text, 'copy-payload')}>
-        <devtools-widget class='payload-value source-code' .widgetConfig=${widgetConfig(ShowMoreDetailsWidget, {text})}>
+        <devtools-widget class='payload-value source-code' ${widget(ShowMoreDetailsWidget, {text})}>
         </devtools-widget>
       </li>`;
 
@@ -172,7 +173,10 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
   const createPayload = (parsedFormData: unknown): TemplateResult => {
     const object = new SDK.RemoteObject.LocalJSONObject(parsedFormData);
     const section =
-        new ObjectUI.ObjectPropertiesSection.RootElement(new ObjectUI.ObjectPropertiesSection.ObjectTree(object));
+        new ObjectUI.ObjectPropertiesSection.RootElement(new ObjectUI.ObjectPropertiesSection.ObjectTree(object, {
+          readOnly: true,
+          propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+        }));
     section.title = document.createTextNode(object.description);
     section.listItemElement.classList.add('source-code', 'object-properties-section');
     section.childrenListElement.classList.add('source-code', 'object-properties-section');
@@ -225,6 +229,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
           @contextmenu=${onContextMenu(input.viewQueryParamSource, input.setViewQueryParamSource)}
           @expanded=${(e: UI.TreeOutline.TreeViewElement.ExpandEvent) =>
             queryStringExpandedSetting.set(e.detail.expanded)}
+          ?open=${queryStringExpandedSetting.get()}
         >
         <div class="selection fill"></div>${i18nString(UIStrings.queryStringParameters)}<span
           class=payload-count>${`\xA0(${input.queryParameters?.length ?? 0})`}</span>${
@@ -237,9 +242,9 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
             @click=${toggleURLDecoding}>
           ${input.decodeRequestParameters ? i18nString(UIStrings.viewUrlEncoded) : i18nString(UIStrings.viewDecoded)}
         </devtools-button>
-        <ul role=group ?hidden=${!queryStringExpandedSetting.get()}>
-          ${input.viewQueryParamSource ? createSourceText(input.queryString ?? '')
-                                       : createParsedParams(input.queryParameters ?? [])}
+        <ul role=group>
+          ${ifExpanded(input.viewQueryParamSource ? createSourceText(input.queryString ?? '')
+                                                  : createParsedParams(input.queryParameters ?? []))}
         </ul>
       </li>
       <li
@@ -248,6 +253,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
           jslog=${VisualLogging.section().context('form-data')}
           @contextmenu=${onContextMenu(input.viewFormParamSource, input.setViewFormParamSource)}
           @expanded=${(e: UI.TreeOutline.TreeViewElement.ExpandEvent) => formDataExpandedSetting.set(e.detail.expanded)}
+          ?open=${formDataExpandedSetting.get()}
         >
         <div class="selection fill"></div>${i18nString(UIStrings.formData)}<span
           class=payload-count>${`\xA0(${input.formParameters?.length ?? 0})`}</span>${
@@ -260,9 +266,9 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
             @click=${toggleURLDecoding}>
           ${input.decodeRequestParameters ? i18nString(UIStrings.viewUrlEncoded) : i18nString(UIStrings.viewDecoded)}
         </devtools-button>
-        <ul role=group ?hidden=${!formDataExpandedSetting.get()}>>
-          ${input.viewFormParamSource ? createSourceText(input.formData ?? '')
-                                      : createParsedParams(input.formParameters ?? [])}
+        <ul role=group>
+          ${ifExpanded(input.viewFormParamSource ? createSourceText(input.formData ?? '')
+                                                 : createParsedParams(input.formParameters ?? []))}
         </ul>
       </li>
       <li
@@ -273,12 +279,13 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
                                        /* includeURLDecodingOption*/ false)}
           @expanded=${(e: UI.TreeOutline.TreeViewElement.ExpandEvent) =>
             requestPayloadExpandedSetting.set(e.detail.expanded)}
+          ?open=${requestPayloadExpandedSetting.get()}
         >
         <div class="selection fill"></div>${i18nString(UIStrings.requestPayload)}${
             createViewSourceToggle(input.viewJSONPayloadSource, input.setViewJSONPayloadSource)}
-        <ul role=group ?hidden=${!requestPayloadExpandedSetting.get()}>
-          ${!parsedFormData || input.viewJSONPayloadSource ? createSourceText(input.formData ?? '')
-                                                           : createPayload(parsedFormData)}
+        <ul role=group>
+          ${ifExpanded(!parsedFormData || input.viewJSONPayloadSource ? createSourceText(input.formData ?? '')
+                                                                      : createPayload(parsedFormData))}
         </ul>
       </li>
      </ul>

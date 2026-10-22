@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google Inc.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -15,44 +15,48 @@ namespace skgpu::graphite {
 sk_sp<Buffer> MtlBuffer::Make(const MtlSharedContext* sharedContext,
                               size_t size,
                               BufferType type,
-                              AccessPattern accessPattern) {
+                              AccessPattern accessPattern,
+                              std::string_view label) {
     if (size <= 0) {
         return nullptr;
     }
 
     NSUInteger options = 0;
-    if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
-        if (accessPattern == AccessPattern::kHostVisible) {
+    if (accessPattern == AccessPattern::kHostVisible) {
 #ifdef SK_BUILD_FOR_MAC
-            const MtlCaps& mtlCaps = sharedContext->mtlCaps();
-            if (mtlCaps.isMac()) {
-                options |= MTLResourceStorageModeManaged;
-            } else {
-                SkASSERT(mtlCaps.isApple());
-                options |= MTLResourceStorageModeShared;
-            }
-#else
-            options |= MTLResourceStorageModeShared;
-#endif
+        const MtlCaps& mtlCaps = sharedContext->mtlCaps();
+        if (mtlCaps.isMac()) {
+            options |= MTLResourceStorageModeManaged;
         } else {
-            options |= MTLResourceStorageModePrivate;
+            SkASSERT(mtlCaps.isApple());
+            options |= MTLResourceStorageModeShared;
         }
+#else
+        options |= MTLResourceStorageModeShared;
+#endif
+    } else {
+        options |= MTLResourceStorageModePrivate;
     }
 
     sk_cfp<id<MTLBuffer>> buffer([sharedContext->device() newBufferWithLength:size
                                                                       options:options]);
 
-    return sk_sp<Buffer>(new MtlBuffer(sharedContext, size, std::move(buffer)));
+    return sk_sp<Buffer>(new MtlBuffer(sharedContext, size, std::move(buffer), label));
 }
 
 MtlBuffer::MtlBuffer(const MtlSharedContext* sharedContext,
                      size_t size,
-                     sk_cfp<id<MTLBuffer>> buffer)
+                     sk_cfp<id<MTLBuffer>> buffer,
+                     std::string_view label)
         : Buffer(sharedContext,
                  size,
                  Protected::kNo,  // Metal doesn't support protected memory
+                 label,
                  /*reusableRequiresPurgeable=*/(*buffer).storageMode != MTLStorageModePrivate)
-        , fBuffer(std::move(buffer)) {}
+        , fBuffer(std::move(buffer)) {
+    // Update the newly-created underlying GPU object's label to match the Resource's
+    this->synchronizeBackendLabel();
+}
 
 void MtlBuffer::onMap() {
     SkASSERT(fBuffer);

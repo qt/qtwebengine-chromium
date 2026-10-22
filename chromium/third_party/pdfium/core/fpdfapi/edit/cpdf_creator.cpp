@@ -10,9 +10,11 @@
 
 #include <algorithm>
 #include <array>
+#include <map>
 #include <set>
 #include <utility>
 
+#include "core/fpdfapi/edit/cpdf_fontsubsetter.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_crypto_handler.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -31,6 +33,7 @@
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_random.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxcrt/mask.h"
 #include "core/fxcrt/raw_span.h"
 #include "core/fxcrt/span_util.h"
 #include "core/fxcrt/stl_util.h"
@@ -38,6 +41,15 @@
 namespace {
 
 const size_t kArchiveBufferSize = 32768;
+
+constexpr Mask<CPDF_Creator::CreateFlags> kAllValidFlags{
+    CPDF_Creator::CreateFlags::kIncremental,
+    CPDF_Creator::CreateFlags::kNoOriginal,
+    CPDF_Creator::CreateFlags::kRemoveSecurity,
+    CPDF_Creator::CreateFlags::kSubsetNewFonts};
+constexpr Mask<CPDF_Creator::CreateFlags> kConflictingFlags{
+    CPDF_Creator::CreateFlags::kIncremental,
+    CPDF_Creator::CreateFlags::kNoOriginal};
 
 class CFX_FileBufferArchive final : public IFX_ArchiveStream {
  public:
@@ -100,13 +112,10 @@ bool CFX_FileBufferArchive::WriteBlock(pdfium::span<const uint8_t> buffer) {
 }
 
 std::array<uint32_t, 4> GenerateFileID(uint32_t dwSeed1, uint32_t dwSeed2) {
-  void* context1 = FX_Random_MT_Start(dwSeed1);
-  void* context2 = FX_Random_MT_Start(dwSeed2);
-  std::array<uint32_t, 4> buffer = {
-      FX_Random_MT_Generate(context1), FX_Random_MT_Generate(context1),
-      FX_Random_MT_Generate(context2), FX_Random_MT_Generate(context2)};
-  FX_Random_MT_Close(context1);
-  FX_Random_MT_Close(context2);
+  FX_Random random1(dwSeed1);
+  FX_Random random2(dwSeed2);
+  std::array<uint32_t, 4> buffer = {random1.Generate(), random1.Generate(),
+                                    random2.Generate(), random2.Generate()};
   return buffer;
 }
 
@@ -200,15 +209,24 @@ bool CPDF_Creator::WriteOldObjs() {
 }
 
 bool CPDF_Creator::WriteNewObjs() {
+  std::map<uint32_t, RetainPtr<const CPDF_Object>> font_obj_overrides;
+  if (subset_new_fonts_) {
+    CPDF_FontSubsetter subsetter(document_);
+    font_obj_overrides = subsetter.GenerateObjectOverrides(new_obj_num_array_);
+  }
   for (size_t i = cur_obj_num_; i < new_obj_num_array_.size(); ++i) {
     uint32_t objnum = new_obj_num_array_[i];
-    RetainPtr<const CPDF_Object> pObj = document_->GetIndirectObject(objnum);
-    if (!pObj) {
+    RetainPtr<const CPDF_Object> obj = document_->GetIndirectObject(objnum);
+    if (!obj) {
       continue;
     }
 
     object_offsets_[objnum] = archive_->CurrentOffset();
-    if (!WriteIndirectObj(pObj->GetObjNum(), pObj.Get())) {
+
+    auto it = font_obj_overrides.find(objnum);
+    const CPDF_Object* obj_to_write =
+        it != font_obj_overrides.end() ? it->second.Get() : obj.Get();
+    if (!WriteIndirectObj(objnum, obj_to_write)) {
       return false;
     }
   }
@@ -592,9 +610,27 @@ CPDF_Creator::Stage CPDF_Creator::WriteDoc_Stage4() {
   return stage_;
 }
 
-bool CPDF_Creator::Create(uint32_t flags) {
-  is_incremental_ = !!(flags & FPDFCREATE_INCREMENTAL);
-  is_original_ = !(flags & FPDFCREATE_NO_ORIGINAL);
+bool CPDF_Creator::Create(Mask<CreateFlags> flags, int32_t file_version) {
+  if (flags & ~kAllValidFlags) {
+    flags = CreateFlags::kNone;
+  }
+
+  if (flags == CreateFlags::kRemoveSecurityDeprecated ||
+      (flags & CreateFlags::kRemoveSecurity)) {
+    RemoveSecurity();
+  }
+
+  if (flags.TestAll(kConflictingFlags)) {
+    flags.Clear(kConflictingFlags);
+  }
+
+  is_incremental_ = !!(flags & CreateFlags::kIncremental);
+  is_original_ = !(flags & CreateFlags::kNoOriginal);
+  subset_new_fonts_ = !!(flags & CreateFlags::kSubsetNewFonts);
+
+  if (file_version >= 10 && file_version <= 17) {
+    file_version_ = file_version;
+  }
 
   stage_ = Stage::kInit0;
   last_obj_num_ = document_->GetLastObjNum();
@@ -679,14 +715,6 @@ bool CPDF_Creator::Continue() {
   }
 
   return stage_ > Stage::kInvalid;
-}
-
-bool CPDF_Creator::SetFileVersion(int32_t fileVersion) {
-  if (fileVersion < 10 || fileVersion > 17) {
-    return false;
-  }
-  file_version_ = fileVersion;
-  return true;
 }
 
 void CPDF_Creator::RemoveSecurity() {

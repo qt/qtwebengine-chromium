@@ -38,6 +38,8 @@ declare namespace ProtocolProxyApi {
 
     Cast: CastApi;
 
+    CrashReportContext: CrashReportContextApi;
+
     DOM: DOMApi;
 
     DOMDebugger: DOMDebuggerApi;
@@ -114,6 +116,8 @@ declare namespace ProtocolProxyApi {
 
     WebAuthn: WebAuthnApi;
 
+    WebMCP: WebMCPApi;
+
     Debugger: DebuggerApi;
 
     HeapProfiler: HeapProfilerApi;
@@ -146,6 +150,8 @@ declare namespace ProtocolProxyApi {
     CacheStorage: CacheStorageDispatcher;
 
     Cast: CastDispatcher;
+
+    CrashReportContext: CrashReportContextDispatcher;
 
     DOM: DOMDispatcher;
 
@@ -222,6 +228,8 @@ declare namespace ProtocolProxyApi {
     WebAudio: WebAudioDispatcher;
 
     WebAuthn: WebAuthnDispatcher;
+
+    WebMCP: WebMCPDispatcher;
 
     Debugger: DebuggerDispatcher;
 
@@ -392,12 +400,6 @@ declare namespace ProtocolProxyApi {
      * `issueAdded` event.
      */
     invoke_enable(): Promise<Protocol.ProtocolResponseWithError>;
-
-    /**
-     * Runs the contrast check for the target page. Found issues are reported
-     * using Audits.issueAdded event.
-     */
-    invoke_checkContrast(params: Protocol.Audits.CheckContrastRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
      * Runs the form issues check for the target page. Found issues are reported
@@ -887,6 +889,11 @@ declare namespace ProtocolProxyApi {
     invoke_setSupportsText(params: Protocol.CSS.SetSupportsTextRequest): Promise<Protocol.CSS.SetSupportsTextResponse>;
 
     /**
+     * Modifies the expression of a navigation at-rule.
+     */
+    invoke_setNavigationText(params: Protocol.CSS.SetNavigationTextRequest): Promise<Protocol.CSS.SetNavigationTextResponse>;
+
+    /**
      * Modifies the expression of a scope at-rule.
      */
     invoke_setScopeText(params: Protocol.CSS.SetScopeTextRequest): Promise<Protocol.CSS.SetScopeTextResponse>;
@@ -1041,6 +1048,16 @@ declare namespace ProtocolProxyApi {
      */
     issueUpdated(params: Protocol.Cast.IssueUpdatedEvent): void;
 
+  }
+
+  export interface CrashReportContextApi {
+    /**
+     * Returns all entries in the CrashReportContext across all frames in the page.
+     */
+    invoke_getEntries(): Promise<Protocol.CrashReportContext.GetEntriesResponse>;
+
+  }
+  export interface CrashReportContextDispatcher {
   }
 
   export interface DOMApi {
@@ -1404,6 +1421,11 @@ declare namespace ProtocolProxyApi {
      * Fired when a node's scrollability state changes.
      */
     scrollableFlagUpdated(params: Protocol.DOM.ScrollableFlagUpdatedEvent): void;
+
+    /**
+     * Fired when a node's ad related state changes.
+     */
+    adRelatedStateUpdated(params: Protocol.DOM.AdRelatedStateUpdatedEvent): void;
 
     /**
      * Fired when a node's starting styles changes.
@@ -1832,7 +1854,8 @@ declare namespace ProtocolProxyApi {
     invoke_setSmallViewportHeightDifferenceOverride(params: Protocol.Emulation.SetSmallViewportHeightDifferenceOverrideRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
-     * Returns device's screen configuration.
+     * Returns device's screen configuration. In headful mode, the physical screens configuration is returned,
+     * whereas in headless mode, a virtual headless screen configuration is provided instead.
      */
     invoke_getScreenInfos(): Promise<Protocol.Emulation.GetScreenInfosResponse>;
 
@@ -1842,9 +1865,22 @@ declare namespace ProtocolProxyApi {
     invoke_addScreen(params: Protocol.Emulation.AddScreenRequest): Promise<Protocol.Emulation.AddScreenResponse>;
 
     /**
+     * Updates specified screen parameters. Only supported in headless mode.
+     */
+    invoke_updateScreen(params: Protocol.Emulation.UpdateScreenRequest): Promise<Protocol.Emulation.UpdateScreenResponse>;
+
+    /**
      * Remove screen from the device. Only supported in headless mode.
      */
     invoke_removeScreen(params: Protocol.Emulation.RemoveScreenRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Set primary screen. Only supported in headless mode.
+     * Note that this changes the coordinate system origin to the top-left
+     * of the new primary screen, updating the bounds and work areas
+     * of all existing screens accordingly.
+     */
+    invoke_setPrimaryScreen(params: Protocol.Emulation.SetPrimaryScreenRequest): Promise<Protocol.ProtocolResponseWithError>;
 
   }
   export interface EmulationDispatcher {
@@ -1852,6 +1888,13 @@ declare namespace ProtocolProxyApi {
      * Notification sent after the virtual time budget for the current VirtualTimePolicy has run out.
      */
     virtualTimeBudgetExpired(): void;
+
+    /**
+     * Fired when a page calls screen.orientation.lock() or screen.orientation.unlock()
+     * while device emulation is enabled. This allows the DevTools frontend to update the
+     * emulated device orientation accordingly.
+     */
+    screenOrientationLockChanged(params: Protocol.Emulation.ScreenOrientationLockChangedEvent): void;
 
   }
 
@@ -1891,6 +1934,13 @@ declare namespace ProtocolProxyApi {
      * flag is set.
      */
     invoke_loadUnpacked(params: Protocol.Extensions.LoadUnpackedRequest): Promise<Protocol.Extensions.LoadUnpackedResponse>;
+
+    /**
+     * Gets a list of all unpacked extensions.
+     * Available if the client is connected using the --remote-debugging-pipe flag
+     * and the --enable-unsafe-extension-debugging flag is set.
+     */
+    invoke_getExtensions(): Promise<Protocol.Extensions.GetExtensionsResponse>;
 
     /**
      * Uninstalls an unpacked extension (others not supported) from the profile.
@@ -4284,22 +4334,6 @@ declare namespace ProtocolProxyApi {
     invoke_runBounceTrackingMitigations(): Promise<Protocol.Storage.RunBounceTrackingMitigationsResponse>;
 
     /**
-     * https://wicg.github.io/attribution-reporting-api/
-     */
-    invoke_setAttributionReportingLocalTestingMode(params: Protocol.Storage.SetAttributionReportingLocalTestingModeRequest): Promise<Protocol.ProtocolResponseWithError>;
-
-    /**
-     * Enables/disables issuing of Attribution Reporting events.
-     */
-    invoke_setAttributionReportingTracking(params: Protocol.Storage.SetAttributionReportingTrackingRequest): Promise<Protocol.ProtocolResponseWithError>;
-
-    /**
-     * Sends all pending Attribution Reports immediately, regardless of their
-     * scheduled report time.
-     */
-    invoke_sendPendingAttributionReports(): Promise<Protocol.Storage.SendPendingAttributionReportsResponse>;
-
-    /**
      * Returns the effective Related Website Sets in use by this profile for the browser
      * session. The effective Related Website Sets will not change during a browser session.
      */
@@ -4371,14 +4405,6 @@ declare namespace ProtocolProxyApi {
     storageBucketCreatedOrUpdated(params: Protocol.Storage.StorageBucketCreatedOrUpdatedEvent): void;
 
     storageBucketDeleted(params: Protocol.Storage.StorageBucketDeletedEvent): void;
-
-    attributionReportingSourceRegistered(params: Protocol.Storage.AttributionReportingSourceRegisteredEvent): void;
-
-    attributionReportingTriggerRegistered(params: Protocol.Storage.AttributionReportingTriggerRegisteredEvent): void;
-
-    attributionReportingReportSent(params: Protocol.Storage.AttributionReportingReportSentEvent): void;
-
-    attributionReportingVerboseDebugReportSent(params: Protocol.Storage.AttributionReportingVerboseDebugReportSentEvent): void;
 
   }
 
@@ -4814,6 +4840,42 @@ declare namespace ProtocolProxyApi {
      * Triggered when a credential is used in a webauthn assertion.
      */
     credentialAsserted(params: Protocol.WebAuthn.CredentialAssertedEvent): void;
+
+  }
+
+  export interface WebMCPApi {
+    /**
+     * Enables the WebMCP domain, allowing events to be sent. Enabling the domain will trigger a toolsAdded event for
+     * all currently registered tools.
+     */
+    invoke_enable(): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Disables the WebMCP domain.
+     */
+    invoke_disable(): Promise<Protocol.ProtocolResponseWithError>;
+
+  }
+  export interface WebMCPDispatcher {
+    /**
+     * Event fired when new tools are added.
+     */
+    toolsAdded(params: Protocol.WebMCP.ToolsAddedEvent): void;
+
+    /**
+     * Event fired when tools are removed.
+     */
+    toolsRemoved(params: Protocol.WebMCP.ToolsRemovedEvent): void;
+
+    /**
+     * Event fired when a tool invocation starts.
+     */
+    toolInvoked(params: Protocol.WebMCP.ToolInvokedEvent): void;
+
+    /**
+     * Event fired when a tool invocation completes or fails.
+     */
+    toolResponded(params: Protocol.WebMCP.ToolRespondedEvent): void;
 
   }
 

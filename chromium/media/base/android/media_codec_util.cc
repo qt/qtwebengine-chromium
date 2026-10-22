@@ -13,6 +13,7 @@
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/logging.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/system/sys_info.h"
 #include "media/base/android/media_codec_bridge.h"
@@ -64,7 +65,7 @@ static CodecProfileLevel MediaCodecProfileLevelToChromiumProfileLevel(
 
 static bool IsDecoderSupportedByDevice(std::string_view android_mime_type) {
   if (android_mime_type == kVp8MimeType) {
-    std::string hardware = base::SysInfo::GetAndroidBuildID();
+    std::string hardware = base::SysInfo::GetAndroidHardware();
     // MediaTek decoders do not work properly on vp8 until Android T. See
     // http://crbug.com/446974 and http://crbug.com/597836.
     if (hardware.starts_with("mt") &&
@@ -81,8 +82,32 @@ static bool IsDecoderSupportedByDevice(std::string_view android_mime_type) {
 
 static bool JNI_MediaCodecUtil_IsDecoderSupportedForDevice(
     JNIEnv* env,
-    std::string& mime_type) {
+    const std::string& mime_type) {
   return IsDecoderSupportedByDevice(mime_type);
+}
+
+static int32_t JNI_MediaCodecUtil_EstimateVideoMaxInputSize(
+    JNIEnv* env,
+    const std::string& mime_type,
+    int32_t width,
+    int32_t height) {
+  VideoCodec codec = VideoCodec::kUnknown;
+  if (mime_type == kAvcMimeType) {
+    codec = VideoCodec::kH264;
+  } else if (mime_type == kHevcMimeType) {
+    codec = VideoCodec::kHEVC;
+  } else if (mime_type == kVp8MimeType) {
+    codec = VideoCodec::kVP8;
+  } else if (mime_type == kVp9MimeType) {
+    codec = VideoCodec::kVP9;
+  } else if (mime_type == kAv1MimeType) {
+    codec = VideoCodec::kAV1;
+  } else if (mime_type == kDolbyVisionMimeType) {
+    codec = VideoCodec::kDolbyVision;
+  }
+
+  return base::checked_cast<int32_t>(
+      MediaCodecUtil::EstimateVideoBufferSize(codec, width, height));
 }
 
 static bool CanDecodeInternal(const std::string& mime, bool is_secure) {
@@ -159,6 +184,41 @@ std::string MediaCodecUtil::CodecToAndroidMimeType(VideoCodec codec) {
 // static
 bool MediaCodecUtil::IsVp8DecoderAvailable() {
   return IsDecoderSupportedByDevice(kVp8MimeType);
+}
+
+// static
+size_t MediaCodecUtil::EstimateVideoBufferSize(VideoCodec codec,
+                                               int width,
+                                               int height) {
+  size_t max_pixels = 0;
+  size_t min_compression_ratio = 1;
+
+  switch (codec) {
+    case VideoCodec::kH264:
+      // Round up width/height to an integer number of macroblocks.
+      max_pixels = ((width + 15) / 16) * ((height + 15) / 16) * 16 * 16;
+      min_compression_ratio = 2;
+      break;
+    case VideoCodec::kVP8:
+      max_pixels = width * height;
+      min_compression_ratio = 2;
+      break;
+    case VideoCodec::kHEVC:
+    case VideoCodec::kVP9:
+    case VideoCodec::kAV1:
+    case VideoCodec::kDolbyVision:
+      max_pixels = width * height;
+      min_compression_ratio = 4;
+      break;
+    default:
+      // Leave the default max input size if codec is unknown or unsupported
+      // by this heuristic.
+      return 0;
+  }
+
+  // Estimate the maximum input size assuming three channel 4:2:0 subsampled
+  // input frames.
+  return (max_pixels * 3) / (2 * min_compression_ratio);
 }
 
 // static

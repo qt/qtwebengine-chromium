@@ -66,21 +66,21 @@ class CwiseNullaryOp : public internal::dense_xpr_base<CwiseNullaryOp<NullaryOp,
   typedef typename internal::dense_xpr_base<CwiseNullaryOp>::type Base;
   EIGEN_DENSE_PUBLIC_INTERFACE(CwiseNullaryOp)
 
-  EIGEN_DEVICE_FUNC CwiseNullaryOp(Index rows, Index cols, const NullaryOp& func = NullaryOp())
+  EIGEN_DEVICE_FUNC constexpr CwiseNullaryOp(Index rows, Index cols, const NullaryOp& func = NullaryOp())
       : m_rows(rows), m_cols(cols), m_functor(func) {
     eigen_assert(rows >= 0 && (RowsAtCompileTime == Dynamic || RowsAtCompileTime == rows) && cols >= 0 &&
                  (ColsAtCompileTime == Dynamic || ColsAtCompileTime == cols));
   }
-  EIGEN_DEVICE_FUNC CwiseNullaryOp(Index size, const NullaryOp& func = NullaryOp())
+  EIGEN_DEVICE_FUNC constexpr CwiseNullaryOp(Index size, const NullaryOp& func = NullaryOp())
       : CwiseNullaryOp(RowsAtCompileTime == 1 ? 1 : size, RowsAtCompileTime == 1 ? size : 1, func) {
     EIGEN_STATIC_ASSERT(CwiseNullaryOp::IsVectorAtCompileTime, YOU_TRIED_CALLING_A_VECTOR_METHOD_ON_A_MATRIX);
   }
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE constexpr Index rows() const { return m_rows.value(); }
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE constexpr Index cols() const { return m_cols.value(); }
+  EIGEN_DEVICE_FUNC constexpr Index rows() const { return m_rows.value(); }
+  EIGEN_DEVICE_FUNC constexpr Index cols() const { return m_cols.value(); }
 
   /** \returns the functor representing the nullary operation */
-  EIGEN_DEVICE_FUNC const NullaryOp& functor() const { return m_functor; }
+  EIGEN_DEVICE_FUNC constexpr const NullaryOp& functor() const { return m_functor; }
 
  protected:
   const internal::variable_if_dynamic<Index, RowsAtCompileTime> m_rows;

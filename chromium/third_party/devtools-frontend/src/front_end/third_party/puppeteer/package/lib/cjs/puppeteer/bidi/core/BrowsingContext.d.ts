@@ -142,7 +142,7 @@ export declare class BrowsingContext extends EventEmitter<{
     setJavaScriptEnabled(enabled: boolean): Promise<void>;
     isJavaScriptEnabled(): boolean;
     setUserAgent(userAgent: string | null): Promise<void>;
-    setClientHintsOverride(clientHints: Bidi.BidiUaClientHints.Emulation.ClientHintsMetadata | null): Promise<void>;
+    setClientHintsOverride(clientHints: Bidi.BidiUaClientHints.UserAgentClientHints.ClientHintsMetadata | null): Promise<void>;
     setOfflineMode(enabled: boolean): Promise<void>;
     get bluetooth(): BluetoothEmulation;
     waitForDevicePrompt(timeout: number, signal?: AbortSignal): Promise<DeviceRequestPrompt>;

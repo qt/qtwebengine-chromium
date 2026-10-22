@@ -67,27 +67,82 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
     /// The index of the fixed sample mask builtin, if it was added.
     std::optional<uint32_t> fixed_sample_mask_index;
 
+    std::optional<uint32_t> global_invocation_index_index;
+    std::optional<uint32_t> global_invocation_id_index;
+    std::optional<uint32_t> workgroup_index_index;
+    std::optional<uint32_t> workgroup_id_index;
+    std::optional<uint32_t> num_workgroups_index;
+
     /// Constructor
     StateImpl(core::ir::Module& mod, core::ir::Function* f, const ShaderIOConfig& cfg)
-        : ShaderIOBackendState(mod, f), config(cfg) {}
+        : ShaderIOBackendState(mod, f), config(cfg) {
+        if (auto wgsize = func->WorkgroupSizeAsConst()) {
+            workgroup_size = wgsize;
+        }
+    }
 
     /// Destructor
     ~StateImpl() override {}
 
     /// @copydoc ShaderIO::BackendState::FinalizeInputs
     Vector<core::ir::FunctionParam*, 4> FinalizeInputs() override {
+        // The following builtin values are polyfilled using other builtin values:
+        // * workgroup_index - workgroup_id and num_workgroups
+        // * global_invocation_index - global_invocation_id, num_workgroups (and workgroup size)
+        const bool has_global_invocation_index =
+            HasBuiltinInput(core::BuiltinValue::kGlobalInvocationIndex);
+        const bool has_workgroup_index = HasBuiltinInput(core::BuiltinValue::kWorkgroupIndex);
+        const bool needs_workgroup_id = has_workgroup_index;
+        if (needs_workgroup_id) {
+            RequireBuiltinInput(core::BuiltinValue::kWorkgroupId, ty.vec3u(), "workgroup_id");
+        }
+        const bool needs_num_workgroups = has_workgroup_index || has_global_invocation_index;
+        if (needs_num_workgroups) {
+            RequireBuiltinInput(core::BuiltinValue::kNumWorkgroups, ty.vec3u(), "num_workgroups");
+        }
+        const bool needs_global_invocation_id = has_global_invocation_index;
+        if (needs_global_invocation_id) {
+            RequireBuiltinInput(core::BuiltinValue::kGlobalInvocationId, ty.vec3u(),
+                                "global_invocation_id");
+        }
+
         Vector<core::type::Manager::StructMemberDesc, 4> input_struct_members;
         core::ir::FunctionParam* input_struct_param = nullptr;
         uint32_t input_struct_param_index = 0xffffffff;
 
         for (auto& input : inputs) {
             if (input.attributes.builtin) {
+                auto builtin_value = input.attributes.builtin.value();
+                auto index = static_cast<uint32_t>(input_indices.Length());
+                switch (builtin_value) {
+                    // Record an index for polyfilled inputs.
+                    case core::BuiltinValue::kGlobalInvocationIndex:
+                        input_indices.Push(InputIndex{index, 0u});
+                        global_invocation_index_index = index;
+                        continue;
+                    case core::BuiltinValue::kWorkgroupIndex:
+                        input_indices.Push(InputIndex{index, 0u});
+                        workgroup_index_index = index;
+                        continue;
+                    // Save the indices of the builtins below for use in polyfills.
+                    case core::BuiltinValue::kGlobalInvocationId:
+                        global_invocation_id_index = index;
+                        break;
+                    case core::BuiltinValue::kWorkgroupId:
+                        workgroup_id_index = index;
+                        break;
+                    case core::BuiltinValue::kNumWorkgroups:
+                        num_workgroups_index = index;
+                        break;
+                    default:
+                        break;
+                }
                 auto* param = b.FunctionParam(input.type);
                 if (input.name) {
                     ir.SetName(param, input.name);
                 }
                 param->SetInvariant(input.attributes.invariant);
-                param->SetBuiltin(input.attributes.builtin.value());
+                param->SetBuiltin(builtin_value);
                 input_indices.Push(InputIndex{static_cast<uint32_t>(input_params.Length()), 0u});
                 input_params.Push(param);
             } else {
@@ -151,6 +206,15 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
 
     /// @copydoc ShaderIO::BackendState::GetInput
     core::ir::Value* GetInput(core::ir::Builder& builder, uint32_t idx) override {
+        if (idx == global_invocation_index_index) {
+            return PolyfillGlobalInvocationIndex(builder, global_invocation_id_index.value(),
+                                                 num_workgroups_index.value());
+        }
+        if (idx == workgroup_index_index) {
+            return PolyfillWorkgroupIndex(builder, workgroup_id_index.value(),
+                                          num_workgroups_index.value());
+        }
+
         auto index = input_indices[idx];
         auto* param = input_params[index.param_index];
         if (param->Type()->Is<core::type::Struct>()) {
@@ -254,12 +318,13 @@ struct StateImpl : core::ir::transform::ShaderIOBackendState {
 }  // namespace
 
 Result<SuccessType> ShaderIO(core::ir::Module& ir, const ShaderIOConfig& config) {
-    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "msl.ShaderIO",
-                                              tint::core::ir::Capabilities{
-                                                  core::ir::Capability::kAllow8BitIntegers,
-                                                  core::ir::Capability::kAllowDuplicateBindings,
-                                                  core::ir::Capability::kAllowNonCoreTypes,
-                                              }));
+    AssertValid(ir,
+                tint::core::ir::Capabilities{
+                    core::ir::Capability::kAllow8BitIntegers,
+                    core::ir::Capability::kAllowDuplicateBindings,
+                    core::ir::Capability::kAllowNonCoreTypes,
+                },
+                "before msl.ShaderIO");
 
     core::ir::transform::RunShaderIOBase(ir, [&](core::ir::Module& mod, core::ir::Function* func) {
         return std::make_unique<StateImpl>(mod, func, config);

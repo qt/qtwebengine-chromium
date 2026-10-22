@@ -81,7 +81,6 @@
 #include "fcp/client/task_result_info.pb.h"
 #include "fcp/client/tensorflow/tensorflow_runner.h"
 #include "fcp/client/tensorflow/tensorflow_runner_factory.h"
-#include "fcp/protos/confidentialcompute/payload_metadata.pb.h"
 #include "fcp/protos/federated_api.pb.h"
 #include "fcp/protos/opstats.pb.h"
 #include "fcp/protos/plan.pb.h"
@@ -91,7 +90,6 @@ namespace fcp {
 namespace client {
 
 using ::fcp::client::opstats::OpStatsLogger;
-using ::fcp::confidentialcompute::PayloadMetadata;
 using ::google::internal::federated::plan::AggregationConfig;
 using ::google::internal::federated::plan::ClientOnlyPlan;
 using ::google::internal::federated::plan::ClientPhase;
@@ -125,9 +123,8 @@ absl::StatusOr<ComputationResults> CreateComputationResults(
   }
 
   if (!plan_result.federated_compute_checkpoints.empty()) {
-    // TODO: b/422862369 - support multiple checkpoints.
     computation_results[kFederatedComputeCheckpoint] =
-        std::move(plan_result.federated_compute_checkpoints[0].payload);
+        std::move(plan_result.federated_compute_checkpoints);
   } else if (!checkpoint_filename.empty()) {
     // Name of the TF checkpoint inside the aggregand map in the Checkpoint
     // protobuf. This field name is ignored by the server.
@@ -405,7 +402,8 @@ PlanResultAndCheckpointFile RunPlanWithExampleQuerySpec(
       client_phase.example_query_spec(), checkpoint_output_filename,
       use_client_report_wire_format, flags->enable_event_time_data_upload(),
       source_id, checkin_result.confidential_agg_info.has_value(),
-      flags->enable_privacy_id_generation());
+      flags->enable_privacy_id_generation(), flags->enable_private_logger(),
+      flags->drop_out_based_data_availability());
   PlanResultAndCheckpointFile result(std::move(plan_result));
   result.checkpoint_filename = checkpoint_output_filename;
   return result;
@@ -473,17 +471,28 @@ void LogComputationOutcome(const engine::PlanResult& plan_result,
           plan_result.original_status, plan_result.example_stats, network_stats,
           run_plan_start_time);
       break;
+    case engine::PlanOutcome::kInsufficientData:
+      phase_logger.LogComputationInsufficientData(
+          plan_result.original_status, plan_result.example_stats, network_stats,
+          run_plan_start_time, reference_time);
+      break;
   }
 }
 
-void LogResultUploadStatus(PhaseLogger& phase_logger, absl::Status result,
+void LogResultUploadStatus(PhaseLogger& phase_logger,
+                           ReportResult report_result,
                            const NetworkStats& network_stats,
                            absl::Time time_before_result_upload,
                            absl::Time reference_time) {
-  if (result.ok()) {
+  //  TODO: b/448716561 - Add a method to PhaseLogger to log partial successes.
+  //  For now, we will log partial successes as completed uploads, since that's
+  //  how we treat them for contribution tracking.
+  if (report_result.outcome == ReportOutcome::kSuccess ||
+      report_result.outcome == ReportOutcome::kPartialSuccess) {
     phase_logger.LogResultUploadCompleted(
         network_stats, time_before_result_upload, reference_time);
   } else {
+    absl::Status result = report_result.status;
     auto message =
         absl::StrCat("Error reporting results: code: ", result.code(),
                      ", message: ", result.message());
@@ -529,8 +538,7 @@ absl::Status ReportPlanResult(
     FederatedProtocol* federated_protocol, PhaseLogger& phase_logger,
     absl::StatusOr<ComputationResults> computation_results,
     absl::Time run_plan_start_time, absl::Time reference_time,
-    std::optional<std::string> task_identifier,
-    std::optional<PayloadMetadata> payload_metadata) {
+    std::optional<std::string> task_identifier) {
   const absl::Time before_report_time = absl::Now();
 
   // Note that the FederatedSelectManager shouldn't be active anymore during the
@@ -545,19 +553,26 @@ absl::Status ReportPlanResult(
   absl::Status result = absl::InternalError("");
   if (computation_results.ok()) {
     FCP_RETURN_IF_ERROR(phase_logger.LogResultUploadStarted());
-    result = federated_protocol->ReportCompleted(
+    ReportResult report_result = federated_protocol->ReportCompleted(
         std::move(*computation_results),
-        /*plan_duration=*/absl::Now() - run_plan_start_time, task_identifier,
-        std::move(payload_metadata));
+        /*plan_duration=*/absl::Now() - run_plan_start_time, task_identifier);
+    result = report_result.outcome == ReportOutcome::kFailure
+                 ? report_result.status
+                 : absl::OkStatus();
+
     LogResultUploadStatus(
-        phase_logger, result,
+        phase_logger, report_result,
         GetNetworkStatsSince(federated_protocol, /*fedselect_manager=*/nullptr,
                              before_report_stats),
         before_report_time, reference_time);
   } else {
     FCP_RETURN_IF_ERROR(phase_logger.LogFailureUploadStarted());
+    engine::PhaseOutcome phase_outcome = engine::PhaseOutcome::ERROR;
+    if (absl::IsFailedPrecondition(computation_results.status())) {
+      phase_outcome = engine::PhaseOutcome::INSUFFICIENT_DATA;
+    }
     result = federated_protocol->ReportNotCompleted(
-        engine::PhaseOutcome::ERROR,
+        phase_outcome,
         /*plan_duration=*/absl::Now() - run_plan_start_time, task_identifier);
     LogFailureUploadStatus(
         phase_logger, result,
@@ -1316,6 +1331,10 @@ SelectorContext FillSelectorContextWithTaskLevelDetails(
             ->mutable_simple_aggregation()) = SimpleAggregation();
     }
   }
+  federated_selector_context_with_task_name.mutable_computation_properties()
+      ->mutable_private_logger_options()
+      ->set_support_arbitrary_bytestrings(true);
+
   return federated_selector_context_with_task_name;
 }
 
@@ -1508,7 +1527,6 @@ struct RunPlanResults {
   engine::PlanOutcome outcome;
   absl::StatusOr<ComputationResults> computation_results;
   absl::Time run_plan_start_time;
-  std::optional<PayloadMetadata> payload_metadata;
 };
 
 std::optional<int64_t> GetMinSepPolicyIndexFromCheckinResult(
@@ -1628,21 +1646,12 @@ RunPlanResults RunComputation(
                                    phase_logger, fl_runner_result);
   auto outcome = plan_result_and_checkpoint_file->plan_result.outcome;
   absl::StatusOr<ComputationResults> computation_results;
-  std::optional<PayloadMetadata> payload_metadata;
   if (outcome == engine::PlanOutcome::kSuccess) {
     computation_results = CreateComputationResults(
         checkin_result.plan.phase().has_example_query_spec()
             ? nullptr
             : &checkin_result.plan.phase().tensorflow_spec(),
         *plan_result_and_checkpoint_file, flags);
-
-    // TODO: b/422862369 - add support for multiple checkpoints.
-    if (!plan_result_and_checkpoint_file->plan_result
-             .federated_compute_checkpoints.empty()) {
-      payload_metadata = std::move(plan_result_and_checkpoint_file->plan_result
-                                       .federated_compute_checkpoints[0]
-                                       .metadata);
-    }
   }
   std::optional<int64_t> min_sep_policy_index =
       GetMinSepPolicyIndexFromCheckinResult(checkin_result.plan);
@@ -1654,8 +1663,7 @@ RunPlanResults RunComputation(
       run_plan_start_time, reference_time, min_sep_policy_index);
   return RunPlanResults{.outcome = outcome,
                         .computation_results = std::move(computation_results),
-                        .run_plan_start_time = run_plan_start_time,
-                        .payload_metadata = std::move(payload_metadata)};
+                        .run_plan_start_time = run_plan_start_time};
 }
 
 std::vector<std::string> HandleMultipleTaskAssignments(
@@ -1694,8 +1702,7 @@ std::vector<std::string> HandleMultipleTaskAssignments(
         ReportPlanResult(federated_protocol, phase_logger,
                          std::move(run_plan_results.computation_results),
                          run_plan_results.run_plan_start_time, reference_time,
-                         task_assignment.task_identifier,
-                         std::move(run_plan_results.payload_metadata));
+                         task_assignment.task_identifier);
     TaskResultInfo task_result_info;
     if (run_plan_results.outcome == engine::PlanOutcome::kSuccess &&
         report_result.ok()) {
@@ -1705,6 +1712,9 @@ std::vector<std::string> HandleMultipleTaskAssignments(
       task_result_info.set_result(true);
     } else {
       task_result_info.set_result(false);
+    }
+    if (flags->enable_private_logger()) {
+      task_result_info.set_task_name(task_assignment.task_name);
     }
 
     *task_result_info.mutable_example_iterator_queries() =
@@ -1812,8 +1822,9 @@ absl::StatusOr<FLRunnerResult> RunFederatedComputation(
           clock, log_manager, flags, http_client.get(),
           std::make_unique<SecAggRunnerFactoryImpl>(),
           event_publisher->secagg_event_publisher(), resource_cache.get(),
-          env_deps->CreateAttestationVerifier(), federated_service_uri, api_key,
-          population_name, retry_token, client_version,
+          env_deps->CreateAttestationVerifier(),
+          env_deps->CreateWillowPayloadEncryptor(), federated_service_uri,
+          api_key, population_name, retry_token, client_version,
           client_attestation_measurement, should_abort_protocol_callback,
           absl::BitGen(), timing_config);
 
@@ -1988,8 +1999,7 @@ absl::StatusOr<FLRunnerResult> RunFederatedComputation(
       absl::Status report_result = ReportPlanResult(
           federated_protocol, phase_logger,
           std::move(run_plan_results.computation_results),
-          run_plan_results.run_plan_start_time, reference_time, std::nullopt,
-          std::move(run_plan_results.payload_metadata));
+          run_plan_results.run_plan_start_time, reference_time, std::nullopt);
       TaskResultInfo task_result_info;
       if (run_plan_results.outcome == engine::PlanOutcome::kSuccess &&
           report_result.ok()) {
@@ -1999,6 +2009,9 @@ absl::StatusOr<FLRunnerResult> RunFederatedComputation(
         task_result_info.set_result(true);
       } else {
         task_result_info.set_result(false);
+      }
+      if (flags->enable_private_logger()) {
+        task_result_info.set_task_name(checkin_result->task_name);
       }
 
       *task_result_info.mutable_example_iterator_queries() =

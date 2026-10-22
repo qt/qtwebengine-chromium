@@ -129,7 +129,8 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient,
 
   // This causes any completed raster work to finalize, so that tiles get up to
   // date draw information.
-  void PrepareToDraw();
+  // Returns true if IsReadyToDraw() is true.
+  bool PrepareToDraw();
 
   // Called when the required-for-activation/required-for-draw state of tiles
   // may have changed.
@@ -240,6 +241,7 @@ class CC_EXPORT TileManager : CheckerImageTrackerClient,
 
  protected:
   friend class Tile;
+  friend class FakeTileManager;
   // Must be called by tile during destruction.
   void Release(Tile* tile);
   Tile::Id GetUniqueTileId() { return ++next_tile_id_; }

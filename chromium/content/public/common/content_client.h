@@ -228,8 +228,22 @@ class CONTENT_EXPORT ContentClient {
   virtual bool ShouldAllowDefaultSiteInstanceGroup();
 
   // Returns whether duplicate navigations should be ignored.
+  //
+  // Currently, returns true (ignore) if:
+  // 1. The specific initiator's skip param (browser or renderer) is disabled.
+  // 2. AND one of the following origin criteria is met:
+  //    - It is a browser-initiated navigation.
+  //    - The origin list `kIgnoreDuplicateNavsOrigins` is empty (applies to all
+  //      origins).
+  //    - The navigation's origin matches one in the origin list.
+  // Returns false otherwise.
   virtual bool ShouldIgnoreDuplicateNavs(const GURL& url,
                                          bool is_renderer_initiated) const;
+
+  // Returns whether the navigation's origin is included in the
+  // kIgnoreDuplicateNavsOrigins parameter list for the
+  // IgnoreDuplicateNavs feature. If the origin list is empty, returns false.
+  virtual bool IsUrlInIgnoreDuplicateNavsOrigins(const GURL& url) const;
 
  private:
   // For SetBrowserClientAlwaysAllowForTesting().

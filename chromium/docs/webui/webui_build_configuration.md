@@ -704,7 +704,7 @@ optimize_webui_host: See |host| in bundle_js().
 optimize_webui_excludes: See |excludes| in bundle_js(). Optional.
 optimize_webui_external_paths: See |external_paths| in optimize_webui().
                                Optional.
-optimize_webui_in_files: See |in_files| in bundle_js().
+optimize_webui_in_files: See |js_module_in_files| in bundle_js().
 generate_code_cache: Specifies whether code cache resources should be generated
                      for the minified files. Use
                      `generate_code_cache = enable_webui_generate_code_cache` to
@@ -814,6 +814,7 @@ Under the cover, build_webui_tests() defines the following targets
 
 * preprocess_if_expr("preprocess")
 * webui_ts_library("build_ts")
+* check_tests_referenced("check_tests_referenced")
 * generate_grd("build_grdp")
 
 The parameters passed to build_webui_tests() are forwarded as needed to
@@ -831,6 +832,11 @@ is_chrome_untrusted: Set to true if testing a chrome-untrusted:// UI. Optional
 
 List of files params:
 files: Required parameter. List of all test related files.
+cc_test_files: Required parameter. List of all C++ test files that invoke the
+               Mocha tests. When populated an additional
+               ":check_tests_referenced" target is defined which checks that
+               each Mocha test file is referenced in at least one C++ test file
+               to guard against orphan Mocha tests.
 
 TypeScript (ts_library()) related params:
 ts_tsconfig_base: See |tsconfig_base| in ts_library(). Optional parameter. If

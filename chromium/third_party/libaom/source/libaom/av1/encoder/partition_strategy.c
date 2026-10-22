@@ -1993,6 +1993,7 @@ void av1_prune_ab_partitions(AV1_COMP *cpi, const MACROBLOCK *x,
   // Pruning: pruning out some ab partitions using a DNN taking rd costs of
   // sub-blocks from previous basic partition types.
   if (cpi->sf.part_sf.ml_prune_partition && ext_partition_allowed &&
+      part_cfg->enable_ab_partitions &&
       part_state->partition_rect_allowed[HORZ] &&
       part_state->partition_rect_allowed[VERT]) {
     // TODO(huisu@google.com): x->source_variance may not be the current

@@ -61,6 +61,10 @@ var Model = {
   show_with_bug: true,
   show_without_bug: true,
 
+  show_cat_accuracy: true,
+  show_cat_critical: true,
+  show_cat_spurious: true,
+  show_cat_none: true,
 
   // Callbacks that control the UI.
 
@@ -316,6 +320,12 @@ async function updateFromLines() {
     if (!Model.show_without_bug && !has_bug) { return false; }
     // Reject if there is a focus tag that is not in the row.
     if (Model.focus_tags.filter(t => row.tags.indexOf(t) < 0).length > 0) { return false; }
+
+    // Triage categories
+    if (!Model.show_cat_none && row.categories.size == 0) { return false; }
+    if (!Model.show_cat_accuracy && row.categories.has('Accuracy')) { return false; }
+    if (!Model.show_cat_critical && row.categories.has('Critical')) { return false; }
+    if (!Model.show_cat_spurious && row.categories.has('Spurious')) { return false; }
     return true;
   };
   const rows = prestratifyExpectationLines(Model.file_lines, rowPredicate);

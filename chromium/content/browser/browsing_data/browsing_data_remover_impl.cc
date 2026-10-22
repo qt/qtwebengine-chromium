@@ -16,6 +16,7 @@
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
+#include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
@@ -529,8 +530,7 @@ void BrowsingDataRemoverImpl::RemoveImpl(
         filter_builder->MatchesMostOriginsAndDomains();
 
     storage_partition->ClearData(
-        storage_partition_remove_mask,
-        StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL, filter_builder,
+        storage_partition_remove_mask, filter_builder,
         base::BindRepeating(&DoesStorageKeyMatchMask, origin_type_mask_,
                             std::move(embedder_matcher)),
         std::move(deletion_filter), perform_storage_cleanup, delete_begin_,
@@ -609,7 +609,8 @@ void BrowsingDataRemoverImpl::RemoveImpl(
   // and Browsing Data Cache Removal.
   if (remove_mask & (DATA_TYPE_PRERENDER_CACHE | DATA_TYPE_CACHE)) {
     auto storage_key_filter = filter_builder->BuildStorageKeyFilter();
-    for (WebContentsImpl* web_contents : WebContentsImpl::GetAllWebContents()) {
+    for (raw_ptr<WebContentsImpl> web_contents :
+         WebContentsImpl::GetAllWebContents()) {
       if (web_contents->GetBrowserContext() == browser_context_) {
         PrerenderHostRegistry* prerender_host_registry =
             web_contents->GetPrerenderHostRegistry();

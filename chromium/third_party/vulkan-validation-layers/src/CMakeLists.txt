@@ -19,7 +19,7 @@ cmake_minimum_required(VERSION 3.22.1)
 # The VERSION field is generated with the "--generated-version" flag in the generate_source.py script
 #
 # If working with unreleased extensions, make sure the header and validation version are all on the same header version
-project(VVL VERSION 1.4.343 LANGUAGES CXX)
+project(VVL VERSION 1.4.347 LANGUAGES CXX)
 
 # This variable enables downstream users to customize the target API
 # variant (e.g. Vulkan SC)
@@ -143,6 +143,9 @@ if (ANNOTATED_SPEC_LINK)
     add_compile_definitions(ANNOTATED_SPEC_LINK=${ANNOTATED_SPEC_LINK})
 endif()
 
+# The idiom for open source projects is to NOT enable warnings as errors.
+# System/language package managers have to build on multiple different platforms and compilers.
+# By defaulting to `ON` we cause issues for package managers since there is no standard way to disable warnings until CMake 3.24
 option(BUILD_WERROR "Treat compiler warnings as errors")
 if (BUILD_WERROR)
     add_compile_options("$<IF:$<CXX_COMPILER_ID:MSVC>,/WX,-Werror>")

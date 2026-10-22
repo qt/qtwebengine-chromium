@@ -6,8 +6,10 @@
 
 #include <string_view>
 
+#include "base/check.h"
 #include "base/i18n/time_formatting.h"
 #include "base/json/json_string_value_serializer.h"
+#include "base/logging.h"
 #include "base/values.h"
 #include "components/media_router/browser/log_util.h"
 #include "components/media_router/common/media_source.h"
@@ -57,6 +59,34 @@ std::string_view TruncateMessage(std::string_view message) {
 }
 
 }  // namespace
+
+LoggerImpl::Entry::Entry(Severity severity,
+                         mojom::LogCategory category,
+                         base::Time time,
+                         std::string_view component,
+                         std::string_view message,
+                         std::string_view sink_id,
+                         std::string media_source,
+                         std::string_view session_id)
+    : severity(severity),
+      category(category),
+      time(time),
+      component(component),
+      message(message),
+      sink_id(sink_id),
+      media_source(std::move(media_source)),
+      session_id(session_id) {}
+
+LoggerImpl::Entry::Entry(Entry&& other)
+    : severity(other.severity),
+      category(other.category),
+      time(other.time),
+      component(std::move(other.component)),
+      message(std::move(other.message)),
+      sink_id(std::move(other.sink_id)),
+      media_source(std::move(other.media_source)),
+      session_id(std::move(other.session_id)) {}
+LoggerImpl::Entry::~Entry() = default;
 
 LoggerImpl::LoggerImpl() : capacity_(kEntriesCapacity) {}
 
@@ -119,6 +149,19 @@ void LoggerImpl::Log(Severity severity,
   if (entries_.size() > capacity_) {
     entries_.pop_front();
   }
+  for (auto& observer : observers_) {
+    observer.OnLogAdded(entries_.back());
+  }
+}
+
+void LoggerImpl::AddObserver(Observer* observer) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  observers_.AddObserver(observer);
+}
+
+void LoggerImpl::RemoveObserver(Observer* observer) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  observers_.RemoveObserver(observer);
 }
 
 std::string LoggerImpl::GetLogsAsJson() const {
@@ -139,35 +182,6 @@ base::Value LoggerImpl::GetLogsAsValue() const {
   }
   return base::Value(std::move(entries_val));
 }
-
-LoggerImpl::Entry::Entry(Severity severity,
-                         mojom::LogCategory category,
-                         base::Time time,
-                         std::string_view component,
-                         std::string_view message,
-                         std::string_view sink_id,
-                         std::string media_source,
-                         std::string_view session_id)
-    : severity(severity),
-      category(category),
-      time(time),
-      component(component),
-      message(message),
-      sink_id(sink_id),
-      media_source(std::move(media_source)),
-      session_id(session_id) {}
-
-LoggerImpl::Entry::Entry(Entry&& other)
-    : severity(other.severity),
-      category(other.category),
-      time(other.time),
-      component(std::move(other.component)),
-      message(std::move(other.message)),
-      sink_id(std::move(other.sink_id)),
-      media_source(std::move(other.media_source)),
-      session_id(std::move(other.session_id)) {}
-
-LoggerImpl::Entry::~Entry() = default;
 
 // static
 base::DictValue LoggerImpl::AsValue(const LoggerImpl::Entry& entry) {

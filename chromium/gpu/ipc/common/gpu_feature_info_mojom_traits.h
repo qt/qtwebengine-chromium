@@ -37,29 +37,22 @@ struct GPU_IPC_COMMON_EXPORT EnumTraits<gpu::mojom::GpuFeatureStatus,
     NOTREACHED();
   }
 
-  static bool FromMojom(gpu::mojom::GpuFeatureStatus input,
-                        gpu::GpuFeatureStatus* out) {
+  static gpu::GpuFeatureStatus FromMojom(gpu::mojom::GpuFeatureStatus input) {
     switch (input) {
       case gpu::mojom::GpuFeatureStatus::Enabled:
-        *out = gpu::kGpuFeatureStatusEnabled;
-        return true;
+        return gpu::kGpuFeatureStatusEnabled;
       case gpu::mojom::GpuFeatureStatus::Blocklisted:
-        *out = gpu::kGpuFeatureStatusBlocklisted;
-        return true;
+        return gpu::kGpuFeatureStatusBlocklisted;
       case gpu::mojom::GpuFeatureStatus::Disabled:
-        *out = gpu::kGpuFeatureStatusDisabled;
-        return true;
+        return gpu::kGpuFeatureStatusDisabled;
       case gpu::mojom::GpuFeatureStatus::Software:
-        *out = gpu::kGpuFeatureStatusSoftware;
-        return true;
+        return gpu::kGpuFeatureStatusSoftware;
       case gpu::mojom::GpuFeatureStatus::Undefined:
-        *out = gpu::kGpuFeatureStatusUndefined;
-        return true;
+        return gpu::kGpuFeatureStatusUndefined;
       case gpu::mojom::GpuFeatureStatus::Max:
-        *out = gpu::kGpuFeatureStatusMax;
-        return true;
+        return gpu::kGpuFeatureStatusMax;
     }
-    return false;
+    NOTREACHED();
   }
 };
 
@@ -98,16 +91,6 @@ struct GPU_IPC_COMMON_EXPORT StructTraits<gpu::mojom::GpuFeatureInfoDataView,
   static const std::vector<uint32_t>& applied_gpu_driver_bug_list_entries(
       const gpu::GpuFeatureInfo& info) {
     return info.applied_gpu_driver_bug_list_entries;
-  }
-
-  static bool supports_nv12_for_allocation_and_texturing(
-      const gpu::GpuFeatureInfo& input) {
-    return input.supports_nv12_for_allocation_and_texturing;
-  }
-
-  static bool supports_p010_for_allocation_and_texturing(
-      const gpu::GpuFeatureInfo& input) {
-    return input.supports_p010_for_allocation_and_texturing;
   }
 };
 

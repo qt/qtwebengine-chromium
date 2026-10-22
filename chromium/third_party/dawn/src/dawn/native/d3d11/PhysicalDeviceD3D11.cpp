@@ -153,6 +153,8 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::DualSourceBlending);
     EnableFeature(Feature::ClipDistances);
     EnableFeature(Feature::Unorm16TextureFormats);
+    EnableFeature(Feature::Unorm16Filterable);
+    EnableFeature(Feature::Unorm16FormatsForExternalTexture);
     EnableFeature(Feature::AdapterPropertiesMemoryHeaps);
     EnableFeature(Feature::AdapterPropertiesD3D);
     EnableFeature(Feature::ShaderModuleCompilationOptions);
@@ -276,8 +278,8 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     limits->v1.maxUniformBufferBindingSize = D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT * 16;
 
     if (gpu_info::IsQualcommACPI(GetVendorId()) &&
-        gpu_info::GetQualcommACPIGen(GetVendorId(), GetDeviceId()) <=
-            gpu_info::QualcommACPIGen::Adreno7xx) {
+        gpu_info::GetQualcommACPIGen(GetVendorId(), GetDeviceId()) <
+            gpu_info::QualcommACPIGen::Adreno8xx) {
         // Due to hardware limitation, Raw Buffers can only address 2^28 bytes instead of the
         // guaranteed 2^31 bytes.
         limits->v1.maxStorageBufferBindingSize = 1 << 28;
@@ -335,6 +337,15 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
 
     auto deviceId = GetDeviceId();
     auto vendorId = GetVendorId();
+
+    // Use D3D11's DiscardView for discarding render pass' attachments having StoreOp::Discard.
+    if (gpu_info::IsNvidia(vendorId)) {
+        // TODO(crbug.com/485540062): NVIDIA has performance regressions if DiscardView is used.
+        deviceToggles->Default(Toggle::D3D11UseDiscardView, false);
+    } else {
+        deviceToggles->Default(Toggle::D3D11UseDiscardView, true);
+    }
+
     // D3D11 ClearRenderTargetView() could be buggy with some old driver or GPUs. Intel Gen12+ GPUs
     // don't have the problem.
     // https://crbug.com/329702368
@@ -362,11 +373,6 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
     deviceToggles->Default(
         Toggle::EnableIntegerRangeAnalysisInRobustness,
         platform->IsFeatureEnabled(platform::Features::kWebGPUEnableRangeAnalysisForRobustness));
-
-    // TODO(crbug.com/454782021): hang on Qualcomm Adreno X1.
-    if (gpu_info::IsQualcommACPI(vendorId)) {
-        deviceToggles->ForceSet(Toggle::D3D11DelayFlushToGPU, false);
-    }
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(

@@ -13,7 +13,6 @@ generate_css("css_files") {
   sources = [
     "codeBlock.css",
     "markdownImage.css",
-    "markdownLink.css",
     "markdownView.css",
   ]
 }
@@ -23,7 +22,6 @@ devtools_ui_module("markdown_view") {
     "CodeBlock.ts",
     "MarkdownImage.ts",
     "MarkdownImagesMap.ts",
-    "MarkdownLink.ts",
     "MarkdownLinksMap.ts",
     "MarkdownView.ts",
   ]
@@ -62,7 +60,6 @@ devtools_ui_module("unittests") {
   sources = [
     "CodeBlock.test.ts",
     "MarkdownImage.test.ts",
-    "MarkdownLink.test.ts",
     "MarkdownView.test.ts",
   ]
 

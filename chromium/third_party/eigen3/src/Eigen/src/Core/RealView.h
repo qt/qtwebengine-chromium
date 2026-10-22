@@ -72,7 +72,7 @@ struct evaluator<RealView<Xpr>> : private evaluator<Xpr> {
   static constexpr int CoeffReadCost = BaseEvaluator::CoeffReadCost;
   static constexpr int Alignment = BaseEvaluator::Alignment;
   static constexpr bool IsRowMajor = ExpressionTraits::IsRowMajor;
-  static constexpr bool DirectAccess = Flags & DirectAccessBit;
+  static constexpr bool DirectAccess = (Flags & DirectAccessBit) != 0;
 
   using ComplexCoeffReturnType = std::conditional_t<DirectAccess, const ComplexScalar&, ComplexScalar>;
   using CoeffReturnType = std::conditional_t<DirectAccess, const Scalar&, Scalar>;

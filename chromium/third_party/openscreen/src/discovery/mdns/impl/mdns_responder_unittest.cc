@@ -5,6 +5,7 @@
 #include "discovery/mdns/impl/mdns_responder.h"
 
 #include <utility>
+#include <variant>
 
 #include "discovery/common/config.h"
 #include "discovery/mdns/impl/mdns_probe_manager.h"
@@ -33,7 +34,7 @@ void CheckSingleNsecRecordType(const MdnsMessage& message, DnsType type) {
   const MdnsRecord record = message.answers()[0];
 
   ASSERT_EQ(record.dns_type(), DnsType::kNSEC);
-  const NsecRecordRdata& rdata = absl::get<NsecRecordRdata>(record.rdata());
+  const NsecRecordRdata& rdata = std::get<NsecRecordRdata>(record.rdata());
 
   ASSERT_EQ(rdata.types().size(), size_t{1});
   EXPECT_EQ(rdata.types()[0], type);
@@ -41,7 +42,7 @@ void CheckSingleNsecRecordType(const MdnsMessage& message, DnsType type) {
 
 void CheckPtrDomain(const MdnsRecord& record, const DomainName& domain) {
   ASSERT_EQ(record.dns_type(), DnsType::kPTR);
-  const PtrRecordRdata& rdata = absl::get<PtrRecordRdata>(record.rdata());
+  const PtrRecordRdata& rdata = std::get<PtrRecordRdata>(record.rdata());
 
   EXPECT_EQ(rdata.ptr_domain(), domain);
 }
@@ -53,7 +54,7 @@ void ExpectContainsNsecRecordType(const std::vector<MdnsRecord>& records,
       return false;
     }
 
-    const NsecRecordRdata& rdata = absl::get<NsecRecordRdata>(record.rdata());
+    const NsecRecordRdata& rdata = std::get<NsecRecordRdata>(record.rdata());
     return rdata.types().size() == 1 && rdata.types()[0] == type;
   }));
 }

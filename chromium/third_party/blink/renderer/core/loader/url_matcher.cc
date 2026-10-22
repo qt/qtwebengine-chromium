@@ -33,8 +33,8 @@ bool UrlMatcher::Match(const KURL& url) const {
       if (!it.second.has_value())
         return true;
       // Otherwise check if the path or query contains the string.
-      if (url.GetPath().ToString().Contains(it.second.value()) ||
-          url.Query().ToString().Contains(it.second.value())) {
+      if (url.GetPath().contains(it.second.value()) ||
+          url.Query().contains(it.second.value())) {
         return true;
       }
     }
@@ -45,7 +45,7 @@ bool UrlMatcher::Match(const KURL& url) const {
 
 void UrlMatcher::ParseFieldTrialParam(
     const std::string_view& encoded_url_list_string) {
-  String url_list_string = String::FromUTF8(encoded_url_list_string);
+  String url_list_string = String::FromUtf8(encoded_url_list_string);
   Vector<StringView> parsed_strings =
       StringView(url_list_string).SplitSkippingEmpty(',');
   for (const auto& it : parsed_strings) {

@@ -36,6 +36,7 @@
 #include "third_party/blink/public/mojom/browser_interface_broker.mojom-blink.h"
 #include "third_party/blink/public/mojom/devtools/inspector_issue.mojom-blink.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
+#include "third_party/blink/public/mojom/loader/code_cache.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_trustedscripturl_usvstring.h"
@@ -130,10 +131,10 @@ scoped_refptr<SecurityOrigin> CreateSecurityOrigin(
   // Step 3: If scriptURL’s scheme is not one of "http" and "https", reject
   // promise with a TypeError and abort these steps. [spec text]
   DCHECK(!is_service_worker_global_scope ||
-         !KURL(creation_params->script_url).ProtocolIsData());
+         !creation_params->script_url.ProtocolIsData());
 
   scoped_refptr<SecurityOrigin> security_origin;
-  if (KURL(creation_params->script_url).ProtocolIsData()) {
+  if (creation_params->script_url.ProtocolIsData()) {
     // Workers with data: URL should use a new, unique opaque origin per spec:
     // https://html.spec.whatwg.org/multipage/workers.html#script-settings-for-workers:concept-settings-object-origin-2
     // We use the `origin_to_use`, which is pre-calculated and passed down from

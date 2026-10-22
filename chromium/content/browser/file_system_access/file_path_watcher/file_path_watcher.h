@@ -13,7 +13,6 @@
 #include <utility>
 
 #include "base/auto_reset.h"
-#include "base/containers/enum_set.h"
 #include "base/files/file_path.h"
 #include "base/functional/callback_forward.h"
 #include "base/memory/scoped_refptr.h"
@@ -262,6 +261,12 @@ class CONTENT_EXPORT FilePathWatcher {
   // overflow.
   base::Lock& GetWatchThreadLockForTest();
 #endif
+
+#if BUILDFLAG(IS_MAC)
+  // Creates a watcher with a test hook for FSEvents.
+  static std::unique_ptr<FilePathWatcher> CreateWithFSEventsHookForTesting(
+      base::RepeatingClosure hook);
+#endif  // BUILDFLAG(IS_MAC)
 
   static base::AutoReset<size_t> SetQuotaLimitForTesting(
       size_t quota_limit_override) {

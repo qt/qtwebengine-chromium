@@ -8,7 +8,6 @@ import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import * as ThirdPartyWeb from '../../third_party/third-party-web/third-party-web.js';
 
 import {Issue, IssueCategory, IssueKind} from './Issue.js';
 import {
@@ -53,15 +52,6 @@ export const enum CookieStatus {
   ALLOWED = 1,
   ALLOWED_BY_GRACE_PERIOD = 2,
   ALLOWED_BY_HEURISTICS = 3,
-}
-
-export interface CookieReportInfo {
-  name: string;
-  domain: string;
-  type?: string;
-  platform?: string;
-  status: CookieStatus;
-  insight?: Protocol.Audits.CookieIssueInsight;
 }
 
 export class CookieIssue extends Issue<Protocol.Audits.CookieIssueDetails> {
@@ -244,24 +234,6 @@ export class CookieIssue extends Issue<Protocol.Audits.CookieIssueDetails> {
       return IssueKind.PAGE_ERROR;
     }
     return IssueKind.BREAKING_CHANGE;
-  }
-
-  makeCookieReportEntry(): CookieReportInfo|undefined {
-    const status = CookieIssue.getCookieStatus(this.details());
-    const details = this.details();
-    if (details.cookie && details.cookieUrl && status !== undefined) {
-      const entity = ThirdPartyWeb.ThirdPartyWeb.getEntity(details.cookieUrl);
-      return {
-        name: details.cookie.name,
-        domain: details.cookie.domain,
-        type: entity?.category,
-        platform: entity?.name,
-        status,
-        insight: this.details().insight,
-      };
-    }
-
-    return;
   }
 
   static getCookieStatus(cookieIssueDetails: Protocol.Audits.CookieIssueDetails): CookieStatus|undefined {

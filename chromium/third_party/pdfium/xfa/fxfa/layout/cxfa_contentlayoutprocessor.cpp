@@ -1741,9 +1741,11 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
         case Stage::kNone:
           break;
         case Stage::kBreakBefore: {
-          for (auto& item : array_keep_items_) {
-            layout_item_->RemoveChild(item);
-            calculated_size.height -= item->s_size_.height;
+          if (layout_item_) {
+            for (auto& item : array_keep_items_) {
+              layout_item_->RemoveChild(item);
+              calculated_size.height -= item->s_size_.height;
+            }
           }
 
           if (!bUseBreakControl || !view_layout_processor_) {
@@ -2636,7 +2638,9 @@ CXFA_ContentLayoutProcessor::InsertFlowedItem(
           pProcessor->ExtractLayoutItem();
       if (ExistContainerKeep(pProcessor->GetFormNode(), false) &&
           pProcessor->GetFormNode()->GetIntact() == XFA_AttributeValue::None) {
-        array_keep_items_.push_back(pChildLayoutItem);
+        if (pChildLayoutItem) {
+          array_keep_items_.push_back(pChildLayoutItem);
+        }
       } else {
         array_keep_items_.clear();
       }

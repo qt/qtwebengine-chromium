@@ -888,8 +888,17 @@ TEST_F(IR_SingleEntryPointTest, OverrideInArrayType) {
         v2 = b.Var("b", ty.ptr(workgroup, a2, read_write))->Result();
     });
 
-    EntryPoint("foo", {v1});
-    EntryPoint("bar", {v2});
+    auto foo = b.ComputeFunction("foo");
+    b.Append(foo->Block(), [&] {
+        b.Let(v1->Type())->SetValue(v1);
+        b.Return(foo);
+    });
+
+    auto bar = b.ComputeFunction("bar");
+    b.Append(bar->Block(), [&] {
+        b.Let(v2->Type())->SetValue(v2);
+        b.Return(bar);
+    });
 
     auto* src = R"(
 $B1: {  # root
@@ -899,13 +908,13 @@ $B1: {  # root
   %b:ptr<workgroup, array<i32, %o2>, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %6:ptr<workgroup, array<i32, %o1>, read_write> = let %a
     ret
   }
 }
-%bar = @fragment func():void {
+%bar = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B3: {
     %8:ptr<workgroup, array<i32, %o2>, read_write> = let %b
     ret
@@ -919,7 +928,7 @@ $B1: {  # root
   %a:ptr<workgroup, array<i32, %o1>, read_write> = var undef
 }
 
-%foo = @fragment func():void {
+%foo = @compute @workgroup_size(1u, 1u, 1u) func():void {
   $B2: {
     %4:ptr<workgroup, array<i32, %o1>, read_write> = let %a
     ret

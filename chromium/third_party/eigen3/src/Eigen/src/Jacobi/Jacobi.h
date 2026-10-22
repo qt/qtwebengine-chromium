@@ -239,7 +239,7 @@ EIGEN_DEVICE_FUNC void JacobiRotation<Scalar>::makeGivens(const Scalar& p, const
 
 namespace internal {
 /** \jacobi_module
- * Applies the clock wise 2D rotation \a j to the set of 2D vectors of coordinates \a x and \a y:
+ * Applies the clockwise 2D rotation \a j to the set of 2D vectors of coordinates \a x and \a y:
  * \f$ \left ( \begin{array}{cc} x \\ y \end{array} \right )  =  J \left ( \begin{array}{cc} x \\ y \end{array} \right )
  * \f$
  *
@@ -421,31 +421,44 @@ EIGEN_DEVICE_FUNC void inline apply_rotation_in_the_plane(DenseBase<VectorX>& xp
 }
 
 template <typename MatrixType, typename RealScalar, typename Index>
-void real_2x2_jacobi_svd(const MatrixType& matrix, Index p, Index q, JacobiRotation<RealScalar>* j_left,
-                         JacobiRotation<RealScalar>* j_right) {
-  using std::abs;
-  using std::sqrt;
-  Matrix<RealScalar, 2, 2> m;
-  m << numext::real(matrix.coeff(p, p)), numext::real(matrix.coeff(p, q)), numext::real(matrix.coeff(q, p)),
-      numext::real(matrix.coeff(q, q));
-  JacobiRotation<RealScalar> rot1;
-  RealScalar t = m.coeff(0, 0) + m.coeff(1, 1);
-  RealScalar d = m.coeff(1, 0) - m.coeff(0, 1);
+EIGEN_DONT_INLINE void real_2x2_jacobi_svd(const MatrixType& matrix, Index p, Index q,
+                                           JacobiRotation<RealScalar>* j_left, JacobiRotation<RealScalar>* j_right) {
+  // Extract 2x2 submatrix into scalars (avoids Matrix construction on stack).
+  const RealScalar m00 = numext::real(matrix.coeff(p, p));
+  const RealScalar m01 = numext::real(matrix.coeff(p, q));
+  const RealScalar m10 = numext::real(matrix.coeff(q, p));
+  const RealScalar m11 = numext::real(matrix.coeff(q, q));
 
-  if (abs(d) < (std::numeric_limits<RealScalar>::min)()) {
-    rot1.s() = RealScalar(0);
-    rot1.c() = RealScalar(1);
+  // Compute the symmetrizing rotation rot1 such that rot1 * [m] is symmetric.
+  const RealScalar t = m00 + m11;
+  const RealScalar d = m10 - m01;
+
+  RealScalar c1, s1;
+  if (numext::abs(d) < (std::numeric_limits<RealScalar>::min)()) {
+    c1 = RealScalar(1);
+    s1 = RealScalar(0);
   } else {
     // If d!=0, then t/d cannot overflow because the magnitude of the
     // entries forming d are not too small compared to the ones forming t.
     RealScalar u = t / d;
-    RealScalar tmp = sqrt(RealScalar(1) + numext::abs2(u));
-    rot1.s() = RealScalar(1) / tmp;
-    rot1.c() = u / tmp;
+    s1 = RealScalar(1) / numext::sqrt(RealScalar(1) + numext::abs2(u));
+    c1 = u * s1;
   }
-  m.applyOnTheLeft(0, 1, rot1);
-  j_right->makeJacobi(m, 0, 1);
-  *j_left = rot1 * j_right->transpose();
+
+  // Apply rot1 to the 2x2 submatrix inline (avoids rotation dispatch overhead).
+  // Result is symmetric, so we only need 3 values: a00, a01 (== a10), a11.
+  const RealScalar a00 = c1 * m00 + s1 * m10;
+  const RealScalar a01 = c1 * m01 + s1 * m11;
+  const RealScalar a11 = -s1 * m01 + c1 * m11;
+
+  // Compute the diagonalizing rotation j_right from the symmetrized matrix.
+  j_right->makeJacobi(a00, a01, a11);
+
+  // Compose j_left = rot1 * j_right^T inline (avoids template machinery overhead).
+  const RealScalar jr_c = j_right->c();
+  const RealScalar jr_s = j_right->s();
+  j_left->c() = c1 * jr_c + s1 * jr_s;
+  j_left->s() = s1 * jr_c - c1 * jr_s;
 }
 
 }  // end namespace internal

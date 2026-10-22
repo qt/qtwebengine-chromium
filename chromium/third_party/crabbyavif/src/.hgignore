@@ -9,8 +9,6 @@
 /out_comparison.txt
 /sys/dav1d-sys/dav1d
 /sys/dav1d-sys/dav1d.rs
-/sys/libgav1-sys/libgav1
-/sys/libgav1-sys/src/libgav1.rs
 /sys/libyuv-sys/libyuv
 /sys/libyuv-sys/src/libyuv.rs
 /sys/ndk-sys/src/bindings.rs

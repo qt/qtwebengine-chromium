@@ -311,7 +311,8 @@ endif()
 
 # Test compiler flags.
 if(MSVC)
-  # It isn't possible to specify C99 conformance for MSVC.
+  # C11 conformance is available starting in Visual Studio 2019 version 16.8.
+  require_c_flag("/std:c11" YES)
   add_cxx_flag_if_supported("/std:c++17")
   add_compiler_flag_if_supported("/W3")
 
@@ -324,7 +325,7 @@ if(MSVC)
   # Compile source files in parallel
   add_compiler_flag_if_supported("/MP")
 else()
-  require_c_flag("-std=c99" YES)
+  require_c_flag("-std=c11" YES)
   if(CYGWIN AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # The GNU C++ compiler in Cygwin needs the -std=gnu++* flag to make the
     # POSIX function declarations visible in the Standard C Library headers.
@@ -368,6 +369,7 @@ else()
   add_compiler_flag_if_supported("-Wunreachable-code-aggressive")
   add_compiler_flag_if_supported("-Wunused")
   add_compiler_flag_if_supported("-Wvla")
+  add_c_flag_if_supported("-Wc23-extensions")
   add_cxx_flag_if_supported("-Wc++20-extensions")
   add_cxx_flag_if_supported("-Wc++23-extensions")
 
@@ -441,6 +443,20 @@ if(EMSCRIPTEN)
   # of target_link_libraries() used by Emscripten.cmake.
   unset(AOM_LIB_LINK_TYPE)
 endif()
+
+# Sanitize boolean variables to ensure they are 0 or 1.
+foreach(aom_config_var ${AOM_CONFIG_VARS})
+  if(
+    NOT aom_config_var MATCHES
+    "AOM_RTCD_FLAGS|CONFIG_MAX_DECODE_PROFILE|DECODE_HEIGHT_LIMIT|DECODE_WIDTH_LIMIT"
+    )
+    if(${aom_config_var})
+      set(${aom_config_var} 1)
+    else()
+      set(${aom_config_var} 0)
+    endif()
+  endif()
+endforeach()
 
 # Generate aom_config templates.
 set(aom_config_asm_template "${AOM_CONFIG_DIR}/config/aom_config.asm.cmake")

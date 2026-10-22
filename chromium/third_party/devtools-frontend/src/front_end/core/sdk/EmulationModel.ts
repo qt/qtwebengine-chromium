@@ -4,7 +4,6 @@
 
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
-import * as Common from '../common/common.js';
 
 import {CSSModel} from './CSSModel.js';
 import {MultitargetNetworkManager} from './NetworkManager.js';
@@ -18,7 +17,7 @@ export const enum DataSaverOverride {
   DISABLED = 'disabled',
 }
 
-export class EmulationModel extends SDKModel<void> {
+export class EmulationModel extends SDKModel<EmulationModelEventTypes> implements ProtocolProxyApi.EmulationDispatcher {
   readonly #emulationAgent: ProtocolProxyApi.EmulationApi;
   readonly #deviceOrientationAgent: ProtocolProxyApi.DeviceOrientationApi;
   #cssModel: CSSModel|null;
@@ -33,11 +32,15 @@ export class EmulationModel extends SDKModel<void> {
     enabled: boolean,
     configuration: Protocol.Emulation.SetEmitTouchEventsForMouseRequestConfiguration,
   };
+  #screenOrientationLocked: boolean;
+  #lockedOrientation: Protocol.Emulation.ScreenOrientation|null;
 
   constructor(target: Target) {
     super(target);
     this.#emulationAgent = target.emulationAgent();
     this.#deviceOrientationAgent = target.deviceOrientationAgent();
+    this.#screenOrientationLocked = false;
+    this.#lockedOrientation = null;
     this.#cssModel = target.model(CSSModel);
     this.#overlayModel = target.model(OverlayModel);
     if (this.#overlayModel) {
@@ -46,7 +49,8 @@ export class EmulationModel extends SDKModel<void> {
       }, this);
     }
 
-    const disableJavascriptSetting = Common.Settings.Settings.instance().moduleSetting('java-script-disabled');
+    const settings = this.target().targetManager().settings;
+    const disableJavascriptSetting = settings.moduleSetting('java-script-disabled');
     disableJavascriptSetting.addChangeListener(
         async () =>
             await this.#emulationAgent.invoke_setScriptExecutionDisabled({value: disableJavascriptSetting.get()}));
@@ -54,14 +58,14 @@ export class EmulationModel extends SDKModel<void> {
       void this.#emulationAgent.invoke_setScriptExecutionDisabled({value: true});
     }
 
-    const touchSetting = Common.Settings.Settings.instance().moduleSetting('emulation.touch');
+    const touchSetting = settings.moduleSetting('emulation.touch');
     touchSetting.addChangeListener(() => {
       const settingValue = touchSetting.get();
 
       void this.overrideEmulateTouch(settingValue === 'force');
     });
 
-    const idleDetectionSetting = Common.Settings.Settings.instance().moduleSetting('emulation.idle-detection');
+    const idleDetectionSetting = settings.moduleSetting('emulation.idle-detection');
     idleDetectionSetting.addChangeListener(async () => {
       const settingValue = idleDetectionSetting.get();
       if (settingValue === 'none') {
@@ -76,7 +80,7 @@ export class EmulationModel extends SDKModel<void> {
       await this.setIdleOverride(emulationParams);
     });
 
-    const cpuPressureDetectionSetting = Common.Settings.Settings.instance().moduleSetting('emulation.cpu-pressure');
+    const cpuPressureDetectionSetting = settings.moduleSetting('emulation.cpu-pressure');
     cpuPressureDetectionSetting.addChangeListener(async () => {
       const settingValue = cpuPressureDetectionSetting.get();
 
@@ -94,21 +98,19 @@ export class EmulationModel extends SDKModel<void> {
       await this.setPressureStateOverride(settingValue);
     });
 
-    const mediaTypeSetting = Common.Settings.Settings.instance().moduleSetting<string>('emulated-css-media');
-    const mediaFeatureColorGamutSetting =
-        Common.Settings.Settings.instance().moduleSetting<string>('emulated-css-media-feature-color-gamut');
+    const mediaTypeSetting = settings.moduleSetting<string>('emulated-css-media');
+    const mediaFeatureColorGamutSetting = settings.moduleSetting<string>('emulated-css-media-feature-color-gamut');
     const mediaFeaturePrefersColorSchemeSetting =
-        Common.Settings.Settings.instance().moduleSetting<string>('emulated-css-media-feature-prefers-color-scheme');
-    const mediaFeatureForcedColorsSetting =
-        Common.Settings.Settings.instance().moduleSetting('emulated-css-media-feature-forced-colors');
+        settings.moduleSetting<string>('emulated-css-media-feature-prefers-color-scheme');
+    const mediaFeatureForcedColorsSetting = settings.moduleSetting('emulated-css-media-feature-forced-colors');
     const mediaFeaturePrefersContrastSetting =
-        Common.Settings.Settings.instance().moduleSetting<string>('emulated-css-media-feature-prefers-contrast');
+        settings.moduleSetting<string>('emulated-css-media-feature-prefers-contrast');
     const mediaFeaturePrefersReducedDataSetting =
-        Common.Settings.Settings.instance().moduleSetting<string>('emulated-css-media-feature-prefers-reduced-data');
-    const mediaFeaturePrefersReducedTransparencySetting = Common.Settings.Settings.instance().moduleSetting<string>(
-        'emulated-css-media-feature-prefers-reduced-transparency');
+        settings.moduleSetting<string>('emulated-css-media-feature-prefers-reduced-data');
+    const mediaFeaturePrefersReducedTransparencySetting =
+        settings.moduleSetting<string>('emulated-css-media-feature-prefers-reduced-transparency');
     const mediaFeaturePrefersReducedMotionSetting =
-        Common.Settings.Settings.instance().moduleSetting<string>('emulated-css-media-feature-prefers-reduced-motion');
+        settings.moduleSetting<string>('emulated-css-media-feature-prefers-reduced-motion');
     // Note: this uses a different format than what the CDP API expects,
     // because we want to update these values per media type/feature
     // without having to search the `features` array (inefficient) or
@@ -157,7 +159,7 @@ export class EmulationModel extends SDKModel<void> {
     });
     void this.updateCssMedia();
 
-    const autoDarkModeSetting = Common.Settings.Settings.instance().moduleSetting('emulate-auto-dark-mode');
+    const autoDarkModeSetting = settings.moduleSetting('emulate-auto-dark-mode');
     autoDarkModeSetting.addChangeListener(() => {
       const enabled = autoDarkModeSetting.get();
       mediaFeaturePrefersColorSchemeSetting.setDisabled(enabled);
@@ -170,13 +172,13 @@ export class EmulationModel extends SDKModel<void> {
       void this.emulateAutoDarkMode(true);
     }
 
-    const visionDeficiencySetting = Common.Settings.Settings.instance().moduleSetting('emulated-vision-deficiency');
+    const visionDeficiencySetting = settings.moduleSetting('emulated-vision-deficiency');
     visionDeficiencySetting.addChangeListener(() => this.emulateVisionDeficiency(visionDeficiencySetting.get()));
     if (visionDeficiencySetting.get()) {
       void this.emulateVisionDeficiency(visionDeficiencySetting.get());
     }
 
-    const osTextScaleSetting = Common.Settings.Settings.instance().moduleSetting('emulated-os-text-scale');
+    const osTextScaleSetting = settings.moduleSetting('emulated-os-text-scale');
     osTextScaleSetting.addChangeListener(() => {
       void this.emulateOSTextScale(parseFloat(osTextScaleSetting.get()) || undefined);
     });
@@ -184,19 +186,23 @@ export class EmulationModel extends SDKModel<void> {
       void this.emulateOSTextScale(parseFloat(osTextScaleSetting.get()) || undefined);
     }
 
-    const localFontsDisabledSetting = Common.Settings.Settings.instance().moduleSetting('local-fonts-disabled');
+    const localFontsDisabledSetting = settings.moduleSetting('local-fonts-disabled');
     localFontsDisabledSetting.addChangeListener(() => this.setLocalFontsDisabled(localFontsDisabledSetting.get()));
     if (localFontsDisabledSetting.get()) {
       this.setLocalFontsDisabled(localFontsDisabledSetting.get());
     }
 
-    const avifFormatDisabledSetting = Common.Settings.Settings.instance().moduleSetting('avif-format-disabled');
-    const webpFormatDisabledSetting = Common.Settings.Settings.instance().moduleSetting('webp-format-disabled');
+    const avifFormatDisabledSetting = settings.moduleSetting('avif-format-disabled');
+    const jpegXlFormatDisabledSetting = settings.moduleSetting('jpeg-xl-format-disabled');
+    const webpFormatDisabledSetting = settings.moduleSetting('webp-format-disabled');
 
     const updateDisabledImageFormats = (): void => {
       const types = [];
       if (avifFormatDisabledSetting.get()) {
         types.push(Protocol.Emulation.DisabledImageType.Avif);
+      }
+      if (jpegXlFormatDisabledSetting.get()) {
+        types.push(Protocol.Emulation.DisabledImageType.Jxl);
       }
       if (webpFormatDisabledSetting.get()) {
         types.push(Protocol.Emulation.DisabledImageType.Webp);
@@ -205,9 +211,10 @@ export class EmulationModel extends SDKModel<void> {
     };
 
     avifFormatDisabledSetting.addChangeListener(updateDisabledImageFormats);
+    jpegXlFormatDisabledSetting.addChangeListener(updateDisabledImageFormats);
     webpFormatDisabledSetting.addChangeListener(updateDisabledImageFormats);
 
-    if (avifFormatDisabledSetting.get() || webpFormatDisabledSetting.get()) {
+    if (avifFormatDisabledSetting.get() || jpegXlFormatDisabledSetting.get() || webpFormatDisabledSetting.get()) {
       updateDisabledImageFormats();
     }
 
@@ -220,6 +227,7 @@ export class EmulationModel extends SDKModel<void> {
       enabled: false,
       configuration: Protocol.Emulation.SetEmitTouchEventsForMouseRequestConfiguration.Mobile,
     };
+    target.registerEmulationDispatcher(this);
   }
 
   setTouchEmulationAllowed(touchEmulationAllowed: boolean): void {
@@ -473,6 +481,41 @@ export class EmulationModel extends SDKModel<void> {
     ];
     return await this.emulateCSSMedia(type, features);
   }
+
+  // ProtocolProxyApi.EmulationDispatcher implementation
+
+  virtualTimeBudgetExpired(): void {
+    // No-op for now; not used by the frontend.
+  }
+
+  screenOrientationLockChanged(event: Protocol.Emulation.ScreenOrientationLockChangedEvent): void {
+    this.#screenOrientationLocked = event.locked;
+    this.#lockedOrientation = event.orientation ?? null;
+    this.dispatchEventToListeners(
+        EmulationModelEvents.SCREEN_ORIENTATION_LOCK_CHANGED,
+        {locked: event.locked, orientation: event.orientation ?? null});
+  }
+
+  isScreenOrientationLocked(): boolean {
+    return this.#screenOrientationLocked;
+  }
+
+  lockedOrientation(): Protocol.Emulation.ScreenOrientation|null {
+    return this.#lockedOrientation;
+  }
+}
+
+export const enum EmulationModelEvents {
+  SCREEN_ORIENTATION_LOCK_CHANGED = 'ScreenOrientationLockChanged',
+}
+
+export interface ScreenOrientationLockChangedEvent {
+  locked: boolean;
+  orientation: Protocol.Emulation.ScreenOrientation|null;
+}
+
+export interface EmulationModelEventTypes {
+  [EmulationModelEvents.SCREEN_ORIENTATION_LOCK_CHANGED]: ScreenOrientationLockChangedEvent;
 }
 
 export class Location {
@@ -558,14 +601,14 @@ export class Location {
 
   static accuracyValidator(value: string): {
     valid: boolean,
-    errorMessage: (string|undefined),
+    errorMessage?: string,
   } {
     if (!value) {
-      return {valid: true, errorMessage: undefined};
+      return {valid: true};
     }
     const numValue = parseFloat(value);
     const valid = /^([+-]?[\d]+(\.\d+)?|[+-]?\.\d+)$/.test(value) && numValue >= 0;
-    return {valid, errorMessage: undefined};
+    return {valid};
   }
 
   toSetting(): string {

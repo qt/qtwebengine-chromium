@@ -4,10 +4,12 @@
 # found in the LICENSE file.
 """Objects for describing template code to be generated from structured.xml."""
 
-import templates_validator as validator_tmpl
-from codegen_util import FileInfo, Util
-from code_generator import (EventTemplateBase, ProjectInfoBase,
-  EventInfoBase, MetricInfoBase)
+import setup_modules  # pylint: disable=unused-import
+
+import chromium_src.tools.metrics.structured.templates_validator as validator_tmpl
+from chromium_src.tools.metrics.structured.codegen_util import FileInfo, Util
+from chromium_src.tools.metrics.structured.code_generator import (
+    EventTemplateBase, ProjectInfoBase, EventInfoBase, MetricInfoBase)
 
 CHROMIUM_TARGET="chromium"
 
@@ -213,7 +215,7 @@ class ValidatorImplTemplate:
 
   def _stamp_file(self, file_info) -> str:
     event_code = []
-    project_event_maps = []
+    project_event_maps: list[str] = []
     project_code = []
 
     for project in self.projects:

@@ -38,6 +38,45 @@ limitations under the License.
     return F32ToBf16(METHOD<PACKET_F>(Bf16ToF32(_x)));                                              \
   }
 
+#define EIGEN_INSTANTIATE_GENERIC_MATH_FUNCS_BF16(PACKET_F, PACKET_BF16) \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pcos)                      \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, psin)                      \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, psinh)                     \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pcosh)                     \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pasinh)                    \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pacosh)                    \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pexp)                      \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pexp2)                     \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pexpm1)                    \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, plog)                      \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, plog1p)                    \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, plog2)                     \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, plog10)                    \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, preciprocal)               \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, prsqrt)                    \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pcbrt)                     \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, psqrt)                     \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, ptanh)
+
+// BF16 wrappers for unsupported/SpecialFunctions.
+#define EIGEN_INSTANTIATE_SPECIAL_FUNCS_BF16(PACKET_F, PACKET_BF16) \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, perf)                 \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pndtri)
+
+#define EIGEN_INSTANTIATE_BESSEL_FUNCS_BF16(PACKET_F, PACKET_BF16) \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_i0)          \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_i0e)         \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_i1)          \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_i1e)         \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_j0)          \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_j1)          \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_k0)          \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_k0e)         \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_k1)          \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_k1e)         \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_y0)          \
+  BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, pbessel_y1)
+
 // Only use HIP GPU bf16 in kernels
 #if defined(EIGEN_HAS_HIP_BF16) && defined(EIGEN_GPU_COMPILE_PHASE)
 #define EIGEN_USE_HIP_BF16
@@ -176,6 +215,8 @@ struct numeric_limits_bfloat16_impl {
   static EIGEN_CONSTEXPR Eigen::bfloat16 denorm_min() { return Eigen::bfloat16_impl::raw_uint16_to_bfloat16(0x0001); }
 };
 
+// Redundant out-of-class definitions are required pre-C++17 but deprecated since.
+#if EIGEN_COMP_CXXVER < 17
 template <typename T>
 EIGEN_CONSTEXPR const bool numeric_limits_bfloat16_impl<T>::is_specialized;
 template <typename T>
@@ -225,6 +266,7 @@ template <typename T>
 EIGEN_CONSTEXPR const bool numeric_limits_bfloat16_impl<T>::traps;
 template <typename T>
 EIGEN_CONSTEXPR const bool numeric_limits_bfloat16_impl<T>::tinyness_before;
+#endif
 }  // end namespace bfloat16_impl
 }  // end namespace Eigen
 

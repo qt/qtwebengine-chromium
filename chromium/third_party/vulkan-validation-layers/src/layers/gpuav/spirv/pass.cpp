@@ -45,56 +45,6 @@ bool Pass::Run() {
     return modified;
 }
 
-const Variable& Pass::GetBuiltInVariable(uint32_t built_in) {
-    uint32_t variable_id = 0;
-    for (const auto& annotation : module_.annotations_) {
-        if (annotation->Opcode() == spv::OpDecorate && annotation->Word(2) == spv::DecorationBuiltIn &&
-            annotation->Word(3) == built_in) {
-            variable_id = annotation->Word(1);
-            break;
-        }
-    }
-
-    if (variable_id == 0) {
-        variable_id = module_.TakeNextId();
-        auto new_inst = std::make_unique<Instruction>(4, spv::OpDecorate);
-        new_inst->Fill({variable_id, spv::DecorationBuiltIn, built_in});
-        module_.annotations_.emplace_back(std::move(new_inst));
-    }
-
-    // Currently we only ever needed Input variables and the built-ins we are using are not those that can be used by both Input and
-    // Output storage classes
-    const Variable* built_in_variable = type_manager_.FindVariableById(variable_id);
-    if (!built_in_variable) {
-        const Type& pointer_type = type_manager_.GetTypePointerBuiltInInput(spv::BuiltIn(built_in));
-        auto new_inst = std::make_unique<Instruction>(4, spv::OpVariable);
-        new_inst->Fill({pointer_type.Id(), variable_id, spv::StorageClassInput});
-        built_in_variable = &type_manager_.AddVariable(std::move(new_inst), pointer_type);
-        module_.AddInterfaceVariables(built_in_variable->Id(), spv::StorageClassInput);
-    } else {
-        // Slang with the --preserve-params option will leave built-in variables that aren't in any interface.
-        const uint32_t built_in_variable_id = built_in_variable->Id();
-        const Instruction* entry_point = module_.GetTargetEntryPoint();
-
-        bool found_variable = false;
-        uint32_t word = entry_point->GetEntryPointInterfaceStart();
-        const uint32_t total_words = entry_point->Length();
-        for (; word < total_words; word++) {
-            const uint32_t interface_id = entry_point->Word(word);
-            if (interface_id == built_in_variable_id) {
-                found_variable = true;
-                break;
-            }
-        }
-
-        if (!found_variable) {
-            module_.AddInterfaceVariables(variable_id, spv::StorageClassInput);
-        }
-    }
-
-    return *built_in_variable;
-}
-
 // Special function to map to the internal representation of the execution models used for GenerateStageMessage()
 static uint32_t GetNormalizedExecutionModel(VkShaderStageFlagBits shader_stage) {
     switch (shader_stage) {
@@ -160,7 +110,7 @@ uint32_t Pass::GetStageInfo(Function& function, const BasicBlock& target_block_i
 
     // Gets BuiltIn variable and creates a valid OpLoad of it
     auto create_load = [this, &block, &inst_it](spv::BuiltIn built_in) {
-        const Variable& variable = GetBuiltInVariable(built_in);
+        const Variable& variable = module_.GetBuiltInVariable(built_in);
         const Type* pointer_type = variable.PointerType(type_manager_);
         const uint32_t load_id = module_.TakeNextId();
         block.CreateInstruction(spv::OpLoad, {pointer_type->Id(), load_id, variable.Id()}, &inst_it);
@@ -204,7 +154,7 @@ uint32_t Pass::GetStageInfo(Function& function, const BasicBlock& target_block_i
         case VK_SHADER_STAGE_TASK_BIT_NV:
         case VK_SHADER_STAGE_MESH_BIT_NV: {
             // This can be both a uvec3 or ivec3 so need to cast if ivec3
-            const Variable& variable = GetBuiltInVariable(spv::BuiltInGlobalInvocationId);
+            const Variable& variable = module_.GetBuiltInVariable(spv::BuiltInGlobalInvocationId);
             const Type* pointer_type = variable.PointerType(type_manager_);
             const uint32_t load_id = module_.TakeNextId();
             block.CreateInstruction(spv::OpLoad, {pointer_type->Id(), load_id, variable.Id()}, &inst_it);
@@ -309,20 +259,20 @@ uint32_t Pass::FindTypeByteSize(uint32_t type_id, uint32_t matrix_stride, bool c
                 module_.InternalError("FindTypeByteSize", "missing matrix stride");
             }
             if (col_major) {
-                return type.inst_.Word(3) * matrix_stride;
+                return type.meta_.matrix.component_count * matrix_stride;
             } else {
                 const Type* vector_type = type_manager_.FindTypeById(type.inst_.Word(2));
-                return vector_type->inst_.Word(3) * matrix_stride;
+                return vector_type->meta_.vector.component_count * matrix_stride;
             }
         }
         case SpvType::kVector: {
-            uint32_t size = type.inst_.Word(3);
+            uint32_t size = type.meta_.vector.component_count;
             const Type* component_type = type_manager_.FindTypeById(type.inst_.Word(2));
             // if vector in row major matrix, the vector is strided so return the number of bytes spanned by the vector
             if (in_matrix && !col_major && matrix_stride > 0) {
                 return (size - 1) * matrix_stride + FindTypeByteSize(component_type->Id());
             } else if (component_type->spv_type_ == SpvType::kFloat || component_type->spv_type_ == SpvType::kInt) {
-                const uint32_t width = component_type->inst_.Word(2);
+                const uint32_t width = component_type->meta_.scalar.bit_width;
                 size *= width;
             } else {
                 module_.InternalError("FindTypeByteSize", "unexpected vector type");
@@ -331,16 +281,11 @@ uint32_t Pass::FindTypeByteSize(uint32_t type_id, uint32_t matrix_stride, bool c
         }
         case SpvType::kFloat:
         case SpvType::kInt: {
-            const uint32_t width = type.inst_.Word(2);
-            return width / 8;
+            return type.meta_.scalar.bit_width / 8u;
         }
         case SpvType::kArray: {
             const uint32_t array_stride = GetDecoration(type_id, spv::DecorationArrayStride)->Word(3);
-            const Constant* count = type_manager_.FindConstantById(type.inst_.Operand(1));
-            // TODO - Need to handle spec constant here, for now return one to have things not blowup
-            assert(count && !count->is_spec_constant_);
-            const uint32_t array_length = (count && !count->is_spec_constant_) ? count->inst_.Operand(0) : 1;
-            return array_length * array_stride;
+            return type.meta_.array.length * array_stride;
         }
         case SpvType::kStruct: {
             const uint32_t struct_length = type.inst_.Length() - 2;
@@ -763,11 +708,10 @@ CooperativeMatrixAccess Pass::GetCooperativeMatrixAccess(const Instruction& inst
     // Currently we don't save/cache the size of each type because we still need to extract the rows/column info. This the tradeoff
     // of having a simplified single Type class
     const Type* component_type = type_manager_.FindTypeById(info.type->inst_.Word(2));
-    info.component_size = type_manager_.TypeLength(*component_type);
+    info.component_size = type_manager_.GetTypeBytesSize(*component_type);
 
     const Constant* rows_const = type_manager_.FindConstantById(info.type->inst_.Word(4));
     const Constant* columns_const = type_manager_.FindConstantById(info.type->inst_.Word(5));
-    // TODO - Need to handle spec constant here, for now return zero to have things not blowup
     assert(rows_const && !rows_const->is_spec_constant_ && columns_const && !columns_const->is_spec_constant_);
     info.rows = rows_const->inst_.Operand(0);
     info.columns = columns_const->inst_.Operand(0);
@@ -867,7 +811,7 @@ InstructionIt Pass::FindTargetInstruction(BasicBlock& block, const Instruction& 
     return block.instructions_.end();
 }
 
-bool Pass::IsMaxInstrumentationsCount() const {
+bool Pass::MaxInstrumentationsCountReached() const {
     return (module_.settings_.max_instrumentations_count != 0) &&
            (instrumentations_count_ >= module_.settings_.max_instrumentations_count);
 }
@@ -941,15 +885,16 @@ InjectConditionalData Pass::InjectFunctionPre(Function& function, const BasicBlo
             invalid_block.CreateInstruction(spv::OpConvertUToPtr, {phi_type.Id(), null_id, null_constant.Id()});
             module_.AddCapability(spv::CapabilityInt64);
         } else {
-            if ((phi_type.spv_type_ == SpvType::kInt || phi_type.spv_type_ == SpvType::kFloat) && phi_type.inst_.Word(2) < 32) {
+            if ((phi_type.spv_type_ == SpvType::kInt || phi_type.spv_type_ == SpvType::kFloat) &&
+                phi_type.meta_.scalar.bit_width < 32) {
                 // You can't make a constant of a 8-int, 16-int, 16-float without having the capability
                 // The only way this situation occurs if they use something like
                 //     OpCapability StorageBuffer8BitAccess
                 // but there is not explicit Int8
                 // It should be more than safe to inject it for them
-                spv::Capability capability = (phi_type.spv_type_ == SpvType::kFloat) ? spv::CapabilityFloat16
-                                             : (phi_type.inst_.Word(2) == 16)        ? spv::CapabilityInt16
-                                                                                     : spv::CapabilityInt8;
+                spv::Capability capability = (phi_type.spv_type_ == SpvType::kFloat)   ? spv::CapabilityFloat16
+                                             : (phi_type.meta_.scalar.bit_width == 16) ? spv::CapabilityInt16
+                                                                                       : spv::CapabilityInt8;
                 module_.AddCapability(capability);
             }
 

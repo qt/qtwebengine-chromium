@@ -362,7 +362,7 @@ class FrameSchedulerImplTest : public testing::Test {
           ->GetTaskRunnerWithDefaultTaskType()
           ->PostTask(FROM_HERE,
                      base::BindOnce(&AppendToVectorTestTask, run_order,
-                                    String::FromUTF8(task)));
+                                    String::FromUtf8(task)));
     }
   }
 
@@ -384,27 +384,27 @@ class FrameSchedulerImplTest : public testing::Test {
         case 'L':
           LoadingTaskQueue()->GetTaskRunnerWithDefaultTaskType()->PostTask(
               FROM_HERE, base::BindOnce(&AppendToVectorTestTask, run_order,
-                                        String::FromUTF8(task)));
+                                        String::FromUtf8(task)));
           break;
         case 'T':
           ThrottleableTaskQueue()->GetTaskRunnerWithDefaultTaskType()->PostTask(
               FROM_HERE, base::BindOnce(&AppendToVectorTestTask, run_order,
-                                        String::FromUTF8(task)));
+                                        String::FromUtf8(task)));
           break;
         case 'P':
           PausableTaskQueue()->GetTaskRunnerWithDefaultTaskType()->PostTask(
               FROM_HERE, base::BindOnce(&AppendToVectorTestTask, run_order,
-                                        String::FromUTF8(task)));
+                                        String::FromUtf8(task)));
           break;
         case 'U':
           UnpausableTaskQueue()->GetTaskRunnerWithDefaultTaskType()->PostTask(
               FROM_HERE, base::BindOnce(&AppendToVectorTestTask, run_order,
-                                        String::FromUTF8(task)));
+                                        String::FromUtf8(task)));
           break;
         case 'D':
           DeferrableTaskQueue()->GetTaskRunnerWithDefaultTaskType()->PostTask(
               FROM_HERE, base::BindOnce(&AppendToVectorTestTask, run_order,
-                                        String::FromUTF8(task)));
+                                        String::FromUtf8(task)));
           break;
         default:
           NOTREACHED();
@@ -1709,6 +1709,52 @@ TEST_F(FrameSchedulerImplTest, BackForwardCacheOptOut) {
   EXPECT_THAT(
       frame_scheduler_->GetActiveFeaturesTrackedForBackForwardCacheMetrics(),
       testing::UnorderedElementsAre());
+}
+
+TEST_F(FrameSchedulerImplTest, RetainsThreadTypeUnderWebRTCMediaThreadTypes) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(features::kWebRtcUseMediaThreadTypes);
+
+  EXPECT_EQ(base::PlatformThread::GetCurrentThreadType(),
+            base::ThreadType::kPresentation);
+  auto feature_handle1 =
+      frame_scheduler_->RegisterFeature(SchedulingPolicy::Feature::kWebRTC, {});
+  EXPECT_EQ(base::PlatformThread::GetCurrentThreadType(),
+            base::ThreadType::kPresentation);
+  auto feature_handle2 =
+      frame_scheduler_->RegisterFeature(SchedulingPolicy::Feature::kWebRTC, {});
+  EXPECT_EQ(base::PlatformThread::GetCurrentThreadType(),
+            base::ThreadType::kPresentation);
+  feature_handle1.reset();
+  EXPECT_EQ(base::PlatformThread::GetCurrentThreadType(),
+            base::ThreadType::kPresentation);
+  feature_handle2.reset();
+  EXPECT_EQ(base::PlatformThread::GetCurrentThreadType(),
+            base::ThreadType::kPresentation);
+}
+
+TEST_F(FrameSchedulerImplTest, ResetsThreadTypeUnderWebRTCDefaultThreadType) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitWithFeatures(
+      {features::kRendererMainIsDefaultThreadTypeForWebRTC},
+      {features::kWebRtcUseMediaThreadTypes});
+
+  EXPECT_EQ(base::PlatformThread::GetCurrentThreadType(),
+            base::ThreadType::kPresentation);
+  auto feature_handle1 =
+      frame_scheduler_->RegisterFeature(SchedulingPolicy::Feature::kWebRTC, {});
+  EXPECT_EQ(base::PlatformThread::GetCurrentThreadType(),
+            base::ThreadType::kDefault);
+  auto feature_handle2 =
+      frame_scheduler_->RegisterFeature(SchedulingPolicy::Feature::kWebRTC, {});
+  EXPECT_EQ(base::PlatformThread::GetCurrentThreadType(),
+            base::ThreadType::kDefault);
+  feature_handle1.reset();
+  EXPECT_EQ(base::PlatformThread::GetCurrentThreadType(),
+            base::ThreadType::kDefault);
+  feature_handle2.reset();
+  EXPECT_EQ(base::PlatformThread::GetCurrentThreadType(),
+            base::ThreadType::kPresentation);
 }
 
 TEST_F(FrameSchedulerImplTest, FeatureUpload) {

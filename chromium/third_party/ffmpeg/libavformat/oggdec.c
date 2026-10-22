@@ -117,8 +117,10 @@ static int ogg_save(AVFormatContext *s)
             memcpy(os->buf, ost->streams[i].buf, os->bufpos);
         else
             ret = AVERROR(ENOMEM);
-        os->new_metadata      = NULL;
-        os->new_metadata_size = 0;
+        os->new_metadata       = NULL;
+        os->new_metadata_size  = 0;
+        os->new_extradata      = NULL;
+        os->new_extradata_size = 0;
         os->new_extradata      = NULL;
         os->new_extradata_size = 0;
     }

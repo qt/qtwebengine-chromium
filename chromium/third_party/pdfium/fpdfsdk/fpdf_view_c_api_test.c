@@ -122,6 +122,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFDoc_GetAttachmentCount);
 
     // fpdf_catalog.h
+    CHK(FPDFCatalog_GetLanguage);
     CHK(FPDFCatalog_IsTagged);
     CHK(FPDFCatalog_SetLanguage);
 
@@ -397,6 +398,7 @@ int CheckPDFiumCApi() {
     CHK(FPDF_StructElement_GetAttributeCount);
     CHK(FPDF_StructElement_GetChildAtIndex);
     CHK(FPDF_StructElement_GetChildMarkedContentID);
+    CHK(FPDF_StructElement_GetExpansion);
     CHK(FPDF_StructElement_GetID);
     CHK(FPDF_StructElement_GetLang);
     CHK(FPDF_StructElement_GetMarkedContentID);

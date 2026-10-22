@@ -340,7 +340,7 @@ bool ScrollInDirection(Node* container, SpatialNavigationDirection direction) {
   // TODO(crbug.com/914775): Use UserScroll() instead. UserScroll() does a
   // smooth, animated scroll which might make it easier for users to understand
   // spatnav's moves. Another advantage of using ScrollableArea::UserScroll() is
-  // that it returns a ScrollResult so we don't need to call
+  // that it returns a ScrollConsumption so we don't need to call
   // CanScrollInDirection(). Regular arrow-key scrolling (without
   // --enable-spatial-navigation) already uses smooth scrolling by default.
   ScrollableArea* scroller = ScrollableAreaFor(container);
@@ -407,25 +407,22 @@ bool CanScrollInDirection(const Node* container,
     return false;
 
   DCHECK(container->GetLayoutObject());
+  const ComputedStyle& style = container->GetLayoutObject()->StyleRef();
   switch (direction) {
     case SpatialNavigationDirection::kLeft:
-      return (container->GetLayoutObject()->Style()->OverflowX() !=
-                  EOverflow::kHidden &&
+      return (style.OverflowX() != EOverflow::kHidden &&
               scrollable_area->GetScrollOffset().x() >
                   scrollable_area->MinimumScrollOffset().x());
     case SpatialNavigationDirection::kUp:
-      return (container->GetLayoutObject()->Style()->OverflowY() !=
-                  EOverflow::kHidden &&
+      return (style.OverflowY() != EOverflow::kHidden &&
               scrollable_area->GetScrollOffset().y() >
                   scrollable_area->MinimumScrollOffset().y());
     case SpatialNavigationDirection::kRight:
-      return (container->GetLayoutObject()->Style()->OverflowX() !=
-                  EOverflow::kHidden &&
+      return (style.OverflowX() != EOverflow::kHidden &&
               scrollable_area->GetScrollOffset().x() <
                   scrollable_area->MaximumScrollOffset().x());
     case SpatialNavigationDirection::kDown:
-      return (container->GetLayoutObject()->Style()->OverflowY() !=
-                  EOverflow::kHidden &&
+      return (style.OverflowY() != EOverflow::kHidden &&
               scrollable_area->GetScrollOffset().y() <
                   scrollable_area->MaximumScrollOffset().y());
     default:

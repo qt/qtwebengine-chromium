@@ -103,25 +103,14 @@ export class LiveHeapProfileView extends UI.Widget.VBox {
   }
 
   createDataGrid(): DataGrid.SortableDataGrid.SortableDataGrid<GridNode> {
-    const defaultColumnConfig: DataGrid.DataGrid.ColumnDescriptor = {
-      id: '',
+    const defaultColumnConfig = {
       title: Common.UIString.LocalizedEmptyString,
-      width: undefined,
       fixedWidth: true,
       sortable: true,
       align: DataGrid.DataGrid.Align.RIGHT,
       sort: DataGrid.DataGrid.Order.Descending,
-      titleDOMFragment: undefined,
-      editable: undefined,
-      nonSelectable: undefined,
-      longText: undefined,
-      disclosure: undefined,
-      weight: undefined,
-      allowInSortByEvenWhenHidden: undefined,
-      dataType: undefined,
-      defaultWeight: undefined,
     };
-    const columns = [
+    const columns: Array<{tooltip: Common.UIString.LocalizedString}&DataGrid.DataGrid.ColumnDescriptor> = [
       {
         ...defaultColumnConfig,
         id: 'size',
@@ -150,12 +139,10 @@ export class LiveHeapProfileView extends UI.Widget.VBox {
         sortable: true,
         tooltip: i18nString(UIStrings.urlOfTheScriptSource),
       },
-    ] as Array<{tooltip: Common.UIString.LocalizedString}&DataGrid.DataGrid.ColumnDescriptor>;
+    ];
     const dataGrid = new DataGrid.SortableDataGrid.SortableDataGrid({
       displayName: i18nString(UIStrings.heapProfile),
       columns,
-      deleteCallback: undefined,
-      refreshCallback: undefined,
     });
     dataGrid.setResizeMethod(DataGrid.DataGrid.ResizeMethod.LAST);
     dataGrid.element.classList.add('flex-auto');

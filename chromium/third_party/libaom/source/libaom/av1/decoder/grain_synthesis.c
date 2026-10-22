@@ -1379,7 +1379,6 @@ int av1_add_film_grain(const aom_film_grain_t *params, const aom_image_t *src,
   int mc_identity = src->mc == AOM_CICP_MC_IDENTITY ? 1 : 0;
 
   switch (src->fmt) {
-    case AOM_IMG_FMT_AOMI420:
     case AOM_IMG_FMT_I420:
       use_high_bit_depth = 0;
       chroma_subsamp_x = 1;

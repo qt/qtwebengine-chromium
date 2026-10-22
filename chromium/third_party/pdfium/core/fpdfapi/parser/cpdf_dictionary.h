@@ -42,6 +42,7 @@ class CPDF_Dictionary final : public CPDF_Object {
 
   bool IsLocked() const { return !!lock_count_; }
 
+  bool IsEmpty() const { return map_.empty(); }
   size_t size() const { return map_.size(); }
   RetainPtr<const CPDF_Object> GetObjectFor(ByteStringView key) const;
   RetainPtr<CPDF_Object> GetMutableObjectFor(ByteStringView key);

@@ -7,7 +7,7 @@
 import {SelectOption} from '@material/web/select/select-option.js';
 import {css} from 'lit';
 
-import {MenuItem} from '../menu/menu_item';
+import {MenuItem} from '../menu/menu_item.js';
 
 /**
  * A chromeOS compliant dropdown-option to use within dropdown.

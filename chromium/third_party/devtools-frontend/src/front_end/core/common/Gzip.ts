@@ -37,10 +37,25 @@ export async function fileToString(file: File): Promise<string> {
  * Decompress a gzipped ArrayBuffer to a string.
  * Consider using `arrayBufferToString` instead, which can handle both gzipped and plain text buffers.
  */
-export async function decompress(gzippedBuffer: ArrayBufferLike): Promise<string> {
+export async function decompress(gzippedBuffer: ArrayBufferLike, charset = 'utf-8'): Promise<string> {
   const buffer = await gzipCodec(gzippedBuffer, new DecompressionStream('gzip'));
-  const str = new TextDecoder('utf-8').decode(buffer);
+  const str = new TextDecoder(charset).decode(buffer);
   return str;
+}
+
+/**
+ * Decompress a deflate-encoded ArrayBuffer to a string.
+ * Tries 'deflate' (zlib wrapper) first, then falls back to 'deflate-raw'.
+ */
+export async function decompressDeflate(buffer: ArrayBufferLike, charset = 'utf-8'): Promise<string> {
+  let decompressedBuffer: ArrayBuffer;
+  try {
+    decompressedBuffer = await gzipCodec(buffer, new DecompressionStream('deflate'));
+  } catch {
+    // Try deflate-raw format if zlib-wrapped deflate fails.
+    decompressedBuffer = await gzipCodec(buffer, new DecompressionStream('deflate-raw'));
+  }
+  return new TextDecoder(charset).decode(decompressedBuffer);
 }
 export async function compress(str: string): Promise<ArrayBuffer> {
   const encoded = new TextEncoder().encode(str);

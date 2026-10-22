@@ -41,6 +41,7 @@
 #include "third_party/blink/renderer/core/events/keyboard_event.h"
 #include "third_party/blink/renderer/core/events/mouse_event.h"
 #include "third_party/blink/renderer/core/html/forms/html_data_list_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_opt_group_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/html_hr_element.h"
@@ -147,7 +148,6 @@ FocusableState HTMLOptionElement::SupportsFocus(
     bool base_with_picker =
         select->UsesMenuList() && popover && popover->popoverOpen();
     bool base_in_page =
-        RuntimeEnabledFeatures::CustomizableSelectListboxEnabled() &&
         !select->UsesMenuList() && select->IsAppearanceBase();
     if (base_with_picker || base_in_page) {
       // If this option is being rendered as regular web content inside a
@@ -169,8 +169,7 @@ bool HTMLOptionElement::IsKeyboardFocusableSlow(
   if (!HTMLElement::IsKeyboardFocusableSlow(update_behavior)) {
     return false;
   }
-  if (!RuntimeEnabledFeatures::CustomizableSelectListboxEnabled() ||
-      !OwnerSelectElement() || OwnerSelectElement()->UsesMenuList()) {
+  if (!OwnerSelectElement() || OwnerSelectElement()->UsesMenuList()) {
     return true;
   }
 
@@ -567,6 +566,7 @@ void HTMLOptionElement::UpdateAncestors() {
   nearest_ancestor_select_ = ancestors.select;
   nearest_ancestor_optgroup_ = ancestors.optgroup;
   nearest_ancestor_datalist_ = ancestors.datalist;
+  SetFiltered(false);
 }
 
 Node::InsertionNotificationRequest HTMLOptionElement::InsertedInto(
@@ -581,6 +581,9 @@ Node::InsertionNotificationRequest HTMLOptionElement::InsertedInto(
     CHECK(!old_ancestor_select);
     nearest_ancestor_select_->OptionInserted(*this, Selected());
   }
+
+  // TODO(crbug.com/453705243): Call OptionInserted on the ancestor datalist if
+  // it changed.
 
   return return_value;
 }
@@ -644,13 +647,22 @@ bool HTMLOptionElement::IsVisibleInViewport() {
                                           listbox_top + listbox_rect.Height();
 }
 void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
+  if (nearest_ancestor_datalist_ && event.type() == event_type_names::kClick &&
+      RuntimeEnabledFeatures::CustomizableComboboxEnabled()) {
+    if (HTMLInputElement* combobox_input =
+            nearest_ancestor_datalist_->ComboboxInput()) {
+      ChooseOptionForCombobox(*combobox_input, *nearest_ancestor_datalist_);
+      event.SetDefaultHandled();
+      return;
+    }
+  }
+
   auto* select = OwnerSelectElement();
   if (!select) {
     return;
   }
 
   const bool appearance_base_in_page =
-      RuntimeEnabledFeatures::CustomizableSelectListboxEnabled() &&
       !select->UsesMenuList() && select->IsAppearanceBase();
 
   if (!appearance_base_in_page && !select->PickerIsPopover()) {
@@ -677,14 +689,15 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
       // We leave the picker open, and do not "pick" an option, only if:
       //  1. The mousedown was on the <select> button, so we have a mousedown
       //     location stored, and
-      //  2. The mouseup on this <option> was within kEpsilon layout units
-      //     (post zoom, page-relative) of the location of the mousedown. I.e.
-      //     the mouse was not dragged between mousedown and mouseup.
+      //  2. The mouseup on this <option> was within kPopupMenuDragEpsilon
+      //     layout units (post zoom, page-relative) of the location of the
+      //     mousedown. I.e.  the mouse was not dragged between mousedown and
+      //     mouseup.
       auto mouse_down_info = GetDocument().PopoverPickerPointerdown();
-      constexpr float kEpsilon = 5;  // 5 pixels in any direction
-      bool mouse_moved = !mouse_down_info.target ||
-                         !mouse_down_info.location.IsWithinDistance(
-                             mouse_event->AbsoluteLocation(), kEpsilon);
+      bool mouse_moved =
+          !mouse_down_info.target ||
+          !mouse_down_info.location.IsWithinDistance(
+              mouse_event->AbsoluteLocation(), kPopupMenuDragEpsilon);
       if (mouse_moved) {
         ChooseOption(event);
       }
@@ -701,6 +714,9 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
   int ignore_modifiers = WebInputEvent::kShiftKey | tab_ignore_modifiers;
   FocusParams focus_params(FocusTrigger::kUserGesture);
 
+  bool (*is_option_focusable)(HTMLOptionElement&) =
+      [](HTMLOptionElement& option) -> bool { return option.IsFocusable(); };
+
   if (keyboard_event && event.type() == event_type_names::kKeydown) {
     const AtomicString key(keyboard_event->key());
     if (!(keyboard_event->GetModifiers() & ignore_modifiers)) {
@@ -713,28 +729,36 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
         // Nothing below can do anything, if the options list is empty.
         return;
       }
-      if (key == keywords::kArrowUp) {
-        if (auto* previous_option = options.PreviousFocusableOption(*this)) {
-          previous_option->Focus(focus_params);
+      if (key == keywords::kArrowUp || key == keywords::kArrowDown ||
+          key == keywords::kArrowLeft || key == keywords::kArrowRight) {
+        if (std::optional<Direction> direction =
+                GetFocusDirectionFromKeyboardEvent(key)) {
+          if (*direction == Direction::kPrevious) {
+            if (auto* previous_option =
+                    options.FindPreviousOption(*this, is_option_focusable)) {
+              previous_option->Focus(focus_params);
+            }
+            event.SetDefaultHandled();
+            return;
+          } else {
+            if (auto* next_option =
+                    options.FindNextOption(*this, is_option_focusable)) {
+              next_option->Focus(focus_params);
+            }
+            event.SetDefaultHandled();
+            return;
+          }
         }
-        event.SetDefaultHandled();
-        return;
-      } else if (key == keywords::kArrowDown) {
-        if (auto* next_option = options.NextFocusableOption(*this)) {
-          next_option->Focus(focus_params);
-        }
-        event.SetDefaultHandled();
-        return;
       } else if (key == keywords::kHome) {
-        if (auto* first_option = options.NextFocusableOption(
-                *options.begin(), /*inclusive*/ true)) {
+        if (auto* first_option = options.FindNextOption(
+                *options.begin(), is_option_focusable, /*inclusive*/ true)) {
           first_option->Focus(focus_params);
           event.SetDefaultHandled();
           return;
         }
       } else if (key == keywords::kEnd) {
-        if (auto* last_option = options.PreviousFocusableOption(
-                *options.last(), /*inclusive*/ true)) {
+        if (auto* last_option = options.FindPreviousOption(
+                *options.last(), is_option_focusable, /*inclusive*/ true)) {
           last_option->Focus(focus_params);
           event.SetDefaultHandled();
           return;
@@ -745,7 +769,8 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
           // view.
           scrollIntoViewIfNeeded(/*center_if_needed*/ false);
         } else {
-          auto* next_option = options.NextFocusableOption(*this);
+          auto* next_option =
+              options.FindNextOption(*this, is_option_focusable);
           if (next_option && !next_option->IsVisibleInViewport()) {
             // The next option isn't visible, which means we were at the very
             // bottom. Scroll the current option to the top, and then focus the
@@ -761,7 +786,8 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
           // Then find the last option that is still in the view.
           HTMLOptionElement* next_focus = this;
           for (auto* current = this; current && current->IsVisibleInViewport();
-               current = options.NextFocusableOption(*current)) {
+               current =
+                   options.FindNextOption(*current, is_option_focusable)) {
             next_focus = current;
           }
           next_focus->Focus(focus_params);
@@ -773,7 +799,8 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
           // view.
           scrollIntoViewIfNeeded(/*center_if_needed*/ false);
         } else {
-          auto* previous_option = options.PreviousFocusableOption(*this);
+          auto* previous_option =
+              options.FindPreviousOption(*this, is_option_focusable);
           if (previous_option && !previous_option->IsVisibleInViewport()) {
             // The previous option isn't visible, which means we were at the
             // very top. Scroll the current option to the bottom, and then focus
@@ -789,7 +816,8 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
           // Then find the first option that is in the view.
           HTMLOptionElement* next_focus = this;
           for (auto* current = this; current && current->IsVisibleInViewport();
-               current = options.PreviousFocusableOption(*current)) {
+               current =
+                   options.FindPreviousOption(*current, is_option_focusable)) {
             next_focus = current;
           }
           next_focus->Focus(focus_params);
@@ -812,15 +840,72 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
   }
 }
 
+std::optional<HTMLOptionElement::Direction>
+HTMLOptionElement::GetFocusDirectionFromKeyboardEvent(const AtomicString& key) {
+  HTMLSelectElement* select = OwnerSelectElement();
+  CHECK(select);
+
+  if (key == keywords::kArrowUp) {
+    return Direction::kPrevious;
+  }
+  if (key == keywords::kArrowDown) {
+    return Direction::kNext;
+  }
+
+  const ComputedStyle* style = select->GetComputedStyle();
+  if (!style) {
+    return std::nullopt;
+  }
+  if (IsHorizontalWritingMode(style->GetWritingMode())) {
+    return std::nullopt;
+  }
+
+  // vertical-rl or sideways-rl: Left=next, Right=previous
+  // vertical-lr or sideways-lr: Left=previous, Right=next
+  bool next = key == keywords::kArrowRight;
+  if (!next) {
+    CHECK_EQ(key, keywords::kArrowLeft);
+  }
+  if (IsFlippedBlocksWritingMode(style->GetWritingMode())) {
+    // vertical-rl and sideways-rl
+    next = !next;
+  }
+  return next ? Direction::kNext : Direction::kPrevious;
+}
+
 void HTMLOptionElement::ChooseOption(Event& event) {
   HTMLSelectElement* select = OwnerSelectElement();
   CHECK(select);
   if (IsDisabledFormControl() || select->IsDisabledFormControl()) {
     return;
   }
-  CHECK(select->IsAppearanceBase() || select->PickerIsPopover());
-  select->SelectOptionFromPopoverPickerOrBaseListbox(this);
+  CHECK(!select->UsesMenuList() || select->PickerIsPopover());
+  select->SelectOptionFromPopoverPickerOrListbox(this);
   event.SetDefaultHandled();
+}
+
+void HTMLOptionElement::ChooseOptionForCombobox(HTMLInputElement& input,
+                                                HTMLDataListElement& datalist) {
+  CHECK(RuntimeEnabledFeatures::CustomizableComboboxEnabled());
+  CHECK_EQ(input.DataList(), &datalist);
+
+  // TODO(crbug.com/453705243): This code which decides which attributes have
+  // precedence over others should probably be shared with the appearance:auto
+  // code. The appearance:auto logic is in GetDataListOptions in form_autofill_util.cc.
+  String value_to_commit = FastHasAttribute(html_names::kValueAttr)
+                               ? FastGetAttribute(html_names::kValueAttr)
+                               : CollectOptionInnerText()
+                                     .StripWhiteSpace(IsHTMLSpace<UChar>)
+                                     .SimplifyWhiteSpace(IsHTMLSpace<UChar>);
+
+  input.SetValue(value_to_commit,
+                 TextFieldEventBehavior::kDispatchInputAndChangeEvent,
+                 TextControlSetValueSelection::kSetSelectionToEnd,
+                 WebAutofillState::kNotFilled);
+  datalist.HidePopoverInternal(
+      /*invoker=*/&input, HidePopoverFocusBehavior::kNone,
+      HidePopoverTransitionBehavior::kFireEventsAndWaitForTransitions,
+      /*exception_state=*/nullptr);
 }
 
 void HTMLOptionElement::FinishParsingChildren() {
@@ -838,6 +923,22 @@ bool HTMLOptionElement::IsLabelContainerElement(const Element& element) {
   return IsA<HTMLOptionElement>(element.OwnerShadowHost()) &&
          element.ShadowPseudoId() ==
              shadow_element_names::kOptionLabelContainer;
+}
+
+bool HTMLOptionElement::SupportsActiveOptionPseudo() {
+  return GetLayoutObject() && !IsDisabledFormControl();
+}
+
+void HTMLOptionElement::SetFiltered(bool new_filtered) {
+  if (!RuntimeEnabledFeatures::CustomizableComboboxEnabled() &&
+      !RuntimeEnabledFeatures::FilterableSelectEnabled()) {
+    return;
+  }
+  if (is_filtered_ == new_filtered) {
+    return;
+  }
+  is_filtered_ = new_filtered;
+  PseudoStateChanged(CSSSelector::kPseudoFiltered);
 }
 
 }  // namespace blink

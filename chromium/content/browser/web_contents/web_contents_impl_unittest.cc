@@ -47,6 +47,8 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui_controller.h"
+#include "content/public/browser/webui_config.h"
+#include "content/public/browser/webui_config_map.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_features.h"
@@ -58,10 +60,10 @@
 #include "content/public/test/navigation_simulator.h"
 #include "content/public/test/scoped_web_ui_controller_factory_registration.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/public/test/test_content_browser_client.h"
+#include "content/public/test/test_content_client.h"
 #include "content/public/test/test_utils.h"
 #include "content/test/navigation_simulator_impl.h"
-#include "content/test/test_content_browser_client.h"
-#include "content/test/test_content_client.h"
 #include "content/test/test_page_broadcast.h"
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
@@ -473,8 +475,7 @@ TEST_F(WebContentsImplTest, UpdateTitle) {
   main_test_rfh()->SendNavigateWithParams(std::move(params),
                                           false /* was_within_same_document */);
 
-  contents()->UpdateTitle(main_test_rfh(), u"    Lots O' Whitespace\n",
-                          base::i18n::LEFT_TO_RIGHT);
+  contents()->UpdateTitle(main_test_rfh(), u"    Lots O' Whitespace\n");
   // Make sure that title updates get stripped of whitespace.
   EXPECT_EQ(u"Lots O' Whitespace", contents()->GetTitle());
   EXPECT_FALSE(contents()->IsWaitingForResponse());
@@ -486,7 +487,7 @@ TEST_F(WebContentsImplTest, UpdateTitle) {
 TEST_F(WebContentsImplTest, UpdateTitleBeforeFirstNavigation) {
   ASSERT_TRUE(controller().IsInitialNavigation());
   const std::u16string title = u"Initial Entry Title";
-  contents()->UpdateTitle(main_test_rfh(), title, base::i18n::LEFT_TO_RIGHT);
+  contents()->UpdateTitle(main_test_rfh(), title);
   EXPECT_EQ(title, contents()->GetTitle());
 }
 
@@ -496,7 +497,7 @@ TEST_F(WebContentsImplTest, UpdateTitleWhileFirstNavigationIsPending) {
                        std::string());
   ASSERT_TRUE(!!controller().GetPendingEntry());
   const std::u16string title = u"Initial Entry Title";
-  contents()->UpdateTitle(main_test_rfh(), title, base::i18n::LEFT_TO_RIGHT);
+  contents()->UpdateTitle(main_test_rfh(), title);
   EXPECT_EQ(title, contents()->GetTitle());
 }
 
@@ -1582,6 +1583,162 @@ TEST_F(WebContentsImplTest, NavigationExitsFullscreen) {
   contents()->SetDelegate(nullptr);
 }
 
+TEST_F(WebContentsImplTest, FullscreenNoExitOnIframeNavigate) {
+  FakeFullscreenDelegate fake_delegate;
+  contents()->SetDelegate(&fake_delegate);
+
+  // Navigate to a site.
+  NavigationSimulator::NavigateAndCommitFromBrowser(contents(),
+                                                    GURL("http://a.com"));
+  TestRenderFrameHost* main_rfh = main_test_rfh();
+
+  // Create a subframe and navigate it.
+  TestRenderFrameHost* sub_rfh = main_rfh->AppendChild("subframe");
+  sub_rfh = static_cast<TestRenderFrameHost*>(
+      NavigationSimulator::NavigateAndCommitFromDocument(GURL("http://b.com"),
+                                                         sub_rfh));
+
+  // Make the top page fullscreen.
+  EXPECT_FALSE(contents()->IsFullscreen());
+  main_rfh->frame_tree_node()->UpdateUserActivationState(
+      blink::mojom::UserActivationUpdateType::kNotifyActivation,
+      blink::mojom::UserActivationNotificationType::kTest);
+  main_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
+                            base::BindOnce(&ExpectTrue));
+  EXPECT_TRUE(contents()->IsFullscreen());
+
+  // Navigate the iframe.
+  NavigationSimulator::NavigateAndCommitFromDocument(GURL("http://c.com"),
+                                                     sub_rfh);
+
+  // Fullscreen should NOT be exited.
+  EXPECT_TRUE(contents()->IsFullscreen());
+  EXPECT_TRUE(fake_delegate.IsFullscreenForTabOrPending(contents()));
+
+  contents()->SetDelegate(nullptr);
+}
+
+TEST_F(WebContentsImplTest, FullscreenNoExitOnIframeSameDocumentNavigate) {
+  FakeFullscreenDelegate fake_delegate;
+  contents()->SetDelegate(&fake_delegate);
+  TestRenderFrameHost* main_rfh = main_test_rfh();
+
+  // Navigate to a site.
+  NavigationSimulator::NavigateAndCommitFromBrowser(contents(),
+                                                    GURL("http://a.com"));
+  main_rfh = main_test_rfh();
+
+  // Create a subframe and navigate it.
+  TestRenderFrameHost* sub_rfh = main_rfh->AppendChild("subframe");
+  sub_rfh = static_cast<TestRenderFrameHost*>(
+      NavigationSimulator::NavigateAndCommitFromDocument(GURL("http://b.com"),
+                                                         sub_rfh));
+
+  // Make the top page fullscreen.
+  EXPECT_FALSE(contents()->IsFullscreen());
+  main_rfh->frame_tree_node()->UpdateUserActivationState(
+      blink::mojom::UserActivationUpdateType::kNotifyActivation,
+      blink::mojom::UserActivationNotificationType::kTest);
+  main_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
+                            base::BindOnce(&ExpectTrue));
+  EXPECT_TRUE(contents()->IsFullscreen());
+
+  // Navigate the iframe same-document.
+  NavigationSimulator::CreateRendererInitiated(GURL("http://b.com/#hash"),
+                                               sub_rfh)
+      ->CommitSameDocument();
+
+  // Fullscreen should NOT be exited.
+  EXPECT_TRUE(contents()->IsFullscreen());
+  EXPECT_TRUE(fake_delegate.IsFullscreenForTabOrPending(contents()));
+
+  contents()->SetDelegate(nullptr);
+}
+
+TEST_F(WebContentsImplTest,
+       FullscreenExitOnIframeNavigateWhileIframeIsFullscreen) {
+  FakeFullscreenDelegate fake_delegate;
+  contents()->SetDelegate(&fake_delegate);
+  TestRenderFrameHost* main_rfh = main_test_rfh();
+
+  // Navigate to a site.
+  NavigationSimulator::NavigateAndCommitFromBrowser(contents(),
+                                                    GURL("http://a.com"));
+  main_rfh = main_test_rfh();
+
+  // Create a subframe with fullscreen Permissions Policy and navigate it.
+  TestRenderFrameHost* sub_rfh = main_rfh->AppendChildWithPolicy(
+      "subframe", {{network::mojom::PermissionsPolicyFeature::kFullscreen,
+                    /*allowed_origins=*/{},
+                    /*self_if_matches=*/std::nullopt,
+                    /*matches_all_origins=*/true,
+                    /*matches_opaque_src=*/false}});
+  sub_rfh = static_cast<TestRenderFrameHost*>(
+      NavigationSimulator::NavigateAndCommitFromDocument(GURL("http://b.com"),
+                                                         sub_rfh));
+
+  // Make the subframe fullscreen.
+  EXPECT_FALSE(contents()->IsFullscreen());
+  sub_rfh->frame_tree_node()->UpdateUserActivationState(
+      blink::mojom::UserActivationUpdateType::kNotifyActivation,
+      blink::mojom::UserActivationNotificationType::kTest);
+  sub_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
+                           base::BindOnce(&ExpectTrue));
+  EXPECT_TRUE(contents()->IsFullscreen());
+
+  // Navigate the iframe.
+  NavigationSimulator::NavigateAndCommitFromDocument(GURL("http://c.com"),
+                                                     sub_rfh);
+
+  // Fullscreen SHOULD be exited.
+  EXPECT_FALSE(contents()->IsFullscreen());
+  EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
+
+  contents()->SetDelegate(nullptr);
+}
+
+TEST_F(WebContentsImplTest,
+       FullscreenExitOnMainFrameNavigateWhileIframeIsFullscreen) {
+  FakeFullscreenDelegate fake_delegate;
+  contents()->SetDelegate(&fake_delegate);
+  TestRenderFrameHost* main_rfh = main_test_rfh();
+
+  // Navigate to a site.
+  NavigationSimulator::NavigateAndCommitFromBrowser(contents(),
+                                                    GURL("http://a.com"));
+  main_rfh = main_test_rfh();
+
+  // Create a subframe with fullscreen Permissions Policy and navigate it.
+  TestRenderFrameHost* sub_rfh = main_rfh->AppendChildWithPolicy(
+      "subframe", {{network::mojom::PermissionsPolicyFeature::kFullscreen,
+                    /*allowed_origins=*/{},
+                    /*self_if_matches=*/std::nullopt,
+                    /*matches_all_origins=*/true,
+                    /*matches_opaque_src=*/false}});
+  sub_rfh = static_cast<TestRenderFrameHost*>(
+      NavigationSimulator::NavigateAndCommitFromDocument(GURL("http://b.com"),
+                                                         sub_rfh));
+
+  // Make the subframe fullscreen.
+  EXPECT_FALSE(contents()->IsFullscreen());
+  sub_rfh->frame_tree_node()->UpdateUserActivationState(
+      blink::mojom::UserActivationUpdateType::kNotifyActivation,
+      blink::mojom::UserActivationNotificationType::kTest);
+  sub_rfh->EnterFullscreen(blink::mojom::FullscreenOptions::New(),
+                           base::BindOnce(&ExpectTrue));
+  EXPECT_TRUE(contents()->IsFullscreen());
+
+  // Navigate the main frame.
+  NavigationSimulator::NavigateAndCommitFromBrowser(contents(),
+                                                    GURL("http://c.com"));
+
+  // Fullscreen SHOULD be exited.
+  EXPECT_FALSE(contents()->IsFullscreen());
+  EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
+
+  contents()->SetDelegate(nullptr);
+}
+
 // Tests that fullscreen is exited throughout the object hierarchy when
 // instructing NavigationController to GoBack() or GoForward().
 TEST_F(WebContentsImplTest, HistoryNavigationExitsFullscreen) {
@@ -2038,6 +2195,60 @@ void HideOrOccludeWithCapturerTest(WebContentsImpl* contents,
 }
 
 }  // namespace
+
+// Tests that when
+// WebUIConfig::ShouldKeepVisibleUntilFirstVisuallyNonEmptyPaint() is true, the
+// WebContents's visibility will not be OCCLUDED until the first visually
+// non-empty paint.
+class KeepVisibleWebUIConfig : public WebUIConfig {
+ public:
+  KeepVisibleWebUIConfig() : WebUIConfig("chrome", "keep-visible") {}
+  bool ShouldKeepVisibleUntilFirstVisuallyNonEmptyPaint() override {
+    return true;
+  }
+  std::unique_ptr<WebUIController> CreateWebUIController(
+      WebUI* web_ui,
+      const GURL& url) override {
+    return std::make_unique<WebUIController>(web_ui);
+  }
+};
+
+TEST_F(WebContentsImplTest, KeepVisibleUntilFirstVisuallyNonEmptyPaint) {
+  TestRenderWidgetHostView* view = static_cast<TestRenderWidgetHostView*>(
+      contents()->GetRenderWidgetHostView());
+
+  EXPECT_FALSE(view->is_showing());
+
+  WebUIConfigMap::GetInstance().AddWebUIConfig(
+      std::make_unique<KeepVisibleWebUIConfig>());
+
+  const GURL kGURL("chrome://keep-visible/");
+  NavigationSimulator::NavigateAndCommitFromBrowser(contents(), kGURL);
+
+  contents()->UpdateWebContentsVisibility(Visibility::VISIBLE);
+  EXPECT_TRUE(view->is_showing());
+  EXPECT_FALSE(view->is_occluded());
+
+  contents()->UpdateWebContentsVisibility(Visibility::OCCLUDED);
+  // Still showing and NOT occluded, because it hasn't painted yet.
+  EXPECT_TRUE(view->is_showing());
+  EXPECT_FALSE(view->is_occluded());
+  // The visibility of WebContents is OCCLUDED, but the actual one passed
+  // down and returned by GetVisibility is VISIBLE because of our check.
+  EXPECT_EQ(Visibility::VISIBLE, contents()->GetVisibility());
+
+  // Simulate first non-empty paint.
+  main_test_rfh()->GetPage().OnFirstVisuallyNonEmptyPaint();
+
+  // Now an occlusion update should actually occlude.
+  contents()->UpdateWebContentsVisibility(Visibility::OCCLUDED);
+  EXPECT_TRUE(view->is_showing());
+  EXPECT_TRUE(view->is_occluded());
+  EXPECT_EQ(Visibility::OCCLUDED, contents()->GetVisibility());
+
+  // Cleanup WebUIConfigMap.
+  WebUIConfigMap::GetInstance().RemoveConfig(kGURL);
+}
 
 TEST_F(WebContentsImplTest, HideWithCapturer) {
   HideOrOccludeWithCapturerTest(contents(), Visibility::HIDDEN);
@@ -3467,9 +3678,9 @@ TEST_F(WebContentsImplTest, RequestMediaAccessPermissionNoDelegate) {
               blink::mojom::MediaStreamRequestResult result,
               std::unique_ptr<MediaStreamUI> ui) {
             EXPECT_TRUE(stream_devices_set.stream_devices.empty());
-            EXPECT_EQ(
-                result,
-                blink::mojom::MediaStreamRequestResult::FAILED_DUE_TO_SHUTDOWN);
+            EXPECT_EQ(result,
+                      blink::mojom::MediaStreamRequestResult::
+                          FAILED_DUE_TO_SHUTDOWN_WEB_CONTENTS_NO_DELEGATE);
             callback_run = true;
           }));
   ASSERT_TRUE(callback_run);
@@ -3478,6 +3689,7 @@ TEST_F(WebContentsImplTest, RequestMediaAccessPermissionNoDelegate) {
 TEST_F(WebContentsImplTest, IgnoreInputEvents) {
   // By default, input events should not be ignored.
   EXPECT_FALSE(contents()->ShouldIgnoreInputEvents());
+
   std::optional<WebContents::ScopedIgnoreInputEvents> ignore_1 =
       contents()->IgnoreInputEvents(std::nullopt);
   EXPECT_TRUE(contents()->ShouldIgnoreInputEvents());
@@ -3507,38 +3719,6 @@ TEST_F(WebContentsImplTest, IgnoreInputEvents) {
 
   // Now input should be allowed.
   EXPECT_FALSE(contents()->ShouldIgnoreInputEvents());
-}
-
-TEST_F(WebContentsImplTest, IgnoreInputEvents_IgnoreA11yInputEvents) {
-  // By default, input and a11y input events should not be ignored.
-  EXPECT_FALSE(contents()->ShouldIgnoreInputEvents());
-  EXPECT_FALSE(contents()->ShouldIgnoreA11yInputEvents());
-
-  // Create two requests with different a11y input settings.
-  std::optional<WebContents::ScopedIgnoreInputEvents> ignore_input_only =
-      contents()->IgnoreInputEvents(std::nullopt);
-  std::optional<WebContents::ScopedIgnoreInputEvents>
-      ignore_input_and_a11y_input = contents()->IgnoreInputEvents(
-          std::nullopt, /*should_ignore_a11y_input=*/true);
-
-  // With both requests active, both input and a11y input should be ignored.
-  EXPECT_TRUE(contents()->ShouldIgnoreInputEvents());
-  EXPECT_TRUE(contents()->ShouldIgnoreA11yInputEvents());
-
-  // Manually release the request that was ignoring a11y input events.
-  ignore_input_and_a11y_input.reset();
-
-  // Verify the state reverted: general input is still ignored by the first
-  // request, but a11y input events are now allowed.
-  EXPECT_TRUE(contents()->ShouldIgnoreInputEvents());
-  EXPECT_FALSE(contents()->ShouldIgnoreA11yInputEvents());
-
-  // Manually release the ignore input only request.
-  ignore_input_only.reset();
-
-  // Verify everything is back to the default state.
-  EXPECT_FALSE(contents()->ShouldIgnoreInputEvents());
-  EXPECT_FALSE(contents()->ShouldIgnoreA11yInputEvents());
 }
 
 TEST_F(WebContentsImplTest, OnColorProviderChangedTriggersPageBroadcast) {

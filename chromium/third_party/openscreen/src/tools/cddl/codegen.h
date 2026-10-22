@@ -5,18 +5,19 @@
 #ifndef TOOLS_CDDL_CODEGEN_H_
 #define TOOLS_CDDL_CODEGEN_H_
 
+#include <iostream>
 #include <string>
 
 #include "tools/cddl/sema.h"
 
-bool WriteTypeDefinitions(int fd, CppSymbolTable* table);
-bool WriteFunctionDeclarations(int fd, CppSymbolTable* table);
-bool WriteEncoders(int fd, CppSymbolTable* table);
-bool WriteDecoders(int fd, CppSymbolTable* table);
-bool WriteEqualityOperators(int fd, CppSymbolTable* table);
-bool WriteHeaderPrologue(int fd, const std::string& header_filename);
-bool WriteHeaderEpilogue(int fd, const std::string& header_filename);
-bool WriteSourcePrologue(int fd, const std::string& header_filename);
-bool WriteSourceEpilogue(int fd);
+bool WriteTypeDefinitions(std::ostream& os, CppSymbolTable* table);
+bool WriteFunctionDeclarations(std::ostream& os, CppSymbolTable* table);
+bool WriteEncoders(std::ostream& os, CppSymbolTable* table);
+bool WriteDecoders(std::ostream& os, CppSymbolTable* table);
+bool WriteEqualityOperators(std::ostream& os, CppSymbolTable* table);
+bool WriteHeaderPrologue(std::ostream& os, const std::string& header_filename);
+bool WriteHeaderEpilogue(std::ostream& os, const std::string& header_filename);
+bool WriteSourcePrologue(std::ostream& os, const std::string& header_filename);
+bool WriteSourceEpilogue(std::ostream& os);
 
 #endif  // TOOLS_CDDL_CODEGEN_H_

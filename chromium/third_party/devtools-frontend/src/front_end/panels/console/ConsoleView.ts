@@ -42,6 +42,7 @@ import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as AiCodeCompletion from '../../models/ai_code_completion/ai_code_completion.js';
+import * as AiCodeGeneration from '../../models/ai_code_generation/ai_code_generation.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Logs from '../../models/logs/logs.js';
@@ -72,7 +73,6 @@ import {
   ConsoleTableMessageView,
   ConsoleViewMessage,
   getMessageForElement,
-  MaxLengthForLinks,
 } from './ConsoleViewMessage.js';
 import {ConsoleViewport, type ConsoleViewportElement, type ConsoleViewportProvider} from './ConsoleViewport.js';
 
@@ -107,11 +107,11 @@ const UIStrings = {
   /**
    * @description Title of a setting under the Console category that can be invoked through the Command Menu
    */
-  groupSimilarMessagesInConsole: 'Group similar messages in console',
+  groupSimilarMessagesInConsole: 'Group similar messages',
   /**
    * @description Title of a setting under the Console category that can be invoked through the Command Menu
    */
-  showCorsErrorsInConsole: 'Show `CORS` errors in console',
+  showCorsErrorsInConsole: 'CORS errors in console',
   /**
    * @description Tooltip for the the console sidebar toggle in the Console panel. Command to
    * open/show the sidebar.
@@ -141,7 +141,7 @@ const UIStrings = {
   /**
    * @description Text in Console View of the Console panel
    */
-  hideNetwork: 'Hide network',
+  networkMessages: 'Network messages',
   /**
    * @description Tooltip text that appears on the setting when hovering over it in Console View of the Console panel
    */
@@ -269,7 +269,7 @@ const UIStrings = {
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/console/ConsoleView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-let consoleViewInstance: ConsoleView;
+let consoleViewInstance: ConsoleView|null;
 
 const MIN_HISTORY_LENGTH_FOR_DISABLING_SELF_XSS_WARNING = 5;
 const DISCLAIMER_TOOLTIP_ID = 'console-ai-code-completion-disclaimer-tooltip';
@@ -473,8 +473,8 @@ export class ConsoleView extends UI.Widget.VBox implements
     const userActivationEvalSetting = Common.Settings.Settings.instance().moduleSetting('console-user-activation-eval');
     settingsPane.append(
         SettingsUI.SettingsUI.createSettingCheckbox(
-            i18nString(UIStrings.hideNetwork), this.filter.hideNetworkMessagesSetting,
-            this.filter.hideNetworkMessagesSetting.title()),
+            i18nString(UIStrings.networkMessages), this.filter.networkMessagesSetting,
+            this.filter.networkMessagesSetting.title()),
         SettingsUI.SettingsUI.createSettingCheckbox(
             i18nString(UIStrings.logXMLHttpRequests), monitoringXHREnabledSetting),
         SettingsUI.SettingsUI.createSettingCheckbox(
@@ -549,7 +549,7 @@ export class ConsoleView extends UI.Widget.VBox implements
     // the linkifiers live location change event.
     const throttler = new Common.Throttler.Throttler(100);
     const refilterMessages = (): Promise<void> => throttler.schedule(async () => this.onFilterChanged());
-    this.linkifier = new Components.Linkifier.Linkifier(MaxLengthForLinks);
+    this.linkifier = new Components.Linkifier.Linkifier(UI.UIUtils.MaxLengthForDisplayedURLsInConsole);
     this.linkifier.addEventListener(Components.Linkifier.Events.LIVE_LOCATION_UPDATED, refilterMessages);
 
     this.consoleMessages = [];
@@ -566,6 +566,9 @@ export class ConsoleView extends UI.Widget.VBox implements
               included_reason: Host.AidaClient.Reason.RELATED_FILE,
             }],
             stopSequences: ['\n\n'],
+          },
+          generationContext: {
+            additionalPreambleContext: AiCodeGeneration.AiCodeGeneration.additionalContextForConsole,
           },
           onFeatureEnabled: () => {
             this.setupAiCodeCompletion();
@@ -632,6 +635,10 @@ export class ConsoleView extends UI.Widget.VBox implements
     this.issueToolbarThrottle = new Common.Throttler.Throttler(100);
     issuesManager.addEventListener(
         IssuesManager.IssuesManager.Events.ISSUES_COUNT_UPDATED, this.#onIssuesCountUpdateBound);
+  }
+
+  static clearConsoleViewInstanceForTest(): void {
+    consoleViewInstance = null;
   }
 
   static instance(opts?: {forceNew: boolean, viewportThrottlerTimeout?: number}): ConsoleView {
@@ -784,6 +791,22 @@ export class ConsoleView extends UI.Widget.VBox implements
   override willHide(): void {
     super.willHide();
     this.hidePromptSuggestBox();
+  }
+
+  dispose(): void {
+    SDK.TargetManager.TargetManager.instance().removeModelListener(
+        SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.ConsoleCleared, this.consoleCleared, this);
+    SDK.TargetManager.TargetManager.instance().removeModelListener(
+        SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.MessageAdded, this.onConsoleMessageAdded, this);
+    SDK.TargetManager.TargetManager.instance().removeModelListener(
+        SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.MessageUpdated, this.onConsoleMessageUpdated, this);
+    SDK.TargetManager.TargetManager.instance().removeModelListener(
+        SDK.ConsoleModel.ConsoleModel, SDK.ConsoleModel.Events.CommandEvaluated, this.commandEvaluated, this);
+    SDK.TargetManager.TargetManager.instance().unobserveModels(SDK.ConsoleModel.ConsoleModel, this);
+
+    const issuesManager = IssuesManager.IssuesManager.IssuesManager.instance();
+    issuesManager.removeEventListener(
+        IssuesManager.IssuesManager.Events.ISSUES_COUNT_UPDATED, this.#onIssuesCountUpdateBound);
   }
 
   override wasShown(): void {
@@ -1100,7 +1123,9 @@ export class ConsoleView extends UI.Widget.VBox implements
       if (parentGroup) {
         showGroup(parentGroup, visibleViewMessages);
       }
-      visibleViewMessages.push(currentGroup);
+      if (!parentGroup?.messagesHidden()) {
+        visibleViewMessages.push(currentGroup);
+      }
     }
   }
 
@@ -1730,7 +1755,7 @@ globalThis.Console.ConsoleView = ConsoleView;
 export class ConsoleViewFilter {
   private readonly filterChanged: () => void;
   messageLevelFiltersSetting: Common.Settings.Setting<LevelsMask>;
-  hideNetworkMessagesSetting: Common.Settings.Setting<boolean>;
+  networkMessagesSetting: Common.Settings.Setting<boolean>;
   filterByExecutionContextSetting: Common.Settings.Setting<boolean>;
   private readonly suggestionBuilder: UI.FilterSuggestionBuilder.FilterSuggestionBuilder;
   readonly textFilterUI: UI.Toolbar.ToolbarInput;
@@ -1745,12 +1770,12 @@ export class ConsoleViewFilter {
     this.filterChanged = filterChangedCallback;
 
     this.messageLevelFiltersSetting = ConsoleViewFilter.levelFilterSetting();
-    this.hideNetworkMessagesSetting = Common.Settings.Settings.instance().moduleSetting('hide-network-messages');
+    this.networkMessagesSetting = Common.Settings.Settings.instance().moduleSetting('network-messages');
     this.filterByExecutionContextSetting =
         Common.Settings.Settings.instance().moduleSetting('selected-context-filter-enabled');
 
     this.messageLevelFiltersSetting.addChangeListener(this.onFilterChanged.bind(this));
-    this.hideNetworkMessagesSetting.addChangeListener(this.onFilterChanged.bind(this));
+    this.networkMessagesSetting.addChangeListener(this.onFilterChanged.bind(this));
     this.filterByExecutionContextSetting.addChangeListener(this.onFilterChanged.bind(this));
     UI.Context.Context.instance().addFlavorChangeListener(
         SDK.RuntimeModel.ExecutionContext, this.onFilterChanged, this);
@@ -1835,7 +1860,7 @@ export class ConsoleViewFilter {
           break;
       }
     }
-    if (this.hideNetworkMessagesSetting.get()) {
+    if (!this.networkMessagesSetting.get()) {
       parsedFilters.push(
           {key: FilterType.Source, text: Protocol.Log.LogEntrySource.Network, negative: true, regex: undefined});
     }
@@ -1925,7 +1950,7 @@ export class ConsoleViewFilter {
   reset(): void {
     this.messageLevelFiltersSetting.set(ConsoleFilter.defaultLevelsFilterValue());
     this.filterByExecutionContextSetting.set(false);
-    this.hideNetworkMessagesSetting.set(false);
+    this.networkMessagesSetting.set(true);
     this.textFilterUI.setValue('');
     this.onFilterChanged();
   }

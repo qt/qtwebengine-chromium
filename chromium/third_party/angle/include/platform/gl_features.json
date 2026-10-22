@@ -185,6 +185,14 @@
             "issue": ""
         },
         {
+            "name": "dont_invalidate_incomplete_FBOs",
+            "category": "Workarounds",
+            "description": [
+                "Skip invalidation calls if the framebuffer is incomplete."
+            ],
+            "issue": "http://crbug.com/507508103"
+        },
+        {
             "name": "dont_use_loops_to_initialize_variables",
             "category": "Workarounds",
             "description": [
@@ -449,6 +457,14 @@
                 "CopyTexImage2D spuriously returns errors on iOS when copying from renderbuffers."
             ],
             "issue": "https://anglebug.com/42263273"
+        },
+        {
+            "name": "force_luma_workaround_for_same_texture_CopyTexImage2D",
+            "category": "Workarounds",
+            "description": [
+                "Work around incorrect channel results in same-texture LUMA CopyTexImage2D."
+            ],
+            "issue": "https://anglebug.com/486067696"
         },
         {
             "name": "disable_GPU_switching_support",
@@ -877,6 +893,22 @@
                 "supposed to recreate to work around driver bugs."
             ],
             "issue": "http://crbug.com/491732188"
+        },
+        {
+            "name": "limit_max_buffer_size_to_1gb",
+            "category": "Workarounds",
+            "description": [
+                "Some drivers have internal failures when attempting to allocate and initialize buffers larger than 1gb."
+            ],
+            "issue": "http://crbug.com/475877320"
+        },
+        {
+            "name": "recreate_fbo_upon_flush",
+            "category": "Workarounds",
+            "description": [
+                "Recreate FBO upon flush/finish/fencesync under certain conditions to work around driver bugs."
+            ],
+            "issue": "http://crbug.com/493747593"
         }
     ]
 }

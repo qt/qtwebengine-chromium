@@ -35,6 +35,7 @@
 #include "dawn/common/StackAllocated.h"
 #include "dawn/common/vulkan_platform.h"
 #include "dawn/native/Commands.h"
+#include "dawn/native/IntegerTypes.h"
 #include "dawn/native/dawn_platform.h"
 
 namespace dawn::native {
@@ -112,6 +113,8 @@ struct PNextChainBuilder : public StackAllocated {
   private:
     raw_ptr<VkBaseOutStructure> mCurrent;
 };
+
+uint32_t ToPushConstantBytes(const ImmediateConstantMask& immediates);
 
 VkCompareOp ToVulkanCompareOp(wgpu::CompareFunction op);
 
@@ -199,9 +202,9 @@ ResultOrError<VkDrmFormatModifierPropertiesEXT> GetFormatModifierProps(
     VkFormat format,
     uint64_t modifier);
 
-ResultOrError<VkSamplerYcbcrConversion> CreateSamplerYCbCrConversionCreateInfo(
-    YCbCrVkDescriptor yCbCrDescriptor,
-    Device* device);
+ResultOrError<VkSamplerYcbcrConversion> CreateSamplerYCbCrConversion(
+    const Device* device,
+    const YCbCrVkDescriptor& yCbCrDescriptor);
 
 // TODO(42240963): properly surface the limit.
 // Linux nearly always exposes 4096.

@@ -37,12 +37,13 @@
 #include "base/functional/callback_helpers.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
-#include "cc/test/test_ukm_recorder_factory.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_settings.h"
 #include "cc/trees/render_frame_metadata_observer.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
+#include "net/http/http_response_headers.h"
+#include "services/network/public/cpp/connection_allowlist_parser.h"
 #include "services/network/public/cpp/web_sandbox_flags.h"
 #include "services/network/public/mojom/content_security_policy.mojom-blink-forward.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
@@ -81,6 +82,7 @@
 #include "third_party/blink/renderer/core/testing/fake_web_plugin.h"
 #include "third_party/blink/renderer/core/testing/mock_policy_container_host.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/loader/fetch/policy_container_utils.h"
 #include "third_party/blink/renderer/platform/network/http_parsers.h"
 #include "third_party/blink/renderer/platform/scheduler/public/main_thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
@@ -269,8 +271,9 @@ void PumpPendingRequestsForFrameToLoad(WebLocalFrame* frame) {
 void FillNavigationParamsResponse(WebNavigationParams* params) {
   KURL kurl(params->url);
   // Empty documents and srcdoc will be handled by DocumentLoader.
-  if (DocumentLoader::WillLoadUrlAsEmpty(kurl) || kurl.IsAboutSrcdocURL())
+  if (DocumentLoader::WillLoadUrlAsEmpty(kurl) || kurl.IsAboutSrcdocUrl()) {
     return;
+  }
   URLLoaderMockFactory::GetSingletonInstance()->FillNavigationParamsResponse(
       params);
 
@@ -283,7 +286,33 @@ void FillNavigationParamsResponse(WebNavigationParams* params) {
            params->response.ResponseUrl())) {
     params->policy_container->policies.sandbox_flags |= csp->sandbox;
     params->policy_container->policies.content_security_policies.emplace_back(
-        ConvertToPublic(std::move(csp)));
+        ToWebContentSecurityPolicy(*csp));
+  }
+
+  // Parse Connection Allowlist response headers into the policy container,
+  // simulating what the browser does.
+  WebString enforced_header =
+      params->response.HttpHeaderField("Connection-Allowlist");
+  WebString report_only_header =
+      params->response.HttpHeaderField("Connection-Allowlist-Report-Only");
+  if (!enforced_header.IsNull() || !report_only_header.IsNull()) {
+    auto headers = base::MakeRefCounted<net::HttpResponseHeaders>("");
+    if (!enforced_header.IsNull()) {
+      headers->AddHeader("Connection-Allowlist", enforced_header.Utf8());
+    }
+    if (!report_only_header.IsNull()) {
+      headers->AddHeader("Connection-Allowlist-Report-Only",
+                         report_only_header.Utf8());
+    }
+    // The Connection Allowlist parser is defined in the network service and
+    // therefore requires a GURL; given that we are in Blink/KURL land, there's
+    // no automatic WebURL->GURL conversion, so we have to construct it
+    // manually.
+    params->policy_container->policies.connection_allowlists =
+        network::ParseConnectionAllowlistsFromHeaders(
+            *headers, GURL(params->response.ResponseUrl().GetString().Utf8(),
+                           params->response.ResponseUrl().GetParsed(),
+                           params->response.ResponseUrl().IsValid()));
   }
 }
 
@@ -315,7 +344,9 @@ WebLocalFrameImpl* CreateLocalChild(
   auto* frame = To<WebLocalFrameImpl>(
       parent.CreateLocalChild(scope, client, nullptr, LocalFrameToken()));
   client->Bind(frame, std::move(owned_client));
-  finish_creation(frame, DocumentToken(), mojo::NullRemote());
+  finish_creation(frame, DocumentToken(), mojo::NullRemote(),
+                  std::make_unique<base::UnguessableToken>(
+                      base::UnguessableToken::Create()));
   return frame;
 }
 
@@ -333,7 +364,9 @@ WebLocalFrameImpl* CreateLocalChild(
   auto* frame = To<WebLocalFrameImpl>(
       parent.CreateLocalChild(scope, client, nullptr, LocalFrameToken()));
   client->Bind(frame, std::move(self_owned));
-  finish_creation(frame, DocumentToken(), mojo::NullRemote());
+  finish_creation(frame, DocumentToken(), mojo::NullRemote(),
+                  std::make_unique<base::UnguessableToken>(
+                      base::UnguessableToken::Create()));
   return frame;
 }
 
@@ -843,7 +876,9 @@ WebLocalFrame* TestWebFrameClient::CreateChildFrame(
   client->sandbox_flags_ = frame_policy.sandbox_flags;
   TestWebFrameClient* client_ptr = client.get();
   client_ptr->Bind(frame, std::move(client));
-  finish_creation(frame, DocumentToken(), mojo::NullRemote());
+  finish_creation(frame, DocumentToken(), mojo::NullRemote(),
+                  std::make_unique<base::UnguessableToken>(
+                      base::UnguessableToken::Create()));
   return frame;
 }
 
@@ -895,7 +930,7 @@ void TestWebFrameClient::CommitNavigation(
   auto params = WebNavigationParams::CreateFromInfo(*info);
 
   KURL url = info->url_request.Url();
-  if (url.IsAboutSrcdocURL()) {
+  if (url.IsAboutSrcdocUrl()) {
     params->fallback_base_url = info->requestor_base_url;
     TestWebFrameHelper::FillStaticResponseForSrcdocNavigation(frame_,
                                                               params.get());
@@ -914,6 +949,12 @@ void TestWebFrameClient::CommitNavigation(
   // and the included sandbox flags to commit, and then passed on within the
   // WebNavigationParams.
   params->policy_container->policies.sandbox_flags |= sandbox_flags();
+  if ((params->policy_container->policies.sandbox_flags &
+       network::mojom::blink::WebSandboxFlags::kOrigin) !=
+      network::mojom::blink::WebSandboxFlags::kNone) {
+    params->origin_to_commit = SecurityOrigin::Create(info->url_request.Url())
+                                   ->DeriveNewOpaqueOrigin();
+  }
   frame_->CommitNavigation(std::move(params), nullptr /* extra_data */);
 }
 

@@ -13,6 +13,7 @@
 #import "components/webauthn/core/browser/remote_validation.h"
 #import "components/webauthn/ios/ios_passkey_client.h"
 #import "components/webauthn/ios/passkey_request_params.h"
+#import "components/webauthn/ios/passkey_types.h"
 #import "ios/web/public/js_messaging/web_frames_manager.h"
 #import "ios/web/public/web_state_observer.h"
 #import "ios/web/public/web_state_user_data.h"
@@ -25,6 +26,8 @@ class WebauthnCredentialSpecifics;
 namespace web {
 class WebFrame;
 }  // namespace web
+
+@protocol IOSPasskeyClientCommands;
 
 namespace webauthn {
 
@@ -45,7 +48,9 @@ class PasskeyTabHelper : public web::WebStateObserver,
     kGetResolvedNonGpm,
     kCreateResolvedGpm,
     kCreateResolvedNonGpm,
-    kMaxValue = kCreateResolvedNonGpm,
+    kIncognitoInterstitialShown,
+    kCancelRequested,
+    kMaxValue = kCancelRequested,
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/webauthn/enums.xml)
 
@@ -56,6 +61,10 @@ class PasskeyTabHelper : public web::WebStateObserver,
 
   // Logs metric indicating that an event of the given type occurred.
   void LogEvent(WebAuthenticationIOSContentAreaEvent event_type);
+
+  // Handles passkey cancellation requests triggered by an AbortSignal.
+  void HandleCancelRequestEvent(
+      webauthn::IOSPasskeyClient::RequestInfo request_info);
 
   // Handles passkey assertion requests. Yields if the request ID is missing.
   void HandleGetRequestedEvent(AssertionRequestParams params);
@@ -106,6 +115,10 @@ class PasskeyTabHelper : public web::WebStateObserver,
   // Returns whether there is a pending remote validation for testing.
   bool HasPendingValidationForTesting() const;
 
+  // Returns whether the interstitial is necessary for the current state.
+  bool ShowCreationInterstitialIfNecessary(
+      base::OnceCallback<void(bool)> callback);
+
  private:
   friend class web::WebStateUserData<PasskeyTabHelper>;
   friend class PasskeyTabHelperTest;
@@ -140,7 +153,7 @@ class PasskeyTabHelper : public web::WebStateObserver,
   // PasskeyJavaScriptFeature.
   void CompletePasskeyCreation(RegistrationRequestParams params,
                                std::string client_data_json,
-                               const SharedKeyList& shared_key_list,
+                               SharedKeyList shared_key_list,
                                NSError* error);
 
   // Callback which uses the provided passkey for assertion given the provided
@@ -149,7 +162,7 @@ class PasskeyTabHelper : public web::WebStateObserver,
   void CompletePasskeyAssertion(AssertionRequestParams params,
                                 sync_pb::WebauthnCredentialSpecifics passkey,
                                 std::string client_data_json,
-                                const SharedKeyList& shared_key_list,
+                                SharedKeyList shared_key_list,
                                 NSError* error);
 
   // Starts remote validation for the given origin and RP ID. If validation

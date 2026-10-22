@@ -11,6 +11,7 @@
 #include "base/android/jni_string.h"
 #include "base/android/unguessable_token_android.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/task/bind_post_task.h"
@@ -201,7 +202,7 @@ void PlayerCompositorDelegateAndroid::CompositeResponseFramesToVectors(
 
 int32_t PlayerCompositorDelegateAndroid::RequestBitmap(
     JNIEnv* env,
-    std::optional<base::UnguessableToken>& frame_guid,
+    const std::optional<base::UnguessableToken>& frame_guid,
     const JavaRef<jobject>& j_bitmap_callback,
     base::OnceClosure&& error_callback,
     float j_scale_factor,
@@ -279,7 +280,7 @@ void PlayerCompositorDelegateAndroid::OnJavaBitmapCallback(
 
 ScopedJavaLocalRef<jstring> PlayerCompositorDelegateAndroid::OnClick(
     JNIEnv* env,
-    std::optional<base::UnguessableToken>& frame_guid,
+    const std::optional<base::UnguessableToken>& frame_guid,
     int32_t j_x,
     int32_t j_y) {
   if (!frame_guid.has_value()) {

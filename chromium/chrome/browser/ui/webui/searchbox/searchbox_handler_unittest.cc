@@ -9,6 +9,7 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
+#include "chrome/browser/autocomplete/aim_eligibility_service_factory.h"
 #include "chrome/browser/ui/browser_window/test/mock_browser_window_interface.h"
 #include "chrome/browser/ui/contextual_search/tab_contextualization_controller.h"
 #include "chrome/browser/ui/omnibox/omnibox_controller.h"
@@ -16,6 +17,7 @@
 #include "chrome/browser/ui/tabs/alert/tab_alert_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/test_tab_strip_model_delegate.h"
+#include "chrome/browser/ui/webui/cr_components/searchbox/searchbox_omnibox_client.h"
 #include "chrome/browser/ui/webui/new_tab_page/composebox/variations/composebox_fieldtrial.h"
 #include "chrome/browser/ui/webui/omnibox_popup/omnibox_popup_ui.h"
 #include "chrome/browser/ui/webui/searchbox/lens_searchbox_client.h"
@@ -24,6 +26,7 @@
 #include "chrome/browser/ui/webui/webui_embedding_context.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/omnibox/browser/autocomplete_controller.h"
+#include "components/omnibox/browser/mock_aim_eligibility_service.h"
 #include "components/omnibox/browser/mock_autocomplete_provider_client.h"
 #include "components/omnibox/browser/omnibox_prefs.h"
 #include "components/omnibox/browser/test_omnibox_client.h"
@@ -31,6 +34,7 @@
 #include "components/search/ntp_features.h"
 #include "components/variations/scoped_variations_ids_provider.h"
 #include "components/variations/variations_ids_provider.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_renderer_host.h"
 #include "content/public/test/test_web_ui.h"
@@ -42,6 +46,11 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/metrics_proto/omnibox_event.pb.h"
 #include "third_party/metrics_proto/omnibox_focus_type.pb.h"
+#include "third_party/omnibox_proto/model_config.pb.h"
+#include "third_party/omnibox_proto/model_mode.pb.h"
+#include "third_party/omnibox_proto/searchbox_config.pb.h"
+#include "third_party/omnibox_proto/tool_config.pb.h"
+#include "third_party/omnibox_proto/tool_mode.pb.h"
 #include "ui/base/webui/web_ui_util.h"
 
 class SearchboxHandlerTest : public ::testing::Test {
@@ -86,6 +95,16 @@ class SearchboxHandlerTest : public ::testing::Test {
   }
 };
 
+TEST_F(SearchboxHandlerTest, GetWebUIDataSourceDictSetsDragAndDrop) {
+  base::DictValue strings = SearchboxHandler::GetWebUIDataSourceDict(profile());
+  EXPECT_FALSE(*strings.FindBool("composeboxContextDragAndDropEnabled"));
+
+  base::DictValue strings_with_drag = SearchboxHandler::GetWebUIDataSourceDict(
+      profile(), {.session_allows_drag_and_drop = true});
+  EXPECT_TRUE(
+      *strings_with_drag.FindBool("composeboxContextDragAndDropEnabled"));
+}
+
 class RealboxHandlerTest : public SearchboxHandlerTest {
  public:
   RealboxHandlerTest() = default;
@@ -105,13 +124,12 @@ class RealboxHandlerTest : public SearchboxHandlerTest {
     web_contents_ =
         content::WebContentsTester::CreateTestWebContents(profile(), nullptr);
     handler_ = std::make_unique<RealboxHandler>(
-        mojo::PendingReceiver<searchbox::mojom::PageHandler>(), profile(),
-        web_contents_.get(),
+        mojo::PendingReceiver<searchbox::mojom::PageHandler>(),
+        page_.BindAndGetRemote(), profile(), web_contents_.get(),
         base::BindLambdaForTesting(
             []() -> contextual_search::ContextualSearchSessionHandle* {
               return nullptr;
             }));
-    handler_->SetPage(page_.BindAndGetRemote());
   }
 
   void TearDown() override {
@@ -121,11 +139,9 @@ class RealboxHandlerTest : public SearchboxHandlerTest {
 };
 
 TEST_F(RealboxHandlerTest, RealboxLensVariationsContainsVariations) {
-  SearchboxHandler::SetupWebUIDataSource(source()->GetWebUIDataSource(),
-                                         profile());
+  base::DictValue strings = SearchboxHandler::GetWebUIDataSourceDict(profile());
 
-  EXPECT_EQ("CGQ", *source()->GetLocalizedStrings()->FindString(
-                       "searchboxLensVariations"));
+  EXPECT_EQ("CGQ", *strings.FindString("searchboxLensVariations"));
 }
 
 TEST_F(RealboxHandlerTest, AutocompleteController_Start) {
@@ -201,14 +217,112 @@ TEST_F(RealboxHandlerTest, AutocompleteController_Start) {
   }
 }
 
-TEST_F(RealboxHandlerTest, GetPlaceholderConfig) {
+TEST_F(RealboxHandlerTest, GetPlaceholderConfig_NoPecApiReturnsEmpty) {
   base::test::TestFuture<searchbox::mojom::PlaceholderConfigPtr> future;
   handler_->GetPlaceholderConfig(future.GetCallback());
   auto config = future.Take();
 
-  ASSERT_GT(config->texts.size(), 0u);
+  ASSERT_EQ(config->texts.size(), 0u);
   ASSERT_EQ(config->change_text_animation_interval.InMilliseconds(), 2000u);
   ASSERT_EQ(config->fade_text_animation_duration.InMilliseconds(), 250u);
+}
+
+namespace {
+std::unique_ptr<KeyedService> BuildMockAimEligibilityService(
+    content::BrowserContext* context) {
+  auto* profile = Profile::FromBrowserContext(context);
+  auto service = std::make_unique<testing::NiceMock<MockAimEligibilityService>>(
+      *profile->GetPrefs(),
+      /*template_url_service=*/nullptr,
+      /*url_loader_factory=*/nullptr,
+      /*identity_manager=*/nullptr, AimEligibilityService::Configuration{});
+  return service;
+}
+}  // namespace
+
+class SearchboxHandlerPecApiTest : public RealboxHandlerTest {
+ public:
+  SearchboxHandlerPecApiTest() = default;
+  ~SearchboxHandlerPecApiTest() override = default;
+
+ protected:
+  raw_ptr<testing::NiceMock<MockAimEligibilityService>>
+      mock_aim_eligibility_service_ = nullptr;
+
+  void SetUp() override {
+    SearchboxHandlerTest::SetUp();
+
+    AimEligibilityServiceFactory::GetInstance()->SetTestingFactory(
+        profile(), base::BindRepeating(&BuildMockAimEligibilityService));
+
+    mock_aim_eligibility_service_ =
+        static_cast<testing::NiceMock<MockAimEligibilityService>*>(
+            AimEligibilityServiceFactory::GetForProfile(profile()));
+
+    web_contents_ =
+        content::WebContentsTester::CreateTestWebContents(profile(), nullptr);
+    handler_ = std::make_unique<RealboxHandler>(
+        mojo::PendingReceiver<searchbox::mojom::PageHandler>(),
+        page_.BindAndGetRemote(), profile(), web_contents_.get(),
+        base::BindLambdaForTesting(
+            []() -> contextual_search::ContextualSearchSessionHandle* {
+              return nullptr;
+            }));
+  }
+
+  void TearDown() override {
+    mock_aim_eligibility_service_ = nullptr;
+    RealboxHandlerTest::TearDown();
+  }
+};
+
+TEST_F(SearchboxHandlerPecApiTest, GetPlaceholderConfig_WithToolConfigs) {
+  omnibox::SearchboxConfig& config = mock_aim_eligibility_service_->config();
+
+  auto* tool = config.add_tool_configs();
+  tool->set_tool(omnibox::TOOL_MODE_IMAGE_GEN);
+
+  auto* tool2 = config.add_tool_configs();
+  tool2->set_tool(omnibox::TOOL_MODE_CANVAS);
+
+  ON_CALL(*mock_aim_eligibility_service_, GetSearchboxConfig())
+      .WillByDefault(testing::Return(&config));
+
+  base::test::TestFuture<searchbox::mojom::PlaceholderConfigPtr> future;
+  handler_->GetPlaceholderConfig(future.GetCallback());
+  auto result = future.Take();
+
+  ASSERT_EQ(result->texts.size(), 3u);
+  EXPECT_EQ(result->texts[0], u"Ask Google");
+  EXPECT_EQ(result->texts[1], u"Describe your image");
+  EXPECT_EQ(result->texts[2], u"Create anything");
+}
+
+TEST_F(SearchboxHandlerPecApiTest,
+       GetPlaceholderConfig_NoToolConfigsReturnsEmpty) {
+  omnibox::SearchboxConfig& config = mock_aim_eligibility_service_->config();
+
+  ON_CALL(*mock_aim_eligibility_service_, GetSearchboxConfig())
+      .WillByDefault(testing::Return(&config));
+
+  base::test::TestFuture<searchbox::mojom::PlaceholderConfigPtr> future;
+  handler_->GetPlaceholderConfig(future.GetCallback());
+  auto result = future.Take();
+
+  // Not eligible tools -> cycling disabled -> empty placeholder list.
+  ASSERT_EQ(result->texts.size(), 0u);
+}
+
+TEST_F(SearchboxHandlerPecApiTest,
+       GetPlaceholderConfig_NullSearchboxConfigReturnsEmpty) {
+  ON_CALL(*mock_aim_eligibility_service_, GetSearchboxConfig())
+      .WillByDefault(testing::Return(nullptr));
+
+  base::test::TestFuture<searchbox::mojom::PlaceholderConfigPtr> future;
+  handler_->GetPlaceholderConfig(future.GetCallback());
+  auto result = future.Take();
+
+  ASSERT_EQ(result->texts.size(), 0u);
 }
 
 TEST_F(RealboxHandlerTest, AddFileContext) {
@@ -264,10 +378,9 @@ class LensSearchboxHandlerTest : public SearchboxHandlerTest {
         std::make_unique<testing::NiceMock<MockLensSearchboxClient>>();
 
     handler_ = std::make_unique<LensSearchboxHandler>(
-        mojo::PendingReceiver<searchbox::mojom::PageHandler>(), profile(),
+        mojo::PendingReceiver<searchbox::mojom::PageHandler>(),
+        page_.BindAndGetRemote(), profile(),
         /*web_contents=*/nullptr, lens_searchbox_client_.get());
-
-    handler_->SetPage(page_.BindAndGetRemote());
   }
 };
 
@@ -427,12 +540,12 @@ class WebuiOmniboxHandlerTest : public SearchboxHandlerTest {
 
     handler_ = std::make_unique<WebuiOmniboxHandler>(
         mojo::PendingReceiver<searchbox::mojom::PageHandler>(),
+        page_.BindAndGetRemote(),
         /*metrics_reporter=*/nullptr, omnibox_controller_.get(), &web_ui_,
         base::BindLambdaForTesting(
             []() -> contextual_search::ContextualSearchSessionHandle* {
               return nullptr;
             }));
-    handler_->SetPage(page_.BindAndGetRemote());
   }
 
   void TearDown() override {
@@ -494,4 +607,83 @@ TEST_F(WebuiOmniboxHandlerTest, WebuiOmniboxUpdatesSelection) {
   EXPECT_EQ(
       searchbox::mojom::SelectionLineState::kFocusedButtonRemoveSuggestion,
       selection->state);
+}
+
+namespace {
+class DeletingWebContentsDelegate : public content::WebContentsDelegate {
+ public:
+  DeletingWebContentsDelegate() = default;
+  ~DeletingWebContentsDelegate() override = default;
+
+  content::WebContents* OpenURLFromTab(
+      content::WebContents* source,
+      const content::OpenURLParams& params,
+      base::OnceCallback<void(content::NavigationHandle&)> callback) override {
+    if (on_open_url_callback_) {
+      std::move(on_open_url_callback_).Run();
+    }
+    return nullptr;
+  }
+
+  void set_on_open_url_callback(base::OnceClosure callback) {
+    on_open_url_callback_ = std::move(callback);
+  }
+
+ private:
+  base::OnceClosure on_open_url_callback_;
+};
+
+// A concrete implementation of SearchboxOmniboxClient for testing.
+// SearchboxOmniboxClient is abstract because it does not implement
+// GetPageClassification().
+class TestSearchboxOmniboxClient : public SearchboxOmniboxClient {
+ public:
+  using SearchboxOmniboxClient::SearchboxOmniboxClient;
+  metrics::OmniboxEventProto::PageClassification GetPageClassification(
+      bool is_prefetch) const override {
+    return metrics::OmniboxEventProto::NTP_REALBOX;
+  }
+};
+}  // namespace
+
+// Tests the navigation logic within SearchboxOmniboxClient, specifically
+// focusing on edge cases like synchronous object destruction.
+class SearchboxOmniboxClientNavigationTest : public SearchboxHandlerTest {
+ public:
+  SearchboxOmniboxClientNavigationTest() = default;
+  ~SearchboxOmniboxClientNavigationTest() override = default;
+
+ protected:
+  content::RenderViewHostTestEnabler test_render_host_factories_;
+  std::unique_ptr<content::WebContents> web_contents_;
+
+  void SetUp() override {
+    SearchboxHandlerTest::SetUp();
+    web_contents_ =
+        content::WebContentsTester::CreateTestWebContents(profile(), nullptr);
+  }
+};
+
+TEST_F(SearchboxOmniboxClientNavigationTest,
+       OnAutocompleteAccept_HandleSynchronousClientDestruction) {
+  auto client = std::make_unique<TestSearchboxOmniboxClient>(
+      profile(), web_contents_.get());
+
+  DeletingWebContentsDelegate delegate;
+  web_contents_->SetDelegate(&delegate);
+  delegate.set_on_open_url_callback(
+      base::BindLambdaForTesting([&]() { client.reset(); }));
+
+  AutocompleteMatch match;
+  match.type = AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED;
+  match.destination_url = GURL("https://google.com");
+
+  // This should NOT crash.
+  client->OnAutocompleteAccept(
+      match.destination_url, /*post_content=*/nullptr,
+      WindowOpenDisposition::CURRENT_TAB, ui::PAGE_TRANSITION_TYPED, match.type,
+      base::TimeTicks::Now(),
+      /*destination_url_entered_without_scheme=*/false,
+      /*destination_url_entered_with_http_scheme=*/false,
+      /*text=*/u"google", match, /*alternative_nav_match=*/AutocompleteMatch());
 }

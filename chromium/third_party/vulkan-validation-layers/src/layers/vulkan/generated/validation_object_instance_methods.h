@@ -24,7 +24,7 @@
 
 // NOLINTBEGIN
 
-// This file contains methods for class vvl::base::Instance and it is designed to ONLY be
+// This file contains methods for class vvl::BaseInstance and it is designed to ONLY be
 // included into validation_object.h.
 
 virtual bool PreCallValidateCreateInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
@@ -1360,6 +1360,17 @@ virtual void PreCallRecordEnumeratePhysicalDeviceQueueFamilyPerformanceCountersB
 virtual void PostCallRecordEnumeratePhysicalDeviceQueueFamilyPerformanceCountersByRegionARM(
     VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t* pCounterCount, VkPerformanceCounterARM* pCounters,
     VkPerformanceCounterDescriptionARM* pCounterDescriptions, const RecordObject& record_obj) {}
+virtual bool PreCallValidateEnumeratePhysicalDeviceShaderInstrumentationMetricsARM(
+    VkPhysicalDevice physicalDevice, uint32_t* pDescriptionCount, VkShaderInstrumentationMetricDescriptionARM* pDescriptions,
+    const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordEnumeratePhysicalDeviceShaderInstrumentationMetricsARM(
+    VkPhysicalDevice physicalDevice, uint32_t* pDescriptionCount, VkShaderInstrumentationMetricDescriptionARM* pDescriptions,
+    const RecordObject& record_obj) {}
+virtual void PostCallRecordEnumeratePhysicalDeviceShaderInstrumentationMetricsARM(
+    VkPhysicalDevice physicalDevice, uint32_t* pDescriptionCount, VkShaderInstrumentationMetricDescriptionARM* pDescriptions,
+    const RecordObject& record_obj) {}
 #ifdef VK_USE_PLATFORM_UBM_SEC
 virtual bool PreCallValidateCreateUbmSurfaceSEC(VkInstance instance, const VkUbmSurfaceCreateInfoSEC* pCreateInfo,
                                                 const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
@@ -1373,16 +1384,14 @@ virtual void PostCallRecordCreateUbmSurfaceSEC(VkInstance instance, const VkUbmS
                                                const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
                                                const RecordObject& record_obj) {}
 virtual bool PreCallValidateGetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
-                                                                       struct ubm_device* ubm_device,
+                                                                       struct ubm_device* device,
                                                                        const ErrorObject& error_obj) const {
     return false;
 }
 virtual void PreCallRecordGetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
-                                                                     struct ubm_device* ubm_device,
-                                                                     const RecordObject& record_obj) {}
+                                                                     struct ubm_device* device, const RecordObject& record_obj) {}
 virtual void PostCallRecordGetPhysicalDeviceUbmPresentationSupportSEC(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
-                                                                      struct ubm_device* ubm_device,
-                                                                      const RecordObject& record_obj) {}
+                                                                      struct ubm_device* device, const RecordObject& record_obj) {}
 #endif  // VK_USE_PLATFORM_UBM_SEC
 
 // NOLINTEND

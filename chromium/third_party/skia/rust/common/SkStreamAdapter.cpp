@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC.
+// Copyright 2024 Google LLC
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -87,7 +87,8 @@ bool SkStreamAdapter::seek_relative(int64_t requestedOffset, uint64_t& finalPos)
         return false;
     }
 
-    if (!fStream->move(offset)) {
+    // Only move the stream if the offset is non-zero, as zero offset should be no-op.
+    if (offset != 0 && !fStream->move(offset)) {
         return false;
     }
 

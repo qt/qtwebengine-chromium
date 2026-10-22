@@ -25,12 +25,7 @@ cc_library(
 
 ynn_cc_library(
     name = "reduce",
-    srcs = [
-        "generic.h",
-        "min_max_accumulator.h",
-        "reduce.cc",
-        "sum_accumulator.h",
-    ],
+    srcs = ["reduce.cc"],
     hdrs = [
         "max.inc",
         "min.inc",
@@ -40,21 +35,20 @@ ynn_cc_library(
         "sum_squared.inc",
     ],
     compatible_with = _COMPATIBLE_WITH,
-    copts = ynn_kernel_copts(unroll_loops = False),
+    copts = ynn_kernel_copts(),
     per_arch_srcs = {
         "arm_neonfp16": ["arm_neonfp16.cc"],
         "arm_neonbf16": ["arm_neonbf16.cc"],
         "arm_neonfma": ["arm_neonfma.cc"],
         "arm_neondot": ["arm_neondot.cc"],
         "arm_neon": ["arm_neon.cc"],
+        "hexagon_hvx": ["hexagon_hvx.cc"],
         "x86_ssse3": ["x86_ssse3.cc"],
         "x86_sse2": ["x86_sse2.cc"],
         "x86_sse41": ["x86_sse41.cc"],
         "x86_avx512bf16": ["x86_avx512bf16.cc"],
-        "x86_avx512bw": ["x86_avx512bw.cc"],
-        "x86_avx512f": ["x86_avx512f.cc"],
+        "x86_avx512": ["x86_avx512.cc"],
         "x86_f16c": ["x86_f16c.cc"],
-        "x86_fma3": ["x86_fma3.cc"],
         "x86_avx": ["x86_avx.cc"],
         "x86_avx2": ["x86_avx2.cc"],
         "x86_avx2_fma3": ["x86_avx2_fma3.cc"],
@@ -67,6 +61,26 @@ ynn_cc_library(
         "//ynnpack/base:log",
         "//ynnpack/base/simd",  # buildcleaner: keep
     ],
+)
+
+cc_test(
+    name = "consistent_reduce_test",
+    srcs = select({
+        # We currently only attempt to provide consistency on x86
+        "//ynnpack:x86": ["consistent_reduce_test.cc"],
+        "//conditions:default": [],
+    }),
+    linkopts = ynn_binary_linkopts(),
+    malloc = ynn_binary_malloc(),
+    deps = [
+        ":reduce",
+        "//ynnpack:ynnpack_h",
+        "//ynnpack/base",
+        "//ynnpack/base/test:fuzz_test",
+        "//ynnpack/base/test:random",
+        "//ynnpack/base/test:tensor",
+        "//ynnpack/base/test:util",
+    ] + ynn_test_deps(),
 )
 
 cc_test(
@@ -83,6 +97,7 @@ cc_test(
         "//ynnpack/base/test:random",
         "//ynnpack/base/test:tensor",
         "//ynnpack/base/test:util",
+        "@slinky//slinky/base",
     ] + ynn_test_deps(),
 )
 

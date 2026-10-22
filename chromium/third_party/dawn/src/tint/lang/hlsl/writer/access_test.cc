@@ -42,7 +42,8 @@ TEST_F(HlslWriterTest, AccessArray) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -70,7 +71,8 @@ TEST_F(HlslWriterTest, AccessStruct) {
         b.Return(f);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct S {
   int a;
   float b;
@@ -95,7 +97,8 @@ TEST_F(HlslWriterTest, AccessVector) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -116,7 +119,8 @@ TEST_F(HlslWriterTest, AccessMatrix) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -135,7 +139,8 @@ TEST_F(HlslWriterTest, AccessStoreVectorElementConstantIndex) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -162,7 +167,8 @@ TEST_F(HlslWriterTest, AccessStoreVectorElementDynamicIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 void foo(int idx) {
   int4 vec = (int(0)).xxxx;
@@ -204,7 +210,8 @@ TEST_F(HlslWriterTest, AccessNested) {
         b.Return(f);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct A {
   int d;
   float e[3];
@@ -235,7 +242,8 @@ TEST_F(HlslWriterTest, AccessSwizzle) {
         b.Return(f);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -255,7 +263,8 @@ TEST_F(HlslWriterTest, AccessSwizzleMulti) {
         b.Return(f);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -281,7 +290,8 @@ TEST_F(HlslWriterTest, AccessStorageVector) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 ByteAddressBuffer v : register(t0);
 void main() {
@@ -310,7 +320,8 @@ TEST_F(HlslWriterTest, AccessStorageVectorF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 ByteAddressBuffer v : register(t0);
 void main() {
@@ -338,7 +349,8 @@ TEST_F(HlslWriterTest, AccessStorageMatrix) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 ByteAddressBuffer v : register(t0);
 float4x4 v_1(uint offset) {
@@ -366,7 +378,8 @@ TEST_F(HlslWriterTest, AccessStorageArray) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 ByteAddressBuffer v : register(t0);
 typedef float3 ary_ret[5];
@@ -384,7 +397,6 @@ ary_ret v_1(uint offset) {
       {
         v_2 = (v_3 + 1u);
       }
-      continue;
     }
   }
   float3 v_4[5] = a;
@@ -416,7 +428,8 @@ TEST_F(HlslWriterTest, AccessStorageStruct) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct SB {
   int a;
   float b;
@@ -466,7 +479,8 @@ TEST_F(HlslWriterTest, AccessStorageNested) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct Inner {
   float3x3 s;
   float3 t[5];
@@ -499,7 +513,6 @@ ary_ret v_1(uint offset) {
       {
         v_2 = (v_3 + 1u);
       }
-      continue;
     }
   }
   float3 v_4[5] = a;
@@ -553,7 +566,8 @@ TEST_F(HlslWriterTest, AccessStorageStoreVector) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -590,7 +604,8 @@ TEST_F(HlslWriterTest, AccessDirectVariable) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 ByteAddressBuffer v1 : register(t0);
 ByteAddressBuffer v2 : register(t1);
@@ -633,7 +648,8 @@ TEST_F(HlslWriterTest, AccessChainFromUnnamedAccessChain) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -667,7 +683,8 @@ TEST_F(HlslWriterTest, AccessChainFromLetAccessChain) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -710,7 +727,8 @@ TEST_F(HlslWriterTest, AccessComplexDynamicAccessChain) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer sb : register(u0);
 void main() {
@@ -759,7 +777,8 @@ TEST_F(HlslWriterTest, AccessComplexDynamicAccessChainSplit) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer sb : register(u0);
 void main() {
@@ -798,7 +817,8 @@ TEST_F(HlslWriterTest, AccessUniformChainFromUnnamedAccessChain) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[8];
@@ -836,7 +856,8 @@ TEST_F(HlslWriterTest, AccessUniformChainFromLetAccessChain) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[2];
@@ -859,7 +880,8 @@ TEST_F(HlslWriterTest, AccessUniformScalar) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[1];
@@ -882,7 +904,8 @@ TEST_F(HlslWriterTest, AccessUniformScalarF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[1];
@@ -917,7 +940,8 @@ TEST_F(HlslWriterTest, AccessUniformVector) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[1];
@@ -949,7 +973,8 @@ TEST_F(HlslWriterTest, AccessUniformVectorF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[1];
@@ -1003,7 +1028,8 @@ TEST_F(HlslWriterTest, AccessUniformMatrix) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[4];
@@ -1035,7 +1061,8 @@ TEST_F(HlslWriterTest, AccessUniformMatrix2x3) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[2];
@@ -1066,7 +1093,8 @@ TEST_F(HlslWriterTest, AccessUniformMat2x3F16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[1];
@@ -1120,7 +1148,8 @@ TEST_F(HlslWriterTest, AccessUniformMatrix3x2) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[2];
@@ -1157,7 +1186,8 @@ TEST_F(HlslWriterTest, AccessUniformMatrix2x2) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[1];
@@ -1192,7 +1222,8 @@ TEST_F(HlslWriterTest, AccessUniformMatrix2x2F16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[1];
@@ -1231,7 +1262,8 @@ TEST_F(HlslWriterTest, AccessUniformArray) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[5];
@@ -1251,7 +1283,6 @@ ary_ret v_1(uint start_byte_offset) {
       {
         v_2 = (v_3 + 1u);
       }
-      continue;
     }
   }
   float3 v_4[5] = a;
@@ -1278,7 +1309,8 @@ TEST_F(HlslWriterTest, AccessUniformArrayF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[3];
@@ -1311,7 +1343,6 @@ ary_ret v_5(uint start_byte_offset) {
       {
         v_6 = (v_7 + 1u);
       }
-      continue;
     }
   }
   vector<float16_t, 3> v_9[5] = a;
@@ -1338,7 +1369,8 @@ TEST_F(HlslWriterTest, AccessUniformArrayWhichCanHaveSizesOtherThenFive) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[42];
@@ -1358,7 +1390,6 @@ ary_ret v_1(uint start_byte_offset) {
       {
         v_2 = (v_3 + 1u);
       }
-      continue;
     }
   }
   float3 v_4[42] = a;
@@ -1390,7 +1421,8 @@ TEST_F(HlslWriterTest, AccessUniformStruct) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct SB {
   int a;
   float b;
@@ -1430,7 +1462,8 @@ TEST_F(HlslWriterTest, AccessUniformStructF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct SB {
   int a;
   float16_t b;
@@ -1493,7 +1526,8 @@ TEST_F(HlslWriterTest, AccessUniformStructNested) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct Inner {
   float3x3 s;
   float3 t[5];
@@ -1528,7 +1562,6 @@ ary_ret v_1(uint start_byte_offset) {
       {
         v_2 = (v_3 + 1u);
       }
-      continue;
     }
   }
   float3 v_4[5] = a;
@@ -1579,7 +1612,8 @@ TEST_F(HlslWriterTest, AccessStoreScalar) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1600,7 +1634,8 @@ TEST_F(HlslWriterTest, AccessStoreScalarF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1621,7 +1656,8 @@ TEST_F(HlslWriterTest, AccessStoreVectorElement) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1642,7 +1678,8 @@ TEST_F(HlslWriterTest, AccessStoreVectorElementF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1663,7 +1700,8 @@ TEST_F(HlslWriterTest, AccessStoreVector) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1684,7 +1722,8 @@ TEST_F(HlslWriterTest, AccessStoreVectorF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1706,7 +1745,8 @@ TEST_F(HlslWriterTest, AccessStoreMatrixElement) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1728,7 +1768,8 @@ TEST_F(HlslWriterTest, AccessStoreMatrixElementF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1750,7 +1791,8 @@ TEST_F(HlslWriterTest, AccessStoreMatrixColumn) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1772,7 +1814,8 @@ TEST_F(HlslWriterTest, AccessStoreMatrixColumnF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1793,7 +1836,8 @@ TEST_F(HlslWriterTest, AccessStoreMatrix) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void v_1(uint offset, float4x4 obj) {
@@ -1821,7 +1865,8 @@ TEST_F(HlslWriterTest, AccessStoreMatrixF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void v_1(uint offset, matrix<float16_t, 4, 4> obj) {
@@ -1849,7 +1894,8 @@ TEST_F(HlslWriterTest, AccessStoreArrayElement) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1870,7 +1916,8 @@ TEST_F(HlslWriterTest, AccessStoreArrayElementF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1892,7 +1939,8 @@ TEST_F(HlslWriterTest, AccessStoreArray) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void v_1(uint offset, float3 obj[5]) {
@@ -1908,7 +1956,6 @@ void v_1(uint offset, float3 obj[5]) {
       {
         v_2 = (v_3 + 1u);
       }
-      continue;
     }
   }
 }
@@ -1937,7 +1984,8 @@ TEST_F(HlslWriterTest, AccessStoreStructMember) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1963,7 +2011,8 @@ TEST_F(HlslWriterTest, AccessStoreStructMemberF16) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -1999,7 +2048,8 @@ TEST_F(HlslWriterTest, AccessStoreStructNested) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -2035,7 +2085,8 @@ TEST_F(HlslWriterTest, AccessStoreStruct) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct Inner {
   float s;
   float3 t;
@@ -2105,7 +2156,8 @@ TEST_F(HlslWriterTest, AccessStoreStructComplex) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct Inner {
   float3x3 s;
   float3 t[5];
@@ -2136,7 +2188,6 @@ void v_1(uint offset, float3 obj[5]) {
       {
         v_2 = (v_3 + 1u);
       }
-      continue;
     }
   }
 }
@@ -2191,7 +2242,8 @@ TEST_F(HlslWriterTest, AccessChainReused) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer v : register(u0);
 void main() {
@@ -2220,7 +2272,8 @@ TEST_F(HlslWriterTest, UniformAccessChainReused) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_v : register(b0) {
   uint4 v[2];
@@ -2269,7 +2322,8 @@ TEST_F(HlslWriterTest, AccessStorage_OffsetFromUniform) {
     options.array_offset_from_uniform.bindpoint_to_offset_index[{1, 2}] = 3;
     options.array_offset_from_uniform.bindpoint_to_offset_index[{1, 3}] = 4;
     options.array_offset_from_uniform.bindpoint_to_offset_index[{1, 4}] = 5;
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer array_1 : register(u2, space1);
 RWByteAddressBuffer vec2_u32 : register(u3, space1);

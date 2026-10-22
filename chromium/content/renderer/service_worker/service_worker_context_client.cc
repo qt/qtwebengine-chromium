@@ -18,7 +18,6 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
@@ -393,7 +392,8 @@ void ServiceWorkerContextClient::WillDestroyWorkerContext(
   context_.reset();
 
   GetContentClient()->renderer()->WillDestroyServiceWorkerContextOnWorkerThread(
-      context, service_worker_version_id_, service_worker_scope_, script_url_);
+      context, service_worker_version_id_, service_worker_scope_, script_url_,
+      service_worker_token_);
 }
 
 void ServiceWorkerContextClient::WorkerContextDestroyed() {
@@ -519,7 +519,8 @@ void ServiceWorkerContextClient::SendWorkerStarted(
     SCOPED_CRASH_KEY_NUMBER("extensions", "service_worker_start_status",
                             static_cast<int>(status));
     GetContentClient()->renderer()->DidStartServiceWorkerContextOnWorkerThread(
-        service_worker_version_id_, service_worker_scope_, script_url_);
+        service_worker_version_id_, service_worker_scope_, script_url_,
+        service_worker_token_);
   }
 
   // Temporary DCHECK for https://crbug.com/881100

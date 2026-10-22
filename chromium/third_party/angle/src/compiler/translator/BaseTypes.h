@@ -891,7 +891,8 @@ enum TQualifier
     EvqSecondaryFragColorEXT,  // EXT_blend_func_extended
     EvqSecondaryFragDataEXT,   // EXT_blend_func_extended
 
-    EvqViewIDOVR,  // OVR_multiview
+    EvqViewIDOVR,          // OVR_multiview
+    EvqEmulatedViewIDOVR,  // Emulated gl_ViewID_OVR
 
     EvqClipDistance,  // APPLE_clip_distance / EXT_clip_cull_distance / ANGLE_clip_cull_distance
     EvqCullDistance,  // EXT_clip_cull_distance / ANGLE_clip_cull_distance
@@ -1014,9 +1015,6 @@ enum TQualifier
     // generation.  In that case, TLayoutQualifier::location will contain the somewhat equivalent
     // constant_id.
     EvqSpecConst,
-
-    // __pixel_localEXT from EXT_shader_pixel_local_storage.
-    EvqPixelLocalEXT,
 
     // end of list
     EvqLast
@@ -1471,6 +1469,7 @@ inline const char *getQualifierString(TQualifier q)
     case EvqSecondaryFragColorEXT:     return "SecondaryFragColorEXT";
     case EvqSecondaryFragDataEXT:      return "SecondaryFragDataEXT";
     case EvqViewIDOVR:                 return "ViewIDOVR";
+    case EvqEmulatedViewIDOVR:         return "EmulatedViewIDOVR";
     case EvqLayerOut:                  return "LayerOut";
     case EvqLayerIn:                   return "LayerIn";
     case EvqLastFragColor:             return "LastFragColor";
@@ -1541,7 +1540,6 @@ inline const char *getQualifierString(TQualifier q)
     case EvqTessEvaluationOut:         return "out";
     case EvqTessCoord:                 return "TessCoord";
     case EvqSpecConst:                 return "const";
-    case EvqPixelLocalEXT:             return "__pixel_localEXT";
     default: UNREACHABLE();            return "unknown qualifier";
     }
     // clang-format on

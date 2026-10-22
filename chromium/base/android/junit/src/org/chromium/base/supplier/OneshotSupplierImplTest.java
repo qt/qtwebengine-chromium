@@ -8,32 +8,28 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.mockito.Mockito.verify;
 
-import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.MockitoAnnotations;
 import org.mockito.Spy;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 import org.robolectric.annotation.Config;
-import org.robolectric.annotation.LooperMode;
 import org.robolectric.shadows.ShadowProcess;
 
 import org.chromium.base.Callback;
 import org.chromium.base.test.BaseRobolectricTestRunner;
+import org.chromium.base.test.RobolectricUtil;
 
 /** Unit tests for {@link OneshotSupplierImpl}. */
 @RunWith(BaseRobolectricTestRunner.class)
 @Config(shadows = {ShadowProcess.class})
-@LooperMode(LooperMode.Mode.LEGACY)
 public class OneshotSupplierImplTest {
+    @Rule public MockitoRule mMockitoRule = MockitoJUnit.rule();
     private final OneshotSupplierImpl<String> mSupplier = new OneshotSupplierImpl<>();
 
     @Spy private Callback<String> mCallback1;
     @Spy private Callback<String> mCallback2;
-
-    @Before
-    public void setup() {
-        MockitoAnnotations.initMocks(this);
-    }
 
     @Test
     public void testSet() {
@@ -41,6 +37,7 @@ public class OneshotSupplierImplTest {
         assertNull(mSupplier.onAvailable(mCallback2));
         mSupplier.set("answer");
 
+        RobolectricUtil.runAllBackgroundAndUi();
         verify(mCallback1).onResult("answer");
         verify(mCallback2).onResult("answer");
     }
@@ -52,6 +49,7 @@ public class OneshotSupplierImplTest {
         assertEquals("answer", mSupplier.onAvailable(mCallback1));
         assertEquals("answer", mSupplier.onAvailable(mCallback2));
 
+        RobolectricUtil.runAllBackgroundAndUi();
         verify(mCallback1).onResult("answer");
         verify(mCallback2).onResult("answer");
     }
@@ -60,8 +58,10 @@ public class OneshotSupplierImplTest {
     public void testInterleaved() {
         assertNull(mSupplier.onAvailable(mCallback1));
         mSupplier.set("answer");
+        RobolectricUtil.runAllBackgroundAndUi();
         assertEquals("answer", mSupplier.onAvailable(mCallback2));
 
+        RobolectricUtil.runAllBackgroundAndUi();
         verify(mCallback1).onResult("answer");
         verify(mCallback2).onResult("answer");
     }

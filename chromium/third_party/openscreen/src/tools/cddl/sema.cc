@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <charconv>
 #include <cinttypes>
 #include <cstdlib>
 #include <iostream>
@@ -14,10 +15,10 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_set>
 #include <vector>
 
-#include "absl/strings/numbers.h"
 #include "tools/cddl/logging.h"
 
 std::vector<CppType*> CppSymbolTable::TypesWithId() {
@@ -164,7 +165,7 @@ CddlType* AnalyzeType2(CddlSymbolTable* table, const AstNode& type2) {
     InitString(&value->value, node->text);
     return value;
   } else if (node->type == AstNode::Type::kTypename) {
-    if (type2.text[0] == '~') {
+    if (type2.text.starts_with('~')) {
       std::cerr << "We don't support the '~' operator." << std::endl;
       return nullptr;
     }
@@ -172,24 +173,31 @@ CddlType* AnalyzeType2(CddlSymbolTable* table, const AstNode& type2) {
     InitString(&id->id, node->text);
     return id;
   } else if (node->type == AstNode::Type::kType) {
-    if (type2.text[0] == '#' && type2.text[1] == '6' && type2.text[2] == '.') {
+    if (type2.text.starts_with("#6.")) {
       CddlType* tagged_type = AddCddlType(table, CddlType::Which::kTaggedType);
-      tagged_type->tagged_type.tag_value =
-          atoll(type2.text.substr(3 /* #6. */).data());
+      std::string_view tag_str = type2.text.substr(3 /* #6. */);
+      uint64_t tag_val = 0;
+      auto result = std::from_chars(tag_str.data(),
+                                    tag_str.data() + tag_str.size(), tag_val);
+      if (result.ec != std::errc()) {
+        std::cerr << "Invalid tag value in " << type2.text << std::endl;
+        return nullptr;
+      }
+      tagged_type->tagged_type.tag_value = tag_val;
       tagged_type->tagged_type.type = AnalyzeType(table, *node);
       return tagged_type;
     }
     std::cerr << "Unknown type2 value, expected #6.[uint]" << std::endl;
   } else if (node->type == AstNode::Type::kGroup) {
-    if (type2.text[0] == '{') {
+    if (type2.text.starts_with('{')) {
       CddlType* map = AddCddlType(table, CddlType::Which::kMap);
       map->map = AnalyzeGroup(table, *node);
       return map;
-    } else if (type2.text[0] == '[') {
+    } else if (type2.text.starts_with('[')) {
       CddlType* array = AddCddlType(table, CddlType::Which::kArray);
       array->array = AnalyzeGroup(table, *node);
       return array;
-    } else if (type2.text[0] == '&') {
+    } else if (type2.text.starts_with('&')) {
       // Represents a choice between options in this group (ie an enum), not a
       // choice between groups (which is currently unsupported).
       CddlType* group_choice =
@@ -198,7 +206,7 @@ CddlType* AnalyzeType2(CddlSymbolTable* table, const AstNode& type2) {
       return group_choice;
     }
   } else if (node->type == AstNode::Type::kGroupname) {
-    if (type2.text[0] == '&') {
+    if (type2.text.starts_with('&')) {
       CddlType* group_choice =
           AddCddlType(table, CddlType::Which::kGroupnameChoice);
       InitString(&group_choice->id, node->text);
@@ -226,7 +234,7 @@ CddlType::Op AnalyzeCtlop(const AstNode& ctlop) {
               << std::endl;
     return CddlType::Op::kNone;
   }
-  const std::string& id = ctlop.children->text;
+  std::string_view id = ctlop.children->text;
   if (id == "size") {
     return CddlType::Op::kSize;
   } else if (id == "bits") {
@@ -354,13 +362,14 @@ CddlGroup* AnalyzeGroup(CddlSymbolTable* table, const AstNode& group) {
 // be parsed.
 // TODO(issuetracker.google.com/281741443): Add support for hex and binary
 // options.
-std::optional<uint64_t> ParseOptionalUint(const std::string& text) {
+std::optional<uint64_t> ParseOptionalUint(std::string_view text) {
   if (text == "0") {
     return 0;
   }
 
-  uint64_t parsed = std::strtoul(text.c_str(), nullptr, 10);
-  if (!parsed) {
+  uint64_t parsed = 0;
+  auto result = std::from_chars(text.data(), text.data() + text.size(), parsed);
+  if (result.ec != std::errc() || parsed == 0) {
     return std::nullopt;
   }
   return parsed;
@@ -371,7 +380,7 @@ bool AnalyzeGroupEntry(CddlSymbolTable* table,
                        CddlGroup::Entry* entry) {
   const AstNode* node = group_entry.children;
 
-  // If it's an occurance operator (so the entry is optional), mark it as such
+  // If it's an occurrence operator (so the entry is optional), mark it as such
   // and proceed to the next the node.
   if (node->type == AstNode::Type::kOccur) {
     if (node->text == "?") {
@@ -387,22 +396,26 @@ bool AnalyzeGroupEntry(CddlSymbolTable* table,
       }
 
       int lower_bound = CddlGroup::Entry::kOccurrenceMinUnbounded;
-      std::string first_half = node->text.substr(0, index);
+      std::string_view first_half = node->text.substr(0, index);
       if ((first_half.length() != 1 || first_half.at(0) != '0') &&
           first_half.length() != 0) {
-        lower_bound = std::atoi(first_half.c_str());
-        if (!lower_bound) {
+        auto result =
+            std::from_chars(first_half.data(),
+                            first_half.data() + first_half.size(), lower_bound);
+        if (result.ec != std::errc() || lower_bound == 0) {
           return false;
         }
       }
 
       int upper_bound = CddlGroup::Entry::kOccurrenceMaxUnbounded;
-      std::string second_half =
+      std::string_view second_half =
           index >= node->text.length() ? "" : node->text.substr(index + 1);
       if ((second_half.length() != 1 || second_half.at(0) != '0') &&
           second_half.length() != 0) {
-        upper_bound = std::atoi(second_half.c_str());
-        if (!upper_bound) {
+        auto result = std::from_chars(second_half.data(),
+                                      second_half.data() + second_half.size(),
+                                      upper_bound);
+        if (result.ec != std::errc() || upper_bound == 0) {
           return false;
         }
       }
@@ -420,7 +433,7 @@ bool AnalyzeGroupEntry(CddlSymbolTable* table,
 
   // If it's a member key (key in a map), save it and go to next node.
   if (node->type == AstNode::Type::kMemberKey) {
-    if (node->text[node->text.size() - 1] == '>')
+    if (node->text.back() == '>')
       return false;
     entry->which = CddlGroup::Entry::Which::kType;
     InitGroupEntry(&entry->type);
@@ -457,7 +470,7 @@ std::pair<bool, CddlSymbolTable> BuildSymbolTable(const AstNode& rules) {
     // Ensure that the node is either a type or group definition.
     if (node->type != AstNode::Type::kTypename &&
         node->type != AstNode::Type::kGroupname) {
-      Logger::Error("Error parsing node with text '" + node->text +
+      Logger::Error("Error parsing node with text '" + std::string(node->text) +
                     "'. Unexpected node type.");
       return result;
     }
@@ -467,7 +480,7 @@ std::pair<bool, CddlSymbolTable> BuildSymbolTable(const AstNode& rules) {
     // Ensure that the node is assignment.
     node = node->sibling;
     if (node->type != AstNode::Type::kAssign) {
-      Logger::Error("Error parsing node with text '" + node->text +
+      Logger::Error("Error parsing node with text '" + std::string(node->text) +
                     "'. Node type != kAssign.");
       return result;
     }
@@ -484,7 +497,8 @@ std::pair<bool, CddlSymbolTable> BuildSymbolTable(const AstNode& rules) {
         type->type_key = parsed_type_key.value();
       }
       if (!type) {
-        Logger::Error("Error parsing node with text '" + node->text +
+        Logger::Error("Error parsing node with text '" +
+                      std::string(node->text) +
                       "'. "
                       "Failed to analyze node type.");
       }
@@ -671,7 +685,10 @@ CppType* MakeCppType(CppSymbolTable* table,
         cpp_type->InitBytes();
         if (type.op == CddlType::Op::kSize) {
           size_t size = 0;
-          if (!absl::SimpleAtoi(type.constraint_type->value, &size)) {
+          auto& val = type.constraint_type->value;
+          auto result =
+              std::from_chars(val.data(), val.data() + val.size(), size);
+          if (result.ec != std::errc()) {
             return nullptr;
           }
           cpp_type->bytes_type.fixed_size = size;

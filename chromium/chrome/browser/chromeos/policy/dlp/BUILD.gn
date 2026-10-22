@@ -61,7 +61,7 @@ static_library("dlp") {
 
   public_deps = [
     "//chrome/browser:browser_public_dependencies",
-    "//chrome/browser/ui:browser_list",
+    "//chrome/browser/ash/browser_delegate",
     "//chrome/browser/ui/tabs:tab_strip_model_observer",
   ]
 
@@ -76,6 +76,7 @@ static_library("dlp") {
     "//chrome/browser:browser_process",
     "//chrome/browser/ash/profiles",
     "//chrome/browser/chromeos/policy/dlp/dialogs",
+    "//chrome/browser/download",
     "//chrome/browser/favicon",
     "//chrome/browser/notifications",
     "//chrome/browser/profiles",
@@ -279,6 +280,7 @@ if (!is_chromeos_device) {
       "//chrome/browser/chromeos/policy/dlp/test:test_support",
       "//chrome/browser/enterprise/data_controls",
       "//chrome/browser/enterprise/data_controls:test_support",
+      "//chrome/browser/printing",
       "//chrome/browser/profiles:profile",
       "//chrome/browser/ui",
       "//chrome/test:print_preview_test_support",
@@ -303,6 +305,7 @@ if (!is_chromeos_device) {
       "//ui/aura",
       "//ui/base",
       "//ui/base/clipboard",
+      "//ui/base/clipboard:clipboard_test_support",
       "//ui/base/clipboard:clipboard_types",
       "//ui/base/data_transfer_policy",
       "//ui/base/dragdrop:types",

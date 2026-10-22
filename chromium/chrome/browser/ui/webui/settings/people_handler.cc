@@ -11,7 +11,6 @@
 
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
-#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/i18n/time_formatting.h"
@@ -957,8 +956,7 @@ void PeopleHandler::HandleShowSyncPassphraseDialog(
 }
 
 void PeopleHandler::HandleShowAccountSettingsUI(const base::ListValue& args) {
-  CHECK(
-      base::FeatureList::IsEnabled(syncer::kReplaceSyncPromosWithSignInPromos));
+  CHECK(syncer::IsReplaceSyncPromosWithSignInPromosEnabled());
   AllowJavascript();
 
   GetLoginUIService()->SetLoginUI(this);
@@ -974,8 +972,7 @@ void PeopleHandler::HandleShowAccountSettingsUI(const base::ListValue& args) {
 }
 
 void PeopleHandler::HandleSetDatatype(const base::ListValue& args) {
-  CHECK(
-      base::FeatureList::IsEnabled(syncer::kReplaceSyncPromosWithSignInPromos));
+  CHECK(syncer::IsReplaceSyncPromosWithSignInPromosEnabled());
   AllowJavascript();
 
   CHECK_EQ(3U, args.size());
@@ -1392,8 +1389,7 @@ void PeopleHandler::MarkFirstSetupComplete() {
 
   // We're done configuring, so notify SyncService that it is OK to start
   // syncing.
-  service->GetUserSettings()->SetInitialSyncFeatureSetupComplete(
-      syncer::SyncFirstSetupCompleteSource::ADVANCED_FLOW_CONFIRM);
+  service->GetUserSettings()->SetInitialSyncFeatureSetupComplete();
   FireWebUIListener("sync-settings-saved");
 #endif  // BUILDFLAG(IS_CHROMEOS)
 }

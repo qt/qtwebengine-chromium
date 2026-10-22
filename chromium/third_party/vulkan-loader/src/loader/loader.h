@@ -36,6 +36,9 @@
 LOADER_PLATFORM_THREAD_ONCE_EXTERN_DEFINITION(once_init)
 
 static inline VkPhysicalDevice loader_unwrap_physical_device(VkPhysicalDevice physicalDevice) {
+    if (VK_NULL_HANDLE == physicalDevice) {
+        return VK_NULL_HANDLE;
+    }
     struct loader_physical_device_tramp *phys_dev = (struct loader_physical_device_tramp *)physicalDevice;
     if (PHYS_TRAMP_MAGIC_NUMBER != phys_dev->magic) {
         return VK_NULL_HANDLE;
@@ -82,7 +85,6 @@ static inline void loader_init_dispatch(void *obj, const void *data) {
 extern struct loader_struct loader;
 extern loader_platform_thread_mutex loader_lock;
 extern loader_platform_thread_mutex loader_preload_icd_lock;
-extern loader_platform_thread_mutex loader_global_instance_list_lock;
 
 bool compare_vk_extension_properties(const VkExtensionProperties *op1, const VkExtensionProperties *op2);
 

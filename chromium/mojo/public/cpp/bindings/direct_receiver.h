@@ -28,21 +28,25 @@
 
 namespace blink {
 class WidgetInputHandlerImpl;
-}
+}  // namespace blink
 
 namespace cc::mojo_embedder {
 class AsyncLayerTreeFrameSink;
-}
+}  // namespace cc::mojo_embedder
 
 namespace cc::slim {
 class FrameSinkImpl;
-}
+}  // namespace cc::slim
 
 namespace viz {
 class CompositorFrameSinkImpl;
 class FrameSinkManagerImpl;
 class ExternalBeginFrameSourceMojoMac;
 }  // namespace viz
+
+namespace network {
+class NetworkContext;
+}  // namespace network
 
 namespace mojo {
 
@@ -140,6 +144,7 @@ class DirectReceiverKey {
   friend class viz::CompositorFrameSinkImpl;
   friend class viz::FrameSinkManagerImpl;
   friend class viz::ExternalBeginFrameSourceMojoMac;
+  friend class network::NetworkContext;
 };
 
 // DirectReceiver is a wrapper around the standard Receiver<T> type that always
@@ -173,10 +178,6 @@ class DirectReceiverKey {
 // DirectReceiver, passing pipes to your DirectReceiver is likely a BAD IDEA.
 template <typename T>
 class DirectReceiver {
-  static_assert(
-      T::kSupportsDirectReceiver,
-      "This interface must be marked with the [DirectReceiver] attribute.");
-
  public:
   // Creates a DirectReceiver bound to the current thread.
   DirectReceiver(DirectReceiverKey, T* impl) : receiver_(impl) {}
@@ -216,6 +217,12 @@ class DirectReceiver {
 
 // Indicates whether DirectReceiver can be supported in the calling process.
 COMPONENT_EXPORT(MOJO_CPP_BINDINGS) bool IsDirectReceiverSupported();
+
+// Indicates whether the current thread can receive async IO either because it's
+// an IO thread or because an IOWatcher is exposed. Used for cases where
+// DirectReceiver is used on threads that can run on different message pumps on
+// different platforms (e.g. IO on Windows, but UI on Android).
+COMPONENT_EXPORT(MOJO_CPP_BINDINGS) bool IsAsyncIOSupported();
 
 #if BUILDFLAG(IS_WIN)
 

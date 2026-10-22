@@ -9,6 +9,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "cast/standalone_sender/connection_settings.h"
 #include "cast/standalone_sender/constants.h"
@@ -36,6 +37,8 @@ class LoopingFileSender final : public SimulatedAudioCapturer::Client,
 
   void SetPlaybackRate(double rate);
 
+  void OnInputMessage(InputMessage message);
+
  private:
   void UpdateEncoderBitrates();
   void ControlForNetworkCongestion();
@@ -55,6 +58,11 @@ class LoopingFileSender final : public SimulatedAudioCapturer::Client,
                     Clock::time_point reference_time) final;
 
   void UpdateStatusOnConsole();
+
+  // Draws any active animations (like mouse clicks) onto the frame.
+  void DrawAnimations(const AVFrame& av_frame,
+                      int frame_width,
+                      int frame_height);
 
   // SimulatedCapturer::Client overrides.
   void OnEndOfFile(SimulatedCapturer* capturer) final;
@@ -92,6 +100,14 @@ class LoopingFileSender final : public SimulatedAudioCapturer::Client,
   Clock::time_point latest_frame_time_{};
   std::optional<SimulatedAudioCapturer> audio_capturer_;
   std::optional<SimulatedVideoCapturer> video_capturer_;
+
+  struct Click {
+    float x;
+    float y;
+    Clock::time_point start_time;
+    Clock::time_point end_time;
+  };
+  std::vector<Click> active_clicks_;
 
   Alarm next_task_;
   Alarm console_update_task_;

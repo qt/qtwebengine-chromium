@@ -62,7 +62,7 @@ class SkewSymmetricBase : public EigenBase<Derived> {
   /**
    * Constructs a dense matrix from \c *this. Note, this directly returns a dense matrix type,
    * not an expression.
-   * \returns A dense matrix, with its entries set from the the derived object. */
+   * \returns A dense matrix, with its entries set from the derived object. */
   EIGEN_DEVICE_FUNC DenseMatrixType toDenseMatrix() const { return derived(); }
 
   /** Determinant vanishes */
@@ -308,7 +308,7 @@ class SkewSymmetricWrapper : public SkewSymmetricBase<SkewSymmetricWrapper<SkewS
  * \sa class SkewSymmetricWrapper, class SkewSymmetricMatrix3, vector(), isSkewSymmetric()
  **/
 template <typename Derived>
-EIGEN_DEVICE_FUNC inline const SkewSymmetricWrapper<const Derived> MatrixBase<Derived>::asSkewSymmetric() const {
+EIGEN_DEVICE_FUNC constexpr const SkewSymmetricWrapper<const Derived> MatrixBase<Derived>::asSkewSymmetric() const {
   return SkewSymmetricWrapper<const Derived>(derived());
 }
 

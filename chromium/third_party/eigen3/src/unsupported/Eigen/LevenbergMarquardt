@@ -10,26 +10,22 @@
 #ifndef EIGEN_LEVENBERGMARQUARDT_MODULE_H
 #define EIGEN_LEVENBERGMARQUARDT_MODULE_H
 
-// #include <vector>
-
 #include "../../Eigen/Core"
 #include "../../Eigen/Jacobi"
 #include "../../Eigen/QR"
-#include "NumericalDiff"
-
+#include "../../Eigen/SparseCore"
 #include "../../Eigen/SparseQR"
+#include "NumericalDiff"
 
 /**
  * \defgroup LevenbergMarquardt_Module Levenberg-Marquardt module
  *
  * \code
- * #include </Eigen/LevenbergMarquardt>
+ * #include <unsupported/Eigen/LevenbergMarquardt>
  * \endcode
  *
  *
  */
-
-#include "../../Eigen/SparseCore"
 
 #include "../../Eigen/src/Core/util/DisableStupidWarnings.h"
 

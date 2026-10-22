@@ -185,7 +185,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
     def generateInstanceMethods(self):
         out = []
         out.append('''
-            // This file contains methods for class vvl::base::Instance and it is designed to ONLY be
+            // This file contains methods for class vvl::BaseInstance and it is designed to ONLY be
             // included into validation_object.h.
             ''')
         self.write("".join(out))
@@ -195,7 +195,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
     def generateDeviceMethods(self):
         out = []
         out.append('''
-            // This file contains methods for class vvl::base::Device and it is designed to ONLY be
+            // This file contains methods for class vvl::BaseDevice and it is designed to ONLY be
             // included into validation_object.h.
             ''')
         self.write("".join(out))
@@ -211,10 +211,10 @@ class LayerChassisOutputGenerator(BaseGenerator):
 
             #include "chassis/validation_object.h"
 
-            namespace vvl::base {
-            thread_local WriteLockGuard* Device::record_guard{};
+            namespace vvl {
+            thread_local WriteLockGuard* BaseDevice::record_guard{};
 
-            } // namespace vvl::base
+            } // namespace vvl
         ''')
         self.write("".join(out))
 
@@ -295,7 +295,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
                 }
 
                 assert(physicalDevice);
-                auto layer_data = vvl::dispatch::GetData(physicalDevice);
+                auto layer_data = vvl::GetDispatchInstance(physicalDevice);
                 return layer_data->instance_dispatch_table.EnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pCount, pProperties);
             }
             ''')
@@ -307,10 +307,12 @@ class LayerChassisOutputGenerator(BaseGenerator):
 
             paramsList = ', '.join([param.name for param in command.params])
 
-            dispatch = 'device_dispatch' if not command.instance else 'instance_dispatch'
             # Setup common to call wrappers. First parameter is always dispatchable
             out.append('VVL_ZoneScoped;\n\n')
-            out.append(f'auto {dispatch} = vvl::dispatch::GetData({command.params[0].name});\n')
+            if command.instance:
+                out.append(f'auto instance_dispatch = vvl::GetDispatchInstance({command.params[0].name});\n')
+            else:
+                out.append(f'auto device_dispatch = vvl::GetDispatchDevice({command.params[0].name});\n')
 
             # Declare result variable, if any.
             return_map = {
@@ -330,6 +332,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
             out.append(f'ErrorObject error_obj(vvl::Func::{command.name}, VulkanTypedHandle({command.params[0].name}, kVulkanObjectType{command.params[0].type[2:]}));\n')
 
             # Generate pre-call validation source code
+            dispatch = 'device_dispatch' if not command.instance else 'instance_dispatch'
             out.append(f'{{\nVVL_ZoneScopedN("PreCallValidate_{command.name}");')
             if not command.instance:
                 out.append(f'''
@@ -440,7 +443,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
                     VVL_TracyVkNamedZoneStart(GetTracyVkCtx(), queue, "gpu_PostCallRecord{command.name}", post_call_record_gpu_zone);
                 ''')
 
-            # Because each intercept is a copy of vvl::base::Device, we need to update it for each,
+            # Because each intercept is a copy of vvl::BaseDevice, we need to update it for each,
             # even if they don't intercept this command.
             if not command.instance and command.errorCodes and 'VK_ERROR_DEVICE_LOST' in command.errorCodes:
                 out.append(f'''
@@ -463,7 +466,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
 
 
             # These commands perform blocking operations during PostRecord phase. We might need to
-            # release base::Device's lock for the period of blocking operation to avoid deadlocks.
+            # release BaseDevice's lock for the period of blocking operation to avoid deadlocks.
             # The released mutex can be re-acquired by the command that sets wait finish condition.
             # This functionality is needed when fine grained locking is disabled or not implemented.
             commands_with_blocking_operations = [
@@ -479,7 +482,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
                 if command.name not in commands_with_blocking_operations:
                     out.append('auto lock = vo->WriteLock();\n')
                 else:
-                    out.append('vvl::base::Device::BlockingOperationGuard lock(vo);\n')
+                    out.append('vvl::BaseDevice::BlockingOperationGuard lock(vo);\n')
 
             out.append(f'vo->PostCallRecord{command.name[2:]}({paramsList}, record_obj);\n')
             out.append('    }\n')

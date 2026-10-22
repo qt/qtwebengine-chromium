@@ -10,7 +10,7 @@
 #include "content/browser/webui/web_ui_data_source_impl.h"
 #include "content/public/common/buildflags.h"
 #include "content/public/test/browser_task_environment.h"
-#include "content/test/test_content_client.h"
+#include "content/public/test/test_content_client.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -74,7 +74,7 @@ class WebUIDataSourceTest : public testing::Test {
                               WebContents::Getter(), std::move(callback));
   }
 
-  std::string GetMimeTypeForPath(const std::string& path) const {
+  std::string_view GetMimeTypeForPath(const std::string& path) const {
     return source_->GetMimeType(GURL("https://any-host/" + path));
   }
 

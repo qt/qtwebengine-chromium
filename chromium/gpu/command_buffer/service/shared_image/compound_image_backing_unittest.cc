@@ -110,7 +110,7 @@ class CompoundImageBackingTest : public testing::Test {
     copy_manager_->AddStrategy(std::make_unique<SharedMemoryCopyStrategy>());
   }
 
-  bool HasGpuBacking(CompoundImageBacking* backing) {
+  bool HasGpuBacking(CompoundImageBacking* backing) NO_THREAD_SAFETY_ANALYSIS {
     for (const auto& element : backing->elements_) {
       if (!element.access_streams.Has(SharedImageAccessStream::kMemory)) {
         return !!element.backing;
@@ -119,7 +119,8 @@ class CompoundImageBackingTest : public testing::Test {
     return false;
   }
 
-  bool HasGpuCreateBackingCallback(CompoundImageBacking* backing) {
+  bool HasGpuCreateBackingCallback(CompoundImageBacking* backing)
+      NO_THREAD_SAFETY_ANALYSIS {
     for (const auto& element : backing->elements_) {
       if (!element.access_streams.Has(SharedImageAccessStream::kMemory)) {
         return !element.create_callback.is_null();
@@ -128,7 +129,8 @@ class CompoundImageBackingTest : public testing::Test {
     return false;
   }
 
-  TestImageBacking* GetGpuBacking(CompoundImageBacking* backing) {
+  TestImageBacking* GetGpuBacking(CompoundImageBacking* backing)
+      NO_THREAD_SAFETY_ANALYSIS {
     for (auto& element : backing->elements_) {
       if (!element.access_streams.Has(SharedImageAccessStream::kMemory)) {
         auto* gpu_backing = element.backing.get();
@@ -149,13 +151,31 @@ class CompoundImageBackingTest : public testing::Test {
     return backing->HasLatestContent(backing->GetShmElement());
   }
 
-  bool GetGpuHasLatestContent(CompoundImageBacking* backing) {
+  bool GetGpuHasLatestContent(CompoundImageBacking* backing)
+      NO_THREAD_SAFETY_ANALYSIS {
     for (auto& element : backing->elements_) {
       if (!element.access_streams.Has(SharedImageAccessStream::kMemory)) {
         return backing->HasLatestContent(element);
       }
     }
     return false;
+  }
+
+  // Construct a CompoundImageBacking via the WrapExternalBacking constructor
+  // (private). This mirrors CompoundImageBacking::WrapExternalBacking exactly,
+  // minus the SharedImageFactory consultation.
+  std::unique_ptr<CompoundImageBacking> WrapExternal(
+      std::unique_ptr<SharedImageBacking> backing) {
+    backing->SetNotRefCounted();
+    return std::unique_ptr<CompoundImageBacking>(new CompoundImageBacking(
+        /*is_thread_safe=*/false,
+        /*buffer_usage=*/std::nullopt, std::move(backing), copy_manager_,
+        /*shared_image_factory=*/nullptr));
+  }
+
+  const std::vector<SkPixmap>& CallGetSharedMemoryPixmaps(
+      CompoundImageBacking* backing) {
+    return backing->GetSharedMemoryPixmaps();
   }
 
   // Create a compound backing containing shared memory + GPU backing.

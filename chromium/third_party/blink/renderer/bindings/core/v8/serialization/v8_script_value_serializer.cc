@@ -20,11 +20,13 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_dom_quad.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_dom_rect.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_dom_rect_read_only.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_element_image.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_file.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_file_list.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_image_bitmap.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_image_data.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_message_port.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_microtasks_scope.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_mojo_handle.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_offscreen_canvas.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_readable_stream.h"
@@ -44,6 +46,7 @@
 #include "third_party/blink/renderer/core/geometry/dom_quad.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect_read_only.h"
+#include "third_party/blink/renderer/core/html/canvas/element_image.h"
 #include "third_party/blink/renderer/core/html/canvas/image_data.h"
 #include "third_party/blink/renderer/core/html/fenced_frame/fenced_frame_config.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
@@ -145,6 +148,18 @@ bool V8ScriptValueSerializer::ExtractTransferable(
       return false;
     }
     transferables.array_buffers.push_back(shared_array_buffer);
+    return true;
+  }
+  if (ElementImage* element_image =
+          V8ElementImage::ToWrappable(isolate, object)) {
+    if (transferables.element_images.Contains(element_image)) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kDataCloneError,
+          StrCat({"ElementImage at index ", String::Number(object_index),
+                  " is a duplicate of an earlier ElementImage."}));
+      return false;
+    }
+    transferables.element_images.push_back(element_image);
     return true;
   }
   if (ImageBitmap* image_bitmap = V8ImageBitmap::ToWrappable(isolate, object)) {
@@ -252,9 +267,7 @@ scoped_refptr<SerializedScriptValue> V8ScriptValueSerializer::Serialize(
   // Serialize the value and handle errors.
   v8::Isolate* isolate = script_state_->GetIsolate();
   TryRethrowScope rethrow_scope(isolate, exception_state);
-  v8::MicrotasksScope microtasks_scope(
-      isolate, ToMicrotaskQueue(script_state_),
-      v8::MicrotasksScope::kDoNotRunMicrotasks);
+  V8DoNotRunMicrotasksScope microtasks_scope(script_state_);
   bool wrote_value;
   if (!serializer_.WriteValue(script_state_->GetContext(), value)
            .To(&wrote_value)) {
@@ -350,7 +363,7 @@ void V8ScriptValueSerializer::FinalizeTransfer(
     }
   } promptly_free_array_buffers{&array_buffers};
   if (transferables_)
-    array_buffers.AppendVector(transferables_->array_buffers);
+    array_buffers.append_range(transferables_->array_buffers);
 
   if (!array_buffers.empty()) {
     serialized_script_value_->TransferArrayBuffers(isolate, array_buffers,
@@ -360,6 +373,12 @@ void V8ScriptValueSerializer::FinalizeTransfer(
   }
 
   if (transferables_) {
+    serialized_script_value_->TransferElementImages(
+        isolate, transferables_->element_images, exception_state);
+    if (exception_state.HadException()) {
+      return;
+    }
+
     serialized_script_value_->TransferImageBitmaps(
         isolate, transferables_->image_bitmaps, exception_state);
     if (exception_state.HadException())
@@ -443,6 +462,29 @@ bool V8ScriptValueSerializer::WriteDOMObject(ScriptWrappable* wrappable,
         return false;
     }
     return true;
+  }
+  if (auto* element_image = dispatcher.ToMostDerived<ElementImage>()) {
+    if (!element_image->PaintRecord()) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kDataCloneError,
+          "An ElementImage is closed and could not be cloned.");
+      return false;
+    }
+
+    size_t index = kNotFound;
+    if (transferables_) {
+      index = transferables_->element_images.Find(element_image);
+    }
+    if (index != kNotFound) {
+      DCHECK_LE(index, std::numeric_limits<uint32_t>::max());
+      WriteAndRequireInterfaceTag(kElementImageTransferTag);
+      WriteUint32(static_cast<uint32_t>(index));
+      return true;
+    }
+
+    exception_state.ThrowDOMException(DOMExceptionCode::kDataCloneError,
+                                      "An ElementImage could not be cloned.");
+    return false;
   }
   if (auto* image_bitmap = dispatcher.ToMostDerived<ImageBitmap>()) {
     if (image_bitmap->IsNeutered()) {

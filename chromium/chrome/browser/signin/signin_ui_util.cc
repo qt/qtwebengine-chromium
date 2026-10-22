@@ -5,12 +5,10 @@
 #include "chrome/browser/signin/signin_ui_util.h"
 
 #include "base/auto_reset.h"
-#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
@@ -156,7 +154,7 @@ std::u16string GetAuthenticatedUsername(Profile* profile) {
         identity_manager->GetPrimaryAccountInfo(signin::ConsentLevel::kSignin)
             .email;
 #if BUILDFLAG(IS_CHROMEOS)
-    // See https://crbug.com/994798 for details.
+    // See https://crbug.com/40640779 for details.
     user_manager::User* user =
         ash::ProfileHelper::Get()->GetUserByProfile(profile);
     // |user| may be null in tests.
@@ -254,7 +252,6 @@ void ShowSigninPromptFromPromo(Profile* profile,
 #if BUILDFLAG(IS_CHROMEOS)
   NOTREACHED();
 #elif BUILDFLAG(ENABLE_DICE_SUPPORT)
-  CHECK_NE(signin_metrics::AccessPoint::kUnknown, access_point);
   CHECK(!profile->IsOffTheRecord());
 
   signin::IdentityManager* identity_manager =
@@ -275,7 +272,6 @@ void SignInFromSingleAccountPromo(Profile* profile,
                                   const CoreAccountInfo& account,
                                   signin_metrics::AccessPoint access_point) {
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  DCHECK_NE(signin_metrics::AccessPoint::kUnknown, access_point);
   DCHECK(!profile->IsOffTheRecord());
 
   signin::IdentityManager* identity_manager =
@@ -344,7 +340,6 @@ void EnableSyncFromMultiAccountPromo(Profile* profile,
                                      signin_metrics::AccessPoint access_point,
                                      bool is_default_promo_account) {
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  DCHECK_NE(signin_metrics::AccessPoint::kUnknown, access_point);
   DCHECK(!profile->IsOffTheRecord());
 
   signin::IdentityManager* identity_manager =
@@ -391,8 +386,7 @@ void EnableSyncFromMultiAccountPromo(Profile* profile,
                                               existing_account_promo_action);
   signin_metrics::RecordSigninUserActionForAccessPoint(access_point);
 
-  if (base::FeatureList::IsEnabled(
-          syncer::kReplaceSyncPromosWithSignInPromos)) {
+  if (syncer::IsReplaceSyncPromosWithSignInPromosEnabled()) {
     if (!identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSignin)) {
       identity_manager->GetPrimaryAccountMutator()->SetPrimaryAccount(
           account.account_id, signin::ConsentLevel::kSignin, access_point);

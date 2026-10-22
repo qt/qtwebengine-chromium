@@ -4,13 +4,12 @@
 
 import type * as Protocol from '../../generated/protocol.js';
 import * as Common from '../common/common.js';
+import * as Root from '../root/root.js';
 
 import type {Resource} from './Resource.js';
 import {Events as ResourceTreeModelEvents, type ResourceTreeFrame, ResourceTreeModel} from './ResourceTreeModel.js';
 import type {Target} from './Target.js';
 import {type SDKModelObserver, TargetManager} from './TargetManager.js';
-
-let frameManagerInstance: FrameManager|null = null;
 
 /**
  * The FrameManager is a central storage for all #frames. It collects #frames from all
@@ -37,22 +36,22 @@ export class FrameManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
   }>();
   #awaitedFrames = new Map<string, Array<{resolve: (frame: ResourceTreeFrame) => void, notInTarget?: Target}>>();
 
-  constructor() {
+  constructor(targetManager: TargetManager) {
     super();
-    TargetManager.instance().observeModels(ResourceTreeModel, this);
+    targetManager.observeModels(ResourceTreeModel, this);
   }
 
   static instance({forceNew}: {
     forceNew: boolean,
   } = {forceNew: false}): FrameManager {
-    if (!frameManagerInstance || forceNew) {
-      frameManagerInstance = new FrameManager();
+    if (!Root.DevToolsContext.globalInstance().has(FrameManager) || forceNew) {
+      Root.DevToolsContext.globalInstance().set(FrameManager, new FrameManager(TargetManager.instance()));
     }
-    return frameManagerInstance;
+    return Root.DevToolsContext.globalInstance().get(FrameManager);
   }
 
   static removeInstance(): void {
-    frameManagerInstance = null;
+    Root.DevToolsContext.globalInstance().delete(FrameManager);
   }
 
   modelAdded(resourceTreeModel: ResourceTreeModel): void {

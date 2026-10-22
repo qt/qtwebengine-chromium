@@ -472,6 +472,86 @@ This also means that, unless specified, if the function \c std::foo is available
   <td></td>
 </tr>
 <tr>
+  <td class="code">
+  \anchor cwisetable_less
+  a.\c operator<(b); \n
+  a.\c operator<(s);
+  </td>
+  <td>coefficient-wise less than comparison (\f$ a_i \lt b_i \f$). \n
+  \c a and \c b can be either an array or scalar.</td>
+  <td class="code">
+  a[i] < b[i];
+  </td>
+  <td></td>
+</tr>
+<tr>
+  <td class="code">
+  \anchor cwisetable_less_equal
+  a.\c operator<=(b); \n
+  a.\c operator<=(s);
+  </td>
+  <td>coefficient-wise less than or equal comparison (\f$ a_i \le b_i \f$). \n
+  \c a and \c b can be either an array or scalar.</td>
+  <td class="code">
+  a[i] <= b[i];
+  </td>
+  <td></td>
+</tr>
+<tr>
+  <td class="code">
+  \anchor cwisetable_greater
+  a.\c operator>(b); \n
+  a.\c operator>(s);
+  </td>
+  <td>coefficient-wise greater than comparison (\f$ a_i \gt b_i \f$). \n
+  \c a and \c b can be either an array or scalar.</td>
+  <td class="code">
+  a[i] > b[i];
+  </td>
+  <td></td>
+</tr>
+<tr>
+  <td class="code">
+  \anchor cwisetable_greater_equal
+  a.\c operator>=(b); \n
+  a.\c operator>=(s);
+  </td>
+  <td>coefficient-wise greater than or equal comparison (\f$ a_i \ge b_i \f$). \n
+  \c a and \c b can be either an array or scalar.</td>
+  <td class="code">
+  a[i] >= b[i];
+  </td>
+  <td></td>
+</tr>
+<tr>
+  <td class="code">
+  \anchor cwisetable_equal
+  a.\c operator==(b); \n
+  a.\c operator==(s);
+  </td>
+  <td>coefficient-wise equality comparison (\f$ a_i = b_i \f$). \n
+  \c a and \c b can be either an array or scalar. \n
+  \warning Performs exact comparison; prefer \c isApprox() for floating-point types.</td>
+  <td class="code">
+  a[i] == b[i];
+  </td>
+  <td></td>
+</tr>
+<tr>
+  <td class="code">
+  \anchor cwisetable_not_equal
+  a.\c operator!=(b); \n
+  a.\c operator!=(s);
+  </td>
+  <td>coefficient-wise not-equal comparison (\f$ a_i \ne b_i \f$). \n
+  \c a and \c b can be either an array or scalar. \n
+  \warning Performs exact comparison; prefer \c isApprox() for floating-point types.</td>
+  <td class="code">
+  a[i] != b[i];
+  </td>
+  <td></td>
+</tr>
+<tr>
 <th colspan="4">Error and gamma functions</th>
 </tr>
 <tr> <td colspan="4">  Require \c \#include \c <unsupported/Eigen/SpecialFunctions> </td></tr>
@@ -572,7 +652,7 @@ This also means that, unless specified, if the function \c std::foo is available
   \anchor cwisetable_betainc
   betainc(a,b,x);
   </td>
-  <td><a href="https://en.wikipedia.org/wiki/Beta_function#Incomplete_beta_function">Incomplete beta function</a></td>
+  <td><a href="https://en.wikipedia.org/wiki/Beta_function#Incomplete_beta_function">regularized incomplete beta function</a></td>
   <td>
   built-in for float and double,\n but requires \cpp11
   </td>
@@ -607,6 +687,133 @@ This also means that, unless specified, if the function \c std::foo is available
 </table>
 
 \n
+
+\section CoeffwiseMathFunctionsAccuracy Accuracy of vectorized math functions
+
+The following tables summarize the accuracy of %Eigen's vectorized implementations measured
+in units of ULP (Unit in the Last Place) on an x86-64 system (Intel Xeon, GCC) with SSE2 SIMD
+target. The reference values were computed using
+<a href="https://www.mpfr.org/">MPFR</a> at 128-bit precision.
+Float results are exhaustive over all ~4.28 billion finite representable values.
+Double results sample ~2.88 billion values using a geometric stepping factor of 10<sup>-6</sup>.
+
+These numbers may differ for other SIMD targets (AVX, AVX512, NEON, SVE, etc.)
+since each has its own packet math implementations. Functions marked "delegates to std"
+do not have a custom vectorized implementation for the tested SIMD target &mdash; they call
+the standard library function element-by-element.
+
+The full histograms for each function can be generated with the \c ulp_accuracy tool
+in <tt>test/ulp_accuracy/</tt>.
+
+\subsection CoeffwiseMathFunctionsAccuracy_float Float precision
+
+<table class="manual-hl">
+<tr><th>Function</th><th>Max |ULP|</th><th>Mean |ULP|</th><th>% Exact</th><th>Notes</th></tr>
+<tr><th colspan="5">Trigonometric</th></tr>
+<tr><td>sin</td>  <td>2</td>  <td>0.087</td> <td>91.3%</td> <td>\ref CoeffwiseMathFunctionsAccuracy_note1 "1"</td></tr>
+<tr><td>cos</td>  <td>2</td>  <td>0.088</td> <td>91.2%</td> <td>\ref CoeffwiseMathFunctionsAccuracy_note1 "1"</td></tr>
+<tr><td>tan</td>  <td>5</td>  <td>0.238</td> <td>77.3%</td> <td>\ref CoeffwiseMathFunctionsAccuracy_note1 "1"</td></tr>
+<tr><td>asin</td> <td>4</td>  <td>0.726</td> <td>51.3%</td> <td></td></tr>
+<tr><td>acos</td> <td>4</td>  <td>0.057</td> <td>95.0%</td> <td></td></tr>
+<tr><td>atan</td> <td>4</td>  <td>0.061</td> <td>94.0%</td> <td></td></tr>
+<tr><th colspan="5">Hyperbolic</th></tr>
+<tr><td>sinh</td>  <td>2</td>  <td>0.017</td> <td>98.3%</td> <td></td></tr>
+<tr><td>cosh</td>  <td>2</td>  <td>0.004</td> <td>99.6%</td> <td></td></tr>
+<tr><td>tanh</td>  <td>6</td>  <td>0.030</td> <td>97.2%</td> <td></td></tr>
+<tr><td>asinh</td> <td>2</td>  <td>0.145</td> <td>85.5%</td> <td></td></tr>
+<tr><td>acosh</td> <td>2</td>  <td>0.057</td> <td>94.3%</td> <td></td></tr>
+<tr><td>atanh</td> <td>2</td>  <td>0.004</td> <td>99.6%</td> <td></td></tr>
+<tr><th colspan="5">Exponential / Logarithmic</th></tr>
+<tr><td>exp</td>   <td>1</td>  <td>0.018</td> <td>98.2%</td> <td></td></tr>
+<tr><td>exp2</td>  <td>6</td>  <td>0.034</td> <td>97.3%</td> <td></td></tr>
+<tr><td>expm1</td> <td>5</td>  <td>0.060</td> <td>94.6%</td> <td></td></tr>
+<tr><td>log</td>   <td>3</td>  <td>0.120</td> <td>88.0%</td> <td></td></tr>
+<tr><td>log1p</td> <td>5</td>  <td>0.134</td> <td>87.5%</td> <td></td></tr>
+<tr><td>log10</td> <td>2</td>  <td>0.007</td> <td>99.3%</td> <td></td></tr>
+<tr><td>log2</td>  <td>5</td>  <td>0.005</td> <td>99.5%</td> <td></td></tr>
+<tr><th colspan="5">Error / Special</th></tr>
+<tr><td>erf</td>      <td>7</td>     <td>0.332</td> <td>67.5%</td> <td></td></tr>
+<tr><td>erfc</td>     <td>8</td>     <td>0.010</td> <td>99.2%</td> <td></td></tr>
+<tr><td>lgamma</td>   <td colspan="3"><em>delegates to std</em></td> <td>\ref CoeffwiseMathFunctionsAccuracy_note3 "3"</td></tr>
+<tr><th colspan="5">Other</th></tr>
+<tr><td>logistic</td> <td>7</td>     <td>0.040</td> <td>97.0%</td> <td></td></tr>
+<tr><td>sqrt</td>     <td>0</td>     <td>0.000</td> <td>100%</td>  <td>Uses hardware sqrt</td></tr>
+<tr><td>cbrt</td>     <td>2</td>     <td>0.552</td> <td>49.1%</td> <td></td></tr>
+<tr><td>rsqrt</td>    <td>&infin;</td> <td>0.114</td> <td>88.2%</td> <td>\ref CoeffwiseMathFunctionsAccuracy_note4 "4"</td></tr>
+</table>
+
+\subsection CoeffwiseMathFunctionsAccuracy_double Double precision
+
+<table class="manual-hl">
+<tr><th>Function</th><th>Max |ULP|</th><th>Mean |ULP|</th><th>% Exact</th><th>Notes</th></tr>
+<tr><th colspan="5">Trigonometric</th></tr>
+<tr><td>sin</td>  <td>13,879,755</td> <td>0.093</td> <td>93.2%</td> <td>\ref CoeffwiseMathFunctionsAccuracy_note1 "1"</td></tr>
+<tr><td>cos</td>  <td>2,024,130</td>  <td>0.043</td> <td>98.2%</td> <td>\ref CoeffwiseMathFunctionsAccuracy_note1 "1"</td></tr>
+<tr><td>tan</td>  <td>13,879,755</td> <td>0.128</td> <td>92.7%</td> <td>\ref CoeffwiseMathFunctionsAccuracy_note1 "1"</td></tr>
+<tr><td>asin</td> <td>1</td>          <td>&lt;0.001</td> <td>&gt;99.9%</td> <td></td></tr>
+<tr><td>acos</td> <td>1</td>          <td>&lt;0.001</td> <td>100%</td> <td></td></tr>
+<tr><td>atan</td> <td>5</td>          <td>0.013</td> <td>98.8%</td> <td></td></tr>
+<tr><th colspan="5">Hyperbolic</th></tr>
+<tr><td>sinh</td>  <td>2</td>  <td>0.004</td> <td>99.6%</td> <td></td></tr>
+<tr><td>cosh</td>  <td>2</td>  <td>0.001</td> <td>99.9%</td> <td></td></tr>
+<tr><td>tanh</td>  <td>8</td>  <td>0.008</td> <td>99.3%</td> <td></td></tr>
+<tr><td>asinh</td> <td>2</td>  <td>0.098</td> <td>90.2%</td> <td></td></tr>
+<tr><td>acosh</td> <td>2</td>  <td>0.047</td> <td>95.3%</td> <td></td></tr>
+<tr><td>atanh</td> <td>2</td>  <td>&lt;0.001</td> <td>&gt;99.9%</td> <td></td></tr>
+<tr><th colspan="5">Exponential / Logarithmic</th></tr>
+<tr><td>exp</td>   <td>2</td>   <td>0.001</td> <td>99.9%</td> <td></td></tr>
+<tr><td>exp2</td>  <td>214</td> <td>0.107</td> <td>99.6%</td> <td>\ref CoeffwiseMathFunctionsAccuracy_note2 "2"</td></tr>
+<tr><td>expm1</td> <td>3</td>   <td>0.010</td> <td>99.1%</td> <td></td></tr>
+<tr><td>log</td>   <td>2</td>   <td>0.147</td> <td>85.3%</td> <td></td></tr>
+<tr><td>log1p</td> <td>3</td>   <td>0.097</td> <td>90.6%</td> <td></td></tr>
+<tr><td>log10</td> <td>2</td>   <td>0.001</td> <td>99.9%</td> <td></td></tr>
+<tr><td>log2</td>  <td>2</td>   <td>&lt;0.001</td> <td>99.9%</td> <td></td></tr>
+<tr><th colspan="5">Error / Special</th></tr>
+<tr><td>erf</td>      <td>&infin;</td> <td>0.050</td> <td>70.5%</td> <td>\ref CoeffwiseMathFunctionsAccuracy_note5 "5"</td></tr>
+<tr><td>erfc</td>     <td>11</td>      <td>0.002</td> <td>99.9%</td> <td></td></tr>
+<tr><td>lgamma</td>   <td colspan="3"><em>delegates to std</em></td> <td>\ref CoeffwiseMathFunctionsAccuracy_note3 "3"</td></tr>
+<tr><th colspan="5">Other</th></tr>
+<tr><td>logistic</td> <td>3</td>       <td>0.008</td> <td>99.2%</td> <td></td></tr>
+<tr><td>sqrt</td>     <td>0</td>       <td>0.000</td> <td>100%</td>  <td>Uses hardware sqrt</td></tr>
+<tr><td>cbrt</td>     <td>2</td>       <td>0.119</td> <td>88.1%</td> <td></td></tr>
+<tr><td>rsqrt</td>    <td>&infin;</td> <td>0.135</td> <td>86.5%</td> <td>\ref CoeffwiseMathFunctionsAccuracy_note4 "4"</td></tr>
+</table>
+
+\subsection CoeffwiseMathFunctionsAccuracy_notes Notes
+
+\anchor CoeffwiseMathFunctionsAccuracy_note1
+<b>1. sin/cos/tan argument reduction:</b>
+%Eigen's vectorized sin, cos, and tan use a Cody-Waite argument reduction scheme that
+subtracts multiples of &pi;/2 from the input. For very large arguments (|x| &gt; ~10<sup>4</sup>
+in float, |x| &gt; ~10 in double), this reduction loses precision, producing
+occasional large ULP errors. The mean error remains low because most representable
+values are small. Applications that need high accuracy for large arguments should
+perform argument reduction in user code before calling these functions.
+
+\anchor CoeffwiseMathFunctionsAccuracy_note2
+<b>2. exp2 double precision:</b>
+The exp2 implementation for double shows a max error of 214 ULP near the overflow
+boundary (x &asymp; 1022). The mean error is still low (0.107 ULP, 99.6% exact), so
+the large max error affects only inputs very close to overflow.
+
+\anchor CoeffwiseMathFunctionsAccuracy_note3
+<b>3. lgamma:</b>
+The vectorized lgamma delegates to the standard library function \c std::lgamma for
+this SIMD target (SSE2) and therefore has the same accuracy as the platform's C math library.
+
+\anchor CoeffwiseMathFunctionsAccuracy_note4
+<b>4. rsqrt max=&infin;:</b>
+The infinite max ULP is due to a sign disagreement at a single subnormal input:
+rsqrt(-0) returns -&infin; in %Eigen but the MPFR reference produces NaN (rsqrt of a negative
+value). Ignoring this edge case, the implementation is accurate (&lt; 2 ULP) everywhere else.
+For float, 16.8 million subnormal negative inputs (0.4%) also produce &plusmn;&infin; vs NaN.
+The mean error excluding these outliers is well below 1 ULP.
+
+\anchor CoeffwiseMathFunctionsAccuracy_note5
+<b>5. erf double &infin;:</b>
+The vectorized erf for double returns NaN for &plusmn;&infin; instead of the correct &plusmn;1.
+This produces an infinite max ULP error at a single input value. Excluding &plusmn;&infin;,
+the max error is 3 ULP and the mean is 0.050 ULP.
 
 */
 

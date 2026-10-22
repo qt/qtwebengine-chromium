@@ -251,23 +251,6 @@ gpu::ContextUrl& GetActiveUrl() {
   return *active_url;
 }
 
-scoped_refptr<gpu::raster::GraphiteCacheController>
-GetOrCreateGraphiteCacheController(skgpu::graphite::Recorder* recorder) {
-  // All SkiaOutputSurfaceImpl instances on a thread share one cache controller,
-  // and the controller will be released when all SkiaOutputSurfaceImpl
-  // instances are released, so we use a sequence local WeakPtr here.
-  static base::SequenceLocalStorageSlot<
-      base::WeakPtr<gpu::raster::GraphiteCacheController>>
-      sls_weak_controller;
-  auto& weak_controller = sls_weak_controller.GetOrCreateValue();
-  if (weak_controller) {
-    return base::WrapRefCounted(weak_controller.get());
-  }
-  auto controller =
-      base::MakeRefCounted<gpu::raster::GraphiteCacheController>(recorder);
-  weak_controller = controller->AsWeakPtr();
-  return controller;
-}
 
 }  // namespace
 
@@ -929,8 +912,8 @@ void SkiaOutputSurfaceImpl::EndPaint(
         &SkiaOutputSurfaceImplOnGpu::FinishPaintCurrentFrame,
         base::Unretained(impl_on_gpu_.get()), std::move(ddl),
         std::move(overdraw_ddl), std::move(graphite_recording),
-        std::move(images_in_current_paint_), resource_sync_tokens_,
-        std::move(on_finished), std::move(return_release_fence_cb));
+        std::move(images_in_current_paint_), std::move(on_finished),
+        std::move(return_release_fence_cb));
     EnqueueGpuTask(std::move(task), std::move(resource_sync_tokens_),
                    /*make_current=*/true, /*need_framebuffer=*/true);
   } else {
@@ -938,9 +921,8 @@ void SkiaOutputSurfaceImpl::EndPaint(
         &SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass,
         base::Unretained(impl_on_gpu_.get()), current_paint_->mailbox(),
         std::move(ddl), std::move(overdraw_ddl), std::move(graphite_recording),
-        std::move(images_in_current_paint_), resource_sync_tokens_,
-        std::move(on_finished), std::move(return_release_fence_cb), update_rect,
-        is_overlay);
+        std::move(images_in_current_paint_), std::move(on_finished),
+        std::move(return_release_fence_cb), update_rect, is_overlay);
     EnqueueGpuTask(std::move(task), std::move(resource_sync_tokens_),
                    /*make_current=*/true, /*need_framebuffer=*/false);
   }
@@ -1121,11 +1103,18 @@ bool SkiaOutputSurfaceImpl::Initialize() {
     damage_of_current_buffer_.emplace();
   }
 
-  // |graphite_recorder_| is used on viz thread, so we get or create cache
-  // controller for graphite_recorder_ and use it on viz thread.
   if (graphite_recorder_) {
-    graphite_cache_controller_ =
-        GetOrCreateGraphiteCacheController(graphite_recorder_);
+    CHECK(graphite_cache_controller_weak_ptr_);
+    if (*graphite_cache_controller_weak_ptr_) {
+      graphite_cache_controller_ =
+          base::WrapRefCounted(graphite_cache_controller_weak_ptr_->get());
+    } else {
+      graphite_cache_controller_ =
+          base::MakeRefCounted<gpu::raster::GraphiteCacheController>(
+              graphite_recorder_, /*can_handle_context_resources=*/false);
+      *graphite_cache_controller_weak_ptr_ =
+          graphite_cache_controller_->AsWeakPtr();
+    }
     GraphiteVizMemoryAssistant::GetInstance().AddClient(
         graphite_recorder_, graphite_cache_controller_.get(),
         dependency_->GetClientTaskRunner());
@@ -1171,6 +1160,8 @@ void SkiaOutputSurfaceImpl::InitializeOnGpuThread(bool* result) {
     gr_context_thread_safe_ = gr_context->threadSafeProxy();
   }
   graphite_recorder_ = shared_context_state->viz_compositor_graphite_recorder();
+  graphite_cache_controller_weak_ptr_ =
+      shared_context_state->viz_compositor_graphite_cache_controller_weak_ptr();
   // On Dawn/Metal & Dawn/D3D, it is possible to use non-volatile promise images
   // as Dawn textures are cached between BeginAccess() calls on a per-usage
   // basis. Other platforms/backends cannot use non-volatile promise images as

@@ -183,7 +183,7 @@ bool Resolver::Resolve() {
     if (result && !disable_uniformity_analysis) {
         // Run the uniformity analysis, which requires a complete semantic module.
         const bool subgroup_uniformity =
-            allowed_features_.features.count(wgsl::LanguageFeature::kSubgroupUniformity);
+            allowed_features_.features.contains(wgsl::LanguageFeature::kSubgroupUniformity);
         if (!AnalyzeUniformity(b, dependencies_, subgroup_uniformity)) {
             return false;
         }
@@ -1548,6 +1548,131 @@ void Resolver::RegisterLoad(const sem::ValueExpression* expr) {
         });
 }
 
+void Resolver::RegisterBufferView(const sem::Call* call, wgsl::BuiltinFn fn) {
+    uint64_t buffer_size = 0;
+    auto* ret_type = call->Target()->ReturnType();
+    auto* ret_ptr_type = ret_type->As<core::type::Pointer>();
+    auto* ret_store_type = ret_ptr_type->StoreType();
+    if (ret_store_type->HasFixedFootprint()) {
+        buffer_size = ret_store_type->Size();
+    } else {
+        if (const auto* str_ty = ret_store_type->As<core::type::Struct>()) {
+            auto members = str_ty->Members();
+            const auto* last = members[members.Length() - 1];
+            const auto* last_type = last->Type();
+            TINT_ASSERT(last_type->Is<core::type::Array>());
+            buffer_size = last->Offset() + last_type->As<core::type::Array>()->ImplicitStride();
+        } else if (const auto* arr_ty = ret_store_type->As<core::type::Array>()) {
+            buffer_size = arr_ty->ImplicitStride();
+        }
+        // Any other type should be caught be validation as an error.
+    }
+
+    auto* offset = call->Arguments()[1];
+    auto* offset_constant_value = offset->ConstantValue();
+    uint64_t offset_value = 0;
+    if (offset_constant_value) {
+        if (offset->Type()->IsUnsignedIntegerScalar()) {
+            offset_value = offset_constant_value->ValueAs<u32>();
+        } else {
+            TINT_ASSERT(offset->Type()->IsSignedIntegerScalar());
+            int32_t ivalue = offset_constant_value->ValueAs<i32>();
+            offset_value = static_cast<uint32_t>(ivalue);
+        }
+    }
+    if (fn == wgsl::BuiltinFn::kBufferView) {
+        buffer_size += offset_value;
+    } else {
+        TINT_ASSERT(fn == wgsl::BuiltinFn::kBufferArrayView);
+        uint64_t size_value = 0;
+        auto* size = call->Arguments()[2];
+        auto* size_constant_value = size->ConstantValue();
+        if (size_constant_value) {
+            size_value = std::numeric_limits<uint32_t>::max();
+            if (size->Type()->IsUnsignedIntegerScalar()) {
+                size_value = size_constant_value->ValueAs<u32>();
+            } else {
+                TINT_ASSERT(size->Type()->IsSignedIntegerScalar());
+                int32_t ivalue = size_constant_value->ValueAs<i32>();
+                size_value = static_cast<uint32_t>(ivalue);
+            }
+        }
+        buffer_size = offset_value + std::max(size_value, buffer_size);
+    }
+
+    // Don't need to check global variables since they will be checked directly through validation.
+    if (const auto* param = call->RootIdentifier()->As<sem::Parameter>()) {
+        auto where = buffer_view_sizes_.GetOrAddEntry(param, [buffer_size, call]() {
+            BufferViewInfo info;
+            info.size = buffer_size;
+            info.source = &call->Declaration()->source;
+            return info;
+        });
+        where.value = {std::max(buffer_size, where.value.size), where.value.source};
+    }
+}
+
+bool Resolver::CheckBufferViews(const sem::Call* call) {
+    auto* target = call->Target()->As<sem::Function>();
+    if (!target) {
+        return true;
+    }
+
+    auto& args = call->Arguments();
+    for (size_t i = 0; i < args.Length(); i++) {
+        auto* arg = args[i];
+        if (!arg->Type()->Is<core::type::Pointer>()) {
+            continue;
+        }
+
+        auto* root = arg->RootIdentifier();
+        auto where = buffer_view_sizes_.Get(target->Parameters()[i]);
+        if (where) {
+            bool ret = Switch(
+                root,
+                [&](const sem::GlobalVariable* global) {
+                    const auto* ty = global->Type()->UnwrapPtrOrRef();
+                    if (const auto* buffer_ty = ty->As<core::type::Buffer>()) {
+                        auto count = buffer_ty->ConstantCount();
+                        if (count != std::nullopt && count.value() < where->size) {
+                            AddError(global->Declaration()->source)
+                                << "buffer size (" << count.value()
+                                << " bytes) is smaller than the minimum view size (" << where->size
+                                << " bytes)";
+                            AddNote(*where->source) << "due to call here";
+                            return false;
+                        }
+                    }
+                    return true;
+                },
+                [&](const sem::Parameter* param) {
+                    const auto* ty = param->Type()->UnwrapPtrOrRef();
+                    if (const auto* buffer_ty = ty->As<core::type::Buffer>()) {
+                        auto count = buffer_ty->ConstantCount();
+                        if (count != std::nullopt && count.value() < where->size) {
+                            AddError(param->Declaration()->source)
+                                << "buffer size (" << count.value()
+                                << " bytes) is smaller than the minimum view size (" << where->size
+                                << " bytes)";
+                            AddNote(*where->source) << "due to call here";
+                            return false;
+                        }
+                    }
+                    auto param_where =
+                        buffer_view_sizes_.GetOrAddEntry(param, [where]() { return *where; });
+                    param_where.value = {std::max(param_where.value.size, where->size),
+                                         where->source};
+                    return true;
+                });
+            if (!ret) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 bool Resolver::AliasAnalysis(const sem::Call* call) {
     auto* target = call->Target()->As<sem::Function>();
     if (!target) {
@@ -1741,7 +1866,7 @@ const sem::ValueExpression* Resolver::Materialize(
     auto* decl = expr->Declaration();
 
     auto* concrete_ty = ConcreteType(expr->Type(), target_type, decl->source);
-    if (!concrete_ty) {
+    if (!concrete_ty || concrete_ty->DeepestElement()->Is<core::type::AbstractNumeric>()) {
         return expr;  // Does not require materialization
     }
 
@@ -1776,31 +1901,17 @@ const sem::ValueExpression* Resolver::Materialize(
 }
 
 template <size_t N>
-bool Resolver::MaybeMaterializeAndLoadArguments(Vector<const sem::ValueExpression*, N>& args,
-                                                const sem::CallTarget* target) {
+bool Resolver::MaybeMaterializeArguments(Vector<const sem::ValueExpression*, N>& args,
+                                         const sem::CallTarget* target) {
     for (size_t i = 0, n = std::min(args.Length(), target->Parameters().Length()); i < n; i++) {
         const auto* param_ty = target->Parameters()[i]->Type();
-        if (ShouldMaterializeArgument(param_ty)) {
-            auto* materialized = Materialize(args[i], param_ty);
-            if (!materialized) {
-                return false;
-            }
-            args[i] = materialized;
+        auto* materialized = Materialize(args[i], param_ty);
+        if (!materialized) {
+            return false;
         }
-        if (!param_ty->Is<core::type::Reference>()) {
-            auto* load = Load(args[i]);
-            if (!load) {
-                return false;
-            }
-            args[i] = load;
-        }
+        args[i] = materialized;
     }
     return true;
-}
-
-bool Resolver::ShouldMaterializeArgument(const core::type::Type* parameter_ty) const {
-    const auto* param_el_ty = parameter_ty->DeepestElement();
-    return (param_el_ty != nullptr) && !param_el_ty->Is<core::type::AbstractNumeric>();
 }
 
 bool Resolver::Convert(const core::constant::Value*& c,
@@ -1865,8 +1976,7 @@ sem::ValueExpression* Resolver::IndexAccessor(const ast::IndexAccessorExpression
     const core::type::Type* storage_ty = object_ty->UnwrapRef();
     if (memory_view) {
         if (memory_view->Is<core::type::Pointer>() &&
-            (allowed_features_.features.count(wgsl::LanguageFeature::kPointerCompositeAccess) ==
-             0u)) {
+            !allowed_features_.features.contains(wgsl::LanguageFeature::kPointerCompositeAccess)) {
             AddError(expr->source)
                 << "pointer composite access requires the pointer_composite_access language "
                    "feature, which is not allowed in the current environment";
@@ -1898,9 +2008,7 @@ sem::ValueExpression* Resolver::IndexAccessor(const ast::IndexAccessorExpression
         return nullptr;
     }
 
-    // If we're extracting from a memory view, we return a reference.
-    // TODO(crbug.com/477280751): The swizzle view exception preserves some existing buggy behavior
-    // in single element swizzle of a swizzle assignment, but this should be fixed in a follow up.
+    // If we're extracting from a memory view that will need to be loaded, we return a reference.
     if (memory_view && !memory_view->Is<core::type::SwizzleView>()) {
         ty =
             b.create<core::type::Reference>(memory_view->AddressSpace(), ty, memory_view->Access());
@@ -1941,7 +2049,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
     args.Reserve(expr->args.Length());
     auto args_stage = core::EvaluationStage::kConstant;
     for (size_t i = 0; i < expr->args.Length(); i++) {
-        auto* arg = sem_.GetVal(expr->args[i]);
+        const auto* arg = Load(sem_.GetVal(expr->args[i]));
         if (!arg) {
             return nullptr;
         }
@@ -1953,13 +2061,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
     // sem::ValueConversion call for a CtorConvIntrinsic with an optional template argument type.
     auto ctor_or_conv = [&](CtorConvIntrinsic ty,
                             VectorRef<const core::type::Type*> template_args) -> sem::Call* {
-        auto arg_tys = tint::Transform(args, [&](auto* arg) -> const core::type::Type* {
-            // Use the swizzle result type as the arg type for intrinsic lookup.
-            if (auto* swizzle_view = arg->Type()->template As<core::type::SwizzleView>()) {
-                return swizzle_view->StoreType();
-            }
-            return arg->Type()->UnwrapRef();
-        });
+        auto arg_tys = tint::Transform(args, [&](auto* arg) { return arg->Type(); });
 
         auto match = intrinsic_table_.Lookup(ty, template_args, arg_tys, args_stage);
         if (match != Success) {
@@ -1992,7 +2094,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             });
         }
 
-        if (!MaybeMaterializeAndLoadArguments(args, target_sem)) {
+        if (!MaybeMaterializeArguments(args, target_sem)) {
             return nullptr;
         }
 
@@ -2086,7 +2188,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                         return b.create<sem::ValueConstructor>(arr, std::move(params), args_stage);
                     });
 
-                if (DAWN_UNLIKELY(!MaybeMaterializeAndLoadArguments(args, call_target))) {
+                if (DAWN_UNLIKELY(!MaybeMaterializeArguments(args, call_target))) {
                     return nullptr;
                 }
 
@@ -2111,7 +2213,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                         return b.create<sem::ValueConstructor>(str, std::move(params), args_stage);
                     });
 
-                if (DAWN_UNLIKELY(!MaybeMaterializeAndLoadArguments(args, call_target))) {
+                if (DAWN_UNLIKELY(!MaybeMaterializeArguments(args, call_target))) {
                     return nullptr;
                 }
 
@@ -2141,7 +2243,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
                                                                core::EvaluationStage::kRuntime);
                     });
 
-                if (DAWN_UNLIKELY(!MaybeMaterializeAndLoadArguments(args, call_target))) {
+                if (DAWN_UNLIKELY(!MaybeMaterializeArguments(args, call_target))) {
                     return nullptr;
                 }
 
@@ -2195,8 +2297,7 @@ sem::Call* Resolver::Call(const ast::CallExpression* expr) {
             case core::BuiltinType::kArray: {
                 auto el_count =
                     b.create<core::type::ConstantArrayCount>(static_cast<uint32_t>(args.Length()));
-                auto arg_tys =
-                    tint::Transform(args, [](auto* arg) { return arg->Type()->UnwrapRef(); });
+                auto arg_tys = tint::Transform(args, [](auto* arg) { return arg->Type(); });
                 auto el_ty = core::type::Type::Common(arg_tys);
                 if (DAWN_UNLIKELY(!el_ty)) {
                     AddError(expr->source)
@@ -2278,13 +2379,7 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
         }
     }
 
-    auto arg_tys = tint::Transform(args, [&](auto* arg) -> const core::type::Type* {
-        // Use the swizzle result type as the arg type for intrinsic lookup.
-        if (auto* swizzle_view = arg->Type()->template As<core::type::SwizzleView>()) {
-            return swizzle_view->StoreType();
-        }
-        return arg->Type()->UnwrapRef();
-    });
+    auto arg_tys = tint::Transform(args, [&](auto* arg) { return arg->Type(); });
 
     auto overload = intrinsic_table_.Lookup(fn, tmpl_args, arg_tys, arg_stage);
     if (overload != Success) {
@@ -2314,16 +2409,9 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
                                         supported_stages, *overload->info);
     });
 
-    if (fn == wgsl::BuiltinFn::kTintMaterialize) {
-        args[0] = Materialize(args[0]);
-        if (!args[0]) {
-            return nullptr;
-        }
-    } else {
-        // Materialize arguments if the parameter type is not abstract
-        if (!MaybeMaterializeAndLoadArguments(args, target)) {
-            return nullptr;
-        }
+    // Materialize arguments if the parameter type is not abstract
+    if (!MaybeMaterializeArguments(args, target)) {
+        return nullptr;
     }
 
     if (target->IsDeprecated()) {
@@ -2361,9 +2449,10 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
         value = r.Get();
     }
 
-    // If the builtin is bufferView, set the root identifier based on the first argument.
+    // If the builtin is bufferView or bufferArrayView, set the root identifier based on the first
+    // argument.
     const sem::Variable* root_ident = nullptr;
-    if (fn == wgsl::BuiltinFn::kBufferView) {
+    if (fn == wgsl::BuiltinFn::kBufferView || fn == wgsl::BuiltinFn::kBufferArrayView) {
         root_ident = args[0]->RootIdentifier();
     }
     auto* call = b.create<sem::Call>(expr, target, stage, std::move(args), current_statement_,
@@ -2421,6 +2510,8 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
         case wgsl::BuiltinFn::kAtomicSub:
         case wgsl::BuiltinFn::kAtomicMax:
         case wgsl::BuiltinFn::kAtomicMin:
+        case wgsl::BuiltinFn::kAtomicStoreMax:
+        case wgsl::BuiltinFn::kAtomicStoreMin:
         case wgsl::BuiltinFn::kAtomicAnd:
         case wgsl::BuiltinFn::kAtomicOr:
         case wgsl::BuiltinFn::kAtomicXor:
@@ -2437,7 +2528,9 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
             RegisterStore(args[0]);
             break;
 
-        case wgsl::BuiltinFn::kBufferView: {
+        case wgsl::BuiltinFn::kBufferView:
+        case wgsl::BuiltinFn::kBufferArrayView: {
+            RegisterBufferView(call, fn);
             auto address_space =
                 call->Target()->ReturnType()->template As<core::type::Pointer>()->AddressSpace();
             auto* store_type =
@@ -2452,7 +2545,6 @@ sem::Call* Resolver::BuiltinCall(const ast::CallExpression* expr,
             }
             break;
         }
-
         default:
             break;
     }
@@ -3046,13 +3138,6 @@ const core::type::SampledTexture* Resolver::SampledTexture(const ast::Identifier
         if (DAWN_UNLIKELY(filterable == core::TextureFilterable::kUndefined)) {
             return nullptr;
         }
-
-        if (!ty_expr->IsAnyOf<core::type::F32, core::type::F16>()) {
-            AddError(tmpl_ident->arguments[1]->source)
-                << "texture filterability only applies to float textures, got '"
-                << sem_.TypeNameOf(ty_expr) << "'";
-            return nullptr;
-        }
     }
 
     auto* out = b.create<core::type::SampledTexture>(dim, ty_expr, filterable);
@@ -3263,7 +3348,7 @@ sem::Call* Resolver::FunctionCall(const ast::CallExpression* expr,
                                   sem::Function* target,
                                   VectorRef<const sem::ValueExpression*> args_in) {
     Vector<const sem::ValueExpression*, 8> args = std::move(args_in);
-    if (!MaybeMaterializeAndLoadArguments(args, target)) {
+    if (!MaybeMaterializeArguments(args, target)) {
         return nullptr;
     }
 
@@ -3295,6 +3380,9 @@ sem::Call* Resolver::FunctionCall(const ast::CallExpression* expr,
         }
 
         if (!AliasAnalysis(call)) {
+            return nullptr;
+        }
+        if (!CheckBufferViews(call)) {
             return nullptr;
         }
     }
@@ -3550,8 +3638,7 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
     const core::type::Type* storage_ty = object_ty->UnwrapRef();
     if (memory_view) {
         if (memory_view->Is<core::type::Pointer>() &&
-            (allowed_features_.features.count(wgsl::LanguageFeature::kPointerCompositeAccess) ==
-             0u)) {
+            !allowed_features_.features.contains(wgsl::LanguageFeature::kPointerCompositeAccess)) {
             AddError(expr->source)
                 << "pointer composite access requires the pointer_composite_access language "
                    "feature, which is not allowed in the current environment";
@@ -3655,13 +3742,20 @@ sem::ValueExpression* Resolver::MemberAccessor(const ast::MemberAccessorExpressi
             if (size == 1) {
                 // A single element swizzle is just the type of the vector.
                 ty = vec->Type();
-                // If we're extracting from a memory view, we return a reference.
-                // TODO(crbug.com/477280751): The swizzle view exception preserves some existing
-                // buggy behavior in single element swizzle of a swizzle assignment, but this should
-                // be fixed in a follow up.
+
+                // If we're extracting from a memory view that will need to be loaded, we return a
+                // reference.
                 if (memory_view && !memory_view->Is<core::type::SwizzleView>()) {
                     ty = b.create<core::type::Reference>(memory_view->AddressSpace(), ty,
                                                          memory_view->Access());
+                } else if (memory_view && memory_view->Is<core::type::SwizzleView>() &&
+                           allowed_features_.features.contains(
+                               wgsl::LanguageFeature::kSwizzleAssignment)) {
+                    // If the swizzle assignment language feature is enabled, a single element
+                    // swizzle into a swizzle view must also be a swizzle view.
+                    ty = b.create<core::type::SwizzleView>(memory_view->AddressSpace(), ty,
+                                                           memory_view->Access(), vec->Width(),
+                                                           static_cast<uint32_t>(size));
                 }
             } else {
                 if (memory_view) {
@@ -3716,8 +3810,7 @@ sem::ValueExpression* Resolver::Binary(const ast::BinaryExpression* expr) {
     }
 
     auto stage = core::EarliestStage(lhs->Stage(), rhs->Stage());
-    auto overload = intrinsic_table_.Lookup(expr->op, lhs->Type()->UnwrapRef(),
-                                            rhs->Type()->UnwrapRef(), stage, false);
+    auto overload = intrinsic_table_.Lookup(expr->op, lhs->Type(), rhs->Type(), stage, false);
     if (overload != Success) {
         AddError(expr->source) << overload.Failure();
         return nullptr;
@@ -3728,17 +3821,13 @@ sem::ValueExpression* Resolver::Binary(const ast::BinaryExpression* expr) {
     // Parameter types
     auto* lhs_ty = overload->parameters[0].type;
     auto* rhs_ty = overload->parameters[1].type;
-    if (ShouldMaterializeArgument(lhs_ty)) {
-        lhs = Materialize(lhs, lhs_ty);
-        if (!lhs) {
-            return nullptr;
-        }
+    lhs = Materialize(lhs, lhs_ty);
+    if (!lhs) {
+        return nullptr;
     }
-    if (ShouldMaterializeArgument(rhs_ty)) {
-        rhs = Materialize(rhs, rhs_ty);
-        if (!rhs) {
-            return nullptr;
-        }
+    rhs = Materialize(rhs, rhs_ty);
+    if (!rhs) {
+        return nullptr;
     }
 
     if (!validator_.BinaryExpression(expr, expr->op, lhs, rhs)) {
@@ -3842,33 +3931,24 @@ sem::ValueExpression* Resolver::UnaryOp(const ast::UnaryOpExpression* unary) {
             break;
 
         default: {
-            stage = expr->Stage();
-            auto* arg_ty = expr_ty->UnwrapRef();
-            // Use the swizzle result type as the arg type for intrinsic lookup.
-            if (auto* swizzle_view = expr_ty->As<core::type::SwizzleView>()) {
-                arg_ty = swizzle_view->StoreType();
-            }
-            auto overload = intrinsic_table_.Lookup(unary->op, arg_ty, stage);
-            if (overload != Success) {
-                AddError(unary->source) << overload.Failure();
-                return nullptr;
-            }
-            ty = overload->return_type;
-            auto* param_ty = overload->parameters[0].type;
-            if (ShouldMaterializeArgument(param_ty)) {
-                expr = Materialize(expr, param_ty);
-                if (!expr) {
-                    return nullptr;
-                }
-            }
-
-            // Load expr if it is a reference
             expr = Load(expr);
             if (!expr) {
                 return nullptr;
             }
 
             stage = expr->Stage();
+            auto overload = intrinsic_table_.Lookup(unary->op, expr->Type(), stage);
+            if (overload != Success) {
+                AddError(unary->source) << overload.Failure();
+                return nullptr;
+            }
+            ty = overload->return_type;
+            auto* param_ty = overload->parameters[0].type;
+            expr = Materialize(expr, param_ty);
+            if (!expr) {
+                return nullptr;
+            }
+
             if (stage == core::EvaluationStage::kConstant) {
                 if (auto const_eval_fn = overload->const_eval_fn) {
                     auto r = (const_eval_.*const_eval_fn)(ty, Vector{expr->ConstantValue()},
@@ -4231,7 +4311,7 @@ bool Resolver::Enable(const ast::Enable* enable) {
     for (auto* ext : enable->extensions) {
         Mark(ext);
         enabled_extensions_.Add(ext->name);
-        if (!allowed_features_.extensions.count(ext->name)) {
+        if (!allowed_features_.extensions.contains(ext->name)) {
             AddError(ext->source) << "extension " << style::Code(ext->name)
                                   << " is not allowed in the current environment";
             return false;
@@ -4242,7 +4322,7 @@ bool Resolver::Enable(const ast::Enable* enable) {
 
 bool Resolver::Requires(const ast::Requires* req) {
     for (auto feature : req->features) {
-        if (!allowed_features_.features.count(feature)) {
+        if (!allowed_features_.features.contains(feature)) {
             AddError(req->source) << "language feature " << style::Code(wgsl::ToString(feature))
                                   << " is not allowed in the current environment";
             return false;
@@ -4279,6 +4359,14 @@ const core::type::ArrayCount* Resolver::ArrayCount(const ast::Expression* count_
         return nullptr;
     }
 
+    auto* ty = count_sem->Type();
+    if (!ty->IsIntegerScalar()) {
+        AddError(count_expr->source)
+            << count_kind << " must evaluate to an integer expression, but is type "
+            << style::Type(ty->FriendlyName());
+        return nullptr;
+    }
+
     switch (count_sem->Stage()) {
         case core::EvaluationStage::kNotEvaluated:
             ICE(count_expr->source) << "array element count was not evaluated";
@@ -4296,13 +4384,6 @@ const core::type::ArrayCount* Resolver::ArrayCount(const ast::Expression* count_
 
         case core::EvaluationStage::kConstant: {
             auto* count_val = count_sem->ConstantValue();
-            if (auto* ty = count_val->Type(); !ty->IsIntegerScalar()) {
-                AddError(count_expr->source)
-                    << count_kind << " must evaluate to a constant integer expression, but is type "
-                    << style::Type(ty->FriendlyName());
-                return nullptr;
-            }
-
             int64_t count = count_val->ValueAs<AInt>();
             if (count < 1) {
                 AddError(count_expr->source)
@@ -4785,18 +4866,21 @@ sem::Statement* Resolver::AssignmentStatement(const ast::AssignmentStatement* st
         const bool is_phony_assignment = stmt->lhs->Is<ast::PhonyExpression>();
 
         const auto* rhs = ValueExpression(stmt->rhs);
-        if (!rhs) {
-            return false;
-        }
 
         if (!is_phony_assignment) {
-            rhs = Materialize(rhs, lhs->Type()->UnwrapRef());
-            if (!rhs) {
-                return false;
+            const core::type::Type* lhs_type = nullptr;
+            if (lhs->Type()->Is<core::type::SwizzleView>() &&
+                allowed_features_.features.contains(wgsl::LanguageFeature::kSwizzleAssignment)) {
+                lhs_type = lhs->Type()->As<core::type::SwizzleView>()->StoreType();
+            } else {
+                lhs_type = lhs->Type()->UnwrapRef();
             }
+
+            rhs = Load(Materialize(rhs, lhs_type));
+        } else {
+            rhs = Load(rhs);
         }
 
-        rhs = Load(rhs);
         if (!rhs) {
             return false;
         }
@@ -4852,7 +4936,7 @@ sem::Statement* Resolver::CompoundAssignmentStatement(
             return false;
         }
 
-        const auto* rhs = ValueExpression(stmt->rhs);
+        const auto* rhs = Load(ValueExpression(stmt->rhs));
         if (!rhs) {
             return false;
         }
@@ -4861,24 +4945,22 @@ sem::Statement* Resolver::CompoundAssignmentStatement(
 
         auto stage = core::EarliestStage(lhs->Stage(), rhs->Stage());
 
-        // TODO(crbug.com/477255032): See if this can be cleaned up by improving the consistency of
-        // resolver subexpression loading.
-        auto* rhs_type = rhs->Type();
-        if (auto* swizzle_view = rhs_type->As<core::type::SwizzleView>()) {
-            // Use the swizzle result type as the arg type for intrinsic lookup.
-            rhs_type = swizzle_view->StoreType();
+        auto* lhs_type = lhs->Type();
+        if (auto* lhs_swizzle_view = lhs_type->As<core::type::SwizzleView>();
+            lhs_swizzle_view &&
+            allowed_features_.features.contains(wgsl::LanguageFeature::kSwizzleAssignment)) {
+            lhs_type = lhs_swizzle_view->StoreType();
         } else {
-            rhs_type = rhs_type->UnwrapRef();
+            lhs_type = lhs_type->UnwrapRef();
         }
-        auto overload =
-            intrinsic_table_.Lookup(stmt->op, lhs->Type()->UnwrapRef(), rhs_type, stage, true);
+
+        auto overload = intrinsic_table_.Lookup(stmt->op, lhs_type, rhs->Type(), stage, true);
         if (overload != Success) {
             AddError(stmt->source) << overload.Failure();
             return false;
         }
 
-        // Load or materialize the RHS if necessary.
-        rhs = Load(Materialize(rhs, overload->parameters[1].type));
+        rhs = Materialize(rhs, overload->parameters[1].type);
         if (!rhs) {
             return false;
         }
@@ -4954,12 +5036,14 @@ bool Resolver::ApplyAddressSpaceUsageToType(core::AddressSpace address_space,
 
     if (auto* arr = ty->As<sem::Array>()) {
         if (address_space != core::AddressSpace::kStorage) {
-            if (arr->Count()->Is<core::type::RuntimeArrayCount>()) {
-                AddError(usage)
-                    << "runtime-sized arrays can only be used in the <storage> address space";
-                return false;
+            // With buffer_view, runtime-sized arrays can appear in more locations.
+            if (!allowed_features_.features.contains(wgsl::LanguageFeature::kBufferView)) {
+                if (arr->Count()->Is<core::type::RuntimeArrayCount>()) {
+                    AddError(usage)
+                        << "runtime-sized arrays can only be used in the <storage> address space";
+                    return false;
+                }
             }
-
             auto count = arr->ConstantCount();
             if (count.has_value() && count.value() >= internal_limits::kMaxArrayElementCount) {
                 AddError(usage) << "array count (" << count.value() << ") must be less than "
@@ -4994,6 +5078,21 @@ bool Resolver::ApplyAddressSpaceUsageToType(core::AddressSpace address_space,
         address_space != core::AddressSpace::kWorkgroup) {
         AddError(usage) << "buffer types cannot be declared in the " << style::Enum(address_space)
                         << " address space";
+        return false;
+    }
+
+    if (address_space != core::AddressSpace::kStorage) {
+        if (auto as_atomic = ty->As<core::type::Atomic>()) {
+            auto atomic_ty = as_atomic->Type();
+            if (auto* vec = atomic_ty->As<core::type::Vector>()) {
+                if (vec->Width() == 2 && vec->Type()->Is<core::type::U32>()) {
+                    AddError(usage)
+                        << "atomic variables of type " << style::Type(sem_.TypeNameOf(atomic_ty))
+                        << " can only be in " << style::Enum("storage") << " address space";
+                    return false;
+                }
+            }
+        }
     }
 
     if (core::IsHostShareable(address_space) && !ty->IsHostShareable()) {

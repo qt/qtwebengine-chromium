@@ -31,6 +31,7 @@
 
 #include "dawn/common/Assert.h"
 #include "dawn/common/StringViewUtils.h"
+#include "dawn/native/CommandBuffer.h"
 #include "dawn/native/RenderBundle.h"
 #include "dawn/native/webgpu/BindGroupWGPU.h"
 #include "dawn/native/webgpu/BufferWGPU.h"
@@ -62,6 +63,28 @@ void CommandBuffer::SetLabelImpl() {
 
 namespace {
 
+void PrepareResourcesForSyncScope(const SyncScopeResourceUsage& scope) {
+    for (size_t i = 0; i < scope.textures.size(); i++) {
+        Texture* texture = ToBackend(scope.textures[i]);
+
+        texture->SynchronizeTextureBeforeUse();
+
+        // Mark subresources as cleared that are not render attachments as initialized.
+        // Render attachments will be marked as cleared in Encode BeginRenderPass.
+        // The actual clearing relies on the inner device.
+        scope.textureSyncInfos[i].Iterate(
+            [&](const SubresourceRange& range, const TextureSyncInfo& syncInfo) -> void {
+                if (syncInfo.usage & ~wgpu::TextureUsage::RenderAttachment) {
+                    texture->SetIsSubresourceContentInitialized(true, range);
+                }
+            });
+    }
+
+    for (BufferBase* bufferBase : scope.buffers) {
+        bufferBase->SetInitialized(true);
+    }
+}
+
 void EncodeComputePass(const DawnProcTable& wgpu,
                        WGPUCommandEncoder innerEncoder,
                        CommandIterator& commands,
@@ -79,12 +102,13 @@ void EncodeComputePass(const DawnProcTable& wgpu,
     }
 
     for (auto texture : resourceUsages.referencedTextures) {
-        texture->SetInitialized(true);
+        ToBackend(texture)->SynchronizeTextureBeforeUse();
     }
 
     WGPUComputePassEncoder passEncoder =
         wgpu.commandEncoderBeginComputePass(innerEncoder, &passDescriptor);
 
+    size_t nextDispatchNumber = 0;
     Command type;
     while (commands.NextCommandId(&type)) {
         switch (type) {
@@ -96,12 +120,16 @@ void EncodeComputePass(const DawnProcTable& wgpu,
 
             case Command::Dispatch: {
                 auto cmd = commands.NextCommand<DispatchCmd>();
+                PrepareResourcesForSyncScope(resourceUsages.dispatchUsages[nextDispatchNumber]);
+                ++nextDispatchNumber;
                 wgpu.computePassEncoderDispatchWorkgroups(passEncoder, cmd->x, cmd->y, cmd->z);
                 break;
             }
 
             case Command::DispatchIndirect: {
                 auto cmd = commands.NextCommand<DispatchIndirectCmd>();
+                PrepareResourcesForSyncScope(resourceUsages.dispatchUsages[nextDispatchNumber]);
+                ++nextDispatchNumber;
                 wgpu.computePassEncoderDispatchWorkgroupsIndirect(
                     passEncoder, ToBackend(cmd->indirectBuffer)->GetInnerHandle(),
                     cmd->indirectOffset);
@@ -177,17 +205,13 @@ void EncodeRenderPass(const Device* device,
                       WGPUCommandEncoder innerEncoder,
                       CommandIterator& commands,
                       BeginRenderPassCmd* renderPassCmd) {
-    const DawnProcTable& wgpu = device->wgpu;
+    const DawnProcTable& wgpu = device->wgpu.get();
 
     PerColorAttachment<WGPURenderPassColorAttachment> colorAttachments = {};
 
     size_t colorAttachmentCount = 0;
     for (auto i : renderPassCmd->attachmentState->GetColorAttachmentsMask()) {
         auto& colorAttachment = renderPassCmd->colorAttachments[i];
-        colorAttachment.view->GetTexture()->SetInitialized(true);
-        if (colorAttachment.resolveTarget != nullptr) {
-            colorAttachment.resolveTarget->GetTexture()->SetInitialized(true);
-        }
         colorAttachments[i] = ToWGPU(colorAttachment);
         colorAttachmentCount = static_cast<size_t>(i) + 1;
     }
@@ -205,7 +229,6 @@ void EncodeRenderPass(const Device* device,
     };
     WGPURenderPassDepthStencilAttachment depthStencilAttachment;
     if (renderPassCmd->attachmentState->HasDepthStencilAttachment()) {
-        renderPassCmd->depthStencilAttachment.view->GetTexture()->SetInitialized(true);
         depthStencilAttachment = ToWGPU(renderPassCmd->depthStencilAttachment);
         passDescriptor.depthStencilAttachment = &depthStencilAttachment;
     }
@@ -976,14 +999,15 @@ MaybeError CommandBuffer::CaptureCreationParameters(CaptureContext& captureConte
     return {};
 }
 
-WGPUCommandBuffer CommandBuffer::Encode() {
-    auto& wgpu = ToBackend(GetDevice())->wgpu;
+ResultOrError<WGPUCommandBuffer> CommandBuffer::Encode() {
+    auto& wgpu = ToBackend(GetDevice())->wgpu.get();
 
     // TODO(crbug.com/413053623): Use stored command encoder descriptor
     WGPUCommandEncoder innerEncoder =
         wgpu.deviceCreateCommandEncoder(ToBackend(GetDevice())->GetInnerHandle(), nullptr);
 
     size_t nextComputePassNumber = 0;
+    size_t nextRenderPassNumber = 0;
 
     Command type;
     while (mCommands.NextCommandId(&type)) {
@@ -997,7 +1021,24 @@ WGPUCommandBuffer CommandBuffer::Encode() {
             }
             case Command::BeginRenderPass: {
                 auto cmd = mCommands.NextCommand<BeginRenderPassCmd>();
+
+                // Call PrepareResourcesForSyncScope instead of manually set every texture with
+                // SetInitialized(true) to properly manage initialization state especially for
+                // imported shared texture.
+                PrepareResourcesForSyncScope(
+                    GetResourceUsages().renderPasses[nextRenderPassNumber]);
+
+                DAWN_TRY(LazyClearRenderPassAttachments(
+                    GetDevice(), cmd,
+                    [](TextureBase* texture, const SubresourceRange& range) -> MaybeError {
+                        // The WGPU backend doesn't clear directly, it relies on the the inner
+                        // device so we just mark the subresource as initialized.
+                        ToBackend(texture)->SetIsSubresourceContentInitialized(true, range);
+                        return {};
+                    }));
                 EncodeRenderPass(ToBackend(GetDevice()), innerEncoder, mCommands, cmd);
+
+                ++nextRenderPassNumber;
                 break;
             }
             case Command::CopyBufferToBuffer: {
@@ -1014,8 +1055,10 @@ WGPUCommandBuffer CommandBuffer::Encode() {
                 WGPUTexelCopyBufferInfo source = ToWGPU(cmd->source, blockInfo);
                 WGPUTexelCopyTextureInfo destination = ToWGPU(cmd->destination);
                 WGPUExtent3D size = ToWGPU(cmd->copySize);
+                ToBackend(cmd->destination.texture.Get())->SynchronizeTextureBeforeUse();
                 wgpu.commandEncoderCopyBufferToTexture(innerEncoder, &source, &destination, &size);
-                cmd->destination.texture.Get()->SetInitialized(true);
+                cmd->destination.texture.Get()->SetIsSubresourceContentInitialized(
+                    true, GetSubresourcesAffectedByCopy(cmd->destination, cmd->copySize));
                 break;
             }
             case Command::CopyTextureToBuffer: {
@@ -1024,6 +1067,7 @@ WGPUCommandBuffer CommandBuffer::Encode() {
                 WGPUTexelCopyTextureInfo source = ToWGPU(cmd->source);
                 WGPUTexelCopyBufferInfo destination = ToWGPU(cmd->destination, blockInfo);
                 WGPUExtent3D size = ToWGPU(cmd->copySize);
+                ToBackend(cmd->source.texture.Get())->SynchronizeTextureBeforeUse();
                 wgpu.commandEncoderCopyTextureToBuffer(innerEncoder, &source, &destination, &size);
                 break;
             }
@@ -1032,8 +1076,11 @@ WGPUCommandBuffer CommandBuffer::Encode() {
                 WGPUTexelCopyTextureInfo source = ToWGPU(cmd->source);
                 WGPUTexelCopyTextureInfo destination = ToWGPU(cmd->destination);
                 WGPUExtent3D size = ToWGPU(cmd->copySize);
+                ToBackend(cmd->source.texture.Get())->SynchronizeTextureBeforeUse();
+                ToBackend(cmd->destination.texture.Get())->SynchronizeTextureBeforeUse();
                 wgpu.commandEncoderCopyTextureToTexture(innerEncoder, &source, &destination, &size);
-                cmd->destination.texture.Get()->SetInitialized(true);
+                cmd->destination.texture.Get()->SetIsSubresourceContentInitialized(
+                    true, GetSubresourcesAffectedByCopy(cmd->destination, cmd->copySize));
                 break;
             }
             case Command::ClearBuffer: {

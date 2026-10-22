@@ -41,10 +41,17 @@ typedef struct FPDF_FILEWRITE_ {
                     unsigned long size);
 } FPDF_FILEWRITE;
 
- // Flags for FPDF_SaveAsCopy()
-#define FPDF_INCREMENTAL 1
-#define FPDF_NO_INCREMENTAL 2
-#define FPDF_REMOVE_SECURITY 3
+// Flags for FPDF_SaveAsCopy().
+// FPDF_INCREMENTAL and FPDF_NO_INCREMENTAL cannot be used together.
+#define FPDF_INCREMENTAL (1 << 0)
+#define FPDF_NO_INCREMENTAL (1 << 1)
+ // Deprecated. Use FPDF_REMOVE_SECURITY instead.
+ // TODO(crbug.com/42270430): Remove FPDF_REMOVE_SECURITY_DEPRECATED.
+#define FPDF_REMOVE_SECURITY_DEPRECATED 3
+#define FPDF_REMOVE_SECURITY (1 << 2)
+// Experimental. Subsets any embedded font files for new text objects added to
+// the document.
+#define FPDF_SUBSET_NEW_FONTS (1 << 3)
 
 // Function: FPDF_SaveAsCopy
 //          Saves the copy of specified document in custom way.

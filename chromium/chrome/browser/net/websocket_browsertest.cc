@@ -162,7 +162,6 @@ class WebSocketBrowserTest : public InProcessBrowserTest {
     content::RenderProcessHost* const process = frame->GetProcess();
 
     const std::vector<std::string> requested_protocols;
-    const net::SiteForCookies site_for_cookies;
     // The actual value of this doesn't actually matter, it just can't be empty,
     // to avoid a DCHECK.
     const net::IsolationInfo isolation_info =
@@ -171,10 +170,10 @@ class WebSocketBrowserTest : public InProcessBrowserTest {
     const url::Origin origin;
 
     process->GetStoragePartition()->GetNetworkContext()->CreateWebSocket(
-        url, requested_protocols, site_for_cookies,
-        net::StorageAccessApiStatus::kNone, isolation_info,
-        std::move(additional_headers), ToOriginatingProcess(process->GetID()),
-        origin, network::mojom::ClientSecurityState::New(),
+        url, requested_protocols, net::StorageAccessApiStatus::kNone,
+        isolation_info, std::move(additional_headers),
+        ToOriginatingProcessId(process->GetID()), origin,
+        network::mojom::ClientSecurityState::New(),
         network::mojom::kWebSocketOptionNone,
         net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS),
         std::move(handshake_client),
@@ -182,7 +181,8 @@ class WebSocketBrowserTest : public InProcessBrowserTest {
             content::GlobalRenderFrameHostId(process->GetID(),
                                              frame->GetRoutingID())),
         /*auth_handler=*/mojo::NullRemote(), std::move(header_client),
-        /*throttling_profile_id=*/std::nullopt);
+        /*throttling_profile_id=*/std::nullopt,
+        /*network_restrictions_id=*/std::nullopt);
   }
 
   void SetBlockThirdPartyCookies(bool blocked) {

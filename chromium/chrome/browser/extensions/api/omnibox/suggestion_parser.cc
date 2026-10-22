@@ -11,7 +11,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/extensions/api/omnibox.h"
-#include "components/omnibox/browser/autocomplete_match.h"
+#include "components/omnibox/browser/autocomplete_input.h"
 #include "services/data_decoder/public/cpp/data_decoder.h"
 #include "services/data_decoder/public/cpp/safe_xml_parser.h"
 #include "services/data_decoder/public/mojom/xml_parser.mojom.h"
@@ -34,8 +34,9 @@ std::string CheckedGetElementTag(const base::Value& node) {
 // Recursively walks an XML node, generating `result` as it goes along.
 void WalkNode(const base::Value& node, DescriptionAndStyles* result) {
   const base::ListValue* children = data_decoder::GetXmlElementChildren(node);
-  if (!children)
+  if (!children) {
     return;
+  }
 
   for (const base::Value& child : *children) {
     // Append text nodes to our description.
@@ -46,14 +47,10 @@ void WalkNode(const base::Value& node, DescriptionAndStyles* result) {
           child.GetDict().FindString(data_decoder::mojom::XmlParser::kTextKey);
       DCHECK(text);
       std::u16string sanitized_text = base::UTF8ToUTF16(*text);
-      // Note: We unfortunately can't just use
-      // `AutocompleteMatch::SanitizeString()` directly here, because it
-      // unconditionally trims leading whitespace, which we need to preserve
-      // for any non-first styles.
-      // TODO(devlin): Add a toggle to AutocompleteMatch::SanitizeString() for
-      // that?
-      base::RemoveChars(sanitized_text, AutocompleteMatch::kInvalidChars,
-                        &sanitized_text);
+      // Keep leading whitespace, which we need to preserve for any non-first
+      // styles.
+      sanitized_text = AutocompleteInput::SanitizeString(
+          sanitized_text, /*trim_whitespace=*/false);
       if (result->description.empty()) {
         base::TrimWhitespace(sanitized_text, base::TRIM_LEADING,
                              &sanitized_text);
@@ -105,13 +102,15 @@ bool PopulateEntriesFromNode(const base::Value& root_node,
     return false;
   }
 
-  if (CheckedGetElementTag(root_node) != "fragment")
+  if (CheckedGetElementTag(root_node) != "fragment") {
     return false;
+  }
 
   const base::ListValue* children =
       data_decoder::GetXmlElementChildren(root_node);
-  if (!children)
+  if (!children) {
     return false;
+  }
 
   entries_out->reserve(children->size());
   for (const base::Value& child : *children) {
@@ -119,8 +118,9 @@ bool PopulateEntriesFromNode(const base::Value& root_node,
             child, data_decoder::mojom::XmlParser::kElementType)) {
       return false;
     }
-    if (CheckedGetElementTag(child) != "internal-suggestion")
+    if (CheckedGetElementTag(child) != "internal-suggestion") {
       return false;
+    }
     entries_out->push_back(&child);
   }
 

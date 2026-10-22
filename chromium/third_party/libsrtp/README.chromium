@@ -1,7 +1,8 @@
 Name: libsrtp
 URL: https://github.com/cisco/libsrtp
 Version: fd08747fa6800b321d53e15feb34da12dc697dee
-License: 3-clause BSD
+Update Mechanism: Manual
+License: BSD-3-Clause
 License File: LICENSE
 Security Critical: Yes
 Shipped: yes

@@ -25,12 +25,12 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) TensorImplDml final
  public:
   TensorImplDml(mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
                 Microsoft::WRL::ComPtr<ID3D12Resource> buffer,
-                base::WeakPtr<WebNNContextImpl> context,
+                WebNNContextImpl& context,
                 mojom::TensorInfoPtr tensor_info);
 
   TensorImplDml(mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
                 RepresentationPtr representation,
-                base::WeakPtr<WebNNContextImpl> context,
+                WebNNContextImpl& context,
                 mojom::TensorInfoPtr tensor_info);
 
   TensorImplDml(const TensorImplDml&) = delete;
@@ -63,14 +63,17 @@ class COMPONENT_EXPORT(WEBNN_SERVICE) TensorImplDml final
   // access to WebNN and to EndAccessWebNN() again.
   scoped_refptr<gfx::D3DSharedFence> EndAccessWebNN();
 
+  base::WeakPtr<const TensorImplDml> GetWeakPtr() const {
+    return weak_factory_.GetWeakPtr();
+  }
+
  private:
   ~TensorImplDml() override;
 
   void ReadTensorImpl(ReadTensorCallback callback) override;
   void WriteTensorImpl(mojo_base::BigBuffer src_buffer) override;
   bool ImportTensorImpl(ScopedAccessPtr access) override;
-  void ExportTensorImpl(ScopedAccessPtr access,
-                        ExportTensorCallback callback) override;
+  void ExportTensorImpl(ScopedAccessPtr access) override;
 
   // The D3D12 resource that holds the tensor data.
   // The buffer must always remain valid after creation and could outlive

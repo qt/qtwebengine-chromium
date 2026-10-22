@@ -93,7 +93,7 @@ config("skia_private") {
       "SK_GAMMA_CONTRAST=0.0",
     ]
   }
-  if (is_skia_dev_build && !is_wasm) {
+  if (is_skia_dev_build && !is_canvaskit) {
     defines += [
       "SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1",
       "GPU_TEST_UTILS=1",
@@ -116,6 +116,10 @@ config("skia_private") {
 
   if (skia_dump_tasks) {
     defines += [ "SK_DUMP_TASKS" ]
+  }
+
+  if (skia_use_partition_alloc) {
+    defines += [ "SK_USE_PARTITION_ALLOC" ]
   }
 
   # Temporary staging flag:
@@ -164,22 +168,24 @@ template("opts") {
 is_x86 = current_cpu == "x64" || current_cpu == "x86"
 is_loong64 = current_cpu == "loong64"
 
-opts("hsw") {
+opts("ml3") {
   enabled = is_x86
-  sources = skia_opts.hsw_sources
+  sources = skia_opts.ml3_sources
   if (is_win) {
     cflags = [ "/arch:AVX2" ]
   } else {
+    # TODO(kjlubick) use -march=x86-64-v3
     cflags = [ "-march=haswell" ]
   }
 }
 
-opts("skx") {
+opts("ml4") {
   enabled = is_x86
-  sources = skia_opts.skx_sources
+  sources = skia_opts.ml4_sources
   if (is_win) {
     cflags = [ "/arch:AVX512" ]
   } else {
+    # TODO(kjlubick) use -march=x86-64-v4
     cflags = [ "-march=skylake-avx512" ]
   }
 }
@@ -421,7 +427,7 @@ optional("fontmgr_FontConfigInterface") {
 }
 
 optional("fontmgr_fontations_empty") {
-  enabled = skia_use_fontations
+  enabled = skia_enable_fontmgr_fontations_empty
   public_defines = [ "SK_FONTMGR_FONTATIONS_AVAILABLE" ]
 
   deps = [ ":typeface_fontations" ]
@@ -1018,7 +1024,8 @@ optional("gpu") {
   if (skia_use_direct3d) {
     public_defines += [ "SK_DIRECT3D" ]
     deps += [ "//third_party/d3d12allocator" ]
-    sources += skia_direct3d_sources
+    public += skia_ganesh_d3d_public
+    sources += skia_ganesh_d3d_private
     if (skia_enable_direct3d_debug_layer) {
       public_defines += [ "SK_ENABLE_D3D_DEBUG_LAYER" ]
     }
@@ -1166,6 +1173,11 @@ optional("graphite") {
 
   if (skia_enable_vello_shaders) {
     sources += skia_graphite_vello_sources
+  }
+
+  if (skia_enable_sparse_strips) {
+    sources += skia_graphite_sparse_strips_sources
+    public_defines += [ "SK_ENABLE_SPARSE_STRIPS" ]
   }
 
   if (skia_use_dawn) {
@@ -1357,7 +1369,8 @@ if (is_debug) {
 # from having multiple copies of the Rust standard library.
 
 if (skia_use_fontations || skia_use_rust_png_decode ||
-    skia_use_rust_png_encode || skia_use_rust_bmp_decode || skia_use_rust_icc) {
+    skia_use_rust_png_encode || skia_use_rust_bmp_decode || skia_use_rust_icc ||
+    skia_use_rust_exif) {
   # Collect all Rust targets, sources, outputs based on what's enabled
   _rust_targets = []
   _rust_sources = []
@@ -1365,9 +1378,9 @@ if (skia_use_fontations || skia_use_rust_png_decode ||
   _rust_output_mappings = []
 
   # Add cxx dependency if any feature that needs it is enabled
-  _needs_cxx =
-      skia_use_fontations || skia_use_rust_png_decode ||
-      skia_use_rust_png_encode || skia_use_rust_bmp_decode || skia_use_rust_icc
+  _needs_cxx = skia_use_fontations || skia_use_rust_png_decode ||
+               skia_use_rust_png_encode || skia_use_rust_bmp_decode ||
+               skia_use_rust_icc || skia_use_rust_exif
   if (_needs_cxx) {
     _rust_targets += [ "@crates//:cxx_cc" ]
     _rust_sources += [
@@ -1477,6 +1490,28 @@ if (skia_use_fontations || skia_use_rust_png_decode ||
     ]
   }
 
+  if (skia_use_rust_exif) {
+    _rust_targets += [ "//rust/exif:ffi_rs" ]
+    _rust_sources += [
+      "rust/exif/BUILD.bazel",
+      "rust/exif/FFI.h",
+      "rust/exif/FFI.rs",
+    ]
+    _rust_outputs += [
+      "$root_out_dir/librust_exif_ffi_rs.a",
+      "$root_out_dir/rust/exif/FFI.rs.h",
+      "$root_out_dir/rust/exif/FFI.rs.cc",
+    ]
+    _rust_output_mappings += [
+      rebase_path("//bazel-bin/rust/exif/libffi_rs.a", root_build_dir) +
+          "=librust_exif_ffi_rs.a",
+      rebase_path("//bazel-bin/rust/exif/FFI.rs.h", root_build_dir) +
+          "=rust/exif/FFI.rs.h",
+      rebase_path("//bazel-bin/rust/exif/FFI.rs.cc", root_build_dir) +
+          "=rust/exif/FFI.rs.cc",
+    ]
+  }
+
   # Single unified action that builds all Rust FFI library targets
   action("rust_all_ffi_bazel_build") {
     script = "gn/bazel_build.py"
@@ -1506,6 +1541,9 @@ if (skia_use_fontations || skia_use_rust_png_decode ||
     if (skia_use_rust_icc) {
       _all_rust_libs += [ "$root_out_dir/librust_icc_ffi_rs.a" ]
     }
+    if (skia_use_rust_exif) {
+      _all_rust_libs += [ "$root_out_dir/librust_exif_ffi_rs.a" ]
+    }
 
     public_configs = [ ":rust_ffi_libs_config" ]
     all_dependent_configs = [ ":rust_ffi_libs_config" ]
@@ -1527,6 +1565,9 @@ if (skia_use_fontations || skia_use_rust_png_decode ||
     }
     if (skia_use_rust_icc) {
       _all_rust_libs += [ "$root_out_dir/librust_icc_ffi_rs.a" ]
+    }
+    if (skia_use_rust_exif) {
+      _all_rust_libs += [ "$root_out_dir/librust_exif_ffi_rs.a" ]
     }
     libs = _all_rust_libs
 
@@ -1648,6 +1689,36 @@ optional("rust_icc") {
     ":rust_ffi_libs",
     ":rust_icc_cxx_bridge",
     "//modules/skcms",
+  ]
+}
+
+if (skia_use_rust_exif) {
+  config("rust_exif_cxx_bridge_private_config") {
+    include_dirs = [
+      # This entry is needed so that `FFI.rs.cc` can resolve
+      # `#include "rust/exif/FFI.h"`
+      ".",
+    ]
+  }
+  skia_source_set("rust_exif_cxx_bridge") {
+    deps = [ ":rust_all_ffi_bazel_build" ]
+    public = [ "${root_out_dir}/rust/exif/FFI.rs.h" ]
+    sources = [ "${root_out_dir}/rust/exif/FFI.rs.cc" ]
+    public_configs = [ ":rust_common_cxx_bridge_public_config" ]
+    configs = [ ":rust_exif_cxx_bridge_private_config" ]
+  }
+}
+
+optional("rust_exif") {
+  enabled = skia_use_rust_exif
+  public_defines = [ "SK_EXIF_PARSE_WITH_RUST" ]
+  public = skia_rust_exif_ffi_cpp_hdrs
+  sources = skia_rust_exif_ffi_cpp_srcs
+  sources_for_tests = [ "tests/RustExifTest.cpp" ]
+  public_configs = [ ":rust_common_cxx_bridge_public_config" ]
+  deps = [
+    ":rust_exif_cxx_bridge",
+    ":rust_ffi_libs",
   ]
 }
 
@@ -1798,7 +1869,23 @@ skia_source_set("core") {
   sources = skia_core_sources
 
   # These deps don't belong to :core, but they are currently needed to support (de)serialization.
+  deps = [
+    ":fontmgr_mac_ct",
+    ":fontmgr_win",
+    ":fontmgr_win_gdi",
+    ":png_decode_libpng",
+    ":png_encode_libpng",
+    ":typeface_fontations",
+    ":typeface_freetype",
+  ]
+}
+
+skia_component("skia") {
+  public_configs = [ ":skia_public" ]
+  configs = skia_library_configs
+
   public_deps = [
+    ":core",
     ":fontmgr_FontConfigInterface",
     ":fontmgr_android",
     ":fontmgr_android_ndk",
@@ -1810,23 +1897,13 @@ skia_source_set("core") {
     ":fontmgr_mac_ct",
     ":fontmgr_win",
     ":fontmgr_win_gdi",
-    ":png_decode_libpng",
-    ":png_encode_libpng",
-  ]
-  deps = [ ":typeface_fontations" ]
-}
-
-skia_component("skia") {
-  public_configs = [ ":skia_public" ]
-  configs = skia_library_configs
-
-  public_deps = [
-    ":core",
     ":gpu",
     ":graphite",
     ":jpeg_encode",
     ":pdf",
     ":pdf_jpeg_helpers",
+    ":png_decode_libpng",
+    ":png_encode_libpng",
     ":webp_encode",
     ":xps",
   ]
@@ -1835,17 +1912,18 @@ skia_component("skia") {
     ":android_utils",
     ":avif",
     ":crabbyavif",
-    ":hsw",
     ":jpeg_decode",
     ":jpegxl_decode",
     ":lasx",
     ":minify_sksl",
+    ":ml3",
+    ":ml4",
     ":ndk_images",
     ":png_decode_rust",
     ":raw",
     ":rust_icc",
-    ":skx",
     ":typeface_fontations",
+    ":typeface_freetype",
     ":vello",
     ":webp_decode",
     ":wuffs",
@@ -1994,7 +2072,7 @@ skia_component("skia") {
 }
 
 # DebugCanvas used in experimental/wasm-skp-debugger
-if (is_wasm) {
+if (is_canvaskit) {
   skia_static_library("debugcanvas") {
     public_configs = [ ":skia_public" ]
 
@@ -2018,7 +2096,7 @@ group("modules") {
     "modules/svg",
   ]
 
-  if (is_wasm) {
+  if (is_canvaskit) {
     deps += [ "modules/canvaskit" ]
   }
 }
@@ -2289,7 +2367,7 @@ if (skia_enable_tools) {
       libs = []
       frameworks = []
 
-      if (skia_use_gl && target_cpu != "wasm") {
+      if (skia_use_gl && !is_canvaskit) {
         if (is_android || skia_use_egl) {
           sources +=
               [ "tools/ganesh/gl/egl/CreatePlatformGLTestContext_egl.cpp" ]
@@ -2312,6 +2390,10 @@ if (skia_enable_tools) {
           if (target_cpu != "arm64") {
             libs += [ "OpenGL32.lib" ]
           }
+        } else if (is_wasm) {
+          # TODO: replace with webgl test context
+          sources +=
+              [ "tools/ganesh/gl/none/CreatePlatformGLTestContext_none.cpp" ]
         }
       }
 
@@ -2382,8 +2464,10 @@ if (skia_enable_tools) {
           sources += [ "tools/ganesh/mtl/MtlTestContext.mm" ]
         }
         if (skia_use_direct3d) {
-          sources += [ "tools/ganesh/d3d/D3DTestContext.cpp" ]
-          sources += [ "tools/ganesh/d3d/D3DTestUtils.cpp" ]
+          sources += [
+            "tools/ganesh/d3d/D3DTestContext.cpp",
+            "tools/ganesh/d3d/D3DTestUtils.cpp",
+          ]
         }
       }
       if (skia_enable_graphite) {
@@ -2556,7 +2640,7 @@ if (skia_enable_tools) {
       ]
     }
 
-    if (target_cpu != "wasm") {
+    if (!is_canvaskit) {
       sources += [ "tools/CrashHandler.cpp" ]
     }
     libs = []
@@ -2677,6 +2761,9 @@ if (skia_enable_tools) {
       }
       if (skia_enable_graphite) {
         sources += graphite_tests_sources
+        if (skia_enable_sparse_strips) {
+          sources += sparse_strips_test_sources
+        }
         if (skia_use_dawn) {
           sources += graphite_dawn_tests_sources
         }
@@ -2714,6 +2801,7 @@ if (skia_enable_tools) {
         ":png_decode_libpng_tests",
         ":png_decode_rust_tests",
         ":png_encode_rust_tests",
+        ":rust_exif_tests",
         ":rust_icc_tests",
         ":skia",
         ":test",
@@ -2790,7 +2878,7 @@ if (skia_enable_tools) {
       "//third_party/libpng",
     ]
   }
-  if (target_cpu != "wasm") {
+  if (!is_canvaskit) {
     if (skia_enable_tools_that_might_need_ganesh) {
       test_app("convert-to-nia") {
         sources = [ "tools/convert-to-nia.cpp" ]
@@ -2840,6 +2928,9 @@ if (skia_enable_tools) {
         }
         if (skia_enable_ganesh) {
           deps += [ ":common_flags_ganesh" ]
+        }
+        if (skia_use_partition_alloc) {
+          deps += [ "tools/partition_alloc:test_support" ]
         }
       }
     }
@@ -2901,6 +2992,14 @@ if (skia_enable_tools) {
       ]
       if (skia_enable_graphite) {
         deps += [ ":common_flags_graphite" ]
+      }
+      if (skia_use_pprof) {
+        # https://packages.debian.org/trixie/libgoogle-perftools-dev
+        libs = [
+          "profiler",
+          "tcmalloc",
+        ]
+        defines = [ "SK_USE_PPROF" ]
       }
     }
   }
@@ -3016,6 +3115,7 @@ if (skia_enable_tools) {
         "fuzz/oss_fuzz/FuzzAnimatedImage.cpp",
         "fuzz/oss_fuzz/FuzzCOLRv1.cpp",
         "fuzz/oss_fuzz/FuzzColorspace.cpp",
+        "fuzz/oss_fuzz/FuzzHdrAgtm.cpp",
         "fuzz/oss_fuzz/FuzzImage.cpp",
         "fuzz/oss_fuzz/FuzzImageFilterDeserialize.cpp",
         "fuzz/oss_fuzz/FuzzIncrementalImage.cpp",
@@ -3434,7 +3534,7 @@ if (skia_enable_tools) {
     group("modules_testonly") {
       testonly = true
       deps = []
-      if (is_wasm) {
+      if (is_canvaskit) {
         deps += [ "modules/canvaskit:viewer_wasm" ]
       }
     }
@@ -3726,7 +3826,7 @@ if (skia_build_fuzzers) {
     deps = []
   }
 
-  libfuzzer_app("grshape") {
+  libfuzzer_app("api_grshape") {
     sources = [
       "fuzz/FuzzCanvasHelpers.cpp",
       "fuzz/FuzzCanvasHelpers.h",
@@ -3824,6 +3924,11 @@ if (skia_build_fuzzers) {
 
   libfuzzer_app("parse_path") {
     sources = [ "fuzz/oss_fuzz/FuzzParsePath.cpp" ]
+    deps = []
+  }
+
+  libfuzzer_app("hdr_agtm") {
+    sources = [ "fuzz/oss_fuzz/FuzzHdrAgtm.cpp" ]
     deps = []
   }
 }

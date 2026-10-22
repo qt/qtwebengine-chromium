@@ -2,11 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! FOR_RELASE: Docs
+//! This file defines the `MojomParse` trait, which allows a Rust type to be
+//! converted to/from the the Mojom binary format.
+//!
+//! It operates by providing the facilities to convert `Self` to and from a
+//! `MojomValue`, which is the type that's actually used by the parser. The
+//! trait has implementations for many builtin types; however, for structs it
+//! must be derived using a proc-macro defined in `parsing_attribute.rs`.
+//!
+//! This file also defined the `PrimitiveEnum` trait, which provides a way to
+//! implement `MojomParse` for enums whose variants don't carry any additional
+//! data (a C++-style enum). That trait is also derived via macro, and the
+//! derivation automatically provides `MojomParse` as well.
+
+chromium::import! {
+    "//mojo/public/rust/system";
+}
+
 use crate::ast::*;
 use crate::pack::pack_mojom_type;
+use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use std::collections::HashMap;
+
+use system::message_pipe::MessageEndpoint;
+use system::mojo_types::UntypedHandle;
 
 /// This trait allows a type to be serialized/deserialized into a Mojom message.
 pub trait MojomParse:
@@ -21,9 +41,6 @@ pub trait MojomParse:
     /// Logically, this just returns pack_mojom_type(T::mojom_type(), 0).
     /// However, since we call this for every parse/deparse call, it caches the
     /// results of every previous call.
-    ///
-    /// FOR_RELEASE: We could reduce our complexity by using the generic_static
-    /// crate
     fn wire_type() -> &'static MojomWireType {
         use std::any::TypeId;
         use std::collections::HashMap;
@@ -60,11 +77,11 @@ pub trait MojomParse:
     }
 }
 
-// FOR_RELEASE: We could replace this with one of a number of crates. num_enum
-// seems closest, though it doesn't have quite the API we want (we want
-// from_primitive to return an option but respect default values if they exist)
-pub trait PrimitiveEnum: Into<u32> + TryFrom<u32, Error = anyhow::Error> + Sized {
-    fn is_valid(value: u32) -> bool {
+// We could _almost_ replace this with the `num_enum` crate, but it doesn't have
+// quite the API we want (we want `from_primitive` to return an option but
+// respect default values if they exist)
+pub trait PrimitiveEnum: Into<i32> + TryFrom<i32, Error = anyhow::Error> + Sized {
+    fn is_valid(value: i32) -> bool {
         Self::try_from(value).is_ok()
     }
 }
@@ -132,6 +149,9 @@ mojomparse_leaf_impl!(OrderedFloat<f64>, Float64);
 mojomparse_leaf_impl!(bool, Bool);
 mojomparse_leaf_impl!(String, String);
 
+mojomparse_leaf_impl!(UntypedHandle, Handle);
+mojomparse_leaf_impl!(MessageEndpoint, Handle);
+
 // Implement MojomParse for any type that implements PrimitiveEnum and the other
 // requirements for MojomParse. All requirements are derived by
 // #[derive(PrimitiveEnum)]. Note that logically we could implement
@@ -142,7 +162,7 @@ where
     T: PrimitiveEnum + TryFrom<MojomValue, Error = anyhow::Error> + 'static,
 {
     fn mojom_type() -> MojomType {
-        MojomType::Enum { is_valid: Predicate::new::<T>(&(Self::is_valid as fn(u32) -> bool)) }
+        MojomType::Enum { is_valid: Predicate::new::<T>(&(Self::is_valid as fn(i32) -> bool)) }
     }
 }
 
@@ -184,26 +204,32 @@ impl<T: MojomParse, const N: usize> From<[T; N]> for MojomValue {
         MojomValue::Array(value.into_iter().map(T::into).collect())
     }
 }
+
 impl<T: MojomParse, const N: usize> TryFrom<MojomValue> for [T; N] {
     type Error = anyhow::Error;
 
     fn try_from(value: MojomValue) -> anyhow::Result<Self> {
-        // FOR_RELEASE: Don't clone here, it's just for the error message
-        if let MojomValue::Array(v) = value.clone() {
-            let vec_of_t: Vec<T> = v.into_iter().map(T::try_from).collect::<anyhow::Result<_>>()?;
-            let arr_of_t: [T; N] = Self::try_from(vec_of_t).or(Err(anyhow::anyhow!(
-                "Wrong number of values to construct {} from this MojomValue: {:?}",
-                std::any::type_name::<Self>(),
-                value
-            )))?;
-            Ok(arr_of_t)
-        } else {
+        let MojomValue::Array(v) = value else {
             anyhow::bail!(
                 "Cannot construct a value of type {} from this MojomValue: {:?}",
                 std::any::type_name::<Self>(),
                 value
             );
-        }
+        };
+
+        if v.len() != N {
+            anyhow::bail!(
+                "Wrong number of values to construct {} from this MojomValue: {:?}",
+                std::any::type_name::<Self>(),
+                MojomValue::Array(v)
+            )
+        };
+
+        let arr_of_t: [T; N] = v.into_iter().map(T::try_from).process_results(|iter| {
+            // Unwrap will succeed because we just checked the length above.
+            iter.collect_array().unwrap()
+        })?;
+        Ok(arr_of_t)
     }
 }
 
@@ -240,14 +266,8 @@ where
         if let MojomValue::Map(hashmap) = value {
             let converted_map: Self = hashmap
                 .into_iter()
-                // Map to Result<(K, V)>
-                .map(|(k, v)| {
-                    let ret: anyhow::Result<(K, V)> = Ok((k.try_into()?, v.try_into()?));
-                    ret
-                })
+                .map(|(k, v)| -> anyhow::Result<(K, V)> { Ok((k.try_into()?, v.try_into()?)) })
                 // Fail if any of the conversions failed
-                // FOR_RELEASE: It would be nice to use Itertools::process_results
-                // instead of collecting here
                 .collect::<Result<_, _>>()?;
             Ok(converted_map)
         } else {

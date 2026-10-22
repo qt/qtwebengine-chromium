@@ -28,6 +28,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/network_delegate.h"
+#include "net/base/network_handle.h"
 #include "net/base/network_isolation_partition.h"
 #include "net/base/upload_data_stream.h"
 #include "net/cert/x509_certificate.h"
@@ -285,8 +286,13 @@ int64_t URLRequest::GetRawBodyBytes() const {
     return bytes;
   }
 
-  // GetReceivedBodyBytes() is available only when the body was received from
-  // the network. Otherwise, returns prefilter_bytes_read() instead.
+  // GetReceivedBodyBytes() returns the pre-filter (encoded) byte count when
+  // the body was received from the network. For cached responses, it returns 0
+  // and we fall back to prefilter_bytes_read(), which reflects bytes read from
+  // the cache (post-content-decoding for shared dictionary responses).
+  // Note: For shared dictionary cached responses, the correct encoded body
+  // size is stored in HttpResponseInfo::encoded_body_size and should be used
+  // instead of this method when the total encoded size is needed.
   return job_->prefilter_bytes_read();
 }
 
@@ -591,7 +597,9 @@ void URLRequest::Start() {
     return;
 
   if (context_->require_network_anonymization_key()) {
-    DCHECK(!isolation_info_.IsEmpty());
+    DCHECK(!isolation_info_.IsEmpty() ||
+           NetworkIsolationPartitionAlwaysAllowEmptyPartition(
+               isolation_info_.GetNetworkIsolationPartition()));
   }
 
   // Some values can be NULL, but the job factory must not be.
@@ -634,6 +642,7 @@ URLRequest::URLRequest(base::PassKey<URLRequestContext> pass_key,
                        const URLRequestContext* context,
                        NetworkTrafficAnnotationTag traffic_annotation,
                        bool is_for_websockets,
+                       handles::NetworkHandle target_network,
                        std::optional<net::NetLogSource> net_log_source)
     : context_(context),
       net_log_(CreateNetLogWithSource(context->net_log(), net_log_source)),
@@ -641,6 +650,7 @@ URLRequest::URLRequest(base::PassKey<URLRequestContext> pass_key,
       method_("GET"),
       delegate_(delegate),
       is_for_websockets_(is_for_websockets),
+      target_network_(target_network),
       redirect_limit_(kMaxRedirects),
       priority_(priority),
       creation_time_(base::TimeTicks::Now()),
@@ -1116,9 +1126,6 @@ void URLRequest::RetryWithStorageAccess() {
                storage_access_status().GetStatusForThirdPartyContext().value()),
            static_cast<int>(cookie_util::StorageAccessStatus::kActive));
   extra_request_headers_.SetHeader("Sec-Fetch-Storage-Access", "active");
-  base::UmaHistogramEnumeration(
-      "API.StorageAccessHeader.SecFetchStorageAccessOutcome",
-      cookie_util::SecFetchStorageAccessOutcome::kValueActive);
 
   if (!final_upload_progress_.position() && upload_data_stream_) {
     final_upload_progress_ = upload_data_stream_->GetUploadProgress();
@@ -1329,7 +1336,7 @@ void URLRequest::RecordReferrerGranularityMetrics(
 
 IsolationInfo URLRequest::CreateIsolationInfoFromNetworkAnonymizationKey(
     const NetworkAnonymizationKey& network_anonymization_key) {
-  if (!network_anonymization_key.IsFullyPopulated()) {
+  if (network_anonymization_key.IsEmpty()) {
     return IsolationInfo();
   }
 

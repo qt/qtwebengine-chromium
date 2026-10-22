@@ -28,7 +28,7 @@ namespace {
 
 bool g_job_priority_boosting = false;
 
-BASE_FEATURE(kJobPriorityBoosting, base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kJobPriorityBoosting, base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Capped to allow assigning task_ids from a bitfield.
 constexpr size_t kMaxWorkersPerJob = 32;
@@ -97,10 +97,13 @@ void JobTaskSource::InitializeFeatures() {
 
 JobTaskSource::JobTaskSource(const Location& from_here,
                              const TaskTraits& traits,
+                             ThreadType originating_thread_type,
                              RepeatingCallback<void(JobDelegate*)> worker_task,
                              MaxConcurrencyCallback max_concurrency_callback,
                              PooledTaskRunnerDelegate* delegate)
-    : TaskSource(traits, TaskSourceExecutionMode::kJob),
+    : TaskSource(traits,
+                 TaskSourceExecutionMode::kJob,
+                 originating_thread_type),
       max_concurrency_callback_(std::move(max_concurrency_callback)),
       worker_task_(std::move(worker_task)),
       primary_task_(base::BindRepeating(

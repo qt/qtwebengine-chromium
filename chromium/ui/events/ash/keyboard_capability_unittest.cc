@@ -13,6 +13,7 @@
 #include "ash/constants/ash_switches.h"
 #include "base/auto_reset.h"
 #include "base/command_line.h"
+#include "base/containers/span.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_file.h"
 #include "base/strings/string_number_conversions.h"
@@ -1217,24 +1218,6 @@ TEST_P(KeyboardCapabilityTest, TopRowLayoutWilco) {
 }
 
 TEST_P(KeyboardCapabilityTest, NullTopRowDescriptor) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndDisableFeature(ash::features::kNullTopRowFix);
-
-  KeyboardDevice input_device(kDeviceId1, INPUT_DEVICE_BLUETOOTH,
-                              "External Keyboard");
-  fake_keyboard_manager_->AddFakeKeyboard(input_device,
-                                          "C0000 C0000 C0000 C0000",
-                                          /*has_custom_top_row=*/true);
-  EXPECT_EQ(
-      KeyboardCapability::DeviceType::kDeviceExternalNullTopRowChromeOsKeyboard,
-      keyboard_capability_->GetDeviceType(input_device));
-  EXPECT_TRUE(keyboard_capability_->HasCapsLockKey(input_device));
-}
-
-TEST_P(KeyboardCapabilityTest, NullTopRowDescriptorWithFix) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(ash::features::kNullTopRowFix);
-
   KeyboardDevice input_device(kDeviceId1, INPUT_DEVICE_BLUETOOTH,
                               "External Keyboard");
   fake_keyboard_manager_->AddFakeKeyboard(input_device,
@@ -1259,8 +1242,8 @@ class TopRowLayoutCustomTest
     custom_scan_codes.reserve(top_row_action_keys_.size());
     for (const auto& action_key : top_row_action_keys_) {
       const uint32_t scan_code = ConvertTopRowActionKeyToScanCode(action_key);
-      custom_scan_codes.push_back(
-          base::ToLowerASCII(base::HexEncode(&scan_code, 1)));
+      custom_scan_codes.push_back(base::ToLowerASCII(
+          base::HexEncode(base::byte_span_from_ref(scan_code).first<1>())));
     }
 
     custom_layout_string_ = base::JoinString(custom_scan_codes, " ");

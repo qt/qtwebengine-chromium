@@ -12,17 +12,18 @@ import * as SDK from '../../core/sdk/sdk.js';
  * Model trackComputedStyleUpdatesForNode method.
  */
 export class ComputedStyleModel extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
-  #node: SDK.DOMModel.DOMNode|null;
-  #cssModel: SDK.CSSModel.CSSModel|null;
-  private eventListeners: Common.EventTarget.EventDescriptor[];
+  #node: SDK.DOMModel.DOMNode|null = null;
+  #cssModel: SDK.CSSModel.CSSModel|null = null;
+  private eventListeners: Common.EventTarget.EventDescriptor[] = [];
   private frameResizedTimer?: number;
   private computedStylePromise?: Promise<ComputedStyle|null>;
 
   constructor(node?: SDK.DOMModel.DOMNode|null) {
     super();
-    this.#cssModel = null;
-    this.eventListeners = [];
-    this.#node = node ?? null;
+    if (node) {
+      // Call the explicit setter to trigger the setup and event binding.
+      this.node = node;
+    }
   }
 
   get node(): SDK.DOMModel.DOMNode|null {
@@ -37,6 +38,21 @@ export class ComputedStyleModel extends Common.ObjectWrapper.ObjectWrapper<Event
 
   cssModel(): SDK.CSSModel.CSSModel|null {
     return this.#cssModel?.isEnabled() ? this.#cssModel : null;
+  }
+
+  /**
+   * Clears all event listeners to ensure the instance can be GC'd without leaking memory.
+   */
+  dispose(): void {
+    Common.EventTarget.removeEventListeners(this.eventListeners);
+    this.eventListeners = [];
+    this.node = null;
+    this.#cssModel = null;
+    this.computedStylePromise = undefined;
+    if (this.frameResizedTimer) {
+      clearTimeout(this.frameResizedTimer);
+      this.frameResizedTimer = undefined;
+    }
   }
 
   private updateModel(cssModel: SDK.CSSModel.CSSModel|null): void {
@@ -125,17 +141,66 @@ export class ComputedStyleModel extends Common.ObjectWrapper.ObjectWrapper<Event
     }
 
     if (!this.computedStylePromise) {
-      this.computedStylePromise = cssModel.getComputedStyle(nodeId).then(verifyOutdated.bind(this, elementNode));
+      this.computedStylePromise = cssModel.getComputedStyle(nodeId).then(style => {
+        return this.#validateNodeStyles(elementNode, style);
+      });
     }
 
     return await this.computedStylePromise;
+  }
 
-    function verifyOutdated(
-        this: ComputedStyleModel, elementNode: SDK.DOMModel.DOMNode, style: Map<string, string>|null): ComputedStyle|
-        null {
-      return elementNode === this.elementNode() && style ? new ComputedStyle(elementNode, style) :
-                                                           null as ComputedStyle | null;
+  /**
+   * Once we fetch the node's CSS styles, we validate them to ensure that the
+   * active Node didn't change between initiating the request to fetch the
+   * styles and the request returning. If it did, we discard these styles as
+   * outdated.
+   */
+  #validateNodeStyles(node: SDK.DOMModel.DOMNode, styles: Map<string, string>|null): ComputedStyle|null {
+    if (node === this.elementNode() && styles) {
+      return new ComputedStyle(node, styles);
     }
+    return null;
+  }
+
+  /**
+   * Fetches the CSS cascade for the node, including matched rules, inherited
+   * styles, and pseudo-elements.
+   * This allows determining which properties are active or overridden.
+   */
+  async fetchMatchedCascade(): Promise<SDK.CSSMatchedStyles.CSSMatchedStyles|null> {
+    const node = this.node;
+    if (!node || !this.cssModel()) {
+      return null;
+    }
+
+    const cssModel = this.cssModel();
+    if (!cssModel) {
+      return null;
+    }
+
+    const matchedStyles = await cssModel.cachedMatchedCascadeForNode(node);
+    if (!matchedStyles) {
+      return null;
+    }
+    return matchedStyles.node() === this.node ? matchedStyles : null;
+  }
+
+  computePropertyTraces(matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles):
+      Map<string, SDK.CSSProperty.CSSProperty[]> {
+    const result = new Map<string, SDK.CSSProperty.CSSProperty[]>();
+    for (const style of matchedStyles.nodeStyles()) {
+      const allProperties = style.allProperties();
+      for (const property of allProperties) {
+        if (!property.activeInStyle() || !matchedStyles.propertyState(property)) {
+          continue;
+        }
+
+        const matches = result.get(property.name) ?? [];
+        matches.push(property);
+        result.set(property.name, matches);
+      }
+    }
+    return result;
   }
 }
 
@@ -145,7 +210,8 @@ export const enum Events {
 }
 
 export type CSSModelChangedEvent = SDK.CSSStyleSheetHeader.CSSStyleSheetHeader|SDK.CSSModel.StyleSheetChangedEvent|
-                                   SDK.CSSModel.PseudoStateForcedEvent|SDK.DOMModel.DOMNode|null|void;
+                                   SDK.CSSModel.PseudoStateForcedEvent|SDK.DOMModel.DOMNode|
+                                   SDK.CSSModel.ComputedStyleUpdatedEvent|null|void;
 
 export interface EventTypes {
   [Events.CSS_MODEL_CHANGED]: CSSModelChangedEvent;

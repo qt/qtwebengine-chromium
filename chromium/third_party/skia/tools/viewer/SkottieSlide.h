@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -67,7 +67,8 @@ private:
                                        fShowTrackerUI        = false,
                                        fShowSlotManager      = false,
                                        fDraggingProgress     = false,
-                                       fPreferGlyphPaths     = false;
+                                       fPreferGlyphPaths     = false,
+                                       fPreferCoretext       = false;
 };
 
 #endif // SK_ENABLE_SKOTTIE

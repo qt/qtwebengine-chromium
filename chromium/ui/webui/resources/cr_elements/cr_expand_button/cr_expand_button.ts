@@ -71,15 +71,12 @@ export class CrExpandButtonElement extends CrLitElement {
 
   accessor expanded: boolean = false;
   accessor disabled: boolean = false;
+  override accessor ariaLabel: string = '';
   accessor expandIcon: string = 'cr:expand-more';
   accessor collapseIcon: string = 'cr:expand-less';
   accessor expandTitle: string|undefined;
   accessor collapseTitle: string|undefined;
   override accessor tabIndex: number = 0;
-
-  override firstUpdated() {
-    this.addEventListener('click', this.toggleExpand_);
-  }
 
   override willUpdate(changedProperties: PropertyValues<this>) {
     super.willUpdate(changedProperties);
@@ -90,6 +87,10 @@ export class CrExpandButtonElement extends CrLitElement {
       this.title =
           (this.expanded ? this.collapseTitle : this.expandTitle) || '';
     }
+  }
+
+  override firstUpdated() {
+    this.addEventListener('click', this.toggleExpand_);
   }
 
   override updated(changedProperties: PropertyValues<this>) {

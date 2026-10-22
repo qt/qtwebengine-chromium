@@ -21,6 +21,7 @@
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
 #include "net/base/network_anonymization_key.h"
+#include "net/base/network_handle.h"
 #include "net/base/privacy_mode.h"
 #include "net/base/proxy_server.h"
 #include "net/base/request_priority.h"
@@ -64,6 +65,10 @@ class NET_EXPORT HttpStreamFactory {
     // Job that will preconnect via HTTP/3 iff an "h3" value was found in the
     // ALPN list of an HTTPS DNS record.
     PRECONNECT_DNS_ALPN_H3,
+    // Job that reuses an existing HTTP/3 session for WebSocket via Extended
+    // CONNECT. Never creates a new connection -- yields to `main_job_` if no
+    // suitable session exists.
+    WS_OVER_H3,
   };
 
   // This is the subset of HttpRequestInfo needed by the HttpStreamFactory
@@ -101,6 +106,7 @@ class NET_EXPORT HttpStreamFactory {
     PrivacyMode privacy_mode = PRIVACY_MODE_DISABLED;
     SecureDnsPolicy secure_dns_policy = SecureDnsPolicy::kAllow;
     SocketTag socket_tag;
+    handles::NetworkHandle target_network = handles::kInvalidNetworkHandle;
   };
 
   // Calculates an appropriate SPDY session key for the given parameters.

@@ -11,50 +11,16 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"strconv"
 	"testing"
-	"time"
 
 	"github.com/kylelemons/godebug/pretty"
 )
 
-func TestReplaceTimeStamp(t *testing.T) {
-	time_stamp_ms :=
-		time.Date(2017, time.June, 1, 23, 0, 0, 0, time.UTC).Unix() * 1000
-	replacements := map[string]string{
-		"{{WPR_TIME_SEED_TIMESTAMP}}": strconv.FormatInt(time_stamp_ms, 10)}
-	script := []byte("var time_seed = {{WPR_TIME_SEED_TIMESTAMP}};")
-	transformer, err := NewScriptInjector(script, replacements)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := http.Request{}
-	responseHeader := http.Header{
-		"Content-Type": []string{"text/html"}}
-	resp := http.Response{
-		StatusCode: 200,
-		Header:     responseHeader,
-		Request:    &req,
-		Body:       ioutil.NopCloser(bytes.NewReader([]byte("<html></html>")))}
-	transformer.Transform(&req, &resp)
-	body, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	expectedContent := []byte(
-		fmt.Sprintf("<html><script>var time_seed=%de6</script></html>",
-			time_stamp_ms/1e6))
-	if !bytes.Equal(expectedContent, body) {
-		t.Fatal(
-			fmt.Errorf("expected : %s \n actual: %s \n", expectedContent, body))
-	}
-}
+const injectedScript string = "var foo=1"
 
 // Regression test for https://github.com/catapult-project/catapult/issues/3726
 func TestInjectScript(t *testing.T) {
-	script := []byte("var foo = 1;")
-	transformer, err := NewScriptInjector(script, nil)
+	transformer, err := NewScriptInjector([]byte(injectedScript))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,9 +39,9 @@ func TestInjectScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectedContent := []byte(fmt.Sprintf("<html><head><script>var foo=" +
-		"1</script><script>document.write('<head></head>');</script>" +
-		"</head></html>"))
+	expectedContent := []byte("<html><head><script>" + injectedScript +
+		"</script><script>document.write('<head></head>');</script>" +
+		"</head></html>")
 	if !bytes.Equal(expectedContent, body) {
 		t.Fatal(
 			fmt.Errorf("expected : %s \n actual: %s \n", expectedContent, body))
@@ -83,8 +49,7 @@ func TestInjectScript(t *testing.T) {
 }
 
 func TestNoTagFound(t *testing.T) {
-	script := []byte("var foo = 1;")
-	transformer, err := NewScriptInjector(script, nil)
+	transformer, err := NewScriptInjector([]byte(injectedScript))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,8 +77,7 @@ func TestNoTagFound(t *testing.T) {
 }
 
 func TestInjectScriptToGzipResponse(t *testing.T) {
-	script := []byte("var foo = 1;")
-	transformer, minifyErr := NewScriptInjector(script, nil)
+	transformer, minifyErr := NewScriptInjector([]byte(injectedScript))
 	if minifyErr != nil {
 		t.Fatal(minifyErr)
 	}
@@ -145,10 +109,143 @@ func TestInjectScriptToGzipResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	reader.Close()
-	expectedContent := []byte("<html><script>var foo=1</script></html>")
+	expectedContent := []byte("<html><script>" + injectedScript + "</script></html>")
 	if !bytes.Equal(expectedContent, body) {
 		t.Fatal(
 			fmt.Errorf("expected : %s \n actual: %s \n", expectedContent, body))
+	}
+}
+
+func transform(t *testing.T, inputJS, contentType string) string {
+	t.Helper()
+	transformer, err := NewScriptInjector([]byte(injectedScript))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := http.Request{}
+	responseHeader := http.Header{"Content-Type": []string{contentType}}
+
+	resp := http.Response{
+		StatusCode: 200,
+		Header:     responseHeader,
+		Request:    &req,
+		Body:       ioutil.NopCloser(bytes.NewReader([]byte(inputJS)))}
+
+	transformer.Transform(&req, &resp)
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(body)
+}
+
+func TestInjectScriptToHTMLMimeType(t *testing.T) {
+	const originalHTML string = "<html><head></head></html>"
+	expectedHTML := "<html><head><script>" + injectedScript +
+		"</script></head></html>"
+
+	contentTypes := []string{
+		"text/html",
+		"TEXT/HTML",
+		"Text/Html",
+	}
+
+	for _, contentType := range contentTypes {
+		for _, suffix := range []string{"", "; charset=utf-8"} {
+			transformationResult := transform(t, originalHTML, contentType+suffix)
+			if transformationResult != expectedHTML {
+				t.Errorf("For %s:\nExpected: %s\nActual: %s",
+					contentType+suffix, expectedHTML, transformationResult)
+			}
+		}
+	}
+}
+
+func TestInjectScriptToJSMimeType(t *testing.T) {
+	const originalJS string = "console.log('hello');"
+	const expectedJS string = injectedScript + ";\n" + originalJS
+
+	contentTypes := []string{
+		// Standard MIME types.
+		"application/javascript",
+		"text/javascript",
+		"application/x-javascript",
+		// Non-standard but seen in the wild.
+		"javascript",
+		// Case insensitivity.
+		"Application/JavaScript",
+		"TEXT/JAVASCRIPT",
+		"application/x-JAVASCRIPT",
+		"JavaScript",
+	}
+
+	for _, contentType := range contentTypes {
+		for _, suffix := range []string{"", "; charset=utf-8"} {
+			transformationResult := transform(t, originalJS, contentType+suffix)
+			if transformationResult != expectedJS {
+				t.Errorf("For %s:\nExpected: %s\nActual: %s",
+					contentType+suffix, expectedJS, string(transformationResult))
+			}
+		}
+	}
+}
+
+func TestInjectScriptToNonJSMimeType(t *testing.T) {
+	const originalJS string = "console.log('hello');"
+
+	// Values that don't trigger injection.
+	contentTypes := []string{
+		"text/css",
+		"application/msword",
+		"made/up",
+		"gar-ba-ge",
+	}
+
+	// This value would normally trigger injection, but because the original
+	// content is not an HTML file, the place to inject is not found.
+	contentTypes = append(contentTypes, "text/html")
+
+	for _, contentType := range contentTypes {
+		for _, suffix := range []string{"", "; charset=utf-8"} {
+			transformationResult := transform(t, originalJS, contentType+suffix)
+			if transformationResult != originalJS {
+				t.Errorf("For %s:\nExpected: %s\nActual: %s",
+					contentType+suffix, originalJS, string(transformationResult))
+			}
+		}
+	}
+}
+
+func TestAlreadyInjected(t *testing.T) {
+	const originalJS string = "console.log('hello');"
+	const expectedJS string = injectedScript + ";\n" + originalJS
+	const contentType string = "application/javascript"
+
+	// The first injection is impactful.
+	result1 := transform(t, originalJS, contentType)
+	if result1 != expectedJS {
+		t.Errorf("Expected: %s\nActual:   %s", expectedJS, result1)
+	}
+
+	// The second injection is no-op.
+	result2 := transform(t, result1, contentType)
+	if result2 != result1 {
+		t.Errorf("Expected: %s\nActual:   %s", result1, result2)
+	}
+}
+
+func TestDefensiveSemicolon(t *testing.T) {
+	// Many minified JS files start with a parenthesis.
+	const originalJS string = "(function(){})();"
+	const expectedJS string = injectedScript + ";\n" + originalJS
+	const contentType string = "application/javascript"
+
+	result := transform(t, originalJS, contentType)
+	if result != expectedJS {
+		t.Errorf("Defensive semicolon missing or incorrect.\nExpected: %s\nActual: %s",
+			expectedJS, result)
 	}
 }
 
@@ -161,38 +258,37 @@ func TestInjectScriptToResponse(t *testing.T) {
 		{
 			desc:  "With CSP Nonce script-src",
 			input: []string{"script-src 'strict-dynamic' 'nonce-2726c7f26c'"},
-			want: "<html><head><script nonce=\"2726c7f26c\">var foo=1</script>" +
+			want: "<html><head><script nonce=\"2726c7f26c\">" + injectedScript + "</script>" +
 				"<script>document.write('<head></head>');</script></head></html>",
 		},
 		{
 			desc:  "With CSP Nonce default-src",
 			input: []string{"default-src 'strict-dynamic' 'nonce-2726c7f26c'"},
-			want: "<html><head><script nonce=\"2726c7f26c\">var foo=1</script>" +
+			want: "<html><head><script nonce=\"2726c7f26c\">" + injectedScript + "</script>" +
 				"<script>document.write('<head></head>');</script></head></html>",
 		},
 		{
 			desc:  "With CSP Nonce and both Default and Script",
 			input: []string{"default-src 'self' https://foo.com;script-src 'strict-dynamic' 'nonce-2726cf26c'"},
-			want: "<html><head><script nonce=\"2726cf26c\">var foo=1</script>" +
+			want: "<html><head><script nonce=\"2726cf26c\">" + injectedScript + "</script>" +
 				"<script>document.write('<head></head>');</script></head></html>",
 		},
 		{
 			desc:  "With CSP Nonce and both Default and Script override",
 			input: []string{"default-src 'self' 'nonce-99999cf26c';script-src 'strict-dynamic' 'nonce-2726cf26c'"},
-			want: "<html><head><script nonce=\"2726cf26c\">var foo=1</script>" +
+			want: "<html><head><script nonce=\"2726cf26c\">" + injectedScript + "</script>" +
 				"<script>document.write('<head></head>');</script></head></html>",
 		},
 		{
 			desc:  "With two CSP headers",
 			input: []string{"useless", "script-src 'strict-dynamic' 'nonce-12345'"},
-			want: "<html><head><script nonce=\"12345\">var foo=1</script>" +
+			want: "<html><head><script nonce=\"12345\">" + injectedScript + "</script>" +
 				"<script>document.write('<head></head>');</script></head></html>",
 		},
 	}
 
 	for _, tc := range tests {
-		script := []byte("var foo = 1;")
-		transformer, err := NewScriptInjector(script, nil)
+		transformer, err := NewScriptInjector([]byte(injectedScript))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -222,8 +318,7 @@ func TestInjectScriptToResponse(t *testing.T) {
 }
 
 func TestInjectScriptToResponseWithCspHash(t *testing.T) {
-	script := []byte("var foo = 1;")
-	transformer, err := NewScriptInjector(script, nil)
+	transformer, err := NewScriptInjector([]byte(injectedScript))
 	if err != nil {
 		t.Fatal(err)
 	}

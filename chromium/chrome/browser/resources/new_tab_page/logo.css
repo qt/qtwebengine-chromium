@@ -18,6 +18,21 @@
   min-height: var(--ntp-logo-height);
 }
 
+/*
+ * Set a higher z-index for the logo when so that it's rendered above the OGB.
+ */
+:host([show-tight-doodle-boxing_]) {
+  --ntp-logo-z-index: 1001;
+}
+
+/*
+ * In case we use the boxed container for the Doodle, we can borrow 20px from
+ * the bottom margin to make the Doodle logo larger.
+ */
+:host([doodle-boxed_][show-tight-doodle-boxing_]) {
+  --ntp-logo-margin-bottom: 18px;
+}
+
 :host([doodle-boxed_]) {
   justify-content: flex-end;
 }
@@ -48,10 +63,16 @@
   cursor: auto;
 }
 
-:host([doodle-boxed_]) #imageDoodle {
+:host([doodle-boxed_]:not([show-tight-doodle-boxing_])) #imageDoodle {
   background-color: var(--ntp-logo-box-color);
   border-radius: 20px;
   padding: 16px 24px;
+}
+
+:host([doodle-boxed_][show-tight-doodle-boxing_]) #imageDoodle {
+  background-color: var(--ntp-logo-box-color);
+  border-radius: 28px;
+  padding: 16px;
 }
 
 :host-context(.focus-outline-visible) #imageDoodle:focus {
@@ -72,6 +93,14 @@
 
 :host([doodle-boxed_]) #image {
   max-height: 128px;
+}
+
+/*
+ * The max-height of 156px + 32px of vertical padding + 18px of bottom margin
+ * equals the height of the ntp-logo container + bottom margin, which is 206px.
+ */
+:host([doodle-boxed_][show-tight-doodle-boxing_]) #image {
+  max-height: 156px;
 }
 
 #animation {
@@ -111,16 +140,4 @@
   vertical-align: bottom;
   mask-image: url(chrome://new-tab-page/icons/share_unfilled.svg);
   background-color: var(--color-new-tab-page-doodle-share-button-icon, none);
-}
-
-#iframe {
-  border: none;
-  height: var(--height, var(--ntp-logo-height));
-  transition-duration: var(--duration, 100ms);
-  transition-property: height, width;
-  width: var(--width, 100%);
-}
-
-#iframe:not([expanded]) {
-  max-height: var(--ntp-logo-height);
 }

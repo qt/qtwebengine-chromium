@@ -57,8 +57,8 @@ class OpenScreenSessionBase : public quic::QuicSession {
   // This will offer the custom ALPN.
   std::vector<std::string> GetAlpnsToOffer() const override;
   // This will select the custom ALPN.
-  std::vector<absl::string_view>::const_iterator SelectAlpn(
-      const std::vector<absl::string_view>& alpns) const override;
+  std::vector<std::string_view>::const_iterator SelectAlpn(
+      const std::vector<std::string_view>& alpns) const override;
 
   QuicStream* CreateOutgoingStream(QuicStream::Delegate& delegate);
   Visitor& visitor() { return visitor_; }

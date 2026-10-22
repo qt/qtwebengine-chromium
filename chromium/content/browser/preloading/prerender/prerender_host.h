@@ -405,6 +405,8 @@ class CONTENT_EXPORT PrerenderHost {
     return attributes_.prerender_action_type;
   }
 
+  bool form_submission() const { return attributes_.form_submission; }
+
   bool IsInitialNavigation(const NavigationRequest& navigation_request) const;
 
   bool were_headers_received() const { return were_headers_received_; }
@@ -444,6 +446,9 @@ class CONTENT_EXPORT PrerenderHost {
 
   const PreloadPipelineInfo& preload_pipeline_info() const {
     return *attributes_.preload_pipeline_info.get();
+  }
+  scoped_refptr<PreloadPipelineInfoImpl> preload_pipeline_info_scoped_refptr() {
+    return attributes_.preload_pipeline_info;
   }
 
   // Returns whether the initiator page is overriding user agents. The initiator
@@ -576,7 +581,13 @@ class CONTENT_EXPORT PrerenderHost {
   // `Report*(base_name, trigger_type(), embedder_suffix())`
   const std::string metric_suffix_;
 
-  base::ObserverList<Observer> observers_;
+  // TODO(crbug.com/484371187): Investigate if reentrancy can be removed.
+  base::ObserverList<
+      Observer,
+      /*check_empty=*/false,
+      /*reentrancy=*/
+      base::ObserverListReentrancyPolicy::kAllowReentrancyUntriaged>
+      observers_;
 
   // Stores the attempt corresponding to this prerender to log various metrics.
   // We use a WeakPtr here to avoid inadvertent UAF. `attempt_` can get deleted

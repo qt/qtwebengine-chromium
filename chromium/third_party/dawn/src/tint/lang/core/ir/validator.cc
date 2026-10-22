@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <iostream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -37,7 +38,6 @@
 #include "src/tint/lang/core/intrinsic/table.h"
 #include "src/tint/lang/core/ir/access.h"
 #include "src/tint/lang/core/ir/binary.h"
-#include "src/tint/lang/core/ir/bitcast.h"
 #include "src/tint/lang/core/ir/block_param.h"
 #include "src/tint/lang/core/ir/break_if.h"
 #include "src/tint/lang/core/ir/constant.h"
@@ -114,14 +114,8 @@
 #include "src/tint/utils/rtti/castable.h"
 #include "src/tint/utils/rtti/switch.h"
 #include "src/tint/utils/text/styled_text.h"
-#include "src/tint/utils/text/text_style.h"
-
-/// If set to 1 then the Tint will dump the IR when validating.
-#define TINT_DUMP_IR_WHEN_VALIDATING 0
-#if TINT_DUMP_IR_WHEN_VALIDATING
-#include <iostream>
 #include "src/tint/utils/text/styled_text_printer.h"
-#endif
+#include "src/tint/utils/text/text_style.h"
 
 using namespace tint::core::fluent_types;  // NOLINT
 
@@ -133,6 +127,20 @@ struct ValidatedType {
 };
 
 namespace {
+
+/// Prints out the current IR state, iff ir.dump_ir_when_validating is set.
+void DumpIRIfEnabled([[maybe_unused]] const Module& ir,
+                     [[maybe_unused]] const std::string_view msg) {
+#if TINT_ENABLE_IR_DUMPING
+    if (ir.dump_ir_when_validating) {
+        auto printer = StyledTextPrinter::Create(stdout);
+        std::cout << "=========================================================\n";
+        std::cout << "== IR dump " << msg << ":\n";
+        std::cout << "=========================================================\n";
+        printer->Print(Disassembler(ir).Text());
+    }
+#endif
+}
 
 using SupportedStages = tint::EnumSet<Function::PipelineStage>;
 
@@ -360,6 +368,7 @@ IOAttributeUsage IOAttributeUsageFor(Function::PipelineStage stage, IODirection 
                 case IODirection::kResource:
                     return IOAttributeUsage::kComputeResourceUsage;
             }
+            break;
         case Function::PipelineStage::kFragment:
             switch (direction) {
                 case IODirection::kInput:
@@ -369,6 +378,7 @@ IOAttributeUsage IOAttributeUsageFor(Function::PipelineStage stage, IODirection 
                 case IODirection::kResource:
                     return IOAttributeUsage::kFragmentResourceUsage;
             }
+            break;
         case Function::PipelineStage::kVertex:
             switch (direction) {
                 case IODirection::kInput:
@@ -378,6 +388,7 @@ IOAttributeUsage IOAttributeUsageFor(Function::PipelineStage stage, IODirection 
                 case IODirection::kResource:
                     return IOAttributeUsage::kVertexResourceUsage;
             }
+            break;
         case Function::PipelineStage::kUndefined:
             return IOAttributeUsage::kUndefinedUsage;
     }
@@ -668,6 +679,8 @@ const BuiltInChecker& BuiltinCheckerFor(BuiltinValue builtin, const Capabilities
         case BuiltinValue::kLocalInvocationId:
             return kLocalInvocationIdChecker;
         case BuiltinValue::kLocalInvocationIndex:
+        case BuiltinValue::kGlobalInvocationIndex:
+        case BuiltinValue::kWorkgroupIndex:
             return kLocalInvocationIndexChecker;
         case BuiltinValue::kNumSubgroups:
             return kNumSubgroupsChecker;
@@ -826,7 +839,7 @@ constexpr IOAttributeChecker kColorChecker{
     .type_check = [](const core::type::Type* ty, const Capabilities&) -> bool {
         return ty->IsNumericScalarOrVector();
     },
-    .type_error = "must be a scalar or vector",
+    .type_error = "must be a numeric scalar or vector",
 };
 
 constexpr IOAttributeChecker kInputAttachmentIndexChecker{
@@ -1202,7 +1215,8 @@ class Validator {
     /// @param ignore_caps a set of capabilities to ignore for this check
     void CheckType(const core::type::Type* type,
                    std::function<diag::Diagnostic&()> diag,
-                   Capabilities ignore_caps = {});
+                   Capabilities ignore_caps = {},
+                   Capabilities allow_caps = {});
 
     /// Validates the root block
     /// @param blk the block
@@ -1354,14 +1368,6 @@ class Validator {
     /// Validates the given call
     /// @param call the call to validate
     void CheckCall(const Call* call);
-
-    /// Validates the given bitcast
-    /// @param bitcast the bitcast to validate
-    void CheckBitcast(const Bitcast* bitcast);
-
-    /// Validates that there exists the required bitcast override
-    /// @param bitcast the bitcast to validate types of
-    void CheckBitcastTypes(const Bitcast* bitcast);
 
     /// Validates the given builtin call
     /// @param call the call to validate
@@ -2120,7 +2126,8 @@ bool Validator::CheckResultsAndOperands(const ir::Instruction* inst,
 
 void Validator::CheckType(const core::type::Type* root,
                           std::function<diag::Diagnostic&()> diag,
-                          Capabilities ignore_caps) {
+                          Capabilities ignore_caps,
+                          Capabilities allow_caps) {
     if (root == nullptr) {
         return;
     }
@@ -2315,7 +2322,8 @@ void Validator::CheckType(const core::type::Type* root,
             },
             [&](const core::type::U64*) {
                 // u64 types are guarded by the Allow64BitIntegers capability.
-                if (!capabilities_.Contains(Capability::kAllow64BitIntegers)) {
+                if (!capabilities_.Contains(Capability::kAllow64BitIntegers) &&
+                    !allow_caps.Contains(Capability::kAllow64BitIntegers)) {
                     diag() << "64-bit integer types are not permitted";
                     return false;
                 }
@@ -2351,12 +2359,7 @@ void Validator::CheckType(const core::type::Type* root,
                            << ", must have creation-fixed footprint";
                     return false;
                 }
-                if (arr->Count()->Is<core::type::RuntimeArrayCount>()) {
-                    if (addrspace != AddressSpace::kStorage) {
-                        diag() << "runtime arrays must be in the 'storage' address space";
-                        return false;
-                    }
-                } else if (auto* count = arr->Count()->As<core::type::ConstantArrayCount>()) {
+                if (auto* count = arr->Count()->As<core::type::ConstantArrayCount>()) {
                     if (count->value == 0) {
                         diag() << "array requires a constant array size > 0";
                         return false;
@@ -2379,8 +2382,17 @@ void Validator::CheckType(const core::type::Type* root,
                 return true;
             },
             [&](const core::type::Atomic* a) {
-                if (!a->Type()->IsAnyOf<core::type::I32, core::type::U32>()) {
-                    diag() << "atomic subtype must be i32 or u32";
+                // Prior to lowering we allow for atomic operations on vec2u to support the
+                // AtomicVec2UMinMax feature.
+                if (auto* vec = a->Type()->As<core::type::Vector>()) {
+                    if (vec->Width() == 2 && vec->Type()->Is<core::type::U32>()) {
+                        return true;
+                    }
+                }
+
+                if (!a->Type()->IsAnyOf<core::type::I32, core::type::U32, core::type::U64>()) {
+                    diag() << "atomic subtype must be i32, u32 or u64 type is "
+                           << NameOf(a->Type());
                     return false;
                 }
                 return true;
@@ -2490,15 +2502,21 @@ void Validator::CheckType(const core::type::Type* root,
             continue;
         }
 
+        // Visit the elements of a composite type.
         auto type_count = ty->Elements();
-        if (type_count.type && seen.Add(type_count.type)) {
-            stack.Push(type_count.type);
-            continue;
-        }
-
-        for (uint32_t i = 0; i < type_count.count; i++) {
-            if (auto* subtype = ty->Element(i); subtype && seen.Add(subtype)) {
-                stack.Push(subtype);
+        if (type_count.type) {
+            // Every element has the same type (e.g. array, vector, matrix, ...), so validate that
+            // type once if it has not been seen before.
+            if (seen.Add(type_count.type)) {
+                stack.Push(type_count.type);
+            }
+        } else {
+            // Different elements have different types (e.g. a struct), so we need to validate each
+            // of them if they have not been seen before.
+            for (uint32_t i = 0; i < type_count.count; i++) {
+                if (auto* subtype = ty->Element(i); subtype && seen.Add(subtype)) {
+                    stack.Push(subtype);
+                }
             }
         }
     }
@@ -2577,7 +2595,7 @@ void Validator::CheckRootBlock(const Block* blk) {
                 if (capabilities_.Contains(Capability::kAllowOverrides) &&
                     inst->IsAnyOf<core::ir::Unary, core::ir::Binary, core::ir::BuiltinCall,
                                   core::ir::Convert, core::ir::Swizzle, core::ir::Access,
-                                  core::ir::Bitcast, core::ir::ConstExprIf>()) {
+                                  core::ir::ConstExprIf>()) {
                     CheckInstruction(inst);
                     // If overrides are allowed we can have certain regular instructions in the root
                     // block, with the caveat that those instructions can _only_ be used in the root
@@ -2817,22 +2835,37 @@ void Validator::CheckFunction(const Function* func) {
                 continue;
             }
 
-            if (mv->AddressSpace() == AddressSpace::kImmediate) {
-                if (user_declared_immediate) {
-                    AddError(var) << "multiple user-declared immediate data variables referenced "
-                                     "by entry point "
-                                  << NameOf(func);
-                    return;
-                }
-                user_declared_immediate = var;
+            auto address_space = mv->AddressSpace();
+            switch (address_space) {
+                case AddressSpace::kImmediate:
+                    if (user_declared_immediate) {
+                        AddError(var)
+                            << "multiple user-declared immediate data variables referenced "
+                               "by entry point "
+                            << NameOf(func);
+                    }
+                    user_declared_immediate = var;
+                    continue;
+                case AddressSpace::kWorkgroup:
+                    if (!func->IsCompute()) {
+                        AddError(var) << "workgroup variable cannot be used in a " << func->Stage()
+                                      << " shader";
+                    }
+                    continue;
+                case AddressSpace::kPixelLocal:
+                    if (!func->IsFragment()) {
+                        AddError(var) << "pixel_local variable cannot be used in a "
+                                      << func->Stage() << " shader";
+                    }
+                    continue;
+                case AddressSpace::kIn:
+                case AddressSpace::kOut:
+                    break;
+                default:
+                    continue;
             }
 
-            if (mv->AddressSpace() != AddressSpace::kIn &&
-                mv->AddressSpace() != AddressSpace::kOut) {
-                continue;
-            }
-
-            if (func->IsFragment() && mv->AddressSpace() == AddressSpace::kIn) {
+            if (func->IsFragment() && address_space == AddressSpace::kIn) {
                 WalkTypeAndMembers(
                     var, ty, attr, [this](const auto* v, const auto* t, const auto& a) {
                         CheckFrontFacingIfBool(
@@ -3357,13 +3390,22 @@ void Validator::CheckInstruction(const Instruction* inst) {
         return;
     }
 
+    Capabilities allowed_types{};
+    if (auto* call = inst->As<core::ir::CoreBuiltinCall>();
+        call && call->Func() == core::BuiltinFn::kBitcast) {
+        allowed_types.Add(Capability::kAllow64BitIntegers);
+    }
+
     auto results = inst->Results();
     for (size_t i = 0; i < results.Length(); ++i) {
         auto* res = results[i];
         if (!res) {
             continue;
         }
-        CheckType(res->Type(), [&]() -> diag::Diagnostic& { return AddResultError(inst, i); });
+
+        CheckType(
+            res->Type(), [&]() -> diag::Diagnostic& { return AddResultError(inst, i); }, {},
+            allowed_types);
     }
 
     auto ops = inst->Operands();
@@ -3373,7 +3415,9 @@ void Validator::CheckInstruction(const Instruction* inst) {
             continue;
         }
 
-        CheckType(op->Type(), [&]() -> diag::Diagnostic& { return AddError(inst, i); });
+        CheckType(
+            op->Type(), [&]() -> diag::Diagnostic& { return AddError(inst, i); }, {},
+            allowed_types);
     }
 
     tint::Switch(
@@ -3455,6 +3499,17 @@ void Validator::CheckVar(const Var* var) {
             mv->AddressSpace() != AddressSpace::kPrivate) {
             AddError(var) << "vars in a function scope must be in the 'function' address space";
             return;
+        }
+    }
+
+    if (mv->AddressSpace() != AddressSpace::kStorage &&
+        mv->AddressSpace() != AddressSpace::kHandle) {
+        if (!capabilities_.Contains(Capability::kMslAllowEntryPointInterface)) {
+            if (!mv->StoreType()->HasFixedFootprint()) {
+                AddResultError(var, 0) << "vars not in the 'storage' or 'handle' address spaces "
+                                          "must have a fixed footprint";
+                return;
+            }
         }
     }
 
@@ -3981,7 +4036,6 @@ void Validator::CheckLet(const Let* l) {
 void Validator::CheckCall(const Call* call) {
     tint::Switch(
         call,                                                            //
-        [&](const Bitcast* b) { CheckBitcast(b); },                      //
         [&](const BuiltinCall* c) { CheckBuiltinCall(c); },              //
         [&](const MemberBuiltinCall* c) { CheckMemberBuiltinCall(c); },  //
         [&](const Construct* c) { CheckConstruct(c); },                  //
@@ -4004,108 +4058,6 @@ void Validator::CheckCall(const Call* call) {
         [&](Default) {
             // Validation of custom IR instructions
         });
-}
-
-void Validator::CheckBitcast(const Bitcast* bitcast) {
-    if (!CheckResultsAndOperands(bitcast, Bitcast::kNumResults, Bitcast::kNumOperands)) {
-        return;
-    }
-
-    CheckBitcastTypes(bitcast);
-}
-
-void Validator::CheckBitcastTypes(const Bitcast* bitcast) {
-    // Caller is responsible for checking results and operands
-    const auto* val_type = bitcast->Operand(Bitcast::kValueOperandOffset)->Type();
-    const auto* result_type = bitcast->Result()->Type();
-
-    const auto add_error = [&]() {
-        AddError(bitcast) << "bitcast is not defined for " << NameOf(val_type) << " -> "
-                          << NameOf(result_type);
-    };
-
-    // Check that there exists an overload for the provided types
-    if (val_type->IsAnyOf<core::type::U32, core::type::I32, core::type::F32>()) {
-        // S, where S is i32, u32, or f32
-        // S -> S, identity and reinterpretation
-        if (result_type->IsAnyOf<core::type::U32, core::type::I32, core::type::F32>()) {
-            return;
-        }
-
-        // S -> vec2<f16 | u16>
-        if (auto* vec_type = result_type->As<core::type::Vector>()) {
-            auto elements = vec_type->Elements();
-            if (elements.count == 2 && IsAnyOf<core::type::F16, core::type::U16>(elements.type)) {
-                return;
-            }
-        }
-    } else if (val_type->IsAnyOf<core::type::F16, core::type::U16>()) {
-        // S, where S is f16 or u16
-        // S -> S, identity and reinterpretation
-        if (result_type->IsAnyOf<core::type::F16, core::type::U16>()) {
-            return;
-        }
-    } else if (val_type->Is<core::type::Vector>()) {
-        auto val_elements = val_type->Elements();
-        if (!val_elements.type) {
-            // Malformed vector
-            add_error();
-            return;
-        }
-
-        std::optional<core::type::TypeAndCount> result_elements;
-        if (result_type->As<core::type::Vector>()) {
-            result_elements = result_type->Elements();
-            if (!result_elements->type) {
-                // Malformed vector
-                add_error();
-                return;
-            }
-        }
-
-        if (val_elements.type->IsAnyOf<core::type::U32, core::type::I32, core::type::F32>()) {
-            // vecN<S>, where S is i32, u32, or f32
-            // vecN<S> -> vecN<s>, identity and reinterpretation cases
-            if (result_elements.has_value() && val_elements.count == result_elements->count &&
-                result_elements->type
-                    ->IsAnyOf<core::type::U32, core::type::I32, core::type::F32>()) {
-                return;
-            }
-
-            // vec2<S> -> vec4<f16|u16>
-            if (val_elements.count == 2) {
-                if (result_elements.has_value() && result_elements->count == 4 &&
-                    result_elements->type->IsAnyOf<core::type::F16, core::type::U16>()) {
-                    return;
-                }
-            }
-        } else if (val_elements.type->IsAnyOf<core::type::F16, core::type::U16>()) {
-            if (result_elements.has_value()) {
-                if (result_elements->type->IsAnyOf<core::type::F16, core::type::U16>()) {
-                    // vecN<f16|u16> -> vecN<f16|u16>, identity
-                    if (val_elements.count == result_elements->count) {
-                        return;
-                    }
-                } else {
-                    // vec4<f16|u16> -> vec2<S>, where S is i32, u32, or f32
-                    if (val_elements.count == 4 && result_elements->count == 2 &&
-                        result_elements->type
-                            ->IsAnyOf<core::type::U32, core::type::I32, core::type::F32>()) {
-                        return;
-                    }
-                }
-            } else {
-                // vec2<f16|u16> -> i32, u32, or f32
-                if (val_elements.count == 2 &&
-                    result_type->IsAnyOf<core::type::U32, core::type::I32, core::type::F32>()) {
-                    return;
-                }
-            }
-        }
-    }
-
-    // No matching case for val and result type combination
-    add_error();
 }
 
 void Validator::CheckBuiltinCall(const BuiltinCall* call) {
@@ -4189,7 +4141,7 @@ void Validator::CheckCoreBuiltinCall(const CoreBuiltinCall* call,
             return;
         }
         uint32_t idx = idx_opt.value();
-        TINT_ASSERT(idx < call->Args().Length());
+        TINT_ASSERT(idx < call->Args().size());
 
         auto* val = call->Args()[idx];
         auto* const_val = val->As<ir::Constant>();
@@ -4270,14 +4222,14 @@ void Validator::CheckConstruct(const Construct* construct) {
     }
 
     auto args = construct->Args();
-    if (args.IsEmpty()) {
+    if (args.empty()) {
         // Zero-value constructors are valid for all constructible types.
         return;
     }
 
     auto check_args_match_elements = [&] {
         // Check that type type of each argument matches the expected element type of the composite.
-        for (size_t i = 0; i < args.Length(); i++) {
+        for (size_t i = 0; i < args.size(); i++) {
             if (args[i]->Is<ir::Unused>()) {
                 continue;
             }
@@ -4292,7 +4244,7 @@ void Validator::CheckConstruct(const Construct* construct) {
 
     if (result_type->Is<core::type::Scalar>()) {
         // The only valid non-zero scalar constructor is the identity operation.
-        if (args.Length() > 1) {
+        if (args.size() > 1) {
             AddError(construct) << "scalar construct must not have more than one argument";
         }
         if (args[0]->Type() != result_type) {
@@ -4300,7 +4252,7 @@ void Validator::CheckConstruct(const Construct* construct) {
                                     << " does not match result type " << NameOf(result_type);
         }
     } else if (auto* sg_mat = result_type->As<core::type::SubgroupMatrix>()) {
-        if (args.Length() > 1) {
+        if (args.size() > 1) {
             AddError(construct) << "subgroup matrix construct must not have more than 1 argument";
         } else {
             // 8-bit integer matrices use 32-bit shader scalar types in WGSL.
@@ -4339,18 +4291,18 @@ void Validator::CheckConstruct(const Construct* construct) {
                                 << " constructor";
         }
     } else if (auto* arr = result_type->As<core::type::Array>()) {
-        if (args.Length() != arr->ConstantCount()) {
+        if (args.size() != arr->ConstantCount()) {
             AddError(construct) << "array has " << arr->ConstantCount().value()
-                                << " elements, but construct provides " << args.Length()
+                                << " elements, but construct provides " << args.size()
                                 << " arguments";
             return;
         }
         check_args_match_elements();
     } else if (auto* str = As<core::type::Struct>(result_type)) {
         auto members = str->Members();
-        if (args.Length() != str->Members().Length()) {
+        if (args.size() != str->Members().Length()) {
             AddError(construct) << "structure has " << members.Length()
-                                << " members, but construct provides " << args.Length()
+                                << " members, but construct provides " << args.size()
                                 << " arguments";
             return;
         }
@@ -4426,15 +4378,31 @@ void Validator::CheckUserCall(const UserCall* call) {
 
     auto args = call->Args();
     auto params = call->Target()->Params();
-    if (args.Length() != params.Length()) {
+    if (args.size() != params.Length()) {
         AddError(call, UserCall::kFunctionOperandOffset)
             << "function has " << params.Length() << " parameters, but call provides "
-            << args.Length() << " arguments";
+            << args.size() << " arguments";
         return;
     }
 
-    for (size_t i = 0; i < args.Length(); i++) {
-        if (args[i]->Type() != params[i]->Type()) {
+    for (size_t i = 0; i < args.size(); i++) {
+        bool allow_mismatch = false;
+        if (auto* arg_buffer_ty = args[i]->Type()->UnwrapPtrOrRef()->As<core::type::Buffer>()) {
+            auto* arg_ptr_ty = args[i]->Type()->As<core::type::Pointer>();
+            if (auto* param_ptr_ty = params[i]->Type()->As<core::type::Pointer>()) {
+                if (auto* param_buffer_ty =
+                        param_ptr_ty->UnwrapPtrOrRef()->As<core::type::Buffer>()) {
+                    allow_mismatch = arg_ptr_ty->AddressSpace() == param_ptr_ty->AddressSpace() &&
+                                     arg_ptr_ty->Access() == param_ptr_ty->Access();
+                    uint32_t arg_size = arg_buffer_ty->ConstantCount().value_or(0);
+                    uint32_t param_size = param_buffer_ty->ConstantCount().value_or(0);
+                    allow_mismatch &=
+                        param_buffer_ty->Count()->Is<core::type::RuntimeArrayCount>() ||
+                        param_size < arg_size;
+                }
+            }
+        }
+        if (!allow_mismatch && args[i]->Type() != params[i]->Type()) {
             AddError(call, UserCall::kArgsOperandOffset + i)
                 << "type " << NameOf(params[i]->Type()) << " of function parameter " << i
                 << " does not match argument type " << NameOf(args[i]->Type());
@@ -4476,7 +4444,7 @@ void Validator::CheckAccess(const Access* a) {
         }
     };
 
-    for (size_t i = 0; i < a->Indices().Length(); i++) {
+    for (size_t i = 0; i < a->Indices().size(); i++) {
         auto err = [&]() -> diag::Diagnostic& {
             return AddError(a, i + Access::kIndicesOperandOffset);
         };
@@ -4893,7 +4861,7 @@ void Validator::CheckContinue(const Continue* c) {
     }
 
     if (auto* cont = loop->Continuing()) {
-        CheckOperandsMatchTarget(c, Continue::kArgsOperandOffset, c->Args().Length(), cont,
+        CheckOperandsMatchTarget(c, Continue::kArgsOperandOffset, c->Args().size(), cont,
                                  cont->Params());
     }
 
@@ -4912,7 +4880,7 @@ void Validator::CheckExit(const Exit* e) {
     }
 
     auto args = e->Args();
-    CheckOperandsMatchTarget(e, e->ArgsOperandOffset(), args.Length(), e->ControlInstruction(),
+    CheckOperandsMatchTarget(e, e->ArgsOperandOffset(), args.size(), e->ControlInstruction(),
                              e->ControlInstruction()->Results());
 
     tint::Switch(
@@ -4938,7 +4906,7 @@ void Validator::CheckNextIteration(const NextIteration* n) {
     }
 
     if (auto* body = loop->Body()) {
-        CheckOperandsMatchTarget(n, NextIteration::kArgsOperandOffset, n->Args().Length(), body,
+        CheckOperandsMatchTarget(n, NextIteration::kArgsOperandOffset, n->Args().size(), body,
                                  body->Params());
     }
 }
@@ -5281,29 +5249,29 @@ const core::type::Type* Validator::GetVectorPtrElementType(const Instruction* in
 
 }  // namespace
 
-Result<SuccessType> Validate(const Module& mod, Capabilities capabilities) {
+Result<SuccessType> Validate(const Module& mod, Capabilities capabilities, std::string_view msg) {
+    DumpIRIfEnabled(mod, msg);
     Validator v(mod, capabilities);
-    TINT_CHECK_RESULT(v.Run());
-    return Success;
+    return v.Run();
 }
 
-Result<SuccessType> ValidateAndDumpIfNeeded([[maybe_unused]] const Module& ir,
-                                            [[maybe_unused]] const char* msg,
-                                            [[maybe_unused]] Capabilities capabilities,
-                                            [[maybe_unused]] std::string_view timing) {
-#if TINT_DUMP_IR_WHEN_VALIDATING
-    auto printer = StyledTextPrinter::Create(stdout);
-    std::cout << "=========================================================\n";
-    std::cout << "== IR dump " << timing << " " << msg << ":\n";
-    std::cout << "=========================================================\n";
-    printer->Print(Disassembler(ir).Text());
-#endif
+void AssertValid(const Module& mod,
+                 [[maybe_unused]] Capabilities capabilities,
+                 std::string_view msg) {
+    DumpIRIfEnabled(mod, msg);
 
-#if TINT_ENABLE_IR_VALIDATION
-    TINT_CHECK_RESULT(Validate(ir, capabilities));
+#if TINT_ENABLE_IR_VALIDATION_ASSERTS
+    if (mod.enable_validation_asserts) {
+        Validator v(mod, capabilities);
+        auto result = v.Run();
+        if (result != Success) {
+            TINT_ICE() << "\n========================================================="
+                       << "\n== IR validation failed " << msg << ":"
+                       << "\n=========================================================\n"
+                       << result.Failure().reason;
+        }
+    }
 #endif
-
-    return Success;
 }
 
 }  // namespace tint::core::ir

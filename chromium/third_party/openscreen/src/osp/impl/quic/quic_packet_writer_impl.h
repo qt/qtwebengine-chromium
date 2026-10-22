@@ -29,7 +29,7 @@ class PacketWriterImpl final : public quic::QuicPacketWriter {
       const quic::QuicPacketWriterParams& params) override;
   bool IsWriteBlocked() const override;
   void SetWritable() override;
-  absl::optional<int> MessageTooBigErrorCode() const override;
+  std::optional<int> MessageTooBigErrorCode() const override;
   quic::QuicByteCount GetMaxPacketSize(
       const quic::QuicSocketAddress& peer_address) const override;
   bool SupportsReleaseTime() const override;

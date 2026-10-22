@@ -1,9 +1,15 @@
+# Copyright 2025 Google LLC
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Specializations for fp32 arm dot kernel generators."""
 
 # pylint: disable=missing-class-docstring
 # pylint: disable=invalid-name
 
 from ynnpack.kernels.dot.generator.arm import arm_neon
+from ynnpack.kernels.dot.generator.dot_base import generate_dot_kernels
 
 
 class arm_neon_bf16_bf16_fp32(arm_neon):
@@ -24,7 +30,7 @@ using bfloat16 = __bf16;
 
 namespace {
 
-YNN_INTRINSIC bfloat16x4_t unaligned_load_broadcast_2xbf16(const bfloat16* ptr) {
+YNN_INTRINSIC bfloat16x4_t unaligned_load_broadcast_bf16x2(const bfloat16* ptr) {
     float value;
     memcpy(&value, ptr, sizeof(float));
     return vreinterpret_bf16_f32(vdup_n_f32(value));
@@ -43,7 +49,7 @@ YNN_INTRINSIC bfloat16x4_t unaligned_load_broadcast_2xbf16(const bfloat16* ptr) 
     elif nk == 4:
       return f"bfloat16x4_t {a} = vld1_bf16({a_ptr});\n"
     else:
-      return f"bfloat16x4_t {a} = unaligned_load_broadcast_2xbf16({a_ptr});\n"
+      return f"bfloat16x4_t {a} = unaligned_load_broadcast_bf16x2({a_ptr});\n"
 
   def load_b_tile(self, k, j):
     return f"bfloat16x8_t b_{k}_{j} = vld1q_bf16({self.b_ptr(k, j)});\n"
@@ -51,9 +57,25 @@ YNN_INTRINSIC bfloat16x4_t unaligned_load_broadcast_2xbf16(const bfloat16* ptr) 
   def product(self, i, j, k):
     c = f"c_{i}_{j}"
     b = f"b_{k}_{j}"
-    if self.block_shape[2] == 8:
+    _, _, block_k = self.block_shape
+    if block_k == 8:
       return f"{c} = vbfdotq_laneq_f32({c}, {b}, a_{i}_{0}, {k//2});\n"
-    elif self.block_shape[2] == 4:
+    elif block_k == 4:
       return f"{c} = vbfdotq_lane_f32({c}, {b}, a_{i}_{0}, {k//2});\n"
     else:
       return f"{c} = vbfdotq_lane_f32({c}, {b}, a_{i}_{k}, 0);\n"
+
+
+generate_dot_kernels(
+    arm_neonbf16_bf16_bf16_fp32_k2(),
+    [
+        (1, 32, 4),
+        (2, 32, 4),
+        (2, 16, 4),
+        (3, 16, 4),
+        (4, 16, 4),
+        (4, 8, 4),
+        (6, 8, 4),
+        (8, 4, 4),
+    ],
+)

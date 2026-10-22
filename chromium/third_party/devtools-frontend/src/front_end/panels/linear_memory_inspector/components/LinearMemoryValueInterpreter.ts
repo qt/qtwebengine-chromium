@@ -32,7 +32,7 @@ const str_ =
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 const {render, html} = Lit;
-const {widgetConfig} = UI.Widget;
+const {widget} = UI.Widget;
 
 export interface ViewInput {
   endianness: Endianness;
@@ -60,7 +60,7 @@ function renderEndiannessSetting(
         data-endianness="true" @change=${(e: Event) => onEndiannessChanged((e.target as HTMLSelectElement).value as Endianness)}>
         ${[Endianness.LITTLE, Endianness.BIG].map(endianness => {
             return html`<option value=${endianness} .selected=${currentEndiannes === endianness}
-            jslog=${VisualLogging.item(Platform.StringUtilities.toKebabCase(endianness)).track({click: true})}>${
+            jslog=${VisualLogging.item(Platform.StringUtilities.toKebabCase(endianness)).track({click: true, resize: true})}>${
                 i18n.i18n.lockedString(endianness)}</option>`;
         })}
       </select>
@@ -89,14 +89,10 @@ export const DEFAULT_VIEW = (input: ViewInput, _output: undefined, target: HTMLE
       </div>
       <span class="divider"></span>
       <div>
-        ${input.showSettings ?
-      html`
-            <devtools-widget .widgetConfig=${widgetConfig(ValueInterpreterSettings, {
-              valueTypes: input.valueTypes, onToggle: input.onValueTypeToggled
-            })}>
-            </devtools-widget>` :
-      html`
-            <devtools-widget .widgetConfig=${widgetConfig(ValueInterpreterDisplay, {
+        ${input.showSettings
+          ? widget(ValueInterpreterSettings, {
+              valueTypes: input.valueTypes, onToggle: input.onValueTypeToggled})
+          : widget(ValueInterpreterDisplay, {
               buffer: input.buffer,
               valueTypes: input.valueTypes,
               endianness: input.endianness,
@@ -104,8 +100,7 @@ export const DEFAULT_VIEW = (input: ViewInput, _output: undefined, target: HTMLE
               memoryLength: input.memoryLength,
               onValueTypeModeChange: input.onValueTypeModeChange,
               onJumpToAddressClicked: input.onJumpToAddressClicked,
-            })}>
-            </devtools-widget>`}
+            })}
       </div>
     </div>
   `,

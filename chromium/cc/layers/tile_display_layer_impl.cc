@@ -5,7 +5,6 @@
 #include "cc/layers/tile_display_layer_impl.h"
 
 #include <algorithm>
-#include <limits>
 #include <memory>
 #include <utility>
 #include <variant>
@@ -174,83 +173,18 @@ std::unique_ptr<LayerImpl> TileDisplayLayerImpl::CreateLayerImpl(
   NOTREACHED();
 }
 
-void TileDisplayLayerImpl::PushPropertiesTo(LayerImpl* layer) {
+void TileDisplayLayerImpl::CopyPropertiesTo(LayerImpl* layer) const {
   NOTREACHED();
 }
 
-void TileDisplayLayerImpl::AppendQuadsSpecialization(
-    const AppendQuadsContext& context,
-    viz::CompositorRenderPass* render_pass,
-    AppendQuadsData* append_quads_data,
-    viz::SharedQuadState* shared_quad_state,
-    const Occlusion& scaled_occlusion,
-    const gfx::Vector2d& quad_offset,
-    float max_contents_scale) {
-  // TODO(crbug.com/40902346): Use CalculateScaledCullRect() to set
-  // append_quads_data->checkerboarded_needs_record as PictureLayerImpl does.
-
-  const float ideal_scale_key = GetIdealContentsScaleKey();
-  const gfx::Rect scaled_recorded_bounds =
-      gfx::ScaleToEnclosingRect(recorded_bounds_, max_contents_scale);
-
-  // Append quads for the tiles in this layer.
-  for (auto iter = Cover(shared_quad_state->visible_quad_layer_rect,
-                         max_contents_scale, ideal_scale_key);
-       iter; ++iter) {
-    const gfx::Rect geometry_rect = iter.geometry_rect();
-    gfx::Rect visible_geometry_rect;
-    if (ShouldSkipTile(geometry_rect, scaled_recorded_bounds, scaled_occlusion,
-                       visible_geometry_rect)) {
-      continue;
-    }
-
-    gfx::Rect offset_geometry_rect = geometry_rect;
-    offset_geometry_rect.Offset(quad_offset);
-    gfx::Rect offset_visible_geometry_rect = visible_geometry_rect;
-    offset_visible_geometry_rect.Offset(quad_offset);
-
-    bool needs_blending = !contents_opaque();
-
-    uint64_t visible_geometry_area = visible_geometry_rect.size().Area64();
-    append_quads_data->visible_layer_area += visible_geometry_area;
-
-    bool has_draw_quad = false;
-    if (*iter) {
-      if (auto resource = iter->resource()) {
-        const gfx::RectF texture_rect = iter.texture_rect();
-        auto* quad = render_pass->CreateAndAppendDrawQuad<viz::TileDrawQuad>();
-        quad->SetNew(shared_quad_state, offset_geometry_rect,
-                     offset_visible_geometry_rect, needs_blending,
-                     resource->resource_id, texture_rect, nearest_neighbor_,
-                     !layer_tree_impl()->settings().enable_edge_anti_aliasing);
-        has_draw_quad = true;
-      } else if (auto color = iter->solid_color()) {
-        has_draw_quad = true;
-        const float alpha = color->fA * shared_quad_state->opacity;
-        if (alpha >= std::numeric_limits<float>::epsilon()) {
-          auto* quad =
-              render_pass->CreateAndAppendDrawQuad<viz::SolidColorDrawQuad>();
-          quad->SetNew(
-              shared_quad_state, offset_geometry_rect,
-              offset_visible_geometry_rect, *color,
-              !layer_tree_impl()->settings().enable_edge_anti_aliasing);
-        }
-      } else if (iter->is_oom()) {
-        // Keep `has_draw_quad` false to end up checkerboarding below.
-      }
-    }
-    if (!has_draw_quad) {
-      // Checkerboard due to missing raster.
-      SkColor4f color = safe_opaque_background_color();
-      auto* quad =
-          render_pass->CreateAndAppendDrawQuad<viz::SolidColorDrawQuad>();
-      quad->SetNew(shared_quad_state, offset_geometry_rect,
-                   offset_visible_geometry_rect, color, false);
-      continue;
-    }
-
-    AddScaleToLastAppendQuadsScales(iter.CurrentTiling()->contents_scale_key());
-  }
+bool TileDisplayLayerImpl::ComputeCheckerboardedNeedsRecord() {
+  // NOTE: Currently it is not necessary to compute
+  // checkerboarded_needs_recorded on the Viz side, as it is consumed only on
+  // the client side. However, it will become necessary when we introduce
+  // frames driven entirely by Viz. At that point, we should dedupe the
+  // relevant code into TileBasedLayerImpl.
+  // See crbug.com/482862751.
+  return false;
 }
 
 float TileDisplayLayerImpl::GetMaximumContentsScaleForUseInAppendQuads() const {
@@ -261,53 +195,8 @@ bool TileDisplayLayerImpl::IsDirectlyCompositedImage() const {
   return is_directly_composited_image_;
 }
 
-void TileDisplayLayerImpl::GetContentsResourceId(
-    viz::ResourceId* resource_id,
-    gfx::Size* resource_size,
-    gfx::SizeF* resource_uv_size) const {
-  *resource_id = viz::kInvalidResourceId;
-
-  // We need contents resource for backdrop filter masks only.
-  if (!is_backdrop_filter_mask()) {
-    return;
-  }
-
-  // Masks are only supported if they fit on exactly one tile.
-  if (tilings_.size() != 1u) {
-    return;
-  }
-
-  const float max_contents_scale = tilings_.front()->contents_scale_key();
-  gfx::Rect content_rect =
-      gfx::ScaleToEnclosingRect(gfx::Rect(bounds()), max_contents_scale);
-  auto iter = TilingSetCoverageIterator<TileDisplayLayerTiling>(
-      tilings_, content_rect, max_contents_scale, GetIdealContentsScaleKey());
-
-  // We cannot do anything if the mask resource was not provided.
-  if (!iter || !*iter || !iter->resource()) {
-    return;
-  }
-
-  DCHECK(iter.geometry_rect() == content_rect)
-      << "iter rect " << iter.geometry_rect().ToString() << " content rect "
-      << content_rect.ToString();
-
-  *resource_id = iter->resource()->resource_id;
-  *resource_size = iter->resource()->resource_size;
-  gfx::SizeF requested_tile_size =
-      gfx::SizeF(iter.CurrentTiling()->tile_size());
-  *resource_uv_size =
-      gfx::SizeF(requested_tile_size.width() / resource_size->width(),
-                 requested_tile_size.height() / resource_size->height());
-}
-
-gfx::Rect TileDisplayLayerImpl::GetDamageRect() const {
-  return damage_rect_;
-}
-
-void TileDisplayLayerImpl::ResetChangeTracking() {
-  LayerImpl::ResetChangeTracking();
-  damage_rect_.SetRect(0, 0, 0, 0);
+gfx::Rect TileDisplayLayerImpl::RecordedBounds() const {
+  return recorded_bounds_;
 }
 
 gfx::ContentColorUsage TileDisplayLayerImpl::GetContentColorUsage() const {
@@ -315,7 +204,7 @@ gfx::ContentColorUsage TileDisplayLayerImpl::GetContentColorUsage() const {
 }
 
 void TileDisplayLayerImpl::RecordDamage(const gfx::Rect& damage_rect) {
-  damage_rect_.Union(damage_rect);
+  UnionWithExistingDamage(damage_rect);
 }
 
 void TileDisplayLayerImpl::DiscardResource(viz::ResourceId resource) {
@@ -343,6 +232,11 @@ float TileDisplayLayerImpl::GetIdealContentsScaleKey() const {
   return std::max(ideal_scale.x(), ideal_scale.y());
 }
 
+bool TileDisplayLayerImpl::ValidateTilingSetForContentsResourceId() const {
+  // Masks are only supported if they fit on exactly one tile.
+  return tilings_.size() == 1u;
+}
+
 void TileDisplayLayerImpl::AppendQuadsForResourcelessSoftwareDraw(
     const AppendQuadsContext& context,
     viz::CompositorRenderPass* render_pass,
@@ -358,7 +252,7 @@ void TileDisplayLayerImpl::AppendQuadsForResourcelessSoftwareDraw(
 TilingSetCoverageIterator<TileDisplayLayerTiling> TileDisplayLayerImpl::Cover(
     const gfx::Rect& coverage_rect,
     float coverage_scale,
-    float ideal_contents_scale) {
+    float ideal_contents_scale) const {
   return TilingSetCoverageIterator<TileDisplayLayerTiling>(
       tilings_, coverage_rect, coverage_scale, ideal_contents_scale);
 }

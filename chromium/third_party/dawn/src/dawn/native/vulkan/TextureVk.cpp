@@ -48,6 +48,7 @@
 #include "dawn/native/vulkan/QueueVk.h"
 #include "dawn/native/vulkan/ResourceHeapVk.h"
 #include "dawn/native/vulkan/ResourceMemoryAllocatorVk.h"
+#include "dawn/native/vulkan/SamplerVk.h"
 #include "dawn/native/vulkan/SharedFenceVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
 #include "dawn/native/vulkan/VulkanError.h"
@@ -590,8 +591,9 @@ VkFormat VulkanImageFormat(const Device* device, wgpu::TextureFormat format) {
                 return VulkanImageFormat(device, wgpu::TextureFormat::Depth24PlusStencil8);
             }
 
-        case wgpu::TextureFormat::External:
-            // The VkFormat is Undefined when TextureFormat::External is passed for YCbCr samplers.
+        case wgpu::TextureFormat::OpaqueYCbCrAndroid:
+            // The VkFormat is Undefined when TextureFormat::OpaqueYCbCrAndroid is passed for YCbCr
+            // samplers.
             return VK_FORMAT_UNDEFINED;
 
         // R8BG8A8Triplanar420Unorm format is only supported on macOS.
@@ -1179,6 +1181,7 @@ MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
                 BeginRenderPassCmd beginCmd{};
                 beginCmd.width = mipSize.width;
                 beginCmd.height = mipSize.height;
+                beginCmd.renderArea = {0, 0, mipSize.width, mipSize.height};
 
                 TextureViewDescriptor viewDesc = {};
                 viewDesc.label = "Dawn_ClearTexture_View";
@@ -1546,7 +1549,7 @@ MaybeError InternalTexture::Initialize(VkImageUsageFlags extraUsages) {
         "BindImageMemory"));
 
     // crbug.com/1361662
-    // This works around an Intel Gen12 mesa bug due to CCS ambiguates stomping on each other.
+    // This works around an Intel Gen12 Mesa bug due to CCS ambiguates stomping on each other.
     // https://gitlab.freedesktop.org/mesa/mesa/-/issues/7301#note_1826367
     if (device->IsToggleEnabled(Toggle::VulkanClearGen12TextureWithCCSAmbiguateOnCreation)) {
         auto format = GetFormat().format;
@@ -2103,20 +2106,43 @@ MaybeError TextureView::Initialize(const UnpackedPtr<TextureViewDescriptor>& des
     usageInfo.usage = VulkanImageUsage(device, GetInternalUsage(), GetFormat());
     createInfo.pNext = &usageInfo;
 
+    // Compute and link the VkSamplerYCbCrConversion, if any is needed.
     VkSamplerYcbcrConversionInfo samplerYCbCrInfo = {};
-    if (auto* yCbCrVkDescriptor = descriptor.Get<YCbCrVkDescriptor>()) {
-        mIsYCbCr = true;
-        mYCbCrVkDescriptor = yCbCrVkDescriptor->WithTrivialFrontendDefaults();
-        mYCbCrVkDescriptor.nextInChain = nullptr;
+    if (GetTexture()->GetFormat().format == wgpu::TextureFormat::OpaqueYCbCrAndroid) {
+        auto stmContents = static_cast<SharedTextureMemoryContentsVk*>(
+            GetTexture()->GetSharedResourceMemoryContents());
+        mIsYCbCrFilterable = stmContents->IsYCbCrFilterable();
 
-        DAWN_TRY_ASSIGN(mSamplerYCbCrConversion,
-                        CreateSamplerYCbCrConversionCreateInfo(mYCbCrVkDescriptor, device));
+        YCbCrVkDescriptor yCbCr;
+        if (auto* yCbCrVkDescriptor = descriptor.Get<YCbCrVkDescriptor>()) {
+            // The YCbCr conversion can be specified by the user with the YCbCrVulkanSamplers
+            // feature.
+            DAWN_ASSERT(device->HasFeature(Feature::YCbCrVulkanSamplers));
+
+            yCbCr = yCbCrVkDescriptor->WithTrivialFrontendDefaults();
+            yCbCr.nextInChain = nullptr;
+        } else {
+            // When using OpaqueYCbCrAndroidForExternalTexture, the YCbCr conversion is the same one
+            // that's going to be used for the ExternalTexture static samplers.
+            // TODO(https://crbug.com/497675620): Specialize the conversion at the same time as all
+            // the other state, in order to take advantage of hardware YCbCr to RGB conversion when
+            // present.
+            DAWN_ASSERT(device->HasFeature(Feature::OpaqueYCbCrAndroidForExternalTexture));
+
+            yCbCr = StaticSamplerSpecialization::GetYCbCrForTextureView(
+                static_cast<VkFormat>(stmContents->GetYCbCrVkDesc().vkFormat),
+                stmContents->GetYCbCrVkDesc().externalFormat);
+        }
+
+        // Create the VkSamplerYCbCrConversion and link it in the createInfo.
+        DAWN_TRY_ASSIGN(mSamplerYCbCrConversion, CreateSamplerYCbCrConversion(device, yCbCr));
 
         samplerYCbCrInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO;
         samplerYCbCrInfo.pNext = nullptr;
         samplerYCbCrInfo.conversion = mSamplerYCbCrConversion;
-
         createInfo.pNext = &samplerYCbCrInfo;
+    } else {
+        DAWN_ASSERT(!descriptor.Has<YCbCrVkDescriptor>());
     }
 
     DAWN_TRY(CheckVkSuccess(
@@ -2257,13 +2283,9 @@ ResultOrError<VkImageView> TextureView::GetOrCreate2DViewOn3D(uint32_t depthSlic
     return view;
 }
 
-bool TextureView::IsYCbCr() const {
-    return mIsYCbCr;
-}
-
-YCbCrVkDescriptor TextureView::GetYCbCrVkDescriptor() const {
+bool TextureView::IsYCbCrFilterable() const {
     DAWN_ASSERT(IsYCbCr());
-    return mYCbCrVkDescriptor;
+    return mIsYCbCrFilterable;
 }
 
 void TextureView::SetLabelImpl() {

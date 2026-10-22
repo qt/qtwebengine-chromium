@@ -18,15 +18,6 @@ use std::path::PathBuf;
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=cbindgen.toml");
-    #[cfg(feature = "libgav1")]
-    {
-        // libgav1 needs libstdc++ on *nix/windows and libc++ on mac.
-        if cfg!(target_os = "macos") {
-            println!("cargo:rustc-link-arg=-lc++");
-        } else {
-            println!("cargo:rustc-link-arg=-lstdc++");
-        }
-    }
     #[cfg(feature = "capi")]
     {
         // Generate the C header.

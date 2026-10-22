@@ -49,7 +49,8 @@ TEST_F(SpirvWriterTest, Swizzle_OneElement) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpCompositeExtract %int %vec 3");
 }
 
@@ -69,7 +70,8 @@ TEST_F(SpirvWriterTest, Swizzle_TwoElements) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpVectorShuffle %v2int %vec %vec 3 2");
 }
 
@@ -89,7 +91,8 @@ TEST_F(SpirvWriterTest, Swizzle_ThreeElements) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpVectorShuffle %v3int %vec %vec 3 2 1");
 }
 
@@ -109,7 +112,8 @@ TEST_F(SpirvWriterTest, Swizzle_FourElements) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpVectorShuffle %v4int %vec %vec 3 2 1 0");
 }
 
@@ -129,7 +133,8 @@ TEST_F(SpirvWriterTest, Swizzle_RepeatedElements) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpVectorShuffle %v4int %vec %vec 1 3 1 3");
 }
 

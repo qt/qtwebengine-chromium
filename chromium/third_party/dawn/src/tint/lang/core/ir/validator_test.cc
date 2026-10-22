@@ -30,7 +30,6 @@
 #include <string>
 
 #include "gtest/gtest.h"
-
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/function_param.h"
 #include "src/tint/lang/core/ir/type/array_count.h"
@@ -50,6 +49,8 @@ namespace tint::core::ir {
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
+
+using IR_ValidatorDeathTest = IR_ValidatorTest;
 
 Function* IR_ValidatorTest::ComputeEntryPoint(const std::string& name) {
     return b.ComputeFunction(name);
@@ -1890,6 +1891,42 @@ TEST_F(IR_ValidatorTest, OverrideWithoutIdOrInitializer) {
   %1:u32 = override undef
            ^^^^^^^^
 )")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, ValidateIfNeeded_Disabled) {
+    auto* l = b.Loop();
+    l->Body()->Append(b.Continue(l));
+    mod.root_block->Append(l);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+
+    // The module is invalid but the assertion should not fire when the flag is disabled.
+    mod.enable_validation_asserts = false;
+    AssertValid(mod);
+}
+
+TEST_F(IR_ValidatorDeathTest, ValidateIfNeeded_Enabled) {
+    auto* l = b.Loop();
+    l->Body()->Append(b.Continue(l));
+    mod.root_block->Append(l);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+
+    mod.enable_validation_asserts = true;
+
+#if TINT_ENABLE_IR_VALIDATION_ASSERTS
+    // The module is invalid and the assertion should trigger an ICE because the flag is enabled.
+    EXPECT_DEATH_IF_SUPPORTED(
+        {  //
+            AssertValid(mod);
+        },
+        "internal compiler error");
+#else
+    // If validation assertions are disabled at build time, this should have no effect.
+    AssertValid(mod);
+#endif
 }
 
 }  // namespace tint::core::ir

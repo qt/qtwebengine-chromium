@@ -122,10 +122,6 @@ const UIStrings = {
    */
   dockSideNavigation: 'Use left and right arrow keys to navigate the options',
   /**
-   * @description Notification shown to the user whenever DevTools receives an external request.
-   */
-  externalRequestReceived: '`DevTools` received an external request',
-  /**
    * @description Notification shown to the user whenever DevTools has finished downloading a local AI model.
    */
   aiModelDownloaded: 'AI model downloaded',
@@ -201,7 +197,9 @@ export class MainImpl {
       },
     };
     this.#universe = new Foundation.Universe.Universe(creationOptions);
-    Root.DevToolsContext.setGlobalInstance(this.#universe.context);
+    Root.DevToolsContext.setGlobalInstance(this.#universe.context as Root.DevToolsContext.WritableDevToolsContext);
+
+    Root.Runtime.experiments.cleanUpStaleExperiments();
 
     await this.requestAndRegisterLocaleData();
 
@@ -352,6 +350,7 @@ export class MainImpl {
       title: 'Protocol Monitor',
       aboutFlag: 'devtools-protocol-monitor',
       isEnabled: enableProtocolMonitor,
+      requiresChromeRestart: false,
       docLink: 'https://developer.chrome.com/blog/new-in-devtools-92/#protocol-monitor' as
           Platform.DevToolsPath.UrlString,
     });
@@ -359,17 +358,10 @@ export class MainImpl {
         Root.ExperimentNames.ExperimentName.PROTOCOL_MONITOR, protocolMonitorExperiment);
     Root.Runtime.experiments.register(
         Root.ExperimentNames.ExperimentName.SAMPLING_HEAP_PROFILER_TIMELINE, 'Sampling heap profiler timeline');
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.SHOW_OPTION_TO_EXPOSE_INTERNALS_IN_HEAP_SNAPSHOT,
-        'Show option to expose internals in heap snapshots');
 
     // Timeline
     Root.Runtime.experiments.register(
         Root.ExperimentNames.ExperimentName.TIMELINE_INVALIDATION_TRACKING, 'Performance panel: invalidation tracking');
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.TIMELINE_SHOW_ALL_EVENTS, 'Performance panel: show all events');
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.TIMELINE_V8_RUNTIME_CALL_STATS, 'Performance panel: V8 runtime call stats');
     Root.Runtime.experiments.register(
         Root.ExperimentNames.ExperimentName.TIMELINE_DEBUG_MODE,
         'Performance panel: debug mode (trace event details, etc)');
@@ -386,48 +378,31 @@ export class MainImpl {
         'Advanced Perceptual Contrast Algorithm (APCA) replacing previous contrast ratio and AA/AAA guidelines',
         'https://developer.chrome.com/blog/new-in-devtools-89/#apca');
 
-    // Full Accessibility Tree
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.FULL_ACCESSIBILITY_TREE,
-        'Full accessibility tree view in the Elements panel',
-        'https://developer.chrome.com/blog/new-in-devtools-90/#accessibility-tree',
-        'https://g.co/devtools/a11y-tree-feedback');
-
     // Font Editor
     Root.Runtime.experiments.register(
         Root.ExperimentNames.ExperimentName.FONT_EDITOR, 'New font editor in the Styles tab',
         'https://developer.chrome.com/blog/new-in-devtools-89/#font');
 
-    // Contrast issues reported via the Issues panel.
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.CONTRAST_ISSUES, 'Automatic contrast issue reporting via the Issues panel',
-        'https://developer.chrome.com/blog/new-in-devtools-90/#low-contrast');
+    Root.Runtime.experiments.registerHostExperiment({
+      name: Root.ExperimentNames.ExperimentName.DURABLE_MESSAGES,
+      title: 'Durable Messages',
+      aboutFlag: 'devtools-enable-durable-messages',
+      isEnabled: Root.Runtime.hostConfig.devToolsEnableDurableMessages?.enabled ?? false,
+      requiresChromeRestart: false,
+    });
 
-    // New cookie features.
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.EXPERIMENTAL_COOKIE_FEATURES, 'Experimental cookie features');
-
-    // Change grouping of sources panel to use Authored/Deployed trees
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.AUTHORED_DEPLOYED_GROUPING,
-        'Group sources into authored and deployed trees', 'https://goo.gle/authored-deployed',
-        'https://goo.gle/authored-deployed-feedback');
-
-    // Hide third party code (as determined by ignore lists or source maps)
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.JUST_MY_CODE, 'Hide ignore-listed code in Sources tree view');
-
-    Root.Runtime.experiments.register(
-        Root.ExperimentNames.ExperimentName.TIMELINE_SHOW_POST_MESSAGE_EVENTS,
-        'Performance panel: show postMessage dispatch and handling flows',
-    );
+    Root.Runtime.experiments.registerHostExperiment({
+      name: Root.ExperimentNames.ExperimentName.JPEG_XL,
+      title: 'JPEG XL support',
+      aboutFlag: 'enable-jxl-image-format',
+      isEnabled: Root.Runtime.hostConfig.devToolsJpegXlImageFormat?.enabled ?? false,
+      requiresChromeRestart: true,
+    });
 
     Root.Runtime.experiments.enableExperimentsByDefault([
-      Root.ExperimentNames.ExperimentName.FULL_ACCESSIBILITY_TREE,
       Root.ExperimentNames.ExperimentName.USE_SOURCE_MAP_SCOPES,
     ]);
 
-    Root.Runtime.experiments.cleanUpStaleExperiments();
     const enabledExperiments = Root.Runtime.Runtime.queryParam('enabledExperiments');
     if (enabledExperiments) {
       Root.Runtime.experiments.setServerEnabledExperiments(enabledExperiments.split(';'));
@@ -481,7 +456,6 @@ export class MainImpl {
 
     // These instances need to be created early so they don't miss any events about requests/issues/etc.
     Logs.NetworkLog.NetworkLog.instance();
-    SDK.FrameManager.FrameManager.instance();
     Logs.LogManager.LogManager.instance();
     IssuesManager.IssuesManager.IssuesManager.instance({
       forceNew: true,
@@ -489,7 +463,6 @@ export class MainImpl {
       showThirdPartyIssuesSetting: IssuesManager.Issue.getShowThirdPartyIssuesSetting(),
       hideIssueSetting: IssuesManager.IssuesManager.getHideIssueByCodeSetting(),
     });
-    IssuesManager.ContrastCheckTrigger.ContrastCheckTrigger.instance();
 
     UI.DockController.DockController.instance({forceNew: true, canDock});
     SDK.DOMDebuggerModel.DOMDebuggerManager.instance({forceNew: true});
@@ -511,6 +484,7 @@ export class MainImpl {
       workspace: Workspace.Workspace.WorkspaceImpl.instance(),
       targetManager,
       debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(),
+      settings: Common.Settings.Settings.instance(),
     });
     // @ts-expect-error e2e test global
     self.Extensions.extensionServer = PanelCommon.ExtensionServer.ExtensionServer.instance({forceNew: true});
@@ -590,14 +564,6 @@ export class MainImpl {
         void badgeNotification.present(badge, reason);
       });
     }
-
-    const conversationHandler = AiAssistanceModel.ConversationHandler.ConversationHandler.instance();
-    conversationHandler.addEventListener(
-        AiAssistanceModel.ConversationHandler.ConversationHandlerEvents.EXTERNAL_REQUEST_RECEIVED,
-        () => Snackbar.Snackbar.Snackbar.show({message: i18nString(UIStrings.externalRequestReceived)}));
-    conversationHandler.addEventListener(
-        AiAssistanceModel.ConversationHandler.ConversationHandlerEvents.EXTERNAL_CONVERSATION_STARTED,
-        event => void VisualLogging.logFunctionCall(`start-conversation-${event.data}`, 'external'));
 
     if (Root.Runtime.hostConfig.devToolsGeminiRebranding?.enabled) {
       await PanelCommon.GeminiRebrandPromoDialog.maybeShow();
@@ -1114,89 +1080,3 @@ export class ReloadActionDelegate implements UI.ActionRegistration.ActionDelegat
     return false;
   }
 }
-
-type ExternalRequestInput = {
-  kind: 'LIVE_STYLE_DEBUGGER',
-  args: {prompt: string, selector: string},
-}|{
-  kind: 'PERFORMANCE_RELOAD_GATHER_INSIGHTS',
-}|{
-  kind: 'PERFORMANCE_ANALYZE',
-  args: {prompt: string},
-}|{
-  kind: 'NETWORK_DEBUGGER',
-  args: {requestUrl: string, prompt: string},
-};
-
-/**
- * For backwards-compatibility we iterate over the generator and drop the
- * intermediate results. The final response is transformed to its legacy type.
- * Instead of sending responses of type error, errors are throws.
- **/
-export async function handleExternalRequest(input: ExternalRequestInput):
-    Promise<{response: string, devToolsLogs: object[]}> {
-  const generator = await handleExternalRequestGenerator(input);
-  let result: IteratorResult<
-      AiAssistanceModel.AiAgent.ExternalRequestResponse, AiAssistanceModel.AiAgent.ExternalRequestResponse>;
-  do {
-    result = await generator.next();
-  } while (!result.done);
-  const response = result.value;
-  if (response.type === AiAssistanceModel.AiAgent.ExternalRequestResponseType.ERROR) {
-    throw new Error(response.message);
-  }
-  if (response.type === AiAssistanceModel.AiAgent.ExternalRequestResponseType.ANSWER) {
-    return {
-      response: response.message,
-      devToolsLogs: response.devToolsLogs,
-    };
-  }
-  throw new Error('Received no response of type answer or type error');
-}
-
-// @ts-expect-error
-globalThis.handleExternalRequest = handleExternalRequest;
-
-export async function handleExternalRequestGenerator(input: ExternalRequestInput): Promise<AsyncGenerator<
-    AiAssistanceModel.AiAgent.ExternalRequestResponse, AiAssistanceModel.AiAgent.ExternalRequestResponse>> {
-  switch (input.kind) {
-    case 'PERFORMANCE_RELOAD_GATHER_INSIGHTS': {
-      const TimelinePanel = await import('../../panels/timeline/timeline.js');
-      return TimelinePanel.TimelinePanel.TimelinePanel.handleExternalRecordRequest();
-    }
-    case 'PERFORMANCE_ANALYZE': {
-      const TimelinePanel = await import('../../panels/timeline/timeline.js');
-      return await TimelinePanel.TimelinePanel.TimelinePanel.handleExternalAnalyzeRequest(input.args.prompt);
-    }
-    case 'NETWORK_DEBUGGER': {
-      const AiAssistanceModel = await import('../../models/ai_assistance/ai_assistance.js');
-      const conversationHandler = AiAssistanceModel.ConversationHandler.ConversationHandler.instance();
-      return await conversationHandler.handleExternalRequest({
-        conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType.NETWORK,
-        prompt: input.args.prompt,
-        requestUrl: input.args.requestUrl,
-      });
-    }
-    case 'LIVE_STYLE_DEBUGGER': {
-      const AiAssistanceModel = await import('../../models/ai_assistance/ai_assistance.js');
-      const conversationHandler = AiAssistanceModel.ConversationHandler.ConversationHandler.instance();
-      return await conversationHandler.handleExternalRequest({
-        conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType.STYLING,
-        prompt: input.args.prompt,
-        selector: input.args.selector,
-      });
-    }
-  }
-  // eslint-disable-next-line require-yield
-  return (async function*(): AsyncGenerator<
-          AiAssistanceModel.AiAgent.ExternalRequestResponse, AiAssistanceModel.AiAgent.ExternalRequestResponse> {
-    return {
-      type: AiAssistanceModel.AiAgent.ExternalRequestResponseType.ERROR,
-      // @ts-expect-error
-      message: `Debugging with an agent of type '${input.kind}' is not implemented yet.`,
-    };
-  })();
-}
-
-// @ts-expect-error
-globalThis.handleExternalRequestGenerator = handleExternalRequestGenerator;

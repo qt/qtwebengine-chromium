@@ -25,6 +25,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/performance_manager/public/features.h"
 #include "content/public/browser/child_process_launcher_utils.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -65,7 +66,7 @@ WebContents* FindFirstDevToolsContents() {
   return nullptr;
 }
 
-// TODO(rvargas) crbug.com/417532: Remove this code.
+// TODO(rvargas) crbug.com/40386210: Remove this code.
 base::Process ProcessFromHandle(base::ProcessHandle handle) {
 #if BUILDFLAG(IS_WIN)
   if (handle == GetCurrentProcess())
@@ -96,7 +97,10 @@ bool IsProcessBackgrounded(const base::Process& process) {
 
 class ChromeRenderProcessHostTest : public extensions::ExtensionBrowserTest {
  public:
-  ChromeRenderProcessHostTest() = default;
+  ChromeRenderProcessHostTest() {
+    feature_list_.InitAndDisableFeature(
+        performance_manager::features::kTransientKeepAlivePolicy);
+  }
 
   ChromeRenderProcessHostTest(const ChromeRenderProcessHostTest&) = delete;
   ChromeRenderProcessHostTest& operator=(const ChromeRenderProcessHostTest&) =
@@ -256,6 +260,7 @@ class ChromeRenderProcessHostTest : public extensions::ExtensionBrowserTest {
   // existing tests run with the prewarm feature enabled.
   test::ScopedPrewarmFeatureList prewarm_feature_list_{
       test::ScopedPrewarmFeatureList::PrewarmState::kDisabled};
+  base::test::ScopedFeatureList feature_list_;
 };
 
 class ChromeRenderProcessHostTestWithCommandLine
@@ -277,7 +282,13 @@ class ChromeRenderProcessHostTestWithCommandLine
   }
 };
 
-IN_PROC_BROWSER_TEST_F(ChromeRenderProcessHostTest, ProcessPerTab) {
+// TODO(crbug.com/497106715): Flaky on Mac.
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_ProcessPerTab DISABLED_ProcessPerTab
+#else
+#define MAYBE_ProcessPerTab ProcessPerTab
+#endif
+IN_PROC_BROWSER_TEST_F(ChromeRenderProcessHostTest, MAYBE_ProcessPerTab) {
   // Set max renderers to 1 to force running out of processes.
   content::RenderProcessHost::SetMaxRendererProcessCount(1);
 
@@ -413,7 +424,7 @@ class ChromeRenderProcessHostBackgroundingTest
     VerifyProcessIsForegrounded(process_or_tab);                             \
   } while (0);
 
-// Flaky on Mac: https://crbug.com/888308
+// Flaky on Mac: https://crbug.com/41416652
 #if BUILDFLAG(IS_MAC)
 #define MAYBE_MultipleTabs DISABLED_MultipleTabs
 #else
@@ -608,8 +619,8 @@ class WindowDestroyer : public content::WebContentsObserver {
 
 // Test to ensure that while iterating through all listeners in
 // RenderProcessHost and invalidating them, we remove them properly and don't
-// access already freed objects. See http://crbug.com/255524.
-// Disabled due to flakiness, see  http://crbug.com/606485.
+// access already freed objects. See http://crbug.com/40077716.
+// Disabled due to flakiness, see  http://crbug.com/41250793.
 IN_PROC_BROWSER_TEST_F(ChromeRenderProcessHostTest,
                        DISABLED_CloseAllTabsDuringProcessDied) {
   GURL url(chrome::kChromeUIOmniboxURL);

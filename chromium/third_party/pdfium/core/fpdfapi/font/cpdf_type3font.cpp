@@ -159,7 +159,7 @@ CPDF_Type3Char* CPDF_Type3Font::LoadChar(uint32_t charcode) {
   return pCachedChar;
 }
 
-int CPDF_Type3Font::GetCharWidthF(uint32_t charcode) {
+int CPDF_Type3Font::GetCharWidth(uint32_t charcode) {
   if (charcode >= std::size(char_width_l_)) {
     charcode = 0;
   }

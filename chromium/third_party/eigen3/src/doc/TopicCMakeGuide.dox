@@ -60,6 +60,66 @@ if (TARGET Eigen3::Eigen)
 endif (TARGET Eigen3::Eigen)
 \endcode
 
+\section title_fetchcontent Using FetchContent
+
+Starting with CMake 3.11, you can use the
+<a href="https://cmake.org/cmake/help/latest/module/FetchContent.html">FetchContent</a>
+module to download and include %Eigen directly in your project without
+installing it first.
+
+A basic example:
+\code{.cmake}
+cmake_minimum_required(VERSION 3.11)
+project(myproject)
+
+include(FetchContent)
+FetchContent_Declare(
+  Eigen
+  GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+  GIT_TAG        master
+  GIT_SHALLOW    TRUE
+  EXCLUDE_FROM_ALL
+)
+FetchContent_MakeAvailable(Eigen)
+
+add_executable(example example.cpp)
+target_link_libraries(example Eigen3::Eigen)
+\endcode
+
+\subsection title_fetchcontent_options Disabling Eigen build options
+
+When %Eigen is added as a sub-project, its documentation, testing, and
+pkg-config targets may collide with your project's own targets. Disable
+them before calling \c FetchContent_MakeAvailable:
+\code{.cmake}
+set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
+set(EIGEN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(Eigen)
+\endcode
+
+\subsection title_fetchcontent_exclude Using EXCLUDE_FROM_ALL
+
+Projects that depend on %Eigen should typically exclude installing %Eigen by
+default to avoid overwriting a previous installation. Pass
+\c EXCLUDE_FROM_ALL in the \c FetchContent_Declare call (as shown above) or
+the equivalent \c add_subdirectory option so that %Eigen's install rules are
+not included in the default install target.
+
+\subsection title_fetchcontent_cmake330 Note for CMake 3.30 and later
+
+CMake 3.30 changed the default value of the
+<a href="https://cmake.org/cmake/help/latest/policy/CMP0168.html">CMP0168</a>
+policy so that \c FetchContent_Declare uses
+\c FetchContent_Populate internally with a different sub-build strategy.
+If you encounter issues with sub-builds you can either upgrade to a
+compatible %Eigen version or set the policy explicitly:
+\code{.cmake}
+cmake_policy(SET CMP0168 OLD)
+\endcode
+
 */
 
 }

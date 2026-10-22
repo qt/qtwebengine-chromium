@@ -9,7 +9,7 @@ import '@material/web/iconbutton/filled-tonal-icon-button.js';
 import '@material/web/iconbutton/icon-button.js';
 
 import {css, CSSResultGroup, html, LitElement} from 'lit';
-import {ifDefined} from 'lit/directives/if-defined';
+import {ifDefined} from 'lit/directives/if-defined.js';
 
 /**
  * Icon buttons have different variants depending on the container

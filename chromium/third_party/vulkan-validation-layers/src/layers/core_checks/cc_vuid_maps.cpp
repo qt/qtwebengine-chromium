@@ -25,14 +25,15 @@
 
 namespace vvl {
 
-const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError error) {
-    static const std::map<CopyError, std::array<Entry, 4>> errors{
+const std::string& GetCopyBufferImageDeviceVUID(const Location& loc, CopyError error) {
+    static const std::map<CopyError, std::array<Entry, 5>> errors{
         {CopyError::TexelBlockSize_07975,
          {{
              {Key(Func::vkCmdCopyBufferToImage), "VUID-vkCmdCopyBufferToImage-dstImage-07975"},
              {Key(Func::vkCmdCopyImageToBuffer), "VUID-vkCmdCopyImageToBuffer-srcImage-07975"},
              {Key(Func::vkCmdCopyBufferToImage2), "VUID-VkCopyBufferToImageInfo2-dstImage-07975"},
              {Key(Func::vkCmdCopyImageToBuffer2), "VUID-VkCopyImageToBufferInfo2-srcImage-07975"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-13029"},
          }}},
         {CopyError::MultiPlaneCompatible_07976,
          {{
@@ -40,6 +41,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Func::vkCmdCopyImageToBuffer), "VUID-vkCmdCopyImageToBuffer-srcImage-07976"},
              {Key(Func::vkCmdCopyBufferToImage2), "VUID-VkCopyBufferToImageInfo2-dstImage-07976"},
              {Key(Func::vkCmdCopyImageToBuffer2), "VUID-VkCopyImageToBufferInfo2-srcImage-07976"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-13030"},
          }}},
         {CopyError::TransferGranularity_07747,
          {{
@@ -47,6 +49,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Func::vkCmdCopyImageToBuffer), "VUID-vkCmdCopyImageToBuffer-imageOffset-07747"},
              {Key(Func::vkCmdCopyBufferToImage2), "VUID-vkCmdCopyBufferToImage2-imageOffset-07738"},
              {Key(Func::vkCmdCopyImageToBuffer2), "VUID-vkCmdCopyImageToBuffer2-imageOffset-07747"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), kVUIDUndefined},  // Not possible to hit with entrypoint
          }}},
         {CopyError::BufferOffset_07737,
          {{
@@ -55,6 +58,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Func::vkCmdCopyImageToBuffer), "VUID-vkCmdCopyImageToBuffer-commandBuffer-07746"},
              {Key(Func::vkCmdCopyBufferToImage2), "VUID-vkCmdCopyBufferToImage2-commandBuffer-07737"},
              {Key(Func::vkCmdCopyImageToBuffer2), "VUID-vkCmdCopyImageToBuffer2-commandBuffer-07746"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), kVUIDUndefined},  // Not possible to hit with entrypoint
          }}},
         {CopyError::BufferOffset_07978,
          {{
@@ -62,6 +66,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Func::vkCmdCopyImageToBuffer), "VUID-vkCmdCopyImageToBuffer-srcImage-07978"},
              {Key(Func::vkCmdCopyBufferToImage2), "VUID-VkCopyBufferToImageInfo2-dstImage-07978"},
              {Key(Func::vkCmdCopyImageToBuffer2), "VUID-VkCopyImageToBufferInfo2-srcImage-07978"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), kVUIDUndefined},  // Not possible to hit with entrypoint
          }}},
         {CopyError::MemoryOverlap_00173,
          {{
@@ -69,6 +74,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Func::vkCmdCopyImageToBuffer), "VUID-vkCmdCopyImageToBuffer-pRegions-00184"},
              {Key(Func::vkCmdCopyBufferToImage2), "VUID-VkCopyBufferToImageInfo2-pRegions-00173"},
              {Key(Func::vkCmdCopyImageToBuffer2), "VUID-VkCopyImageToBufferInfo2-pRegions-00184"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), kVUIDUndefined},  // Not possible to hit with entrypoint
          }}},
         {CopyError::ImageExtentWidthZero_06659,
          {{
@@ -76,6 +82,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Struct::VkBufferImageCopy2), "VUID-VkBufferImageCopy2-imageExtent-06659"},
              {Key(Struct::VkMemoryToImageCopy), "VUID-VkMemoryToImageCopy-imageExtent-06659"},
              {Key(Struct::VkImageToMemoryCopy), "VUID-VkImageToMemoryCopy-imageExtent-06659"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), "VUID-VkDeviceMemoryImageCopyKHR-imageExtent-06659"},
          }}},
         {CopyError::ImageExtentHeightZero_06660,
          {{
@@ -83,6 +90,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Struct::VkBufferImageCopy2), "VUID-VkBufferImageCopy2-imageExtent-06660"},
              {Key(Struct::VkMemoryToImageCopy), "VUID-VkMemoryToImageCopy-imageExtent-06660"},
              {Key(Struct::VkImageToMemoryCopy), "VUID-VkImageToMemoryCopy-imageExtent-06660"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), "VUID-VkDeviceMemoryImageCopyKHR-imageExtent-06660"},
          }}},
         {CopyError::ImageExtentDepthZero_06661,
          {{
@@ -90,6 +98,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Struct::VkBufferImageCopy2), "VUID-VkBufferImageCopy2-imageExtent-06661"},
              {Key(Struct::VkMemoryToImageCopy), "VUID-VkMemoryToImageCopy-imageExtent-06661"},
              {Key(Struct::VkImageToMemoryCopy), "VUID-VkImageToMemoryCopy-imageExtent-06661"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), "VUID-VkDeviceMemoryImageCopyKHR-imageExtent-06661"},
          }}},
         {CopyError::ImageExtentRowLength_09101,
          {{
@@ -97,6 +106,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Struct::VkBufferImageCopy2), "VUID-VkBufferImageCopy2-bufferRowLength-09101"},
              {Key(Struct::VkMemoryToImageCopy), "VUID-VkMemoryToImageCopy-memoryRowLength-09101"},
              {Key(Struct::VkImageToMemoryCopy), "VUID-VkImageToMemoryCopy-memoryRowLength-09101"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), "VUID-VkDeviceMemoryImageCopyKHR-addressRowLength-09101"},
          }}},
         {CopyError::ImageExtentImageHeight_09102,
          {{
@@ -104,6 +114,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Struct::VkBufferImageCopy2), "VUID-VkBufferImageCopy2-bufferImageHeight-09102"},
              {Key(Struct::VkMemoryToImageCopy), "VUID-VkMemoryToImageCopy-memoryImageHeight-09102"},
              {Key(Struct::VkImageToMemoryCopy), "VUID-VkImageToMemoryCopy-memoryImageHeight-09102"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), "VUID-VkDeviceMemoryImageCopyKHR-addressImageHeight-09102"},
          }}},
         {CopyError::AspectMaskSingleBit_09103,
          {{
@@ -111,6 +122,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Struct::VkBufferImageCopy2), "VUID-VkBufferImageCopy2-aspectMask-09103"},
              {Key(Struct::VkMemoryToImageCopy), "VUID-VkMemoryToImageCopy-aspectMask-09103"},
              {Key(Struct::VkImageToMemoryCopy), "VUID-VkImageToMemoryCopy-aspectMask-09103"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), "VUID-VkDeviceMemoryImageCopyKHR-aspectMask-09103"},
          }}},
         {CopyError::ExceedBufferBounds_00171,
          {{
@@ -118,6 +130,7 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
              {Key(Func::vkCmdCopyImageToBuffer), "VUID-vkCmdCopyImageToBuffer-pRegions-00183"},
              {Key(Func::vkCmdCopyBufferToImage2), "VUID-VkCopyBufferToImageInfo2-pRegions-00171"},
              {Key(Func::vkCmdCopyImageToBuffer2), "VUID-VkCopyImageToBufferInfo2-pRegions-00183"},
+             {Key(Struct::VkCopyDeviceMemoryImageInfoKHR), "VUID-VkDeviceMemoryImageCopyKHR-size-13037"},
          }}},
     };
 
@@ -134,10 +147,12 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
         s = Struct::VkImageToMemoryCopy;
     } else if (loc.function == Func::vkCopyMemoryToImage || loc.function == Func::vkCopyMemoryToImageEXT) {
         s = Struct::VkMemoryToImageCopy;
+    } else if (loc.function == Func::vkCmdCopyMemoryToImageKHR || loc.function == Func::vkCmdCopyImageToMemoryKHR) {
+        s = Struct::VkCopyDeviceMemoryImageInfoKHR;
     }
     const Location updated_loc(f, s, loc.field, loc.index);
 
-    const auto &result = FindVUID(error, updated_loc, errors);
+    const auto& result = FindVUID(error, updated_loc, errors);
     assert(!result.empty());
     if (result.empty()) {
         static const std::string unhandled("UNASSIGNED-CoreChecks-unhandled-copy-buffer");
@@ -146,8 +161,8 @@ const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError e
     return result;
 }
 
-const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) {
-    static const std::map<CopyError, std::array<Entry, 6>> errors{
+const std::string& GetCopyBufferImageVUID(const Location& loc, CopyError error) {
+    static const std::map<CopyError, std::array<Entry, 8>> errors{
         {CopyError::ImageOffset_07971,
          {{
              {Key(Func::vkCmdCopyBufferToImage), "VUID-vkCmdCopyBufferToImage-imageSubresource-07971"},
@@ -156,6 +171,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-imageOffset-00197"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-imageSubresource-07971"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-imageSubresource-07971"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-pRegions-13032"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-pRegions-13032"},
          }}},
         {CopyError::ImageOffset_07972,
          {{
@@ -165,6 +182,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-imageOffset-00198"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-imageSubresource-07972"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-imageSubresource-07972"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-pRegions-13032"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-pRegions-13032"},
          }}},
         {CopyError::Image1D_07979,
          {{
@@ -174,6 +193,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-srcImage-07979"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-dstImage-07979"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-srcImage-07979"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07979"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07979"},
          }}},
         {CopyError::Image1D_07980,
          {{
@@ -183,6 +204,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-srcImage-07980"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-dstImage-07980"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-srcImage-07980"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07980"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07980"},
          }}},
         {CopyError::Image3D_07983,
          {{
@@ -192,6 +215,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-srcImage-07983"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-dstImage-07983"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-srcImage-07983"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07983"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07983"},
          }}},
         {CopyError::TexelBlockExtentWidth_07274,
          {{
@@ -201,6 +226,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-srcImage-07274"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-dstImage-07274"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-srcImage-07274"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07274"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07274"},
          }}},
         {CopyError::TexelBlockExtentHeight_07275,
          {{
@@ -210,6 +237,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-srcImage-07275"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-dstImage-07275"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-srcImage-07275"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07275"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07275"},
          }}},
         {CopyError::TexelBlockExtentDepth_07276,
          {{
@@ -219,6 +248,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-srcImage-07276"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-dstImage-07276"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-srcImage-07276"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07276"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07276"},
          }}},
         {CopyError::TexelBlockExtentWidth_00207,
          {{
@@ -228,6 +259,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-srcImage-00207"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-dstImage-00207"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-srcImage-00207"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-00207"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-00207"},
          }}},
         {CopyError::TexelBlockExtentHeight_00208,
          {{
@@ -237,6 +270,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-srcImage-00208"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-dstImage-00208"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-srcImage-00208"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-00208"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-00208"},
          }}},
         {CopyError::TexelBlockExtentDepth_00209,
          {{
@@ -246,6 +281,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-srcImage-00209"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-dstImage-00209"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-srcImage-00209"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-00209"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-00209"},
          }}},
         {CopyError::MultiPlaneAspectMask_07981,
          {{
@@ -255,6 +292,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-srcImage-07981"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-dstImage-07981"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-srcImage-07981"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07981"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-image-07981"},
          }}},
         {CopyError::ImageOffset_09104,
          {{
@@ -264,6 +303,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-imageOffset-09104"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-imageOffset-09104"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-imageOffset-09104"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-imageOffset-09104"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-imageOffset-09104"},
          }}},
         {CopyError::AspectMask_09105,
          {{
@@ -273,6 +314,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-imageSubresource-09105"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-imageSubresource-09105"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-imageSubresource-09105"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-imageSubresource-09105"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-imageSubresource-09105"},
          }}},
         {CopyError::bufferRowLength_09106,
          {{
@@ -282,6 +325,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-bufferRowLength-09106"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-memoryRowLength-09106"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-memoryRowLength-09106"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-addressRowLength-09106"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-addressRowLength-09106"},
          }}},
         {CopyError::bufferImageHeight_09107,
          {{
@@ -291,6 +336,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-bufferImageHeight-09107"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-memoryImageHeight-09107"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-memoryImageHeight-09107"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-addressImageHeight-09107"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-addressImageHeight-09107"},
          }}},
         {CopyError::bufferRowLength_09108,
          {{
@@ -300,6 +347,8 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
              {Key(Struct::VkCopyImageToBufferInfo2), "VUID-VkCopyImageToBufferInfo2-bufferRowLength-09108"},
              {Key(Struct::VkCopyMemoryToImageInfo), "VUID-VkCopyMemoryToImageInfo-memoryRowLength-09108"},
              {Key(Struct::VkCopyImageToMemoryInfo), "VUID-VkCopyImageToMemoryInfo-memoryRowLength-09108"},
+             {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-addressRowLength-09108"},
+             {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-addressRowLength-09108"},
          }}},
     };
 
@@ -318,7 +367,7 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
     }
     const Location updated_loc(f, s, loc.field, loc.index);
 
-    const auto &result = FindVUID(error, updated_loc, errors);
+    const auto& result = FindVUID(error, updated_loc, errors);
     assert(!result.empty());
     if (result.empty()) {
         static const std::string unhandled("UNASSIGNED-CoreChecks-unhandled-copy-buffer-image");
@@ -327,7 +376,7 @@ const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error) 
     return result;
 }
 
-const std::string &GetCopyImageVUID(const Location &loc, CopyError error) {
+const std::string& GetCopyImageVUID(const Location& loc, CopyError error) {
     static const std::map<CopyError, std::array<Entry, 3>> errors{
         {CopyError::SrcImage1D_00146,
          {{
@@ -505,7 +554,7 @@ const std::string &GetCopyImageVUID(const Location &loc, CopyError error) {
          }}},
     };
 
-    const auto &result = FindVUID(error, loc, errors);
+    const auto& result = FindVUID(error, loc, errors);
     assert(!result.empty());
     if (result.empty()) {
         static const std::string unhandled("UNASSIGNED-CoreChecks-unhandled-copy-buffer");
@@ -514,8 +563,8 @@ const std::string &GetCopyImageVUID(const Location &loc, CopyError error) {
     return result;
 }
 
-const std::string &GetImageMipLevelVUID(const Location &loc) {
-    static const std::array<Entry, 20> errors{{
+const std::string& GetImageMipLevelVUID(const Location& loc) {
+    static const std::array<Entry, 22> errors{{
         {Key(Func::vkCmdCopyImage, Field::srcSubresource), "VUID-vkCmdCopyImage-srcSubresource-07967"},
         {Key(Func::vkCmdCopyImage, Field::dstSubresource), "VUID-vkCmdCopyImage-dstSubresource-07967"},
         {Key(Func::vkCmdCopyImage2, Field::srcSubresource), "VUID-VkCopyImageInfo2-srcSubresource-07967"},
@@ -536,9 +585,11 @@ const std::string &GetImageMipLevelVUID(const Location &loc) {
         {Key(Func::vkCmdCopyBufferToImage2), "VUID-VkCopyBufferToImageInfo2-imageSubresource-07967"},
         {Key(Func::vkCopyImageToMemory), "VUID-VkCopyImageToMemoryInfo-imageSubresource-07967"},
         {Key(Func::vkCopyMemoryToImage), "VUID-VkCopyMemoryToImageInfo-imageSubresource-07967"},
+        {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-imageSubresource-07967"},
+        {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-imageSubresource-07967"},
     }};
 
-    const auto &result = FindVUID(loc, errors);
+    const auto& result = FindVUID(loc, errors);
     assert(!result.empty());
     if (result.empty()) {
         static const std::string unhandled("UNASSIGNED-CoreChecks-unhandled-mip-level");
@@ -547,8 +598,8 @@ const std::string &GetImageMipLevelVUID(const Location &loc) {
     return result;
 }
 
-const std::string &GetImageArrayLayerRangeVUID(const Location &loc) {
-    static const std::array<Entry, 20> errors{{
+const std::string& GetImageArrayLayerRangeVUID(const Location& loc) {
+    static const std::array<Entry, 22> errors{{
         {Key(Func::vkCmdCopyImage, Field::srcSubresource), "VUID-vkCmdCopyImage-srcSubresource-07968"},
         {Key(Func::vkCmdCopyImage, Field::dstSubresource), "VUID-vkCmdCopyImage-dstSubresource-07968"},
         {Key(Func::vkCmdCopyImage2, Field::srcSubresource), "VUID-VkCopyImageInfo2-srcSubresource-07968"},
@@ -569,9 +620,11 @@ const std::string &GetImageArrayLayerRangeVUID(const Location &loc) {
         {Key(Func::vkCmdCopyBufferToImage2), "VUID-VkCopyBufferToImageInfo2-imageSubresource-07968"},
         {Key(Func::vkCopyImageToMemory), "VUID-VkCopyImageToMemoryInfo-imageSubresource-07968"},
         {Key(Func::vkCopyMemoryToImage), "VUID-VkCopyMemoryToImageInfo-imageSubresource-07968"},
+        {Key(Func::vkCmdCopyMemoryToImageKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-imageSubresource-07968"},
+        {Key(Func::vkCmdCopyImageToMemoryKHR), "VUID-VkCopyDeviceMemoryImageInfoKHR-imageSubresource-07968"},
     }};
 
-    const auto &result = FindVUID(loc, errors);
+    const auto& result = FindVUID(loc, errors);
     assert(!result.empty());
     if (result.empty()) {
         static const std::string unhandled("UNASSIGNED-CoreChecks-unhandled-array-layer-range");
@@ -580,7 +633,7 @@ const std::string &GetImageArrayLayerRangeVUID(const Location &loc) {
     return result;
 }
 
-const std::string &GetImageImageLayoutVUID(const Location &loc) {
+const std::string& GetImageImageLayoutVUID(const Location& loc) {
     static const std::array<Entry, 5> errors{{
         {Key(Func::vkTransitionImageLayout), "VUID-VkHostImageLayoutTransitionInfo-oldLayout-09229"},
         {Key(Func::vkCopyImageToMemory, Field::srcImageLayout), "VUID-VkCopyImageToMemoryInfo-srcImageLayout-09064"},
@@ -589,7 +642,7 @@ const std::string &GetImageImageLayoutVUID(const Location &loc) {
         {Key(Func::vkCopyImageToImage, Field::dstImageLayout), "VUID-VkCopyImageToImageInfo-dstImageLayout-09071"},
     }};
 
-    const auto &result = FindVUID(loc, errors);
+    const auto& result = FindVUID(loc, errors);
     assert(!result.empty());
     if (result.empty()) {
         static const std::string unhandled("UNASSIGNED-CoreChecks-unhandled-image-layout");
@@ -598,7 +651,195 @@ const std::string &GetImageImageLayoutVUID(const Location &loc) {
     return result;
 }
 
-const std::string &GetSubresourceRangeVUID(const Location &loc, SubresourceRangeError error) {
+const char* GetSurfaceSupportVUID(const Location& loc) {
+    if (loc.function == Func::vkGetDeviceGroupSurfacePresentModes2EXT) {
+        return "VUID-vkGetDeviceGroupSurfacePresentModes2EXT-pSurfaceInfo-06213";
+    } else if (loc.function == Func::vkGetPhysicalDeviceSurfacePresentModes2EXT) {
+        return "VUID-vkGetPhysicalDeviceSurfacePresentModes2EXT-pSurfaceInfo-06522";
+    } else if (loc.function == Func::vkGetDeviceGroupSurfacePresentModesKHR) {
+        return "VUID-vkGetDeviceGroupSurfacePresentModesKHR-surface-06212";
+    } else if (loc.function == Func::vkGetPhysicalDevicePresentRectanglesKHR) {
+        return "VUID-vkGetPhysicalDevicePresentRectanglesKHR-surface-06211";
+    } else if (loc.function == Func::vkGetPhysicalDeviceSurfaceCapabilities2EXT) {
+        return "VUID-vkGetPhysicalDeviceSurfaceCapabilities2EXT-surface-06211";
+    } else if (loc.function == Func::vkGetPhysicalDeviceSurfaceCapabilitiesKHR) {
+        return "VUID-vkGetPhysicalDeviceSurfaceCapabilitiesKHR-surface-06211";
+    } else if (loc.function == Func::vkGetPhysicalDeviceSurfaceCapabilities2KHR) {
+        return "VUID-vkGetPhysicalDeviceSurfaceCapabilities2KHR-pSurfaceInfo-06522";
+    } else if (loc.function == Func::vkGetPhysicalDeviceSurfaceFormats2KHR) {
+        return "VUID-vkGetPhysicalDeviceSurfaceFormats2KHR-pSurfaceInfo-06522";
+    } else if (loc.function == Func::vkGetPhysicalDeviceSurfaceFormatsKHR) {
+        return "VUID-vkGetPhysicalDeviceSurfaceFormatsKHR-surface-06525";
+    } else if (loc.function == Func::vkGetPhysicalDeviceSurfacePresentModesKHR) {
+        return "VUID-vkGetPhysicalDeviceSurfacePresentModesKHR-surface-06525";
+    }
+
+    return kVUIDUndefined;
+}
+
+const char* GetRenderPassCompatibilityVUID(const Location& loc) {
+    if (loc.function == Func::vkCmdBeginRenderPass) {
+        return "VUID-VkRenderPassBeginInfo-renderPass-00904";
+    } else if (loc.function == Func::vkBeginCommandBuffer) {
+        return "VUID-VkCommandBufferBeginInfo-flags-00055";
+    } else if (loc.function == Func::vkCmdExecuteCommands) {
+        return "VUID-vkCmdExecuteCommands-pBeginInfo-06020";
+    } else if (loc.function == Func::vkCmdDraw) {
+        return "VUID-vkCmdDraw-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawIndexed) {
+        return "VUID-vkCmdDrawIndexed-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawMultiEXT) {
+        return "VUID-vkCmdDrawMultiEXT-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawMultiIndexedEXT) {
+        return "VUID-vkCmdDrawMultiIndexedEXT-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawIndirect) {
+        return "VUID-vkCmdDrawIndirect-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawIndirectCount) {
+        return "VUID-vkCmdDrawIndirectCount-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawIndexedIndirect) {
+        return "VUID-vkCmdDrawIndexedIndirect-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawIndexedIndirectCount) {
+        return "VUID-vkCmdDrawIndexedIndirectCount-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawIndirectByteCountEXT) {
+        return "VUID-vkCmdDrawIndirectByteCountEXT-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawMeshTasksNV) {
+        return "VUID-vkCmdDrawMeshTasksNV-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawMeshTasksIndirectNV) {
+        return "VUID-vkCmdDrawMeshTasksIndirectNV-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawMeshTasksIndirectCountNV) {
+        return "VUID-vkCmdDrawMeshTasksIndirectCountNV-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawMeshTasksEXT) {
+        return "VUID-vkCmdDrawMeshTasksEXT-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawMeshTasksIndirectEXT) {
+        return "VUID-vkCmdDrawMeshTasksIndirectEXT-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawMeshTasksIndirectCountEXT) {
+        return "VUID-vkCmdDrawMeshTasksIndirectCountEXT-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawClusterHUAWEI) {
+        return "VUID-vkCmdDrawClusterHUAWEI-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawClusterIndirectHUAWEI) {
+        return "VUID-vkCmdDrawClusterIndirectHUAWEI-renderPass-02684";
+    } else if (loc.function == Func::vkCmdExecuteGeneratedCommandsNV) {
+        return "VUID-vkCmdExecuteGeneratedCommandsNV-renderPass-02684";
+    } else if (loc.function == Func::vkCmdExecuteGeneratedCommandsEXT) {
+        return "VUID-vkCmdExecuteGeneratedCommandsEXT-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawIndexedIndirect2KHR) {
+        return "VUID-vkCmdDrawIndexedIndirect2KHR-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawIndexedIndirectCount2KHR) {
+        return "VUID-vkCmdDrawIndexedIndirectCount2KHR-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawIndirect2KHR) {
+        return "VUID-vkCmdDrawIndirect2KHR-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawIndirectByteCount2EXT) {
+        return "VUID-vkCmdDrawIndirectByteCount2EXT-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawIndirectCount2KHR) {
+        return "VUID-vkCmdDrawIndirectCount2KHR-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawMeshTasksIndirect2EXT) {
+        return "VUID-vkCmdDrawMeshTasksIndirect2EXT-renderPass-02684";
+    } else if (loc.function == Func::vkCmdDrawMeshTasksIndirectCount2EXT) {
+        return "VUID-vkCmdDrawMeshTasksIndirectCount2EXT-renderPass-02684";
+    }
+
+    return kVUIDUndefined;
+}
+
+const char* GetDispatchIndirectProtectVUID(const Location& loc) {
+    if (loc.function == Func::vkCmdDrawIndirect2KHR) {
+        return "VUID-VkDrawIndirect2InfoKHR-protectedNoFault-13108";
+    } else if (loc.function == Func::vkCmdDrawIndexedIndirect2KHR) {
+        return "VUID-VkDrawIndirectCount2InfoKHR-protectedNoFault-13108";
+    } else if (loc.function == Func::vkCmdDispatchIndirect2KHR) {
+        return "VUID-VkDispatchIndirect2InfoKHR-protectedNoFault-13108";
+    }
+
+    return kVUIDUndefined;
+}
+
+const char* GetBuildASVUID(const Location& loc, BuildASError error) {
+    // clang-format off
+    switch (error) {
+        case BuildASError::IsBuilt_03667:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03667" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03667" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03667" :
+                kVUIDUndefined;
+        case BuildASError::SameCount_03758:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03758" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03758" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03758" :
+                kVUIDUndefined;
+        case BuildASError::SameFlags_03759:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03759" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03759" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03759" :
+                kVUIDUndefined;
+        case BuildASError::SameType_03760:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03760" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03760" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03760" :
+                kVUIDUndefined;
+        case BuildASError::SameType_03761:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03761" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03761" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03761" :
+                kVUIDUndefined;
+        case BuildASError::SameFlags_03762:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03762" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03762" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03762" :
+                kVUIDUndefined;
+        case BuildASError::TriangleVertexFormat_03763:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03763" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03763" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03763" :
+                kVUIDUndefined;
+        case BuildASError::TriangleMaxVertex_03764:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03764" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03764" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03764" :
+                kVUIDUndefined;
+        case BuildASError::TriangleIndexType_03765:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03765" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03765" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03765" :
+                kVUIDUndefined;
+        case BuildASError::TriangleTransformData_03766:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03766" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03766" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03766" :
+                kVUIDUndefined;
+        case BuildASError::TriangleTransformData_03767:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03767" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03767" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03767" :
+                kVUIDUndefined;
+        case BuildASError::DstTop_03699:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03699" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03699" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03699" :
+                kVUIDUndefined;
+        case BuildASError::DstBottom_03700:
+            return
+                loc.function == Func::vkBuildAccelerationStructuresKHR  ? "VUID-vkBuildAccelerationStructuresKHR-pInfos-03700" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresKHR  ? "VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03700" :
+                loc.function == Func::vkCmdBuildAccelerationStructuresIndirectKHR  ? "VUID-vkCmdBuildAccelerationStructuresIndirectKHR-pInfos-03700" :
+                kVUIDUndefined;
+    }
+    return "UNASSIGNED-CoreChecks-unhandled-build-as";
+    // clang-format on
+}
+
+const std::string& GetSubresourceRangeVUID(const Location& loc, SubresourceRangeError error) {
     static const std::map<SubresourceRangeError, std::array<Entry, 6>> errors{
         {SubresourceRangeError::BaseMip_01486,
          {{
@@ -665,7 +906,7 @@ const std::string &GetSubresourceRangeVUID(const Location &loc, SubresourceRange
          }}},
     };
 
-    const auto &result = FindVUID(error, loc, errors);
+    const auto& result = FindVUID(error, loc, errors);
     assert(!result.empty());
     if (result.empty()) {
         static const std::string unhandled("UNASSIGNED-CoreChecks-unhandled-subresource-range");
@@ -674,7 +915,7 @@ const std::string &GetSubresourceRangeVUID(const Location &loc, SubresourceRange
     return result;
 }
 
-const char *GetSpirvInterfaceVariableVUID(const Location &loc, SpirvInterfaceVariableError error) {
+const char* GetSpirvInterfaceVariableVUID(const Location& loc, SpirvInterfaceVariableError error) {
     // clang-format off
     switch (error) {
         case SpirvInterfaceVariableError::ShaderStage_07988:
@@ -738,6 +979,335 @@ const char *GetSpirvInterfaceVariableVUID(const Location &loc, SpirvInterfaceVar
     }
     return "UNASSIGNED-CoreChecks-unhandled-pipeline-interface-variable";
     // clang-format on
+}
+
+const std::string GetDeviceAddressCommandVUID(const Location& loc, DeviceAddressCommandError error) {
+    if (error == DeviceAddressCommandError::CompletelyBound_13097) {
+        switch (loc.function) {
+            case Func::vkCreateAccelerationStructure2KHR:
+                return "VUID-VkAccelerationStructureCreateInfo2KHR-addressRange-13097";
+            case Func::vkCmdBindIndexBuffer3KHR:
+                return "VUID-VkBindIndexBuffer3InfoKHR-addressRange-13097";
+            case Func::vkCmdBindVertexBuffers3KHR:
+                return "VUID-VkBindVertexBuffer3InfoKHR-addressRange-13097";
+            case Func::vkCmdBindTransformFeedbackBuffers2EXT:
+            case Func::vkCmdBeginTransformFeedback2EXT:
+            case Func::vkCmdEndTransformFeedback2EXT:
+            case Func::vkCmdDrawIndirectByteCount2EXT:
+                return "VUID-VkBindTransformFeedbackBuffer2InfoEXT-addressRange-13097";
+            case Func::vkCmdBeginConditionalRendering2EXT:
+                return "VUID-VkConditionalRenderingBeginInfo2EXT-addressRange-13097";
+            case Func::vkCmdCopyMemoryToImageKHR:
+            case Func::vkCmdCopyImageToMemoryKHR:
+                return "VUID-VkDeviceMemoryImageCopyKHR-addressRange-13097";
+            case Func::vkCmdDispatchIndirect2KHR:
+                return "VUID-VkDispatchIndirect2InfoKHR-addressRange-13097";
+            case Func::vkCmdWriteMarkerToMemoryAMD:
+                return "VUID-VkMemoryMarkerInfoAMD-dstRange-13097";
+            case Func::vkCmdCopyQueryPoolResultsToMemoryKHR:
+                return "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-pDstRange-13097";
+            case Func::vkCmdFillMemoryKHR:
+                return "VUID-vkCmdFillMemoryKHR-pDstRange-13097";
+            case Func::vkCmdUpdateMemoryKHR:
+                return "VUID-vkCmdUpdateMemoryKHR-pDstRange-13097";
+            case Func::vkCmdDrawIndirect2KHR:
+            case Func::vkCmdDrawIndexedIndirect2KHR:
+            case Func::vkCmdDrawMeshTasksIndirect2EXT:
+                return "VUID-VkDrawIndirect2InfoKHR-addressRange-13097";
+            case Func::vkCmdDrawIndirectCount2KHR:
+            case Func::vkCmdDrawIndexedIndirectCount2KHR:
+            case Func::vkCmdDrawMeshTasksIndirectCount2EXT:
+                return (loc.field == Field::addressRange) ? "VUID-VkDrawIndirectCount2InfoKHR-addressRange-13097"
+                                                          : "VUID-VkDrawIndirectCount2InfoKHR-countAddressRange-13097";
+            case Func::vkCmdPipelineBarrier2KHR:
+            case Func::vkCmdPipelineBarrier2:
+                return "VUID-VkMemoryRangeBarrierKHR-addressRange-13097";
+            case Func::vkCmdCopyMemoryKHR:
+                return (loc.field == Field::srcRange) ? "VUID-VkDeviceMemoryCopyKHR-srcRange-13097"
+                                                      : "VUID-VkDeviceMemoryCopyKHR-dstRange-13097";
+            default:
+                break;
+        }
+    } else if (error == DeviceAddressCommandError::Protected_13098) {
+        switch (loc.function) {
+            case Func::vkCreateAccelerationStructure2KHR:
+                return "VUID-VkAccelerationStructureCreateInfo2KHR-addressRange-13098";
+            case Func::vkCmdBindIndexBuffer3KHR:
+                return "VUID-VkBindIndexBuffer3InfoKHR-addressRange-13098";
+            case Func::vkCmdBindVertexBuffers3KHR:
+                return "VUID-VkBindVertexBuffer3InfoKHR-addressRange-13098";
+            case Func::vkCmdBindTransformFeedbackBuffers2EXT:
+            case Func::vkCmdBeginTransformFeedback2EXT:
+            case Func::vkCmdEndTransformFeedback2EXT:
+            case Func::vkCmdDrawIndirectByteCount2EXT:
+                return "VUID-VkBindTransformFeedbackBuffer2InfoEXT-addressRange-13098";
+            case Func::vkCmdBeginConditionalRendering2EXT:
+                return "VUID-VkConditionalRenderingBeginInfo2EXT-addressRange-13098";
+            case Func::vkCmdCopyMemoryToImageKHR:
+            case Func::vkCmdCopyImageToMemoryKHR:
+                return "VUID-VkDeviceMemoryImageCopyKHR-addressRange-13098";
+            case Func::vkCmdDispatchIndirect2KHR:
+                return "VUID-VkDispatchIndirect2InfoKHR-addressRange-13098";
+            case Func::vkCmdWriteMarkerToMemoryAMD:
+                return "VUID-VkMemoryMarkerInfoAMD-dstRange-13098";
+            case Func::vkCmdCopyQueryPoolResultsToMemoryKHR:
+                return "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-pDstRange-13098";
+            case Func::vkCmdFillMemoryKHR:
+                return "VUID-vkCmdFillMemoryKHR-pDstRange-13098";
+            case Func::vkCmdUpdateMemoryKHR:
+                return "VUID-vkCmdUpdateMemoryKHR-pDstRange-13098";
+            case Func::vkCmdDrawIndirect2KHR:
+            case Func::vkCmdDrawIndexedIndirect2KHR:
+            case Func::vkCmdDrawMeshTasksIndirect2EXT:
+                return "VUID-VkDrawIndirect2InfoKHR-addressRange-13098";
+            case Func::vkCmdDrawIndirectCount2KHR:
+            case Func::vkCmdDrawIndexedIndirectCount2KHR:
+            case Func::vkCmdDrawMeshTasksIndirectCount2EXT:
+                return (loc.field == Field::addressRange) ? "VUID-VkDrawIndirectCount2InfoKHR-addressRange-13098"
+                                                          : "VUID-VkDrawIndirectCount2InfoKHR-countAddressRange-13098";
+            case Func::vkCmdPipelineBarrier2KHR:
+            case Func::vkCmdPipelineBarrier2:
+                return "VUID-VkMemoryRangeBarrierKHR-addressRange-13098";
+            case Func::vkCmdCopyMemoryKHR:
+                return (loc.field == Field::srcRange) ? "VUID-VkDeviceMemoryCopyKHR-srcRange-13098"
+                                                      : "VUID-VkDeviceMemoryCopyKHR-dstRange-13098";
+            default:
+                break;
+        }
+    } else if (error == DeviceAddressCommandError::Protected_13099) {
+        switch (loc.function) {
+            case Func::vkCreateAccelerationStructure2KHR:
+                return "VUID-VkAccelerationStructureCreateInfo2KHR-addressRange-13099";
+            case Func::vkCmdBindIndexBuffer3KHR:
+                return "VUID-VkBindIndexBuffer3InfoKHR-addressRange-13099";
+            case Func::vkCmdBindVertexBuffers3KHR:
+                return "VUID-VkBindVertexBuffer3InfoKHR-addressRange-13099";
+            case Func::vkCmdBindTransformFeedbackBuffers2EXT:
+            case Func::vkCmdBeginTransformFeedback2EXT:
+            case Func::vkCmdEndTransformFeedback2EXT:
+            case Func::vkCmdDrawIndirectByteCount2EXT:
+                return "VUID-VkBindTransformFeedbackBuffer2InfoEXT-addressRange-13099";
+            case Func::vkCmdBeginConditionalRendering2EXT:
+                return "VUID-VkConditionalRenderingBeginInfo2EXT-addressRange-13099";
+            case Func::vkCmdCopyMemoryToImageKHR:
+            case Func::vkCmdCopyImageToMemoryKHR:
+                return "VUID-VkDeviceMemoryImageCopyKHR-addressRange-13099";
+            case Func::vkCmdDispatchIndirect2KHR:
+                return "VUID-VkDispatchIndirect2InfoKHR-addressRange-13099";
+            case Func::vkCmdWriteMarkerToMemoryAMD:
+                return "VUID-VkMemoryMarkerInfoAMD-dstRange-13099";
+            case Func::vkCmdCopyQueryPoolResultsToMemoryKHR:
+                return "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-pDstRange-13099";
+            case Func::vkCmdFillMemoryKHR:
+                return "VUID-vkCmdFillMemoryKHR-pDstRange-13099";
+            case Func::vkCmdUpdateMemoryKHR:
+                return "VUID-vkCmdUpdateMemoryKHR-pDstRange-13099";
+            case Func::vkCmdDrawIndirect2KHR:
+            case Func::vkCmdDrawIndexedIndirect2KHR:
+            case Func::vkCmdDrawMeshTasksIndirect2EXT:
+                return "VUID-VkDrawIndirect2InfoKHR-addressRange-13099";
+            case Func::vkCmdDrawIndirectCount2KHR:
+            case Func::vkCmdDrawIndexedIndirectCount2KHR:
+            case Func::vkCmdDrawMeshTasksIndirectCount2EXT:
+                return (loc.field == Field::addressRange) ? "VUID-VkDrawIndirectCount2InfoKHR-addressRange-13099"
+                                                          : "VUID-VkDrawIndirectCount2InfoKHR-countAddressRange-13099";
+            case Func::vkCmdPipelineBarrier2KHR:
+            case Func::vkCmdPipelineBarrier2:
+                return "VUID-VkMemoryRangeBarrierKHR-addressRange-13099";
+            case Func::vkCmdCopyMemoryKHR:
+                return (loc.field == Field::srcRange) ? "VUID-VkDeviceMemoryCopyKHR-srcRange-13099"
+                                                      : "VUID-VkDeviceMemoryCopyKHR-dstRange-13099";
+            default:
+                break;
+        }
+    } else if (error == DeviceAddressCommandError::Storage_13122) {
+        switch (loc.function) {
+            case Func::vkCreateAccelerationStructure2KHR:
+                return "VUID-VkAccelerationStructureCreateInfo2KHR-addressRange-13122";
+            case Func::vkCmdBindIndexBuffer3KHR:
+                return "VUID-VkBindIndexBuffer3InfoKHR-addressRange-13122";
+            case Func::vkCmdBindVertexBuffers3KHR:
+                return "VUID-VkBindVertexBuffer3InfoKHR-addressRange-13122";
+            case Func::vkCmdBindTransformFeedbackBuffers2EXT:
+            case Func::vkCmdBeginTransformFeedback2EXT:
+            case Func::vkCmdEndTransformFeedback2EXT:
+            case Func::vkCmdDrawIndirectByteCount2EXT:
+                return "VUID-VkBindTransformFeedbackBuffer2InfoEXT-addressRange-13122";
+            case Func::vkCmdBeginConditionalRendering2EXT:
+                return "VUID-VkConditionalRenderingBeginInfo2EXT-addressRange-13122";
+            case Func::vkCmdCopyMemoryToImageKHR:
+            case Func::vkCmdCopyImageToMemoryKHR:
+                return "VUID-VkDeviceMemoryImageCopyKHR-addressRange-13122";
+            case Func::vkCmdDispatchIndirect2KHR:
+                return "VUID-VkDispatchIndirect2InfoKHR-addressRange-13122";
+            case Func::vkCmdWriteMarkerToMemoryAMD:
+                return "VUID-VkMemoryMarkerInfoAMD-dstRange-13122";
+            case Func::vkCmdCopyQueryPoolResultsToMemoryKHR:
+                return "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-pDstRange-13122";
+            case Func::vkCmdFillMemoryKHR:
+                return "VUID-vkCmdFillMemoryKHR-pDstRange-13122";
+            case Func::vkCmdUpdateMemoryKHR:
+                return "VUID-vkCmdUpdateMemoryKHR-pDstRange-13122";
+            case Func::vkCmdDrawIndirect2KHR:
+            case Func::vkCmdDrawIndexedIndirect2KHR:
+            case Func::vkCmdDrawMeshTasksIndirect2EXT:
+                return "VUID-VkDrawIndirect2InfoKHR-addressRange-13122";
+            case Func::vkCmdDrawIndirectCount2KHR:
+            case Func::vkCmdDrawIndexedIndirectCount2KHR:
+            case Func::vkCmdDrawMeshTasksIndirectCount2EXT:
+                return (loc.field == Field::addressRange) ? "VUID-VkDrawIndirectCount2InfoKHR-addressRange-13122"
+                                                          : "VUID-VkDrawIndirectCount2InfoKHR-countAddressRange-13122";
+            case Func::vkCmdPipelineBarrier2KHR:
+            case Func::vkCmdPipelineBarrier2:
+                return "VUID-VkMemoryRangeBarrierKHR-addressRange-13122";
+            case Func::vkCmdCopyMemoryKHR:
+                return (loc.field == Field::srcRange) ? "VUID-VkDeviceMemoryCopyKHR-srcRange-13122"
+                                                      : "VUID-VkDeviceMemoryCopyKHR-dstRange-13122";
+            default:
+                break;
+        }
+    } else if (error == DeviceAddressCommandError::Storage_13123) {
+        switch (loc.function) {
+            case Func::vkCreateAccelerationStructure2KHR:
+                return "VUID-VkAccelerationStructureCreateInfo2KHR-addressRange-13123";
+            case Func::vkCmdBindIndexBuffer3KHR:
+                return "VUID-VkBindIndexBuffer3InfoKHR-addressRange-13123";
+            case Func::vkCmdBindVertexBuffers3KHR:
+                return "VUID-VkBindVertexBuffer3InfoKHR-addressRange-13123";
+            case Func::vkCmdBindTransformFeedbackBuffers2EXT:
+            case Func::vkCmdBeginTransformFeedback2EXT:
+            case Func::vkCmdEndTransformFeedback2EXT:
+            case Func::vkCmdDrawIndirectByteCount2EXT:
+                return "VUID-VkBindTransformFeedbackBuffer2InfoEXT-addressRange-13123";
+            case Func::vkCmdBeginConditionalRendering2EXT:
+                return "VUID-VkConditionalRenderingBeginInfo2EXT-addressRange-13123";
+            case Func::vkCmdCopyMemoryToImageKHR:
+            case Func::vkCmdCopyImageToMemoryKHR:
+                return "VUID-VkDeviceMemoryImageCopyKHR-addressRange-13123";
+            case Func::vkCmdDispatchIndirect2KHR:
+                return "VUID-VkDispatchIndirect2InfoKHR-addressRange-13123";
+            case Func::vkCmdWriteMarkerToMemoryAMD:
+                return "VUID-VkMemoryMarkerInfoAMD-dstRange-13123";
+            case Func::vkCmdCopyQueryPoolResultsToMemoryKHR:
+                return "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-pDstRange-13123";
+            case Func::vkCmdFillMemoryKHR:
+                return "VUID-vkCmdFillMemoryKHR-pDstRange-13123";
+            case Func::vkCmdUpdateMemoryKHR:
+                return "VUID-vkCmdUpdateMemoryKHR-pDstRange-13123";
+            case Func::vkCmdDrawIndirect2KHR:
+            case Func::vkCmdDrawIndexedIndirect2KHR:
+            case Func::vkCmdDrawMeshTasksIndirect2EXT:
+                return "VUID-VkDrawIndirect2InfoKHR-addressRange-13123";
+            case Func::vkCmdDrawIndirectCount2KHR:
+            case Func::vkCmdDrawIndexedIndirectCount2KHR:
+            case Func::vkCmdDrawMeshTasksIndirectCount2EXT:
+                return (loc.field == Field::addressRange) ? "VUID-VkDrawIndirectCount2InfoKHR-addressRange-13123"
+                                                          : "VUID-VkDrawIndirectCount2InfoKHR-countAddressRange-13123";
+            case Func::vkCmdPipelineBarrier2KHR:
+            case Func::vkCmdPipelineBarrier2:
+                return "VUID-VkMemoryRangeBarrierKHR-addressRange-13123";
+            case Func::vkCmdCopyMemoryKHR:
+                return (loc.field == Field::srcRange) ? "VUID-VkDeviceMemoryCopyKHR-srcRange-13123"
+                                                      : "VUID-VkDeviceMemoryCopyKHR-dstRange-13123";
+            default:
+                break;
+        }
+    } else if (error == DeviceAddressCommandError::Xfb_13124) {
+        switch (loc.function) {
+            case Func::vkCreateAccelerationStructure2KHR:
+                return "VUID-VkAccelerationStructureCreateInfo2KHR-addressRange-13124";
+            case Func::vkCmdBindIndexBuffer3KHR:
+                return "VUID-VkBindIndexBuffer3InfoKHR-addressRange-13124";
+            case Func::vkCmdBindVertexBuffers3KHR:
+                return "VUID-VkBindVertexBuffer3InfoKHR-addressRange-13124";
+            case Func::vkCmdBindTransformFeedbackBuffers2EXT:
+            case Func::vkCmdBeginTransformFeedback2EXT:
+            case Func::vkCmdEndTransformFeedback2EXT:
+            case Func::vkCmdDrawIndirectByteCount2EXT:
+                return "VUID-VkBindTransformFeedbackBuffer2InfoEXT-addressRange-13124";
+            case Func::vkCmdBeginConditionalRendering2EXT:
+                return "VUID-VkConditionalRenderingBeginInfo2EXT-addressRange-13124";
+            case Func::vkCmdCopyMemoryToImageKHR:
+            case Func::vkCmdCopyImageToMemoryKHR:
+                return "VUID-VkDeviceMemoryImageCopyKHR-addressRange-13124";
+            case Func::vkCmdDispatchIndirect2KHR:
+                return "VUID-VkDispatchIndirect2InfoKHR-addressRange-13124";
+            case Func::vkCmdWriteMarkerToMemoryAMD:
+                return "VUID-VkMemoryMarkerInfoAMD-dstRange-13124";
+            case Func::vkCmdCopyQueryPoolResultsToMemoryKHR:
+                return "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-pDstRange-13124";
+            case Func::vkCmdFillMemoryKHR:
+                return "VUID-vkCmdFillMemoryKHR-pDstRange-13124";
+            case Func::vkCmdUpdateMemoryKHR:
+                return "VUID-vkCmdUpdateMemoryKHR-pDstRange-13124";
+            case Func::vkCmdDrawIndirect2KHR:
+            case Func::vkCmdDrawIndexedIndirect2KHR:
+            case Func::vkCmdDrawMeshTasksIndirect2EXT:
+                return "VUID-VkDrawIndirect2InfoKHR-addressRange-13124";
+            case Func::vkCmdDrawIndirectCount2KHR:
+            case Func::vkCmdDrawIndexedIndirectCount2KHR:
+            case Func::vkCmdDrawMeshTasksIndirectCount2EXT:
+                return (loc.field == Field::addressRange) ? "VUID-VkDrawIndirectCount2InfoKHR-addressRange-13124"
+                                                          : "VUID-VkDrawIndirectCount2InfoKHR-countAddressRange-13124";
+            case Func::vkCmdPipelineBarrier2KHR:
+            case Func::vkCmdPipelineBarrier2:
+                return "VUID-VkMemoryRangeBarrierKHR-addressRange-13124";
+            case Func::vkCmdCopyMemoryKHR:
+                return (loc.field == Field::srcRange) ? "VUID-VkDeviceMemoryCopyKHR-srcRange-13124"
+                                                      : "VUID-VkDeviceMemoryCopyKHR-dstRange-13124";
+            default:
+                break;
+        }
+    } else if (error == DeviceAddressCommandError::Xfb_13125) {
+        switch (loc.function) {
+            case Func::vkCreateAccelerationStructure2KHR:
+                return "VUID-VkAccelerationStructureCreateInfo2KHR-addressRange-13125";
+            case Func::vkCmdBindIndexBuffer3KHR:
+                return "VUID-VkBindIndexBuffer3InfoKHR-addressRange-13125";
+            case Func::vkCmdBindVertexBuffers3KHR:
+                return "VUID-VkBindVertexBuffer3InfoKHR-addressRange-13125";
+            case Func::vkCmdBindTransformFeedbackBuffers2EXT:
+            case Func::vkCmdBeginTransformFeedback2EXT:
+            case Func::vkCmdEndTransformFeedback2EXT:
+            case Func::vkCmdDrawIndirectByteCount2EXT:
+                return "VUID-VkBindTransformFeedbackBuffer2InfoEXT-addressRange-13125";
+            case Func::vkCmdBeginConditionalRendering2EXT:
+                return "VUID-VkConditionalRenderingBeginInfo2EXT-addressRange-13125";
+            case Func::vkCmdCopyMemoryToImageKHR:
+            case Func::vkCmdCopyImageToMemoryKHR:
+                return "VUID-VkDeviceMemoryImageCopyKHR-addressRange-13125";
+            case Func::vkCmdDispatchIndirect2KHR:
+                return "VUID-VkDispatchIndirect2InfoKHR-addressRange-13125";
+            case Func::vkCmdWriteMarkerToMemoryAMD:
+                return "VUID-VkMemoryMarkerInfoAMD-dstRange-13125";
+            case Func::vkCmdCopyQueryPoolResultsToMemoryKHR:
+                return "VUID-vkCmdCopyQueryPoolResultsToMemoryKHR-pDstRange-13125";
+            case Func::vkCmdFillMemoryKHR:
+                return "VUID-vkCmdFillMemoryKHR-pDstRange-13125";
+            case Func::vkCmdUpdateMemoryKHR:
+                return "VUID-vkCmdUpdateMemoryKHR-pDstRange-13125";
+            case Func::vkCmdDrawIndirect2KHR:
+            case Func::vkCmdDrawIndexedIndirect2KHR:
+            case Func::vkCmdDrawMeshTasksIndirect2EXT:
+                return "VUID-VkDrawIndirect2InfoKHR-addressRange-13125";
+            case Func::vkCmdDrawIndirectCount2KHR:
+            case Func::vkCmdDrawIndexedIndirectCount2KHR:
+            case Func::vkCmdDrawMeshTasksIndirectCount2EXT:
+                return (loc.field == Field::addressRange) ? "VUID-VkDrawIndirectCount2InfoKHR-addressRange-13125"
+                                                          : "VUID-VkDrawIndirectCount2InfoKHR-countAddressRange-13125";
+            case Func::vkCmdPipelineBarrier2KHR:
+            case Func::vkCmdPipelineBarrier2:
+                return "VUID-VkMemoryRangeBarrierKHR-addressRange-13125";
+            case Func::vkCmdCopyMemoryKHR:
+                return (loc.field == Field::srcRange) ? "VUID-VkDeviceMemoryCopyKHR-srcRange-13125"
+                                                      : "VUID-VkDeviceMemoryCopyKHR-dstRange-13125";
+            default:
+                break;
+        }
+    }
+    assert(false);
+    static const std::string unhandled("UNASSIGNED-unhandled-DeviceAddressCommand");
+    return unhandled;
 }
 
 }  // namespace vvl

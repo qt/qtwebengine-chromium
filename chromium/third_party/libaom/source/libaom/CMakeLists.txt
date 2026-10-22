@@ -23,7 +23,7 @@ endif()
 
 # VERSION is the release version of the library. It should be updated at the
 # same time as the LT_* variables.
-project(AOM LANGUAGES C CXX VERSION 3.13.1)
+project(AOM LANGUAGES C CXX VERSION 3.13.3)
 
 # GENERATED source property global visibility.
 if(POLICY CMP0118)
@@ -59,7 +59,7 @@ endif()
 #
 # The VERSION number in project() should be updated when these variables are.
 set(LT_CURRENT 16)
-set(LT_REVISION 1)
+set(LT_REVISION 3)
 set(LT_AGE 13)
 math(EXPR SO_VERSION "${LT_CURRENT} - ${LT_AGE}")
 set(SO_FILE_VERSION "${SO_VERSION}.${LT_AGE}.${LT_REVISION}")
@@ -799,6 +799,15 @@ if(ENABLE_EXAMPLES AND CONFIG_AV1_ENCODER AND CONFIG_AV1_DECODER)
                  $<TARGET_OBJECTS:aom_decoder_app_util>)
   list(APPEND AOM_EXAMPLE_TARGETS lightfield_bitstream_parsing)
   list(APPEND AOM_APP_TARGETS lightfield_bitstream_parsing)
+endif()
+
+if(ENABLE_EXAMPLES AND CONFIG_AV1_ENCODER)
+  add_executable(low_complexity_mode_encoder
+                 "${AOM_ROOT}/examples/low_complexity_mode_encoder.c"
+                 $<TARGET_OBJECTS:aom_common_app_util>
+                 $<TARGET_OBJECTS:aom_encoder_app_util>)
+  list(APPEND AOM_EXAMPLE_TARGETS low_complexity_mode_encoder)
+  list(APPEND AOM_APP_TARGETS low_complexity_mode_encoder)
 endif()
 
 foreach(aom_app ${AOM_APP_TARGETS})

@@ -48,7 +48,10 @@ export class AnimationsTrackAppender implements TrackAppender {
   }
 
   #appendTrackHeaderAtLevel(currentLevel: number, expanded?: boolean): void {
-    const style = buildGroupStyle({useFirstLineForOverview: false});
+    const style = buildGroupStyle({
+      useFirstLineForOverview: false,
+      collapsible: PerfUI.FlameChart.GroupCollapsibleState.IF_MULTI_ROW,
+    });
     const group = buildTrackHeader(
         VisualLoggingTrackName.ANIMATIONS, currentLevel, i18nString(UIStrings.animations), style,
         /* selectable= */ true, expanded);

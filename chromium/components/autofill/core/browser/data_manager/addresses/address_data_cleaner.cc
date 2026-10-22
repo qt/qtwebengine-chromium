@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/containers/to_vector.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/version_info/version_info.h"
 #include "components/autofill/core/browser/data_manager/addresses/address_data_manager.h"
@@ -79,6 +80,7 @@ bool ShouldWaitForSync(syncer::SyncService* sync_service) {
 void DeduplicateProfiles(const AutofillProfileComparator& comparator,
                          std::vector<AutofillProfile> profiles,
                          AddressDataManager& adm) {
+  SCOPED_UMA_HISTOGRAM_TIMER("Autofill.Timing.DeduplicateProfiles");
   std::set<std::string> guids_to_delete;
 
   for (const AutofillProfile& profile : profiles) {
@@ -250,7 +252,6 @@ void AddressDataCleaner::ApplyDeduplicationRoutine() {
   if (profiles.size() < 2) {
     return;
   }
-  autofill_metrics::LogNumberOfProfilesConsideredForDedupe(profiles.size());
 
   // `profiles` contains pointers to the PDM's state. Modifying them directly
   // won't update them in the database and calling `PDM:UpdateProfile()`
@@ -259,6 +260,11 @@ void AddressDataCleaner::ApplyDeduplicationRoutine() {
   for (const AutofillProfile* profile : profiles) {
     deduplicated_profiles.push_back(*profile);
   }
+
+  autofill_metrics::LogNumberOfProfilesConsideredForDedupe(profiles.size());
+  autofill_metrics::LogNumberOfProfilesConsideredForDedupePerCountryCode(
+      deduplicated_profiles);
+
   DeduplicateProfiles(
       AutofillProfileComparator(address_data_manager_->app_locale()),
       std::move(deduplicated_profiles), *address_data_manager_);

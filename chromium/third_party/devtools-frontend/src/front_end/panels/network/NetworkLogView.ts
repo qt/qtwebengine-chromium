@@ -39,7 +39,6 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
-import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Annotations from '../../models/annotations/annotations.js';
@@ -1722,21 +1721,21 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
         }
 
         UI.Context.Context.instance().setFlavor(SDK.NetworkRequest.NetworkRequest, request);
-          const action = UI.ActionRegistry.ActionRegistry.instance().getAction(openAiAssistanceId);
-          const submenu = contextMenu.footerSection().appendSubMenuItem(action.title(), false, openAiAssistanceId);
-          submenu.defaultSection().appendAction(openAiAssistanceId, i18nString(UIStrings.startAChat));
-          appendSubmenuPromptAction(
-              submenu, action, i18nString(UIStrings.explainPurpose), 'What is the purpose of this request?',
-              openAiAssistanceId + '.purpose');
-          appendSubmenuPromptAction(
-              submenu, action, i18nString(UIStrings.explainSlowness), 'Why is this request taking so long?',
-              openAiAssistanceId + '.slowness');
-          appendSubmenuPromptAction(
-              submenu, action, i18nString(UIStrings.explainFailures), 'Why is the request failing?',
-              openAiAssistanceId + '.failures');
-          appendSubmenuPromptAction(
-              submenu, action, i18nString(UIStrings.assessSecurityHeaders), 'Are there any security headers present?',
-              openAiAssistanceId + '.security');
+        const action = UI.ActionRegistry.ActionRegistry.instance().getAction(openAiAssistanceId);
+        const submenu = contextMenu.footerSection().appendSubMenuItem(action.title(), false, openAiAssistanceId);
+        submenu.defaultSection().appendAction(openAiAssistanceId, i18nString(UIStrings.startAChat));
+        appendSubmenuPromptAction(
+            submenu, action, i18nString(UIStrings.explainPurpose), 'What is the purpose of this request?',
+            openAiAssistanceId + '.purpose');
+        appendSubmenuPromptAction(
+            submenu, action, i18nString(UIStrings.explainSlowness), 'Why is this request taking so long?',
+            openAiAssistanceId + '.slowness');
+        appendSubmenuPromptAction(
+            submenu, action, i18nString(UIStrings.explainFailures), 'Why is the request failing?',
+            openAiAssistanceId + '.failures');
+        appendSubmenuPromptAction(
+            submenu, action, i18nString(UIStrings.assessSecurityHeaders), 'Are there any security headers present?',
+            openAiAssistanceId + '.security');
       }
       copyMenu.defaultSection().appendItem(
           i18nString(UIStrings.copyURL),
@@ -1854,98 +1853,58 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
       const maxBlockedURLLength = 20;
       const manager = SDK.NetworkManager.MultitargetNetworkManager.instance();
 
-      if (!Root.Runtime.hostConfig.devToolsIndividualRequestThrottling?.enabled) {
-        function addBlockedURL(url: string): void {
-          manager.requestConditions.add(SDK.NetworkManager.RequestCondition.createFromSetting(
-              {enabled: true, url: url as Platform.DevToolsPath.UrlString}));
-          manager.requestConditions.conditionsEnabled = true;
+      function removeRequestCondition(pattern: SDK.NetworkManager.RequestURLPattern): void {
+        const entry = manager.requestConditions.findCondition(pattern.constructorString);
+        if (entry) {
+          manager.requestConditions.delete(entry);
           void UI.ViewManager.ViewManager.instance().showView('network.blocked-urls');
         }
+      }
 
-        function removeBlockedURL(url: string): void {
-          const entry = manager.requestConditions.findCondition(url);
-          if (entry) {
-            manager.requestConditions.delete(entry);
-          }
-          void UI.ViewManager.ViewManager.instance().showView('network.blocked-urls');
+      function addRequestCondition(
+          pattern: SDK.NetworkManager.RequestURLPattern,
+          conditions: SDK.NetworkManager.ThrottlingConditions,
+          ): void {
+        const entry = manager.requestConditions.findCondition(pattern.constructorString);
+        if (entry) {
+          entry.conditions = conditions;
+        } else {
+          manager.requestConditions.add(SDK.NetworkManager.RequestCondition.create(pattern, conditions));
         }
+        manager.requestConditions.conditionsEnabled = true;
+        void UI.ViewManager.ViewManager.instance().showView('network.blocked-urls');
+      }
 
-        const urlWithoutScheme = request.parsedURL.urlWithoutScheme();
-        if (urlWithoutScheme && !manager.requestConditions.has(urlWithoutScheme)) {
-          contextMenu.debugSection().appendItem(
-              i18nString(UIStrings.blockRequestUrl), addBlockedURL.bind(null, urlWithoutScheme),
-              {jslogContext: 'block-request-url'});
-        } else if (urlWithoutScheme) {
-          const croppedURL = Platform.StringUtilities.trimMiddle(urlWithoutScheme, maxBlockedURLLength);
-          contextMenu.debugSection().appendItem(
-              i18nString(UIStrings.unblockS, {PH1: croppedURL}), removeBlockedURL.bind(null, urlWithoutScheme),
-              {jslogContext: 'unblock'});
-        }
+      const blockingMenu =
+          contextMenu.debugSection().appendSubMenuItem(i18nString(UIStrings.blockRequests), /* disabled=*/ true);
+      const throttlingMenu =
+          contextMenu.debugSection().appendSubMenuItem(i18nString(UIStrings.throttleRequests), /* disabled=*/ true);
 
-        const domain = request.parsedURL.domain();
-        if (domain && !manager.requestConditions.has(domain)) {
-          contextMenu.debugSection().appendItem(
-              i18nString(UIStrings.blockRequestDomain), addBlockedURL.bind(null, domain),
-              {jslogContext: 'block-request-domain'});
-        } else if (domain) {
-          const croppedDomain = Platform.StringUtilities.trimMiddle(domain, maxBlockedURLLength);
-          contextMenu.debugSection().appendItem(
-              i18nString(UIStrings.unblockS, {PH1: croppedDomain}), removeBlockedURL.bind(null, domain),
-              {jslogContext: 'unblock'});
-        }
-      } else {
-        function removeRequestCondition(pattern: SDK.NetworkManager.RequestURLPattern): void {
-          const entry = manager.requestConditions.findCondition(pattern.constructorString);
-          if (entry) {
-            manager.requestConditions.delete(entry);
-            void UI.ViewManager.ViewManager.instance().showView('network.blocked-urls');
-          }
-        }
-
-        function addRequestCondition(
-            pattern: SDK.NetworkManager.RequestURLPattern,
-            conditions: SDK.NetworkManager.ThrottlingConditions,
-            ): void {
-          const entry = manager.requestConditions.findCondition(pattern.constructorString);
-          if (entry) {
-            entry.conditions = conditions;
-          } else {
-            manager.requestConditions.add(SDK.NetworkManager.RequestCondition.create(pattern, conditions));
-          }
-          manager.requestConditions.conditionsEnabled = true;
-          void UI.ViewManager.ViewManager.instance().showView('network.blocked-urls');
-        }
-
-        const blockingMenu =
-            contextMenu.debugSection().appendSubMenuItem(i18nString(UIStrings.blockRequests), /* disabled=*/ true);
-        const throttlingMenu =
-            contextMenu.debugSection().appendSubMenuItem(i18nString(UIStrings.throttleRequests), /* disabled=*/ true);
-
-        const urlWithoutScheme = request.parsedURL.urlWithoutScheme();
-        const urlPattern = urlWithoutScheme &&
-            SDK.NetworkManager.RequestURLPattern.create(
-                `*://${urlWithoutScheme}` as SDK.NetworkManager.URLPatternConstructorString);
-        if (urlPattern) {
-          throttlingMenu.setEnabled(true);
-          blockingMenu.setEnabled(true);
-          const existingConditions = manager.requestConditions.findCondition(urlPattern.constructorString);
-          const isBlocking = existingConditions?.conditions === SDK.NetworkManager.BlockingConditions;
-          const isThrottling = existingConditions &&
-              existingConditions.conditions !== SDK.NetworkManager.BlockingConditions &&
-              existingConditions.conditions !== SDK.NetworkManager.NoThrottlingConditions;
-          blockingMenu.debugSection().appendItem(
-              isBlocking ? i18nString(UIStrings.unblockS, {PH1: urlPattern.constructorString}) :
-                           i18nString(UIStrings.blockRequestUrl),
-              () => isBlocking ? removeRequestCondition(urlPattern) :
-                                 addRequestCondition(urlPattern, SDK.NetworkManager.BlockingConditions),
-              {jslogContext: 'block-request-url'});
-          throttlingMenu.debugSection().appendItem(
-              isThrottling ? i18nString(UIStrings.unthrottleS, {PH1: urlPattern.constructorString}) :
-                             i18nString(UIStrings.throttleRequestUrl),
-              () => isThrottling ? removeRequestCondition(urlPattern) :
-                                   addRequestCondition(urlPattern, SDK.NetworkManager.Slow3GConditions),
-              {jslogContext: 'throttle-request-url'});
-        }
+      const urlWithoutScheme = request.parsedURL.urlWithoutScheme();
+      const urlPattern = urlWithoutScheme &&
+          SDK.NetworkManager.RequestURLPattern.create(
+              `*://${urlWithoutScheme}` as SDK.NetworkManager.URLPatternConstructorString);
+      if (urlPattern) {
+        throttlingMenu.setEnabled(true);
+        blockingMenu.setEnabled(true);
+        const existingConditions = manager.requestConditions.findCondition(urlPattern.constructorString);
+        const isBlocking = existingConditions?.conditions === SDK.NetworkManager.BlockingConditions;
+        const isThrottling = existingConditions &&
+            existingConditions.conditions !== SDK.NetworkManager.BlockingConditions &&
+            existingConditions.conditions !== SDK.NetworkManager.NoThrottlingConditions;
+        const croppedURL = Platform.StringUtilities.trimMiddle(urlPattern.constructorString, maxBlockedURLLength);
+        blockingMenu.debugSection().appendItem(
+            isBlocking ? i18nString(UIStrings.unblockS, {PH1: croppedURL}) : i18nString(UIStrings.blockRequestUrl),
+            () => isBlocking ? removeRequestCondition(urlPattern) :
+                               addRequestCondition(urlPattern, SDK.NetworkManager.BlockingConditions),
+            {jslogContext: 'block-request-url'});
+        throttlingMenu.debugSection().appendItem(
+            isThrottling ? i18nString(UIStrings.unthrottleS, {PH1: croppedURL}) :
+                           i18nString(UIStrings.throttleRequestUrl),
+            () => isThrottling ? removeRequestCondition(urlPattern) :
+                                 addRequestCondition(urlPattern, SDK.NetworkManager.Slow3GConditions),
+            {jslogContext: 'throttle-request-url'});
+      }
 
         const domain = request.parsedURL.domain();
         const domainPattern = domain &&
@@ -1959,19 +1918,18 @@ export class NetworkLogView extends Common.ObjectWrapper.eventMixin<EventTypes, 
           const isThrottling = existingConditions &&
               existingConditions.conditions !== SDK.NetworkManager.BlockingConditions &&
               existingConditions.conditions !== SDK.NetworkManager.NoThrottlingConditions;
+          const croppedURL = Platform.StringUtilities.trimMiddle(domainPattern.constructorString, maxBlockedURLLength);
           blockingMenu.debugSection().appendItem(
-              isBlocking ? i18nString(UIStrings.unblockS, {PH1: domainPattern.constructorString}) :
-                           i18nString(UIStrings.blockRequestDomain),
+              isBlocking ? i18nString(UIStrings.unblockS, {PH1: croppedURL}) : i18nString(UIStrings.blockRequestDomain),
               () => isBlocking ? removeRequestCondition(domainPattern) :
                                  addRequestCondition(domainPattern, SDK.NetworkManager.BlockingConditions),
               {jslogContext: 'block-request-domain'});
           throttlingMenu.debugSection().appendItem(
-              isThrottling ? i18nString(UIStrings.unthrottleS, {PH1: domainPattern.constructorString}) :
+              isThrottling ? i18nString(UIStrings.unthrottleS, {PH1: croppedURL}) :
                              i18nString(UIStrings.throttleRequestDomain),
               () => isThrottling ? removeRequestCondition(domainPattern) :
                                    addRequestCondition(domainPattern, SDK.NetworkManager.Slow3GConditions),
               {jslogContext: 'throttle-request-domain'});
-        }
       }
 
       if (SDK.NetworkManager.NetworkManager.canReplayRequest(request)) {
@@ -2758,7 +2716,8 @@ export class MoreFiltersDropDownUI extends Common.ObjectWrapper.ObjectWrapper<UI
     this.updateActiveFiltersCount();
 
     this.dropDownButton = new UI.Toolbar.ToolbarMenuButton(
-        this.showMoreFiltersContextMenu.bind(this), /* isIconDropdown=*/ false, /* useSoftMenu=*/ true,
+        this.showMoreFiltersContextMenu.bind(this),
+        /* isIconDropdown=*/ false, /* useSoftMenu=*/ true,
         /* jslogContext=*/ undefined, /* iconName=*/ undefined,
         /* keepOpen=*/ true);
     this.dropDownButton.setTitle(i18nString(UIStrings.showOnlyHideRequests));

@@ -31,6 +31,8 @@ class ImageIndex;
 
 namespace rx
 {
+class GraphicsDriverUniforms;
+
 namespace vk
 {
 constexpr VkBufferUsageFlags kVertexBufferUsageFlags =
@@ -2024,6 +2026,10 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
 
     bool isDefault() const { return mFramebuffer.isDefault(); }
 
+    void addCurrentDriverUniforms(const vk::PipelineLayout *pipelineLayout,
+                                  const GraphicsDriverUniforms &graphicsDriverUniforms);
+    void dirtyCurrentDriverUniforms();
+
   private:
     uint32_t getSubpassCommandBufferCount() const { return mCurrentSubpassCommandBufferIndex + 1; }
 
@@ -2111,6 +2117,10 @@ class RenderPassCommandBufferHelper final : public CommandBufferHelperCommon
 
     // The list of VkEvents copied from RefCountedEventArray
     EventArray mVkEventArray;
+
+    // pushConstant at beginning of this renderPass
+    const vk::PipelineLayout *mPipelineLayout;
+    std::unique_ptr<GraphicsDriverUniforms> mGraphicsDriverUniforms;
 
     friend class CommandBufferHelperCommon;
 };
@@ -2216,19 +2226,19 @@ class ImageHelper final : public Resource, public angle::Subject
     angle::Result copyToBufferOneOff(ErrorContext *context,
                                      BufferHelper *stagingBuffer,
                                      VkBufferImageCopy copyRegion);
-    angle::Result initMSAASwapchain(ErrorContext *context,
-                                    gl::TextureType textureType,
-                                    const VkExtent3D &extents,
-                                    bool rotatedAspectRatio,
-                                    angle::FormatID intendedFormatID,
-                                    angle::FormatID actualFormatID,
-                                    GLint samples,
-                                    VkImageUsageFlags usage,
-                                    gl::LevelIndex firstLevel,
-                                    uint32_t mipLevels,
-                                    uint32_t layerCount,
-                                    bool isRobustResourceInitEnabled,
-                                    bool hasProtectedContent);
+    angle::Result initAncillarySwapchain(ErrorContext *context,
+                                         gl::TextureType textureType,
+                                         const VkExtent3D &extents,
+                                         bool rotatedAspectRatio,
+                                         angle::FormatID intendedFormatID,
+                                         angle::FormatID actualFormatID,
+                                         GLint samples,
+                                         VkImageUsageFlags usage,
+                                         gl::LevelIndex firstLevel,
+                                         uint32_t mipLevels,
+                                         uint32_t layerCount,
+                                         bool isRobustResourceInitEnabled,
+                                         bool hasProtectedContent);
     angle::Result initExternal(ErrorContext *context,
                                gl::TextureType textureType,
                                const VkExtent3D &extents,
@@ -2357,14 +2367,14 @@ class ImageHelper final : public Resource, public angle::Subject
     // pNext chain based on the given parameters, and adjust create flags.  In some cases, these
     // shouldn't be automatically derived, for example when importing images through
     // EXT_external_objects and ANGLE_external_objects_flags.
-    static constexpr uint32_t kImageListFormatCount = 2;
-    using ImageListFormats                          = std::array<VkFormat, kImageListFormatCount>;
+    static constexpr uint32_t kImageColorspaceOverrideFormatCount = 2;
+    using ImageFormats = angle::FixedVector<VkFormat, kImageColorspaceOverrideFormatCount>;
     static const void *DeriveCreateInfoPNext(
         ErrorContext *context,
         angle::FormatID actualFormatID,
         const void *pNext,
         VkImageFormatListCreateInfoKHR *imageFormatListInfoStorage,
-        ImageListFormats *imageListFormatsStorage,
+        ImageFormats *imageFormats,
         ImageFormatReinterpretability formatReinterpretability,
         VkImageCreateFlags *createFlagsOut);
 
@@ -2385,14 +2395,8 @@ class ImageHelper final : public Resource, public angle::Subject
                                     const FormatSupportCheck formatSupportCheck);
 
     // Image formats used for the creation of imageless framebuffers.
-    using ImageFormats = angle::FixedVector<VkFormat, kImageListFormatCount>;
     ImageFormats &getViewFormats() { return mViewFormats; }
     const ImageFormats &getViewFormats() const { return mViewFormats; }
-
-    // Helper for initExternal and users to extract the view formats of the image from the pNext
-    // chain in VkImageCreateInfo.
-    void deriveImageViewFormatFromCreateInfoPNext(const VkImageCreateInfo &imageInfo,
-                                                  ImageFormats &formatOut);
 
     // Release the underlying VkImage object for garbage collection.
     void releaseImage(Renderer *renderer);
@@ -2418,7 +2422,8 @@ class ImageHelper final : public Resource, public angle::Subject
                              VkImageCreateFlags createFlags,
                              VkImageUsageFlags usage,
                              GLint samples,
-                             bool isRobustResourceInitEnabled);
+                             bool isRobustResourceInitEnabled,
+                             const ImageFormats &imageFormats);
     void resetImageWeakReference();
 
     const Image &getImage() const { return mImage; }
@@ -2534,6 +2539,13 @@ class ImageHelper final : public Resource, public angle::Subject
                                           LevelIndex baseLevel,
                                           LevelIndex maxLevel);
 
+    // Copy this image into a destination image.  This image should be in the TransferSrc layout.
+    // The destination image should be in the TransferDst layout.
+    void copy(Renderer *renderer,
+              ImageHelper *dst,
+              const VkImageCopy &region,
+              OutsideRenderPassCommandBuffer *commandBuffer);
+
     // Resolve this image into a destination image.  This image should be in the TransferSrc layout.
     // The destination image should be in the TransferDst layout.
     void resolve(Renderer *renderer,
@@ -2615,9 +2627,11 @@ class ImageHelper final : public Resource, public angle::Subject
     void stageSubresourceUpdateFromImage(RefCounted<ImageHelper> *image,
                                          const gl::ImageIndex &index,
                                          LevelIndex srcMipLevel,
+                                         uint32_t srcLayerIndex,
                                          const gl::Offset &destOffset,
                                          const gl::Extents &glExtents,
-                                         const VkImageType imageType);
+                                         const VkImageType srcImageType,
+                                         const VkImageType dstImageType);
 
     // Takes an image and stages a subresource update for each level of it, including its full
     // extent and all its layers, at the specified GL level.
@@ -2635,7 +2649,8 @@ class ImageHelper final : public Resource, public angle::Subject
                                                      const gl::Extents &glExtents,
                                                      const angle::Format &intendedFormat,
                                                      const angle::Format &imageFormat);
-    void stageRobustResourceClear(const gl::ImageIndex &index);
+    void stageRobustResourceClear(const gl::ImageIndex &index,
+                                  const VkImageAspectFlags aspectFlags);
 
     angle::Result stageResourceClearWithFormat(ContextVk *contextVk,
                                                const gl::ImageIndex &index,
@@ -3066,7 +3081,9 @@ class ImageHelper final : public Resource, public angle::Subject
         bool matchesLayerRange(uint32_t layerIndex, uint32_t layerCount) const;
         // Returns true if the update is to any layer within range of [layerIndex,
         // layerIndex+layerCount)
-        bool intersectsLayerRange(uint32_t layerIndex, uint32_t layerCount) const;
+        bool intersectsLayerRange(uint32_t layerIndex,
+                                  uint32_t layerCount,
+                                  uint32_t imageLayerCount) const;
         void getDestSubresource(uint32_t imageLayerCount,
                                 uint32_t *baseLayerOut,
                                 uint32_t *layerCountOut) const;
@@ -3102,10 +3119,6 @@ class ImageHelper final : public Resource, public angle::Subject
     using LevelContentDefinedMask = angle::BitSet8<kMaxContentDefinedLayerCount>;
 
     void deriveExternalImageTiling(const void *createInfoChain);
-
-    // Used to initialize ImageFormats from actual format, with no pNext from a VkImageCreateInfo
-    // object.
-    void setImageFormatsFromActualFormat(VkFormat actualFormat, ImageFormats &imageFormatsOut);
 
     // Called from flushStagedUpdates, removes updates that are later superseded by another.  This
     // cannot be done at the time the updates were staged, as the image is not created (and thus the
@@ -3155,6 +3168,8 @@ class ImageHelper final : public Resource, public angle::Subject
     {
         return (mSubresourcesWrittenSinceBarrier[level] & layerMask) != 0;
     }
+
+    bool verifyNoStagedUpdates() const;
 
     // If the image has emulated channels, we clear them once so as not to leave garbage on those
     // channels.
@@ -3249,9 +3264,15 @@ class ImageHelper final : public Resource, public angle::Subject
     // Used only for assertions, these functions verify that
     // SubresourceUpdate::refcountedObject::image or buffer references have the correct ref count.
     // This is to prevent accidental leaks.
-    bool validateSubresourceUpdateImageRefConsistent(RefCounted<ImageHelper> *image) const;
-    bool validateSubresourceUpdateBufferRefConsistent(RefCounted<BufferHelper> *buffer) const;
-    bool validateSubresourceUpdateRefCountsConsistent() const;
+    void assertSubresourceUpdateImageRefConsistentImpl(RefCounted<ImageHelper> *image) const;
+    void assertSubresourceUpdateBufferRefConsistentImpl(RefCounted<BufferHelper> *buffer) const;
+    void assertSubresourceUpdateRefCountsConsistentImpl() const;
+    ANGLE_INLINE void assertSubresourceUpdateRefCountsConsistent() const
+    {
+#if defined(ANGLE_ENABLE_ASSERTS)
+        assertSubresourceUpdateRefCountsConsistentImpl();
+#endif
+    }
 
     void resetCachedProperties();
     void setEntireContentDefined();
@@ -3468,9 +3489,14 @@ ANGLE_INLINE bool RenderPassCommandBufferHelper::usesImage(const ImageHelper &im
 
 // A vector of image views, such as one per level or one per layer.
 using ImageViewVector = std::vector<ImageView>;
+// A map between FormatID and vector of image views.
+using ImageViewVectorMap = angle::HashMap<angle::FormatID, std::unique_ptr<ImageViewVector>>;
 
 // A vector of vector of image views.  Primary index is layer, secondary index is level.
 using LayerLevelImageViewVector = std::vector<ImageViewVector>;
+// A map between FormatID and vector of vector of image views.
+using LayerLevelImageViewVectorMap =
+    angle::HashMap<angle::FormatID, std::unique_ptr<LayerLevelImageViewVector>>;
 
 using SubresourceImageViewMap = angle::HashMap<ImageSubresourceRange, std::unique_ptr<ImageView>>;
 
@@ -3854,8 +3880,8 @@ class ImageViewHelper final : angle::NonCopyable
     SubresourceImageViewMap mSubresourceStencilOnlyImageViews;
 
     // Storage views
-    ImageViewVector mLevelStorageImageViews;
-    LayerLevelImageViewVector mLayerLevelStorageImageViews;
+    ImageViewVectorMap mLevelStorageImageViews;
+    LayerLevelImageViewVectorMap mLayerLevelStorageImageViews;
 
     // Fragment shading rate view
     ImageView mFragmentShadingRateImageView;

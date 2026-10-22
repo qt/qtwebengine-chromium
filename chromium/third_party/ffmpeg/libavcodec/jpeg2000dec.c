@@ -1900,7 +1900,7 @@ static void decode_sigpass(Jpeg2000T1Context *t1, int width, int height,
                            int bpno, int bandno,
                            int vert_causal_ctx_csty_symbol)
 {
-    int mask = 3 << (bpno - 1), y0, x, y;
+    int mask = (3u << bpno)>>1, y0, x, y;
 
     for (y0 = 0; y0 < height; y0 += 4)
         for (x = 0; x < width; x++)
@@ -1933,7 +1933,7 @@ static void decode_refpass(Jpeg2000T1Context *t1, int width, int height,
     int phalf;
     int y0, x, y;
 
-    phalf = 1 << (bpno - 1);
+    phalf = 1 << bpno;
 
     for (y0 = 0; y0 < height; y0 += 4)
         for (x = 0; x < width; x++)
@@ -1942,11 +1942,11 @@ static void decode_refpass(Jpeg2000T1Context *t1, int width, int height,
                     int flags_mask = (vert_causal_ctx_csty_symbol && y == y0 + 3) ?
                         ~(JPEG2000_T1_SIG_S | JPEG2000_T1_SIG_SW | JPEG2000_T1_SIG_SE | JPEG2000_T1_SGN_S) : -1;
                     int ctxno = ff_jpeg2000_getrefctxno(t1->flags[(y + 1) * t1->stride + x + 1] & flags_mask);
-                    t1->data[(y) * t1->stride + x] |= phalf;
+                    t1->data[(y) * t1->stride + x] |= phalf >> 1;
                     if (ff_mqc_decode(&t1->mqc, t1->mqc.cx_states + ctxno))
-                        t1->data[(y) * t1->stride + x] |= phalf << 1;
+                        t1->data[(y) * t1->stride + x] |= phalf;
                     else {
-                        t1->data[(y) * t1->stride + x] &= ~(phalf << 1);
+                        t1->data[(y) * t1->stride + x] &= ~(phalf);
 
                     }
                     t1->flags[(y + 1) * t1->stride + x + 1] |= JPEG2000_T1_REF;
@@ -2043,8 +2043,8 @@ static int decode_cblk(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *cod
     ff_mqc_initdec(&t1->mqc, cblk->data, 0, 1);
 
     while (passno--) {
-        if (bpno < 0 || bpno > 29) {
-            av_log(s->avctx, AV_LOG_ERROR, "bpno became invalid\n");
+        if (bpno < -1 || bpno > 29) {
+            av_log(s->avctx, AV_LOG_ERROR, "bpno (%d) became invalid\n", bpno);
             return AVERROR_INVALIDDATA;
         }
         switch(pass_t) {
@@ -2100,7 +2100,7 @@ static int decode_cblk(const Jpeg2000DecoderContext *s, Jpeg2000CodingStyle *cod
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             int32_t sign, n, val;
-            const uint32_t mask  = UINT32_MAX >> (M_b + 1); // bit mask for ROI detection
+            const uint32_t mask  = (int64_t)UINT32_MAX >> (M_b + 1); // bit mask for ROI detection
 
             n = x + (y * t1->stride);
             val = t1->data[n];
@@ -2130,7 +2130,7 @@ static void dequantization_float(int x, int y, Jpeg2000Cblk *cblk,
     int w = cblk->coord[0][1] - cblk->coord[0][0];
     const int downshift = 31 - M_b;
     float fscale = band->f_stepsize;
-    fscale /= (float)(1 << downshift);
+    fscale /= (float)(1LL << downshift);
     for (j = 0; j < (cblk->coord[1][1] - cblk->coord[1][0]); ++j) {
         float *datap = &comp->f_data[(comp->coord[0][1] - comp->coord[0][0]) * (y + j) + x];
         int *src = t1->data + j*t1->stride;
@@ -2149,7 +2149,7 @@ static void dequantization_int(int x, int y, Jpeg2000Cblk *cblk,
                                Jpeg2000T1Context *t1, Jpeg2000Band *band, const int M_b)
 {
     int i, j;
-    const int downshift = 31 - M_b;
+    const int downshift = FFMIN(31 - M_b, 31);
     int w = cblk->coord[0][1] - cblk->coord[0][0];
     for (j = 0; j < (cblk->coord[1][1] - cblk->coord[1][0]); ++j) {
         int32_t *datap = &comp->i_data[(comp->coord[0][1] - comp->coord[0][0]) * (y + j) + x];
@@ -2188,7 +2188,7 @@ static void dequantization_int_97(int x, int y, Jpeg2000Cblk *cblk,
     const int PRESCALE = 6; // At least 6 is required to pass the conformance tests in ISO/IEC 15444-4
     int scale;
 
-    fscale /= (float)(1 << downshift);
+    fscale /= (float)(1LL << downshift);
     fscale *= (float)(1 << PRESCALE);
     fscale *= (float)(1 << (16 + I_PRESHIFT));
     scale = (int)(fscale + 0.5);
@@ -2201,7 +2201,7 @@ static void dequantization_int_97(int x, int y, Jpeg2000Cblk *cblk,
             if (val < 0) // Convert sign-magnitude to two's complement
                 val = -(val & INT32_MAX);
             // Shifting down to prevent overflow in dequantization
-            val = (val + (1 << (PRESCALE - 1))) >> PRESCALE;
+            val = (val + (1LL << (PRESCALE - 1))) >> PRESCALE;
             datap[i] = RSHIFT(val * (int64_t)band->i_stepsize, 16);
         }
     }
@@ -2270,8 +2270,8 @@ static inline int tile_codeblocks(const Jpeg2000DecoderContext *s, Jpeg2000Tile 
                     band->coord[1][0] == band->coord[1][1])
                     continue;
 
-                if (M_b >= 31) {
-                    avpriv_request_sample(s->avctx, "M_b >= 31");
+                if (M_b > 31) {
+                    avpriv_request_sample(s->avctx, "M_b (%d) > 31", M_b);
                     return AVERROR_PATCHWELCOME;
                 }
 

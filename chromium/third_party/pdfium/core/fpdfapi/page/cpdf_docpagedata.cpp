@@ -40,10 +40,10 @@
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/scoped_set_insertion.h"
 #include "core/fxcrt/span.h"
+#include "core/fxge/cfx_charmap_resolver.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/cfx_substfont.h"
-#include "core/fxge/cfx_unicodeencoding.h"
 #include "core/fxge/fx_font.h"
 
 namespace {
@@ -88,13 +88,13 @@ ByteString GetPSNameFromTT(HDC hDC) {
 #endif  // BUILDFLAG(IS_WIN)
 
 void InsertWidthArray1(CFX_Font* font,
-                       CFX_UnicodeEncoding* pEncoding,
+                       CFX_CharmapResolver* charmap_resolver,
                        wchar_t start,
                        wchar_t end,
                        CPDF_Array* pWidthArray) {
   std::vector<int> widths(end - start + 1);
   for (size_t i = 0; i < widths.size(); ++i) {
-    int glyph_index = pEncoding->GlyphFromCharCode(start + i);
+    int glyph_index = charmap_resolver->GlyphFromCharCode(start + i);
     widths[i] = font->GetGlyphWidth(glyph_index);
   }
   InsertWidthArrayImpl(std::move(widths), pWidthArray);
@@ -558,12 +558,12 @@ RetainPtr<CPDF_Font> CPDF_DocPageData::AddFont(std::unique_ptr<CFX_Font> font,
   auto pBaseDict = GetDocument()->NewIndirect<CPDF_Dictionary>();
   pBaseDict->SetNewFor<CPDF_Name>("Type", "Font");
 
-  auto pEncoding = std::make_unique<CFX_UnicodeEncoding>(font.get());
+  auto charmap_resolver = CFX_CharmapResolver::CreateUnicode(font.get());
   RetainPtr<CPDF_Dictionary> font_dict = pBaseDict;
   if (!bCJK) {
     auto pWidths = pdfium::MakeRetain<CPDF_Array>();
     for (int charcode = 32; charcode < 128; charcode++) {
-      int glyph_index = pEncoding->GlyphFromCharCode(charcode);
+      int glyph_index = charmap_resolver->GlyphFromCharCode(charcode);
       int char_width = font->GetGlyphWidth(glyph_index);
       pWidths->AppendNew<CPDF_Number>(char_width);
     }
@@ -572,7 +572,7 @@ RetainPtr<CPDF_Font> CPDF_DocPageData::AddFont(std::unique_ptr<CFX_Font> font,
       pBaseDict->SetNewFor<CPDF_Name>("Encoding",
                                       pdfium::font_encodings::kWinAnsiEncoding);
       for (int charcode = 128; charcode <= 255; charcode++) {
-        int glyph_index = pEncoding->GlyphFromCharCode(charcode);
+        int glyph_index = charmap_resolver->GlyphFromCharCode(charcode);
         int char_width = font->GetGlyphWidth(glyph_index);
         pWidths->AppendNew<CPDF_Number>(char_width);
       }
@@ -582,7 +582,7 @@ RetainPtr<CPDF_Font> CPDF_DocPageData::AddFont(std::unique_ptr<CFX_Font> font,
         pdfium::span<const uint16_t> pUnicodes =
             kFX_CharsetUnicodes[i].unicodes_;
         for (int j = 0; j < 128; j++) {
-          int glyph_index = pEncoding->GlyphFromCharCode(pUnicodes[j]);
+          int glyph_index = charmap_resolver->GlyphFromCharCode(pUnicodes[j]);
           int char_width = font->GetGlyphWidth(glyph_index);
           pWidths->AppendNew<CPDF_Number>(char_width);
         }
@@ -591,11 +591,13 @@ RetainPtr<CPDF_Font> CPDF_DocPageData::AddFont(std::unique_ptr<CFX_Font> font,
     ProcessNonbCJK(pBaseDict, font->IsBold(), font->IsItalic(), basefont,
                    std::move(pWidths));
   } else {
-    font_dict = ProcessbCJK(
-        pBaseDict, charset, basefont,
-        [&font, &pEncoding](wchar_t start, wchar_t end, CPDF_Array* widthArr) {
-          InsertWidthArray1(font.get(), pEncoding.get(), start, end, widthArr);
-        });
+    font_dict =
+        ProcessbCJK(pBaseDict, charset, basefont,
+                    [&font, &charmap_resolver](wchar_t start, wchar_t end,
+                                               CPDF_Array* widthArr) {
+                      InsertWidthArray1(font.get(), charmap_resolver.get(),
+                                        start, end, widthArr);
+                    });
   }
   int italicangle = font->GetSubstFontItalicAngle();
   FX_RECT bbox = font->GetBBox().value_or(FX_RECT());
@@ -610,11 +612,11 @@ RetainPtr<CPDF_Font> CPDF_DocPageData::AddFont(std::unique_ptr<CFX_Font> font,
   } else {
     static constexpr char kStemChars[] = {'i', 'I', '!', '1'};
     static constexpr pdfium::span<const char> kStemSpan{kStemChars};
-    uint32_t glyph = pEncoding->GlyphFromCharCode(kStemSpan.front());
+    uint32_t glyph = charmap_resolver->GlyphFromCharCode(kStemSpan.front());
     const auto remaining = kStemSpan.subspan<1>();
     nStemV = font->GetGlyphWidth(glyph);
     for (auto ch : remaining) {
-      glyph = pEncoding->GlyphFromCharCode(ch);
+      glyph = charmap_resolver->GlyphFromCharCode(ch);
       int width = font->GetGlyphWidth(glyph);
       if (width > 0 && width < nStemV) {
         nStemV = width;

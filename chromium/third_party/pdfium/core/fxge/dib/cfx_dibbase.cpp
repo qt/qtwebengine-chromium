@@ -23,7 +23,6 @@
 #include "core/fxcrt/span_util.h"
 #include "core/fxcrt/stl_util.h"
 #include "core/fxcrt/zip.h"
-#include "core/fxge/agg/cfx_agg_cliprgn.h"
 #include "core/fxge/calculate_pitch.h"
 #include "core/fxge/dib/cfx_bitmapstorer.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
@@ -708,7 +707,7 @@ bool CFX_DIBBase::GetOverlapRect(int& dest_left,
                                  int src_height,
                                  int& src_left,
                                  int& src_top,
-                                 const CFX_AggClipRgn* pClipRgn) const {
+                                 const FX_RECT* clip_rect) const {
   if (width == 0 || height == 0) {
     return false;
   }
@@ -779,8 +778,8 @@ bool CFX_DIBBase::GetOverlapRect(int& dest_left,
   FX_RECT dest_bound(0, 0, GetWidth(), GetHeight());
   dest_rect.Intersect(dest_bound);
 
-  if (pClipRgn) {
-    dest_rect.Intersect(pClipRgn->GetBox());
+  if (clip_rect) {
+    dest_rect.Intersect(*clip_rect);
   }
   dest_left = dest_rect.left;
   dest_top = dest_rect.top;

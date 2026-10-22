@@ -239,6 +239,7 @@ class CORE_EXPORT CSSSelector {
     kPseudoActiveViewTransition,
     kPseudoActiveViewTransitionType,
     kPseudoAfter,
+    kPseudoAnimatedImage,
     kPseudoAny,
     kPseudoAnyLink,
     kPseudoAutofill,
@@ -260,7 +261,9 @@ class CORE_EXPORT CSSSelector {
     kPseudoEmpty,
     kPseudoEnabled,
     kPseudoEnd,
+    kPseudoExpandIcon,
     kPseudoFileSelectorButton,
+    kPseudoFiltered,
     kPseudoFirstChild,
     kPseudoFirstLetter,
     kPseudoFirstLine,
@@ -325,6 +328,7 @@ class CORE_EXPORT CSSSelector {
     kPseudoStart,
     kPseudoState,
     kPseudoTarget,
+    kPseudoTextField,
     kPseudoToolFormActive,
     kPseudoToolSubmitActive,
     kPseudoUnknown,
@@ -900,12 +904,7 @@ inline bool CSSSelector::LegacyCaseInsensitiveMatch() const {
 }
 
 inline bool CSSSelector::IsASCIILower(const AtomicString& value) {
-  for (wtf_size_t i = 0; i < value.length(); ++i) {
-    if (IsASCIIUpper(value[i])) {
-      return false;
-    }
-  }
-  return true;
+  return value.ContainsNoAsciiUpper();
 }
 
 inline void CSSSelector::SetValue(const AtomicString& value,
@@ -922,7 +921,7 @@ inline void CSSSelector::SetValue(const AtomicString& value,
     return;
   }
   data_.rare_data_->matching_value_ =
-      match_lower_case ? value.LowerASCII() : value;
+      match_lower_case ? value.ToAsciiLower() : value;
   data_.rare_data_->serializing_value_ = value;
 }
 

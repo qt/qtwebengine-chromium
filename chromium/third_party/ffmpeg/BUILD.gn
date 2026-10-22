@@ -78,7 +78,7 @@ if (has_nasm_deps) {
     }
 
     # See comments on fix_textrels config.
-    if (use_lld && current_cpu == "x86" && !is_win) {
+    if ((use_lld || use_mold) && current_cpu == "x86" && !is_win) {
       all_dependent_configs = [ ":fix_textrels" ]
     }
   }

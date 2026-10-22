@@ -3,28 +3,31 @@
 # found in the LICENSE file.
 
 import("//chrome/common/features.gni")
-
-assert(enable_glic)
+import("//ui/views/features.gni")
 
 source_set("test_support") {
   testonly = true
   sources = [
     "glic_browser_test.h",
+    "glic_histogram_tester.h",
     "glic_test_environment.cc",
     "glic_test_environment.h",
     "glic_test_util.cc",
     "glic_test_util.h",
+    "new_glic_api_test.h",
   ]
   if (!is_android) {
     sources += [
       "glic_api_test.cc",
       "glic_api_test.h",
+      "glic_functional_browsertest.cc",
+      "glic_functional_browsertest.h",
       "interactive_glic_test.cc",
       "interactive_glic_test.h",
       "interactive_test_util.cc",
       "interactive_test_util.h",
-      "mock_glic_window_controller.cc",
-      "mock_glic_window_controller.h",
+      "mock_glic_instance_coordinator.cc",
+      "mock_glic_instance_coordinator.h",
       "mock_local_hotkey_panel.cc",
       "mock_local_hotkey_panel.h",
       "non_interactive_glic_test.cc",
@@ -40,6 +43,9 @@ source_set("test_support") {
     "//chrome/browser/ui:ui_features",
     "//components/signin/public/identity_manager:test_support",
   ]
+  if (enable_desktop_aura || is_mac) {
+    deps += [ "//ui/views:test_support" ]
+  }
   if (!is_android) {
     deps += [
       "//chrome/browser/actor",

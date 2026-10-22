@@ -850,6 +850,18 @@ export namespace Audits {
     insight?: CookieIssueInsight;
   }
 
+  export const enum PerformanceIssueType {
+    DocumentCookie = 'DocumentCookie',
+  }
+
+  /**
+   * Details for a performance issue.
+   */
+  export interface PerformanceIssueDetails {
+    performanceIssueType: PerformanceIssueType;
+    sourceCodeLocation?: SourceCodeLocation;
+  }
+
   export const enum MixedContentResolutionStatus {
     MixedContentBlocked = 'MixedContentBlocked',
     MixedContentAutomaticallyUpgraded = 'MixedContentAutomaticallyUpgraded',
@@ -1018,16 +1030,6 @@ export namespace Audits {
     sourceCodeLocation: SourceCodeLocation;
     isWarning: boolean;
     type: SharedArrayBufferIssueType;
-  }
-
-  export interface LowTextContrastIssueDetails {
-    violatingNodeId: DOM.BackendNodeId;
-    violatingNodeSelector: string;
-    contrastRatio: number;
-    thresholdAA: number;
-    thresholdAAA: number;
-    fontSize: string;
-    fontWeight: string;
   }
 
   /**
@@ -1209,6 +1211,7 @@ export namespace Audits {
     AutofillAndManualTextPolicyControlledFeaturesInfo = 'AutofillAndManualTextPolicyControlledFeaturesInfo',
     AutofillPolicyControlledFeatureInfo = 'AutofillPolicyControlledFeatureInfo',
     ManualTextPolicyControlledFeatureInfo = 'ManualTextPolicyControlledFeatureInfo',
+    FormModelContextParameterMissingTitleAndDescription = 'FormModelContextParameterMissingTitleAndDescription',
   }
 
   /**
@@ -1292,10 +1295,6 @@ export namespace Audits {
     ConfigNoResponse = 'ConfigNoResponse',
     ConfigInvalidResponse = 'ConfigInvalidResponse',
     ConfigInvalidContentType = 'ConfigInvalidContentType',
-    ClientMetadataHttpNotFound = 'ClientMetadataHttpNotFound',
-    ClientMetadataNoResponse = 'ClientMetadataNoResponse',
-    ClientMetadataInvalidResponse = 'ClientMetadataInvalidResponse',
-    ClientMetadataInvalidContentType = 'ClientMetadataInvalidContentType',
     IdpNotPotentiallyTrustworthy = 'IdpNotPotentiallyTrustworthy',
     DisabledInSettings = 'DisabledInSettings',
     DisabledInFlags = 'DisabledInFlags',
@@ -1317,11 +1316,9 @@ export namespace Audits {
     Canceled = 'Canceled',
     RpPageNotVisible = 'RpPageNotVisible',
     SilentMediationFailure = 'SilentMediationFailure',
-    ThirdPartyCookiesBlocked = 'ThirdPartyCookiesBlocked',
     NotSignedInWithIdp = 'NotSignedInWithIdp',
     MissingTransientUserActivation = 'MissingTransientUserActivation',
     ReplacedByActiveMode = 'ReplacedByActiveMode',
-    InvalidFieldsSpecified = 'InvalidFieldsSpecified',
     RelyingPartyOriginIsOpaque = 'RelyingPartyOriginIsOpaque',
     TypeNotMatching = 'TypeNotMatching',
     UiDismissedNoEmbargo = 'UiDismissedNoEmbargo',
@@ -1537,6 +1534,25 @@ export namespace Audits {
   }
 
   /**
+   * The issue warns about blocked calls to privacy sensitive APIs via the
+   * Selective Permissions Intervention.
+   */
+  export interface SelectivePermissionsInterventionIssueDetails {
+    /**
+     * Which API was intervened on.
+     */
+    apiName: string;
+    /**
+     * Why the ad script using the API is considered an ad.
+     */
+    adAncestry: Network.AdAncestry;
+    /**
+     * The stack trace at the time of the intervention.
+     */
+    stackTrace?: Runtime.StackTrace;
+  }
+
+  /**
    * A unique identifier for the type of issue. Each type may use one of the
    * optional fields in InspectorIssueDetails to convey more specific
    * information about the kind of issue.
@@ -1548,7 +1564,6 @@ export namespace Audits {
     HeavyAdIssue = 'HeavyAdIssue',
     ContentSecurityPolicyIssue = 'ContentSecurityPolicyIssue',
     SharedArrayBufferIssue = 'SharedArrayBufferIssue',
-    LowTextContrastIssue = 'LowTextContrastIssue',
     CorsIssue = 'CorsIssue',
     AttributionReportingIssue = 'AttributionReportingIssue',
     QuirksModeIssue = 'QuirksModeIssue',
@@ -1570,6 +1585,8 @@ export namespace Audits {
     ConnectionAllowlistIssue = 'ConnectionAllowlistIssue',
     UserReidentificationIssue = 'UserReidentificationIssue',
     PermissionElementIssue = 'PermissionElementIssue',
+    PerformanceIssue = 'PerformanceIssue',
+    SelectivePermissionsInterventionIssue = 'SelectivePermissionsInterventionIssue',
   }
 
   /**
@@ -1584,7 +1601,6 @@ export namespace Audits {
     heavyAdIssueDetails?: HeavyAdIssueDetails;
     contentSecurityPolicyIssueDetails?: ContentSecurityPolicyIssueDetails;
     sharedArrayBufferIssueDetails?: SharedArrayBufferIssueDetails;
-    lowTextContrastIssueDetails?: LowTextContrastIssueDetails;
     corsIssueDetails?: CorsIssueDetails;
     attributionReportingIssueDetails?: AttributionReportingIssueDetails;
     quirksModeIssueDetails?: QuirksModeIssueDetails;
@@ -1609,6 +1625,8 @@ export namespace Audits {
     connectionAllowlistIssueDetails?: ConnectionAllowlistIssueDetails;
     userReidentificationIssueDetails?: UserReidentificationIssueDetails;
     permissionElementIssueDetails?: PermissionElementIssueDetails;
+    performanceIssueDetails?: PerformanceIssueDetails;
+    selectivePermissionsInterventionIssueDetails?: SelectivePermissionsInterventionIssueDetails;
   }
 
   /**
@@ -1668,13 +1686,6 @@ export namespace Audits {
      * Size after re-encoding.
      */
     encodedSize: integer;
-  }
-
-  export interface CheckContrastRequest {
-    /**
-     * Whether to report WCAG AAA level issues. Default is false.
-     */
-    reportAAA?: boolean;
   }
 
   export interface CheckFormsIssuesResponse extends ProtocolResponseWithError {
@@ -2966,6 +2977,11 @@ export namespace CSS {
      * The array enumerates @starting-style at-rules starting with the innermost one, going outwards.
      */
     startingStyles?: CSSStartingStyle[];
+    /**
+     * @navigation CSS at-rule array.
+     * The array enumerates @navigation at-rules starting with the innermost one, going outwards.
+     */
+    navigations?: CSSNavigation[];
   }
 
   /**
@@ -2980,6 +2996,7 @@ export namespace CSS {
     ScopeRule = 'ScopeRule',
     StyleRule = 'StyleRule',
     StartingStyleRule = 'StartingStyleRule',
+    NavigationRule = 'NavigationRule',
   }
 
   /**
@@ -3264,6 +3281,29 @@ export namespace CSS {
      * Whether the supports condition is satisfied.
      */
     active: boolean;
+    /**
+     * The associated rule header range in the enclosing stylesheet (if
+     * available).
+     */
+    range?: SourceRange;
+    /**
+     * Identifier of the stylesheet containing this object (if exists).
+     */
+    styleSheetId?: DOM.StyleSheetId;
+  }
+
+  /**
+   * CSS Navigation at-rule descriptor.
+   */
+  export interface CSSNavigation {
+    /**
+     * Navigation rule text.
+     */
+    text: string;
+    /**
+     * Whether the navigation condition is satisfied.
+     */
+    active?: boolean;
     /**
      * The associated rule header range in the enclosing stylesheet (if
      * available).
@@ -3610,6 +3650,10 @@ export namespace CSS {
      */
     supports?: CSSSupports;
     /**
+     * @navigation condition. Only one type of condition should be set.
+     */
+    navigation?: CSSNavigation;
+    /**
      * Block body.
      */
     children: CSSFunctionNode[];
@@ -3658,6 +3702,10 @@ export namespace CSS {
      * Function body.
      */
     children: CSSFunctionNode[];
+    /**
+     * The BackendNodeId of the DOM node that constitutes the origin tree scope of this rule.
+     */
+    originTreeScopeNodeId?: DOM.BackendNodeId;
   }
 
   /**
@@ -4098,6 +4146,19 @@ export namespace CSS {
     supports: CSSSupports;
   }
 
+  export interface SetNavigationTextRequest {
+    styleSheetId: DOM.StyleSheetId;
+    range: SourceRange;
+    text: string;
+  }
+
+  export interface SetNavigationTextResponse extends ProtocolResponseWithError {
+    /**
+     * The resulting CSS Navigation rule after modification.
+     */
+    navigation: CSSNavigation;
+  }
+
   export interface SetScopeTextRequest {
     styleSheetId: DOM.StyleSheetId;
     range: SourceRange;
@@ -4465,6 +4526,28 @@ export namespace Cast {
 }
 
 /**
+ * This domain exposes the current state of the CrashReportContext API.
+ */
+export namespace CrashReportContext {
+
+  /**
+   * Key-value pair in CrashReportContext.
+   */
+  export interface CrashReportContextEntry {
+    key: string;
+    value: string;
+    /**
+     * The ID of the frame where the key-value pair was set.
+     */
+    frameId: Page.FrameId;
+  }
+
+  export interface GetEntriesResponse extends ProtocolResponseWithError {
+    entries: CrashReportContextEntry[];
+  }
+}
+
+/**
  * This domain exposes DOM read/write operations. Each DOM Node is represented with its mirror object
  * that has an `id`. This `id` can be used to get additional information on the Node, resolve it into
  * the JavaScript object wrapper, etc. It is important that client receives DOM events only for the
@@ -4515,6 +4598,7 @@ export namespace DOM {
     Checkmark = 'checkmark',
     Before = 'before',
     After = 'after',
+    ExpandIcon = 'expand-icon',
     PickerIcon = 'picker-icon',
     InterestHint = 'interest-hint',
     Marker = 'marker',
@@ -4728,6 +4812,7 @@ export namespace DOM {
     isScrollable?: boolean;
     affectedByStartingStyles?: boolean;
     adoptedStyleSheets?: StyleSheetId[];
+    adProvenance?: Network.AdProvenance;
   }
 
   /**
@@ -5783,6 +5868,20 @@ export namespace DOM {
      * If the node is scrollable.
      */
     isScrollable: boolean;
+  }
+
+  /**
+   * Fired when a node's ad related state changes.
+   */
+  export interface AdRelatedStateUpdatedEvent {
+    /**
+     * The id of the node.
+     */
+    nodeId: DOM.NodeId;
+    /**
+     * The provenance of the ad related node, if it is ad related.
+     */
+    adProvenance?: Network.AdProvenance;
   }
 
   /**
@@ -7004,6 +7103,7 @@ export namespace Emulation {
    */
   export const enum DisabledImageType {
     Avif = 'avif',
+    Jxl = 'jxl',
     Webp = 'webp',
   }
 
@@ -7046,6 +7146,11 @@ export namespace Emulation {
 
   export interface SetSafeAreaInsetsOverrideRequest {
     insets: SafeAreaInsets;
+  }
+
+  export const enum SetDeviceMetricsOverrideRequestScrollbarType {
+    Overlay = 'overlay',
+    Default = 'default',
   }
 
   export interface SetDeviceMetricsOverrideRequest {
@@ -7113,6 +7218,18 @@ export namespace Emulation {
      * @deprecated
      */
     devicePosture?: DevicePosture;
+    /**
+     * Scrollbar type. Default: `default`.
+     */
+    scrollbarType?: SetDeviceMetricsOverrideRequestScrollbarType;
+    /**
+     * If set to true, enables screen orientation lock emulation, which
+     * intercepts screen.orientation.lock() calls from the page and reports
+     * orientation changes via screenOrientationLockChanged events. This is
+     * useful for emulating mobile device orientation lock behavior in
+     * responsive design mode.
+     */
+    screenOrientationLockEmulation?: boolean;
   }
 
   export interface SetDevicePostureOverrideRequest {
@@ -7455,8 +7572,79 @@ export namespace Emulation {
     screenInfo: ScreenInfo;
   }
 
+  export interface UpdateScreenRequest {
+    /**
+     * Target screen identifier.
+     */
+    screenId: ScreenId;
+    /**
+     * Offset of the left edge of the screen in pixels.
+     */
+    left?: integer;
+    /**
+     * Offset of the top edge of the screen in pixels.
+     */
+    top?: integer;
+    /**
+     * The width of the screen in pixels.
+     */
+    width?: integer;
+    /**
+     * The height of the screen in pixels.
+     */
+    height?: integer;
+    /**
+     * Specifies the screen's work area.
+     */
+    workAreaInsets?: WorkAreaInsets;
+    /**
+     * Specifies the screen's device pixel ratio.
+     */
+    devicePixelRatio?: number;
+    /**
+     * Specifies the screen's rotation angle. Available values are 0, 90, 180 and 270.
+     */
+    rotation?: integer;
+    /**
+     * Specifies the screen's color depth in bits.
+     */
+    colorDepth?: integer;
+    /**
+     * Specifies the descriptive label for the screen.
+     */
+    label?: string;
+    /**
+     * Indicates whether the screen is internal to the device or external, attached to the device. Default is false.
+     */
+    isInternal?: boolean;
+  }
+
+  export interface UpdateScreenResponse extends ProtocolResponseWithError {
+    screenInfo: ScreenInfo;
+  }
+
   export interface RemoveScreenRequest {
     screenId: ScreenId;
+  }
+
+  export interface SetPrimaryScreenRequest {
+    screenId: ScreenId;
+  }
+
+  /**
+   * Fired when a page calls screen.orientation.lock() or screen.orientation.unlock()
+   * while device emulation is enabled. This allows the DevTools frontend to update the
+   * emulated device orientation accordingly.
+   */
+  export interface ScreenOrientationLockChangedEvent {
+    /**
+     * Whether the screen orientation is currently locked.
+     */
+    locked: boolean;
+    /**
+     * The orientation lock type requested by the page. Only set when locked is true.
+     */
+    orientation?: ScreenOrientation;
   }
 }
 
@@ -7497,6 +7685,32 @@ export namespace Extensions {
     Managed = 'managed',
   }
 
+  /**
+   * Detailed information about an extension.
+   */
+  export interface ExtensionInfo {
+    /**
+     * Extension id.
+     */
+    id: string;
+    /**
+     * Extension name.
+     */
+    name: string;
+    /**
+     * Extension version.
+     */
+    version: string;
+    /**
+     * The path from which the extension was loaded.
+     */
+    path: string;
+    /**
+     * Extension enabled status.
+     */
+    enabled: boolean;
+  }
+
   export interface TriggerActionRequest {
     /**
      * Extension id.
@@ -7524,6 +7738,10 @@ export namespace Extensions {
      * Extension id.
      */
     id: string;
+  }
+
+  export interface GetExtensionsResponse extends ProtocolResponseWithError {
+    extensions: ExtensionInfo[];
   }
 
   export interface UninstallRequest {
@@ -10031,7 +10249,7 @@ export namespace Network {
   }
 
   /**
-   * The render blocking behavior of a resource request.
+   * The render-blocking behavior of a resource request.
    */
   export const enum RenderBlockingBehavior {
     Blocking = 'Blocking',
@@ -11269,6 +11487,65 @@ export namespace Network {
     localNetworkAccessRequestPolicy: LocalNetworkAccessRequestPolicy;
   }
 
+  /**
+   * Identifies the script on the stack that caused a resource or element to be
+   * labeled as an ad. For resources, this indicates the context that triggered
+   * the fetch. For elements, this indicates the context that caused the element
+   * to be appended to the DOM.
+   */
+  export interface AdScriptIdentifier {
+    /**
+     * The script's V8 identifier.
+     */
+    scriptId: Runtime.ScriptId;
+    /**
+     * V8's debugging ID for the v8::Context.
+     */
+    debuggerId: Runtime.UniqueDebuggerId;
+    /**
+     * The script's url (or generated name based on id if inline script).
+     */
+    name: string;
+  }
+
+  /**
+   * Encapsulates the script ancestry and the root script filter list rule that
+   * caused the resource or element to be labeled as an ad.
+   */
+  export interface AdAncestry {
+    /**
+     * A chain of `AdScriptIdentifier`s representing the ancestry of an ad
+     * script that led to the creation of a resource or element. The chain is
+     * ordered from the script itself (lowest level) up to its root ancestor
+     * that was flagged by a filter list.
+     */
+    ancestryChain: AdScriptIdentifier[];
+    /**
+     * The filter list rule that caused the root (last) script in
+     * `ancestryChain` to be tagged as an ad.
+     */
+    rootScriptFilterlistRule?: string;
+  }
+
+  /**
+   * Represents the provenance of an ad resource or element. Only one of
+   * `filterlistRule` or `adScriptAncestry` can be set. If `filterlistRule`
+   * is provided, the resource URL directly matches a filter list rule. If
+   * `adScriptAncestry` is provided, an ad script initiated the resource fetch or
+   * appended the element to the DOM. If neither is provided, the entity is
+   * known to be an ad, but provenance tracking information is unavailable.
+   */
+  export interface AdProvenance {
+    /**
+     * The filterlist rule that matched, if any.
+     */
+    filterlistRule?: string;
+    /**
+     * The script ancestry that created the ad, if any.
+     */
+    adScriptAncestry?: AdAncestry;
+  }
+
   export const enum CrossOriginOpenerPolicyValue {
     SameOrigin = 'SameOrigin',
     SameOriginAllowPopups = 'SameOriginAllowPopups',
@@ -11596,6 +11873,30 @@ export namespace Network {
   }
 
   /**
+   * Details about a failed device bound session network request.
+   */
+  export interface DeviceBoundSessionFailedRequest {
+    /**
+     * The failed request URL.
+     */
+    requestUrl: string;
+    /**
+     * The net error of the response if it was not OK.
+     */
+    netError?: string;
+    /**
+     * The response code if the net error was OK and the response code was not
+     * 200.
+     */
+    responseError?: integer;
+    /**
+     * The body of the response if the net error was OK, the response code was
+     * not 200, and the response body was not empty.
+     */
+    responseErrorBody?: string;
+  }
+
+  /**
    * Session event details specific to creation.
    */
   export interface CreationEventDetails {
@@ -11608,6 +11909,11 @@ export namespace Network {
      * all successful creation events.
      */
     newSession?: DeviceBoundSession;
+    /**
+     * Details about a failed device bound session network request if there was
+     * one.
+     */
+    failedRequest?: DeviceBoundSessionFailedRequest;
   }
 
   export const enum RefreshEventDetailsRefreshResult {
@@ -11641,6 +11947,11 @@ export namespace Network {
      * See comments on `net::device_bound_sessions::RefreshEventResult::was_fully_proactive_refresh`.
      */
     wasFullyProactiveRefresh: boolean;
+    /**
+     * Details about a failed device bound session network request if there was
+     * one.
+     */
+    failedRequest?: DeviceBoundSessionFailedRequest;
   }
 
   export const enum TerminationEventDetailsDeletionReason {
@@ -11888,6 +12199,8 @@ export namespace Network {
   export interface EnableRequest {
     /**
      * Buffer size in bytes to use when preserving network payloads (XHRs, etc).
+     * This is the maximum number of bytes that will be collected by this
+     * DevTools session.
      */
     maxTotalBufferSize?: integer;
     /**
@@ -12512,7 +12825,7 @@ export namespace Network {
      */
     hasUserGesture?: boolean;
     /**
-     * The render blocking behavior of the request.
+     * The render-blocking behavior of the request.
      */
     renderBlockingBehavior?: RenderBlockingBehavior;
   }
@@ -14055,43 +14368,6 @@ export namespace Page {
   }
 
   /**
-   * Identifies the script which caused a script or frame to be labelled as an
-   * ad.
-   */
-  export interface AdScriptId {
-    /**
-     * Script Id of the script which caused a script or frame to be labelled as
-     * an ad.
-     */
-    scriptId: Runtime.ScriptId;
-    /**
-     * Id of scriptId's debugger.
-     */
-    debuggerId: Runtime.UniqueDebuggerId;
-  }
-
-  /**
-   * Encapsulates the script ancestry and the root script filterlist rule that
-   * caused the frame to be labelled as an ad. Only created when `ancestryChain`
-   * is not empty.
-   */
-  export interface AdScriptAncestry {
-    /**
-     * A chain of `AdScriptId`s representing the ancestry of an ad script that
-     * led to the creation of a frame. The chain is ordered from the script
-     * itself (lower level) up to its root ancestor that was flagged by
-     * filterlist.
-     */
-    ancestryChain: AdScriptId[];
-    /**
-     * The filterlist rule that caused the root (last) script in
-     * `ancestryChain` to be ad-tagged. Only populated if the rule is
-     * available.
-     */
-    rootScriptFilterlistRule?: string;
-  }
-
-  /**
    * Indicates whether the frame is a secure context and why it is the case.
    */
   export const enum SecureContextType {
@@ -14992,6 +15268,7 @@ export namespace Page {
     BackForwardCacheDisabledForPrerender = 'BackForwardCacheDisabledForPrerender',
     UserAgentOverrideDiffers = 'UserAgentOverrideDiffers',
     ForegroundCacheLimit = 'ForegroundCacheLimit',
+    ForwardCacheDisabled = 'ForwardCacheDisabled',
     BrowsingInstanceNotSwapped = 'BrowsingInstanceNotSwapped',
     BackForwardCacheDisabledForDelegate = 'BackForwardCacheDisabledForDelegate',
     UnloadHandlerExistsInMainFrame = 'UnloadHandlerExistsInMainFrame',
@@ -15352,7 +15629,7 @@ export namespace Page {
      * stack) to more distant ancestors (that created the immediately preceding
      * script). Only sent if frame is labelled as an ad and ids are available.
      */
-    adScriptAncestry?: AdScriptAncestry;
+    adScriptAncestry?: Network.AdAncestry;
   }
 
   export interface GetFrameTreeResponse extends ProtocolResponseWithError {
@@ -16655,6 +16932,7 @@ export namespace Preload {
     loaderId: Network.LoaderId;
     action: SpeculationAction;
     url: string;
+    formSubmission?: boolean;
     targetHint?: SpeculationTargetHint;
   }
 
@@ -16760,6 +17038,7 @@ export namespace Preload {
     PrerenderFailedDuringPrefetch = 'PrerenderFailedDuringPrefetch',
     BrowsingDataRemoved = 'BrowsingDataRemoved',
     PrerenderHostReused = 'PrerenderHostReused',
+    FormSubmitWhenPrerendering = 'FormSubmitWhenPrerendering',
   }
 
   /**
@@ -18005,253 +18284,6 @@ export namespace Storage {
     durability: StorageBucketsDurability;
   }
 
-  export const enum AttributionReportingSourceType {
-    Navigation = 'navigation',
-    Event = 'event',
-  }
-
-  export type UnsignedInt64AsBase10 = string;
-
-  export type UnsignedInt128AsBase16 = string;
-
-  export type SignedInt64AsBase10 = string;
-
-  export interface AttributionReportingFilterDataEntry {
-    key: string;
-    values: string[];
-  }
-
-  export interface AttributionReportingFilterConfig {
-    filterValues: AttributionReportingFilterDataEntry[];
-    /**
-     * duration in seconds
-     */
-    lookbackWindow?: integer;
-  }
-
-  export interface AttributionReportingFilterPair {
-    filters: AttributionReportingFilterConfig[];
-    notFilters: AttributionReportingFilterConfig[];
-  }
-
-  export interface AttributionReportingAggregationKeysEntry {
-    key: string;
-    value: UnsignedInt128AsBase16;
-  }
-
-  export interface AttributionReportingEventReportWindows {
-    /**
-     * duration in seconds
-     */
-    start: integer;
-    /**
-     * duration in seconds
-     */
-    ends: integer[];
-  }
-
-  export const enum AttributionReportingTriggerDataMatching {
-    Exact = 'exact',
-    Modulus = 'modulus',
-  }
-
-  export interface AttributionReportingAggregatableDebugReportingData {
-    keyPiece: UnsignedInt128AsBase16;
-    /**
-     * number instead of integer because not all uint32 can be represented by
-     * int
-     */
-    value: number;
-    types: string[];
-  }
-
-  export interface AttributionReportingAggregatableDebugReportingConfig {
-    /**
-     * number instead of integer because not all uint32 can be represented by
-     * int, only present for source registrations
-     */
-    budget?: number;
-    keyPiece: UnsignedInt128AsBase16;
-    debugData: AttributionReportingAggregatableDebugReportingData[];
-    aggregationCoordinatorOrigin?: string;
-  }
-
-  export interface AttributionScopesData {
-    values: string[];
-    /**
-     * number instead of integer because not all uint32 can be represented by
-     * int
-     */
-    limit: number;
-    maxEventStates: number;
-  }
-
-  export interface AttributionReportingNamedBudgetDef {
-    name: string;
-    budget: integer;
-  }
-
-  export interface AttributionReportingSourceRegistration {
-    time: Network.TimeSinceEpoch;
-    /**
-     * duration in seconds
-     */
-    expiry: integer;
-    /**
-     * number instead of integer because not all uint32 can be represented by
-     * int
-     */
-    triggerData: number[];
-    eventReportWindows: AttributionReportingEventReportWindows;
-    /**
-     * duration in seconds
-     */
-    aggregatableReportWindow: integer;
-    type: AttributionReportingSourceType;
-    sourceOrigin: string;
-    reportingOrigin: string;
-    destinationSites: string[];
-    eventId: UnsignedInt64AsBase10;
-    priority: SignedInt64AsBase10;
-    filterData: AttributionReportingFilterDataEntry[];
-    aggregationKeys: AttributionReportingAggregationKeysEntry[];
-    debugKey?: UnsignedInt64AsBase10;
-    triggerDataMatching: AttributionReportingTriggerDataMatching;
-    destinationLimitPriority: SignedInt64AsBase10;
-    aggregatableDebugReportingConfig: AttributionReportingAggregatableDebugReportingConfig;
-    scopesData?: AttributionScopesData;
-    maxEventLevelReports: integer;
-    namedBudgets: AttributionReportingNamedBudgetDef[];
-    debugReporting: boolean;
-    eventLevelEpsilon: number;
-  }
-
-  export const enum AttributionReportingSourceRegistrationResult {
-    Success = 'success',
-    InternalError = 'internalError',
-    InsufficientSourceCapacity = 'insufficientSourceCapacity',
-    InsufficientUniqueDestinationCapacity = 'insufficientUniqueDestinationCapacity',
-    ExcessiveReportingOrigins = 'excessiveReportingOrigins',
-    ProhibitedByBrowserPolicy = 'prohibitedByBrowserPolicy',
-    SuccessNoised = 'successNoised',
-    DestinationReportingLimitReached = 'destinationReportingLimitReached',
-    DestinationGlobalLimitReached = 'destinationGlobalLimitReached',
-    DestinationBothLimitsReached = 'destinationBothLimitsReached',
-    ReportingOriginsPerSiteLimitReached = 'reportingOriginsPerSiteLimitReached',
-    ExceedsMaxChannelCapacity = 'exceedsMaxChannelCapacity',
-    ExceedsMaxScopesChannelCapacity = 'exceedsMaxScopesChannelCapacity',
-    ExceedsMaxTriggerStateCardinality = 'exceedsMaxTriggerStateCardinality',
-    ExceedsMaxEventStatesLimit = 'exceedsMaxEventStatesLimit',
-    DestinationPerDayReportingLimitReached = 'destinationPerDayReportingLimitReached',
-  }
-
-  export const enum AttributionReportingSourceRegistrationTimeConfig {
-    Include = 'include',
-    Exclude = 'exclude',
-  }
-
-  export interface AttributionReportingAggregatableValueDictEntry {
-    key: string;
-    /**
-     * number instead of integer because not all uint32 can be represented by
-     * int
-     */
-    value: number;
-    filteringId: UnsignedInt64AsBase10;
-  }
-
-  export interface AttributionReportingAggregatableValueEntry {
-    values: AttributionReportingAggregatableValueDictEntry[];
-    filters: AttributionReportingFilterPair;
-  }
-
-  export interface AttributionReportingEventTriggerData {
-    data: UnsignedInt64AsBase10;
-    priority: SignedInt64AsBase10;
-    dedupKey?: UnsignedInt64AsBase10;
-    filters: AttributionReportingFilterPair;
-  }
-
-  export interface AttributionReportingAggregatableTriggerData {
-    keyPiece: UnsignedInt128AsBase16;
-    sourceKeys: string[];
-    filters: AttributionReportingFilterPair;
-  }
-
-  export interface AttributionReportingAggregatableDedupKey {
-    dedupKey?: UnsignedInt64AsBase10;
-    filters: AttributionReportingFilterPair;
-  }
-
-  export interface AttributionReportingNamedBudgetCandidate {
-    name?: string;
-    filters: AttributionReportingFilterPair;
-  }
-
-  export interface AttributionReportingTriggerRegistration {
-    filters: AttributionReportingFilterPair;
-    debugKey?: UnsignedInt64AsBase10;
-    aggregatableDedupKeys: AttributionReportingAggregatableDedupKey[];
-    eventTriggerData: AttributionReportingEventTriggerData[];
-    aggregatableTriggerData: AttributionReportingAggregatableTriggerData[];
-    aggregatableValues: AttributionReportingAggregatableValueEntry[];
-    aggregatableFilteringIdMaxBytes: integer;
-    debugReporting: boolean;
-    aggregationCoordinatorOrigin?: string;
-    sourceRegistrationTimeConfig: AttributionReportingSourceRegistrationTimeConfig;
-    triggerContextId?: string;
-    aggregatableDebugReportingConfig: AttributionReportingAggregatableDebugReportingConfig;
-    scopes: string[];
-    namedBudgets: AttributionReportingNamedBudgetCandidate[];
-  }
-
-  export const enum AttributionReportingEventLevelResult {
-    Success = 'success',
-    SuccessDroppedLowerPriority = 'successDroppedLowerPriority',
-    InternalError = 'internalError',
-    NoCapacityForAttributionDestination = 'noCapacityForAttributionDestination',
-    NoMatchingSources = 'noMatchingSources',
-    Deduplicated = 'deduplicated',
-    ExcessiveAttributions = 'excessiveAttributions',
-    PriorityTooLow = 'priorityTooLow',
-    NeverAttributedSource = 'neverAttributedSource',
-    ExcessiveReportingOrigins = 'excessiveReportingOrigins',
-    NoMatchingSourceFilterData = 'noMatchingSourceFilterData',
-    ProhibitedByBrowserPolicy = 'prohibitedByBrowserPolicy',
-    NoMatchingConfigurations = 'noMatchingConfigurations',
-    ExcessiveReports = 'excessiveReports',
-    FalselyAttributedSource = 'falselyAttributedSource',
-    ReportWindowPassed = 'reportWindowPassed',
-    NotRegistered = 'notRegistered',
-    ReportWindowNotStarted = 'reportWindowNotStarted',
-    NoMatchingTriggerData = 'noMatchingTriggerData',
-  }
-
-  export const enum AttributionReportingAggregatableResult {
-    Success = 'success',
-    InternalError = 'internalError',
-    NoCapacityForAttributionDestination = 'noCapacityForAttributionDestination',
-    NoMatchingSources = 'noMatchingSources',
-    ExcessiveAttributions = 'excessiveAttributions',
-    ExcessiveReportingOrigins = 'excessiveReportingOrigins',
-    NoHistograms = 'noHistograms',
-    InsufficientBudget = 'insufficientBudget',
-    InsufficientNamedBudget = 'insufficientNamedBudget',
-    NoMatchingSourceFilterData = 'noMatchingSourceFilterData',
-    NotRegistered = 'notRegistered',
-    ProhibitedByBrowserPolicy = 'prohibitedByBrowserPolicy',
-    Deduplicated = 'deduplicated',
-    ReportWindowPassed = 'reportWindowPassed',
-    ExcessiveReports = 'excessiveReports',
-  }
-
-  export const enum AttributionReportingReportResult {
-    Sent = 'sent',
-    Prohibited = 'prohibited',
-    FailedToAssemble = 'failedToAssemble',
-    Expired = 'expired',
-  }
-
   /**
    * A single Related Website Set object.
    */
@@ -18534,24 +18566,6 @@ export namespace Storage {
     deletedSites: string[];
   }
 
-  export interface SetAttributionReportingLocalTestingModeRequest {
-    /**
-     * If enabled, noise is suppressed and reports are sent immediately.
-     */
-    enabled: boolean;
-  }
-
-  export interface SetAttributionReportingTrackingRequest {
-    enable: boolean;
-  }
-
-  export interface SendPendingAttributionReportsResponse extends ProtocolResponseWithError {
-    /**
-     * The number of reports that were sent.
-     */
-    numSent: integer;
-  }
-
   export interface GetRelatedWebsiteSetsResponse extends ProtocolResponseWithError {
     sets: RelatedWebsiteSet[];
   }
@@ -18804,37 +18818,6 @@ export namespace Storage {
 
   export interface StorageBucketDeletedEvent {
     bucketId: string;
-  }
-
-  export interface AttributionReportingSourceRegisteredEvent {
-    registration: AttributionReportingSourceRegistration;
-    result: AttributionReportingSourceRegistrationResult;
-  }
-
-  export interface AttributionReportingTriggerRegisteredEvent {
-    registration: AttributionReportingTriggerRegistration;
-    eventLevel: AttributionReportingEventLevelResult;
-    aggregatable: AttributionReportingAggregatableResult;
-  }
-
-  export interface AttributionReportingReportSentEvent {
-    url: string;
-    body: any;
-    result: AttributionReportingReportResult;
-    /**
-     * If result is `sent`, populated with net/HTTP status.
-     */
-    netError?: integer;
-    netErrorName?: string;
-    httpStatusCode?: integer;
-  }
-
-  export interface AttributionReportingVerboseDebugReportSentEvent {
-    url: string;
-    body?: any[];
-    netError?: integer;
-    netErrorName?: string;
-    httpStatusCode?: integer;
   }
 }
 
@@ -20067,6 +20050,7 @@ export namespace WebAuthn {
   export const enum Ctap2Version {
     Ctap2_0 = 'ctap2_0',
     Ctap2_1 = 'ctap2_1',
+    Ctap2_2 = 'ctap2_2',
   }
 
   export const enum AuthenticatorTransport {
@@ -20116,6 +20100,18 @@ export namespace WebAuthn {
      * Defaults to false.
      */
     hasPrf?: boolean;
+    /**
+     * If set to true, the authenticator will support the hmac-secret extension.
+     * https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-hmac-secret-extension
+     * Defaults to false.
+     */
+    hasHmacSecret?: boolean;
+    /**
+     * If set to true, the authenticator will support the hmac-secret-mc extension.
+     * https://fidoalliance.org/specs/fido-v2.2-rd-20241003/fido-client-to-authenticator-protocol-v2.2-rd-20241003.html#sctn-hmac-secret-make-cred-extension
+     * Defaults to false.
+     */
+    hasHmacSecretMc?: boolean;
     /**
      * If set to true, tests of user presence will succeed immediately.
      * Otherwise, they will not be resolved. Defaults to true.
@@ -20315,6 +20311,134 @@ export namespace WebAuthn {
   export interface CredentialAssertedEvent {
     authenticatorId: AuthenticatorId;
     credential: Credential;
+  }
+}
+
+export namespace WebMCP {
+
+  /**
+   * Tool annotations
+   */
+  export interface Annotation {
+    /**
+     * A hint indicating that the tool does not modify any state.
+     */
+    readOnly?: boolean;
+    /**
+     * If the declarative tool was declared with the autosubmit attribute.
+     */
+    autosubmit?: boolean;
+  }
+
+  /**
+   * Represents the status of a tool invocation.
+   */
+  export const enum InvocationStatus {
+    Success = 'Success',
+    Canceled = 'Canceled',
+    Error = 'Error',
+  }
+
+  /**
+   * Definition of a tool that can be invoked.
+   */
+  export interface Tool {
+    /**
+     * Tool name.
+     */
+    name: string;
+    /**
+     * Tool description.
+     */
+    description: string;
+    /**
+     * Schema for the tool's input parameters.
+     */
+    inputSchema?: any;
+    /**
+     * Optional annotations for the tool.
+     */
+    annotations?: Annotation;
+    /**
+     * Frame identifier associated with the tool registration.
+     */
+    frameId: Page.FrameId;
+    /**
+     * Optional node ID for declarative tools.
+     */
+    backendNodeId?: DOM.BackendNodeId;
+    /**
+     * The stack trace at the time of the registration.
+     */
+    stackTrace?: Runtime.StackTrace;
+  }
+
+  /**
+   * Event fired when new tools are added.
+   */
+  export interface ToolsAddedEvent {
+    /**
+     * Array of tools that were added.
+     */
+    tools: Tool[];
+  }
+
+  /**
+   * Event fired when tools are removed.
+   */
+  export interface ToolsRemovedEvent {
+    /**
+     * Array of tools that were removed.
+     */
+    tools: Tool[];
+  }
+
+  /**
+   * Event fired when a tool invocation starts.
+   */
+  export interface ToolInvokedEvent {
+    /**
+     * Name of the tool to invoke.
+     */
+    toolName: string;
+    /**
+     * Frame id
+     */
+    frameId: Page.FrameId;
+    /**
+     * Invocation identifier.
+     */
+    invocationId: string;
+    /**
+     * The input parameters used for the invocation.
+     */
+    input: string;
+  }
+
+  /**
+   * Event fired when a tool invocation completes or fails.
+   */
+  export interface ToolRespondedEvent {
+    /**
+     * Invocation identifier.
+     */
+    invocationId: string;
+    /**
+     * Status of the invocation.
+     */
+    status: InvocationStatus;
+    /**
+     * Output or error delivered as delivered to the agent. Missing if `status` is anything other than Success.
+     */
+    output?: any;
+    /**
+     * Error text for protocol users.
+     */
+    errorText?: string;
+    /**
+     * The exception object, if the javascript tool threw an error>
+     */
+    exception?: Runtime.RemoteObject;
   }
 }
 

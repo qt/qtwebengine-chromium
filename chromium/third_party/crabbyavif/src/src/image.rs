@@ -12,12 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::decoder::tile::TileInfo;
-use crate::decoder::{CompressionFormat, ProgressiveState};
+use crate::decoder::ProgressiveState;
 use crate::internal_utils::*;
-use crate::parser::mp4box::CodecConfiguration;
 use crate::reformat::coeffs::*;
-use crate::utils::clap::CleanAperture;
+use crate::utils::clap::*;
 use crate::utils::pixels::*;
 use crate::*;
 
@@ -80,7 +78,6 @@ pub struct Image {
     pub alpha_premultiplied: bool,
 
     pub row_bytes: [u32; MAX_PLANE_COUNT],
-    pub image_owns_planes: [bool; MAX_PLANE_COUNT],
 
     pub planes: [Option<Pixels>; MAX_PLANE_COUNT],
 
@@ -110,30 +107,19 @@ pub struct PlaneData {
 }
 
 impl Image {
+    // Creates an instance with all the properties of self but with pixels and
+    // Exif, XMP, ICC metadata left unallocated.
     pub(crate) fn shallow_clone(&self) -> Self {
         Self {
-            width: self.width,
-            height: self.height,
-            depth: self.depth,
-            yuv_format: self.yuv_format,
-            yuv_range: self.yuv_range,
-            chroma_sample_position: self.chroma_sample_position,
-            alpha_present: self.alpha_present,
-            alpha_premultiplied: self.alpha_premultiplied,
-            color_primaries: self.color_primaries,
-            transfer_characteristics: self.transfer_characteristics,
-            matrix_coefficients: self.matrix_coefficients,
-            clli: self.clli,
-            pasp: self.pasp,
-            clap: self.clap,
-            irot_angle: self.irot_angle,
-            imir_axis: self.imir_axis,
-            exif: self.exif.clone(),
-            icc: self.icc.clone(),
-            xmp: self.xmp.clone(),
-            image_sequence_track_present: self.image_sequence_track_present,
-            progressive_state: self.progressive_state,
-            ..Default::default()
+            // Fields requiring dynamic allocation.
+            row_bytes: [0; MAX_PLANE_COUNT],
+            planes: [const { None }; MAX_PLANE_COUNT],
+            exif: vec![],
+            icc: vec![],
+            xmp: vec![],
+
+            // All other field values can be copied.
+            ..*self
         }
     }
 
@@ -307,6 +293,62 @@ impl Image {
         Ok(&mut self.row16_mut(plane, row)?[0..width])
     }
 
+    // Returns a view with the same image properties as self and pointing to
+    // the pixel values of self. Copies all Exif, XMP and ICC data if any.
+    #[cfg(feature = "cli")]
+    pub fn cropped_image(&self) -> AvifResult<Image> {
+        match self.clap {
+            Some(clap) => {
+                match CropRect::create_from(&clap, self.width, self.height, self.yuv_format) {
+                    Ok(rect) => {
+                        let mut image = self.shallow_clone();
+                        image.width = rect.width;
+                        image.height = rect.height;
+                        for plane in ALL_PLANES {
+                            if self.planes[plane.as_usize()].is_none() {
+                                continue;
+                            }
+                            let (x, y) = if plane == Plane::Y || plane == Plane::A {
+                                (usize_from_u32(rect.x)?, rect.y)
+                            } else {
+                                (
+                                    usize_from_u32(image.yuv_format.apply_chroma_shift_x(rect.x))?,
+                                    image.yuv_format.apply_chroma_shift_y(rect.y),
+                                )
+                            };
+                            let ptr = if image.depth == 8 {
+                                let row = self.row(plane, y)?;
+                                // SAFETY: rect is a valid rectangle that is guaranteed to be
+                                // within the image bounds. So this pointer is pointing to a valid
+                                // buffer.
+                                unsafe { row.as_ptr().add(x) as *mut u8 }
+                            } else {
+                                let row = self.row16(plane, y)?;
+                                // SAFETY: rect is a valid rectangle that is guaranteed to be
+                                // within the image bounds. So this pointer is pointing to a valid
+                                // buffer.
+                                unsafe { row.as_ptr().add(x) as *mut u8 }
+                            };
+                            image.planes[plane.as_usize()] = Some(Pixels::from_raw_pointer(
+                                ptr,
+                                image.depth as _,
+                                u32_from_usize(image.height(plane))?,
+                                self.row_bytes[plane.as_usize()],
+                            )?);
+                            image.row_bytes[plane.as_usize()] = self.row_bytes[plane.as_usize()];
+                        }
+                        image.exif = self.exif.try_clone()?;
+                        image.xmp = self.xmp.try_clone()?;
+                        image.icc = self.icc.try_clone()?;
+                        Ok(image)
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            None => Err(AvifError::InvalidArgument),
+        }
+    }
+
     #[cfg(feature = "libyuv")]
     pub(crate) fn plane_ptrs(&self) -> [*const u8; 4] {
         ALL_PLANES.map(|x| {
@@ -351,17 +393,16 @@ impl Image {
         }))
     }
 
-    #[cfg(any(feature = "dav1d", feature = "libgav1", feature = "avm"))]
+    #[cfg(any(feature = "dav1d", feature = "avm"))]
     pub(crate) fn free_planes(&mut self, planes: &[Plane]) {
         for plane in planes {
             let plane = plane.as_usize();
             self.planes[plane] = None;
             self.row_bytes[plane] = 0;
-            self.image_owns_planes[plane] = false;
         }
     }
 
-    #[cfg(any(feature = "dav1d", feature = "libgav1"))]
+    #[cfg(feature = "dav1d")]
     pub(crate) fn clear_chroma_planes(&mut self) {
         self.free_planes(&[Plane::U, Plane::V])
     }
@@ -385,48 +426,12 @@ impl Image {
             let pixels = self.planes[plane_index].unwrap_mut();
             pixels.resize(plane_size, default_values[plane_index])?;
             self.row_bytes[plane_index] = u32_from_usize(checked_mul!(width, pixel_size)?)?;
-            self.image_owns_planes[plane_index] = true;
         }
         Ok(())
     }
 
     pub fn allocate_planes(&mut self, category: Category) -> AvifResult<()> {
         self.allocate_planes_with_default_values(category, [0, 0, 0, self.max_channel()])
-    }
-
-    pub(crate) fn copy_properties_from(
-        &mut self,
-        image: &Image,
-        codec_config: &CodecConfiguration,
-    ) {
-        self.yuv_format = image.yuv_format;
-        self.depth = image.depth;
-        if cfg!(feature = "heic") && codec_config.compression_format() == CompressionFormat::Heic {
-            // For AVIF, the information in the `colr` box takes precedence over what is reported
-            // by the decoder. For HEIC, we always honor what is reported by the decoder.
-            self.yuv_range = image.yuv_range;
-            self.color_primaries = image.color_primaries;
-            self.transfer_characteristics = image.transfer_characteristics;
-            self.matrix_coefficients = image.matrix_coefficients;
-        }
-    }
-
-    // If src contains pointers, this function will simply make a copy of the pointer without
-    // copying the actual pixels (stealing). If src contains buffer, this function will clone the
-    // buffers (copying).
-    pub(crate) fn steal_or_copy_planes_from(
-        &mut self,
-        src: &Image,
-        category: Category,
-    ) -> AvifResult<()> {
-        for plane in category.planes() {
-            let plane = plane.as_usize();
-            (self.planes[plane], self.row_bytes[plane]) = match &src.planes[plane] {
-                Some(src_plane) => (Some(src_plane.try_clone()?), src.row_bytes[plane]),
-                None => (None, 0),
-            }
-        }
-        Ok(())
     }
 
     #[cfg(feature = "encoder")]
@@ -466,173 +471,6 @@ impl Image {
         Ok(())
     }
 
-    pub(crate) fn copy_from_tile(
-        &mut self,
-        tile: &Image,
-        grid: &Grid,
-        tile_index: u32,
-        category: Category,
-    ) -> AvifResult<()> {
-        let row_index = tile_index / grid.columns;
-        let column_index = tile_index % grid.columns;
-        for plane in category.planes() {
-            let plane = *plane;
-            let src_plane = tile.plane_data(plane);
-            if src_plane.is_none() {
-                continue;
-            }
-            let src_plane = src_plane.unwrap();
-            // If this is the last tile column, clamp to left over width.
-            let src_width_to_copy = if column_index == grid.columns - 1 {
-                let width_so_far = checked_mul!(src_plane.width, column_index)?;
-                checked_sub!(self.width(plane), usize_from_u32(width_so_far)?)?
-            } else {
-                usize_from_u32(src_plane.width)?
-            };
-
-            // If this is the last tile row, clamp to left over height.
-            let src_height_to_copy = if row_index == grid.rows - 1 {
-                let height_so_far = checked_mul!(src_plane.height, row_index)?;
-                checked_sub!(u32_from_usize(self.height(plane))?, height_so_far)?
-            } else {
-                src_plane.height
-            };
-
-            let dst_y_start = checked_mul!(row_index, src_plane.height)?;
-            let dst_x_offset = usize_from_u32(checked_mul!(column_index, src_plane.width)?)?;
-            let dst_x_offset_end = checked_add!(dst_x_offset, src_width_to_copy)?;
-            if self.depth == 8 {
-                for y in 0..src_height_to_copy {
-                    let src_row = tile.row(plane, y)?;
-                    let src_slice = &src_row[0..src_width_to_copy];
-                    let dst_row = self.row_mut(plane, checked_add!(dst_y_start, y)?)?;
-                    let dst_slice = &mut dst_row[dst_x_offset..dst_x_offset_end];
-                    dst_slice.copy_from_slice(src_slice);
-                }
-            } else {
-                for y in 0..src_height_to_copy {
-                    let src_row = tile.row16(plane, y)?;
-                    let src_slice = &src_row[0..src_width_to_copy];
-                    let dst_row = self.row16_mut(plane, checked_add!(dst_y_start, y)?)?;
-                    let dst_slice = &mut dst_row[dst_x_offset..dst_x_offset_end];
-                    dst_slice.copy_from_slice(src_slice);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    pub(crate) fn copy_and_overlay_from_tile(
-        &mut self,
-        tile: &Image,
-        tile_info: &TileInfo,
-        tile_index: u32,
-        category: Category,
-    ) -> AvifResult<()> {
-        // This function is used only when |tile| contains pointers and self contains buffers.
-        for plane in category.planes() {
-            let plane = *plane;
-            let src_plane = tile.plane_data(plane);
-            let dst_plane = self.plane_data(plane);
-            if src_plane.is_none() || dst_plane.is_none() {
-                continue;
-            }
-            let dst_plane = dst_plane.unwrap();
-            let tile_index = usize_from_u32(tile_index)?;
-
-            let vertical_offset = tile_info.overlay.vertical_offsets[tile_index] as i128;
-            let horizontal_offset = tile_info.overlay.horizontal_offsets[tile_index] as i128;
-            let src_height = tile.height as i128;
-            let src_width = tile.width as i128;
-            let dst_height = dst_plane.height as i128;
-            let dst_width = dst_plane.width as i128;
-
-            if matches!(plane, Plane::Y | Plane::A)
-                && (vertical_offset + src_height < 0
-                    || horizontal_offset + src_width < 0
-                    || vertical_offset >= dst_height
-                    || horizontal_offset >= dst_width)
-            {
-                // Entire tile outside of the canvas. It is sufficient to perform this check only
-                // for Y and A plane since they are never sub-sampled.
-                return Ok(());
-            }
-
-            let mut src_y_start: u32;
-            let mut src_height_to_copy: u32;
-            let mut dst_y_start: u32;
-            if vertical_offset >= 0 {
-                src_y_start = 0;
-                src_height_to_copy = src_height as u32;
-                dst_y_start = vertical_offset as u32;
-            } else {
-                src_y_start = vertical_offset.unsigned_abs() as u32;
-                src_height_to_copy = (src_height - vertical_offset.abs()) as u32;
-                dst_y_start = 0;
-            }
-
-            let mut src_x_start: u32;
-            let mut src_width_to_copy: u32;
-            let mut dst_x_start: u32;
-            if horizontal_offset >= 0 {
-                src_x_start = 0;
-                src_width_to_copy = src_width as u32;
-                dst_x_start = horizontal_offset as u32;
-            } else {
-                src_x_start = horizontal_offset.unsigned_abs() as u32;
-                src_width_to_copy = (src_width - horizontal_offset.abs()) as u32;
-                dst_x_start = 0;
-            }
-
-            // Clamp width to the canvas width.
-            if self.width - dst_x_start < src_width_to_copy {
-                src_width_to_copy = self.width - dst_x_start;
-            }
-
-            // Clamp height to the canvas height.
-            if self.height - dst_y_start < src_height_to_copy {
-                src_height_to_copy = self.height - dst_y_start;
-            }
-
-            // Apply chroma subsampling to the offsets.
-            if plane == Plane::U || plane == Plane::V {
-                src_y_start = tile.yuv_format.apply_chroma_shift_y(src_y_start);
-                src_height_to_copy = tile.yuv_format.apply_chroma_shift_y(src_height_to_copy);
-                dst_y_start = tile.yuv_format.apply_chroma_shift_y(dst_y_start);
-                src_x_start = tile.yuv_format.apply_chroma_shift_x(src_x_start);
-                src_width_to_copy = tile.yuv_format.apply_chroma_shift_x(src_width_to_copy);
-                dst_x_start = tile.yuv_format.apply_chroma_shift_x(dst_x_start);
-            }
-
-            let src_y_range = src_y_start..checked_add!(src_y_start, src_height_to_copy)?;
-            let dst_x_range = usize_from_u32(dst_x_start)?
-                ..usize_from_u32(checked_add!(dst_x_start, src_width_to_copy)?)?;
-            let src_x_range = usize_from_u32(src_x_start)?
-                ..checked_add!(usize_from_u32(src_x_start)?, dst_x_range.len())?;
-            let mut dst_y = dst_y_start;
-            if self.depth == 8 {
-                for src_y in src_y_range {
-                    let src_row = tile.row(plane, src_y)?;
-                    let src_slice = &src_row[src_x_range.clone()];
-                    let dst_row = self.row_mut(plane, dst_y)?;
-                    let dst_slice = &mut dst_row[dst_x_range.clone()];
-                    dst_slice.copy_from_slice(src_slice);
-                    checked_incr!(dst_y, 1);
-                }
-            } else {
-                for src_y in src_y_range {
-                    let src_row = tile.row16(plane, src_y)?;
-                    let src_slice = &src_row[src_x_range.clone()];
-                    let dst_row = self.row16_mut(plane, dst_y)?;
-                    let dst_slice = &mut dst_row[dst_x_range.clone()];
-                    dst_slice.copy_from_slice(src_slice);
-                    checked_incr!(dst_y, 1);
-                }
-            }
-        }
-        Ok(())
-    }
-
     pub(crate) fn convert_rgba16_to_yuva(&self, rgba: [u16; 4]) -> [u16; 4] {
         let r = rgba[0] as f32 / 65535.0;
         let g = rgba[1] as f32 / 65535.0;
@@ -651,7 +489,7 @@ impl Image {
         ]
     }
 
-    #[cfg(feature = "encoder")]
+    #[cfg(any(feature = "encoder", feature = "png"))]
     pub(crate) fn is_opaque(&self) -> bool {
         if let Some(plane_data) = self.plane_data(Plane::A) {
             let opaque_value = self.max_channel();
@@ -691,5 +529,15 @@ impl Image {
             }
         }
         Ok(())
+    }
+
+    #[cfg(feature = "png")]
+    pub(crate) fn remove_trailing_null_from_xmp(&mut self) {
+        if self.xmp.len() >= 2
+            && self.xmp[self.xmp.len() - 1] == 0
+            && self.xmp[self.xmp.len() - 2] != 0
+        {
+            self.xmp.pop();
+        }
     }
 }

@@ -22,6 +22,7 @@
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
 #include "components/autofill/core/browser/webdata/autocomplete/autocomplete_entry.h"
+#include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/autofill/core/common/unique_ids.h"
 #include "ui/gfx/image/image.h"
 #include "url/gurl.h"
@@ -31,6 +32,14 @@
 #endif  // BUILDFLAG(IS_ANDROID)
 
 namespace autofill {
+
+// The index that will be used to filter suggestions for showing them in tabbed
+// panes in the suggestion bubble.
+using SuggestionTabIndex = base::StrongAlias<struct SuggestionTabIndexTag, int>;
+
+// The index of the default suggestion tab which all suggestions should be
+// displayed in unless specified otherwise in `Suggestion::tab_index`.
+inline constexpr SuggestionTabIndex kDefaultSuggestionTabIndex(0);
 
 struct Suggestion {
   struct PasswordSuggestionDetails {
@@ -94,7 +103,8 @@ struct Suggestion {
 
   struct AutofillAiPayload final {
     AutofillAiPayload();
-    explicit AutofillAiPayload(EntityInstance::EntityId guid);
+    explicit AutofillAiPayload(EntityInstance::EntityId guid,
+                               bool requires_server_fetch = false);
     AutofillAiPayload(const AutofillAiPayload&);
     AutofillAiPayload(AutofillAiPayload&&);
     AutofillAiPayload& operator=(const AutofillAiPayload&);
@@ -105,6 +115,10 @@ struct Suggestion {
                            const AutofillAiPayload&) = default;
 
     EntityInstance::EntityId guid;
+
+    // Whether selecting this suggestion requires fetching data from a server.
+    // E.g. retrieving masked credentials.
+    bool requires_server_fetch = false;
   };
 
   using Guid = base::StrongAlias<class GuidTag, std::string>;
@@ -192,8 +206,25 @@ struct Suggestion {
     std::map<FieldType, std::u16string> fields;
   };
 
+  struct AtMemoryPayload final {
+    AtMemoryPayload();
+    explicit AtMemoryPayload(std::u16string value);
+    AtMemoryPayload(const AtMemoryPayload&);
+    AtMemoryPayload(AtMemoryPayload&&);
+    AtMemoryPayload& operator=(const AtMemoryPayload&);
+    AtMemoryPayload& operator=(AtMemoryPayload&&);
+    ~AtMemoryPayload();
+
+    friend bool operator==(const AtMemoryPayload&,
+                           const AtMemoryPayload&) = default;
+
+    // Text to fill in the trigger field upon accepting the suggestion.
+    std::u16string value;
+  };
+
   using IsLoading = base::StrongAlias<class IsLoadingTag, bool>;
   using InstrumentId = base::StrongAlias<class InstrumentIdTag, uint64_t>;
+  // TODO(crbug.com/477689220): Directly use BnplIssuer and remove the alias.
   using BnplIssuer = base::StrongAlias<class BnplIssuerTag, BnplIssuer>;
   using Payload = std::variant<Guid,
                                InstrumentId,
@@ -205,7 +236,8 @@ struct Suggestion {
                                PaymentsPayload,
                                IdentityCredentialPayload,
                                AutocompleteEntry,
-                               BnplIssuer>;
+                               BnplIssuer,
+                               AtMemoryPayload>;
 
   // This struct is used to provide password suggestions with custom icons,
   // using the favicon of the website associated with the credentials. While
@@ -321,6 +353,7 @@ struct Suggestion {
     kLoyalty,
     kMagic,
     kOfferTag,
+    kPassport,
     kPenSpark,
     kPersonCheck,
     kPlusAddress,
@@ -346,12 +379,10 @@ struct Suggestion {
     kCardVisa,
     kIban,
     kBnplGeneric,
-    kBnplAffirmLinked,
-    kBnplAffirmUnlinked,
-    kBnplZipLinked,
-    kBnplZipUnlinked,
-    kBnplKlarnaLinked,
-    kBnplKlarnaUnlinked,
+    kBnplAffirm,
+    kBnplAfterpay,
+    kBnplKlarna,
+    kBnplZip,
     kSaveAndFill,
     kAndroidMessages,
   };
@@ -388,25 +419,20 @@ struct Suggestion {
     kUnacceptableWithDeactivatedStyle,
   };
 
-  // TODO(crbug.com/335194240): Consolidate expected param types for these
-  // constructors. Some expect UTF16 strings and others UTF8, while internally
-  // we only use UTF16. The ones expecting UTF8 are only used by tests and could
-  // be easily refactored.
   explicit Suggestion(SuggestionType type);
   Suggestion(std::u16string main_text, SuggestionType type);
-  // Constructor for unit tests. It will convert the strings from UTF-8 to
-  // UTF-16.
-  Suggestion(std::string_view main_text,
-             std::string_view label,
+  // Constructor for unit tests.
+  Suggestion(std::u16string main_text,
+             std::u16string label,
              Icon icon,
              SuggestionType type);
-  Suggestion(std::string_view main_text,
+  Suggestion(std::u16string_view main_text,
              std::vector<std::vector<Text>> labels,
              Icon icon,
              SuggestionType type);
-  Suggestion(std::string_view main_text,
-             base::span<const std::string> minor_text_labels,
-             std::string_view label,
+  Suggestion(std::u16string_view main_text,
+             base::span<const std::u16string> minor_text_labels,
+             std::u16string_view label,
              Icon icon,
              SuggestionType type);
   Suggestion(const Suggestion& other);
@@ -455,8 +481,13 @@ struct Suggestion {
         return std::holds_alternative<Guid>(payload) ||
                std::holds_alternative<PaymentsPayload>(payload);
       case SuggestionType::kBnplEntry:
-        return std::holds_alternative<PaymentsPayload>(payload) ||
-               std::holds_alternative<BnplIssuer>(payload);
+        if (base::FeatureList::IsEnabled(
+                features::kAutofillEnablePayNowPayLaterTabs)) {
+          return std::holds_alternative<BnplIssuer>(payload);
+        }
+        return std::holds_alternative<PaymentsPayload>(payload);
+      case SuggestionType::kAtMemorySearchResult:
+        return std::holds_alternative<AtMemoryPayload>(payload);
       case SuggestionType::kDevtoolsTestAddressEntry:
       default:
         return std::holds_alternative<Guid>(payload) ||
@@ -475,6 +506,14 @@ struct Suggestion {
 
   // Determines popup identifier for the suggestion.
   SuggestionType type;
+
+  // The index of the tab in which the suggestion is shown in.
+  // This index is used to filter suggestions into separate tabs
+  // when they are displayed within a tabbed pane.
+  // Note: Suggestions are typically shown in a single list.
+  // Displaying suggestions in tabbed panes is enabled only for specific cases,
+  // for example, the "Pay Now"/"Pay Later" tabs.
+  SuggestionTabIndex tab_index = kDefaultSuggestionTabIndex;
 
   // The texts that will be displayed on the first line in a suggestion. The
   // order of showing the two texts on the first line depends on whether it is
@@ -561,6 +600,11 @@ struct Suggestion {
   // `SuggestionType::kAddressEntryOnTyping`, specifies the `FieldType` used to
   // build the suggestion's `main_text`.
   std::optional<FieldType> field_by_field_filling_type_used;
+
+  // Used by `SuggestionType::kLoadingThrobber` to determine the size of the
+  // loading suggestion. It represents the number of suggestions (assumed to be
+  // two-line suggestions) expected to load to provide a smoother UI transition.
+  std::optional<int> expected_number_of_suggestions;
 
   // How the suggestion should be handled by the filtration logic, see the enum
   // values doc for details.

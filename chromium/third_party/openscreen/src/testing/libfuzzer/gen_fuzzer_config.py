@@ -43,8 +43,7 @@ def main():
   parser.add_argument(
       '--environment_variables',
       nargs='+',
-      default=[],
-      choices=['AFL_DRIVER_DONT_DEFER=1'])
+      default=[])
   args = parser.parse_args()
 
   # Script shouldn't be invoked without any arguments, but just in case.

@@ -1,10 +1,29 @@
 # Umfpack lib usually requires linking to a blas library.
 # It is up to the user of this module to find a BLAS and link to it.
+#
+# This module first tries to find UMFPACK via its CMake config-mode package
+# (shipped with SuiteSparse >= 7.0). If that fails, it falls back to a
+# manual header/library search for compatibility with older installations.
 
 if (UMFPACK_INCLUDES AND UMFPACK_LIBRARIES)
   set(UMFPACK_FIND_QUIETLY TRUE)
 endif ()
 
+# --- Try config-mode first (SuiteSparse >= 7.0) ---
+if(NOT UMFPACK_INCLUDES OR NOT UMFPACK_LIBRARIES)
+  find_package(UMFPACK CONFIG QUIET)
+  if(UMFPACK_FOUND AND TARGET SuiteSparse::UMFPACK)
+    get_target_property(_umfpack_inc SuiteSparse::UMFPACK INTERFACE_INCLUDE_DIRECTORIES)
+    if(_umfpack_inc)
+      set(UMFPACK_INCLUDES "${_umfpack_inc}" CACHE PATH "UMFPACK include directory")
+    endif()
+    set(UMFPACK_LIBRARIES SuiteSparse::UMFPACK CACHE STRING "UMFPACK libraries")
+    mark_as_advanced(UMFPACK_INCLUDES UMFPACK_LIBRARIES)
+    return()
+  endif()
+endif()
+
+# --- Fallback: manual search (SuiteSparse < 7.0 or no config package) ---
 find_path(UMFPACK_INCLUDES
   NAMES
   umfpack.h
@@ -28,7 +47,7 @@ if(UMFPACK_LIBRARIES)
   if(COLAMD_LIBRARY)
     set(UMFPACK_LIBRARIES ${UMFPACK_LIBRARIES} ${COLAMD_LIBRARY})
   endif ()
-  
+
   find_library(AMD_LIBRARY amd PATHS ${UMFPACK_LIBDIR} $ENV{UMFPACKDIR} ${LIB_INSTALL_DIR})
   if(AMD_LIBRARY)
     set(UMFPACK_LIBRARIES ${UMFPACK_LIBRARIES} ${AMD_LIBRARY})

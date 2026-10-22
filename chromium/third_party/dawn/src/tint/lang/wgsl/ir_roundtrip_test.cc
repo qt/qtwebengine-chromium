@@ -28,7 +28,6 @@
 // GEN_BUILD:CONDITION(tint_build_wgsl_reader && tint_build_wgsl_writer)
 
 #include "gtest/gtest.h"
-
 #include "src/tint/lang/core/ir/disassembler.h"
 #include "src/tint/lang/wgsl/reader/program_to_ir/program_to_ir.h"
 #include "src/tint/lang/wgsl/reader/reader.h"
@@ -1680,8 +1679,7 @@ fn e(i : i32) -> i32 {
 fn f() {
   var v : array<array<array<i32, 5u>, 5u>, 5u>;
   let v_1 = &(v[e(1i)][e(2i)][e(3i)]);
-  let v_2 = v[e(4i)][e(5i)][e(6i)];
-  *(v_1) = (*(v_1) + v_2);
+  *(v_1) = (*(v_1) + v[e(4i)][e(5i)][e(6i)]);
 })");
 }
 
@@ -1708,8 +1706,7 @@ fn f() {
   let v_2 = e(2i);
   let v_3 = e(6i);
   let v_1 = &(v[e(1i)][v_2][e(3i)]);
-  let v_4 = v[e(4i)][e(5i)][v_3];
-  *(v_1) = (*(v_1) + v_4);
+  *(v_1) = (*(v_1) + v[e(4i)][e(5i)][v_3]);
 })");
 }
 
@@ -1740,8 +1737,7 @@ fn f() {
   let v_4 = e(2i);
   let v_5 = e(6i);
   let v_1 = &(v[e(1i)][v_4][v_3]);
-  let v_6 = v[e(4i)][v_2][v_5];
-  *(v_1) = (*(v_1) + v_6);
+  *(v_1) = (*(v_1) + v[e(4i)][v_2][v_5]);
 })");
 }
 
@@ -1765,8 +1761,7 @@ fn f() {
   var v : array<mat3x4<f32>, 5u>;
   let v_1 = &(v[e(1i)][e(2i)]);
   let v_2 = e(3i);
-  let v_3 = v[e(4i)][e(5i)][e(6i)];
-  (*(v_1))[v_2] = ((*(v_1))[v_2] + v_3);
+  (*(v_1))[v_2] = ((*(v_1))[v_2] + v[e(4i)][e(5i)][e(6i)]);
 })");
 }
 
@@ -1794,8 +1789,7 @@ fn f() {
   let v_3 = e(6i);
   let v_1 = &(v[e(1i)][v_2]);
   let v_4 = e(3i);
-  let v_5 = v[e(4i)][e(5i)][v_3];
-  (*(v_1))[v_4] = ((*(v_1))[v_4] + v_5);
+  (*(v_1))[v_4] = ((*(v_1))[v_4] + v[e(4i)][e(5i)][v_3]);
 })");
 }
 
@@ -1826,8 +1820,7 @@ fn f() {
   let v_4 = e(2i);
   let v_5 = e(6i);
   let v_1 = &(v[e(1i)][v_4]);
-  let v_6 = v[e(4i)][v_2][v_5];
-  (*(v_1))[v_3] = ((*(v_1))[v_3] + v_6);
+  (*(v_1))[v_3] = ((*(v_1))[v_3] + v[e(4i)][v_2][v_5]);
 })");
 }
 
@@ -3621,6 +3614,59 @@ fn foo(p : ptr<workgroup, buffer>) {
   let b = bufferLength(p);
   let c = bufferLength(&(v));
   let d = bufferLength(p);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BufferArrayView_Storage) {
+    RUN_TEST(R"(
+@group(0u) @binding(0u) var<storage, read> v1 : buffer;
+
+@group(0u) @binding(1u) var<storage, read_write> v2 : buffer<32>;
+
+struct S {
+  a : u32,
+  b : array<u32>,
+}
+
+fn f() {
+  let a = bufferArrayView<array<u32>>(&(v1), 0u, 8u);
+  let b = bufferArrayView<S>(&(v2), 4u, 8u);
+  let c = bufferArrayView<array<u32>>(&(v2), 0u, 8u);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BufferArrayView_Uniform) {
+    RUN_TEST(R"(
+@group(0u) @binding(0u) var<uniform> v : buffer<128>;
+
+struct S {
+  a : u32,
+  b : array<u32>,
+}
+
+fn foo(p : ptr<uniform, buffer>) {
+  let a = bufferArrayView<array<u32>>(&(v), 0u, 8u);
+  let b = bufferArrayView<S>(p, 4u, 8u);
+  let c = bufferArrayView<array<u32>>(p, 0u, 8u);
+}
+)");
+}
+
+TEST_F(IRToProgramRoundtripTest, BufferArrayView_Workgroup) {
+    RUN_TEST(R"(
+var<workgroup> v : buffer<128>;
+
+struct S {
+  a : u32,
+  b : array<u32>,
+}
+
+fn foo(p : ptr<workgroup, buffer>) {
+  let a = bufferArrayView<array<u32>>(&(v), 0u, 8u);
+  let b = bufferArrayView<S>(p, 4u, 8u);
+  let c = bufferArrayView<array<u32>>(p, 0u, 8u);
 }
 )");
 }

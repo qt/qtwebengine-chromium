@@ -165,14 +165,18 @@ if (is_android) {
   }
 
   public_android_sdk_root = "//third_party/android_sdk/public"
-  public_android_sdk_platform_version = "36.1"
-  public_android_sdk_build_tools_version = "36.1.0"
+  public_android_sdk_platform_version = "37.0"
+  public_android_sdk_build_tools_version = "37.0.0"
   if (android_sdk_release == "b") {
     default_android_sdk_root = public_android_sdk_root
     default_android_sdk_platform_version = public_android_sdk_platform_version
     default_android_sdk_build_tools_version =
         public_android_sdk_build_tools_version
     public_android_sdk = true
+  }
+
+  if (!defined(default_target_sdk_version)) {
+    default_target_sdk_version = "36"
   }
 
   if (!defined(default_lint_android_sdk_root)) {
@@ -203,6 +207,23 @@ if (is_android) {
 
   if (!defined(android_protoc_bin)) {
     android_protoc_bin = "//third_party/android_build_tools/protoc/cipd/protoc"
+  }
+
+  if (!defined(android_protoc_import_dirs)) {
+    android_protoc_import_dirs = [ "//third_party/protobuf/src" ]
+  }
+
+  if (!defined(android_protoc_import_files)) {
+    # Add common, internal protobuf imports.
+    android_protoc_import_files = [
+      "//third_party/protobuf/src/google/protobuf/descriptor.proto",
+
+      # cpp_features.proto can be used for C++-specific codegen options.  While
+      # it's not particularly useful for Java, protos can be written for both
+      # Java and C++, so we need to support it here too in order not to throw
+      # an error.
+      "//third_party/protobuf/src/google/protobuf/cpp_features.proto",
+    ]
   }
 
   webview_public_framework_dep =
@@ -321,19 +342,16 @@ if (is_android) {
     # //build/android/location_rewriter). Turned on for "default" and "canary"
     # channel for tracing.
     enable_java_location_rewrite =
-        build_with_chromium &&
+        # Do not want to add deps from //base.
+        build_with_chromium && !is_cronet_build &&
+        # Do not want the added build-time outside of official builds.
+        is_official_build &&
         (android_channel == "default" || android_channel == "canary")
   }
 
   if (is_asan) {
     # Disable lint since increasing min_sdk_version can cause ObsoleteSdkInt warnings.
     disable_android_lint = true
-  }
-
-  if (is_cronet_build) {
-    # Disable Java bytecode rewriting for cronet to prevent pulling in bytecode
-    # rewriter's dependencies
-    enable_java_location_rewrite = false
   }
 
   assert(
@@ -343,9 +361,6 @@ if (is_android) {
   # We need a second declare_args block to make sure we are using the overridden
   # value of the arguments set above.
   declare_args() {
-    # Default value for targetSdkVersion for APK and bundle targets.
-    default_target_sdk_version = "36"
-
     # Whether java assertions and Preconditions checks are enabled.
     enable_java_asserts = dcheck_always_on || !is_official_build
 
@@ -354,11 +369,7 @@ if (is_android) {
 
     # Component build breaks javaless renderers - see
     # go/javaless-renderers-component-build
-    # Ensuring that we are on version 37+ as that's what's required for aapt2
-    # to read our manifest. Once 37 is the default public SDK that check can go
-    # away.
-    enable_javaless_renderers =
-        !is_component_build && android_sdk_platform_version != "36.1"
+    enable_javaless_renderers = !is_component_build
 
     # Enables trace event injection on Android views with bytecode rewriting.
     # This adds an additional step on android_app_bundle_module targets that

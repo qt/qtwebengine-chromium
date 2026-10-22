@@ -17,7 +17,6 @@
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/init/gl_factory.h"
 #include "ui/gl/test/gl_test_support.h"
-#include "ui/ozone/public/client_native_pixmap_factory_ozone.h"
 #include "ui/ozone/public/ozone_platform.h"
 #include "ui/ozone/public/surface_factory_ozone.h"
 
@@ -52,9 +51,7 @@ bool SkipTest() {
 
 class NativePixmapGLBindingTest : public testing::Test {
  public:
-  NativePixmapGLBindingTest() {
-    client_native_pixmap_factory_ = ui::CreateClientNativePixmapFactoryOzone();
-  }
+  NativePixmapGLBindingTest() = default;
 
  protected:
   // Overridden from testing::Test:
@@ -101,8 +98,10 @@ class NativePixmapGLBindingTest : public testing::Test {
                                 ->GetCurrentGLOzone();
     EXPECT_TRUE(gl_ozone->CanImportNativePixmap(kFormat));
 
+    // The imported pixmap can be externally sampled i.e. does not provide
+    // per-plane textures but provides a unified single texture object.
     auto binding = gl_ozone->ImportNativePixmap(
-        std::move(pixmap), kFormat, gfx::BufferPlane::DEFAULT, size,
+        std::move(pixmap), kFormat, /*plane_index=*/std::nullopt, size,
         gfx::ColorSpace(), GL_TEXTURE_EXTERNAL_OES, texture_id_);
     EXPECT_TRUE(binding);
     return binding;
@@ -111,7 +110,6 @@ class NativePixmapGLBindingTest : public testing::Test {
   scoped_refptr<GLSurface> surface_;
   scoped_refptr<GLContext> context_;
   GLuint texture_id_ = 0;
-  std::unique_ptr<gfx::ClientNativePixmapFactory> client_native_pixmap_factory_;
   raw_ptr<GLDisplay> display_ = nullptr;
 };
 

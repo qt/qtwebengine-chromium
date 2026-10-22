@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/barrier_closure.h"
+#include "base/byte_size.h"
 #include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
@@ -58,6 +59,8 @@
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/service_worker/embedded_worker_status.h"
 #include "third_party/blink/public/common/service_worker/service_worker_scope_match.h"
+#include "third_party/blink/public/mojom/frame/policy_container.mojom.h"
+#include "third_party/blink/public/mojom/loader/fetch_client_settings_object.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_container_type.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration_options.mojom.h"
@@ -456,7 +459,7 @@ ServiceWorkerClientOwner::CreateServiceWorkerClientForPrefetch(
 
 ScopedServiceWorkerClient
 ServiceWorkerClientOwner::CreateServiceWorkerClientForWorker(
-    int process_id,
+    ChildProcessId process_id,
     ServiceWorkerClientInfo client_info) {
   auto client = std::make_unique<ServiceWorkerClient>(context_->AsWeakPtr(),
                                                       process_id, client_info);
@@ -580,9 +583,13 @@ void ServiceWorkerContextCore::UpdateServiceWorkerWithoutExecutionContext(
     bool force_bypass_cache) {
   // Use an empty fetch client settings object because this method is for
   // browser-initiated update and there is no associated execution context.
+  auto fetch_client_settings_object =
+      blink::mojom::FetchClientSettingsObject::New();
+  fetch_client_settings_object->policy_container_policies =
+      blink::mojom::PolicyContainerPolicies::New();
   UpdateServiceWorkerImpl(
       registration, force_bypass_cache, /*skip_script_comparison=*/false,
-      blink::mojom::FetchClientSettingsObject::New(), base::NullCallback());
+      std::move(fetch_client_settings_object), base::NullCallback());
 }
 
 void ServiceWorkerContextCore::UpdateServiceWorker(
@@ -949,7 +956,8 @@ void ServiceWorkerContextCore::RemoveLiveVersion(int64_t id) {
     observer_list_->Notify(FROM_HERE,
                            &ServiceWorkerContextCoreObserver::OnStopped, id);
     for (auto& observer : sync_observer_list_->observers) {
-      observer.OnStoppedSync(id, version->scope());
+      observer.OnStoppedSync(id, version->scope(),
+                             *version->start_worker_token());
     }
   }
 
@@ -1021,7 +1029,8 @@ void ServiceWorkerContextCore::DeleteAndStartOver(StatusCallback callback) {
         blink::EmbeddedWorkerStatus::kStopped) {
       for (auto& observer : sync_observer_list_->observers) {
         observer.OnStoppedSync(live_version->version_id(),
-                               live_version->scope());
+                               live_version->scope(),
+                               *live_version->start_worker_token());
       }
     }
   }
@@ -1106,7 +1115,7 @@ void ServiceWorkerContextCore::NotifyRegistrationStored(
     const int64_t registration_id,
     const GURL& scope,
     const blink::StorageKey& key,
-    uint64_t stored_resources_total_size_bytes) {
+    base::ByteSize stored_resources_total_size) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   ServiceWorkerRegistrationInformation service_worker_info;
@@ -1115,8 +1124,7 @@ void ServiceWorkerContextCore::NotifyRegistrationStored(
           GetLiveRegistration(registration_id);
       registration) {
     registration->SetStored();
-    registration->set_resources_total_size_bytes(
-        stored_resources_total_size_bytes);
+    registration->set_resources_total_size(stored_resources_total_size);
 
     ServiceWorkerRegistry::ResourceList resources;
     if (ServiceWorkerVersion* version = registration->GetNewestVersion();
@@ -1242,13 +1250,31 @@ void ServiceWorkerContextCore::OnRunningStateChanged(
     ServiceWorkerVersion* version) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_EQ(this, version->context().get());
+
+  // Protect `sync_observer_list_` and `version` from being destroyed during the
+  // synchronous observer loop.
+  scoped_refptr<ServiceWorkerContextSynchronousObserverList>
+      safe_sync_observer_list = sync_observer_list_;
+  scoped_refptr<ServiceWorkerVersion> protect_version =
+      base::WrapRefCounted(version);
+  std::optional<blink::ServiceWorkerToken> start_worker_token =
+      version->start_worker_token();
+
   switch (version->running_status()) {
     case blink::EmbeddedWorkerStatus::kStopped:
       observer_list_->Notify(FROM_HERE,
                              &ServiceWorkerContextCoreObserver::OnStopped,
                              version->version_id());
-      for (auto& observer : sync_observer_list_->observers) {
-        observer.OnStoppedSync(version->version_id(), version->scope());
+      // It appears `start_worker_token` can sometimes be null here, which is
+      // unexpected. That can theoretically happen due to a race between a
+      // timeout and a late IPC stop/stopping message. The first call clears the
+      // token, and the second call crashes when it tries to access it.
+      // See https://crbug.com/496389117.
+      if (start_worker_token.has_value()) {
+        for (auto& observer : sync_observer_list_->observers) {
+          observer.OnStoppedSync(version->version_id(), version->scope(),
+                                 *start_worker_token);
+        }
       }
       break;
     case blink::EmbeddedWorkerStatus::kStarting:
@@ -1267,8 +1293,11 @@ void ServiceWorkerContextCore::OnRunningStateChanged(
       observer_list_->Notify(FROM_HERE,
                              &ServiceWorkerContextCoreObserver::OnStopping,
                              version->version_id());
-      for (auto& observer : sync_observer_list_->observers) {
-        observer.OnStoppingSync(version->version_id(), version->scope());
+      if (start_worker_token.has_value()) {
+        for (auto& observer : sync_observer_list_->observers) {
+          observer.OnStoppingSync(version->version_id(), version->scope(),
+                                  *start_worker_token);
+        }
       }
       break;
   }
@@ -1346,7 +1375,7 @@ void ServiceWorkerContextCore::OnReportConsoleMessage(
   for (auto& observer : sync_observer_list_->observers) {
     observer.OnReportConsoleMessageSync(
         version->embedded_worker() ? version->embedded_worker()->process_id()
-                                   : ChildProcessHost::kInvalidUniqueID,
+                                   : ChildProcessId(),
         version->version_id(), version->scope(), console_message);
   }
 }

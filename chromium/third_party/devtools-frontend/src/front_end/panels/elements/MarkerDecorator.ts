@@ -77,8 +77,6 @@ export function getRegisteredDecorators(): MarkerDecoratorRegistration[] {
     {
       decorator: PseudoStateMarkerDecorator.instance,
       marker: 'pseudo-state-marker',
-      title: undefined,
-      color: undefined,
     },
   ];
 }

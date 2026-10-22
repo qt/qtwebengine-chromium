@@ -12,6 +12,7 @@
 
 namespace blink {
 
+struct GridItemData;
 class GridItems;
 class GridLineResolver;
 
@@ -41,15 +42,27 @@ class CORE_EXPORT GridLanesNode final : public BlockNode {
       wtf_size_t& unplaced_item_span_count) const;
 
   // Collects the children of this node, sorts by order property if needed, and
-  // resolves the grid line positions of the items based on style.
-  GridItems ConstructGridLanesItems(
-      const GridLineResolver& line_resolver,
-      HeapVector<Member<LayoutBox>>* opt_oof_children = nullptr) const;
+  // resolves the grid line positions of the items based on style. If
+  // `oof_children` is provided, aggregate any out of flow children.
+  // `must_invalidate_placement_cache` isn't used in grid-lanes because
+  // the placement cache is populated at a later point in grid-lanes, and
+  // placement also happens after track sizing in grid-lanes, so the placement
+  // cache isn't as heavily relied on for performance with subgrid as it is in
+  // grid. However, we still need to include it in the signature for common
+  // call sites with grid.
+  GridItems* ConstructGridItems(const GridLineResolver& line_resolver,
+                                bool* must_invalidate_placement_cache,
+                                HeapVector<Member<LayoutBox>>* opt_oof_children,
+                                bool* opt_has_nested_subgrid = nullptr) const;
 
-  // Update the grid line positions of the items based on style and provided
-  // `line_resolver`.
-  void AdjustGridLanesItemSpans(GridItems& grid_lanes_items,
-                                const GridLineResolver& line_resolver) const;
+  // Adjusts a subgridded item's span to be relative to the parent grid's
+  // coordinate system if the span is definite.
+  void AdjustSubgriddedItemSpan(const GridItemData& subgrid_item,
+                                GridItemData& subgridded_item) const;
+
+  // Translates the subgrid item's span and computes its set indices.
+  void ComputeSetIndicesForSubgrid(GridItemData& subgrid_item,
+                                   GridLayoutData& layout_data) const;
 
   // Computes the largest span size among all children by examining their
   // grid placement styles directly. Note that this may be an inaccurate value

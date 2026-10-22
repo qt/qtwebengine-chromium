@@ -33,6 +33,7 @@ namespace ffi
 struct SymbolName;
 struct ASTFieldInfo;
 struct Expression;
+enum class ASTForLoopConditionOp : std::uint32_t;
 
 TType *make_basic_type(ASTBasicType basicType);
 TType *make_vector_type(const TType *scalarType, uint32_t count);
@@ -62,6 +63,8 @@ TIntermTyped *make_variable(TCompiler *compiler,
                             const ASTType &astType,
                             bool isRedeclaredBuiltIn,
                             bool isStaticUse);
+TIntermTyped *make_internal_variable_gl_layer_vs();
+TIntermTyped *make_internal_variable_gl_instance_es100();
 TIntermTyped *make_nameless_block_field_variable(TCompiler *compiler,
                                                  TIntermTyped *variable,
                                                  uint32_t fieldIndex,
@@ -82,6 +85,7 @@ TFunction *make_function(TCompiler *compiler,
 TIntermNode *declare_function(const TFunction *function, TIntermBlock *body);
 
 TIntermBlock *make_interm_block();
+void append_typed_instruction_to_block(TIntermBlock *block, TIntermTyped *node);
 void append_instructions_to_block(TIntermBlock *block, rust::Slice<TIntermNode *const> nodes);
 void append_blocks_to_block(TIntermBlock *block, rust::Slice<TIntermBlock *const> blocksToAppend);
 
@@ -342,6 +346,14 @@ void branch_if_else(TIntermBlock *block,
                     TIntermBlock *falseBlock);
 void branch_loop(TIntermBlock *block, TIntermBlock *loopConditionBlock, TIntermBlock *bodyBlock);
 void branch_do_loop(TIntermBlock *block, TIntermBlock *bodyBlock);
+void branch_for_loop(TIntermBlock *block,
+                     TIntermNode *loopVariableDeclaration,
+                     TIntermTyped *loopVariable,
+                     ffi::ASTForLoopConditionOp conditionOp,
+                     TIntermTyped *conditionComparator,
+                     bool ascending,
+                     TIntermTyped *incrementStep,
+                     TIntermBlock *bodyBlock);
 void branch_loop_if(TIntermBlock *block, const Expression &condition);
 void branch_switch(TIntermBlock *block,
                    const Expression &value,

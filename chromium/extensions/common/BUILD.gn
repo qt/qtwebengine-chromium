@@ -422,6 +422,8 @@ static_library("common") {
     "manifest_handlers/csp_info.h",
     "manifest_handlers/default_locale_handler.cc",
     "manifest_handlers/default_locale_handler.h",
+    "manifest_handlers/description_info.cc",
+    "manifest_handlers/description_info.h",
     "manifest_handlers/devtools_page_handler.cc",
     "manifest_handlers/devtools_page_handler.h",
     "manifest_handlers/extension_action_handler.cc",
@@ -438,6 +440,8 @@ static_library("common") {
     "manifest_handlers/incognito_info.h",
     "manifest_handlers/kiosk_mode_info.cc",
     "manifest_handlers/kiosk_mode_info.h",
+    "manifest_handlers/message_serialization_info.cc",
+    "manifest_handlers/message_serialization_info.h",
     "manifest_handlers/mime_types_handler.cc",
     "manifest_handlers/mime_types_handler.h",
     "manifest_handlers/oauth2_manifest_handler.cc",
@@ -690,6 +694,7 @@ source_set("unit_tests") {
     "manifest_handlers/content_capabilities_manifest_unittest.cc",
     "manifest_handlers/csp_info_unittest.cc",
     "manifest_handlers/default_locale_manifest_unittest.cc",
+    "manifest_handlers/description_unittest.cc",
     "manifest_handlers/devtools_page_unittest.cc",
     "manifest_handlers/extension_action_handler_unittest.cc",
     "manifest_handlers/extension_action_page_action_unittest.cc",
@@ -701,6 +706,7 @@ source_set("unit_tests") {
     "manifest_handlers/kiosk_mode_info_unittest.cc",
     "manifest_handlers/manifest_url_about_unittest.cc",
     "manifest_handlers/manifest_v3_permissions_unittest.cc",
+    "manifest_handlers/message_serialization_manifest_unittest.cc",
     "manifest_handlers/mime_types_handler_unittest.cc",
     "manifest_handlers/oauth2_manifest_unittest.cc",
     "manifest_handlers/protocol_handler_manifest_unittest.cc",
@@ -765,7 +771,10 @@ source_set("unit_tests") {
   ]
 
   if (is_chromeos) {
-    sources += [ "manifest_handlers/file_handler_manifest_unittest.cc" ]
+    sources += [
+      "manifest_handlers/file_handler_manifest_unittest.cc",
+      "manifest_handlers/input_components_handler_unittest.cc",
+    ]
   }
 
   data = [

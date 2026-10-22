@@ -124,6 +124,7 @@ TEST(FrameBufferPool, DoesClearAllocations) {
     nonzero |= !!buf[i];
   }
   EXPECT_FALSE(nonzero);
+
   pool->Shutdown();
 }
 

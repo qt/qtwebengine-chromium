@@ -115,7 +115,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Download.Android.OpenDialog.Events"
-    enum="OpenDownloadDialogEvent" expires_after="2026-07-19">
+    enum="OpenDownloadDialogEvent" expires_after="2026-09-20">
   <owner>qinmin@chromium.org</owner>
   <owner>dtrainor@chromium.org</owner>
   <summary>
@@ -173,7 +173,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Download.BandwidthOverallBytesPerSecond2" units="bytes/second"
-    expires_after="2026-07-19">
+    expires_after="2026-09-20">
   <owner>qinmin@chromium.org</owner>
   <summary>
     Overall bandwidth seen for a completed download. This includes all file
@@ -319,7 +319,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Download.DangerousDialog.Events"
-    enum="DangerousDownloadDialogEvent" expires_after="2026-06-28">
+    enum="DangerousDownloadDialogEvent" expires_after="2026-08-30">
   <owner>qinmin@chromium.org</owner>
   <summary>
     Records user interactions with the dangerous download dialog on Android.
@@ -386,7 +386,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Download.DuplicatePdfDownloadTriggered"
-    enum="BooleanOpenInline" expires_after="2026-06-21">
+    enum="BooleanOpenInline" expires_after="2026-08-23">
   <owner>qinmin@chromium.org</owner>
   <owner>clank-downloads@google.com</owner>
   <summary>
@@ -430,30 +430,6 @@ chromium-metrics-reviews@google.com.
     Records errors when reading from the mojo input stream before a download
     completes.
   </summary>
-</histogram>
-
-<histogram
-    name="Download.InsecureBlocking.Extensions.{InitiatorSecurity}.{DownloadSecurity}"
-    enum="InsecureDownloadExtensions" expires_after="2024-02-25">
-  <owner>jdeblasio@chromium.org</owner>
-  <owner>estark@chromium.org</owner>
-  <owner>cthomp@chromium.org</owner>
-  <summary>
-    Records file extension of download to support analysis for mixed content
-    file download blocking. Warning: this histogram was expired from M94 through
-    M95; data may be missing.
-  </summary>
-  <token key="InitiatorSecurity">
-    <variant name="InitiatorInferredInsecure"/>
-    <variant name="InitiatorInferredSecure"/>
-    <variant name="InitiatorInsecure"/>
-    <variant name="InitiatorSecure"/>
-    <variant name="InitiatorUnknown"/>
-  </token>
-  <token key="DownloadSecurity">
-    <variant name="DownloadInsecure"/>
-    <variant name="DownloadSecure"/>
-  </token>
 </histogram>
 
 <histogram name="Download.InsecureBlocking.Totals"
@@ -1191,7 +1167,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Download.Start.ContentType.{TransientType}"
-    enum="DownloadContentType" expires_after="2026-06-21">
+    enum="DownloadContentType" expires_after="2026-08-23">
   <owner>qinmin@chromium.org</owner>
   <owner>clank-downloads@google.com</owner>
   <summary>
@@ -1227,7 +1203,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Download.UserValidatedDangerousDownload.DownloadsPage"
-    enum="DownloadItem.DangerType" expires_after="2026-06-28">
+    enum="DownloadItem.DangerType" expires_after="2026-08-30">
   <owner>chlily@chromium.org</owner>
   <owner>chrome-counter-abuse-alerts@google.com</owner>
   <summary>

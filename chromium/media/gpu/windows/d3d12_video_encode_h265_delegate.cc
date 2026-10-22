@@ -319,6 +319,18 @@ EncoderStatus D3D12VideoEncodeH265Delegate::EncodeImpl(
       destroy_buffer = 1;
     }
   } else {
+    for (uint8_t ref_idx : options.reference_buffers) {
+      if (ref_idx >= GetMaxNumOfManualRefBuffers()) {
+        return {EncoderStatus::Codes::kBadReferenceBuffer,
+                "Manual reference buffer index exceeds that is supported by "
+                "encoder"};
+      }
+    }
+    if (options.reference_buffers.size() > list0_reference_frames_.size()) {
+      return {EncoderStatus::Codes::kBadReferenceBuffer,
+              "Number of manual reference buffers exceeds that is supported by "
+              "encoder"};
+    }
     reference_buffers = options.reference_buffers;
     update_buffer = options.update_buffer;
   }
@@ -376,7 +388,6 @@ EncoderStatus D3D12VideoEncodeH265Delegate::EncodeImpl(
     pic_params_.pList0ReferenceFrames = nullptr;
   } else {
     pic_params_.FrameType = D3D12_VIDEO_ENCODER_FRAME_TYPE_HEVC_P_FRAME;
-    CHECK_LE(reference_buffers.size(), list0_reference_frames_.size());
     for (size_t i = 0; i < reference_buffers.size(); i++) {
       std::optional<uint32_t> descriptor_index =
           reference_frame_manager_.GetReferenceFrameId(reference_buffers[i]);
@@ -402,18 +413,18 @@ EncoderStatus D3D12VideoEncodeH265Delegate::EncodeImpl(
   // Rate control.
   int qp = -1;
   if (software_rate_controller_) {
-    software_rate_controller_
-        ->temporal_layers(metadata_.svc_generic->temporal_idx)
+    size_t temporal_idx =
+        metadata_.svc_generic ? metadata_.svc_generic->temporal_idx : 0;
+    software_rate_controller_->temporal_layers(temporal_idx)
         .ShrinkHRDBuffer(rate_controller_timestamp_);
     if (is_keyframe) {
       software_rate_controller_->EstimateIntraFrameQP(
           rate_controller_timestamp_);
     } else {
       software_rate_controller_->EstimateInterFrameQP(
-          metadata_.svc_generic->temporal_idx, rate_controller_timestamp_);
+          temporal_idx, rate_controller_timestamp_);
     }
-    qp = software_rate_controller_
-             ->temporal_layers(metadata_.svc_generic->temporal_idx)
+    qp = software_rate_controller_->temporal_layers(temporal_idx)
              .curr_frame_qp();
   } else if (options.quantizer.has_value()) {
     qp = options.quantizer.value();
@@ -644,6 +655,14 @@ EncoderStatus D3D12VideoEncodeH265Delegate::InitializeVideoEncoder(
   status = CheckD3D12VideoEncoderSupport(video_device_.Get(), &support);
   if (!status.is_ok()) {
     return status;
+  }
+  if (!std::has_single_bit(
+          resolution_support_limits_.SubregionBlockPixelsSize)) {
+    return {
+        EncoderStatus::Codes::kEncoderUnsupportedConfig,
+        base::StringPrintf(
+            "D3D12VideoEncoder reported invalid SubregionBlockPixelsSize %u",
+            resolution_support_limits_.SubregionBlockPixelsSize)};
   }
   encoder_support_flags_ = support.SupportFlags;
 

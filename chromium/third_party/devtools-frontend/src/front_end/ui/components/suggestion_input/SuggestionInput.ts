@@ -83,7 +83,7 @@ class EditableContent extends HTMLElement {
     this.tabIndex = 0;
 
     this.addEventListener('focus', () => {
-      this.innerHTML = this.innerText;
+      this.textContent = this.innerText;
     });
     this.addEventListener('blur', this.#highlight.bind(this));
   }
@@ -217,21 +217,16 @@ class SuggestionBox extends LitElement {
       return;
     }
 
+    // clang-format off
     return html`<style>${contentEditableStyles}</style><ul class="suggestions">
-      ${this.#suggestions.map((suggestion, index) => {
-      return html`<li
-          class=${classMap({
-        selected: index === this.cursor,
-      })}
-          @mousedown=${this.#dispatchSuggestEvent.bind(this, suggestion)}
-          jslog=${VisualLogging.item('suggestion').track({
-        click: true,
-      })}
-        >
+      ${this.#suggestions.map((suggestion, index) => html`
+        <li class=${classMap({selected: index === this.cursor})}
+            @mousedown=${this.#dispatchSuggestEvent.bind(this, suggestion)}
+            jslog=${VisualLogging.item('suggestion').track({ click: true, resize: true })}>
           ${suggestion}
-        </li>`;
-    })}
+        </li>`)}
     </ul>`;
+    // clang-format on
   }
 }
 

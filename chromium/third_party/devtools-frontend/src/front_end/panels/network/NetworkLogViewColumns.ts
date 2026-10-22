@@ -74,6 +74,10 @@ const UIStrings = {
    */
   url: 'Url',
   /**
+   * @description Column header in the Network log view of the Network panel
+   */
+  requestNumber: 'Request #',
+  /**
    * @description Text for one or a group of functions
    */
   method: 'Method',
@@ -156,7 +160,7 @@ const UIStrings = {
   /**
    * @description Text in Network Log View Columns of the Network panel
    */
-  renderBlocking: 'Render Blocking',
+  renderBlocking: 'Render-blocking',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkLogViewColumns.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -232,13 +236,13 @@ export class NetworkLogViewColumns {
     const title = columnConfig.title instanceof Function ? columnConfig.title() : columnConfig.title;
     return {
       id: columnConfig.id,
-      title,
+      title: title as Common.UIString.LocalizedString,
       sortable: columnConfig.sortable,
       align: columnConfig.align,
       nonSelectable: columnConfig.nonSelectable,
       weight: columnConfig.weight,
       allowInSortByEvenWhenHidden: columnConfig.allowInSortByEvenWhenHidden,
-    } as DataGrid.DataGrid.ColumnDescriptor;
+    };
   }
 
   wasShown(): void {
@@ -281,8 +285,6 @@ export class NetworkLogViewColumns {
     this.#dataGrid = new DataGrid.SortableDataGrid.SortableDataGrid<NetworkNode>(({
       displayName: (i18nString(UIStrings.networkLog) as string),
       columns: this.columns.map(NetworkLogViewColumns.convertToDataGridDescriptor),
-      deleteCallback: undefined,
-      refreshCallback: undefined,
     }));
     this.dataGridScroller = (this.#dataGrid.scrollContainer as HTMLDivElement);
 
@@ -410,7 +412,8 @@ export class NetworkLogViewColumns {
 
   private createWaterfallHeader(): void {
     this.waterfallHeaderElement = this.waterfallColumn.contentElement.createChild('div', 'network-waterfall-header');
-    this.waterfallHeaderElement.setAttribute('jslog', `${VisualLogging.tableHeader('waterfall').track({click: true})}`);
+    this.waterfallHeaderElement.setAttribute(
+        'jslog', `${VisualLogging.tableHeader('waterfall').track({click: true, resize: true})}`);
     this.waterfallHeaderElement.addEventListener('click', waterfallHeaderClicked.bind(this));
     this.waterfallHeaderElement.addEventListener('contextmenu', event => {
       const contextMenu = new UI.ContextMenu.ContextMenu(event);
@@ -994,6 +997,12 @@ const DEFAULT_COLUMNS = [
     sortingFunction: NetworkRequestNode.RequestURLComparator,
   },
   {
+    id: 'request-number',
+    title: i18nLazyString(UIStrings.requestNumber),
+    align: DataGrid.DataGrid.Align.RIGHT,
+    sortingFunction: NetworkRequestNode.RequestNumberComparator,
+  },
+  {
     id: 'method',
     title: i18nLazyString(UIStrings.method),
     sortingFunction: NetworkRequestNode.RequestPropertyComparator.bind(null, 'requestMethod'),
@@ -1242,7 +1251,7 @@ export interface Descriptor {
   hideableGroup: string|null;
   nonSelectable: boolean;
   sortable: boolean;
-  align?: string|null;
+  align?: DataGrid.DataGrid.Align|null;
   isResponseHeader: boolean;
   isRequestHeader: boolean;
   sortingFunction: (arg0: NetworkNode, arg1: NetworkNode) => number | undefined;

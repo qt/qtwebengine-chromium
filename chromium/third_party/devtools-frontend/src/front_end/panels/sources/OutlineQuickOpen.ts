@@ -298,10 +298,6 @@ export class OutlineQuickOpen extends QuickOpen.FilteredListWidget.Provider {
   private items: OutlineItem[] = [];
   private active = false;
 
-  constructor() {
-    super('source-symbol');
-  }
-
   override attach(): void {
     const sourceFrame = this.currentSourceFrame();
     if (sourceFrame) {

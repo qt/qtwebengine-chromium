@@ -4,26 +4,31 @@
 
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 
+#include "base/command_line.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/client/raster_interface.h"
+#include "gpu/command_buffer/client/shared_image_interface.h"
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/config/gpu_feature_info.h"
-#include "gpu/config/gpu_finch_features.h"
-#include "gpu/ipc/client/client_shared_image_interface.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
-#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
 #include "third_party/blink/public/platform/web_url.h"
+#include "third_party/blink/renderer/platform/graphics/gpu/canvas_utils.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/webgraphics_shared_image_interface_provider_impl.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/main_thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 
 namespace blink {
+
+namespace {
+
+}  // namespace
 
 SharedGpuContext* SharedGpuContext::GetInstanceForCurrentThread() {
   DEFINE_THREAD_SAFE_STATIC_LOCAL(ThreadSpecific<SharedGpuContext>,
@@ -249,28 +254,5 @@ bool SharedGpuContext::IsValidWithoutRestoringForTesting() {
   CHECK(raster_interface);
   return raster_interface->GetGraphicsResetStatusKHR() == GL_NO_ERROR;
 }
-
-bool SharedGpuContext::AllowSoftwareToAcceleratedCanvasUpgrade() {
-  SharedGpuContext* this_ptr = GetInstanceForCurrentThread();
-  bool only_if_gpu_compositing = false;
-  this_ptr->CreateContextProviderIfNeeded(only_if_gpu_compositing);
-  if (!this_ptr->context_provider_wrapper_)
-    return false;
-  return !this_ptr->context_provider_wrapper_->ContextProvider()
-              .GetGpuFeatureInfo()
-              .IsWorkaroundEnabled(
-                  gpu::DISABLE_SOFTWARE_TO_ACCELERATED_CANVAS_UPGRADE);
-}
-
-#if BUILDFLAG(IS_ANDROID)
-bool SharedGpuContext::MaySupportImageChromium() {
-  SharedGpuContext* this_ptr = GetInstanceForCurrentThread();
-  if (this_ptr->context_provider_factory_) {
-    // In unit tests, enable support.
-    return true;
-  }
-  return ::features::IsAndroidSurfaceControlEnabled();
-}
-#endif  // BUILDFLAG(IS_ANDROID)
 
 }  // namespace blink

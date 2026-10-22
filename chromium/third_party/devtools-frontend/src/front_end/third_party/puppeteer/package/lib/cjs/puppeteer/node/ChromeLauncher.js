@@ -129,8 +129,7 @@ class ChromeLauncher extends BrowserLauncher_js_1.BrowserLauncher {
             'MediaRouter',
             'OptimizationHints',
             'RenderDocument', // https://crbug.com/444150315
-            'IPH_ReadingModePageActionLabel', // b/479237585
-            'ReadAnythingOmniboxChip', // b/479237585
+            'PartitionAllocSchedulerLoopQuarantineTaskControlledPurge', // https://crbug.com/489314676
             ...(turnOnExperimentalFeaturesForTesting
                 ? []
                 : [
@@ -188,8 +187,13 @@ class ChromeLauncher extends BrowserLauncher_js_1.BrowserLauncher {
             return arg !== '';
         });
         const { devtools = false, headless = !devtools, args = [], userDataDir, enableExtensions = false, } = options;
+        if (process.env['PUPPETEER_DANGEROUS_NO_SANDBOX'] === 'true' &&
+            !args.includes('--no-sandbox')) {
+            chromeArguments.push('--no-sandbox');
+        }
         if (userDataDir) {
-            chromeArguments.push(`--user-data-dir=${node_path_1.default.resolve(userDataDir)}`);
+            // If absolute (for any platform) path is given, we should not resolve it.
+            chromeArguments.push(`--user-data-dir=${node_path_1.default.posix.isAbsolute(userDataDir) || node_path_1.default.win32.isAbsolute(userDataDir) ? userDataDir : node_path_1.default.resolve(userDataDir)}`);
         }
         if (devtools) {
             chromeArguments.push('--auto-open-devtools-for-tabs');

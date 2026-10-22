@@ -92,6 +92,7 @@ EntityInstance GetVehicleEntityInstanceWithRandomGuid(
 
 template <typename = void>
 struct NationalIdCardOptionsT {
+  const char16_t* name = u"Name";
   const char16_t* number = u"987654321";
   const char16_t* country = u"United States";
   const char16_t* issue_date = u"01/12/2020";
@@ -113,6 +114,7 @@ EntityInstance GetNationalIdCardEntityInstance(
 
 template <typename = void>
 struct KnownTravelerNumberOptionsT {
+  const char16_t* name = u"Name";
   const char16_t* number = u"987654321";
   const char16_t* expiration_date = u"01/12/2030";
   std::string_view guid = "00000000-0000-4000-8000-400000000000";
@@ -132,6 +134,7 @@ EntityInstance GetKnownTravelerNumberInstance(
 
 template <typename = void>
 struct RedressNumberOptionsT {
+  const char16_t* name = u"Name";
   const char16_t* number = u"987654321";
   std::string_view guid = "00000000-0000-4000-8000-500000000000";
   std::string_view nickname = "RedressNumber";
@@ -175,6 +178,51 @@ EntityInstance GetFlightReservationEntityInstance(
 
 EntityInstance GetFlightReservationEntityInstanceWithRandomGuid(
     FlightReservationOptions options = {});
+
+template <typename = void>
+struct OrderOptionsT {
+  const char16_t* id = u"12345";
+  const char16_t* account = u"test@gmail.com";
+  const char16_t* date = u"2025-01-15";
+  const char16_t* merchant_name = u"Example";
+  const char16_t* merchant_domain = u"example.com";
+  const char16_t* product_names = u"Product A, Product B";
+  std::string_view guid = "00000000-0000-4000-8000-600000000000";
+  std::string_view nickname = "Order";
+  std::string_view app_locale = "en-US";
+  base::Time date_modified = kJune2017;
+  base::Time use_date = kJune2017;
+  EntityInstance::RecordType record_type =
+      EntityInstance::RecordType::kAccessibilityAnnotator;
+  EntityInstance::AreAttributesReadOnly are_attributes_read_only =
+      EntityInstance::AreAttributesReadOnly(false);
+  int use_count = 0;
+};
+using OrderOptions = OrderOptionsT<>;
+
+EntityInstance GetOrderEntityInstance(OrderOptions options = {});
+
+template <typename = void>
+struct ShipmentOptionsT {
+  const char16_t* tracking_number = u"12345";
+  const char16_t* delivery_zip_code = u"12345";
+  const char16_t* carrier_name = u"Carrier";
+  const char16_t* carrier_domain = u"carrier.com";
+  const char16_t* estimated_delivery_date = u"2025-12-01";
+  std::string_view guid = "00000000-0000-4000-8000-700000000000";
+  std::string_view nickname = "Shipment";
+  std::string_view app_locale = "en-US";
+  base::Time date_modified = kJune2017;
+  base::Time use_date = kJune2017;
+  EntityInstance::RecordType record_type =
+      EntityInstance::RecordType::kAccessibilityAnnotator;
+  EntityInstance::AreAttributesReadOnly are_attributes_read_only =
+      EntityInstance::AreAttributesReadOnly(false);
+  int use_count = 0;
+};
+using ShipmentOptions = ShipmentOptionsT<>;
+
+EntityInstance GetShipmentEntityInstance(ShipmentOptions options = {});
 
 template <typename = void>
 struct EntityOptionsT {

@@ -572,7 +572,9 @@ TEST_F(AutomationTreeManagerOwnerTest, GetBoundsAppIdConstruction) {
     node_data1.role =
         i == 0 ? ax::mojom::Role::kDesktop : ax::mojom::Role::kRootWebArea;
     node_data1.child_ids.push_back(2);
-    node_data1.relative_bounds.bounds = gfx::RectF(100, 100, 100, 100);
+    // The rootWebArea enforces kClipsChildren, so ensure the root bounds
+    // are large enough to contain the child button.
+    node_data1.relative_bounds.bounds = gfx::RectF(100, 100, 200, 200);
     tree_update.nodes.emplace_back();
     auto& node_data2 = tree_update.nodes.back();
     node_data2.id = 2;
@@ -637,7 +639,7 @@ TEST_F(AutomationTreeManagerOwnerTest, GetBoundsNestedAppIdConstruction) {
         i == 0 ? ax::mojom::Role::kDesktop : ax::mojom::Role::kRootWebArea;
     node_data1.child_ids.push_back(2);
     node_data1.child_ids.push_back(3);
-    node_data1.relative_bounds.bounds = gfx::RectF(100, 100, 100, 100);
+    node_data1.relative_bounds.bounds = gfx::RectF(100, 100, 200, 200);
     tree_update.nodes.emplace_back();
     auto& node_data2 = tree_update.nodes.back();
     node_data2.id = 2;
@@ -702,7 +704,7 @@ TEST_F(AutomationTreeManagerOwnerTest, GetBoundsNestedAppIdConstruction) {
 
   // Similar to the button, but not scaled. This does not cross an app id
   // boundary, so is also offset by the parent tree's root (100 + 100).
-  EXPECT_EQ(gfx::Rect(200, 200, 100, 100),
+  EXPECT_EQ(gfx::Rect(200, 200, 200, 200),
             CallComputeGlobalNodeBounds(wrapper_1, wrapper1_root));
 }
 
@@ -996,6 +998,50 @@ TEST_F(AutomationTreeManagerOwnerTest, FireEventsWithListeners) {
   SendOnTreeDestroyedEvent(updates[0].tree_data.tree_id);
 
   EXPECT_TRUE(tree_destroyed);
+}
+
+TEST_F(AutomationTreeManagerOwnerTest, UnserializeFailureClearsCachedTree) {
+  EXPECT_TRUE(GetTreeIDToTreeMap().empty());
+
+  const AXTreeID tree_id = AXTreeID::CreateNewAXTreeID();
+  const int valid_node_id = 1;
+  const int invalid_node_id = 2;
+
+  std::vector<AXTreeUpdate> updates;
+  updates.emplace_back();
+  auto& tree_update = updates.back();
+  auto& tree_data = tree_update.tree_data;
+  tree_data.tree_id = tree_id;
+  tree_update.has_tree_data = true;
+  tree_update.root_id = valid_node_id;
+  tree_update.nodes.emplace_back();
+  auto& node_data = tree_update.nodes.back();
+  node_data.role = ax::mojom::Role::kDesktop;
+  node_data.id = valid_node_id;
+  std::vector<AXEvent> events;
+  SendAccessibilityEvents(tree_id, updates, gfx::Point(), events);
+
+  ASSERT_EQ(1U, GetTreeIDToTreeMap().size());
+
+  updates.clear();
+  updates.emplace_back();
+  auto& bad_update = updates.back();
+  bad_update.has_tree_data = true;
+  bad_update.tree_data.tree_id = tree_id;
+  bad_update.root_id = valid_node_id;
+  bad_update.nodes.emplace_back();
+  auto& bad_node_data = bad_update.nodes.back();
+  bad_node_data.id = valid_node_id;
+  // Adds a non-existent node id.
+  bad_node_data.child_ids.push_back(invalid_node_id);
+
+#if AX_FAIL_FAST_BUILD()
+  EXPECT_DEATH_IF_SUPPORTED(
+      SendAccessibilityEvents(tree_id, updates, gfx::Point(), events), "");
+#else
+  SendAccessibilityEvents(tree_id, updates, gfx::Point(), events);
+  EXPECT_TRUE(GetTreeIDToTreeMap().empty());
+#endif
 }
 
 }  // namespace ui

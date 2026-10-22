@@ -13,12 +13,12 @@
 
 #include "build/build_config.h"
 #include "core/fxcrt/unowned_ptr_exclusion.h"
+#include "core/fxge/cfx_fontmgr.h"
 
 #if BUILDFLAG(IS_APPLE)
 #include "core/fxcrt/span.h"
 #endif
 
-class CFX_FontMgr;
 class SystemFontInfoIface;
 
 class CFX_GEModule {
@@ -29,6 +29,8 @@ class CFX_GEModule {
     virtual ~PlatformIface() = default;
 
     virtual void Init() = 0;
+    virtual void Terminate() = 0;
+
     virtual std::unique_ptr<SystemFontInfoIface>
     CreateDefaultSystemFontInfo() = 0;
 #if BUILDFLAG(IS_APPLE)
@@ -36,7 +38,21 @@ class CFX_GEModule {
 #endif
   };
 
-  static void Create(const char** pUserFontPaths);
+  // This internal definition of renderer types must stay updated with respect
+  // to the public definition of `FPDF_RENDERER_TYPE` in `fpdfview.h`.
+  enum class RendererType {
+    kAgg = 0,
+    kSkia = 1,
+#if defined(PDF_USE_SKIA)
+    kDefault = kSkia,
+#else
+    kDefault = kAgg,
+#endif
+  };
+
+  static void Create(const char** pUserFontPaths,
+                     RendererType renderer_type,
+                     CFX_FontMgr::FontBackend backend);
   static void Destroy();
   static CFX_GEModule* Get();
 
@@ -44,11 +60,20 @@ class CFX_GEModule {
   PlatformIface* GetPlatform() const { return platform_.get(); }
   const char** GetUserFontPaths() const { return user_font_paths_; }
 
+#if defined(PDF_USE_SKIA)
+  // Runtime check to see if Skia is the renderer variant in use.
+  bool UseSkiaRenderer() const { return renderer_type_ == RendererType::kSkia; }
+#endif
+
  private:
-  explicit CFX_GEModule(const char** pUserFontPaths);
+  CFX_GEModule(const char** pUserFontPaths,
+               RendererType renderer_type,
+               CFX_FontMgr::FontBackend backend);
   ~CFX_GEModule();
 
-  std::unique_ptr<PlatformIface> const platform_;
+  const RendererType renderer_type_;
+
+  std::unique_ptr<PlatformIface> const platform_;  // Must outlive `font_mgr_`.
   std::unique_ptr<CFX_FontMgr> const font_mgr_;
 
   // Exclude because taken from public API.

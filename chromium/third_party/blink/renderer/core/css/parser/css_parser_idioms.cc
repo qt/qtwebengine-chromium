@@ -3,11 +3,13 @@
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/core/css/parser/css_parser_idioms.h"
+
 #include "third_party/blink/renderer/core/css/parser/css_tokenizer_input_stream.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/html/parser/input_stream_preprocessor.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_to_number.h"
 
 namespace blink {
 
@@ -26,21 +28,20 @@ UChar32 ConsumeEscape(CSSTokenizerInputStream& input) {
   UChar cc = input.NextInputChar();
   input.Advance();
   DCHECK(!IsCSSNewLine(cc));
-  if (IsASCIIHexDigit(cc)) {
+  if (IsAsciiHexDigit(cc)) {
     unsigned consumed_hex_digits = 1;
     StringBuilder hex_chars;
     hex_chars.Append(cc);
     while (consumed_hex_digits < 6 &&
-           IsASCIIHexDigit(input.PeekWithoutReplacement(0))) {
+           IsAsciiHexDigit(input.PeekWithoutReplacement(0))) {
       cc = input.NextInputChar();
       input.Advance();
       hex_chars.Append(cc);
       consumed_hex_digits++;
     };
     ConsumeSingleWhitespaceIfNext(input);
-    bool ok = false;
-    UChar32 code_point = hex_chars.ReleaseString().HexToUIntStrict(&ok);
-    DCHECK(ok);
+    UChar32 code_point = *HexStringToUint(hex_chars.ReleaseString(),
+                                          NumberParsingOptions::Strict());
     if (code_point == 0 || (0xD800 <= code_point && code_point <= 0xDFFF) ||
         code_point > 0x10FFFF) {
       return kReplacementCharacter;
@@ -59,17 +60,15 @@ String ConsumeName(CSSTokenizerInputStream& input) {
   StringBuilder result;
   while (true) {
     UChar cc = input.NextInputChar();
-    input.Advance();
     if (IsNameCodePoint(cc)) {
+      input.Advance();
       result.Append(cc);
-      continue;
-    }
-    if (TwoCharsAreValidEscape(cc, input.PeekWithoutReplacement(0))) {
+    } else if (TwoCharsAreValidEscape(cc, input.PeekWithoutReplacement(1))) {
+      input.Advance();
       result.Append(ConsumeEscape(input));
-      continue;
+    } else {
+      return result.ReleaseString();
     }
-    input.PushBack(cc);
-    return result.ReleaseString();
   }
 }
 

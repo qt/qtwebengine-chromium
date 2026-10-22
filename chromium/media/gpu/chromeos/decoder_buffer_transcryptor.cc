@@ -111,15 +111,22 @@ void DecoderBufferTranscryptor::DecryptPendingBuffer() {
   // Check if we need to split VP9 superframes.
   auto curr_buffer_span = base::span(*curr_buffer);
   if (needs_vp9_superframe_splitting_ &&
-      Vp9Parser::IsSuperframe(
-          curr_buffer_span.data(),
-          base::checked_cast<off_t>(curr_buffer_span.size()),
-          curr_buffer->decrypt_config())) {
+      Vp9Parser::IsSuperframe(curr_buffer_span,
+                              curr_buffer->decrypt_config())) {
+    const bool secure_handle_already_attached =
+        curr_buffer->side_data() && curr_buffer->side_data()->secure_handle;
+    if (secure_handle_already_attached) {
+      // This should not happen. If a secure handle is already attached, this
+      // buffer must be a previously split sub-frame. If it still parses as a
+      // superframe, it is invalid or a maliciously crafted nested superframe.
+      LOG(ERROR)
+          << "Invalid Vp9 superframe detected (already has secure handle)";
+      OnBufferTranscrypted(Decryptor::kError, nullptr);
+      return;
+    }
     base::circular_deque<Vp9Parser::FrameInfo> frames =
-        Vp9Parser::ExtractFrames(
-            curr_buffer_span.data(),
-            base::checked_cast<off_t>(curr_buffer_span.size()),
-            curr_buffer->decrypt_config());
+        Vp9Parser::ExtractFrames(curr_buffer_span,
+                                 curr_buffer->decrypt_config());
     if (frames.empty()) {
       LOG(ERROR) << "Failure in Vp9 superframe splitting";
       OnBufferTranscrypted(Decryptor::kError, nullptr);
@@ -134,11 +141,8 @@ void DecoderBufferTranscryptor::DecryptPendingBuffer() {
 
     // Put the first frame in place of the |current_transcrypt_task_|'s buffer,
     // then add the rest to the queue.
-    //
-    // TODO(crbug.com/40284755): Use `base::span` in `Vp9Parser::FrameInfo`.
-    current_transcrypt_task_->buffer = DecoderBuffer::CopyFrom(UNSAFE_TODO(
-        base::span(frames.front().ptr.get(),
-                   base::checked_cast<size_t>(frames.front().size))));
+    current_transcrypt_task_->buffer =
+        DecoderBuffer::CopyFrom(frames.front().data);
     curr_buffer = current_transcrypt_task_->buffer.get();
 
     // We only copy this limited set of fields to match what we do in the
@@ -168,9 +172,8 @@ void DecoderBufferTranscryptor::DecryptPendingBuffer() {
     while (!frames.empty()) {
       // The |frames| are in decode order, so we take from the back of |frames|
       // and append to the front of |transcrypt_task_queue_|.
-      scoped_refptr<DecoderBuffer> buffer = DecoderBuffer::CopyFrom(UNSAFE_TODO(
-          base::span(frames.back().ptr.get(),
-                     base::checked_cast<size_t>(frames.back().size))));
+      scoped_refptr<DecoderBuffer> buffer =
+          DecoderBuffer::CopyFrom(frames.back().data);
       buffer->set_timestamp(superframe->timestamp());
       buffer->set_duration(superframe->duration());
       buffer->set_is_key_frame(superframe->is_key_frame());

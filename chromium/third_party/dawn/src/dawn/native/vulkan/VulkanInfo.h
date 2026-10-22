@@ -71,6 +71,7 @@ struct VulkanDeviceKnobs {
     VkPhysicalDeviceRobustness2FeaturesEXT robustness2Features;
     VkPhysicalDeviceSamplerYcbcrConversionFeatures samplerYCbCrConversionFeatures;
     VkPhysicalDeviceShaderSubgroupExtendedTypesFeaturesKHR shaderSubgroupExtendedTypes;
+    VkPhysicalDeviceShaderAtomicInt64Features shaderAtomicInt64Features;
     VkPhysicalDeviceVulkanMemoryModelFeatures vulkanMemoryModelFeatures;
     VkPhysicalDeviceCooperativeMatrixFeaturesKHR cooperativeMatrixFeatures;
     VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures;
@@ -78,6 +79,7 @@ struct VulkanDeviceKnobs {
     VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamicRenderingFeatures;
     VkPhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT
         multisampledRenderToSingleSampledFeatures;
+    VkPhysicalDeviceExtendedDynamicStateFeaturesEXT extendedDynamicStateFeatures;
 
     bool HasExt(DeviceExt ext) const;
     DeviceExtSet extensions;
@@ -96,6 +98,7 @@ struct VulkanDeviceInfo : VulkanDeviceKnobs {
     VkPhysicalDeviceDescriptorIndexingProperties descriptorIndexingProperties;
     VkPhysicalDevicePipelineRobustnessProperties pipelineRobustnessProperties;
     VkPhysicalDeviceMaintenance5Properties propertiesMaintenance5;
+    VkPhysicalDeviceDrmPropertiesEXT drmProperties;
 
     std::vector<VkQueueFamilyProperties> queueFamilies;
     std::vector<VkCooperativeMatrixPropertiesKHR> cooperativeMatrixConfigs;

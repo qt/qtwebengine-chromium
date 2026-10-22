@@ -499,6 +499,7 @@ export class TreeElement {
     this.listItemNode.setAttribute(
         'jslog', `${VisualLogging.treeItem().parent('parentTreeItem').context(jslogContext).track({
           click: true,
+          resize: true,
           keydown: 'ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Backspace|Delete|Enter|Space|Home|End',
         })}`);
     ARIAUtils.markAsTreeitem(this.listItemNode);
@@ -1538,6 +1539,9 @@ class TreeViewTreeElement extends TreeElement {
   static readonly CLONED_ATTRIBUTES = SDK.DOMModel.ARIA_ATTRIBUTES.union(new Set(['jslog']));
   #clonedAttributes = new Set<string>();
   #clonedClasses = new Set<string>();
+  #userExpanded = false;
+  #isProcessingAttribute = false;
+  #previousOpenAttributeValue?: string|null;
 
   static #elementToTreeElement = new WeakMap<Node, TreeViewTreeElement>();
   readonly configElement: HTMLLIElement;
@@ -1549,7 +1553,46 @@ class TreeViewTreeElement extends TreeElement {
     this.refresh();
   }
 
+  override onexpand(): void {
+    if (!this.#isProcessingAttribute) {
+      this.#userExpanded = true;
+    }
+  }
+
+  override oncollapse(): void {
+    if (!this.#isProcessingAttribute) {
+      this.#userExpanded = false;
+    }
+  }
+
+  updateExpansionFromAttribute(): void {
+    this.#isProcessingAttribute = true;
+    try {
+      const openAttr = this.configElement.getAttribute('open');
+      if (openAttr === this.#previousOpenAttributeValue) {
+        return;
+      }
+      this.#previousOpenAttributeValue = openAttr;
+      if (openAttr === null) {
+        if (this.#userExpanded) {
+          this.expand();
+        } else {
+          this.collapse();
+        }
+      } else if (openAttr === 'false') {
+        this.collapse();
+      } else {
+        this.expand();
+      }
+    } finally {
+      this.#isProcessingAttribute = false;
+    }
+  }
+
   refresh(): void {
+    const expandable = Boolean(this.configElement.querySelector('ul[role="group"]'));
+    this.setExpandable(expandable);
+
     this.titleElement.textContent = '';
     this.#clonedAttributes.forEach(attr => this.listItemElement.attributes.removeNamedItem(attr));
     this.#clonedClasses.forEach(className => this.listItemElement.classList.remove(className));
@@ -1566,7 +1609,7 @@ class TreeViewTreeElement extends TreeElement {
       this.listItemElement.classList.add(className);
       this.#clonedClasses.add(className);
     }
-    InterceptBindingDirective.attachEventListeners(this.configElement, this.listItemElement);
+    InterceptBindingDirective.setEventListeners(this.configElement, this.listItemElement);
 
     for (const child of this.configElement.childNodes) {
       if (child instanceof HTMLUListElement && child.role === 'group') {
@@ -1576,6 +1619,7 @@ class TreeViewTreeElement extends TreeElement {
     }
 
     this.hidden = hasBooleanAttribute(this.configElement, 'hidden');
+    this.updateExpansionFromAttribute();
 
     Highlighting.HighlightManager.HighlightManager.instance().apply(this.titleElement);
   }
@@ -1585,7 +1629,9 @@ class TreeViewTreeElement extends TreeElement {
   }
 
   remove(): void {
-    removeNode(this);
+    removeNode(
+        this,
+        Boolean(this.parent && (this.parent as TreeViewTreeElement).configElement?.querySelector('ul[role="group"]')));
     TreeViewTreeElement.#elementToTreeElement.delete(this.configElement);
   }
 }
@@ -1623,11 +1669,13 @@ function getStyleElements(nodes: NodeList|Node[]): HTMLElement[] {
   });
 }
 
-function removeNode(node: TreeElement): void {
+function removeNode(node: TreeElement, preserveParentExpandable = false): void {
   const parent = node.parent;
   if (parent) {
     parent.removeChild(node);
-    parent.setExpandable(parent.children().length > 0);
+    if (!preserveParentExpandable) {
+      parent.setExpandable(parent.children().length > 0);
+    }
   }
 }
 
@@ -1648,9 +1696,16 @@ function removeNode(node: TreeElement): void {
  *          <ul role="group">
  *            Node with subtree
  *            <li role="treeitem" jslog-context="context">
- *              <ul role="group" hidden>
+ *              <ul role="group">
  *                <li role="treeitem">Tree Node Text in collapsed subtree</li>
  *                <li role="treeitem">Tree Node Text in collapsed subtree</li>
+ *              </ul>
+ *           </li>
+ *           <li role="treeitem" open>
+ *             Tree Node Text in expanded subtree
+ *              <ul role="group">
+ *                <li role="treeitem">Tree Node Text in expanded subtree</li>
+ *                <li role="treeitem">Tree Node Text in expanded subtree</li>
  *              </ul>
  *           </li>
  *           <li selected role="treeitem">Tree Node Text in a selected-by-default node</li>
@@ -1662,8 +1717,8 @@ function removeNode(node: TreeElement): void {
  *
  * ```
  * where a <li role="treeitem"> element defines a tree node and its contents (the <li> is the `config element` for this
- * tree node). If a tree node contains a <ul role="group">, that defines a subtree under that tree node. The `hidden`
- * attribute on the <ul> defines whether that subtree should render as collapsed. Note that node expanding/collapsing do
+ * tree node). If a tree node contains a <ul role="group">, that defines a subtree under that tree node. The `open`
+ * attribute on the <li> defines whether that subtree should render as expanded. Note that node expanding/collapsing do
  * not reflect this state back to the attribute on the config element, those state changes are rather sent out as
  * `expand` events on the config element.
  *
@@ -1674,7 +1729,7 @@ function removeNode(node: TreeElement): void {
  * - `selected`: Whether the tree node should be rendered as selected.
  * - `jslog-context`: The jslog context for the tree element.
  * - `aria-*`: All aria attributes defined on the config element are cloned over.
- * - `hidden`: On the <ul>, declares whether the subtree should be rendererd as expanded or collapsed.
+ * - `open`: On the <li>, declares whether the subtree should be rendererd as expanded or collapsed.
  *
  * ## Event Handling ##
  *
@@ -1704,7 +1759,7 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
     super();
     this.#treeOutline.addEventListener(Events.ElementSelected, event => {
       if (event.data instanceof TreeViewTreeElement) {
-        this.dispatchEvent(new TreeViewElement.SelectEvent(event.data.configElement));
+        event.data.listItemElement.dispatchEvent(new TreeViewElement.SelectEvent());
       }
     });
     this.#treeOutline.addEventListener(Events.ElementExpanded, event => {
@@ -1724,20 +1779,21 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
     return this.#treeOutline;
   }
 
-  #getParentTreeElement(element: HTMLLIElement|TreeElementWrapper): {treeElement: TreeElement, expanded: boolean}|null {
+  #getParentTreeElement(element: HTMLLIElement|TreeElementWrapper):
+      {treeElement: TreeElement, expanded: boolean, classes: DOMTokenList}|null {
     const subtreeRoot = element.parentElement;
     if (!(subtreeRoot instanceof HTMLUListElement)) {
       return null;
     }
     if (subtreeRoot.role === 'tree') {
-      return {treeElement: this.#treeOutline.rootElement(), expanded: false};
+      return {treeElement: this.#treeOutline.rootElement(), expanded: false, classes: subtreeRoot.classList};
     }
     if (subtreeRoot.role !== 'group' || !subtreeRoot.parentElement) {
       return null;
     }
-    const expanded = !hasBooleanAttribute(subtreeRoot, 'hidden');
     const treeElement = TreeViewTreeElement.get(subtreeRoot.parentElement);
-    return treeElement ? {expanded, treeElement} : null;
+    const expanded = treeElement ? treeElement.expanded : hasBooleanAttribute(subtreeRoot.parentElement, 'open');
+    return treeElement ? {expanded, treeElement, classes: subtreeRoot.classList} : null;
   }
 
   protected override updateNode(node: Node, attributeName: string|null): void {
@@ -1756,12 +1812,8 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
     if (node === treeNode && attributeName === 'selected' && hasBooleanAttribute(treeNode, 'selected')) {
       treeElement.revealAndSelect(true);
     }
-    if (attributeName === 'hidden' && node instanceof HTMLUListElement && node.role === 'group') {
-      if (hasBooleanAttribute(node, 'hidden')) {
-        treeElement.collapse();
-      } else {
-        treeElement.expand();
-      }
+    if (node === treeNode && attributeName === 'open') {
+      treeElement.updateExpansionFromAttribute();
     }
   }
 
@@ -1774,6 +1826,9 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
       if (!parent) {
         continue;
       }
+      if (parent.treeElement.childCount() === 0) {
+        parent.treeElement.childrenListElement.classList.add(...parent.classes.values());
+      }
       while (nextSibling && nextSibling.nodeType !== Node.ELEMENT_NODE) {
         nextSibling = nextSibling.nextSibling;
       }
@@ -1784,6 +1839,7 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
         treeElement = new TreeViewTreeElement(this.#treeOutline, node);
         const expandable = Boolean(node.querySelector('ul[role="group"]'));
         treeElement.setExpandable(expandable);
+        treeElement.updateExpansionFromAttribute();
       } else {
         treeElement = node.treeElement;
       }
@@ -1810,7 +1866,11 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
       if (node instanceof HTMLLIElement) {
         TreeViewTreeElement.get(node)?.remove();
       } else if (node.treeElement) {
-        removeNode(node.treeElement);
+        removeNode(
+            node.treeElement,
+            Boolean(
+                node.treeElement.parent &&
+                (node.treeElement.parent as TreeViewTreeElement).configElement?.querySelector('ul[role="group"]')));
       }
     }
   }
@@ -1859,9 +1919,9 @@ export class TreeViewElement extends HTMLElementWithLightDOMTemplate {
 }
 
 export namespace TreeViewElement {
-  export class SelectEvent extends CustomEvent<HTMLLIElement> {
-    constructor(detail: HTMLLIElement) {
-      super('select', {detail});
+  export class SelectEvent extends CustomEvent<void> {
+    constructor() {
+      super('select');
     }
   }
 
@@ -1871,6 +1931,45 @@ export namespace TreeViewElement {
     }
   }
 }
+
+export const ifExpanded = Lit.Directive.directive(class extends Lit.Directive.Directive {
+  #partInfo: {type: Lit.Directive.PartType, startNode: Node};
+  constructor(partInfo: Lit.Directive.PartInfo) {
+    if (partInfo.type !== Lit.Directive.PartType.CHILD) {
+      throw new Error('ifExpanded directive must be used in a child node');
+    }
+    super(partInfo);
+    this.#partInfo = partInfo as {type: Lit.Directive.PartType, startNode: Node};
+  }
+
+  render(content: Lit.LitTemplate|Iterable<Lit.LitTemplate>): Lit.LitTemplate|Iterable<Lit.LitTemplate> {
+    return this.#isInExpandedRow(this.#partInfo.startNode) ? content : Lit.nothing;
+  }
+
+  #isInExpandedRow(element: Node|null|undefined): boolean {
+    if (!element) {
+      return false;
+    }
+    if (!(element instanceof HTMLElement)) {
+      element = element.parentNode;
+    }
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+    element = element.closest('li[role="treeitem"]') ?? undefined;
+    if (!(element instanceof HTMLLIElement)) {
+      return false;
+    }
+    if (hasBooleanAttribute(element, 'open')) {
+      return true;
+    }
+    const node = TreeViewTreeElement.get(element);
+    if (!node) {
+      return false;
+    }
+    return node.expanded;
+  }
+});
 
 export class TreeElementWrapper extends HTMLElement {
   #treeElement?: TreeElement;

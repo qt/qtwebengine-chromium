@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/inspector/inspector_css_parser_observer.h"
 
+#include "base/compiler_specific.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/execution_context/security_context.h"
@@ -167,22 +168,23 @@ CSSRuleSourceData* InspectorCSSParserObserver::PopRuleData() {
 
 namespace {
 
-wtf_size_t FindColonIndex(const String& property_string) {
+wtf_size_t FindColonIndex(const StringView& property_string) {
   for (wtf_size_t index = 0;
        index != kNotFound && index < property_string.length(); index++) {
-    if (property_string[index] == '\\') {
+    // SAFETY: index checked in loop body.
+    if (UNSAFE_BUFFERS(property_string[index]) == '\\') {
       // Next character is escaped, skip over it.
       index++;
-    } else if (property_string[index] == ':') {
+    } else if (UNSAFE_BUFFERS(property_string[index]) == ':') {
       return index;
     } else if (index < property_string.length() - 1 &&
-               property_string[index] == '/' &&
-               property_string[index + 1 == '*']) {
+               UNSAFE_BUFFERS(property_string[index]) == '/' &&
+               UNSAFE_BUFFERS(property_string[index + 1]) == '*') {
       if (index >= property_string.length() - 2) {
         return kNotFound;
       }
       // We're in a comment inside the property name, skip past it.
-      index = property_string.Find("*/", index + 2);
+      index = property_string.find("*/", index + 2);
       if (index != kNotFound) {
         // "*/" are two characters. Advance one more than the for-loop.
         index++;
@@ -216,19 +218,23 @@ void InspectorCSSParserObserver::ObserveProperty(unsigned start_offset,
   }
 
   DCHECK_LT(start_offset, end_offset);
-  String property_string =
-      parsed_text_.Substring(start_offset, end_offset - start_offset)
+  StringView property_string =
+      parsed_text_
+          .subview(std::min(start_offset, parsed_text_.length()),
+                   end_offset - start_offset)
           .StripWhiteSpace();
-  if (property_string.EndsWith(';')) {
-    property_string = property_string.Left(property_string.length() - 1);
+  if (property_string.ends_with(';')) {
+    property_string.remove_suffix(1);
   }
   wtf_size_t colon_index = FindColonIndex(property_string);
   DCHECK_NE(colon_index, kNotFound);
 
-  String name = property_string.Left(colon_index).StripWhiteSpace();
+  String name =
+      property_string.subview(0, colon_index).StripWhiteSpace().ToString();
   String value =
-      property_string.Substring(colon_index + 1, property_string.length())
-          .StripWhiteSpace();
+      property_string.subview(colon_index + 1, property_string.length())
+          .StripWhiteSpace()
+          .ToString();
   current_rule_data_stack_.back()->property_data.push_back(
       CSSPropertySourceData(name, value, is_important, false, is_parsed,
                             SourceRange(start_offset, end_offset)));
@@ -259,15 +265,15 @@ void InspectorCSSParserObserver::ObserveComment(unsigned start_offset,
   String comment_text =
       parsed_text_.Substring(start_offset, end_offset - start_offset);
 
-  DCHECK(comment_text.StartsWith("/*"));
+  DCHECK(comment_text.starts_with("/*"));
   comment_text = comment_text.Substring(2);
 
   // Require well-formed comments.
-  if (!comment_text.EndsWith("*/")) {
+  if (!comment_text.ends_with("*/")) {
     return;
   }
   comment_text =
-      comment_text.Substring(0, comment_text.length() - 2).StripWhiteSpace();
+      comment_text.substr(0, comment_text.length() - 2).StripWhiteSpace();
   if (comment_text.empty()) {
     return;
   }
@@ -284,18 +290,17 @@ void InspectorCSSParserObserver::ObserveComment(unsigned start_offset,
     return;
   }
   CSSPropertySourceData& property_data = comment_property_data.at(0);
-  bool parsed_ok = property_data.parsed_ok ||
-                   property_data.name.StartsWith("-moz-") ||
-                   property_data.name.StartsWith("-o-") ||
-                   property_data.name.StartsWith("-webkit-") ||
-                   property_data.name.StartsWith("-ms-");
+  const String& name = property_data.name;
+  bool parsed_ok = property_data.parsed_ok || name.starts_with("-moz-") ||
+                   name.starts_with("-o-") || name.starts_with("-webkit-") ||
+                   name.starts_with("-ms-");
   if (!parsed_ok || property_data.range.length() != comment_text.length()) {
     return;
   }
 
   current_rule_data_stack_.back()->property_data.push_back(
-      CSSPropertySourceData(property_data.name, property_data.value, false,
-                            true, true, SourceRange(start_offset, end_offset)));
+      CSSPropertySourceData(name, property_data.value, false, true, true,
+                            SourceRange(start_offset, end_offset)));
 }
 
 static OrdinalNumber AddOrdinalNumbers(OrdinalNumber a, OrdinalNumber b) {

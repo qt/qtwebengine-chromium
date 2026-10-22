@@ -25,7 +25,6 @@ devtools_ui_module("components") {
     "EditableSpan.ts",
     "HeaderSectionRow.ts",
     "RequestHeaderSection.ts",
-    "RequestHeadersView.ts",
     "RequestTrustTokensView.ts",
     "ResponseHeaderSection.ts",
   ]
@@ -82,7 +81,6 @@ devtools_ui_module("unittests") {
     "DirectSocketConnectionView.test.ts",
     "HeaderSectionRow.test.ts",
     "RequestHeaderSection.test.ts",
-    "RequestHeadersView.test.ts",
     "RequestTrustTokensView.test.ts",
     "ResponseHeaderSection.test.ts",
   ]

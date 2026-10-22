@@ -2390,21 +2390,24 @@ void GLES2TraceImplementation::ProvokingVertexANGLE(GLenum provokeMode) {
 
 void GLES2TraceImplementation::FramebufferMemorylessPixelLocalStorageANGLE(
     GLint plane,
-    GLenum internalformat) {
+    GLenum internalformat,
+    GLbitfield usage) {
   TRACE_EVENT_BINARY_EFFICIENT0(
       "gpu", "GLES2Trace::FramebufferMemorylessPixelLocalStorageANGLE");
-  gl_->FramebufferMemorylessPixelLocalStorageANGLE(plane, internalformat);
+  gl_->FramebufferMemorylessPixelLocalStorageANGLE(plane, internalformat,
+                                                   usage);
 }
 
 void GLES2TraceImplementation::FramebufferTexturePixelLocalStorageANGLE(
     GLint plane,
     GLuint backingtexture,
     GLint level,
-    GLint layer) {
+    GLint layer,
+    GLbitfield usage) {
   TRACE_EVENT_BINARY_EFFICIENT0(
       "gpu", "GLES2Trace::FramebufferTexturePixelLocalStorageANGLE");
   gl_->FramebufferTexturePixelLocalStorageANGLE(plane, backingtexture, level,
-                                                layer);
+                                                layer, usage);
 }
 
 void GLES2TraceImplementation::FramebufferPixelLocalClearValuefvANGLE(
@@ -2446,6 +2449,12 @@ void GLES2TraceImplementation::EndPixelLocalStorageANGLE(
   gl_->EndPixelLocalStorageANGLE(count, storeops);
 }
 
+void GLES2TraceImplementation::EndPixelLocalStorageImplicitANGLE() {
+  TRACE_EVENT_BINARY_EFFICIENT0(
+      "gpu", "GLES2Trace::EndPixelLocalStorageImplicitANGLE");
+  gl_->EndPixelLocalStorageImplicitANGLE();
+}
+
 void GLES2TraceImplementation::PixelLocalStorageBarrierANGLE() {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu",
                                 "GLES2Trace::PixelLocalStorageBarrierANGLE");
@@ -2480,6 +2489,15 @@ void GLES2TraceImplementation::GetFramebufferPixelLocalStorageParameterivANGLE(
   TRACE_EVENT_BINARY_EFFICIENT0(
       "gpu", "GLES2Trace::GetFramebufferPixelLocalStorageParameterivANGLE");
   gl_->GetFramebufferPixelLocalStorageParameterivANGLE(plane, pname, params);
+}
+
+void GLES2TraceImplementation::GetFramebufferPixelLocalStorageParameteruivANGLE(
+    GLint plane,
+    GLenum pname,
+    GLuint* params) {
+  TRACE_EVENT_BINARY_EFFICIENT0(
+      "gpu", "GLES2Trace::GetFramebufferPixelLocalStorageParameteruivANGLE");
+  gl_->GetFramebufferPixelLocalStorageParameteruivANGLE(plane, pname, params);
 }
 
 void GLES2TraceImplementation::ClipControlEXT(GLenum origin, GLenum depth) {

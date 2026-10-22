@@ -24,7 +24,5 @@ if (current_toolchain == host_toolchain) {
       "sema.cc",
       "sema.h",
     ]
-
-    deps = [ "../../third_party/abseil" ]
   }
 }

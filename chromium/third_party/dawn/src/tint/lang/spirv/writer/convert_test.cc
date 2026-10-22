@@ -67,7 +67,8 @@ TEST_P(Convert, Scalar) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = " + params.spirv_inst + " %" + params.spirv_type_name + " %arg");
 }
 TEST_P(Convert, Vector) {
@@ -86,7 +87,8 @@ TEST_P(Convert, Vector) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = " + params.spirv_inst + " %v2" + params.spirv_type_name + " %arg");
 }
 INSTANTIATE_TEST_SUITE_P(SpirvWriterTest,
@@ -136,7 +138,8 @@ TEST_F(SpirvWriterTest, Convert_Mat2x3_F16_to_F32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %11 = OpCompositeExtract %v3half %arg 0
          %12 = OpFConvert %v3float %11
@@ -161,7 +164,8 @@ TEST_F(SpirvWriterTest, Convert_Mat4x2_F32_to_F16) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %11 = OpCompositeExtract %v2float %arg 0
          %12 = OpFConvert %v2half %11
@@ -190,7 +194,8 @@ TEST_F(SpirvWriterTest, Convert_F32_to_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                ; Function foo
         %foo = OpFunction %int None %5
@@ -233,7 +238,8 @@ TEST_F(SpirvWriterTest, Convert_F32_to_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                ; Function foo
         %foo = OpFunction %uint None %5
@@ -276,7 +282,8 @@ TEST_F(SpirvWriterTest, Convert_F16_to_I32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                ; Function foo
         %foo = OpFunction %int None %5
@@ -319,7 +326,8 @@ TEST_F(SpirvWriterTest, Convert_F16_to_U32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                ; Function foo
         %foo = OpFunction %uint None %5
@@ -362,7 +370,8 @@ TEST_F(SpirvWriterTest, Convert_F32_to_I32_Vec2) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %20 = OpExtInstImport "GLSL.std.450"
                OpMemoryModel Logical GLSL450
@@ -433,7 +442,8 @@ TEST_F(SpirvWriterTest, Convert_F32_to_U32_Vec3) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %20 = OpExtInstImport "GLSL.std.450"
                OpMemoryModel Logical GLSL450
@@ -502,7 +512,8 @@ TEST_F(SpirvWriterTest, Convert_F16_to_I32_Vec2) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
                OpCapability Float16
                OpCapability StorageBuffer16BitAccess
@@ -575,7 +586,8 @@ TEST_F(SpirvWriterTest, Convert_F16_to_U32_Vec4) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(Shader
                OpCapability Float16
                OpCapability StorageBuffer16BitAccess

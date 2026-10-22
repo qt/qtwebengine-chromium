@@ -35,16 +35,15 @@
 
 #include "dawn/common/FutureUtils.h"
 #include "dawn/common/NonCopyable.h"
-#include "partition_alloc/pointers/raw_ptr.h"
-
+#include "dawn/native/DeviceGuard.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/Forward.h"
 #include "dawn/native/IntegerTypes.h"
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/SharedBufferMemory.h"
 #include "dawn/native/UsageValidationMode.h"
-
 #include "dawn/native/dawn_platform.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native {
 
@@ -55,20 +54,20 @@ ResultOrError<UnpackedPtr<BufferDescriptor>> ValidateBufferDescriptor(
     DeviceBase* device,
     const BufferDescriptor* descriptor);
 
-static constexpr wgpu::BufferUsage kReadOnlyBufferUsages =
+inline constexpr wgpu::BufferUsage kReadOnlyBufferUsages =
     wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::Index |
     wgpu::BufferUsage::Vertex | wgpu::BufferUsage::Uniform | kReadOnlyTexelBuffer |
     kReadOnlyStorageBuffer | kIndirectBufferForFrontendValidation |
     kIndirectBufferForBackendResourceTracking;
 
-static constexpr wgpu::BufferUsage kMappableBufferUsages =
+inline constexpr wgpu::BufferUsage kMappableBufferUsages =
     wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite;
 
-static constexpr wgpu::BufferUsage kShaderBufferUsages =
+inline constexpr wgpu::BufferUsage kShaderBufferUsages =
     wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage | wgpu::BufferUsage::TexelBuffer |
     kInternalStorageBuffer | kReadOnlyStorageBuffer | kReadOnlyTexelBuffer;
 
-static constexpr wgpu::BufferUsage kReadOnlyShaderBufferUsages =
+inline constexpr wgpu::BufferUsage kReadOnlyShaderBufferUsages =
     kShaderBufferUsages & kReadOnlyBufferUsages;
 
 // Return the actual internal buffer usages that will be used to create a buffer.
@@ -102,7 +101,7 @@ class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
 
         explicit ScopedUseBuffer(BufferBase* buffer);
 
-        BufferBase* mBuffer = nullptr;
+        raw_ptr<BufferBase> mBuffer = nullptr;
     };
 
     // TODO(crbug.com/467247254): See if ConcurrentAccessGuard<T> can be used be implemented and
@@ -217,6 +216,10 @@ class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
   private:
     class MapAsyncEvent;
 
+    // TODO(crbug.com/481211676): Remove this once all backends' DestroyImpl methods are
+    // thread-safe.
+    virtual std::optional<DeviceGuard> UseDeviceGuardForDestroy();
+
     virtual MaybeError MapAtCreationImpl() = 0;
 
     // Performs backend specific work to start mapping. The device mutex is not locked when this is
@@ -262,7 +265,7 @@ class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
     // until after `mPendingMapEvent` is reset and potential race is averted.
     // Note: MutexProtected isn't used here due to Use() providing MapAsyncEvent* instead of
     // Ref<MapAsyncEvent> which doesn't allow resetting the Ref.
-    Mutex mPendingMapMutex;
+    RecursiveMutex mPendingMapMutex;
     Ref<MapAsyncEvent> mPendingMapEvent;
 
     // Track texel buffer views created from this buffer so they can be destroyed when the buffer is
@@ -307,7 +310,8 @@ class BufferBase : public SharedResource, public WeakRefSupport<BufferBase> {
     wgpu::MapMode mMapMode = wgpu::MapMode::None;
     size_t mMapOffset = 0;
     size_t mMapSize = 0;
-    void* mMappedPointer = nullptr;
+    // TODO(crbug.com/485825675): Investigate this dangling pointers.
+    raw_ptr<void, DanglingUntriaged> mMappedPointer = nullptr;
 };
 
 }  // namespace dawn::native

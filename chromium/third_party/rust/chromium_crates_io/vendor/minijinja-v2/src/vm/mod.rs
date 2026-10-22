@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::mem;
 
@@ -10,9 +11,11 @@ use crate::compiler::instructions::{
 use crate::environment::Environment;
 use crate::error::{Error, ErrorKind};
 use crate::output::{CaptureMode, Output};
-use crate::utils::{untrusted_size_hint, AutoEscape, UndefinedBehavior};
+use crate::utils::{untrusted_size_hint, write_escaped, AutoEscape, UndefinedBehavior};
 use crate::value::namespace_object::Namespace;
-use crate::value::{ops, value_map_with_capacity, Kwargs, ObjectRepr, Value, ValueMap};
+use crate::value::{
+    ops, value_map_with_capacity, Kwargs, ObjectRepr, UndefinedType, Value, ValueMap, ValueRepr,
+};
 use crate::vm::context::{Frame, Stack};
 use crate::vm::loop_object::{Loop, LoopState};
 use crate::vm::state::BlockStack;
@@ -73,6 +76,16 @@ where
     }
 }
 
+fn normalize_filter_test_name(name: &str) -> Cow<'_, str> {
+    if name.as_bytes().iter().any(|b| b.is_ascii_whitespace()) {
+        let mut normalized = String::with_capacity(name.len());
+        normalized.extend(name.chars().filter(|c| !c.is_ascii_whitespace()));
+        Cow::Owned(normalized)
+    } else {
+        Cow::Borrowed(name)
+    }
+}
+
 impl<'env> Vm<'env> {
     /// Creates a new VM.
     pub fn new(env: &'env Environment<'env>) -> Vm<'env> {
@@ -123,7 +136,7 @@ impl<'env> Vm<'env> {
             &mut State {
                 ctx,
                 current_block: None,
-                auto_escape: state.auto_escape(),
+                auto_escape: std::cell::Cell::new(state.auto_escape()),
                 instructions,
                 blocks: BTreeMap::default(),
                 temps: state.temps.clone(),
@@ -181,8 +194,12 @@ impl<'env> Vm<'env> {
         mut stack: Stack,
         mut pc: u32,
     ) -> Result<Option<Value>, Error> {
-        let initial_auto_escape = state.auto_escape;
+        let initial_auto_escape = state.auto_escape.get();
         let undefined_behavior = state.undefined_behavior();
+        let strict_undefined = matches!(
+            undefined_behavior,
+            UndefinedBehavior::Strict | UndefinedBehavior::SemiStrict
+        );
         let mut auto_escape_stack = vec![];
         let mut next_loop_recursion_jump = None;
         let mut loaded_filters = [None; MAX_LOCALS];
@@ -314,7 +331,17 @@ impl<'env> Vm<'env> {
                     ok!(out.write_str(val).map_err(Error::from));
                 }
                 Instruction::Emit => {
-                    ctx_ok!(self.env.format(&stack.pop(), state, out));
+                    let value = stack.pop();
+                    if self.env.is_default_formatter() {
+                        if strict_undefined
+                            && matches!(value.0, ValueRepr::Undefined(UndefinedType::Default))
+                        {
+                            bail!(Error::from(ErrorKind::UndefinedError));
+                        }
+                        ctx_ok!(write_escaped(out, state.auto_escape.get(), &value));
+                    } else {
+                        ctx_ok!(self.env.format(&value, state, out));
+                    }
                 }
                 Instruction::StoreLocal(name) => {
                     state.ctx.store(name, stack.pop());
@@ -462,7 +489,7 @@ impl<'env> Vm<'env> {
                     if let Some((target, end_capture)) = l.current_recursion_jump.take() {
                         pc = target;
                         if end_capture {
-                            stack.push(out.end_capture(state.auto_escape));
+                            stack.push(out.end_capture(state.auto_escape.get()));
                         }
                         continue;
                     }
@@ -519,27 +546,30 @@ impl<'env> Vm<'env> {
                 }
                 Instruction::PushAutoEscape => {
                     a = stack.pop();
-                    auto_escape_stack.push(state.auto_escape);
-                    state.auto_escape = ctx_ok!(self.derive_auto_escape(a, initial_auto_escape));
+                    auto_escape_stack.push(state.auto_escape.get());
+                    state
+                        .auto_escape
+                        .set(ctx_ok!(self.derive_auto_escape(a, initial_auto_escape)));
                 }
                 Instruction::PopAutoEscape => {
-                    state.auto_escape = auto_escape_stack.pop().unwrap();
+                    state.auto_escape.set(auto_escape_stack.pop().unwrap());
                 }
                 Instruction::BeginCapture(mode) => {
                     out.begin_capture(*mode);
                 }
                 Instruction::EndCapture => {
-                    stack.push(out.end_capture(state.auto_escape));
+                    stack.push(out.end_capture(state.auto_escape.get()));
                 }
                 Instruction::ApplyFilter(name, arg_count, local_id) => {
+                    let normalized_name = normalize_filter_test_name(name);
                     let filter =
                         ctx_ok!(get_or_lookup_local(&mut loaded_filters, *local_id, || {
-                            state.env().get_filter(name)
+                            state.env().get_filter(normalized_name.as_ref())
                         })
                         .ok_or_else(|| {
                             Error::new(
                                 ErrorKind::UnknownFilter,
-                                format!("filter {name} is unknown"),
+                                format!("filter {} is unknown", normalized_name.as_ref()),
                             )
                         }));
                     let args = stack.get_call_args(*arg_count);
@@ -549,11 +579,15 @@ impl<'env> Vm<'env> {
                     stack.push(a);
                 }
                 Instruction::PerformTest(name, arg_count, local_id) => {
+                    let normalized_name = normalize_filter_test_name(name);
                     let test = ctx_ok!(get_or_lookup_local(&mut loaded_tests, *local_id, || {
-                        state.env().get_test(name)
+                        state.env().get_test(normalized_name.as_ref())
                     })
                     .ok_or_else(|| {
-                        Error::new(ErrorKind::UnknownTest, format!("test {name} is unknown"))
+                        Error::new(
+                            ErrorKind::UnknownTest,
+                            format!("test {} is unknown", normalized_name.as_ref()),
+                        )
                     }));
                     let args = stack.get_call_args(*arg_count);
                     let arg_count = args.len();
@@ -777,7 +811,7 @@ impl<'env> Vm<'env> {
             };
 
             let (new_instructions, new_blocks) = ok!(tmpl.instructions_and_blocks());
-            let old_escape = mem::replace(&mut state.auto_escape, tmpl.initial_auto_escape());
+            let old_escape = state.auto_escape.replace(tmpl.initial_auto_escape());
             let old_instructions = mem::replace(&mut state.instructions, new_instructions);
             let old_blocks = mem::replace(&mut state.blocks, prepare_blocks(new_blocks));
             // we need to make a copy of the loaded templates here as we want
@@ -798,7 +832,7 @@ impl<'env> Vm<'env> {
             }
             state.ctx.decr_depth(INCLUDE_RECURSION_COST);
             state.loaded_templates = old_loaded_templates;
-            state.auto_escape = old_escape;
+            state.auto_escape.set(old_escape);
             state.instructions = old_instructions;
             state.blocks = old_blocks;
             ok!(rv.map_err(|err| {
@@ -863,7 +897,7 @@ impl<'env> Vm<'env> {
             Error::new(ErrorKind::EvalBlock, "error in super block").with_source(err)
         }));
         if capture {
-            Ok(out.end_capture(state.auto_escape))
+            Ok(out.end_capture(state.auto_escape.get()))
         } else {
             Ok(Value::UNDEFINED)
         }

@@ -19,7 +19,6 @@
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_detector.h"
 #include "third_party/blink/renderer/core/paint/timing/paint_timing_record.h"
 #include "third_party/blink/renderer/core/paint/timing/text_paint_timing_detector.h"
-#include "third_party/blink/renderer/core/timing/navigation_id_generator.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/traced_value.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
@@ -131,13 +130,12 @@ void LargestContentfulPaintCalculator::UpdateWebExposedLargestContentfulImage(
     return;
   }
 
-  largest_image_bpp_ = largest_image.EntropyForLCP();
   largest_reported_size_ = largest_image.RecordedSize();
   const KURL& url = media_timing->Url();
   const String& image_string = url.GetString();
   const String& image_url =
       url.ProtocolIsData()
-          ? image_string.Left(ImageElementTiming::kInlineImageMaxChars)
+          ? image_string.substr(0, ImageElementTiming::kInlineImageMaxChars)
           : image_string;
   // Do not expose element attribution from shadow trees.
   Element* image_element =
@@ -279,7 +277,7 @@ bool LargestContentfulPaintCalculator::
     // Set cross-origin flag of the image.
     if (auto* window = window_performance_->DomWindow()) {
       auto image_url = timing->Url();
-      if (!image_url.IsEmpty() && image_url.ProtocolIsInHTTPFamily() &&
+      if (!image_url.IsEmpty() && image_url.ProtocolIsInHttpFamily() &&
           window->GetFrame()->IsOutermostMainFrame()) {
         auto image_origin = SecurityOrigin::Create(image_url);
         if (!image_origin->IsSameOriginWith(window->GetSecurityOrigin())) {

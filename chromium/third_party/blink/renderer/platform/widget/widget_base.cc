@@ -577,9 +577,10 @@ void WidgetBase::WasHidden() {
   client_->WasHidden();
 }
 
-void WidgetBase::WasShown(bool was_evicted,
-                          mojom::blink::RecordContentToVisibleTimeRequestPtr
-                              record_tab_switch_time_request) {
+void WidgetBase::WasShown(
+    bool was_evicted,
+    const std::optional<RecordContentToVisibleTimeRequest>&
+        record_tab_switch_time_request) {
   // The frame must be attached to the frame tree (which makes it no longer
   // provisional) before changing visibility.
   DCHECK(!IsForProvisionalFrame());
@@ -591,41 +592,26 @@ void WidgetBase::WasShown(bool was_evicted,
 
   if (record_tab_switch_time_request) {
     LayerTreeHost()->RequestSuccessfulPresentationTimeForNextFrame(
-        tab_switch_time_recorder_.TabWasShown(
-            false /* has_saved_frames */,
-            record_tab_switch_time_request->event_start_time,
-            record_tab_switch_time_request->destination_is_loaded,
-            record_tab_switch_time_request->show_reason_tab_switching,
-            record_tab_switch_time_request->show_reason_bfcache_restore));
+        tab_switch_time_recorder_.TabWasShown(false /* has_saved_frames */,
+                                              *record_tab_switch_time_request));
   }
 
   client_->WasShown(was_evicted);
 }
 
 void WidgetBase::RequestSuccessfulPresentationTimeForNextFrame(
-    mojom::blink::RecordContentToVisibleTimeRequestPtr visible_time_request) {
-  DCHECK(visible_time_request);
+    const RecordContentToVisibleTimeRequest& visible_time_request) {
   if (is_hidden_) {
     return;
   }
   TRACE_EVENT0("renderer",
                "WidgetBase::RequestSuccessfulPresentationTimeForNextFrame");
 
-  if (visible_time_request->show_reason_unfolding) {
-    LayerTreeHost()->RequestSuccessfulPresentationTimeForNextFrame(
-        tab_switch_time_recorder_.GetCallbackForNextFrameAfterUnfold(
-            visible_time_request->event_start_time));
-    return;
-  }
-
   // Tab was shown while widget was already painting, eg. due to being
   // captured.
   LayerTreeHost()->RequestSuccessfulPresentationTimeForNextFrame(
-      tab_switch_time_recorder_.TabWasShown(
-          false /* has_saved_frames */, visible_time_request->event_start_time,
-          visible_time_request->destination_is_loaded,
-          visible_time_request->show_reason_tab_switching,
-          visible_time_request->show_reason_bfcache_restore));
+      tab_switch_time_recorder_.TabWasShown(false /* has_saved_frames */,
+                                            visible_time_request));
 }
 
 void WidgetBase::CancelSuccessfulPresentationTimeRequest() {
@@ -883,13 +869,11 @@ void WidgetBase::FinishRequestNewLayerTreeFrameSink(
 
   constexpr bool automatic_flushes = false;
   constexpr bool support_locking = false;
-  constexpr bool lose_context_when_out_of_memory = true;
 
   auto context_provider = viz::ContextProviderCommandBuffer::CreateForRaster(
       gpu_channel_host, kGpuStreamIdDefault, kGpuStreamPriorityDefault,
       GURL(params.url), automatic_flushes, support_locking, limits,
-      viz::command_buffer_metrics::ContextType::RENDERER_COMPOSITOR,
-      lose_context_when_out_of_memory);
+      viz::command_buffer_metrics::ContextType::RENDERER_COMPOSITOR);
 
 #if BUILDFLAG(IS_ANDROID)
   if (Platform::Current()->IsSynchronousCompositingEnabledForAndroidWebView() &&
@@ -1205,7 +1189,7 @@ void WidgetBase::UpdateTextInputStateInternal(bool show_virtual_keyboard,
       params->ime_text_spans_info =
           frame_widget->GetImeTextSpansInfo(new_info.ime_text_spans);
     }
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
     if (next_previous_flags_ == kInvalidNextPreviousFlagsValue) {
       // Due to a focus change, values will be reset by the frame.
       // That case we only need fresh NEXT/PREVIOUS information.
@@ -1521,9 +1505,13 @@ void WidgetBase::ImeSetComposition(
   }
 
   ImeEventGuard guard(weak_ptr_factory_.GetWeakPtr());
-  if (!frame_widget->SetComposition(text, ime_text_spans, replacement_range,
-                                    selection_start, selection_end,
-                                    ime_state)) {
+  bool success =
+      frame_widget->SetComposition(text, ime_text_spans, replacement_range,
+                                   selection_start, selection_end, ime_state);
+  if (!guard.IsValid()) {
+    return;
+  }
+  if (!success) {
     // If we failed to set the composition text, then we need to let the browser
     // process to cancel the input method's ongoing composition session, to make
     // sure we are in a consistent state.
@@ -1555,6 +1543,9 @@ void WidgetBase::ImeCommitText(const String& text,
   input_handler_.set_handling_input_event(true);
   frame_widget->CommitText(text, ime_text_spans, replacement_range,
                            relative_cursor_pos);
+  if (!guard.IsValid()) {
+    return;
+  }
   input_handler_.set_handling_input_event(false);
   UpdateCompositionInfo(false /* not an immediate request */);
 }
@@ -1574,6 +1565,9 @@ void WidgetBase::ImeFinishComposingText(bool keep_selection) {
   ImeEventGuard guard(weak_ptr_factory_.GetWeakPtr());
   input_handler_.set_handling_input_event(true);
   frame_widget->FinishComposingText(keep_selection);
+  if (!guard.IsValid()) {
+    return;
+  }
   input_handler_.set_handling_input_event(false);
   UpdateCompositionInfo(false /* not an immediate request */);
 }

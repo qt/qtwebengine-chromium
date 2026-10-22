@@ -144,7 +144,7 @@ const DEFAULT_VIEW: View = (input: ViewInput, _output: ViewOutput, target: HTMLE
       // clang-format off
       return html`
         <span class=${spanClasses}
-              jslog=${VisualLogging.item('matched-address-item').track({hover: true})}
+              jslog=${VisualLogging.item('matched-address-item').track({hover: true, resize: true})}
               @mouseenter=${() => input.onHighlightMatchesInAddress(startIndex)}
               @mouseleave=${input.onClearHighlightedMatches}>
           ${templateLines}
@@ -228,14 +228,12 @@ const DEFAULT_VIEW: View = (input: ViewInput, _output: ViewOutput, target: HTMLE
           <div class="top-left-corner">
             <devtools-checkbox
                 ${bindToSetting(input.showTestAddressesInAutofillMenuSetting)}
-                title=${i18nString(UIStrings.showTestAddressesInAutofillMenu)}
-                jslog=${VisualLogging.toggle(input.showTestAddressesInAutofillMenuSetting.name).track({ change: true })}>
+                title=${i18nString(UIStrings.showTestAddressesInAutofillMenu)}>
               ${i18nString(UIStrings.showTestAddressesInAutofillMenu)}
             </devtools-checkbox>
             <devtools-checkbox
                 ${bindToSetting(input.autoOpenViewSetting)}
-                title=${i18nString(UIStrings.autoShowTooltip)}
-                jslog=${VisualLogging.toggle(input.autoOpenViewSetting.name).track({ change: true })}>
+                title=${i18nString(UIStrings.autoShowTooltip)}>
               ${i18nString(UIStrings.autoShow)}
             </devtools-checkbox>
             <devtools-link href=${AUTOFILL_FEEDBACK_URL} class="feedback link" jslogcontext="feedback">${i18nString(UIStrings.sendFeedback)}</devtools-link>
@@ -267,16 +265,14 @@ const DEFAULT_VIEW: View = (input: ViewInput, _output: ViewOutput, target: HTMLE
               <div class="label-container">
                 <devtools-checkbox
                     ${bindToSetting(input.showTestAddressesInAutofillMenuSetting)}
-                    title=${i18nString(UIStrings.showTestAddressesInAutofillMenu)}
-                    jslog=${VisualLogging.toggle(input.showTestAddressesInAutofillMenuSetting.name).track({ change: true })}>
+                    title=${i18nString(UIStrings.showTestAddressesInAutofillMenu)}>
                   ${i18nString(UIStrings.showTestAddressesInAutofillMenu)}
                 </devtools-checkbox>
               </div>
               <div class="label-container">
                 <devtools-checkbox
                     ${bindToSetting(input.autoOpenViewSetting)}
-                    title=${i18nString(UIStrings.autoShowTooltip)}
-                    jslog=${VisualLogging.toggle(input.autoOpenViewSetting.name).track({ change: true })}>
+                    title=${i18nString(UIStrings.autoShowTooltip)}>
                   ${i18nString(UIStrings.autoShow)}
                 </devtools-checkbox>
               </div>

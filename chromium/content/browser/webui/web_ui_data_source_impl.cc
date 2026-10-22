@@ -146,7 +146,7 @@ class WebUIDataSourceImpl::InternalDataSource : public URLDataSource {
   // URLDataSource implementation.
   std::string GetSource() override { return parent_->GetSource(); }
   std::string GetMimeType(const GURL& url) override {
-    return parent_->GetMimeType(url);
+    return std::string(parent_->GetMimeType(url));
   }
   void StartDataRequest(const GURL& url,
                         const WebContents::Getter& wc_getter,
@@ -184,9 +184,6 @@ class WebUIDataSourceImpl::InternalDataSource : public URLDataSource {
     return parent_->deny_xframe_options_;
   }
   bool ShouldServeMimeTypeAsContentTypeHeader() override { return true; }
-  const ui::TemplateReplacements* GetReplacements() override {
-    return &parent_->replacements_;
-  }
   bool ShouldReplaceI18nInJS() override {
     return parent_->ShouldReplaceI18nInJS();
   }
@@ -362,6 +359,10 @@ void WebUIDataSourceImpl::EnableReplaceI18nInJS() {
   should_replace_i18n_in_js_ = true;
 }
 
+const ui::TemplateReplacements* WebUIDataSourceImpl::GetReplacements() const {
+  return &replacements_;
+}
+
 void WebUIDataSourceImpl::EnsureLoadTimeDataDefaultsAdded() {
   if (!add_load_time_data_defaults_)
     return;
@@ -429,7 +430,7 @@ void WebUIDataSourceImpl::SetSupportedScheme(std::string_view scheme) {
   supported_scheme_ = scheme;
 }
 
-std::string WebUIDataSourceImpl::GetMimeType(const GURL& url) const {
+std::string_view WebUIDataSourceImpl::GetMimeType(const GURL& url) const {
   const std::string_view file_path = url.path();
 
   if (base::EndsWith(file_path, ".css", base::CompareCase::INSENSITIVE_ASCII)) {

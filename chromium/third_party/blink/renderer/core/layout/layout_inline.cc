@@ -64,6 +64,7 @@ bool CanBeHitTestTargetPseudoNodeStyle(const ComputedStyle& style) {
     case kPseudoIdBefore:
     case kPseudoIdCheckMark:
     case kPseudoIdAfter:
+    case kPseudoIdExpandIcon:
     case kPseudoIdPickerIcon:
     case kPseudoIdInterestHint:
     case kPseudoIdFirstLetter:
@@ -116,11 +117,9 @@ void LayoutInline::WillBeDestroyed() {
   if (TextAutosizer* text_autosizer = GetDocument().GetTextAutosizer())
     text_autosizer->Destroy(this);
 
-  if (!DocumentBeingDestroyed()) {
-    if (FirstInlineFragmentItemIndex()) {
-      FragmentItems::LayoutObjectWillBeDestroyed(*this);
-      ClearFirstInlineFragmentItemIndex();
-    }
+  if (FirstInlineFragmentItemIndex()) {
+    FragmentItems::LayoutObjectWillBeDestroyed(*this);
+    ClearFirstInlineFragmentItemIndex();
   }
 
   LayoutBoxModelObject::WillBeDestroyed();
@@ -148,15 +147,6 @@ void LayoutInline::InLayoutNGInlineFormattingContextWillChange(bool new_value) {
   NOT_DESTROYED();
   if (IsInLayoutNGInlineFormattingContext())
     ClearFirstInlineFragmentItemIndex();
-}
-
-void LayoutInline::UpdateFromStyle() {
-  NOT_DESTROYED();
-  LayoutBoxModelObject::UpdateFromStyle();
-
-  // FIXME: Support transforms and reflections on inline flows someday.
-  SetHasTransformRelatedProperty(false);
-  SetHasReflection(false);
 }
 
 void LayoutInline::StyleDidChange(
@@ -214,7 +204,7 @@ bool LayoutInline::ComputeInitialShouldCreateBoxFragment(
     if (element->MayBeImplicitAnchor()) {
       return true;
     }
-    if (element->GetTrackedElementRect()) {
+    if (element->GetTrackedElementSubRects()) {
       return true;
     }
   }
@@ -536,14 +526,9 @@ PhysicalRect LayoutInline::AbsoluteBoundingBoxRectHandlingEmptyInline(
   return LocalToAbsoluteRect(rect);
 }
 
-LayoutUnit LayoutInline::OffsetLeft(const Element* parent) const {
+PhysicalOffset LayoutInline::OffsetPoint(const Element* parent) const {
   NOT_DESTROYED();
-  return AdjustedPositionRelativeTo(FirstLineBoxTopLeft(), parent).left;
-}
-
-LayoutUnit LayoutInline::OffsetTop(const Element* parent) const {
-  NOT_DESTROYED();
-  return AdjustedPositionRelativeTo(FirstLineBoxTopLeft(), parent).top;
+  return AdjustedPositionRelativeTo(FirstLineBoxTopLeft(), parent);
 }
 
 PhysicalRect LayoutInline::BoundingBoxRelativeToFirstFragment() const {

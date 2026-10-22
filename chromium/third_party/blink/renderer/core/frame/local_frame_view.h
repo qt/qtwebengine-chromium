@@ -39,13 +39,15 @@
 #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/frame/viewport_intersection_state.mojom-blink.h"
 #include "third_party/blink/public/mojom/scroll/scroll_into_view_params.mojom-blink-forward.h"
+#include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink-forward.h"
+#include "third_party/blink/renderer/core/ad_tracker/overlay_interstitial_ad_detector.h"
+#include "third_party/blink/renderer/core/ad_tracker/sticky_ad_detector.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/document_lifecycle.h"
+#include "third_party/blink/renderer/core/dom/document_resize_options.h"
 #include "third_party/blink/renderer/core/frame/frame_view.h"
 #include "third_party/blink/renderer/core/frame/layout_subtree_root_list.h"
 #include "third_party/blink/renderer/core/frame/local_frame_ukm_aggregator.h"
-#include "third_party/blink/renderer/core/frame/overlay_interstitial_ad_detector.h"
-#include "third_party/blink/renderer/core/frame/sticky_ad_detector.h"
 #include "third_party/blink/renderer/core/layout/hit_test_request.h"
 #include "third_party/blink/renderer/core/paint/layout_object_counter.h"
 #include "third_party/blink/renderer/core/view_transition/view_transition_request_forward.h"
@@ -96,6 +98,8 @@ class Element;
 class FragmentAnchor;
 class Frame;
 class FrameViewAutoSizeInfo;
+class GraphicsContext;
+class HTMLCanvasElement;
 class HTMLVideoElement;
 class HitTestLocation;
 class HitTestResult;
@@ -281,7 +285,7 @@ class CORE_EXPORT LocalFrameView final
 
   // If this is set to false, the layout size will need to be explicitly set by
   // the owner.  E.g. WebViewImpl sets its mainFrame's layout size manually
-  void SetLayoutSizeFixedToFrameSize(bool);
+  void SetLayoutSizeFixedToFrameSize(bool, DocumentResizeOptions = {});
   bool LayoutSizeFixedToFrameSize() const {
     return layout_size_fixed_to_frame_size_;
   }
@@ -452,10 +456,15 @@ class CORE_EXPORT LocalFrameView final
   friend class InvalidationDisallowedScope;
 
   // This for doing work that needs to run synchronously at the end of lifecycle
-  // updates, but needs to happen outside of the lifecycle code. It's OK to
-  // schedule another animation frame here, but the layout tree should not be
-  // invalidated.
+  // updates.
   void RunPostLifecycleSteps();
+  // Called just before the impl commit. This runs post-lifecycle steps
+  // immediately if they are required to happen before the commit (e.g.
+  // canvas.onpaint).
+  void WillCommit();
+  // Called after the main frame is complete. If post-lifecycle steps have not
+  // run yet, they will execute here.
+  void DidBeginMainFrame();
   bool InvalidationDisallowed() const;
 
   void ScheduleVisualUpdateForVisualOverflowIfNeeded();
@@ -820,6 +829,9 @@ class CORE_EXPORT LocalFrameView final
   void NotifyVideoIsDominantVisibleStatus(HTMLVideoElement* element,
                                           bool is_dominant);
 
+  void DidPaintCanvasChild(HTMLCanvasElement& canvas, Element& child);
+  void RequestCanvasOnpaint(HTMLCanvasElement&);
+
   bool HasDominantVideoElement() const;
 
   // Gets the xr overlay layer if present, or nullptr if there is none.
@@ -876,6 +888,8 @@ class CORE_EXPORT LocalFrameView final
   // one element may affect layout of another element, which means that the main
   // thread needs to be involved during the animation.
   bool HasRunningAnchorTransformAnimation() const;
+
+  mojom::blink::WebFeature SvgFilterPaintedCounter() const override;
 
  protected:
   void FrameRectsChanged(const gfx::Rect&) override;
@@ -976,8 +990,7 @@ class CORE_EXPORT LocalFrameView final
                            const gfx::Vector2d& paint_offset) const;
 
   // EmbeddedContentView implementation
-  void Paint(GraphicsContext&,
-             PaintFlags,
+  void Paint(const PaintInfo&,
              const CullRect&,
              const gfx::Vector2d&) const final;
 
@@ -996,7 +1009,8 @@ class CORE_EXPORT LocalFrameView final
   // The internal version that does the work after the proper context and checks
   // have passed in the above function call.
   void UpdateLifecyclePhasesInternal(
-      DocumentLifecycle::LifecycleState target_state);
+      DocumentLifecycle::LifecycleState target_state,
+      DocumentUpdateReason reason);
   // Four lifecycle phases helper functions corresponding to StyleAndLayout,
   // Compositing, PrePaint, and Paint phases. If the return value is true, it
   // means further lifecycle phases need to be run. This is used to abort
@@ -1048,7 +1062,7 @@ class CORE_EXPORT LocalFrameView final
 
   AXObjectCache* ExistingAXObjectCache() const;
 
-  void SetLayoutSizeInternal(const gfx::Size&);
+  void SetLayoutSizeInternal(const gfx::Size&, DocumentResizeOptions = {});
 
   void CollectDraggableRegions(LayoutObject&,
                                Vector<DraggableRegionValue>&) const;
@@ -1080,7 +1094,9 @@ class CORE_EXPORT LocalFrameView final
   void DeliverSynchronousIntersectionObservations();
 
   // https://drafts.csswg.org/cssom-view/#post-layout-snapshot
-  bool RunSnapshotPostLayoutStateSteps();
+  bool RunSnapshotPostLayoutStateSteps(
+      DocumentLifecycle::LifecycleState target_state,
+      DocumentUpdateReason reason);
 
   bool ShouldDeferLayoutSnap() const;
 
@@ -1132,6 +1148,8 @@ class CORE_EXPORT LocalFrameView final
   void UpdateCanCompositeBackgroundAttachmentFixed();
 
   void EnqueueScrollSnapChangingFromImplIfNecessary();
+
+  void RunCanvasOnpaintSteps();
 
   typedef HeapHashSet<Member<LayoutEmbeddedContent>> EmbeddedContentSet;
   EmbeddedContentSet part_update_set_;
@@ -1303,6 +1321,16 @@ class CORE_EXPORT LocalFrameView final
   Member<TapFriendlinessChecker> tap_friendliness_checker_;
 
   HeapHashSet<WeakMember<LifecycleNotificationObserver>> lifecycle_observers_;
+
+  // Map of canvas elements which need onpaint. The value is a set of children
+  // of the <canvas> which painted during the current paint lifecycle update.
+  // The set of children may be empty if the onpaint event has been requested
+  // with `requestPaint`. This map is cleared at the end of the lifecycle
+  // update.
+  HeapHashMap<Member<HTMLCanvasElement>,
+              Member<GCedHeapLinkedHashSet<Member<Element>>>>
+      canvas_elements_needing_onpaint_;
+  bool did_run_post_lifecycle_steps_before_commit_ = false;
 
   HeapHashSet<WeakMember<HTMLVideoElement>> fullscreen_video_elements_;
 

@@ -700,7 +700,7 @@ bool Converter::Convert(interop::GPUTextureFormat& out, wgpu::TextureFormat in) 
         case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar422Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar444Unorm:
-        case wgpu::TextureFormat::External:
+        case wgpu::TextureFormat::OpaqueYCbCrAndroid:
 
         case wgpu::TextureFormat::Undefined:
             return false;
@@ -1731,6 +1731,7 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::AdapterPropertiesD3D:
         case wgpu::FeatureName::AdapterPropertiesMemoryHeaps:
         case wgpu::FeatureName::AdapterPropertiesVk:
+        case wgpu::FeatureName::AdapterPropertiesDrm:
         case wgpu::FeatureName::ANGLETextureSharing:
         case wgpu::FeatureName::BufferMapExtendedUsages:
         case wgpu::FeatureName::ChromiumExperimentalTimestampQueryInsidePasses:
@@ -1785,6 +1786,12 @@ bool Converter::Convert(interop::GPUFeatureName& out, wgpu::FeatureName in) {
         case wgpu::FeatureName::SharedTextureMemoryD3D12Resource:
         case wgpu::FeatureName::ChromiumExperimentalSamplingResourceTable:
         case wgpu::FeatureName::ChromiumExperimentalSubgroupSizeControl:
+        case wgpu::FeatureName::AtomicVec2uMinMax:
+        case wgpu::FeatureName::Unorm16FormatsForExternalTexture:
+        case wgpu::FeatureName::OpaqueYCbCrAndroidForExternalTexture:
+        case wgpu::FeatureName::Unorm16Filterable:
+        case wgpu::FeatureName::RenderPassRenderArea:
+        case wgpu::FeatureName::DawnNativeSpontaneousQueueEvents:
             return false;
     }
     return false;
@@ -1840,6 +1847,12 @@ bool Converter::Convert(wgpu::WGSLLanguageFeatureName& out, interop::WGSLLanguag
         case interop::WGSLLanguageFeatureName::kSwizzleAssignment:
             out = wgpu::WGSLLanguageFeatureName::SwizzleAssignment;
             return true;
+        case interop::WGSLLanguageFeatureName::kLinearIndexing:
+            out = wgpu::WGSLLanguageFeatureName::LinearIndexing;
+            return true;
+        case interop::WGSLLanguageFeatureName::kTextureFormatsTier1:
+            out = wgpu::WGSLLanguageFeatureName::TextureFormatsTier1;
+            return true;
     }
     return false;
 }
@@ -1893,6 +1906,12 @@ bool Converter::Convert(interop::WGSLLanguageFeatureName& out, wgpu::WGSLLanguag
             return true;
         case wgpu::WGSLLanguageFeatureName::SwizzleAssignment:
             out = interop::WGSLLanguageFeatureName::kSwizzleAssignment;
+            return true;
+        case wgpu::WGSLLanguageFeatureName::LinearIndexing:
+            out = interop::WGSLLanguageFeatureName::kLinearIndexing;
+            return true;
+        case wgpu::WGSLLanguageFeatureName::TextureFormatsTier1:
+            out = interop::WGSLLanguageFeatureName::kTextureFormatsTier1;
             return true;
 
         case wgpu::WGSLLanguageFeatureName::ChromiumTestingUnimplemented:

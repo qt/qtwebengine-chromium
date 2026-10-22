@@ -17,14 +17,12 @@
 #include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/fx_codepage_forward.h"
 #include "core/fxcrt/retain_ptr.h"
-#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_face.h"
 
 #ifdef PDF_ENABLE_XFA
 #include "core/fxcrt/fixed_size_data_vector.h"
 #endif
 
-class CFX_FontMgr;
 class CFX_SubstFont;
 class SystemFontInfoIface;
 
@@ -49,7 +47,7 @@ class CFX_FontMapper {
   };
   static constexpr int kNumStandardFonts = 14;
 
-  explicit CFX_FontMapper(CFX_FontMgr* mgr);
+  CFX_FontMapper();
   ~CFX_FontMapper();
 
   static std::optional<StandardFont> GetStandardFontName(ByteString* name);
@@ -67,7 +65,7 @@ class CFX_FontMapper {
   void AddInstalledFont(const ByteString& name, FX_Charset charset);
   void LoadInstalledFonts();
 
-  RetainPtr<CFX_Face> FindSubstFont(const ByteString& face_name,
+  RetainPtr<CFX_Face> FindSubstFace(const ByteString& face_name,
                                     bool is_truetype,
                                     uint32_t flags,
                                     int weight,
@@ -130,7 +128,6 @@ class CFX_FontMapper {
   ByteString last_family_;
   std::vector<FaceData> face_array_;
   std::unique_ptr<SystemFontInfoIface> font_info_;
-  UnownedPtr<CFX_FontMgr> const font_mgr_;
   std::vector<ByteString> installed_ttfonts_;
   std::vector<std::pair<ByteString, ByteString>> localized_ttfonts_;
   std::array<RetainPtr<CFX_Face>, kNumStandardFonts> standard_faces_;

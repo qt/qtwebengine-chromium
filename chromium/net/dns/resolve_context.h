@@ -19,10 +19,11 @@
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "net/base/isolation_info.h"
 #include "net/base/net_export.h"
 #include "net/base/network_handle.h"
+#include "net/dns/dns_attempt.h"
 #include "net/dns/dns_config.h"
+#include "net/dns/dns_http_attempt.h"
 #include "net/dns/public/secure_dns_mode.h"
 
 namespace net {
@@ -33,6 +34,8 @@ class DnsServerIterator;
 class DohDnsServerIterator;
 class HostCache;
 class HostResolverCache;
+class HttpResponseInfo;
+struct LoadTimingInternalInfo;
 class URLRequestContext;
 
 // Represents various states of the DoH auto-upgrade process.
@@ -46,6 +49,23 @@ enum class DohServerAutoupgradeStatus {
   kFailureWithNoPriorSuccesses = 3,
 
   kMaxValue = kFailureWithNoPriorSuccesses
+};
+
+// Status of a canary domain check being used to check for whether a
+// particular behavior is allowed.
+enum class CanaryDomainCheckStatus {
+  // The canary domain check is disabled by feature flag or empty host.
+  kInactive,
+  // The canary domain check has not yet started.
+  kNotStarted,
+  // The canary domain check has started but not yet completed.
+  kStarted,
+  // The canary domain check has completed and was positive.
+  // A positive result indicates that the behavior is allowed.
+  kPositive,
+  // The canary domain check has completed and was negative.
+  // A positive result indicates that the behavior is not allowed.
+  kNegative,
 };
 
 // Per-URLRequestContext data used by HostResolver. Expected to be owned by the
@@ -145,6 +165,16 @@ class NET_EXPORT_PRIVATE ResolveContext : public base::CheckedObserver {
                  int rv,
                  const DnsSession* session);
 
+  // Record the session source and connection info for a DoH attempt. Noop if
+  // `session` is not the current session.
+  void RecordDohSessionStatus(
+      size_t server_index,
+      const HttpResponseInfo& response_info,
+      const LoadTimingInternalInfo& internal_load_timing,
+      base::TimeDelta rtt,
+      int rv,
+      const DnsSession* session);
+
   // Return the period the next query should run before fallback to next
   // attempt. (Not actually a "timeout" because queries are not typically
   // cancelled as additional attempts are made.) |attempt| counts from 0 and is
@@ -208,15 +238,6 @@ class NET_EXPORT_PRIVATE ResolveContext : public base::CheckedObserver {
     return doh_autoupgrade_success_metric_timer_.IsRunning();
   }
 
-  // Returns IsolationInfo that should be used for DoH requests. Using a single
-  // transient IsolationInfo ensures that DNS requests aren't pooled with normal
-  // web requests, but still allows them to be pooled with each other, to allow
-  // reusing connections to the DoH server across different third party
-  // contexts. One downside of a transient IsolationInfo is that it means
-  // metadata about the DoH server itself will not be cached across restarts
-  // (alternative service info if it supports QUIC, for instance).
-  const IsolationInfo& isolation_info() const { return isolation_info_; }
-
   // Network to perform the DNS lookups for. When equal to
   // handles::kInvalidNetworkHandle the decision of which one to target is left
   // to the resolver. Virtual for testing.
@@ -229,6 +250,33 @@ class NET_EXPORT_PRIVATE ResolveContext : public base::CheckedObserver {
   base::WeakPtr<ResolveContext> GetWeakPtr() {
     return weak_ptr_factory_.GetWeakPtr();
   }
+
+  // Sets the status of a canary domain check for allowing DoH fallback.
+  void set_doh_fallback_canary_domain_check_status(
+      CanaryDomainCheckStatus status) {
+    doh_fallback_canary_domain_check_status_ = status;
+  }
+
+  void set_doh_fallback_upgrade_allowed(bool allowed) {
+    doh_fallback_upgrade_allowed_ = allowed;
+  }
+  bool doh_fallback_upgrade_allowed() const {
+    return doh_fallback_upgrade_allowed_;
+  }
+
+  // Gets the status of a canary domain check for allowing DoH fallback.
+  // A positive status indicates that Secure DNS DoH fallback is allowed.
+  CanaryDomainCheckStatus doh_fallback_canary_domain_check_status() const {
+    return doh_fallback_canary_domain_check_status_;
+  }
+
+  // Returns true if the current DoH configuration was added from the fallback
+  // DoH nameservers as part of the fallback-to-default-provider functionality.
+  bool IsDohConfigFromFallbackDohNameservers() const;
+
+  // Returns true if a canary domain probe should be performed for the purpose
+  // of determining whether to allow DoH fallback.
+  bool IsDohFallbackProbeEnabled() const;
 
  private:
   friend DohDnsServerIterator;
@@ -293,9 +341,6 @@ class NET_EXPORT_PRIVATE ResolveContext : public base::CheckedObserver {
   std::string GetDohProviderIdForUma(size_t server_index,
                                      bool is_doh_server,
                                      const DnsSession* session);
-  bool GetProviderUseExtraLogging(size_t server_index,
-                                  bool is_doh_server,
-                                  const DnsSession* session);
 
   void NotifyDohStatusObserversOfSessionChanged();
   void NotifyDohStatusObserversOfUnavailable(bool network_change);
@@ -318,7 +363,7 @@ class NET_EXPORT_PRIVATE ResolveContext : public base::CheckedObserver {
   // need for check_empty to be true.
   base::ObserverList<DohStatusObserver,
                      false /* check_empty */,
-                     false /* allow_reentrancy */>
+                     base::ObserverListReentrancyPolicy::kDisallowReentrancy>
       doh_status_observers_;
 
   // Per-session data is only stored and valid for the latest session. Before
@@ -339,9 +384,13 @@ class NET_EXPORT_PRIVATE ResolveContext : public base::CheckedObserver {
   // Track runtime statistics of each DoH server.
   std::vector<ServerStats> doh_server_stats_;
 
-  const IsolationInfo isolation_info_;
-
   base::OneShotTimer doh_autoupgrade_success_metric_timer_;
+
+  // Status of a canary domain check to allow DoH fallback for Secure DNS.
+  CanaryDomainCheckStatus doh_fallback_canary_domain_check_status_ =
+      CanaryDomainCheckStatus::kInactive;
+
+  bool doh_fallback_upgrade_allowed_ = false;
 
   base::WeakPtrFactory<ResolveContext> weak_ptr_factory_{this};
 };

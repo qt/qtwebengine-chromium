@@ -9,6 +9,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "base/task/single_thread_task_runner.h"
+#include "components/crash/core/common/crash_key.h"
 #include "gpu/command_buffer/common/shm_count.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/gpu/graphite/Context.h"
@@ -55,11 +56,39 @@ InsertRecordingStatusUma InsertRecordingStatusUma(
   NOTREACHED();
 }
 
-struct RecordingContext {
+struct FinishedContext {
   skgpu::graphite::GpuFinishedProc old_finished_proc;
   skgpu::graphite::GpuFinishedContext old_context;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner;
 };
+
+std::pair<skgpu::graphite::GpuFinishedProc, skgpu::graphite::GpuFinishedContext>
+CreateFinishedProcThreadSafe(
+    skgpu::graphite::GpuFinishedProc finished_proc,
+    skgpu::graphite::GpuFinishedContext finished_context,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+  DCHECK(finished_proc);
+  DCHECK(task_runner);
+
+  // Ensure finishedProc is called on the original thread.
+  auto* context = new FinishedContext{finished_proc, finished_context,
+                                      std::move(task_runner)};
+
+  auto thread_safe_finished_proc = [](void* ctx, skgpu::CallbackResult result) {
+    auto context = base::WrapUnique(static_cast<FinishedContext*>(ctx));
+    DCHECK(context->old_finished_proc);
+    base::SingleThreadTaskRunner* task_runner = context->task_runner.get();
+    if (task_runner && !task_runner->BelongsToCurrentThread()) {
+      task_runner->PostTask(FROM_HERE,
+                            base::BindOnce(context->old_finished_proc,
+                                           context->old_context, result));
+      return;
+    }
+    context->old_finished_proc(context->old_context, result);
+  };
+
+  return {thread_safe_finished_proc, context};
+}
 
 struct AsyncReadContext {
   GraphiteSharedContext::SkImageReadPixelsCallback old_callback;
@@ -175,11 +204,13 @@ GraphiteSharedContext::GraphiteSharedContext(
     GpuProcessShmCount* use_shader_cache_shm_count,
     bool is_thread_safe,
     size_t max_pending_recordings,
-    FlushCallback backend_flush_callback)
+    FlushCallback backend_flush_callback,
+    MarkContextLostCallback mark_context_lost_callback)
     : graphite_context_(std::move(graphite_context)),
       use_shader_cache_shm_count_(use_shader_cache_shm_count),
       max_pending_recordings_(max_pending_recordings),
-      backend_flush_callback_(std::move(backend_flush_callback)) {
+      backend_flush_callback_(std::move(backend_flush_callback)),
+      mark_context_lost_callback_(std::move(mark_context_lost_callback)) {
   DCHECK(graphite_context_);
   if (is_thread_safe) {
     lock_.emplace();
@@ -236,22 +267,9 @@ bool GraphiteSharedContext::InsertRecordingImpl(
   std::optional<skgpu::graphite::InsertRecordingInfo> info_copy;
   if (info.fFinishedProc && task_runner) {
     info_copy = info;
-    info_copy->fFinishedContext = new RecordingContext{
-        info.fFinishedProc, info.fFinishedContext, std::move(task_runner)};
-
-    info_copy->fFinishedProc = [](void* ctx, skgpu::CallbackResult result) {
-      auto context = base::WrapUnique(static_cast<RecordingContext*>(ctx));
-      DCHECK(context->old_finished_proc);
-      base::SingleThreadTaskRunner* task_runner = context->task_runner.get();
-      if (task_runner && !task_runner->BelongsToCurrentThread()) {
-        task_runner->PostTask(FROM_HERE,
-                              base::BindOnce(context->old_finished_proc,
-                                             context->old_context, result));
-        return;
-      }
-      context->old_finished_proc(context->old_context, result);
-    };
-
+    std::tie(info_copy->fFinishedProc, info_copy->fFinishedContext) =
+        CreateFinishedProcThreadSafe(info.fFinishedProc, info.fFinishedContext,
+                                     std::move(task_runner));
     info_ptr = &info_copy.value();
   }
 
@@ -277,18 +295,24 @@ bool GraphiteSharedContext::InsertRecordingImpl(
   // kAsyncShaderCompilesFailed and kOutOfOrderRecording are unrecoverable
   // failures because they cause future recordings to be rendered incorrectly.
   // TODO(433845560): Check the kAddCommandsFailed failures.
-  const bool is_unrecoverable_failure =
-      insert_status ==
-          skgpu::graphite::InsertStatus::kAsyncShaderCompilesFailed ||
-      insert_status == skgpu::graphite::InsertStatus::kOutOfOrderRecording;
-  // For kAsyncShaderCompilesFailed, we should also clear the disk shader
-  // cache in case the error was due to a corrupted cached shader blob.
-  std::optional<GpuProcessShmCount::ScopedIncrement> use_shader_cache;
   if (insert_status ==
       skgpu::graphite::InsertStatus::kAsyncShaderCompilesFailed) {
-    use_shader_cache.emplace(use_shader_cache_shm_count_);
+    // For kAsyncShaderCompilesFailed, we should also clear the disk shader
+    // cache in case the error was due to a corrupted cached shader blob.
+    GpuProcessShmCount::ScopedIncrement use_shader_cache(
+        use_shader_cache_shm_count_);
+    static crash_reporter::CrashKeyString<4096> insert_error_key(
+        "graphite-insert-error");
+    insert_error_key.Set(insert_status.message());
+    CHECK(simulating_insert_failure);
+  } else if (insert_status ==
+             skgpu::graphite::InsertStatus::kOutOfOrderRecording) {
+    if (mark_context_lost_callback_) {
+      // TODO(crbug.com/478211694): assume the reason of out of order is OOM for
+      // now.
+      mark_context_lost_callback_.Run(error::kOutOfMemory);
+    }
   }
-  CHECK(simulating_insert_failure || !is_unrecoverable_failure);
 
   // All other failure modes are recoverable in the sense that future recordings
   // will be rendered correctly, so merely return a boolean here so that callers
@@ -296,26 +320,52 @@ bool GraphiteSharedContext::InsertRecordingImpl(
   return insert_status == skgpu::graphite::InsertStatus::kSuccess;
 }
 
-void GraphiteSharedContext::submit(skgpu::graphite::SyncToCpu syncToCpu) {
+void GraphiteSharedContext::submit(skgpu::graphite::SubmitInfo submit_info) {
   AutoLock auto_lock(this);
-  CHECK(SubmitImpl(syncToCpu));
+  CHECK(SubmitImpl(submit_info));
 }
 
-bool GraphiteSharedContext::SubmitImpl(skgpu::graphite::SyncToCpu syncToCpu) {
+bool GraphiteSharedContext::SubmitImpl(
+    const skgpu::graphite::SubmitInfo& submit_info) {
   num_pending_recordings_ = 0;
 
-  return graphite_context_->submit(syncToCpu);
+  if (submit_info.fSync == skgpu::graphite::SyncToCpu::kNo &&
+      !submit_info.fFinishedProc && !graphite_context_->hasPendingGPUWork()) {
+    // Skip submitting if there is no pending GPU work and no finish proc. If a
+    // finish proc is provided, we must call submit() even without new work so
+    // that it can be triggered when all previously submitted work completes.
+    return true;
+  }
+
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+      IsThreadSafe() && base::SingleThreadTaskRunner::HasCurrentDefault()
+          ? base::SingleThreadTaskRunner::GetCurrentDefault()
+          : nullptr;
+
+  // Ensure fFinishedProc is called on the original thread if there is only one
+  // graphite::Context.
+  if (submit_info.fFinishedProc && task_runner) {
+    auto wrapped_submit_info = submit_info;
+    std::tie(wrapped_submit_info.fFinishedProc,
+             wrapped_submit_info.fFinishedContext) =
+        CreateFinishedProcThreadSafe(submit_info.fFinishedProc,
+                                     submit_info.fFinishedContext,
+                                     std::move(task_runner));
+    return graphite_context_->submit(wrapped_submit_info);
+  }
+
+  return graphite_context_->submit(submit_info);
 }
 
 void GraphiteSharedContext::submitAndFlushBackend(
-    skgpu::graphite::SyncToCpu syncToCpu) {
+    skgpu::graphite::SubmitInfo submit_info) {
   AutoLock auto_lock(this);
-  SubmitAndFlushBackendImpl(syncToCpu);
+  SubmitAndFlushBackendImpl(submit_info);
 }
 
 void GraphiteSharedContext::SubmitAndFlushBackendImpl(
-    skgpu::graphite::SyncToCpu syncToCpu) {
-  CHECK(SubmitImpl(syncToCpu));
+    const skgpu::graphite::SubmitInfo& submit_info) {
+  CHECK(SubmitImpl(submit_info));
 
   if (backend_flush_callback_) {
     backend_flush_callback_.Run();

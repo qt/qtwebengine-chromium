@@ -1766,8 +1766,10 @@ export class DataGridNode<T> {
 
   protected createElement(): HTMLElement {
     this.elementInternal = document.createElement('tr');
-    this.elementInternal.setAttribute(
-        'jslog', `${VisualLogging.tableRow().track({keydown: 'ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Enter|Space'})}`);
+    this.elementInternal.setAttribute('jslog', `${VisualLogging.tableRow().track({
+                                        resize: true,
+                                        keydown: 'ArrowUp|ArrowDown|ArrowLeft|ArrowRight|Enter|Space'
+                                      })}`);
     this.elementInternal.classList.add('data-grid-data-grid-node');
     if (this.dataGrid) {
       this.dataGrid.elementToDataGridNode.set(this.elementInternal, this);
@@ -2550,7 +2552,7 @@ export interface Parameters {
   refreshCallback?: (() => void);
 }
 export interface ColumnDescriptor {
-  id: Lowercase<string>;
+  id: string;
   title?: Common.UIString.LocalizedString;
   titleDOMFragment?: DocumentFragment|null;
   sortable: boolean;

@@ -14,6 +14,9 @@ import * as NetworkForward from '../forward/forward.js';
 
 import {EditingAllowedStatus, type HeaderDescriptor} from './HeaderSectionRow.js';
 import requestHeaderSectionStyles from './RequestHeaderSection.css.js';
+import requestHeadersViewStyles from './RequestHeadersView.css.js';
+
+export {requestHeadersViewStyles};
 
 const {render, html} = Lit;
 
@@ -59,7 +62,7 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
     ${headers.map(header => html`
       <devtools-header-section-row
         .data=${{ header }}
-        jslog=${VisualLogging.item('request-header')}
+        jslog=${VisualLogging.item('request-header').track({resize: true})}
       ></devtools-header-section-row>
     `)}
   `, target);

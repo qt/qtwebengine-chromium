@@ -190,16 +190,20 @@ class Renderer : angle::NonCopyable
     {
         return mHostImageCopyProperties;
     }
-    const VkPhysicalDeviceFeatures &getPhysicalDeviceFeatures() const
-    {
-        return mPhysicalDeviceFeatures;
-    }
     const VkPhysicalDeviceShaderIntegerDotProductProperties &
     getPhysicalDeviceShaderIntegerDotProductProperties() const
     {
         return mShaderIntegerDotProductProperties;
     }
+    const VkPhysicalDeviceSubgroupProperties &getPhysicalDeviceSubgroupProperties() const
+    {
+        return mSubgroupProperties;
+    }
 
+    const VkPhysicalDeviceFeatures &getPhysicalDeviceFeatures() const
+    {
+        return mPhysicalDeviceFeatures;
+    }
     const VkPhysicalDeviceFeatures2KHR &getEnabledFeatures() const { return mEnabledFeatures; }
     VkDevice getDevice() const { return mDevice; }
 
@@ -715,10 +719,11 @@ class Renderer : angle::NonCopyable
         return mMinRPWriteCommandCountToEarlySubmit;
     }
 
+    void logFeatures() const;
+
   private:
     angle::Result setupDevice(vk::ErrorContext *context,
                               const angle::FeatureOverrides &featureOverrides,
-                              const char *wsiLayer,
                               UseVulkanSwapchain useVulkanSwapchain,
                               angle::NativeWindowSystem nativeWindowSystem);
     angle::Result createDeviceAndQueue(vk::ErrorContext *context, uint32_t queueFamilyIndex);
@@ -922,6 +927,7 @@ class Renderer : angle::NonCopyable
     VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR mUnifiedImageLayoutsFeatures;
     VkPhysicalDeviceShaderIntegerDotProductFeatures mShaderIntegerDotProductFeatures;
     VkPhysicalDeviceShaderIntegerDotProductProperties mShaderIntegerDotProductProperties;
+    VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures mShaderDemoteToHelperInvocationFeatures;
     VkPhysicalDeviceGlobalPriorityQueryFeaturesEXT mPhysicalDeviceGlobalPriorityQueryFeatures;
     VkPhysicalDeviceExternalMemoryHostPropertiesEXT mExternalMemoryHostProperties;
     VkPhysicalDeviceBufferDeviceAddressFeaturesKHR mBufferDeviceAddressFeatures;
@@ -1092,7 +1098,7 @@ class Renderer : angle::NonCopyable
     // Use thread pool to compress cache data.
     std::shared_ptr<angle::WaitableEvent> mCompressEvent;
 
-    VulkanLayerVector mEnabledDeviceLayerNames;
+    VulkanLayerVector mEnabledInstanceLayerNames;
     vk::ExtensionNameList mEnabledInstanceExtensions;
     vk::ExtensionNameList mEnabledDeviceExtensions;
 

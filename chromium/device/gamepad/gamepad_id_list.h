@@ -132,6 +132,13 @@ class DEVICE_GAMEPAD_EXPORT GamepadIdList {
   // Returns a singleton instance of the GamepadId list.
   static GamepadIdList& Get();
 
+#if BUILDFLAG(IS_WIN)
+  // Returns a unique product identifier for a given gamepad from the vendor and
+  // product id.
+  static std::string GetProductIdentifier(uint16_t vendor_id,
+                                          uint16_t product_id);
+#endif  // BUILDFLAG(IS_WIN)
+
   GamepadIdList(const GamepadIdList& entry) = delete;
   GamepadIdList& operator=(const GamepadIdList& entry) = delete;
 
@@ -153,6 +160,10 @@ class DEVICE_GAMEPAD_EXPORT GamepadIdList {
   // Returns true if the gamepad device identified by |gamepad_id| has haptic
   // actuators on its triggers. Returns false otherwise.
   bool HasTriggerRumbleSupport(GamepadId gamepad_id) const;
+
+  // Returns true if |gamepad_id| is a PlayStation 5 DualSense or DualSense
+  // Edge.
+  static bool IsPlayStation5Gamepad(GamepadId gamepad_id);
 
   // Returns the internal list of gamepad info for testing purposes.
   std::vector<std::tuple<uint16_t, uint16_t, XInputType>>

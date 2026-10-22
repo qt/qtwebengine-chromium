@@ -30,7 +30,7 @@ describeWithMockConnection('ColorSwatchPopoverIcon', () => {
           sinon.createStubInstance(SDK.CSSStyleDeclaration.CSSStyleDeclaration), 0, 'color', 'red', true, false, true,
           false, '', undefined, []);
       const treeElement = new Elements.StylePropertyTreeElement.StylePropertyTreeElement({
-        stylesPane:
+        stylesContainer:
             new Elements.StylesSidebarPane.StylesSidebarPane(new ComputedStyle.ComputedStyleModel.ComputedStyleModel()),
         section: sinon.createStubInstance(Elements.StylePropertiesSection.StylePropertiesSection),
         matchedStyles: await getMatchedStyles(),
@@ -43,7 +43,7 @@ describeWithMockConnection('ColorSwatchPopoverIcon', () => {
 
       const helper = new InlineEditor.SwatchPopoverHelper.SwatchPopoverHelper();
       const swatch = new InlineEditor.ColorSwatch.ColorSwatch();
-      swatch.color = Common.Color.parse('red')!;
+      swatch.setColor(Common.Color.parse('red')!);
       const showPopoverStub = sinon.stub(helper, 'show');
       const icon = new Elements.ColorSwatchPopoverIcon.ColorSwatchPopoverIcon(treeElement, helper, swatch);
       const iconColorChanged = sinon.stub<[Common.EventTarget.EventTargetEvent<

@@ -83,6 +83,17 @@ class AccountCapabilities {
   signin::Tribool
   can_show_history_sync_opt_ins_without_minor_mode_restrictions() const;
 
+#if BUILDFLAG(IS_IOS)
+  // Whether the user is allowed to sign in to Chrome.
+  signin::Tribool can_sign_in_to_chrome() const;
+#endif
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+  // Whether the account can submit feedback. For iOS, this is implemented by
+  // Aloha FeedbackKit. For Android, this is implemented by GMS Core.
+  signin::Tribool can_submit_feedback() const;
+#endif
+
 #if BUILDFLAG(IS_CHROMEOS)
   // Chrome can toggle auto updates with this capability.
   signin::Tribool can_toggle_auto_updates() const;
@@ -202,6 +213,10 @@ class AccountCapabilities {
                            GetSupportedAccountCapabilityNames_FlagDisabled);
   FRIEND_TEST_ALL_PREFIXES(AccountCapabilitiesTest,
                            GetSupportedAccountCapabilityNames_FlagEnabled);
+  FRIEND_TEST_ALL_PREFIXES(AccountCapabilitiesTest,
+                           ConversionWithJNI_FlagGuardDisabled_JavaToCpp);
+  FRIEND_TEST_ALL_PREFIXES(AccountCapabilitiesTest,
+                           ConversionWithJNI_FlagGuardDisabled_CppToJava);
   friend class AccountCapabilitiesTestMutator;
   friend class supervised_user::FamilyLinkUserCapabilitiesObserver;
 

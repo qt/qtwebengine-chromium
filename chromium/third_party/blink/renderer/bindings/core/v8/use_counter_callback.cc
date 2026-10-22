@@ -461,7 +461,7 @@ void UseCounterCallback(v8::Isolate* isolate,
       webdx_feature = WebDXFeature::kRegexpEscape;
       break;
     case v8::Isolate::kFloat16Array:
-      webdx_feature = WebDXFeature::kFloat16Array;
+      webdx_feature = WebDXFeature::kFloat16array;
       break;
     case v8::Isolate::kWasmBranchHinting:
       webdx_feature = WebDXFeature::kDRAFT_WasmBranchHinting;
@@ -470,7 +470,7 @@ void UseCounterCallback(v8::Isolate* isolate,
       webdx_feature = WebDXFeature::kExplicitResourceManagement;
       break;
     case v8::Isolate::kUint8ArrayToFromBase64AndHex:
-      webdx_feature = WebDXFeature::kUint8ArrayBase64Hex;
+      webdx_feature = WebDXFeature::kUint8arrayBase64Hex;
       break;
     case v8::Isolate::kWasmMultiValue:
       webdx_feature = WebDXFeature::kWasmMultiValue;
@@ -515,6 +515,9 @@ void UseCounterCallback(v8::Isolate* isolate,
       UseCounter::Count(CurrentExecutionContext(isolate),
                         WebFeature::kV8RegExpStaticPropertiesWithLastMatch);
       webdx_feature = WebDXFeature::kRegexpStaticProperties;
+      break;
+    case v8::Isolate::kHoleyArrayReadthrough:
+      blink_feature = WebFeature::kV8HoleyArrayReadthrough;
       break;
     default:
       // This can happen if V8 has added counters that this version of Blink

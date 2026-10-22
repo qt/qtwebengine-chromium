@@ -224,6 +224,10 @@ void PrerenderPageLoadMetricsObserver::OnFirstContentfulPaintInPage(
       timing.paint_timing->first_contentful_paint.value());
 }
 
+void PrerenderPageLoadMetricsObserver::OnSoftNavigation() {
+  soft_navigation_count_++;
+}
+
 void PrerenderPageLoadMetricsObserver::OnFirstInputInPage(
     const page_load_metrics::mojom::PageLoadTiming& timing) {
   if (!WasActivatedInForegroundOptionalEventInForeground(
@@ -361,6 +365,11 @@ void PrerenderPageLoadMetricsObserver::RecordSessionEndHistograms(
       page_load_metrics::PrerenderingState::kActivated) {
     RecordLayoutShiftScoreMetrics(main_frame_timing);
     RecordNormalizedResponsivenessMetrics();
+
+    ukm::builders::PrerenderPageLoad builder(
+        GetDelegate().GetPageUkmSourceId());
+    builder.SetSoftNavigationCount(soft_navigation_count_);
+    builder.Record(ukm::UkmRecorder::Get());
   }
 }
 
@@ -409,12 +418,12 @@ void PrerenderPageLoadMetricsObserver::RecordNormalizedResponsivenessMetrics() {
   }
 
   base::TimeDelta high_percentile2_max_event_duration =
-      inp_calculator.ApproximateHighPercentile().value().duration;
+      inp_calculator.ApproximateHighPercentile().value().max_event.duration;
 
   UmaHistogramCustomTimes(
       internal::kHistogramPrerenderWorstUserInteractionLatencyMaxEventDuration,
-      inp_calculator.worst_latency().value().duration, base::Milliseconds(1),
-      base::Seconds(60), 50);
+      inp_calculator.worst_latency().value().max_event.duration,
+      base::Milliseconds(1), base::Seconds(60), 50);
   UmaHistogramCustomTimes(
       internal::
           kHistogramPrerenderUserInteractionLatencyHighPercentile2MaxEventDuration,
@@ -425,7 +434,9 @@ void PrerenderPageLoadMetricsObserver::RecordNormalizedResponsivenessMetrics() {
 
   ukm::builders::PrerenderPageLoad builder(GetDelegate().GetPageUkmSourceId());
   builder.SetInteractiveTiming_WorstUserInteractionLatency_MaxEventDuration(
-      inp_calculator.worst_latency().value().duration.InMilliseconds());
+      inp_calculator.worst_latency()
+          .value()
+          .max_event.duration.InMilliseconds());
 
   builder
       .SetInteractiveTiming_UserInteractionLatency_HighPercentile2_MaxEventDuration(

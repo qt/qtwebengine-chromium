@@ -56,6 +56,7 @@
 #define TINT_DISABLE_WARNING_UNDEFINED_REINTERPRET_CAST  /* currently no-op */
 #define TINT_DISABLE_WARNING_UNREACHABLE_CODE __pragma(warning(disable : 4702))
 #define TINT_DISABLE_WARNING_UNSAFE_BUFFER_USAGE /* currently no-op */
+#define TINT_DISABLE_WARNING_UNSAFE_BUFFER_USAGE_IN_CONTAINER /* currently no-op */
 #define TINT_DISABLE_WARNING_UNUSED_PARAMETER __pragma(warning(disable : 4100))
 #define TINT_DISABLE_WARNING_UNSUED_VARIABLE __pragma(warning(disable : 4189))
 #define TINT_DISABLE_WARNING_UNUSED_VALUE    /* currently no-op */
@@ -133,6 +134,8 @@
 #define TINT_DISABLE_WARNING_UNREACHABLE_CODE /* currently no-op */
 #define TINT_DISABLE_WARNING_UNSAFE_BUFFER_USAGE \
     _Pragma("clang diagnostic ignored \"-Wunsafe-buffer-usage\"")
+#define TINT_DISABLE_WARNING_UNSAFE_BUFFER_USAGE_IN_CONTAINER \
+    _Pragma("clang diagnostic ignored \"-Wunsafe-buffer-usage-in-container\"")
 #define TINT_DISABLE_WARNING_UNUSED_PARAMETER \
     _Pragma("clang diagnostic ignored \"-Wunused-parameter\"")
 #define TINT_DISABLE_WARNING_UNUSED_VALUE _Pragma("clang diagnostic ignored \"-Wunused-value\"")
@@ -200,6 +203,7 @@
 #define TINT_DISABLE_WARNING_UNDEFINED_REINTERPRET_CAST  /* currently no-op */
 #define TINT_DISABLE_WARNING_UNREACHABLE_CODE            /* currently no-op */
 #define TINT_DISABLE_WARNING_UNSAFE_BUFFER_USAGE         /* currently no-op */
+#define TINT_DISABLE_WARNING_UNSAFE_BUFFER_USAGE_IN_CONTAINER /* currently no-op */
 #define TINT_DISABLE_WARNING_UNUSED_PARAMETER \
     _Pragma("GCC diagnostic ignored \"-Wunused-parameter\"")
 #define TINT_DISABLE_WARNING_UNUSED_VALUE _Pragma("GCC diagnostic ignored \"-Wunused-value\"")

@@ -30,6 +30,8 @@
 #include "chrome/common/pref_names.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
+#include "components/safe_browsing/core/common/features.h"
+#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/webui/flags/pref_service_flags_storage.h"
 #include "content/public/browser/network_service_instance.h"
 #include "net/base/features.h"
@@ -135,6 +137,35 @@ bool ShouldEnableAsyncDns() {
 #endif
   return feature_can_be_enabled &&
          base::FeatureList::IsEnabled(net::features::kAsyncDns);
+}
+
+// Returns whether the Secure DNS DoH fallback behavior should be used.
+bool ShouldUseDohFallback(net::SecureDnsMode secure_dns_mode,
+                          const PrefService& local_state,
+                          const DnsOverHttpsConfigSource& doh_config_source) {
+  // DoH fallback is only applicable to Automatic mode.
+  if (secure_dns_mode != net::SecureDnsMode::kAutomatic) {
+    return false;
+  }
+
+  // If the feature is enabled then return the boolean value of the pref.
+  // DoH fallback is a new setting introduced in the Bundled Security Settings
+  // for Secure DNS. If the new UI is enabled to make the setting available,
+  // then just check user choice in the pref.
+  if (base::FeatureList::IsEnabled(
+          safe_browsing::kBundledSecuritySettingsSecureDnsV2)) {
+    return doh_config_source.AutomaticModeFallbackToDohEnabled();
+  }
+
+  // Now consider forcing DoH fallback even though it is not enabled by the
+  // user. We need to do this in order to test the feature before we include it
+  // in a security bundle. See: crbug.com/490045356
+
+  // Since the pref is disabled we will return true to enable the feature from
+  // the perspective of the browser process, relying on the
+  // kForceSecureDnsDohFallback feature flag in the network service to actually
+  // prevent the functionality from being enabled (for the experiment).
+  return true;
 }
 
 }  // namespace
@@ -398,17 +429,16 @@ SecureDnsConfig StubResolverConfigReader::GetAndUpdateConfiguration(
   if (secure_dns_mode != net::SecureDnsMode::kOff) {
     doh_config = net::DnsOverHttpsConfig::FromStringLax(
         GetDnsOverHttpsConfigSource()->GetDnsOverHttpsTemplates());
-    if (secure_dns_mode == net::SecureDnsMode::kAutomatic &&
-        GetDnsOverHttpsConfigSource()->AutomaticModeFallbackToDohEnabled() &&
-        base::FeatureList::IsEnabled(
-            net::features::kAddAutomaticWithDohFallbackMode)) {
-      bool fallback_pref_managed = local_state_->IsManagedPreference(
-          prefs::kDnsOverHttpsAutomaticModeFallbackToDoh);
-      mode_details = fallback_pref_managed
-                         ? SecureDnsModeDetailsForHistogram::
-                               kAutomaticWithDohFallbackByEnterprisePolicy
-                         : SecureDnsModeDetailsForHistogram::
-                               kAutomaticWithDohFallbackByUser;
+    if (ShouldUseDohFallback(secure_dns_mode, *local_state_,
+                             *GetDnsOverHttpsConfigSource())) {
+      if (base::FeatureList::IsEnabled(
+              safe_browsing::kBundledSecuritySettingsSecureDnsV2)) {
+        mode_details =
+            SecureDnsModeDetailsForHistogram::kAutomaticWithDohFallbackByUser;
+      } else {
+        mode_details = SecureDnsModeDetailsForHistogram::
+            kAutomaticWithDohFallbackForExperiment;
+      }
       fallback_doh_nameservers = GetFallbackDohNameservers();
     }
   }

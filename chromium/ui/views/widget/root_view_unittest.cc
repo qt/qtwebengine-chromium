@@ -14,6 +14,7 @@
 #include "build/build_config.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/platform/ax_platform_node.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/base/mojom/dialog_button.mojom.h"
@@ -23,10 +24,12 @@
 #include "ui/gfx/native_ui_types.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/context_menu_controller.h"
+#include "ui/views/focus/focus_manager.h"
 #include "ui/views/test/ax_event_counter.h"
 #include "ui/views/test/test_views.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/test/views_test_utils.h"
+#include "ui/views/view_class_properties.h"
 #include "ui/views/view_targeter.h"
 #include "ui/views/widget/widget_deletion_observer.h"
 #include "ui/views/window/dialog_delegate.h"
@@ -219,6 +222,69 @@ TEST_F(RootViewTest, ContextMenuFromKeyEvent) {
   controller.Reset();
 #endif
 }
+
+#if BUILDFLAG(IS_MAC)
+TEST_F(RootViewTest, ContextMenuFromKeyEventMac) {
+  RootViewTestState state(this);
+  internal::RootView* root_view = state.GetRootView();
+
+  TestContextMenuController controller;
+  View* focused_view = root_view->GetContentsView();
+  focused_view->set_context_menu_controller(&controller);
+  focused_view->SetFocusBehavior(View::FocusBehavior::ALWAYS);
+  focused_view->RequestFocus();
+
+  auto expect_menu_shown = [&](ui::KeyEvent event) {
+    ui::EventDispatchDetails details = root_view->OnEventFromSource(&event);
+    EXPECT_FALSE(details.target_destroyed);
+    EXPECT_FALSE(details.dispatcher_destroyed);
+    EXPECT_EQ(1, controller.show_context_menu_calls());
+    EXPECT_EQ(focused_view, controller.menu_source_view());
+    EXPECT_EQ(ui::mojom::MenuSourceType::kKeyboard,
+              controller.menu_source_type());
+    controller.Reset();
+  };
+
+  auto expect_menu_not_shown = [&](ui::KeyEvent event) {
+    ui::EventDispatchDetails details = root_view->OnEventFromSource(&event);
+    EXPECT_FALSE(details.target_destroyed);
+    EXPECT_FALSE(details.dispatcher_destroyed);
+    EXPECT_EQ(0, controller.show_context_menu_calls());
+    EXPECT_EQ(nullptr, controller.menu_source_view());
+    EXPECT_EQ(ui::mojom::MenuSourceType::kNone, controller.menu_source_type());
+    controller.Reset();
+  };
+
+  expect_menu_shown(ui::KeyEvent(ui::EventType::kKeyPressed, ui::VKEY_APPS,
+                                 ui::EF_CONTROL_DOWN));
+
+  expect_menu_not_shown(ui::KeyEvent(ui::EventType::kKeyPressed, ui::VKEY_F10,
+                                     ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN));
+  expect_menu_not_shown(ui::KeyEvent(ui::EventType::kKeyPressed, ui::VKEY_F10,
+                                     ui::EF_SHIFT_DOWN));
+  expect_menu_not_shown(ui::KeyEvent(ui::EventType::kKeyPressed, ui::VKEY_APPS,
+                                     ui::EF_COMMAND_DOWN));
+  expect_menu_not_shown(
+      ui::KeyEvent(ui::EventType::kKeyReleased, ui::VKEY_APPS, ui::EF_NONE));
+  expect_menu_not_shown(ui::KeyEvent(ui::EventType::kKeyPressed, ui::VKEY_APPS,
+                                     ui::EF_COMMAND_DOWN));
+  expect_menu_not_shown(
+      ui::KeyEvent(ui::EventType::kKeyPressed, ui::VKEY_F10, ui::EF_NONE));
+  expect_menu_not_shown(ui::KeyEvent(ui::EventType::kKeyReleased, ui::VKEY_F10,
+                                     ui::EF_SHIFT_DOWN));
+  expect_menu_not_shown(
+      ui::KeyEvent(ui::EventType::kKeyPressed, ui::VKEY_A, ui::EF_NONE));
+
+  focused_view->SetEnabled(false);
+  expect_menu_not_shown(
+      ui::KeyEvent(ui::EventType::kKeyPressed, ui::VKEY_APPS, ui::EF_NONE));
+  focused_view->SetEnabled(true);
+
+  root_view->GetFocusManager()->ClearFocus();
+  expect_menu_not_shown(
+      ui::KeyEvent(ui::EventType::kKeyPressed, ui::VKEY_APPS, ui::EF_NONE));
+}
+#endif  // BUILDFLAG(IS_MAC)
 
 // View which handles all gesture events.
 class GestureHandlingView : public View {
@@ -954,8 +1020,6 @@ TEST_F(RootViewTest, AnnounceTextAsTest) {
             node_data.GetString16Attribute(ax::mojom::StringAttribute::kName));
 #if BUILDFLAG(IS_CHROMEOS)
   EXPECT_EQ(node_data.role, ax::mojom::Role::kStaticText);
-#elif BUILDFLAG(IS_LINUX)
-  EXPECT_EQ(node_data.role, ax::mojom::Role::kAlert);
 #else
   EXPECT_EQ(node_data.role, ax::mojom::Role::kAlert);
 #endif
@@ -977,8 +1041,6 @@ TEST_F(RootViewTest, AnnounceTextAsTest) {
 
 #if BUILDFLAG(IS_CHROMEOS)
   EXPECT_EQ(node_data.role, ax::mojom::Role::kStaticText);
-#elif BUILDFLAG(IS_LINUX)
-  EXPECT_EQ(node_data.role, ax::mojom::Role::kAlert);
 #else
   EXPECT_EQ(node_data.role, ax::mojom::Role::kStatus);
 #endif
@@ -1161,5 +1223,154 @@ TEST_F(RootViewTest, AccessibleNameChangeEvent) {
   EXPECT_EQ(2, counter.GetCount(ax::mojom::Event::kTextChanged, root_view));
 #endif
 }
+
+// On Mac, AnnounceTextAs takes a separate native path (AXPlatformNode), so
+// these tests only validate the AnnounceTextView-based path used on non-Mac.
+#if !BUILDFLAG(IS_MAC)
+
+TEST_F(RootViewTest, AnnounceTextAsPolite_SetsLiveRegionAttributes) {
+  RootViewTestState state(this);
+
+  state.GetRootView()->AnnounceTextAs(
+      u"Polite announcement",
+      ui::AXPlatformNode::AnnouncementType::kPolite);
+
+  View* announce_view = state.GetRootView()->GetAnnounceViewForTesting();
+  ASSERT_NE(announce_view, nullptr);
+
+  ui::AXNodeData data;
+  announce_view->GetViewAccessibility().GetAccessibleNodeData(&data);
+#if BUILDFLAG(IS_CHROMEOS)
+  EXPECT_EQ(data.role, ax::mojom::Role::kStaticText);
+#else
+  EXPECT_EQ(data.role, ax::mojom::Role::kStatus);
+#endif
+  EXPECT_EQ(data.GetString16Attribute(ax::mojom::StringAttribute::kName),
+            u"Polite announcement");
+  EXPECT_EQ(
+      data.GetStringAttribute(ax::mojom::StringAttribute::kLiveStatus),
+      "polite");
+  EXPECT_EQ(
+      data.GetStringAttribute(ax::mojom::StringAttribute::kContainerLiveStatus),
+      "polite");
+  EXPECT_EQ(
+      data.GetStringAttribute(ax::mojom::StringAttribute::kLiveRelevant),
+      "additions text");
+  EXPECT_EQ(data.GetStringAttribute(
+                ax::mojom::StringAttribute::kContainerLiveRelevant),
+            "additions text");
+  EXPECT_TRUE(data.GetBoolAttribute(ax::mojom::BoolAttribute::kLiveAtomic));
+}
+
+TEST_F(RootViewTest, AnnounceTextAsPolite_FiresLiveRegionChangedEvent) {
+  RootViewTestState state(this);
+
+  views::test::AXEventCounter counter(views::AXUpdateNotifier::Get());
+
+  state.GetRootView()->AnnounceTextAs(
+      u"Polite announcement",
+      ui::AXPlatformNode::AnnouncementType::kPolite);
+
+  View* announce_view = state.GetRootView()->GetAnnounceViewForTesting();
+  ASSERT_NE(announce_view, nullptr);
+
+  EXPECT_GE(
+      counter.GetCount(ax::mojom::Event::kLiveRegionChanged, announce_view),
+      1);
+  EXPECT_EQ(counter.GetCount(ax::mojom::Event::kAlert, announce_view), 0);
+}
+
+TEST_F(RootViewTest, AnnounceTextAsAlert_SetsAlertRole) {
+  RootViewTestState state(this);
+
+  state.GetRootView()->AnnounceTextAs(
+      u"Alert announcement",
+      ui::AXPlatformNode::AnnouncementType::kAlert);
+
+  View* announce_view = state.GetRootView()->GetAnnounceViewForTesting();
+  ASSERT_NE(announce_view, nullptr);
+
+  ui::AXNodeData data;
+  announce_view->GetViewAccessibility().GetAccessibleNodeData(&data);
+
+// ChromeOS uses kStaticText; other platforms use kAlert for alert
+// announcements.
+#if BUILDFLAG(IS_CHROMEOS)
+  EXPECT_EQ(data.role, ax::mojom::Role::kStaticText);
+#else
+  EXPECT_EQ(data.role, ax::mojom::Role::kAlert);
+#endif
+
+  EXPECT_EQ(data.GetString16Attribute(ax::mojom::StringAttribute::kName),
+            u"Alert announcement");
+}
+
+TEST_F(RootViewTest, AnnounceTextAsAlert_FiresAlertEvent) {
+  RootViewTestState state(this);
+
+  views::test::AXEventCounter counter(views::AXUpdateNotifier::Get());
+
+  state.GetRootView()->AnnounceTextAs(
+      u"Alert announcement",
+      ui::AXPlatformNode::AnnouncementType::kAlert);
+
+  View* announce_view = state.GetRootView()->GetAnnounceViewForTesting();
+  ASSERT_NE(announce_view, nullptr);
+
+  EXPECT_GE(counter.GetCount(ax::mojom::Event::kAlert, announce_view), 1);
+  EXPECT_EQ(
+      counter.GetCount(ax::mojom::Event::kLiveRegionChanged, announce_view),
+      0);
+}
+
+TEST_F(RootViewTest, AnnounceTextAsEmpty_DoesNotCreateView) {
+  RootViewTestState state(this);
+
+  state.GetRootView()->AnnounceTextAs(
+      u"", ui::AXPlatformNode::AnnouncementType::kPolite);
+
+  // Empty text should be a no-op; the announce view should not be created.
+  EXPECT_EQ(state.GetRootView()->GetAnnounceViewForTesting()->
+                GetViewAccessibility().GetCachedName(),
+            std::u16string());
+}
+
+TEST_F(RootViewTest, AnnounceTextView_IsInvisibleAndIgnoredByLayout) {
+  RootViewTestState state(this);
+
+  state.GetRootView()->AnnounceTextAs(
+      u"Test", ui::AXPlatformNode::AnnouncementType::kPolite);
+
+  View* announce_view = state.GetRootView()->GetAnnounceViewForTesting();
+  ASSERT_NE(announce_view, nullptr);
+
+  ui::AXNodeData data;
+  announce_view->GetViewAccessibility().GetAccessibleNodeData(&data);
+  EXPECT_TRUE(data.HasState(ax::mojom::State::kInvisible));
+  EXPECT_TRUE(announce_view->GetProperty(kViewIgnoredByLayoutKey));
+}
+
+TEST_F(RootViewTest, AnnounceTextAsPolite_SequentialAnnouncementsUpdateName) {
+  RootViewTestState state(this);
+
+  state.GetRootView()->AnnounceTextAs(
+      u"First", ui::AXPlatformNode::AnnouncementType::kPolite);
+
+  View* announce_view = state.GetRootView()->GetAnnounceViewForTesting();
+  ui::AXNodeData data;
+  announce_view->GetViewAccessibility().GetAccessibleNodeData(&data);
+  EXPECT_EQ(data.GetString16Attribute(ax::mojom::StringAttribute::kName),
+            u"First");
+
+  state.GetRootView()->AnnounceTextAs(
+      u"Second", ui::AXPlatformNode::AnnouncementType::kAlert);
+
+  data = ui::AXNodeData();
+  announce_view->GetViewAccessibility().GetAccessibleNodeData(&data);
+  EXPECT_EQ(data.GetString16Attribute(ax::mojom::StringAttribute::kName),
+            u"Second");
+}
+
+#endif  // !BUILDFLAG(IS_MAC)
 
 }  // namespace views::test

@@ -214,29 +214,21 @@ unsigned HTMLSelectElement::ListBoxSize() const {
 }
 
 void HTMLSelectElement::UpdateUsesMenuList() {
-  if (RuntimeEnabledFeatures::SelectMobileDesktopParityEnabled()) {
-    // Choose MenuList or ListBox the same regardless of the platform:
-    // <select>                  MenuList (popup)
-    // <select size=1>           MenuList (popup)
-    // <select multiple size=1>  MenuList (popup)
-    // <select multiple>         ListBox  (in-page)
-    // <select size=4>           ListBox  (in-page)
-    // <select multiple size=4>  ListBox  (in-page)
-    if (is_multiple_) {
-      // <select multiple> does not use MenuList by default. The author must
-      // specify <select multiple size=1> to get MenuList.
-      uses_menu_list_ =
-          FastHasAttribute(html_names::kSizeAttr) ? size_ == 1 : false;
-    } else {
-      uses_menu_list_ = size_ <= 1;
-    }
-    return;
+  // Choose MenuList or ListBox the same regardless of the platform:
+  // <select>                  MenuList (popup)
+  // <select size=1>           MenuList (popup)
+  // <select multiple size=1>  MenuList (popup)
+  // <select multiple>         ListBox  (in-page)
+  // <select size=4>           ListBox  (in-page)
+  // <select multiple size=4>  ListBox  (in-page)
+  if (is_multiple_) {
+    // <select multiple> does not use MenuList by default. The author must
+    // specify <select multiple size=1> to get MenuList.
+    uses_menu_list_ =
+        FastHasAttribute(html_names::kSizeAttr) ? size_ == 1 : false;
+  } else {
+    uses_menu_list_ = size_ <= 1;
   }
-
-  if (LayoutTheme::GetTheme().DelegatesMenuListRendering())
-    uses_menu_list_ = true;
-  else
-    uses_menu_list_ = !is_multiple_ && size_ <= 1;
 }
 
 int HTMLSelectElement::ActiveSelectionEndListIndex() const {
@@ -302,18 +294,19 @@ void HTMLSelectElement::setValueForBinding(const String& value) {
   String old_value = this->Value();
   bool was_autofilled = IsAutofilled();
   bool value_changed = old_value != value;
-  SetValue(value, false,
-           was_autofilled && !value_changed ? WebAutofillState::kAutofilled
-                                            : WebAutofillState::kNotFilled);
+  SelectOptionByValue(value, false,
+                      was_autofilled && !value_changed
+                          ? WebAutofillState::kAutofilled
+                          : WebAutofillState::kNotFilled);
   if (Page* page = GetDocument().GetPage(); page && value_changed) {
     page->GetChromeClient().JavaScriptChangedValue(*this, old_value,
                                                    was_autofilled);
   }
 }
 
-void HTMLSelectElement::SetValue(const String& value,
-                                 bool send_events,
-                                 WebAutofillState autofill_state) {
+void HTMLSelectElement::SelectOptionByValue(const String& value,
+                                            bool send_events,
+                                            WebAutofillState autofill_state) {
   HTMLOptionElement* option = nullptr;
   // Find the option with value() matching the given parameter and make it the
   // current selection.
@@ -324,6 +317,12 @@ void HTMLSelectElement::SetValue(const String& value,
     }
   }
 
+  SelectOptionByElement(option, send_events, autofill_state);
+}
+
+void HTMLSelectElement::SelectOptionByElement(HTMLOptionElement* option,
+                                              bool send_events,
+                                              WebAutofillState autofill_state) {
   HTMLOptionElement* previous_selected_option = SelectedOption();
   SetSuggestedOption(nullptr);
   SelectOptionFlags flags = kDeselectOtherOptionsFlag | kMakeOptionDirtyFlag;
@@ -338,7 +337,14 @@ void HTMLSelectElement::SetValue(const String& value,
 void HTMLSelectElement::SetAutofillValue(const String& value,
                                          WebAutofillState autofill_state) {
   auto interacted_state = interacted_state_;
-  SetValue(value, true, autofill_state);
+  SelectOptionByValue(value, true, autofill_state);
+  interacted_state_ = interacted_state;
+}
+
+void HTMLSelectElement::SetAutofillOption(HTMLOptionElement* option,
+                                          WebAutofillState autofill_state) {
+  auto interacted_state = interacted_state_;
+  SelectOptionByElement(option, true, autofill_state);
   interacted_state_ = interacted_state;
 }
 
@@ -360,6 +366,23 @@ void HTMLSelectElement::SetSuggestedValue(const String& value) {
   }
 
   SetSuggestedOption(nullptr);
+}
+
+void HTMLSelectElement::SetSuggestedOption(HTMLOptionElement* option) {
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled(GetExecutionContext()) &&
+      IsInCanvasSubtree()) {
+    // Hide suggested values when under canvas, to prevent leaking this
+    // information to javascript.
+    option = nullptr;
+  }
+  if (suggested_option_ == option) {
+    return;
+  }
+  SetAutofillState(option ? WebAutofillState::kPreviewed
+                          : WebAutofillState::kNotFilled);
+  suggested_option_ = option;
+
+  select_type_->DidSetSuggestedOption(option);
 }
 
 bool HTMLSelectElement::IsPresentationAttribute(
@@ -394,7 +417,11 @@ void HTMLSelectElement::ParseAttribute(
       ChangeRendering();
       UpdateUserAgentShadowTree(*UserAgentShadowRoot());
       UpdateMutationObserver();
-      ResetToDefaultSelection();
+      // The selection can't change if there are no children; this is a
+      // common case during parsing.
+      if (hasChildren()) {
+        ResetToDefaultSelection();
+      }
       select_type_->UpdateTextStyleAndContent();
       select_type_->SaveListboxActiveSelection();
     }
@@ -413,15 +440,8 @@ void HTMLSelectElement::ParseAttribute(
       HTMLSelectedContentElement* new_selectedcontent =
           DynamicTo<HTMLSelectedContentElement>(
               getElementByIdIncludingDisconnected(*this, params.new_value));
-      if (old_selectedcontent != new_selectedcontent) {
-        if (old_selectedcontent) {
-          // Clear out the contents of any <selectedcontent> which we are
-          // removing the association from.
-          old_selectedcontent->CloneContentsFromOptionElement(nullptr);
-        }
-        if (new_selectedcontent) {
-          new_selectedcontent->CloneContentsFromOptionElement(SelectedOption());
-        }
+      if (old_selectedcontent != new_selectedcontent && new_selectedcontent) {
+        new_selectedcontent->CloneContentsFromOptionElement(SelectedOption());
       }
     }
   } else {
@@ -820,24 +840,8 @@ int HTMLSelectElement::SelectedListIndex() const {
   return -1;
 }
 
-void HTMLSelectElement::SetSuggestedOption(HTMLOptionElement* option) {
-  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
-      IsInCanvasSubtree()) {
-    // Hide suggested values when under canvas, to prevent leaking this
-    // information to javascript.
-    option = nullptr;
-  }
-  if (suggested_option_ == option)
-    return;
-  SetAutofillState(option ? WebAutofillState::kPreviewed
-                          : WebAutofillState::kNotFilled);
-  suggested_option_ = option;
-
-  select_type_->DidSetSuggestedOption(option);
-}
-
 void HTMLSelectElement::DidChangeIsCanvasOrInCanvasSubtree() {
-  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled(GetExecutionContext()) &&
       IsInCanvasSubtree()) {
     // Hide suggested values when under canvas, to prevent leaking this
     // information to javascript.
@@ -1004,10 +1008,9 @@ void HTMLSelectElement::SelectOption(HTMLOptionElement* element,
   SetAutofillState(element ? autofill_state : WebAutofillState::kNotFilled);
 }
 
-void HTMLSelectElement::SelectOptionFromPopoverPickerOrBaseListbox(
+void HTMLSelectElement::SelectOptionFromPopoverPickerOrListbox(
     HTMLOptionElement* option) {
   if (!UsesMenuList() || IsMultiple()) {
-    CHECK(RuntimeEnabledFeatures::SelectMobileDesktopParityEnabled());
     option->SetSelectedState(!option->Selected());
     option->SetDirty(true);
     if (!IsMultiple()) {
@@ -1121,7 +1124,7 @@ void HTMLSelectElement::RestoreFormControlState(const FormControlState& state) {
   // The saved state should have at least one value and an index.
   DCHECK_GE(state.ValueSize(), 2u);
   if (!IsMultiple()) {
-    unsigned index = StringToUint(state[1]).value_or(0);
+    unsigned index = StringToUintLoose(state[1]).value_or(0);
     HTMLOptionElement* option_element =
         index < items_size ? DynamicTo<HTMLOptionElement>(items[index].Get())
                            : nullptr;
@@ -1149,7 +1152,7 @@ void HTMLSelectElement::RestoreFormControlState(const FormControlState& state) {
     wtf_size_t start_index = 0;
     for (wtf_size_t i = 0; i < state.ValueSize(); i += 2) {
       const String& value = state[i];
-      const unsigned index = StringToUint(state[i + 1]).value_or(0);
+      const unsigned index = StringToUintLoose(state[i + 1]).value_or(0);
       HTMLOptionElement* option_element =
           index < items_size ? DynamicTo<HTMLOptionElement>(items[index].Get())
                              : nullptr;
@@ -1203,9 +1206,7 @@ void HTMLSelectElement::ParseMultipleAttribute(const AtomicString& value) {
 }
 
 void HTMLSelectElement::UpdateMutationObserver() {
-  if ((UsesMenuList() ||
-       RuntimeEnabledFeatures::CustomizableSelectListboxEnabled()) &&
-      isConnected() && IsAppearanceBase()) {
+  if (isConnected() && IsAppearanceBase()) {
     if (!descendants_observer_) {
       descendants_observer_ =
           MakeGarbageCollected<SelectMutationObserver>(*this);
@@ -1288,11 +1289,8 @@ void HTMLSelectElement::DefaultEventHandler(Event& event) {
     return;
   }
 
-  auto* keyboard_event = DynamicTo<KeyboardEvent>(event);
-  if (event.type() == event_type_names::kKeypress && keyboard_event) {
-    if (!keyboard_event->ctrlKey() && !keyboard_event->altKey() &&
-        !keyboard_event->metaKey() &&
-        unicode::IsPrintableChar(keyboard_event->charCode())) {
+  if (auto* keyboard_event = DynamicTo<KeyboardEvent>(event)) {
+    if (TypeAhead::ShouldHandleKeyboardEvent(*keyboard_event)) {
       TypeAheadFind(*keyboard_event);
       event.SetDefaultHandled();
       return;
@@ -1383,9 +1381,8 @@ void HTMLSelectElement::TypeAheadFind(const KeyboardEvent& event) {
   HTMLOptionElement* option_at_index = OptionAtListIndex(index);
 
   const bool customizable_select_popup =
-      select_type_->IsAppearanceBasePicker() && select_type_->PopupIsVisible();
+      PickerIsPopover() && select_type_->PopupIsVisible();
   const bool customizable_select_in_page =
-      RuntimeEnabledFeatures::CustomizableSelectListboxEnabled() &&
       !UsesMenuList() && IsAppearanceBase();
 
   if (customizable_select_popup || customizable_select_in_page) {
@@ -1473,6 +1470,7 @@ void HTMLSelectElement::Trace(Visitor* visitor) const {
   visitor->Trace(descendant_selectedcontents_);
   visitor->Trace(select_type_);
   visitor->Trace(descendants_observer_);
+  visitor->Trace(active_option_);
   HTMLFormControlElementWithState::Trace(visitor);
 }
 
@@ -1517,7 +1515,7 @@ String HTMLSelectElement::ItemText(const Element& element) const {
     item_string = option->TextIndentedToRespectGroupLabel();
 
   if (GetLayoutObject() && GetLayoutObject()->Style()) {
-    return GetLayoutObject()->Style()->ApplyTextTransform(item_string);
+    return GetLayoutObject()->StyleRef().ApplyTextTransform(item_string);
   }
   return item_string;
 }
@@ -1844,7 +1842,15 @@ void HTMLSelectElement::SetIsAppearanceBasePickerForDisplayNone(bool value) {
 }
 
 void HTMLSelectElement::SelectedContentElementInserted(
+    HTMLSelectedContentElement* inserted_selectedcontent) {
+  CHECK(RuntimeEnabledFeatures::SelectedcontentSpecEnabled());
+  DCHECK(!descendant_selectedcontents_.Contains(inserted_selectedcontent));
+  descendant_selectedcontents_.Add(inserted_selectedcontent);
+}
+
+void HTMLSelectElement::SelectedContentElementInsertedLegacy(
     HTMLSelectedContentElement* selectedcontent) {
+  CHECK(!RuntimeEnabledFeatures::SelectedcontentSpecEnabled());
   descendant_selectedcontents_.Add(selectedcontent);
   auto iter = descendant_selectedcontents_.begin();
   if (*iter == selectedcontent) {
@@ -1856,12 +1862,17 @@ void HTMLSelectElement::SelectedContentElementInserted(
 }
 
 void HTMLSelectElement::SelectedContentElementRemoved(
-    HTMLSelectedContentElement* selectedcontent) {
-  bool was_first = *descendant_selectedcontents_.begin() == selectedcontent;
-  descendant_selectedcontents_.Remove(selectedcontent);
-  if (was_first && !descendant_selectedcontents_.IsEmpty()) {
-    (*descendant_selectedcontents_.begin())
-        ->CloneContentsFromOptionElement(SelectedOption());
+    HTMLSelectedContentElement* removed_selectedcontent) {
+  if (RuntimeEnabledFeatures::SelectedcontentSpecEnabled()) {
+    descendant_selectedcontents_.Remove(removed_selectedcontent);
+  } else {
+    bool was_first =
+        *descendant_selectedcontents_.begin() == removed_selectedcontent;
+    descendant_selectedcontents_.Remove(removed_selectedcontent);
+    if (was_first && !descendant_selectedcontents_.IsEmpty()) {
+      (*descendant_selectedcontents_.begin())
+          ->CloneContentsFromOptionElement(SelectedOption());
+    }
   }
 }
 
@@ -1941,15 +1952,8 @@ void HTMLSelectElement::setSelectedContentElement(
   SetElementAttribute(html_names::kSelectedcontentelementAttr,
                       new_selectedcontent);
 
-  if (old_selectedcontent != new_selectedcontent) {
-    if (old_selectedcontent) {
-      // Clear out the contents of any <selectedcontent> which we are removing
-      // the association from.
-      old_selectedcontent->CloneContentsFromOptionElement(nullptr);
-    }
-    if (new_selectedcontent) {
-      new_selectedcontent->CloneContentsFromOptionElement(SelectedOption());
-    }
+  if (old_selectedcontent != new_selectedcontent && new_selectedcontent) {
+    new_selectedcontent->CloneContentsFromOptionElement(SelectedOption());
   }
 }
 
@@ -1960,9 +1964,18 @@ void HTMLSelectElement::UpdateAllSelectedcontents(
   // we have a DCHECK() that they did so correctly.
   DCHECK_EQ(selected_option, SelectedOption());
 
-  if (!descendant_selectedcontents_.IsEmpty()) {
-    (*descendant_selectedcontents_.begin())
-        ->CloneContentsFromOptionElement(selected_option);
+  if (RuntimeEnabledFeatures::SelectedcontentSpecEnabled()) {
+    VectorOf<HTMLSelectedContentElement> descendant_selectedcontents_copy(
+        descendant_selectedcontents_);
+    for (HTMLSelectedContentElement* selectedcontent :
+         descendant_selectedcontents_copy) {
+      selectedcontent->CloneContentsFromOptionElement(selected_option);
+    }
+  } else {
+    if (!descendant_selectedcontents_.IsEmpty()) {
+      (*descendant_selectedcontents_.begin())
+          ->CloneContentsFromOptionElement(selected_option);
+    }
   }
   if (RuntimeEnabledFeatures::SelectedcontentelementAttributeEnabled()) {
     if (auto* attr_selectedcontent = selectedContentElement()) {
@@ -1993,10 +2006,8 @@ HTMLSelectElement::AssociatedSelectAndOptgroupAndDatalist(
       // Descendants of <hr> elements are not <select> associated.
       return {nullptr, ancestor_optgroup, nullptr};
     } else if (auto* datalist = DynamicTo<HTMLDataListElement>(ancestor)) {
-      if (RuntimeEnabledFeatures::SelectDisallowDatalistEnabled()) {
-        // Descendants of <datalist> elements are not <select> associated.
-        return {nullptr, ancestor_optgroup, datalist};
-      }
+      // Descendants of <datalist> elements are not <select> associated.
+      return {nullptr, ancestor_optgroup, datalist};
     } else if (auto* select = DynamicTo<HTMLSelectElement>(ancestor)) {
       return {select, ancestor_optgroup, nullptr};
     }
@@ -2010,8 +2021,7 @@ FocusableState HTMLSelectElement::SupportsFocus(
   // if appropriate, which we will make use of here.
   FocusableState superclass_focusable =
       HTMLFormControlElementWithState::SupportsFocus(update_behavior);
-  if (RuntimeEnabledFeatures::CustomizableSelectListboxEnabled() &&
-      !UsesMenuList() && IsAppearanceBase()) {
+  if (!UsesMenuList() && IsAppearanceBase()) {
     // In this case, the child option elements are focusable and keyboard
     // navigating to this element should just go straight to the options. Call
     // HTMLElement::SupportsFocus instead of
@@ -2043,13 +2053,10 @@ bool HTMLSelectElement::SupportsBaseAppearanceInternal(
   if (RuntimeEnabledFeatures::CustomizableSelectMultiplePopupEnabled()) {
     return true;
   }
-  if (RuntimeEnabledFeatures::CustomizableSelectListboxEnabled()) {
-    if (UsesMenuList() && IsMultiple()) {
-      return false;
-    }
-    return true;
+  if (UsesMenuList() && IsMultiple()) {
+    return false;
   }
-  return !IsMultiple() && UsesMenuList();
+  return true;
 }
 
 // static
@@ -2057,12 +2064,72 @@ bool HTMLSelectElement::ShouldIgnoreDescendantsForOptionTraversals(
     Element* element) {
   // Nested <optgroup>s also should be ignored in places that call this, but
   // this method doesn't have enough context to handle that case.
-  if (RuntimeEnabledFeatures::SelectDisallowDatalistEnabled() &&
-      IsA<HTMLDataListElement>(element)) {
-    return true;
+  return IsA<HTMLDataListElement>(element) || IsA<HTMLSelectElement>(element) ||
+         IsA<HTMLOptionElement>(element) || IsA<HTMLHRElement>(element);
+}
+
+void HTMLSelectElement::StartFiltering() {
+  CHECK(RuntimeEnabledFeatures::FilterableSelectEnabled());
+  CHECK(!UsesMenuList());
+  CHECK(!active_option_);
+  for (HTMLOptionElement& option : GetOptionList()) {
+    if (option.SupportsActiveOptionPseudo()) {
+      active_option_ = option;
+      active_option_->PseudoStateChanged(CSSSelector::kPseudoActiveOption);
+      break;
+    }
   }
-  return IsA<HTMLSelectElement>(element) || IsA<HTMLOptionElement>(element) ||
-         IsA<HTMLHRElement>(element);
+}
+
+void HTMLSelectElement::StopFiltering() {
+  CHECK(RuntimeEnabledFeatures::FilterableSelectEnabled());
+  CHECK(!UsesMenuList());
+  if (active_option_) {
+    HTMLOptionElement* old_active_option = active_option_;
+    active_option_ = nullptr;
+    old_active_option->PseudoStateChanged(CSSSelector::kPseudoActiveOption);
+  }
+}
+
+namespace {
+
+bool SupportsActive(HTMLOptionElement& option) {
+  return option.SupportsActiveOptionPseudo();
+}
+
+}  // namespace
+
+void HTMLSelectElement::MoveActiveOptionForwards() {
+  CHECK(RuntimeEnabledFeatures::FilterableSelectEnabled());
+  CHECK(!UsesMenuList());
+  CHECK(active_option_);
+  if (HTMLOptionElement* new_option =
+          GetOptionList().FindNextOption(*active_option_, &SupportsActive)) {
+    HTMLOptionElement* old_active_option = active_option_;
+    active_option_ = new_option;
+    old_active_option->PseudoStateChanged(CSSSelector::kPseudoActiveOption);
+    active_option_->PseudoStateChanged(CSSSelector::kPseudoActiveOption);
+    active_option_->scrollIntoViewIfNeeded(/*center_if_needed=*/false);
+  }
+}
+
+void HTMLSelectElement::MoveActiveOptionBackwards() {
+  CHECK(RuntimeEnabledFeatures::FilterableSelectEnabled());
+  CHECK(!UsesMenuList());
+  CHECK(active_option_);
+  if (HTMLOptionElement* new_option = GetOptionList().FindPreviousOption(
+          *active_option_, &SupportsActive)) {
+    HTMLOptionElement* old_active_option = active_option_;
+    active_option_ = new_option;
+    old_active_option->PseudoStateChanged(CSSSelector::kPseudoActiveOption);
+    active_option_->PseudoStateChanged(CSSSelector::kPseudoActiveOption);
+    active_option_->scrollIntoViewIfNeeded(/*center_if_needed=*/false);
+  }
+}
+
+void HTMLSelectElement::ToggleActiveOption(Event& event) {
+  CHECK(active_option_);
+  active_option_->ChooseOption(event);
 }
 
 }  // namespace blink

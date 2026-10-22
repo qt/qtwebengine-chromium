@@ -2,22 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fcntl.h>
-#include <string.h>
-#include <sys/stat.h>
-
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <vector>
-
-#if defined(_WIN32)
-#include <io.h>
-#endif
-
-#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
-#include <unistd.h>
-#endif
 
 #include "tools/cddl/codegen.h"
 #include "tools/cddl/logging.h"
@@ -55,7 +45,8 @@ CommandLineArguments ParseCommandLineArguments(int argc, char** argv) {
   ++argv;
   CommandLineArguments result;
   while (argc) {
-    if (strcmp(*argv, "--header") == 0) {
+    std::string_view arg = *argv;
+    if (arg == "--header") {
       // Parse the filename of the output header file. This is also the name
       // that will be used for the include guard and as the  include path in the
       // source file.
@@ -68,7 +59,7 @@ CommandLineArguments ParseCommandLineArguments(int argc, char** argv) {
       --argc;
       ++argv;
       result.header_filename = *argv;
-    } else if (strcmp(*argv, "--cc") == 0) {
+    } else if (arg == "--cc") {
       // Parse the filename of the output source file.
       if (!result.cc_filename.empty()) {
         return {};
@@ -79,7 +70,7 @@ CommandLineArguments ParseCommandLineArguments(int argc, char** argv) {
       --argc;
       ++argv;
       result.cc_filename = *argv;
-    } else if (strcmp(*argv, "--gen-dir") == 0) {
+    } else if (arg == "--gen-dir") {
       // Parse the directory prefix that should be added to the output header.
       // and source file
       if (!result.gen_dir.empty()) {
@@ -110,33 +101,6 @@ CommandLineArguments ParseCommandLineArguments(int argc, char** argv) {
   return result;
 }
 
-void CloseFile(int fd) {
-#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
-  close(fd);
-#elif defined(_WIN32)
-  _close(fd);
-#endif
-}
-
-struct File {
-  explicit File(int descriptor) : descriptor(descriptor) {}
-  ~File() { CloseFile(descriptor); }
-
-  int descriptor;
-};
-
-File OpenFile(const char* filename) {
-#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
-  return File(open(filename, O_CREAT | O_TRUNC | O_WRONLY,
-                   S_IRUSR | S_IWUSR | S_IRGRP));
-#elif defined(_WIN32)
-  int fd = -1;
-  _sopen_s(&fd, filename, O_CREAT | O_TRUNC | O_WRONLY, _SH_DENYNO,
-           _S_IREAD | _S_IWRITE);
-  return File(fd);
-#endif
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -162,16 +126,16 @@ int main(int argc, char** argv) {
 
   // Validate and open the provided header file.
   std::string header_filename = args.gen_dir + "/" + args.header_filename;
-  const File header_file = OpenFile(header_filename.c_str());
-  if (header_file.descriptor == -1) {
+  std::ofstream header_file(header_filename);
+  if (!header_file.is_open()) {
     std::cerr << "failed to open " << args.header_filename << std::endl;
     return 1;
   }
 
   // Validate and open the provided output source file.
   std::string cc_filename = args.gen_dir + "/" + args.cc_filename;
-  const File cc_file = OpenFile(cc_filename.c_str());
-  if (cc_file.descriptor == -1) {
+  std::ofstream cc_file(cc_filename);
+  if (!cc_file.is_open()) {
     std::cerr << "failed to open " << args.cc_filename << std::endl;
     return 1;
   }
@@ -220,63 +184,63 @@ int main(int argc, char** argv) {
   // Create the C++ files from the Symbol table.
 
   Logger::Log("Writing Header prologue...");
-  if (!WriteHeaderPrologue(header_file.descriptor, args.header_filename)) {
+  if (!WriteHeaderPrologue(header_file, args.header_filename)) {
     Logger::Error("WriteHeaderPrologue failed");
     return 1;
   }
   Logger::Log("Successfully wrote header prologue!");
 
   Logger::Log("Writing type definitions...");
-  if (!WriteTypeDefinitions(header_file.descriptor, &cpp_result.second)) {
+  if (!WriteTypeDefinitions(header_file, &cpp_result.second)) {
     Logger::Error("WriteTypeDefinitions failed");
     return 1;
   }
   Logger::Log("Successfully wrote type definitions!");
 
   Logger::Log("Writing function declaration...");
-  if (!WriteFunctionDeclarations(header_file.descriptor, &cpp_result.second)) {
+  if (!WriteFunctionDeclarations(header_file, &cpp_result.second)) {
     Logger::Error("WriteFunctionDeclarations failed");
     return 1;
   }
   Logger::Log("Successfully wrote function declarations!");
 
   Logger::Log("Writing header epilogue...");
-  if (!WriteHeaderEpilogue(header_file.descriptor, args.header_filename)) {
+  if (!WriteHeaderEpilogue(header_file, args.header_filename)) {
     Logger::Error("WriteHeaderEpilogue failed");
     return 1;
   }
   Logger::Log("Successfully wrote header epilogue!");
 
   Logger::Log("Writing source prologue...");
-  if (!WriteSourcePrologue(cc_file.descriptor, args.header_filename)) {
+  if (!WriteSourcePrologue(cc_file, args.header_filename)) {
     Logger::Error("WriteSourcePrologue failed");
     return 1;
   }
   Logger::Log("Successfully wrote source prologue!");
 
   Logger::Log("Writing encoders...");
-  if (!WriteEncoders(cc_file.descriptor, &cpp_result.second)) {
+  if (!WriteEncoders(cc_file, &cpp_result.second)) {
     Logger::Error("WriteEncoders failed");
     return 1;
   }
   Logger::Log("Successfully wrote encoders!");
 
   Logger::Log("Writing decoders...");
-  if (!WriteDecoders(cc_file.descriptor, &cpp_result.second)) {
+  if (!WriteDecoders(cc_file, &cpp_result.second)) {
     Logger::Error("WriteDecoders failed");
     return 1;
   }
   Logger::Log("Successfully wrote decoders!");
 
   Logger::Log("Writing equality operators...");
-  if (!WriteEqualityOperators(cc_file.descriptor, &cpp_result.second)) {
+  if (!WriteEqualityOperators(cc_file, &cpp_result.second)) {
     Logger::Error("WriteStructEqualityOperators failed");
     return 1;
   }
   Logger::Log("Successfully wrote equality operators!");
 
   Logger::Log("Writing source epilogue...");
-  if (!WriteSourceEpilogue(cc_file.descriptor)) {
+  if (!WriteSourceEpilogue(cc_file)) {
     Logger::Error("WriteSourceEpilogue failed");
     return 1;
   }

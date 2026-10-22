@@ -5,7 +5,7 @@
 export interface Progress {
   totalWork: number;
   worked: number;
-  title: string|undefined;
+  title?: string;
   canceled: boolean;
   done: boolean;
 }
@@ -13,7 +13,7 @@ export interface Progress {
 export class Progress implements Progress {
   totalWork = 0;
   worked = 0;
-  title: string|undefined = undefined;
+  title?: string;
   canceled = false;
   done = false;
 }
@@ -112,9 +112,9 @@ export class SubProgress implements Progress {
 }
 
 export class ProgressProxy implements Progress {
-  readonly #delegate: Progress|null|undefined;
-  readonly #doneCallback: (() => void)|undefined;
-  readonly #updateCallback: (() => void)|undefined;
+  readonly #delegate?: Progress|null;
+  readonly #doneCallback?: (() => void);
+  readonly #updateCallback?: (() => void);
 
   constructor(delegate?: Progress|null, doneCallback?: (() => void), updateCallback?: (() => void)) {
     this.#delegate = delegate;

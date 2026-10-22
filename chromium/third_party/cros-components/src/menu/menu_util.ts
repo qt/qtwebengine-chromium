@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {MenuItem} from './menu_item';
+import {MenuItem} from './menu_item.js';
 
 /** Check if an `Element` is a menu item or not. */
 function isMenuItem(element: unknown): element is MenuItem {

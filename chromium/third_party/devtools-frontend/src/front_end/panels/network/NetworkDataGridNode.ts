@@ -324,7 +324,7 @@ const UIStrings = {
    */
   initialPriorityToolTip: '{PH1}, Initial priority: {PH2}',
   /**
-   * @description Text in Network Data Grid Node of the Network panel. Noun. Refers to a render blocking resource.
+   * @description Text in Network Data Grid Node of the Network panel. Noun. Refers to a render-blocking resource.
    */
   blocking: 'Blocking',
   /**
@@ -608,6 +608,8 @@ export class NetworkRequestNode extends NetworkNode {
   private isOnInitiatedPathInternal: boolean;
   private linkifiedInitiatorAnchor?: HTMLElement;
 
+  private static readonly requestNumberByRequest = new WeakMap<SDK.NetworkRequest.NetworkRequest, number>();
+
   constructor(parentView: NetworkLogViewInterface, request: SDK.NetworkRequest.NetworkRequest) {
     super(parentView);
     this.initiatorCell = null;
@@ -616,6 +618,21 @@ export class NetworkRequestNode extends NetworkNode {
     this.selectable = true;
     this.isOnInitiatorPathInternal = false;
     this.isOnInitiatedPathInternal = false;
+  }
+
+  private static requestNumber(request: SDK.NetworkRequest.NetworkRequest): number {
+    const cachedRequestNumber = NetworkRequestNode.requestNumberByRequest.get(request);
+    if (cachedRequestNumber !== undefined) {
+      return cachedRequestNumber;
+    }
+
+    const requestNumber = Logs.NetworkLog.NetworkLog.instance().requests().indexOf(request) + 1;
+    if (requestNumber > 0) {
+      NetworkRequestNode.requestNumberByRequest.set(request, requestNumber);
+      return requestNumber;
+    }
+
+    return 0;
   }
 
   static NameComparator(a: NetworkNode, b: NetworkNode): number {
@@ -665,6 +682,18 @@ export class NetworkRequestNode extends NetworkNode {
     }
     return (aRequest.transferSize - bRequest.transferSize) || (aRequest.resourceSize - bRequest.resourceSize) ||
         aRequest.identityCompare(bRequest);
+  }
+
+  static RequestNumberComparator(a: NetworkNode, b: NetworkNode): number {
+    const aRequest = a.requestOrFirstKnownChildRequest();
+    const bRequest = b.requestOrFirstKnownChildRequest();
+    if (!aRequest || !bRequest) {
+      return !aRequest ? -1 : 1;
+    }
+
+    const aRequestNumber = NetworkRequestNode.requestNumber(aRequest);
+    const bRequestNumber = NetworkRequestNode.requestNumber(bRequest);
+    return (aRequestNumber - bRequestNumber) || aRequest.identityCompare(bRequest);
   }
 
   static TypeComparator(a: NetworkNode, b: NetworkNode): number {
@@ -1047,6 +1076,11 @@ export class NetworkRequestNode extends NetworkNode {
         this.renderPrimaryCell(cell, columnId, this.requestInternal.url());
         break;
       }
+      case 'request-number': {
+        const requestNumber = NetworkRequestNode.requestNumber(this.requestInternal);
+        this.setTextAndTitle(cell, requestNumber ? String(requestNumber) : '');
+        break;
+      }
       case 'method': {
         const preflightRequest = this.requestInternal.preflightRequest();
         if (preflightRequest) {
@@ -1185,14 +1219,6 @@ export class NetworkRequestNode extends NetworkNode {
   }
 
   override select(suppressSelectedEvent?: boolean): void {
-    const id = this.request()?.requestId();
-    if (id) {
-      const floatyHandled =
-          UI.Floaty.onFloatyClick({type: UI.Floaty.FloatyContextTypes.NETWORK_REQUEST, data: {requestId: id}});
-      if (floatyHandled) {
-        return;
-      }
-    }
     super.select(suppressSelectedEvent);
     this.parentView().dispatchEventToListeners(Events.RequestSelected, this.requestInternal);
   }
@@ -1628,6 +1654,10 @@ export class NetworkRequestNode extends NetworkNode {
         ev.stopPropagation();
         this.select();
         void action.execute();
+      }, {capture: true});
+      // We need this as else the images get open under it.
+      floatingButton.addEventListener('dblclick', ev => {
+        ev.stopPropagation();
       }, {capture: true});
       floatingButton.addEventListener('mousedown', ev => {
         ev.stopPropagation();

@@ -27,9 +27,9 @@ inline constexpr TraceId kUnsetTraceId = std::numeric_limits<TraceId>::max();
 // A class to represent the current TraceId Hierarchy and for the user to
 // pass around as needed.
 struct TraceIdHierarchy {
-  TraceId current;
-  TraceId parent;
-  TraceId root;
+  TraceId current = kUnsetTraceId;
+  TraceId parent = kUnsetTraceId;
+  TraceId root = kUnsetTraceId;
 
   static constexpr TraceIdHierarchy Empty() {
     return {kEmptyTraceId, kEmptyTraceId, kEmptyTraceId};

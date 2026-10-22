@@ -37,7 +37,6 @@ group("telemetry_chrome_test_support") {
     "systrace/",
     "third_party/",
     "trace_processor/",
-    "web_page_replay_go/",
   ]
 
   data_deps += [

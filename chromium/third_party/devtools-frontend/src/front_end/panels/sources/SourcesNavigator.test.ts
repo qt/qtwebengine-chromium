@@ -7,7 +7,6 @@
 
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
-import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
@@ -45,13 +44,16 @@ describeWithMockConnection('NetworkNavigatorView', () => {
       ignoreListManager,
       workspace,
     });
-    const breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance(
-        {forceNew: true, targetManager, workspace, debuggerWorkspaceBinding});
+    const breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance({
+      forceNew: true,
+      targetManager,
+      workspace,
+      debuggerWorkspaceBinding,
+      settings: Common.Settings.Settings.instance()
+    });
     Persistence.Persistence.PersistenceImpl.instance({forceNew: true, workspace, breakpointManager});
     Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance({forceNew: true, workspace});
     UI.ShortcutRegistry.ShortcutRegistry.instance({forceNew: true, actionRegistry: actionRegistryInstance});
-    Root.Runtime.experiments.register(Root.ExperimentNames.ExperimentName.AUTHORED_DEPLOYED_GROUPING, '');
-    Root.Runtime.experiments.register(Root.ExperimentNames.ExperimentName.JUST_MY_CODE, '');
   });
 
   describe('reveals main target', () => {

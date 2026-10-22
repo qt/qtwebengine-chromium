@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Enable VLOG level 1.
+#undef ENABLED_VLOG_LEVEL
+#define ENABLED_VLOG_LEVEL 1
+
 #include "components/sync_preferences/cross_device_pref_tracker/cross_device_pref_tracker_impl.h"
 
 #include <algorithm>
@@ -11,8 +15,10 @@
 #include <tuple>
 
 #include "base/check.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/json/values_util.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
@@ -28,6 +34,8 @@
 #include "components/sync_device_info/device_info_sync_service.h"
 #include "components/sync_device_info/device_info_tracker.h"
 #include "components/sync_device_info/local_device_info_provider.h"
+#include "components/sync_preferences/features.h"
+#include "components/sync_preferences/pref_service_syncable.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/jni_android.h"
@@ -92,34 +100,40 @@ bool IsDeviceExpired(const syncer::DeviceInfo& device_info,
 ServiceStatus ComputeServiceStatus(
     const syncer::DeviceInfoTracker* device_info_tracker,
     bool is_local_device_info_ready,
-    bool is_sync_configured_for_writes) {
+    bool is_sync_configured_for_writes,
+    bool is_profile_prefs_syncing) {
   if (!device_info_tracker) {
     return ServiceStatus::kDeviceInfoTrackerMissing;
   }
 
-  if (is_local_device_info_ready && is_sync_configured_for_writes) {
-    return ServiceStatus::kAvailable;
+  if (!is_sync_configured_for_writes && !is_local_device_info_ready) {
+    return ServiceStatus::kSyncNotConfiguredAndLocalDeviceInfoMissing;
   }
 
-  if (is_local_device_info_ready && !is_sync_configured_for_writes) {
+  if (!is_sync_configured_for_writes) {
     return ServiceStatus::kSyncNotConfigured;
   }
 
-  if (!is_local_device_info_ready && is_sync_configured_for_writes) {
+  if (!is_local_device_info_ready) {
     return ServiceStatus::kLocalDeviceInfoMissing;
   }
 
-  return ServiceStatus::kSyncNotConfiguredAndLocalDeviceInfoMissing;
+  if (!is_profile_prefs_syncing) {
+    return ServiceStatus::kWaitingForInitialSync;
+  }
+
+  return ServiceStatus::kAvailable;
 }
 
 // Helper to record the Tracker's service availability metric.
 void LogTrackerServiceAvailability(
     const syncer::DeviceInfoTracker* device_info_tracker,
     bool is_local_device_info_ready,
-    bool is_sync_configured_for_writes) {
-  ServiceStatus availability =
-      ComputeServiceStatus(device_info_tracker, is_local_device_info_ready,
-                           is_sync_configured_for_writes);
+    bool is_sync_configured_for_writes,
+    bool is_profile_prefs_syncing) {
+  ServiceStatus availability = ComputeServiceStatus(
+      device_info_tracker, is_local_device_info_ready,
+      is_sync_configured_for_writes, is_profile_prefs_syncing);
 
   base::UmaHistogramEnumeration(kTrackerAvailabilityAtQueryHistogram,
                                 availability);
@@ -266,6 +280,12 @@ std::optional<TimestampedPrefValueInternal> ParseCrossDevicePrefEntry(
       base::ValueToTime(cross_device_entry.Find(kUpdateTimeKey));
 
   if (!value || !update_timestamp.has_value()) {
+    VLOG_IF(1,
+            base::FeatureList::IsEnabled(
+                sync_preferences::features::kCrossDevicePrefTrackerExtraLogs))
+        << "CrossDevicePrefTracker, " << __func__ << ": failed to parse "
+        << "dictionary entry for guid " << device_info.guid()
+        << ". Missing value or update_time.";
     return std::nullopt;
   }
 
@@ -386,6 +406,12 @@ void ApplyPrefChangeToCrossDevice(
     if (cross_device_dict.contains(cache_guid.value())) {
       ScopedDictPrefUpdate update(profile_pref_service, cross_device_pref_name);
       update->Remove(cache_guid.value());
+
+      VLOG_IF(1,
+              base::FeatureList::IsEnabled(
+                  sync_preferences::features::kCrossDevicePrefTrackerExtraLogs))
+          << "CrossDevicePrefTracker, " << __func__ << ": Cleared entry for "
+          << cross_device_pref_name << ", guid: " << cache_guid.value();
     }
 
     return;
@@ -424,6 +450,12 @@ void ApplyPrefChangeToCrossDevice(
   ScopedDictPrefUpdate update(profile_pref_service, cross_device_pref_name);
 
   update->Set(cache_guid.value(), std::move(entry));
+
+  VLOG_IF(1, base::FeatureList::IsEnabled(
+                 sync_preferences::features::kCrossDevicePrefTrackerExtraLogs))
+      << "CrossDevicePrefTracker, " << __func__ << ": Wrote entry for "
+      << cross_device_pref_name << ", guid: " << cache_guid.value()
+      << ", value: " << current_value.DebugString();
 }
 
 // Retrieves, filters, and parses all valid cross-device pref entries that
@@ -451,13 +483,31 @@ GetCrossDeviceEntriesMatchingDeviceFilter(
   std::vector<TimestampedPrefValueInternal> matching_cross_device_entries;
   base::Time current_time = base::Time::Now();
 
+  const bool debug_logs_enabled = base::FeatureList::IsEnabled(
+      sync_preferences::features::kCrossDevicePrefTrackerExtraLogs);
+
   for (const auto [cache_guid, entry_value] : cross_device_dict) {
     const syncer::DeviceInfo* device_info =
         device_info_tracker->GetDeviceInfo(cache_guid);
 
-    if (!device_info ||
-        !DeviceMatchesFilter(*device_info, filter, current_time) ||
-        !entry_value.is_dict()) {
+    if (!device_info) {
+      VLOG_IF(1, debug_logs_enabled)
+          << "CrossDevicePrefTracker, " << __func__ << ": skipping guid "
+          << cache_guid << " because DeviceInfo is missing from the tracker.";
+      continue;
+    }
+
+    if (!DeviceMatchesFilter(*device_info, filter, current_time)) {
+      VLOG_IF(1, debug_logs_enabled)
+          << "CrossDevicePrefTracker, " << __func__ << ": skipping guid "
+          << cache_guid << " because it did not match the DeviceFilter.";
+      continue;
+    }
+
+    if (!entry_value.is_dict()) {
+      VLOG_IF(1, debug_logs_enabled)
+          << "CrossDevicePrefTracker, " << __func__ << ": skipping guid "
+          << cache_guid << " because its entry_value is not a dictionary.";
       continue;
     }
 
@@ -487,7 +537,7 @@ std::string_view GetTrackedPrefNameFromCrossDevice(
 }  // namespace
 
 CrossDevicePrefTrackerImpl::CrossDevicePrefTrackerImpl(
-    PrefService* profile_pref_service,
+    PrefServiceSyncable* profile_pref_service,
     PrefService* local_pref_service,
     syncer::DeviceInfoSyncService* device_info_sync_service,
     syncer::SyncService* sync_service,
@@ -511,6 +561,8 @@ CrossDevicePrefTrackerImpl::CrossDevicePrefTrackerImpl(
       env, reinterpret_cast<intptr_t>(this)));
 #endif  // BUILDFLAG(IS_ANDROID)
 
+  syncable_pref_observation_.Observe(profile_pref_service_);
+
   is_local_device_info_ready_ =
       GetLocalCacheGuid(device_info_sync_service_).has_value();
 
@@ -520,9 +572,12 @@ CrossDevicePrefTrackerImpl::CrossDevicePrefTrackerImpl(
 
   is_sync_configured_for_writes_ = IsSyncConfiguredForWrites();
 
+  is_profile_prefs_syncing_ = profile_pref_service_->IsSyncing();
+
   service_status_ = ComputeServiceStatus(
       device_info_sync_service_->GetDeviceInfoTracker(),
-      is_local_device_info_ready_, is_sync_configured_for_writes_);
+      is_local_device_info_ready_, is_sync_configured_for_writes_,
+      is_profile_prefs_syncing_);
 
   // Initialize `DeviceInfoTracker` observation and cache known GUIDs.
   if (syncer::DeviceInfoTracker* tracker =
@@ -560,7 +615,13 @@ CrossDevicePrefTrackerImpl::CrossDevicePrefTrackerImpl(
 
   // Clean up any expired device entries from the cross-device storage.
   // This relies on `active_device_guids_`.
-  GarbageCollectStaleCacheGuids();
+  if (syncer::DeviceInfoTracker* tracker =
+          device_info_sync_service_->GetDeviceInfoTracker()) {
+    // Only garbage collect when the tracker is fully loaded.
+    if (tracker->IsSyncing()) {
+      GarbageCollectStaleCacheGuids();
+    }
+  }
 }
 
 CrossDevicePrefTrackerImpl::~CrossDevicePrefTrackerImpl() {
@@ -590,12 +651,21 @@ std::vector<TimestampedPrefValue> CrossDevicePrefTrackerImpl::GetValues(
   CHECK(profile_pref_service_);
   CHECK(device_info_sync_service_);
 
+  if (service_status_ != ServiceStatus::kAvailable) {
+    VLOG_IF(1,
+            base::FeatureList::IsEnabled(
+                sync_preferences::features::kCrossDevicePrefTrackerExtraLogs))
+        << "CrossDevicePrefTracker, " << __func__
+        << ": called while service status is not kAvailable (Status: "
+        << static_cast<int>(service_status_) << ").";
+  }
+
   syncer::DeviceInfoTracker* device_info_tracker =
       device_info_sync_service_->GetDeviceInfoTracker();
 
-  LogTrackerServiceAvailability(device_info_tracker,
-                                is_local_device_info_ready_,
-                                is_sync_configured_for_writes_);
+  LogTrackerServiceAvailability(
+      device_info_tracker, is_local_device_info_ready_,
+      is_sync_configured_for_writes_, is_profile_prefs_syncing_);
 
   // Use `ResolveCrossDevicePrefName()` to allow either tracked or cross-device
   // pref names as input.
@@ -628,9 +698,9 @@ CrossDevicePrefTrackerImpl::GetMostRecentValue(
   syncer::DeviceInfoTracker* device_info_tracker =
       device_info_sync_service_->GetDeviceInfoTracker();
 
-  LogTrackerServiceAvailability(device_info_tracker,
-                                is_local_device_info_ready_,
-                                is_sync_configured_for_writes_);
+  LogTrackerServiceAvailability(
+      device_info_tracker, is_local_device_info_ready_,
+      is_sync_configured_for_writes_, is_profile_prefs_syncing_);
 
   // Use `ResolveCrossDevicePrefName()` to allow either tracked or cross-device
   // pref names as input.
@@ -642,6 +712,12 @@ CrossDevicePrefTrackerImpl::GetMostRecentValue(
                                                 cross_device_pref_name, filter);
 
   if (matching_entries.empty()) {
+    VLOG_IF(1,
+            base::FeatureList::IsEnabled(
+                sync_preferences::features::kCrossDevicePrefTrackerExtraLogs))
+        << "CrossDevicePrefTracker, " << __func__
+        << ": returning nullopt because no matching entries were "
+        << "found after applying filters.";
     return std::nullopt;
   }
 
@@ -652,6 +728,8 @@ CrossDevicePrefTrackerImpl::GetMostRecentValue(
 }
 
 void CrossDevicePrefTrackerImpl::Shutdown() {
+  syncable_pref_observation_.Reset();
+
   profile_pref_registrar_.RemoveAll();
   local_pref_registrar_.RemoveAll();
   cross_device_pref_registrar_.RemoveAll();
@@ -677,9 +755,23 @@ void CrossDevicePrefTrackerImpl::Shutdown() {
 // 3. Signal for garbage collection of stale Cache GUIDs (removed or expired).
 void CrossDevicePrefTrackerImpl::OnDeviceInfoChange() {
   HandleLocalDeviceInfoIfAvailable();
+  UpdateServiceStatus();
+
+  syncer::DeviceInfoTracker* tracker =
+      device_info_sync_service_->GetDeviceInfoTracker();
+
+  if (!tracker) {
+    return;
+  }
+
+  // Nothing to do if Sync is disabled and there's no device data
+  // available to handle.
+  if (!tracker->IsSyncing() && active_device_guids_.empty()) {
+    return;
+  }
+
   HandleRemoteDeviceInfoChanges();
   GarbageCollectStaleCacheGuids();
-  UpdateServiceStatus();
 }
 
 void CrossDevicePrefTrackerImpl::OnStateChanged(syncer::SyncService* sync) {
@@ -1066,6 +1158,9 @@ void CrossDevicePrefTrackerImpl::GarbageCollectStaleCacheGuids() {
     }
   }
 
+  const bool debug_logs_enabled = base::FeatureList::IsEnabled(
+      sync_preferences::features::kCrossDevicePrefTrackerExtraLogs);
+
   // Remove the stale entries. It is now safe for the cache to be updated.
   for (const auto& [cross_device_pref_name, guids_to_remove] :
        entries_to_remove) {
@@ -1074,6 +1169,11 @@ void CrossDevicePrefTrackerImpl::GarbageCollectStaleCacheGuids() {
     for (const std::string& guid : guids_to_remove) {
       bool removed = update->Remove(guid);
       CHECK(removed);
+
+      VLOG_IF(1, debug_logs_enabled)
+          << "CrossDevicePrefTracker, " << __func__
+          << ": Garbage collected stale entry for " << cross_device_pref_name
+          << ", guid: " << guid;
     }
   }
 }
@@ -1114,7 +1214,8 @@ CrossDevicePrefTrackerImpl::GetActiveDevices() const {
 void CrossDevicePrefTrackerImpl::UpdateServiceStatus() {
   ServiceStatus new_status = ComputeServiceStatus(
       device_info_sync_service_->GetDeviceInfoTracker(),
-      is_local_device_info_ready_, is_sync_configured_for_writes_);
+      is_local_device_info_ready_, is_sync_configured_for_writes_,
+      is_profile_prefs_syncing_);
 
   if (new_status == service_status_) {
     return;
@@ -1131,6 +1232,11 @@ void CrossDevicePrefTrackerImpl::UpdateServiceStatus() {
       base::android::AttachCurrentThread(), java_object_,
       static_cast<int>(service_status_));
 #endif  // BUILDFLAG(IS_ANDROID)
+}
+
+void CrossDevicePrefTrackerImpl::OnIsSyncingChanged() {
+  is_profile_prefs_syncing_ = profile_pref_service_->IsSyncing();
+  UpdateServiceStatus();
 }
 
 #if BUILDFLAG(IS_ANDROID)

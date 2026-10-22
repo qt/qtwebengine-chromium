@@ -227,8 +227,8 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderWithoutPause) {
   FakePause pause(false);
   EXPECT_TRUE(StartRenderPage(page.get(), &pause));
   ScopedFPDFBitmap bitmap = FinishRenderPage(page.get());
-  CompareBitmapToPngWithExpectationSuffix(
-      bitmap.get(), kAnnotationStampWithApBaseContentBasename);
+  CompareBitmapWithExpectationSuffix(bitmap.get(),
+                                     kAnnotationStampWithApBaseContentBasename);
 }
 
 TEST_F(FPDFProgressiveRenderEmbedderTest, RenderWithPause) {
@@ -245,8 +245,8 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderWithPause) {
     render_done = ContinueRenderPage(page.get(), &pause);
   }
   ScopedFPDFBitmap bitmap = FinishRenderPage(page.get());
-  CompareBitmapToPngWithExpectationSuffix(
-      bitmap.get(), kAnnotationStampWithApBaseContentBasename);
+  CompareBitmapWithExpectationSuffix(bitmap.get(),
+                                     kAnnotationStampWithApBaseContentBasename);
 }
 
 TEST_F(FPDFProgressiveRenderEmbedderTest, RenderAnnotWithPause) {
@@ -263,8 +263,8 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderAnnotWithPause) {
     render_done = ContinueRenderPage(page.get(), &pause);
   }
   ScopedFPDFBitmap bitmap = FinishRenderPage(page.get());
-  CompareBitmapToPngWithExpectationSuffix(bitmap.get(),
-                                          pdfium::kAnnotationStampWithApPng);
+  CompareBitmapWithExpectationSuffix(bitmap.get(),
+                                     pdfium::kAnnotationStampWithApPng);
 }
 
 TEST_F(FPDFProgressiveRenderEmbedderTest, RenderFormsWithPause) {
@@ -282,7 +282,7 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderFormsWithPause) {
   }
   ScopedFPDFBitmap bitmap =
       FinishRenderPageWithForms(page.get(), form_handle());
-  CompareBitmapToPngWithExpectationSuffix(bitmap.get(), pdfium::kTextFormPng);
+  CompareBitmapWithExpectationSuffix(bitmap.get(), pdfium::kTextFormPng);
 }
 
 void FPDFProgressiveRenderEmbedderTest::VerifyRenderingWithColorScheme(
@@ -301,9 +301,9 @@ void FPDFProgressiveRenderEmbedderTest::VerifyRenderingWithColorScheme(
       page.get(), form_handle(), flags, color_scheme, background_color);
   ASSERT_TRUE(bitmap);
   if (fuzzy) {
-    CompareBitmapToPngWithFuzzyExpectationSuffix(bitmap.get(), basename);
+    CompareBitmapWithFuzzyExpectationSuffix(bitmap.get(), basename);
   } else {
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(), basename);
+    CompareBitmapWithExpectationSuffix(bitmap.get(), basename);
   }
 }
 
@@ -356,8 +356,8 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderPathObjectUsability) {
   // Check rendering result before modifications.
   {
     ScopedFPDFBitmap bitmap = RenderPage(page.get());
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(),
-                                            kAllRectanglesUsedBasename);
+    CompareBitmapWithExpectationSuffix(bitmap.get(),
+                                       kAllRectanglesUsedBasename);
   }
 
   ASSERT_EQ(FPDFPage_CountObjects(page.get()), 8);
@@ -369,16 +369,16 @@ TEST_F(FPDFProgressiveRenderEmbedderTest, RenderPathObjectUsability) {
   ASSERT_TRUE(FPDFPageObj_SetIsActive(page_obj, /*active=*/false));
   {
     ScopedFPDFBitmap bitmap = RenderPage(page.get());
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(),
-                                            kOneRectangleInactiveBasename);
+    CompareBitmapWithExpectationSuffix(bitmap.get(),
+                                       kOneRectangleInactiveBasename);
   }
 
   // Check rendering result after the same page object is active again.
   ASSERT_TRUE(FPDFPageObj_SetIsActive(page_obj, /*active=*/true));
   {
     ScopedFPDFBitmap bitmap = RenderPage(page.get());
-    CompareBitmapToPngWithExpectationSuffix(bitmap.get(),
-                                            kAllRectanglesUsedBasename);
+    CompareBitmapWithExpectationSuffix(bitmap.get(),
+                                       kAllRectanglesUsedBasename);
   }
 }
 

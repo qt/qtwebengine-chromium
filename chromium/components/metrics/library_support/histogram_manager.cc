@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "base/metrics/histogram_macros.h"
+#include "base/metrics/histogram.h"
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/no_destructor.h"
@@ -27,7 +27,7 @@ HistogramManager* HistogramManager::GetInstance() {
 void HistogramManager::RecordDelta(const base::HistogramBase& histogram,
                                    const base::HistogramSamples& snapshot) {
   EncodeHistogramDelta(histogram.histogram_name(), snapshot,
-                       uma_proto_.add_histogram_event());
+                       [&] { return uma_proto_.add_histogram_event(); });
 }
 
 bool HistogramManager::GetDeltas(std::vector<uint8_t>* data) {

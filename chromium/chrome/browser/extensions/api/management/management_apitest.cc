@@ -18,8 +18,6 @@
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/web_applications/extension_status_utils.h"
-#include "chrome/browser/web_applications/web_app_filter.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/public/test/browser_test.h"
@@ -47,11 +45,13 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/web_applications/web_app_dialogs.h"
+#include "chrome/browser/web_applications/extension_status_utils.h"
 #include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
 #include "chrome/browser/web_applications/proto/web_app_install_state.pb.h"
 #include "chrome/browser/web_applications/test/fake_web_app_ui_manager.h"
 #include "chrome/browser/web_applications/test/os_integration_test_override_impl.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
+#include "chrome/browser/web_applications/web_app_filter.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
@@ -63,7 +63,6 @@ static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 using extensions::Extension;
 using extensions::Manifest;
 using extensions::mojom::ManifestLocation;
-using web_app::WebAppFilter;
 
 namespace {
 
@@ -73,10 +72,9 @@ constexpr char kManifest[] =
     R"({
           "name": "Management API Test",
           "version": "0.1",
-          "manifest_version": 2,
+          "manifest_version": 3,
           "background": {
-            "scripts": ["background.js"],
-            "persistent": true
+            "service_worker": "background.js"
           },
           "replacement_web_app": "%s"
         })";
@@ -92,13 +90,9 @@ bool ExpectChromeAppsDefaultEnabled() {
 
 }  // namespace
 
-using ContextType = extensions::browser_test_util::ContextType;
-
-class ExtensionManagementApiTest
-    : public extensions::ExtensionApiTest,
-      public testing::WithParamInterface<ContextType> {
+class ExtensionManagementApiTest : public extensions::ExtensionApiTest {
  public:
-  ExtensionManagementApiTest() : ExtensionApiTest(GetParam()) {
+  ExtensionManagementApiTest() {
 #if !BUILDFLAG(IS_ANDROID)
     enable_chrome_apps_ = std::make_unique<base::AutoReset<bool>>(
         &extensions::testing::g_enable_chrome_apps_for_testing, true);
@@ -140,8 +134,9 @@ class ExtensionManagementApiTest
     ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(app_path),
                               {.context_type = ContextType::kFromManifest}));
 
-    if (out_app_id)
+    if (out_app_id) {
       *out_app_id = last_loaded_extension_id();
+    }
 
     ASSERT_TRUE(launched_app.WaitUntilSatisfied());
   }
@@ -176,18 +171,7 @@ class ExtensionManagementApiTest
 #endif
 };
 
-#if !BUILDFLAG(IS_ANDROID)
-// Android does not support persistent background pages.
-INSTANTIATE_TEST_SUITE_P(PersistentBackground,
-                         ExtensionManagementApiTest,
-                         ::testing::Values(ContextType::kPersistentBackground));
-#endif  // !BUILDFLAG(IS_ANDROID)
-
-INSTANTIATE_TEST_SUITE_P(ServiceWorker,
-                         ExtensionManagementApiTest,
-                         ::testing::Values(ContextType::kServiceWorker));
-
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, Basics) {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, Basics) {
 #if !BUILDFLAG(IS_ANDROID)
   // Android does not provide the XmlUnitTestResultPrinter this method needs.
   base::AddFeatureIdTagToTestResult(
@@ -214,12 +198,12 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, Basics) {
 #else
 #define MAYBE_NoPermission NoPermission
 #endif
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, MAYBE_NoPermission) {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, MAYBE_NoPermission) {
   LoadExtensions();
   ASSERT_TRUE(RunExtensionTest("management/no_permission"));
 }
 
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, Uninstall) {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, Uninstall) {
   LoadExtensions();
   // Confirmation dialog will be shown for uninstallations except for self.
   extensions::ScopedTestDialogAutoConfirm auto_confirm(
@@ -229,7 +213,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, Uninstall) {
 
 #if !BUILDFLAG(IS_ANDROID)
 // Skipped on Android because it does not support Chrome apps.
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, CreateAppShortcut) {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, CreateAppShortcut) {
   LoadExtensions();
   base::FilePath basedir = test_data_dir_.AppendASCII("management");
   LoadNamedExtension(basedir, "packaged_app");
@@ -239,7 +223,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, CreateAppShortcut) {
 }
 
 // Skipped on Android because it does not support Chrome apps.
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, GenerateAppForLink) {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, GenerateAppForLink) {
   web_app::test::WaitUntilReady(web_app::WebAppProvider::GetForTest(profile()));
   ASSERT_TRUE(RunExtensionTest("management/generate_app_for_link"));
 }
@@ -313,7 +297,8 @@ class InstallReplacementWebAppApiTest : public ExtensionManagementApiTest {
     RunTest(manifest, web_app_url, kInstallReplacementWebApp,
             true /* from_webstore */);
     EXPECT_TRUE(provider->registrar_unsafe().AppMatches(
-        web_app_id, WebAppFilter::InstalledInOperatingSystemForTesting()));
+        web_app_id,
+        web_app::WebAppFilter::InstalledInOperatingSystemForTesting()));
     EXPECT_EQ(1, static_cast<int>(
                      provider->ui_manager().GetNumWindowsForApp(web_app_id)));
 
@@ -321,7 +306,8 @@ class InstallReplacementWebAppApiTest : public ExtensionManagementApiTest {
     RunTest(std::move(manifest), web_app_url, kInstallReplacementWebApp,
             true /* from_webstore */);
     EXPECT_TRUE(provider->registrar_unsafe().AppMatches(
-        web_app_id, WebAppFilter::InstalledInOperatingSystemForTesting()));
+        web_app_id,
+        web_app::WebAppFilter::InstalledInOperatingSystemForTesting()));
     EXPECT_EQ(2, static_cast<int>(
                      provider->ui_manager().GetNumWindowsForApp(web_app_id)));
   }
@@ -329,14 +315,7 @@ class InstallReplacementWebAppApiTest : public ExtensionManagementApiTest {
   net::EmbeddedTestServer https_test_server_;
 };
 
-INSTANTIATE_TEST_SUITE_P(PersistentBackground,
-                         InstallReplacementWebAppApiTest,
-                         ::testing::Values(ContextType::kPersistentBackground));
-INSTANTIATE_TEST_SUITE_P(ServiceWorker,
-                         InstallReplacementWebAppApiTest,
-                         ::testing::Values(ContextType::kServiceWorker));
-
-IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest, NotWebstore) {
+IN_PROC_BROWSER_TEST_F(InstallReplacementWebAppApiTest, NotWebstore) {
   static constexpr char kBackground[] = R"(
   chrome.management.installReplacementWebApp(function() {
     chrome.test.assertLastError(
@@ -350,7 +329,7 @@ IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest, NotWebstore) {
       kBackground, false /* from_webstore */);
 }
 
-IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest, NoGesture) {
+IN_PROC_BROWSER_TEST_F(InstallReplacementWebAppApiTest, NoGesture) {
   static constexpr char kBackground[] = R"(
   chrome.management.installReplacementWebApp(function() {
     chrome.test.assertLastError(
@@ -364,7 +343,7 @@ IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest, NoGesture) {
       kBackground, true /* from_webstore */);
 }
 
-IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest, NotInstallableWebApp) {
+IN_PROC_BROWSER_TEST_F(InstallReplacementWebAppApiTest, NotInstallableWebApp) {
   static constexpr char kBackground[] =
       R"(chrome.test.runWithUserGesture(function() {
            chrome.management.installReplacementWebApp(function() {
@@ -379,7 +358,7 @@ IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest, NotInstallableWebApp) {
           kBackground, true /* from_webstore */);
 }
 
-IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest, InstallableWebApp) {
+IN_PROC_BROWSER_TEST_F(InstallReplacementWebAppApiTest, InstallableWebApp) {
   static constexpr char kGoodWebAppURL[] =
       "/management/install_replacement_web_app/acceptable_web_app/index.html";
 
@@ -388,7 +367,7 @@ IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest, InstallableWebApp) {
 
 // Check that web app still installs and launches correctly when start_url does
 // not match replacement_web_app_url.
-IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest,
+IN_PROC_BROWSER_TEST_F(InstallReplacementWebAppApiTest,
                        InstallableWebAppWithStartUrl) {
   static constexpr char kGoodWebAppUrl[] =
       "/management/install_replacement_web_app/"
@@ -402,7 +381,7 @@ IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest,
   RunInstallableWebAppTest(kManifest, kGoodWebAppUrl, kGoodWebAppStartUrl);
 }
 
-IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest,
+IN_PROC_BROWSER_TEST_F(InstallReplacementWebAppApiTest,
                        InstallableWebAppInPlatformApp) {
   static constexpr char kAppManifest[] =
       R"({
@@ -422,7 +401,7 @@ IN_PROC_BROWSER_TEST_P(InstallReplacementWebAppApiTest,
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 // Tests actions on extensions when no management policy is in place.
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, ManagementPolicyAllowed) {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, ManagementPolicyAllowed) {
   LoadExtensions();
   extensions::ScopedTestDialogAutoConfirm auto_confirm(
       extensions::ScopedTestDialogAutoConfirm::ACCEPT);
@@ -445,7 +424,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, ManagementPolicyAllowed) {
 }
 
 // Tests actions on extensions when management policy prohibits those actions.
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, ManagementPolicyProhibited) {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, ManagementPolicyProhibited) {
   LoadExtensions();
   extensions::ExtensionRegistry* registry =
       extensions::ExtensionRegistry::Get(profile());
@@ -467,7 +446,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, ManagementPolicyProhibited) {
 
 #if !BUILDFLAG(IS_ANDROID)
 // Skipped on Android because it does not support Chrome apps.
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, LaunchPanelApp) {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchPanelApp) {
   // Load an extension that calls launchApp() on any app that gets
   // installed.
   ExtensionTestMessageListener launcher_loaded("launcher loaded");
@@ -523,7 +502,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, LaunchPanelApp) {
 }
 
 // Skipped on Android because it does not support Chrome apps.
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, LaunchTabApp) {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchTabApp) {
   // Load an extension that calls launchApp() on any app that gets
   // installed.
   ExtensionTestMessageListener launcher_loaded("launcher loaded");
@@ -577,7 +556,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, LaunchTabApp) {
 }
 
 // Skipped on Android because it does not support Chrome apps.
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest,
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest,
                        NoLaunchPanelAppsDeprecated) {
   extensions::testing::g_enable_chrome_apps_for_testing = false;
   // Load an extension that calls launchApp() on any app that gets
@@ -607,7 +586,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest,
 }
 
 // Skipped on Android because it does not support Chrome apps.
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, NoLaunchTabAppDeprecated) {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, NoLaunchTabAppDeprecated) {
   extensions::testing::g_enable_chrome_apps_for_testing = false;
   // Load an extension that calls launchApp() on any app that gets
   // installed.
@@ -641,13 +620,13 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, NoLaunchTabAppDeprecated) {
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
-// Flaky on MacOS: crbug.com/915339
+// Flaky on MacOS: crbug.com/41431910
 #if BUILDFLAG(IS_MAC)
 #define MAYBE_LaunchType DISABLED_LaunchType
 #else
 #define MAYBE_LaunchType LaunchType
 #endif
-IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTest, MAYBE_LaunchType) {
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, MAYBE_LaunchType) {
   LoadExtensions();
   base::FilePath basedir = test_data_dir_.AppendASCII("management");
   LoadNamedExtension(basedir, "packaged_app");

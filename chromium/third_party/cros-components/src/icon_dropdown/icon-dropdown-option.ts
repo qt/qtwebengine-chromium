@@ -7,7 +7,7 @@
 import {SelectOption} from '@material/web/select/select-option.js';
 import {css, PropertyValues} from 'lit';
 
-import {MenuItem} from '../menu/menu_item';
+import {MenuItem} from '../menu/menu_item.js';
 
 /**
  * Event type for when an option is triggered.

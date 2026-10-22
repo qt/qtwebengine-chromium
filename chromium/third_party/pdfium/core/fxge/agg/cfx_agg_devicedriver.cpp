@@ -376,7 +376,7 @@ agg::filling_rule_e GetAlternateOrWindingFillType(
 }
 
 RetainPtr<CFX_DIBitmap> GetClipMaskFromRegion(const CFX_AggClipRgn* r) {
-  return (r && r->GetType() == CFX_AggClipRgn::kMaskF) ? r->GetMask() : nullptr;
+  return r ? r->GetMask() : nullptr;
 }
 
 FX_RECT GetClipBoxFromRegion(const RetainPtr<CFX_DIBitmap>& device,
@@ -1003,31 +1003,45 @@ DeviceType CFX_AggDeviceDriver::GetDeviceType() const {
   return DeviceType::kDisplay;
 }
 
-int CFX_AggDeviceDriver::GetDeviceCaps(int caps_id) const {
-  switch (caps_id) {
-    case FXDC_PIXEL_WIDTH:
-      return bitmap_->GetWidth();
-    case FXDC_PIXEL_HEIGHT:
-      return bitmap_->GetHeight();
-    case FXDC_BITS_PIXEL:
-      return bitmap_->GetBPP();
-    case FXDC_HORZ_SIZE:
-    case FXDC_VERT_SIZE:
-      return 0;
-    case FXDC_RENDER_CAPS: {
-      int flags = FXRC_GET_BITS | FXRC_ALPHA_PATH | FXRC_ALPHA_IMAGE |
-                  FXRC_BLEND_MODE | FXRC_SOFT_CLIP;
-      if (bitmap_->IsAlphaFormat()) {
-        flags |= FXRC_ALPHA_OUTPUT;
-      } else if (bitmap_->IsMaskFormat()) {
-        CHECK_NE(bitmap_->GetBPP(), 1);  // Matches format CHECKs in the ctor.
-        flags |= FXRC_BYTEMASK_OUTPUT;
-      }
-      return flags;
-    }
-    default:
-      NOTREACHED();
-  }
+bool CFX_AggDeviceDriver::RenderCapGetBits() const {
+  return true;
+}
+
+bool CFX_AggDeviceDriver::RenderCapAlphaPath() const {
+  return true;
+}
+
+bool CFX_AggDeviceDriver::RenderCapAlphaImage() const {
+  return true;
+}
+
+bool CFX_AggDeviceDriver::RenderCapBlendMode() const {
+  return true;
+}
+
+bool CFX_AggDeviceDriver::RenderCapSoftClip() const {
+  return true;
+}
+
+bool CFX_AggDeviceDriver::RenderCapAlphaOutput() const {
+  return bitmap_->IsAlphaFormat();
+}
+
+bool CFX_AggDeviceDriver::RenderCapByteMaskOutput() const {
+  CHECK_NE(bitmap_->GetBPP(), 1);  // Matches format CHECKs in the ctor.
+  return bitmap_->IsMaskFormat();
+}
+
+int CFX_AggDeviceDriver::GetPixelWidth() const {
+  return bitmap_->GetWidth();
+}
+
+int CFX_AggDeviceDriver::GetPixelHeight() const {
+  return bitmap_->GetHeight();
+}
+
+int CFX_AggDeviceDriver::GetBitsPerPixel() const {
+  return bitmap_->GetBPP();
 }
 
 void CFX_AggDeviceDriver::SaveState() {
@@ -1075,8 +1089,8 @@ void CFX_AggDeviceDriver::SetClipMask(agg::rasterizer_scanline_aa& rasterizer) {
     agg::render_scanlines(rasterizer, scanline, final_render,
                           fill_options_.aliased_path);
   }
-  clip_rgn_->IntersectMaskF(path_rect.left, path_rect.top,
-                            std::move(pThisLayer));
+  clip_rgn_->IntersectMask(path_rect.left, path_rect.top,
+                           std::move(pThisLayer));
 }
 
 bool CFX_AggDeviceDriver::SetClip_PathFill(
@@ -1087,15 +1101,14 @@ bool CFX_AggDeviceDriver::SetClip_PathFill(
 
   fill_options_ = fill_options;
   if (!clip_rgn_) {
-    clip_rgn_ = std::make_unique<CFX_AggClipRgn>(
-        GetDeviceCaps(FXDC_PIXEL_WIDTH), GetDeviceCaps(FXDC_PIXEL_HEIGHT));
+    clip_rgn_ =
+        std::make_unique<CFX_AggClipRgn>(GetPixelWidth(), GetPixelHeight());
   }
   std::optional<CFX_FloatRect> maybe_rectf = path.GetRect(pObject2Device);
   if (maybe_rectf.has_value()) {
     CFX_FloatRect& rectf = maybe_rectf.value();
-    rectf.Intersect(
-        CFX_FloatRect(0, 0, static_cast<float>(GetDeviceCaps(FXDC_PIXEL_WIDTH)),
-                      static_cast<float>(GetDeviceCaps(FXDC_PIXEL_HEIGHT))));
+    rectf.Intersect(CFX_FloatRect(0, 0, static_cast<float>(GetPixelWidth()),
+                                  static_cast<float>(GetPixelHeight())));
     FX_RECT rect = rectf.GetOuterRect();
     clip_rgn_->IntersectRect(rect);
     return true;
@@ -1103,9 +1116,8 @@ bool CFX_AggDeviceDriver::SetClip_PathFill(
   agg::path_storage path_data = BuildAggPath(path, pObject2Device);
   path_data.end_poly();
   agg::rasterizer_scanline_aa rasterizer;
-  rasterizer.clip_box(0.0f, 0.0f,
-                      static_cast<float>(GetDeviceCaps(FXDC_PIXEL_WIDTH)),
-                      static_cast<float>(GetDeviceCaps(FXDC_PIXEL_HEIGHT)));
+  rasterizer.clip_box(0.0f, 0.0f, static_cast<float>(GetPixelWidth()),
+                      static_cast<float>(GetPixelHeight()));
   rasterizer.add_path(path_data);
   rasterizer.filling_rule(GetAlternateOrWindingFillType(fill_options));
   SetClipMask(rasterizer);
@@ -1117,14 +1129,13 @@ bool CFX_AggDeviceDriver::SetClip_PathStroke(
     const CFX_Matrix* pObject2Device,
     const CFX_GraphStateData* pGraphState) {
   if (!clip_rgn_) {
-    clip_rgn_ = std::make_unique<CFX_AggClipRgn>(
-        GetDeviceCaps(FXDC_PIXEL_WIDTH), GetDeviceCaps(FXDC_PIXEL_HEIGHT));
+    clip_rgn_ =
+        std::make_unique<CFX_AggClipRgn>(GetPixelWidth(), GetPixelHeight());
   }
   agg::path_storage path_data = BuildAggPath(path, nullptr);
   agg::rasterizer_scanline_aa rasterizer;
-  rasterizer.clip_box(0.0f, 0.0f,
-                      static_cast<float>(GetDeviceCaps(FXDC_PIXEL_WIDTH)),
-                      static_cast<float>(GetDeviceCaps(FXDC_PIXEL_HEIGHT)));
+  rasterizer.clip_box(0.0f, 0.0f, static_cast<float>(GetPixelWidth()),
+                      static_cast<float>(GetPixelHeight()));
   RasterizeStroke(&rasterizer, &path_data, pObject2Device, pGraphState, 1.0f,
                   false);
   rasterizer.filling_rule(agg::fill_non_zero);
@@ -1177,9 +1188,8 @@ bool CFX_AggDeviceDriver::DrawPath(const CFX_Path& path,
       fill_color) {
     agg::path_storage path_data = BuildAggPath(path, pObject2Device);
     agg::rasterizer_scanline_aa rasterizer;
-    rasterizer.clip_box(0.0f, 0.0f,
-                        static_cast<float>(GetDeviceCaps(FXDC_PIXEL_WIDTH)),
-                        static_cast<float>(GetDeviceCaps(FXDC_PIXEL_HEIGHT)));
+    rasterizer.clip_box(0.0f, 0.0f, static_cast<float>(GetPixelWidth()),
+                        static_cast<float>(GetPixelHeight()));
     rasterizer.add_path(path_data);
     rasterizer.filling_rule(GetAlternateOrWindingFillType(fill_options));
     RenderRasterizer(rasterizer, fill_color, fill_options.full_cover,
@@ -1193,9 +1203,8 @@ bool CFX_AggDeviceDriver::DrawPath(const CFX_Path& path,
   if (fill_options.zero_area) {
     agg::path_storage path_data = BuildAggPath(path, pObject2Device);
     agg::rasterizer_scanline_aa rasterizer;
-    rasterizer.clip_box(0.0f, 0.0f,
-                        static_cast<float>(GetDeviceCaps(FXDC_PIXEL_WIDTH)),
-                        static_cast<float>(GetDeviceCaps(FXDC_PIXEL_HEIGHT)));
+    rasterizer.clip_box(0.0f, 0.0f, static_cast<float>(GetPixelWidth()),
+                        static_cast<float>(GetPixelHeight()));
     RasterizeStroke(&rasterizer, &path_data, nullptr, pGraphState, 1,
                     fill_options.stroke_text_mode);
     RenderRasterizer(rasterizer, stroke_color, fill_options.full_cover,
@@ -1216,9 +1225,8 @@ bool CFX_AggDeviceDriver::DrawPath(const CFX_Path& path,
 
   agg::path_storage path_data = BuildAggPath(path, &matrix1);
   agg::rasterizer_scanline_aa rasterizer;
-  rasterizer.clip_box(0.0f, 0.0f,
-                      static_cast<float>(GetDeviceCaps(FXDC_PIXEL_WIDTH)),
-                      static_cast<float>(GetDeviceCaps(FXDC_PIXEL_HEIGHT)));
+  rasterizer.clip_box(0.0f, 0.0f, static_cast<float>(GetPixelWidth()),
+                      static_cast<float>(GetPixelHeight()));
   RasterizeStroke(&rasterizer, &path_data, &matrix2, pGraphState, matrix1.a,
                   fill_options.stroke_text_mode);
   RenderRasterizer(rasterizer, stroke_color, fill_options.full_cover,
@@ -1238,22 +1246,20 @@ bool CFX_AggDeviceDriver::FillRect(const FX_RECT& rect, uint32_t fill_color) {
     return true;
   }
 
-  if (!clip_rgn_ || clip_rgn_->GetType() == CFX_AggClipRgn::kRectI) {
-    if (rgb_byte_order_) {
-      RgbByteOrderCompositeRect(bitmap_, draw_rect.left, draw_rect.top,
-                                draw_rect.Width(), draw_rect.Height(),
-                                fill_color);
-    } else {
-      bitmap_->CompositeRect(draw_rect.left, draw_rect.top, draw_rect.Width(),
-                             draw_rect.Height(), fill_color);
-    }
-    return true;
+  if (clip_rgn_ && clip_rgn_->GetMask()) {
+    bitmap_->CompositeMask(draw_rect.left, draw_rect.top, draw_rect.Width(),
+                           draw_rect.Height(), clip_rgn_->GetMask(), fill_color,
+                           draw_rect.left - clip_rect.left,
+                           draw_rect.top - clip_rect.top, BlendMode::kNormal,
+                           nullptr, nullptr, rgb_byte_order_);
+  } else if (rgb_byte_order_) {
+    RgbByteOrderCompositeRect(bitmap_, draw_rect.left, draw_rect.top,
+                              draw_rect.Width(), draw_rect.Height(),
+                              fill_color);
+  } else {
+    bitmap_->CompositeRect(draw_rect.left, draw_rect.top, draw_rect.Width(),
+                           draw_rect.Height(), fill_color);
   }
-  bitmap_->CompositeMask(draw_rect.left, draw_rect.top, draw_rect.Width(),
-                         draw_rect.Height(), clip_rgn_->GetMask(), fill_color,
-                         draw_rect.left - clip_rect.left,
-                         draw_rect.top - clip_rect.top, BlendMode::kNormal,
-                         nullptr, rgb_byte_order_);
   return true;
 }
 
@@ -1261,8 +1267,7 @@ FX_RECT CFX_AggDeviceDriver::GetClipBox() const {
   if (clip_rgn_) {
     return clip_rgn_->GetBox();
   }
-  return FX_RECT(0, 0, GetDeviceCaps(FXDC_PIXEL_WIDTH),
-                 GetDeviceCaps(FXDC_PIXEL_HEIGHT));
+  return FX_RECT(0, 0, GetPixelWidth(), GetPixelHeight());
 }
 
 bool CFX_AggDeviceDriver::GetDIBits(RetainPtr<CFX_DIBitmap> bitmap,
@@ -1279,9 +1284,8 @@ bool CFX_AggDeviceDriver::GetDIBits(RetainPtr<CFX_DIBitmap> bitmap,
     if (!pBack) {
       return true;
     }
-
     pBack->CompositeBitmap(0, 0, pBack->GetWidth(), pBack->GetHeight(), bitmap_,
-                           0, 0, BlendMode::kNormal, nullptr, false);
+                           0, 0, BlendMode::kNormal);
   } else {
     pBack = bitmap_->ClipTo(rect);
     if (!pBack) {
@@ -1314,16 +1318,23 @@ bool CFX_AggDeviceDriver::SetDIBits(RetainPtr<const CFX_DIBBase> bitmap,
     return true;
   }
 
+  const FX_RECT* clip_rect = nullptr;
+  RetainPtr<CFX_DIBitmap> clip_mask;
+  if (clip_rgn_) {
+    clip_rect = &clip_rgn_->GetBox();
+    clip_mask = clip_rgn_->GetMask();
+  }
+
   if (bitmap->IsMaskFormat()) {
     return bitmap_->CompositeMask(left, top, src_rect.Width(),
                                   src_rect.Height(), std::move(bitmap), argb,
                                   src_rect.left, src_rect.top, blend_type,
-                                  clip_rgn_.get(), rgb_byte_order_);
+                                  clip_rect, clip_mask, rgb_byte_order_);
   }
   return bitmap_->CompositeBitmap(left, top, src_rect.Width(),
                                   src_rect.Height(), std::move(bitmap),
                                   src_rect.left, src_rect.top, blend_type,
-                                  clip_rgn_.get(), rgb_byte_order_);
+                                  clip_rect, clip_mask, rgb_byte_order_);
 }
 
 bool CFX_AggDeviceDriver::StretchDIBits(RetainPtr<const CFX_DIBBase> bitmap,
@@ -1378,8 +1389,10 @@ RenderDeviceDriverIface::StartResult CFX_AggDeviceDriver::StartDIBits(
                                 alpha, argb, matrix, options, rgb_byte_order_)};
 }
 
-bool CFX_AggDeviceDriver::ContinueDIBits(CFX_AggImageRenderer* pHandle,
-                                         PauseIndicatorIface* pPause) {
+bool CFX_AggDeviceDriver::ContinueDIBits(
+    RenderDeviceDriverIface::Continuation* continuation,
+    PauseIndicatorIface* pPause) {
+  auto* pHandle = static_cast<CFX_AggImageRenderer*>(continuation);
   return bitmap_->GetBuffer().empty() || pHandle->Continue(pPause);
 }
 

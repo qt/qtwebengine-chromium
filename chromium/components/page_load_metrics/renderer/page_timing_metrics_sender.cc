@@ -68,7 +68,6 @@ PageTimingMetricsSender::PageTimingMetricsSender(
       last_timing_(std::move(initial_timing)),
       last_cpu_timing_(mojom::CpuTiming::New()),
       metadata_(mojom::FrameMetadata::New()),
-      soft_navigation_metrics_(CreateSoftNavigationMetrics()),
       buffer_timer_delay_ms_(GetBufferTimerDelayMillis(TimerType::kRenderer)),
       metadata_recorder_(initial_monotonic_timing, is_main_frame) {
   if (initial_request) {
@@ -123,31 +122,27 @@ void PageTimingMetricsSender::DidObserveNewFeatureUsage(
 
 void PageTimingMetricsSender::DidObserveSoftNavigation(
     blink::SoftNavigationMetricsForReporting new_metrics) {
-  CHECK(new_metrics.count);
-  CHECK_GT(new_metrics.count, soft_navigation_metrics_->count);
-
-  CHECK(new_metrics.navigation_id);  // blink::kNavigationIdAbsentValue
-  // Increases strictly monotonically but can overflow,
-  // see blink::NavigationIdGenerator.
-  CHECK_NE(new_metrics.navigation_id, soft_navigation_metrics_->navigation_id);
-
   // The start_time is a TimeDelta, and its resolution is in microseconds.
   // Note that it may not be monotonically increasing, see:
   // crbug.com/418449366#comment3
   CHECK(!new_metrics.start_time.is_zero());
 
   CHECK(!new_metrics.same_document_metrics_token.is_empty());
-  CHECK(new_metrics.same_document_metrics_token !=
-        soft_navigation_metrics_->same_document_metrics_token);
-
-  // Now that we've checked the invariants, start with a fresh Mojom
-  // message, including a cleared out largest_contentful_paint field.
-  soft_navigation_metrics_ = CreateSoftNavigationMetrics();
-  soft_navigation_metrics_->count = new_metrics.count;
-  soft_navigation_metrics_->navigation_id = new_metrics.navigation_id;
-  soft_navigation_metrics_->start_time = new_metrics.start_time;
-  soft_navigation_metrics_->same_document_metrics_token =
-      new_metrics.same_document_metrics_token;
+  if (!soft_navigation_metrics_.empty()) {
+    CHECK_EQ(soft_navigation_metrics_.back()->soft_navigation_offset + 1,
+             new_metrics.soft_navigation_offset);
+    CHECK_NE(new_metrics.same_document_metrics_token,
+             soft_navigation_metrics_.back()->same_document_metrics_token);
+  }
+  // Now that we've checked the invariants, enter the soft nav into the queue.
+  auto entry = mojom::SoftNavigationMetrics::New();
+  entry->soft_navigation_offset = new_metrics.soft_navigation_offset;
+  entry->start_time = new_metrics.start_time;
+  entry->soft_navigation_slicing_time =
+      new_metrics.soft_navigation_slicing_time;
+  entry->navigation_type = new_metrics.navigation_type;
+  entry->same_document_metrics_token = new_metrics.same_document_metrics_token;
+  soft_navigation_metrics_.emplace_back(std::move(entry));
 
   EnsureSendTimer();
 }
@@ -255,9 +250,10 @@ void PageTimingMetricsSender::UpdateResourceMetadata(
   it->second->SetIsMainFrameResource(is_main_frame_resource);
 }
 
-void PageTimingMetricsSender::SetUpDroppedFramesReporting(
-    base::ReadOnlySharedMemoryRegion shared_memory_dropped_frames) {
-  sender_->SetUpDroppedFramesReporting(std::move(shared_memory_dropped_frames));
+void PageTimingMetricsSender::UpdateCustomUserTimings(
+    mojom::CustomUserTimingMarkPtr custom_timing) {
+  custom_user_timings_.push_back(std::move(custom_timing));
+  EnsureSendTimer();
 }
 
 void PageTimingMetricsSender::Update(
@@ -290,11 +286,8 @@ void PageTimingMetricsSender::Update(
 
 void PageTimingMetricsSender::DidObserveSoftLargestContentfulPaint(
     mojom::LargestContentfulPaintTimingPtr lcp) {
-  soft_navigation_metrics_->largest_contentful_paint = std::move(lcp);
-  // Until we introduce multiple pending soft lcps, send this urgently
-  // because the next arriving soft navigation will clear
-  // soft_navigation_metrics_.largest_contentful_paint.
-  EnsureSendTimer(/*urgent=*/true);
+  soft_largest_contentful_paint_.emplace_back(std::move(lcp));
+  EnsureSendTimer();
 }
 
 void PageTimingMetricsSender::SendCustomUserTimingMark(
@@ -357,7 +350,9 @@ void PageTimingMetricsSender::SendNow() {
   sender_->SendTiming(last_timing_, metadata_, std::move(new_features_),
                       std::move(resources), render_data_, last_cpu_timing_,
                       std::move(event_timings_), subresource_load_metrics_,
-                      soft_navigation_metrics_);
+                      std::move(soft_navigation_metrics_),
+                      std::move(soft_largest_contentful_paint_),
+                      std::move(custom_user_timings_));
 
   event_timings_.clear();
   new_features_.clear();
@@ -367,6 +362,9 @@ void PageTimingMetricsSender::SendNow() {
   last_cpu_timing_->task_time = base::TimeDelta();
   modified_resources_.clear();
   render_data_.new_layout_shifts.clear();
+  soft_navigation_metrics_.clear();
+  soft_largest_contentful_paint_.clear();
+  custom_user_timings_.clear();
   // As PageTimingMetricsSender is owned by MetricsRenderFrameObserver, which is
   // instantiated for each frame, there's no need to make soft_navigation_count_
   // zero here, as its value only increments through the lifetime of the frame.
@@ -384,6 +382,7 @@ PageResourceDataUse* PageTimingMetricsSender::FindOrInsertPageResourceDataUse(
 void PageTimingMetricsSender::DidObserveUserInteraction(
     base::TimeTicks max_event_start,
     base::TimeTicks max_event_queued_main_thread,
+    base::TimeTicks max_event_processing_start,
     base::TimeTicks max_event_commit_finish,
     base::TimeTicks max_event_end,
     uint64_t interaction_offset) {
@@ -393,8 +392,9 @@ void PageTimingMetricsSender::DidObserveUserInteraction(
       max_event_start, max_event_queued_main_thread, max_event_commit_finish,
       max_event_end);
   base::TimeDelta duration = max_event_end - max_event_start;
-  event_timings_.push_back(
-      mojom::EventTiming::New(duration, interaction_offset, max_event_start));
+  event_timings_.push_back(mojom::EventTiming::New(duration, interaction_offset,
+                                                   max_event_start,
+                                                   max_event_processing_start));
   EnsureSendTimer();
 }
 }  // namespace page_load_metrics

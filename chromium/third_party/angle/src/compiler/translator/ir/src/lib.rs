@@ -18,12 +18,16 @@ mod ast;
 mod builder;
 mod compile;
 mod debug;
+mod gl;
 mod instruction;
 mod ir;
 mod output;
+mod reflection;
 mod transform;
 mod traverser;
 mod util;
-mod validator;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write;
+
+#[cfg(debug_assertions)]
+mod validator;

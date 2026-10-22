@@ -25,15 +25,13 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/tint/lang/core/ir/validator_test.h"
-
 #include <string>
 
 #include "gtest/gtest.h"
-
 #include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/validator.h"
+#include "src/tint/lang/core/ir/validator_test.h"
 #include "src/tint/lang/core/number.h"
 #include "src/tint/lang/core/type/abstract_float.h"
 #include "src/tint/lang/core/type/abstract_int.h"
@@ -630,20 +628,69 @@ TEST_F(IR_ValidatorTest, EntryPoint_Compute_InputLocation_InMSV) {
 )")) << res.Failure();
 }
 
-TEST_F(IR_ValidatorTest, EntryPoint_Compute_OutputLocation) {
-    auto* f = ComputeEntryPoint("my_func");
+TEST_F(IR_ValidatorTest, EntryPoint_Workgroup_NotCompute) {
+    auto* f = FragmentEntryPoint("my_func");
 
-    auto* v = b.Var("v", AddressSpace::kOut, ty.f32());
-    v->SetLocation(0);
+    auto* v = b.Var("v", AddressSpace::kWorkgroup, ty.f32());
     mod.root_block->Append(v);
 
     b.Append(f->Block(), [&] {
-        b.Store(v, 1.0_f);
+        b.Load(v);
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
-    ASSERT_EQ(res, Success) << res.Failure();
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:2:40 error: var: workgroup variable cannot be used in a fragment shader
+  %v:ptr<workgroup, f32, read_write> = var undef
+                                       ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_PixelLocal_NotFragment) {
+    auto* f = ComputeEntryPoint("my_func");
+
+    auto* str_ty = ty.Struct(mod.symbols.New("S"), {{mod.symbols.New("a"), ty.u32()}});
+    auto* v = b.Var("v", AddressSpace::kPixelLocal, str_ty);
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Load(v);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason,
+                testing::HasSubstr(
+                    R"(:6:40 error: var: pixel_local variable cannot be used in a compute shader
+  %v:ptr<pixel_local, S, read_write> = var undef
+                                       ^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, EntryPoint_In_Compute) {
+    auto* f = ComputeEntryPoint("my_func");
+
+    auto* v = b.Var("v", AddressSpace::kIn, ty.f32());
+    mod.root_block->Append(v);
+
+    b.Append(f->Block(), [&] {
+        b.Load(v);
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(
+        res.Failure().reason,
+        testing::HasSubstr(
+            R"(:2:29 error: var: module scope variable must have at least one IO annotation, e.g. a binding point, a location, etc
+  %v:ptr<__in, f32, read> = var undef
+                            ^^^
+)")) << res.Failure();
 }
 
 TEST_F(IR_ValidatorTest, EntryPoint_SameLocation_InputAndOutput) {
@@ -2135,7 +2182,7 @@ TEST_F(IR_ValidatorTest, Function_Param_Color_InvalidType) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
-                                          R"(:1:27 error: color must be a scalar or vector
+                                          R"(:1:27 error: color must be a numeric scalar or vector
 %my_func = @fragment func(%my_param:mat4x4<f32> [@color(0)]):void {
                           ^^^^^^^^^^^^^^^^^^^^^
 )")) << res.Failure();
@@ -3189,6 +3236,35 @@ TEST_F(IR_ValidatorTest, Function_ParamPixelLocal) {
                                           R"(:1:21 error: pixel_local param must be of type struct
 %f = @fragment func(%invalid:ptr<pixel_local, i32, read_write>):void {
                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+)")) << res.Failure();
+}
+
+TEST_F(IR_ValidatorTest, Function_Param_Color_F16) {
+    auto* f = FragmentEntryPoint("my_func");
+    auto* p = b.FunctionParam("my_param", ty.f16());
+    p->SetColor(0);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowNonCoreTypes});
+    EXPECT_EQ(res, Success);
+}
+
+TEST_F(IR_ValidatorTest, Function_Param_Color_Bool) {
+    auto* f = FragmentEntryPoint("my_func");
+    auto* p = b.FunctionParam("my_param", ty.bool_());
+    p->SetColor(0);
+    f->SetParams({p});
+
+    b.Append(f->Block(), [&] { b.Return(f); });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_THAT(res.Failure().reason, testing::HasSubstr(
+                                          R"(:1:27 error: color must be a numeric scalar or vector
+%my_func = @fragment func(%my_param:bool [@color(0)]):void {
+                          ^^^^^^^^^^^^^^
 )")) << res.Failure();
 }
 

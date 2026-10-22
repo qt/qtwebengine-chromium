@@ -7,6 +7,7 @@
 #ifndef CORE_FXGE_FX_FONT_H_
 #define CORE_FXGE_FX_FONT_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <vector>
@@ -68,6 +69,10 @@ constexpr uint16_t kNamePlatformAppleUnicode = 0;
 constexpr uint16_t kNamePlatformMac = 1;
 constexpr uint16_t kNamePlatformWindows = 3;
 
+// The length of the font subset prefix, as defined in ISO 32000-1:2008 spec,
+// section 9.6.4 "Font Subsets".
+constexpr size_t kSubsettedFontPrefixLength = 6;
+
 class TextGlyphPos;
 
 FX_RECT GetGlyphsBBox(const std::vector<TextGlyphPos>& glyphs,
@@ -119,5 +124,9 @@ ByteString AdobeNameFromUnicode(wchar_t unicode);
 // If the computed result is excessively large and does not fit in an int,
 // NormalizeFontMetric() handles that with `saturated_cast()`.
 int NormalizeFontMetric(int64_t value, uint16_t upem);
+
+// Removes the "XXXXXX+" prefix from a subsetted font name if present. The
+// prefix must be 6 uppercase ASCII letters followed by a '+'.
+void MaybeRemoveSubsettedFontPrefix(ByteString& font_name);
 
 #endif  // CORE_FXGE_FX_FONT_H_

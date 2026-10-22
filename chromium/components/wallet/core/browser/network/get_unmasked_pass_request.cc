@@ -5,6 +5,7 @@
 #include "components/wallet/core/browser/network/get_unmasked_pass_request.h"
 
 #include "base/notimplemented.h"
+#include "base/time/time.h"
 #include "components/wallet/core/browser/proto/api_v1.pb.h"
 
 namespace wallet {
@@ -27,6 +28,15 @@ std::string GetUnmaskedPassRequest::GetRequestContent() const {
   request.add_pass_ids(pass_id_);
   *request.mutable_client_info() = BuildClientInfo();
   return request.SerializeAsString();
+}
+
+WalletRequest::WalletNetworkRequestType GetUnmaskedPassRequest::GetRequestType()
+    const {
+  return WalletRequest::WalletNetworkRequestType::kGetUnmaskedPrivatePass;
+}
+
+base::TimeDelta GetUnmaskedPassRequest::GetTimeout() const {
+  return base::Seconds(30);
 }
 
 void GetUnmaskedPassRequest::OnResponse(

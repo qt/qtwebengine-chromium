@@ -83,6 +83,13 @@ function isAutofillUndoEnabled() {
 }
 
 /**
+ * Returns true if autofill optimization form search is enabled.
+ */
+function isAutofillOptimizationFormSearchEnabled() {
+  return window.gCrWebPlaceholderAutofillOptimizationFormSearch;
+}
+
+/**
  * Determines whether the form is interesting enough to send to the browser for
  * further operations.
  *
@@ -151,8 +158,11 @@ function getUnownedIframes() {
  */
 function extractUnownedFields(restrictUnownedFieldsToFormlessCheckout) {
   const fieldsets = [];
+  const elements = isAutofillOptimizationFormSearchEnabled() ?
+      document.querySelectorAll('input, select, textarea, fieldset') :
+      document.all;
   const unownedControlElements =
-      fillUtil.getUnownedAutofillableFormFieldElements(document.all, fieldsets);
+      fillUtil.getUnownedAutofillableFormFieldElements(elements, fieldsets);
   const numEditableUnownedElements =
       countEditableElements_(unownedControlElements);
   const iframeElements =
@@ -561,7 +571,10 @@ function fillFormField(data, field) {
   }
 
   let filled = false;
-  if (isTextField(field) || inferenceUtil.isTextAreaElement(field)) {
+  if (isTextField(field) || inferenceUtil.isTextAreaElement(field) ||
+      (inferenceUtil.isDateField(field) &&
+       autofillFormFeaturesApi.getFunction(
+           'isAutofillSupportDateInputEnabled')())) {
     let sanitizedValue = data['value'];
 
     if (isTextField(field)) {

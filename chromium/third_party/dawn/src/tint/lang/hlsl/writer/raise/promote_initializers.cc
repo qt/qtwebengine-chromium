@@ -122,8 +122,8 @@ struct State {
         while (!const_worklist.IsEmpty()) {
             auto item = const_worklist.Pop();
 
-            tint::Slice<core::ir::Value* const> args = item->Args();
-            for (size_t i = 0; i < args.Length(); ++i) {
+            auto args = item->Args();
+            for (size_t i = 0; i < args.size(); ++i) {
                 auto ret = ProcessConstant(args[i], item, i);
                 if (ret.has_value()) {
                     const_worklist.Insert(0, *ret);
@@ -238,8 +238,7 @@ struct State {
 }  // namespace
 
 Result<SuccessType> PromoteInitializers(core::ir::Module& ir) {
-    TINT_CHECK_RESULT(
-        ValidateAndDumpIfNeeded(ir, "hlsl.PromoteInitializers", kPromoteInitializersCapabilities));
+    core::ir::AssertValid(ir, kPromoteInitializersCapabilities, "before hlsl.PromoteInitializers");
 
     State{ir}.Process();
 

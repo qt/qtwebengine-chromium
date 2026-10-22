@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -140,12 +140,7 @@ struct LoggingLabel {
     };
 
     LoggingLabel() : name(), color({{0.f, 0.f, 0.f, 0.f}}) {}
-    LoggingLabel(const VkDebugUtilsLabelEXT *label_info) {
-        if (label_info && label_info->pLabelName) {
-            name = label_info->pLabelName;
-            std::copy_n(std::begin(label_info->color), 4, color.begin());
-        }
-    }
+    LoggingLabel(const VkDebugUtilsLabelEXT* label_info);
 
     LoggingLabel(const LoggingLabel &) = default;
     LoggingLabel &operator=(const LoggingLabel &) = default;
@@ -168,11 +163,11 @@ struct LoggingLabelState {
             exported_labels.emplace_back(insert_label.Export());
         }
 
-        std::for_each(labels.rbegin(), labels.rend(), [&exported_labels](const LoggingLabel &label) {
-            if (!label.Empty()) {
-                exported_labels.emplace_back(label.Export());
+        for (auto label_it = labels.rbegin(); label_it != labels.rend(); ++label_it) {
+            if (!label_it->Empty()) {
+                exported_labels.emplace_back(label_it->Export());
             }
-        });
+        }
     }
 };
 

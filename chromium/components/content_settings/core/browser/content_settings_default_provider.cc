@@ -10,6 +10,7 @@
 #include "base/auto_reset.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/trace_event/trace_event.h"
@@ -38,6 +39,10 @@
 #include "components/prefs/scoped_user_pref_update.h"
 #include "services/network/public/cpp/features.h"
 #include "url/gurl.h"
+
+#if !BUILDFLAG(IS_IOS)
+#include "services/device/public/cpp/device_features.h"
+#endif  // !BUILDFLAG(IS_IOS)
 
 namespace content_settings {
 
@@ -188,6 +193,7 @@ DefaultProvider::DefaultProvider(PrefService* prefs,
   MigrateGeolocationDefaultValue();
 #if !BUILDFLAG(IS_IOS)
   MigrateLocalNetworkAccessDefaultValue();
+  MigrateSensorsDefaultValue();
 #endif  // !BUILDFLAG(IS_IOS)
 
   if (should_record_metrics)
@@ -502,6 +508,29 @@ void DefaultProvider::MigrateLocalNetworkAccessDefaultValue() {
     prefs_->SetBoolean(kLocalNetworkAccessMigrateDefaultValuePref, false);
   }
 }
+
+void DefaultProvider::MigrateSensorsDefaultValue() {
+  if (is_off_the_record_) {
+    return;
+  }
+
+  const auto it_setting = default_settings_.find(ContentSettingsType::SENSORS);
+  if (it_setting == default_settings_.end()) {
+    return;
+  }
+
+  // Forwards migration is not necessary as we are just adding one more allowed
+  // option. But if the feature flag for the allow/ask/block model is disabled,
+  // migrate back `ask` to `block`.
+  ContentSetting current_setting = ValueToContentSetting(it_setting->second);
+  if (!base::FeatureList::IsEnabled(
+          ::features::kSensorsAllowAskBlockPermissionModel)) {
+    if (current_setting == CONTENT_SETTING_ASK) {
+      ChangeSetting(ContentSettingsType::SENSORS,
+                    ContentSettingToValue(CONTENT_SETTING_BLOCK));
+    }
+  }
+}
 #endif  // !BUILDFLAG(IS_IOS)
 
 void DefaultProvider::RecordHistogramMetrics() {
@@ -607,6 +636,11 @@ void DefaultProvider::RecordHistogramMetrics() {
       "ContentSettings.RegularProfile.DefaultJavaScriptOptimizationSetting",
       IntToContentSetting(prefs_->GetInteger(
           GetPrefName(ContentSettingsType::JAVASCRIPT_OPTIMIZER))),
+      CONTENT_SETTING_NUM_SETTINGS);
+  base::UmaHistogramEnumeration(
+      "ContentSettings.RegularProfile.DefaultSensorsSetting",
+      IntToContentSetting(
+          prefs_->GetInteger(GetPrefName(ContentSettingsType::SENSORS))),
       CONTENT_SETTING_NUM_SETTINGS);
 #endif
 

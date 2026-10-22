@@ -4,6 +4,7 @@
 
 #include "components/lens/lens_overlay_request_id_generator.h"
 
+#include "base/base64url.h"
 #include "base/check.h"
 #include "base/containers/span.h"
 #include "base/rand_util.h"
@@ -33,6 +34,22 @@ LensOverlayRequestIdGenerator::LensOverlayRequestIdGenerator() {
 }
 
 LensOverlayRequestIdGenerator::~LensOverlayRequestIdGenerator() = default;
+
+std::unique_ptr<lens::LensOverlayRequestId>
+LensOverlayRequestIdGenerator::ParseRequestId(
+    const std::string& encoded_request_id) {
+  std::string decoded_request_id;
+  if (!base::Base64UrlDecode(encoded_request_id,
+                             base::Base64UrlDecodePolicy::IGNORE_PADDING,
+                             &decoded_request_id)) {
+    return nullptr;
+  }
+  auto request_id = std::make_unique<lens::LensOverlayRequestId>();
+  if (!request_id->ParseFromString(decoded_request_id)) {
+    return nullptr;
+  }
+  return request_id;
+}
 
 void LensOverlayRequestIdGenerator::ResetRequestId() {
   uuid_ = base::RandUint64();
@@ -71,8 +88,10 @@ LensOverlayRequestIdGenerator::GetNextRequestId(
 }
 
 std::unique_ptr<lens::LensOverlayRequestId>
-LensOverlayRequestIdGenerator::GetNextRequestId(RequestIdUpdateMode update_mode,
-                                                std::string mime_type) {
+LensOverlayRequestIdGenerator::GetNextRequestId(
+    RequestIdUpdateMode update_mode,
+    std::string mime_type,
+    lens::LensOverlayRequestId::MediaType media_type) {
   // Verify that the initial request id is only generated once.
   CHECK(update_mode != RequestIdUpdateMode::kInitialRequest ||
         sequence_id_ == 0);
@@ -82,8 +101,7 @@ LensOverlayRequestIdGenerator::GetNextRequestId(RequestIdUpdateMode update_mode,
 
   std::unique_ptr<lens::LensOverlayRequestId> current_request_id =
       GetCurrentRequestId();
-  current_request_id->set_media_type(
-      lens::LensOverlayRequestId::MEDIA_TYPE_RAW_FILE);
+  current_request_id->set_media_type(media_type);
   std::unique_ptr<lens::LensOverlayRequestId> next_request_id =
       CreateNextRequestIdForUpdate(std::move(current_request_id), update_mode);
 
@@ -103,7 +121,7 @@ LensOverlayRequestIdGenerator::CreateNextRequestIdForUpdate(
   request_id->set_image_sequence_id(previous_request_id->image_sequence_id());
   request_id->set_media_type(previous_request_id->media_type());
   request_id->set_time_usec(
-      base::Time::Now().ToDeltaSinceWindowsEpoch().InMicroseconds());
+      (base::Time::Now() - base::Time::UnixEpoch()).InMicroseconds());
   if (previous_request_id->has_routing_info()) {
     request_id->mutable_routing_info()->CopyFrom(
         previous_request_id->routing_info());
@@ -124,14 +142,20 @@ LensOverlayRequestIdGenerator::CreateNextRequestIdForUpdate(
     // kMultiContextUploadRequest is only used for the initial request in a
     // multi-context upload flow, so reset all ids to their initial values.
     request_id->set_uuid(base::RandUint64());
-    request_id->set_image_sequence_id(1);
-    request_id->set_sequence_id(1);
-    // All media types other than image-only should set long-context-id to 1.
-    request_id->set_long_context_id(
+    // The image sequence should be 1 if the request has an image, and 0
+    // otherwise.
+    bool media_type_is_image = previous_request_id->media_type() ==
+                               LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE;
+    bool media_type_has_image =
+        media_type_is_image ||
         previous_request_id->media_type() ==
-                LensOverlayRequestId::MEDIA_TYPE_DEFAULT_IMAGE
-            ? 0
-            : 1);
+            LensOverlayRequestId::MEDIA_TYPE_PDF_AND_IMAGE ||
+        previous_request_id->media_type() ==
+            LensOverlayRequestId::MEDIA_TYPE_WEBPAGE_AND_IMAGE;
+    request_id->set_image_sequence_id(media_type_has_image ? 1 : 0);
+    request_id->set_sequence_id(1);
+    // The long context id should be 1 unless the request is image-only.
+    request_id->set_long_context_id(media_type_is_image ? 0 : 1);
   } else {
     bool increment_image_sequence =
         update_mode == RequestIdUpdateMode::kFullImageRequest ||
@@ -201,7 +225,7 @@ LensOverlayRequestIdGenerator::GetCurrentRequestId() {
   request_id->set_long_context_id(long_context_id_);
   request_id->set_image_sequence_id(image_sequence_id_);
   request_id->set_time_usec(
-      base::Time::Now().ToDeltaSinceWindowsEpoch().InMicroseconds());
+      (base::Time::Now() - base::Time::UnixEpoch()).InMicroseconds());
   if (routing_info_.has_value()) {
     request_id->mutable_routing_info()->CopyFrom(routing_info_.value());
   }

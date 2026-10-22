@@ -52,6 +52,10 @@ WideString CPDF_StructElement::GetActualText() const {
   return dict_->GetUnicodeTextFor("ActualText");
 }
 
+WideString CPDF_StructElement::GetExpansion() const {
+  return dict_->GetUnicodeTextFor("E");
+}
+
 WideString CPDF_StructElement::GetTitle() const {
   return dict_->GetUnicodeTextFor("T");
 }

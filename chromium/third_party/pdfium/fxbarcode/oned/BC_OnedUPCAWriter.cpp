@@ -105,7 +105,6 @@ bool CBC_OnedUPCAWriter::ShowChars(WideStringView contents,
   std::vector<TextCharPos> charpos(length);
   ByteString tempStr = str.Substr(1, 5);
   static constexpr float kWidth = 35.0f;
-  float blank = 0.0f;
 
   length = tempStr.GetLength();
   int32_t iFontSize = static_cast<int32_t>(fabs(font_size_));
@@ -139,8 +138,7 @@ bool CBC_OnedUPCAWriter::ShowChars(WideStringView contents,
   float strWidth = kWidth * output_hscale_;
 
   pdfium::span<TextCharPos> charpos_span = pdfium::span(charpos);
-  CalcTextInfo(tempStr, charpos_span.subspan<1u>(), font_, strWidth, iFontSize,
-               blank);
+  CalcTextInfo(tempStr, charpos_span.subspan<1u>(), font_, strWidth, iFontSize);
   {
     CFX_Matrix affine_matrix1(1.0, 0.0, 0.0, -1.0,
                               kLeftPosition * output_hscale_,
@@ -152,8 +150,7 @@ bool CBC_OnedUPCAWriter::ShowChars(WideStringView contents,
   }
   tempStr = str.Substr(6, 5);
   length = tempStr.GetLength();
-  CalcTextInfo(tempStr, charpos_span.subspan<6u>(), font_, strWidth, iFontSize,
-               blank);
+  CalcTextInfo(tempStr, charpos_span.subspan<6u>(), font_, strWidth, iFontSize);
   {
     CFX_Matrix affine_matrix1(1.0, 0.0, 0.0, -1.0,
                               (kLeftPosition + 40) * output_hscale_,
@@ -167,7 +164,7 @@ bool CBC_OnedUPCAWriter::ShowChars(WideStringView contents,
   length = tempStr.GetLength();
   strWidth = 7 * output_hscale_;
 
-  CalcTextInfo(tempStr, charpos, font_, strWidth, iFontSize, blank);
+  CalcTextInfo(tempStr, charpos, font_, strWidth, iFontSize);
   {
     CFX_Matrix affine_matrix1(1.0, 0.0, 0.0, -1.0, 0,
                               (float)(height_ - iTextHeight + iFontSize));
@@ -178,8 +175,8 @@ bool CBC_OnedUPCAWriter::ShowChars(WideStringView contents,
   }
   tempStr = str.Substr(11, 1);
   length = tempStr.GetLength();
-  CalcTextInfo(tempStr, charpos_span.subspan<11u>(), font_, strWidth, iFontSize,
-               blank);
+  CalcTextInfo(tempStr, charpos_span.subspan<11u>(), font_, strWidth,
+               iFontSize);
   {
     CFX_Matrix affine_matrix1(1.0, 0.0, 0.0, -1.0,
                               (kLeftPosition + 85) * output_hscale_,

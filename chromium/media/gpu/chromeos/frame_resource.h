@@ -56,11 +56,11 @@ class FrameResource : public base::RefCountedThreadSafe<FrameResource> {
   using ID = ::base::IdTypeU64<class FrameResourceIdTag>;
   ID unique_id() const;
 
-  // If the instance IsMappable(), then frame data can be accessed by using
-  // data(), writable_data(), visible_data(), and GetWritableVisibleData()
+  // If the instance HasDirectCpuAccess(), then frame data can be accessed by
+  // using data(), writable_data(), visible_data(), and GetWritableVisibleData()
   // accessors. The memory is owned by the FrameResource object and must not be
   // freed by the caller.
-  virtual bool IsMappable() const = 0;
+  virtual bool HasDirectCpuAccess() const = 0;
 
   virtual const uint8_t* data(size_t plane) const = 0;
 
@@ -104,9 +104,8 @@ class FrameResource : public base::RefCountedThreadSafe<FrameResource> {
 
   virtual VideoPixelFormat format() const = 0;
 
-  // Returns the stride in bytes of a plane. Note that stride can be negative if
-  // the image layout is bottom-up.
-  virtual int stride(size_t plane) const = 0;
+  // Returns the stride in bytes of a plane.
+  virtual size_t stride(size_t plane) const = 0;
 
   virtual VideoFrame::StorageType storage_type() const = 0;
 

@@ -53,6 +53,11 @@
   padding-bottom: 12px;
 }
 
+.aria-hidden-container {
+  /* Ignore container for visual layout. */
+  display: contents;
+}
+
 :host([has-action]) .container {
   height: 38px;
   padding-top: 3px;
@@ -132,7 +137,7 @@
   position: relative;
 }
 
-#focus-indicator {
+#focusIndicator {
   --searchbox-match-focus-indicator-width_: 7px;
   background-color: var(--color-searchbox-results-focus-indicator);
   border-radius: 3px;
@@ -144,7 +149,7 @@
 }
 
 /* Focus indicator only shown for vertically rendered matches. */
-:host-context(.vertical):host(:is(:focus-visible, [selected]:not(:focus-within))) #focus-indicator:not(.selected-within) {
+:host-context(.vertical):host(:is(:focus-visible, [selected]:not(:focus-within))) #focusIndicator:not(.selected-within) {
   display: block;
 }
 

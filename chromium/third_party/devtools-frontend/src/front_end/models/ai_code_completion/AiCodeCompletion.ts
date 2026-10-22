@@ -169,7 +169,7 @@ export class AiCodeCompletion {
     // As a temporary fix for b/441221870 we are prepending a newline for each prefix.
     prefix = '\n' + prefix;
 
-    let additionalContextFiles = additionalFiles ?? undefined;
+    let additionalContextFiles = additionalFiles;
     if (!additionalContextFiles) {
       additionalContextFiles = this.#panel === ContextFlavor.CONSOLE ? [{
         path: 'devtools-console-context.js',
@@ -346,9 +346,22 @@ export class AiCodeCompletion {
     }
     return Boolean(aidaAvailability.enabled && Root.Runtime.hostConfig.devToolsAiCodeCompletion?.enabled);
   }
+
+  static isAiCodeCompletionStylesEnabled(locale: string): boolean {
+    if (!locale.startsWith('en-')) {
+      return false;
+    }
+    const aidaAvailability = Root.Runtime.hostConfig.aidaAvailability;
+    if (!aidaAvailability || aidaAvailability.blockedByGeo || aidaAvailability.blockedByAge ||
+        aidaAvailability.blockedByEnterprisePolicy) {
+      return false;
+    }
+    return Boolean(aidaAvailability.enabled && Root.Runtime.hostConfig.devToolsAiCodeCompletionStyles?.enabled);
+  }
 }
 
 export const enum ContextFlavor {
   CONSOLE = 'console',  // generated code can contain console specific APIs like `$0`.
   SOURCES = 'sources',
+  STYLES = 'styles',
 }

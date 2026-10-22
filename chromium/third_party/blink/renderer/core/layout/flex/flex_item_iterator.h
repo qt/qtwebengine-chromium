@@ -7,7 +7,6 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/flex/flex_line.h"
-#include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
@@ -46,6 +45,15 @@ class CORE_EXPORT FlexItemIterator {
   // Move the iterator to the next line, unless we are already at the start of a
   // line.
   void NextLine();
+
+  // Returns true if the next item to be processed is in the same line as
+  // `line_idx`.
+  bool HasNextItemInLine(wtf_size_t line_idx) const {
+    DCHECK_LT(line_idx, flex_lines_.size());
+
+    // If there is no next item, then we are at the end of the last line.
+    return line_idx == flex_line_idx_ && next_unstarted_item_;
+  }
 
  private:
   FlexItemData* FindNextItem(const BlockBreakToken* item_break_token = nullptr);

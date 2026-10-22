@@ -385,7 +385,7 @@ declare global {
          injectedScriptId: number, targetWindow?: Window) => void;
     buildExtensionAPIInjectedScript(
         extensionInfo: ExtensionDescriptor, inspectedTabId: string, themeName: string, keysToForward: number[],
-        testHook: undefined|((extensionServer: unknown, extensionAPI: unknown) => unknown)): string;
+        testHook?: (extensionServer: unknown, extensionAPI: unknown) => unknown): string;
     chrome: PublicAPI.Chrome.DevTools.Chrome;
     webInspector?: APIImpl.InspectorExtensionAPI;
   }
@@ -432,7 +432,7 @@ namespace APIImpl {
   export interface EventSink<ListenerT extends Callable> extends PublicAPI.Chrome.DevTools.EventSink<ListenerT> {
     _type: string;
     _listeners: ListenerT[];
-    _customDispatch: undefined|((this: EventSink<ListenerT>, request: {arguments: unknown[]}) => unknown);
+    _customDispatch?: (this: EventSink<ListenerT>, request: {arguments: unknown[]}) => unknown;
 
     _fire(..._vararg: Parameters<ListenerT>): void;
     _dispatch(request: {arguments: unknown[]}): void;
@@ -616,7 +616,7 @@ self.injectedExtensionAPI = function(
           entries[i].__proto__ = new (Constructor(Request))(entries[i]._requestId as number);
           delete entries[i]._requestId;
         }
-        callback?.(result as Object);
+        callback?.(result);
       }
       extensionServer.sendRequest({command: PrivateAPI.Commands.GetHAR}, callback && callbackWrapper);
     },

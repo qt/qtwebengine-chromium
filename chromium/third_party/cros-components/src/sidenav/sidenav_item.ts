@@ -6,15 +6,15 @@
 
 import '@material/web/ripple/ripple.js';
 import '@material/web/focus/md-focus-ring.js';
-import '../tooltip/tooltip';
+import '../tooltip/tooltip.js';
 
 import {css, CSSResultGroup, html, LitElement, nothing, PropertyValues} from 'lit';
-import {classMap} from 'lit/directives/class-map';
-import {StyleInfo, styleMap} from 'lit/directives/style-map';
+import {classMap} from 'lit/directives/class-map.js';
+import {StyleInfo, styleMap} from 'lit/directives/style-map.js';
 
-import {castExists} from '../helpers/helpers';
+import {castExists} from '../helpers/helpers.js';
 
-import {isSidenav, isSidenavItem} from './sidenav_util';
+import {isSidenav, isSidenavItem} from './sidenav_util.js';
 
 /** Type of the tree item expanded custom event. */
 export type SidenavItemExpandedEvent = CustomEvent<{

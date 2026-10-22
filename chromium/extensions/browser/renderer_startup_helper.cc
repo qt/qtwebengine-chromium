@@ -230,9 +230,7 @@ RendererStartupHelper::~RendererStartupHelper() {
 void RendererStartupHelper::OnRenderProcessHostCreated(
     content::RenderProcessHost* host) {
 #if !BUILDFLAG(IS_ANDROID)
-  // TODO(crbug.com/483888399): Use a more generic IsForTopChromeWebUI() check
-  // instead of IsForInitialWebUI() to correctly handle all Top Chrome WebUIs.
-  if (host->IsForInitialWebUI() &&
+  if (host->IsForTopChromeWebUI() &&
       base::FeatureList::IsEnabled(
           blink::features::kInitialWebUIWithoutExtensions)) {
     // We initialize extension for topchrome processes on DidStartNavigation or
@@ -253,9 +251,7 @@ void RendererStartupHelper::OnRenderProcessHostCreated(
 void RendererStartupHelper::OnRenderProcessLaunched(
     content::RenderProcessHost* host) {
 #if !BUILDFLAG(IS_ANDROID)
-  // TODO(crbug.com/483888399): Use a more generic IsForTopChromeWebUI() check
-  // instead of IsForInitialWebUI() to correctly handle all Top Chrome WebUIs.
-  if (host->IsForInitialWebUI() &&
+  if (host->IsForTopChromeWebUI() &&
       base::FeatureList::IsEnabled(
           blink::features::kInitialWebUIWithoutExtensions)) {
     // We initialize extension for topchrome processes on DidStartNavigation or
@@ -333,6 +329,12 @@ void RendererStartupHelper::InitializeProcess(
   // the default (not enabled) is correct.
   if (activity_logging_enabled) {
     renderer->SetActivityLoggingEnabled(activity_logging_enabled);
+  }
+
+  bool telemetry_logging_enabled =
+      client->IsTelemetryLoggingEnabled(process->GetBrowserContext());
+  if (telemetry_logging_enabled) {
+    renderer->SetPolicyActivityLoggingEnabled(telemetry_logging_enabled);
   }
 
   // extensions need to know the developer mode value for api restrictions.
@@ -438,7 +440,7 @@ void RendererStartupHelper::ActivateExtensionInProcess(
     const Extension& extension,
     content::RenderProcessHost* process) {
   // The extension should have been loaded already. Dump without crashing to
-  // debug crbug.com/528026.
+  // debug crbug.com/40434302.
   if (!extension_process_map_.contains(extension.id())) {
     DUMP_WILL_BE_NOTREACHED()
         << "Extension " << extension.id() << " activated before loading";
@@ -676,7 +678,7 @@ void RendererStartupHelper::AddDOMActionToActivityLog(
 
 // static
 void RendererStartupHelper::BindForRenderer(
-    int process_id,
+    content::ChildProcessId process_id,
     mojo::PendingAssociatedReceiver<mojom::RendererHost> receiver) {
   auto* host = content::RenderProcessHost::FromID(process_id);
   if (!host) {

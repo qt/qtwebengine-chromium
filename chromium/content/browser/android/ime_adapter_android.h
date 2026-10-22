@@ -45,12 +45,13 @@ class RenderWidgetHostViewAndroid;
 // corresponding host view.
 class CONTENT_EXPORT ImeAdapterAndroid : public RenderWidgetHostConnector {
  public:
-  ImeAdapterAndroid(JNIEnv* env,
-                    const base::android::JavaRef<jobject>& obj,
-                    WebContents* web_contents);
+  explicit ImeAdapterAndroid(WebContents* web_contents);
   ~ImeAdapterAndroid() override;
 
+  void Destroy(JNIEnv* env);
+
   // Called from java -> native
+  void Initialize(JNIEnv* env);
   bool SendKeyEvent(JNIEnv* env,
                     const base::android::JavaRef<jobject>& original_key_event,
                     int type,
@@ -115,14 +116,12 @@ class CONTENT_EXPORT ImeAdapterAndroid : public RenderWidgetHostConnector {
       const gfx::Rect& focused_edit_bounds,
       const gfx::Rect& caret_bounds);
 
-  bool InsertMediaFromURL(JNIEnv* env,
-
-                          const base::android::JavaRef<jstring>& url);
+  bool InsertMediaFromBytes(JNIEnv* env,
+                            const base::android::JavaRef<jbyteArray>& bytes,
+                            const base::android::JavaRef<jstring>& extension);
 
   base::android::ScopedJavaLocalRef<jobject> java_ime_adapter_for_testing(
-      JNIEnv* env) {
-    return java_ime_adapter_.get(env);
-  }
+      JNIEnv* env);
 
   void UpdateState(const ui::mojom::TextInputState& state);
   void UpdateOnTouchDown();
@@ -139,6 +138,7 @@ class CONTENT_EXPORT ImeAdapterAndroid : public RenderWidgetHostConnector {
   void ClearAllAutocorrectUnderlineSpans(JNIEnv* env);
 
  private:
+  base::android::ScopedJavaLocalRef<jobject> GetJavaObject(JNIEnv* env);
   RenderWidgetHostImpl* GetFocusedWidget();
   RenderFrameHost* GetFocusedFrame();
   blink::mojom::FrameWidgetInputHandler* GetFocusedFrameWidgetInputHandler();
@@ -147,12 +147,12 @@ class CONTENT_EXPORT ImeAdapterAndroid : public RenderWidgetHostConnector {
       const base::android::JavaRef<jobject>& obj,
       const base::android::JavaRef<jobject>& text,
       const std::u16string& text16);
+  void OnPasteFromImageBytesCompleted(bool success);
 
   gfx::SizeF old_viewport_size_;
 
   // Current RenderWidgetHostView connected to this instance. Can be null.
   raw_ptr<RenderWidgetHostViewAndroid> rwhva_;
-  JavaObjectWeakGlobalRef java_ime_adapter_;
   base::WeakPtrFactory<ImeAdapterAndroid> weak_factory_{this};
 };
 

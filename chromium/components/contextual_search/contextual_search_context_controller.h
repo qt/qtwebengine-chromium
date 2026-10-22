@@ -72,16 +72,19 @@ class ContextualSearchContextController {
     bool attach_page_title_and_url_to_suggest_requests = false;
   };
 
-  // Observer interface for the Page Handler to get updates on file upload
-  class FileUploadStatusObserver : public base::CheckedObserver {
+  // Observer interface for the Page Handler to get updates on context upload
+  class ContextUploadStatusObserver : public base::CheckedObserver {
    public:
-    virtual void OnFileUploadStatusChanged(
-        const base::UnguessableToken& file_token,
+    virtual void OnContextUploadStatusChanged(
+        const base::UnguessableToken& context_token,
         lens::MimeType mime_type,
-        FileUploadStatus file_upload_status,
-        const std::optional<FileUploadErrorType>& error_type) = 0;
+        ContextUploadStatus context_upload_status,
+        const std::optional<ContextUploadErrorType>& error_type) = 0;
+
+    virtual void OnControllerDestroyed() {}
+
    protected:
-    ~FileUploadStatusObserver() override = default;
+    ~ContextUploadStatusObserver() override = default;
   };
 
   // The possible search url types.
@@ -181,6 +184,12 @@ class ContextualSearchContextController {
   // Called when a UI is associated with the context controller.
   virtual void InitializeIfNeeded() = 0;
 
+  // Triggers a fetch for the sticky cluster info if needed.
+  virtual void TriggerFetchClusterInfo() = 0;
+
+  // Set whether or not the context controller is backgrounded.
+  virtual void SetIsBackgrounded(bool backgrounded) = 0;
+
   // Called when a query has been submitted. `query_start_time` is the time
   // that the user clicked the submit button.
   virtual void CreateSearchUrl(
@@ -194,8 +203,8 @@ class ContextualSearchContextController {
           create_client_to_aim_request_info) = 0;
 
   // Observer management.
-  virtual void AddObserver(FileUploadStatusObserver* obs) = 0;
-  virtual void RemoveObserver(FileUploadStatusObserver* obs) = 0;
+  virtual void AddObserver(ContextUploadStatusObserver* obs) = 0;
+  virtual void RemoveObserver(ContextUploadStatusObserver* obs) = 0;
 
   // Triggers upload of the file with data and stores the file info in the
   // internal map. Call after setting the file info fields.
@@ -218,11 +227,6 @@ class ContextualSearchContextController {
 
   // Return the file infos for all files in the request.
   virtual std::vector<const FileInfo*> GetFileInfoList() = 0;
-
-  // Search the file infos for an injected input with the given id, and return
-  // the file token if present.
-  virtual std::optional<base::UnguessableToken> FindTokenForInjectedInput(
-      const std::string& id) = 0;
 
   // Returns a weak pointer to the context controller.
   virtual base::WeakPtr<ContextualSearchContextController> AsWeakPtr() = 0;

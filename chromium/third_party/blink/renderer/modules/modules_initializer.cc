@@ -72,11 +72,12 @@
 #include "third_party/blink/renderer/modules/indexed_db_names.h"
 #include "third_party/blink/renderer/modules/indexeddb/inspector_indexed_db_agent.h"
 #include "third_party/blink/renderer/modules/installation/installation_service_impl.h"
-#include "third_party/blink/renderer/modules/launch/web_launch_service_impl.h"
+#include "third_party/blink/renderer/modules/launch/launch_queue.h"
 #include "third_party/blink/renderer/modules/manifest/manifest_manager.h"
 #include "third_party/blink/renderer/modules/media/audio/audio_renderer_sink_cache.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_impl.h"
 #include "third_party/blink/renderer/modules/mediasource/media_source_registry_impl.h"
+#include "third_party/blink/renderer/modules/mediastream/user_media_request_provider_impl.h"
 #include "third_party/blink/renderer/modules/peerconnection/peer_connection_tracker.h"
 #include "third_party/blink/renderer/modules/presentation/presentation.h"
 #include "third_party/blink/renderer/modules/push_messaging/push_messaging_client.h"
@@ -230,8 +231,8 @@ void ModulesInitializer::InitLocalFrame(LocalFrame& frame) const {
     frame.GetInterfaceRegistry()->AddInterface(BindRepeating(
         &AIPageContentAgent::BindReceiver, WrapWeakPersistent(&frame)));
   }
-  frame.GetInterfaceRegistry()->AddAssociatedInterface(BindRepeating(
-      &WebLaunchServiceImpl::BindReceiver, WrapWeakPersistent(&frame)));
+  frame.GetInterfaceRegistry()->AddAssociatedInterface(
+      BindRepeating(&LaunchQueue::BindReceiver, WrapWeakPersistent(&frame)));
 
   frame.GetInterfaceRegistry()->AddInterface(BindRepeating(
       &InstallationServiceImpl::BindReceiver, WrapWeakPersistent(&frame)));
@@ -269,6 +270,7 @@ void ModulesInitializer::InstallSupplements(LocalFrame& frame) const {
   InspectorAccessibilityAgent::ProvideTo(&frame);
   ImageDownloaderImpl::ProvideTo(frame);
   AudioRendererSinkCache::InstallWindowObserver(*frame.DomWindow());
+  UserMediaRequestProviderImpl::ProvideTo(*frame.DomWindow());
 #if DCHECK_IS_ON()
   if (frame.IsLocalRoot() &&
       RuntimeEnabledFeatures::AIPageContentBuildOnLoadForTestingEnabled()) {
@@ -361,7 +363,9 @@ std::unique_ptr<WebMediaPlayer> ModulesInitializer::CreateWebMediaPlayer(
       source, media_player_client, context_impl, &encrypted_media,
       encrypted_media.ContentDecryptionModule(), sink_id,
       frame_widget->GetLayerTreeSettings(),
-      base::ThreadPool::CreateTaskRunner(base::TaskTraits{}));
+      base::ThreadPool::CreateTaskRunner(base::TaskTraits{
+          base::InheritThreadType(),
+          base::MaxThreadType(base::ThreadType::kPresentation)}));
 }
 
 RemotePlaybackClient* ModulesInitializer::CreateRemotePlaybackClient(

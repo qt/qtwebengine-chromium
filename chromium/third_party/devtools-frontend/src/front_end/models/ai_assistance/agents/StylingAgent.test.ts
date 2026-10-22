@@ -365,7 +365,7 @@ describeWithEnvironment('StylingAgent', function() {
             await Array.fromAsync(agent.run('test', {selected: new AiAssistance.StylingAgent.NodeContext(element)}));
         const actionSteps = result.filter(step => {
           return step.type === AiAssistance.AiAgent.ResponseType.ACTION;
-        });
+        }) as AiAssistance.AiAgent.ActionResponse[];
         assert.lengthOf(actionSteps, 1, 'Found non or multiple action steps');
         const actionStep = actionSteps.at(0)!;
         assert(actionStep.output!.includes('Error: Output exceeded the maximum allowed length.'));
@@ -441,6 +441,7 @@ describeWithEnvironment('StylingAgent', function() {
               name: 'executeJavaScript',
               response: {
                 result: 'test data',
+                widgets: undefined,
               }
             }
           },

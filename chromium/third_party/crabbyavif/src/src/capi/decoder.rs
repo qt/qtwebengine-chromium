@@ -220,7 +220,6 @@ impl From<&avifDecoder> for Settings {
             codec_choice: match decoder.codecChoice {
                 avifCodecChoice::Auto => CodecChoice::Auto,
                 avifCodecChoice::Dav1d => CodecChoice::Dav1d,
-                avifCodecChoice::Libgav1 => CodecChoice::Libgav1,
                 // Silently treat all other choices the same as Auto.
                 _ => CodecChoice::Auto,
             },

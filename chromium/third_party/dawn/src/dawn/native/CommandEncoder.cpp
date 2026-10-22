@@ -58,13 +58,13 @@
 #include "dawn/native/RenderPassEncoder.h"
 #include "dawn/native/RenderPassWorkaroundsHelper.h"
 #include "dawn/native/RenderPipeline.h"
-#include "dawn/native/ResourceTable.h"
 #include "dawn/native/ValidationUtils.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/native/dawn_platform.h"
 #include "dawn/native/utils/WGPUHelpers.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "dawn/platform/tracing/TraceEvent.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native {
 
@@ -72,7 +72,7 @@ namespace {
 
 // Record the subresource range of a attachment used in render pass for checking overlaps.
 struct RecordedAttachment {
-    const TextureBase* texture;
+    raw_ptr<const TextureBase> texture;
     uint32_t mipLevel;
     // For 3d color attachment, it's the attachment's depthSlice.
     uint32_t depthOrArrayLayer;
@@ -106,9 +106,6 @@ std::string_view GetAttachmentTypeStr(AttachmentType type) {
 // attachment.
 class RenderPassValidationState final : public NonMovable {
   public:
-    explicit RenderPassValidationState(bool unsafeApi) : mUnsafeApi(unsafeApi) {}
-    ~RenderPassValidationState() = default;
-
     // Record the attachment in the render pass if it passes all validations:
     // - the attachment has same with, height and sample count with other attachments
     // - no overlaps with other attachments
@@ -248,15 +245,9 @@ class RenderPassValidationState final : public NonMovable {
                     break;
                 }
                 case AttachmentType::DepthStencilAttachment: {
-                    // TODO(chromium:324422644): re-enable this validation code.
-                    // This validation code will block skia to chromium autoroll, so disable it
-                    // temporarily.
-                    const bool disableValidation =
-                        mUnsafeApi && mAttachmentValidationWidth != mRenderWidth;
                     DAWN_INVALID_IF(
-                        !disableValidation &&
-                            (attachmentValidationSize.width != mAttachmentValidationWidth ||
-                             attachmentValidationSize.height != mAttachmentValidationHeight),
+                        attachmentValidationSize.width != mAttachmentValidationWidth ||
+                            attachmentValidationSize.height != mAttachmentValidationHeight,
                         "The depth stencil attachment %s size (width: %u, height: %u) does not "
                         "match the size of the other attachments' base plane (width: %u, height: "
                         "%u).",
@@ -358,8 +349,6 @@ class RenderPassValidationState final : public NonMovable {
     }
 
   private:
-    const bool mUnsafeApi;
-
     // The attachment's width, height and sample count.
     uint32_t mRenderWidth = 0;
     uint32_t mRenderHeight = 0;
@@ -481,9 +470,11 @@ MaybeError ValidateResolveTarget(const DeviceBase* device,
 
     const TextureViewBase* resolveTarget = colorAttachment.resolveTarget;
     const TextureViewBase* attachment = colorAttachment.view;
-    DAWN_TRY(device->ValidateObject(colorAttachment.resolveTarget));
-    DAWN_TRY(ValidateCanUseAs(colorAttachment.resolveTarget, wgpu::TextureUsage::RenderAttachment,
-                              usageValidationMode));
+    DAWN_TRY(device->ValidateObject(resolveTarget));
+    DAWN_TRY(
+        ValidateCanUseAs(resolveTarget, wgpu::TextureUsage::RenderAttachment, usageValidationMode));
+    DAWN_INVALID_IF(resolveTarget->GetUsage() & wgpu::TextureUsage::TransientAttachment,
+                    "Cannot use transient attachment %s as a resolve target.", resolveTarget);
 
     DAWN_INVALID_IF(!attachment->GetTexture()->IsMultisampledTexture(),
                     "Cannot set %s as a resolve target when the color attachment %s has a sample "
@@ -571,65 +562,35 @@ MaybeError ValidateColorAttachmentRenderToSingleSampled(
     const DeviceBase* device,
     const RenderPassColorAttachment& colorAttachment,
     const DawnRenderPassSampleCount* renderPassSampleCount) {
+    TextureViewBase* attachment = colorAttachment.view;
+    DAWN_ASSERT(attachment);
+
     DAWN_ASSERT(renderPassSampleCount != nullptr);
     DAWN_ASSERT(device->HasFeature(Feature::MSAARenderToSingleSampled));
 
     uint32_t passSampleCount = renderPassSampleCount->sampleCount;
-    uint32_t attachmentSampleCount = colorAttachment.view->GetTexture()->GetSampleCount();
+    uint32_t attachmentSampleCount = attachment->GetTexture()->GetSampleCount();
     DAWN_INVALID_IF(attachmentSampleCount != 1 && attachmentSampleCount != passSampleCount,
                     "The color attachment %s sample count (%u) must be either 1 or %u when the "
                     "render pass is using MSAARenderToSingleSampled with a sample count of %u.",
-                    colorAttachment.view, attachmentSampleCount, passSampleCount, passSampleCount);
+                    attachment, attachmentSampleCount, passSampleCount, passSampleCount);
 
     if (attachmentSampleCount != 1) {
         // The following rules only apply to attachments that will actually be resolved.
         return {};
     }
 
-    DAWN_INVALID_IF(!colorAttachment.view->GetFormat().SupportsResolveTarget(),
+    DAWN_INVALID_IF(!attachment->GetFormat().SupportsResolveTarget(),
                     "The color attachment %s format (%s) does not support being used with a render "
                     "pass using MSAARenderToSingleSampled with a sample count of %u. The format "
                     "does not support resolve.",
-                    colorAttachment.view, colorAttachment.view->GetFormat().format,
-                    passSampleCount);
+                    attachment, attachment->GetFormat().format, passSampleCount);
 
     DAWN_INVALID_IF(colorAttachment.resolveTarget != nullptr,
                     "Cannot set %s as a resolve target. No resolve target should be specified "
                     "for the color attachment %s when the render pass is using "
                     "MSAARenderToSingleSampled with a sample count of %u.",
-                    colorAttachment.resolveTarget, colorAttachment.view, passSampleCount);
-
-    return {};
-}
-
-// TODO(crbug.com/463893793): Remove once the deprecated attachment-based MSRTSS path is disabled.
-MaybeError ValidateColorAttachmentRenderToSingleSampled(
-    const DeviceBase* device,
-    const RenderPassColorAttachment& colorAttachment,
-    const DawnRenderPassColorAttachmentRenderToSingleSampled* msaaRenderToSingleSampledDesc) {
-    DAWN_ASSERT(msaaRenderToSingleSampledDesc != nullptr);
-
-    DAWN_INVALID_IF(
-        !device->HasFeature(Feature::MSAARenderToSingleSampled),
-        "The color attachment %s has implicit sample count while the %s feature is not enabled.",
-        colorAttachment.view, ToAPI(Feature::MSAARenderToSingleSampled));
-
-    DAWN_INVALID_IF(!IsValidSampleCount(msaaRenderToSingleSampledDesc->implicitSampleCount) ||
-                        msaaRenderToSingleSampledDesc->implicitSampleCount <= 1,
-                    "The color attachment %s's implicit sample count (%u) is not supported.",
-                    colorAttachment.view, msaaRenderToSingleSampledDesc->implicitSampleCount);
-
-    DAWN_INVALID_IF(!colorAttachment.view->GetFormat().SupportsResolveTarget(),
-                    "The color attachment %s format (%s) does not support being used with "
-                    "implicit sample count (%u). The format does not support resolve.",
-                    colorAttachment.view, colorAttachment.view->GetFormat().format,
-                    msaaRenderToSingleSampledDesc->implicitSampleCount);
-
-    DAWN_INVALID_IF(colorAttachment.resolveTarget != nullptr,
-                    "Cannot set %s as a resolve target. No resolve target should be specified "
-                    "for the color attachment %s with implicit sample count (%u).",
-                    colorAttachment.resolveTarget, colorAttachment.view,
-                    msaaRenderToSingleSampledDesc->implicitSampleCount);
+                    colorAttachment.resolveTarget, attachment, passSampleCount);
 
     return {};
 }
@@ -683,18 +644,6 @@ MaybeError ValidateRenderPassColorAttachment(DeviceBase* device,
 
     UnpackedPtr<RenderPassColorAttachment> unpacked;
     DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(&colorAttachment));
-
-    // TODO(crbug.com/463893793): Remove once the attachment-based MSRTSS path is disabled.
-    const auto* msaaRenderToSingleSampledDesc =
-        unpacked.Get<DawnRenderPassColorAttachmentRenderToSingleSampled>();
-    if (msaaRenderToSingleSampledDesc) {
-        DAWN_TRY(ValidateColorAttachmentRenderToSingleSampled(device, colorAttachment,
-                                                              msaaRenderToSingleSampledDesc));
-        validationState->SetExplicitSampleCount(msaaRenderToSingleSampledDesc->implicitSampleCount);
-        // Note: we don't need to check whether the implicit sample count of different attachments
-        // are the same. That already is done by indirectly comparing the sample count in
-        // ValidateOrSetColorAttachmentSampleCount.
-    }
 
     // Plane0, Plane1, and Plane2 aspects for multiplanar texture views should be allowed as color
     // attachments.
@@ -947,11 +896,11 @@ MaybeError ValidateRenderPassDescriptor(DeviceBase* device,
         DAWN_TRY_CONTEXT(ValidateRenderPassColorAttachment(device, attachment, usageValidationMode,
                                                            validationState),
                          "validating colorAttachments[%u].", i);
-        if (renderPassSampleCount) {
-            DAWN_TRY(ValidateColorAttachmentRenderToSingleSampled(device, attachment,
-                                                                  renderPassSampleCount));
-        }
         if (attachment.view) {
+            if (renderPassSampleCount) {
+                DAWN_TRY(ValidateColorAttachmentRenderToSingleSampled(device, attachment,
+                                                                      renderPassSampleCount));
+            }
             colorAttachmentFormats.push_back(&attachment.view->GetFormat());
         }
     }
@@ -998,6 +947,21 @@ MaybeError ValidateRenderPassDescriptor(DeviceBase* device,
         // TODO(dawn:1704): Consider supporting ExpandResolveTexture + PLS
         DAWN_INVALID_IF(pls != nullptr, "For now pixel local storage is invalid to use with %s.",
                         wgpu::LoadOp::ExpandResolveTexture);
+    }
+
+    if (auto area = descriptor.Get<RenderPassRenderAreaRect>()) {
+        DAWN_INVALID_IF(!device->HasFeature(Feature::RenderPassRenderArea),
+                        "RenderPassRenderAreaRect can't be used without %s.",
+                        ToAPI(Feature::RenderPassRenderArea));
+        DAWN_INVALID_IF(area->size.width == 0 || area->size.height == 0,
+                        "RenderPassRenderAreaRect %s must not be empty", area);
+        DAWN_INVALID_IF(
+            static_cast<uint64_t>(area->origin.x) + static_cast<uint64_t>(area->size.width) >
+                    validationState->GetRenderWidth() ||
+                static_cast<uint64_t>(area->origin.y) + static_cast<uint64_t>(area->size.height) >
+                    validationState->GetRenderHeight(),
+            "RenderPassRenderAreaRect %s is not contained in the render pass (%u x %u)", area,
+            validationState->GetRenderWidth(), validationState->GetRenderHeight());
     }
 
     return {};
@@ -1134,13 +1098,6 @@ MaybeError EncodeTimestampsToNanosecondsConversion(CommandEncoder* encoder,
     DAWN_TRY_ASSIGN(paramsBuffer, device->CreateBuffer(&parmsDesc));
 
     DAWN_TRY(device->GetQueue()->WriteBuffer(paramsBuffer.Get(), 0, &params, sizeof(params)));
-
-    // In the internal shader to convert timestamps to nanoseconds, we can ensure no uninitialized
-    // data will be read and the full buffer range will be filled with valid data.
-    if (!destination->IsInitialized() &&
-        destination->IsFullBufferRange(firstQuery, sizeof(uint64_t) * queryCount)) {
-        destination->SetInitialized(true);
-    }
 
     return EncodeConvertTimestampsToNanoseconds(encoder, destination, availabilityBuffer.Get(),
                                                 paramsBuffer.Get());
@@ -1319,12 +1276,13 @@ void CommandEncoder::DestroyImpl(DestroyReason reason) {
 }
 
 CommandBufferResourceUsage CommandEncoder::AcquireResourceUsages() {
-    return CommandBufferResourceUsage{mEncodingContext.AcquireRenderPassUsages(),
-                                      mEncodingContext.AcquireComputePassUsages(),
-                                      std::move(mTopLevelBuffers),
-                                      std::move(mTopLevelTextures),
-                                      std::move(mUsedQuerySets),
-                                      std::move(mUsedResourceTables)};
+    return CommandBufferResourceUsage{
+        mEncodingContext.AcquireRenderPassUsages(),
+        mEncodingContext.AcquireComputePassUsages(),
+        std::move(mTopLevelBuffers),
+        std::move(mTopLevelTextures),
+        std::move(mUsedQuerySets),
+    };
 }
 
 CommandIterator CommandEncoder::AcquireCommands() {
@@ -1432,8 +1390,7 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
     bool stencilReadOnly = false;
     Ref<AttachmentState> attachmentState;
 
-    RenderPassValidationState validationState(
-        GetDevice()->IsToggleEnabled(Toggle::AllowUnsafeAPIs));
+    RenderPassValidationState validationState;
 
     // Lazy make error function to be called if we error and need to return an error encoder.
     auto MakeError = [&]() {
@@ -1446,6 +1403,8 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
     RenderPassWorkaroundsHelper renderpassWorkaroundsHelper;
 
     RenderPassEncoder::EndCallback passEndCallback = nullptr;
+
+    RenderAreaRect renderArea;
 
     bool success = mEncodingContext.TryEncode(
         this,
@@ -1605,6 +1564,20 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
             cmd->width = validationState.GetRenderWidth();
             cmd->height = validationState.GetRenderHeight();
 
+            if (auto* area = descriptor.Get<RenderPassRenderAreaRect>()) {
+                renderArea.x = area->origin.x;
+                renderArea.y = area->origin.y;
+                renderArea.width = area->size.width;
+                renderArea.height = area->size.height;
+            } else {
+                renderArea.x = 0;
+                renderArea.y = 0;
+                renderArea.width = validationState.GetRenderWidth();
+                renderArea.height = validationState.GetRenderHeight();
+            }
+
+            cmd->renderArea = renderArea;
+
             cmd->occlusionQuerySet = descriptor->occlusionQuerySet;
 
             if (descriptor->timestampWrites != nullptr) {
@@ -1655,10 +1628,10 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
         "encoding %s.BeginRenderPass(%s).", this, descriptor);
 
     if (success) {
-        Ref<RenderPassEncoder> passEncoder = RenderPassEncoder::Create(
-            device, descriptor, this, &mEncodingContext, std::move(usageTracker),
-            std::move(attachmentState), validationState.GetRenderWidth(),
-            validationState.GetRenderHeight(), depthReadOnly, stencilReadOnly, passEndCallback);
+        Ref<RenderPassEncoder> passEncoder =
+            RenderPassEncoder::Create(device, descriptor, this, &mEncodingContext,
+                                      std::move(usageTracker), std::move(attachmentState),
+                                      renderArea, depthReadOnly, stencilReadOnly, passEndCallback);
 
         mEncodingContext.EnterPass(passEncoder.Get());
 
@@ -2070,6 +2043,7 @@ void CommandEncoder::APICopyTextureToTexture(const TexelCopyTextureInfo* sourceO
                 (aspect & Aspect::Depth) &&
                 GetDevice()->IsToggleEnabled(
                     Toggle::UseBlitForDepthTextureToTextureCopyToNonzeroSubresource) &&
+                copySize->depthOrArrayLayers > 0 &&
                 (dst.mipLevel > 0 || dst.origin.z > TexelCount{0} ||
                  copySize->depthOrArrayLayers > 1);
 
@@ -2244,7 +2218,8 @@ void CommandEncoder::APIResolveQuerySet(QuerySetBase* querySet,
             // Encode internal compute pipeline for timestamp query
             if (querySet->GetQueryType() == wgpu::QueryType::Timestamp &&
                 !GetDevice()->IsToggleEnabled(Toggle::DisableTimestampQueryConversion) &&
-                GetDevice()->GetTimestampPeriodInNS() != 1.0f) {
+                (GetDevice()->GetTimestampPeriodInNS() != 1.0f ||
+                 GetDevice()->IsToggleEnabled(Toggle::TimestampQueryConversionEvenIf1NS))) {
                 // The below function might create new resources. Need to lock the Device.
                 // TODO(crbug.com/dawn/1618): In future, all temp resources should be created at
                 // Command Submit time, so the locking would be removed from here at that point.
@@ -2260,32 +2235,6 @@ void CommandEncoder::APIResolveQuerySet(QuerySetBase* querySet,
         destination, destinationOffset);
 }
 
-void CommandEncoder::APISetResourceTable(ResourceTableBase* table) {
-    mEncodingContext.TryEncode(
-        this,
-        [&](CommandAllocator* allocator) -> MaybeError {
-            if (GetDevice()->IsValidationEnabled()) {
-                if (table) {
-                    DAWN_TRY(GetDevice()->ValidateObject(table));
-                }
-                DAWN_INVALID_IF(
-                    !GetDevice()->HasFeature(Feature::ChromiumExperimentalSamplingResourceTable),
-                    "setResourceTable requires the %s feature enabled.",
-                    wgpu::FeatureName::ChromiumExperimentalSamplingResourceTable);
-            }
-
-            mResourceTable = table;
-            if (table) {
-                mUsedResourceTables.insert(table);
-            }
-            SetResourceTableCmd* cmd =
-                allocator->Allocate<SetResourceTableCmd>(Command::SetResourceTable);
-            cmd->table = table;
-
-            return {};
-        },
-        "encoding %s.SetResourceTable(%s, %u).", this, table);
-}
 
 void CommandEncoder::APIWriteBuffer(BufferBase* buffer,
                                     uint64_t bufferOffset,

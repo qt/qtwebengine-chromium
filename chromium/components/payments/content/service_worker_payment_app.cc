@@ -124,9 +124,10 @@ void ServiceWorkerPaymentApp::ValidateCanMakePayment(
     return;
   }
 
-  // Returns true if the `kCanMakePaymentEnabled` pref is disabled.
-  if (!prefs_can_make_payment_ && PaymentsExperimentalFeatures::IsEnabled(
-                                      features::kRestrictIsReadyToPayQuery)) {
+  // Skip sending the CanMakePayment event to the payment app if the
+  // `kCanMakePaymentEnabled` pref is disabled, to avoid leaking information to
+  // the payment app.
+  if (!prefs_can_make_payment_) {
     OnCanMakePaymentEventSkipped(std::move(callback));
     return;
   }
@@ -390,8 +391,10 @@ void ServiceWorkerPaymentApp::OnPaymentAppResponse(
     DCHECK(response->payer_phone.value_or("").empty());
     DCHECK(!response->shipping_address);
     DCHECK(response->shipping_option.value_or("").empty());
-    delegate_->OnInstrumentDetailsError(std::string(
-        ConvertPaymentEventResponseTypeToErrorString(response->response_type)));
+    delegate_->OnInstrumentDetailsError(
+        response->response_type,
+        std::string(ConvertPaymentEventResponseTypeToErrorString(
+            response->response_type)));
   }
 
   delegate_ = nullptr;

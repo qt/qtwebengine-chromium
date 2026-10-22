@@ -39,7 +39,8 @@ Translator::Translator(
     const base::RepeatingCallback<bool()>& can_translate_callback,
     const std::string& source_lang,
     const std::string& target_lang,
-    mojo::PendingRemote<on_device_translation::mojom::Translator> remote)
+    mojo::PendingRemote<on_device_translation::mojom::OnDeviceTranslator>
+        remote)
     : can_translate_callback_(can_translate_callback),
       source_lang_(source_lang),
       target_lang_(target_lang),
@@ -57,9 +58,10 @@ bool Translator::VerifyPrerequisites(
     return false;
   }
 
-  RecordTranslationAPICallForLanguagePair("Translate", source_lang_,
-                                          target_lang_);
-  RecordTranslationCharacterCount(source_lang_, target_lang_, input.size());
+  RecordTranslatorApiCallForLanguagePair("Translate", source_lang_,
+                                         target_lang_);
+  RecordTranslatorApiTranslationLength(source_lang_, target_lang_,
+                                       input.size());
 
   // https://github.com/webmachinelearning/translation-api/pull/38: "If |input|
   // is the empty string, or otherwise consists of no translatable content

@@ -40,10 +40,12 @@ void CheckLimitsArray(const CPDF_Dictionary* node,
   ASSERT_TRUE(node);
   RetainPtr<const CPDF_Array> limits = node->GetArrayFor("Limits");
   ASSERT_TRUE(limits);
-  EXPECT_EQ(2u, limits->size());
+
+  // Sorted, but not always truncated.
+  EXPECT_GE(limits->size(), 2u);
   RetainPtr<const CPDF_String> left = limits->GetStringAt(0);
-  ASSERT_TRUE(left);
   RetainPtr<const CPDF_String> right = limits->GetStringAt(1);
+  ASSERT_TRUE(left);
   ASSERT_TRUE(right);
   EXPECT_EQ(least, left->GetString());
   EXPECT_EQ(greatest, right->GetString());

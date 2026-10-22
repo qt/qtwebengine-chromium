@@ -62,11 +62,6 @@ BASE_FEATURE(kV8CodeMemoryWriteProtection, kFeatureDefaultStateControlledByV8);
 // Enables fallback to a breadth-first regexp engine on excessive backtracking.
 BASE_FEATURE(kV8ExperimentalRegexpEngine, kFeatureDefaultStateControlledByV8);
 
-// Enable accounting for external memory limits as part of global limits in v8
-// Heap.
-BASE_FEATURE(kV8ExternalMemoryAccountedInGlobalLimit,
-             kFeatureDefaultStateControlledByV8);
-
 // Enables the Turbofan compiler.
 BASE_FEATURE(kV8Turbofan, kFeatureDefaultStateControlledByV8);
 
@@ -100,6 +95,11 @@ BASE_FEATURE(kV8PreconfigureOldGen, kFeatureDefaultStateControlledByV8);
 
 const base::FeatureParam<int> kV8PreconfigureOldGenSize{
     &kV8PreconfigureOldGen, "V8PreconfigureOldGenSize", 32};
+
+BASE_FEATURE(kV8MemoryReducerDelay, base::FEATURE_DISABLED_BY_DEFAULT);
+
+const base::FeatureParam<int> kV8MemoryReducerDelayInSeconds{
+    &kV8MemoryReducerDelay, "V8MemoryReducerDelayInSeconds", 8};
 
 BASE_FEATURE(kV8ScavengerHigherCapacity, base::FEATURE_DISABLED_BY_DEFAULT);
 

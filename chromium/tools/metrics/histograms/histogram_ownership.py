@@ -13,11 +13,11 @@ import os
 import sys
 from xml.etree import ElementTree as ET
 
-import histogram_paths
-import merge_xml
+import setup_modules  # pylint: disable=unused-import
 
-sys.path.append(os.path.join(os.path.dirname(__file__), 'common'))
-import path_util
+import chromium_src.tools.metrics.common.path_util as path_util
+import chromium_src.tools.metrics.histograms.histogram_paths as histogram_paths
+import chromium_src.tools.metrics.histograms.merge_xml as merge_xml
 
 
 def PrintOwners(root):
@@ -28,7 +28,7 @@ def PrintOwners(root):
     if node.tag == 'histograms':
       histograms = node
       break
-  assert histograms != None
+  assert histograms
 
   for histogram in histograms.getchildren():
     if histogram.tag != 'histogram':
@@ -69,7 +69,7 @@ def main():
     rel_path = path_util.GetInputFile(
         os.path.join('tools', 'metrics', 'histograms', sys.argv[1]))
     if not os.path.exists(rel_path):
-      raise ValueError("A histograms.xml file does not exist in %s" % rel_path)
+      raise ValueError('A histograms.xml file does not exist in %s' % rel_path)
 
     tree = ET.parse(rel_path)
     root = tree.getroot()

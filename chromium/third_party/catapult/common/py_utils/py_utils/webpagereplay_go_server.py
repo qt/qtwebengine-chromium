@@ -18,9 +18,6 @@ import py_utils
 from py_utils import atexit_with_log
 from py_utils import binary_manager
 
-_WPR_DIR = os.path.abspath(os.path.join(
-    py_utils.GetCatapultDir(), 'web_page_replay_go'))
-
 TELEMETRY_PROJECT_CONFIG = os.path.join(
     py_utils.GetCatapultDir(), 'telemetry', 'telemetry',
     'binary_dependencies.json')
@@ -131,7 +128,7 @@ class ReplayServer():
     """Gets the _go_binary_path if it already set, or downloads it."""
     if USE_LOCAL_WPR in replay_options:
       # Build WPR
-      go_folder = os.path.join(_WPR_DIR, 'src')
+      go_folder = os.path.join(py_utils.GetWebPageReplayDir(), 'src')
       cur_cwd = os.getcwd()
       os.chdir(go_folder)
       try:
@@ -208,9 +205,10 @@ class ReplayServer():
       cmd_line.append('replay')
     if DISABLE_FUZZY_URL_MATCHING in options:
       cmd_line.append('--disable_fuzzy_url_matching')
-    key_file = os.path.join(_WPR_DIR, 'wpr_key.pem')
-    cert_file = os.path.join(_WPR_DIR, 'wpr_cert.pem')
-    inject_script = os.path.join(_WPR_DIR, 'deterministic.js')
+    key_file = os.path.join(py_utils.GetWebPageReplayDir(), 'wpr_key.pem')
+    cert_file = os.path.join(py_utils.GetWebPageReplayDir(), 'wpr_cert.pem')
+    inject_script = os.path.join(py_utils.GetWebPageReplayDir(),
+                                 'deterministic.js')
     cmd_line.extend([
         '--http_port=%s' % http_port,
         '--https_port=%s' % https_port,

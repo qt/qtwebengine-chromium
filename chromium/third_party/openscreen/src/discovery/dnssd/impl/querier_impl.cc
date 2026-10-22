@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "discovery/common/reporting_client.h"
@@ -328,7 +329,7 @@ std::vector<PendingQueryChange> QuerierImpl::OnRecordChanged(
   const DomainName& create_endpoints_domain =
       record.dns_type() != DnsType::kPTR
           ? record.name()
-          : absl::get<PtrRecordRdata>(record.rdata()).ptr_domain();
+          : std::get<PtrRecordRdata>(record.rdata()).ptr_domain();
   const DnsDataGraph::DomainGroup create_endpoints_group =
       record.dns_type() != DnsType::kPTR
           ? DnsDataGraph::GetDomainGroup(record)

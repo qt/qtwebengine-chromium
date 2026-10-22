@@ -35,6 +35,9 @@
 #include "components/autofill/core/browser/logging/log_manager.h"
 #include "components/autofill/core/browser/metrics/form_interactions_ukm_logger.h"
 #include "components/autofill/core/browser/metrics/quality_metrics.h"
+#include "components/autofill/core/browser/ml_model/field_classification_model_handler.h"
+#include "components/autofill/core/browser/ml_model/model_predictions.h"
+#include "components/autofill/core/browser/suggestions/suggestion_hiding_reason.h"
 #include "components/autofill/core/browser/suggestions/suggestion_util.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/autofill/core/common/autofill_data_validation.h"
@@ -46,17 +49,11 @@
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/unique_ids.h"
 #include "components/language_detection/core/constants.h"
-#include "components/optimization_guide/machine_learning_tflite_buildflags.h"
 #include "components/translate/core/browser/language_state.h"
 #include "components/translate/core/common/language_detection_details.h"
 #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
 #include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "ui/gfx/geometry/rect_f.h"
-
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
-#include "components/autofill/core/browser/ml_model/field_classification_model_handler.h"
-#include "components/autofill/core/browser/ml_model/model_predictions.h"
-#endif
 
 namespace autofill {
 
@@ -188,6 +185,11 @@ void AutofillManager::OnLanguageDetermined(
 
   NotifyObservers(&Observer::OnBeforeLanguageDetermined);
 
+  // TODO(crbug.com/360322019): This will make an additional server query for
+  // server predictions which does not need any update after determining the
+  // page language. This was added to `ParseFormsAsync()` as part of
+  // crbug.com/470949499.
+  // TODO(crbug.com/360322019):  Consider using `ReparseKnownForms()` instead.
   ParseFormsAsync(
       base::ToVector(form_structures_,
                      [](const auto& p) { return p.second->ToFormData(); }),
@@ -241,61 +243,54 @@ void AutofillManager::OnFormSubmitted(const FormData& form,
 
 void AutofillManager::OnFormsSeen(
     const std::vector<FormData>& updated_forms,
-    const std::vector<FormGlobalId>& removed_forms) {
+    const std::vector<FormGlobalId>& removed_form_ids) {
   auto erase_removed_forms = [&] {
     // Erase forms that have been removed from the DOM. This prevents
     // |form_structures_| from growing up its upper bound
     // kAutofillManagerMaxFormCacheSize.
-    for (FormGlobalId removed_form : removed_forms) {
+    for (FormGlobalId removed_form : removed_form_ids) {
       form_structures_.erase(removed_form);
     }
   };
 
   if (!IsValidFormDataVector(updated_forms) || !ShouldParseForms()) {
     NotifyObservers(&Observer::OnBeforeFormsSeen, std::vector<FormGlobalId>{},
-                    removed_forms);
+                    removed_form_ids);
     erase_removed_forms();
     NotifyObservers(&Observer::OnAfterFormsSeen, std::vector<FormGlobalId>{},
-                    removed_forms);
+                    removed_form_ids);
     return;
   }
 
-  NotifyObservers(&Observer::OnBeforeFormsSeen,
-                  base::ToVector(updated_forms, &FormData::global_id),
-                  removed_forms);
+  std::vector<FormGlobalId> updated_form_ids =
+      base::ToVector(updated_forms, &FormData::global_id);
+  NotifyObservers(&Observer::OnBeforeFormsSeen, updated_form_ids,
+                  removed_form_ids);
   erase_removed_forms();
 
-  auto ProcessParsedForms = [](std::vector<FormGlobalId> removed_forms,
-                               base::TimeTicks forms_seen_timestamp,
-                               AutofillManager& self,
-                               const std::vector<FormData>& parsed_forms) {
-    if (!parsed_forms.empty()) {
-      self.OnFormsParsed(parsed_forms, forms_seen_timestamp);
-    }
-    // TODO(crbug.com/470949499): Since `OnFieldTypesDetermined()` is called
-    // once after parsing and again after the server response arrives, there is
-    // low value in calling `OnAfterFormsSeen()` after the async tasks have
-    // finished. `OnAfterFormsSeen()` should instead likely be called either
-    // synchronously after `OnFormsSeen()` has posted all tasks or be removed
-    // altogether.
-    self.NotifyObservers(&Observer::OnAfterFormsSeen,
-                         base::ToVector(parsed_forms, &FormData::global_id),
-                         removed_forms);
-  };
-
-  // TODO(crbug.com/470949499): Remove this timestamp once
-  // features::kAutofillServerQueryPredictionsEarly is launched.
+  // TODO(crbug.com/470949499): Remove `forms_seen_timestamp` once
+  // `AutofillServerQueryPredictionsEarly` is launched.
   // The timestamp is used to measure the time elapsed between OnFormsSeen() and
   // the server predictions response.
-  const base::TimeTicks forms_seen_timestamp = base::TimeTicks::Now();
-  if (base::FeatureList::IsEnabled(
-          features::kAutofillServerQueryPredictionsEarly)) {
-    QueryServerPredictions(updated_forms, forms_seen_timestamp);
-  }
+  auto process_parsed_forms = base::BindOnce(
+      [](std::vector<FormGlobalId> updated_form_ids,
+         std::vector<FormGlobalId> removed_form_ids,
+         base::TimeTicks forms_seen_timestamp, AutofillManager& self,
+         const std::vector<FormData>& parsed_forms) {
+        if (!parsed_forms.empty()) {
+          self.OnFormsParsed(parsed_forms, forms_seen_timestamp);
+        }
+        if (!base::FeatureList::IsEnabled(
+                features::kAutofillManagerFiresOnAfterFooIfCacheIsFull)) {
+          updated_form_ids = base::ToVector(parsed_forms, &FormData::global_id);
+        }
+        self.NotifyObservers(&Observer::OnAfterFormsSeen, updated_form_ids,
+                             removed_form_ids);
+      },
+      std::move(updated_form_ids), std::move(removed_form_ids),
+      base::TimeTicks::Now());
 
-  ParseFormsAsync(updated_forms,
-                  base::BindOnce(ProcessParsedForms, std::move(removed_forms),
-                                 forms_seen_timestamp));
+  ParseFormsAsync(updated_forms, std::move(process_parsed_forms));
 }
 
 void AutofillManager::QueryServerPredictions(
@@ -399,13 +394,13 @@ void AutofillManager::OnTextFieldValueChanged(const FormData& form,
   }
   const FormFieldData& field = CHECK_DEREF(form.FindFieldByGlobalId(field_id));
   NotifyObservers(&Observer::OnBeforeTextFieldValueChanged, form.global_id(),
-                  field_id);
+                  field.global_id());
   ParseFormAsync(
-      form, ParsingCallback(&AutofillManager::OnTextFieldValueChangedImpl,
-                            field_id, timestamp)
-                .Then(NotifyObserversCallback(
-                    &Observer::OnAfterTextFieldValueChanged, form.global_id(),
-                    field_id, field.value())));
+      form,
+      ParsingCallback(&AutofillManager::OnTextFieldValueChangedImpl,
+                      field.global_id(), timestamp)
+          .Then(NotifyObserversCallback(&Observer::OnAfterTextFieldValueChanged,
+                                        form.global_id(), field.global_id())));
 }
 
 void AutofillManager::OnTextFieldDidScroll(const FormData& form,
@@ -485,13 +480,13 @@ void AutofillManager::OnHidePopup() {
   OnHidePopupImpl();
 }
 
-void AutofillManager::OnSuggestionsHidden() {
+void AutofillManager::OnSuggestionsHidden(SuggestionHidingReason reason) {
   // If the unmask prompt is shown, keep showing the preview. The preview
   // will be cleared when the prompt closes.
   if (ShouldClearPreviewedForm()) {
     driver().RendererShouldClearPreviewedForm();
   }
-  NotifyObservers(&Observer::OnSuggestionsHidden);
+  NotifyObservers(&Observer::OnSuggestionsHidden, reason);
 }
 
 void AutofillManager::OnSelectFieldOptionsDidChange(
@@ -637,6 +632,11 @@ void AutofillManager::ParseFormsAsync(
     parseable_forms.push_back(form);
   }
 
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillServerQueryPredictionsEarly)) {
+    QueryServerPredictions(parseable_forms, base::TimeTicks::Now());
+  }
+
   ParseFormsAsyncCommon(
       /*preserve_signatures=*/false, std::move(parseable_forms),
       std::move(callback));
@@ -652,6 +652,10 @@ void AutofillManager::ParseFormAsync(
       kAutofillManagerMaxFormCacheSize) {
     LOG_AF(log_manager()) << LoggingScope::kAbortParsing
                           << LogMessage::kAbortParsingTooManyForms << form;
+    if (base::FeatureList::IsEnabled(
+            features::kAutofillManagerFiresOnAfterFooIfCacheIsFull)) {
+      std::move(callback).Run(*this, form);
+    }
     return;
   }
 
@@ -698,12 +702,12 @@ void AutofillManager::ParseFormsAsyncCommon(
   // variables).
   auto run_heuristics = [](AsyncContext context, bool ignore_small_forms) {
     SCOPED_UMA_HISTOGRAM_TIMER("Autofill.Timing.ParseFormsAsync.RunHeuristics");
-    context.regex_predictions.reserve(context.forms.size());
-    for (const FormData& form : context.forms) {
-      context.regex_predictions.push_back(DetermineRegexTypes(
-          context.country_code, context.current_page_language, form,
-          context.log_manager.get(), ignore_small_forms));
-    }
+    context.regex_predictions =
+        base::ToVector(context.forms, [&](const FormData& form) {
+          return DetermineRegexTypes(
+              context.country_code, context.current_page_language, form,
+              context.log_manager.get(), ignore_small_forms);
+        });
     return context;
   };
 
@@ -759,7 +763,6 @@ void AutofillManager::ParseFormsAsyncCommon(
       std::move(update_cache),
       /*ignore_small_forms=*/!client().IsTabInActorMode());
 
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
   // Parsing happens in the following order:
   // (1) Running ML models (Autofill and Password Manager).
   // (2) Running heuristics (this ensures that rationalization and sectioning
@@ -767,13 +770,8 @@ void AutofillManager::ParseFormsAsyncCommon(
   // (3) Updating the form cache.
   RunMlModels(AsyncContext(*this, std::move(forms)),
               std::move(run_heuristics_and_update_cache));
-#else
-  std::move(run_heuristics_and_update_cache)
-      .Run(AsyncContext(*this, std::move(forms)));
-#endif
 }
 
-#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
 // Applies the Autofill and Password Manager ML models for field classification
 // to `forms`. The model is executed on a background sequence.
 // Calls `done_callback` upon completion on the UI sequence.
@@ -861,7 +859,6 @@ void AutofillManager::RunMlModels(
                                      std::move(done_callback)))),
       std::move(context));
 }
-#endif  // BUILDFLAG(BUILD_WITH_TFLITE_LIB)
 
 void AutofillManager::PopulateCacheForQueryResponse(
     base::span<const FormData> forms,

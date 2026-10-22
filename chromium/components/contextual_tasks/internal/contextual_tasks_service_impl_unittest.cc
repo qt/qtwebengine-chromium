@@ -11,9 +11,11 @@
 #include <utility>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -21,6 +23,7 @@
 #include "base/uuid.h"
 #include "base/version_info/channel.h"
 #include "components/contextual_search/contextual_search_service.h"
+#include "components/contextual_search/pref_names.h"
 #include "components/contextual_tasks/internal/composite_context_decorator.h"
 #include "components/contextual_tasks/internal/contextual_tasks_service_impl.h"
 #include "components/contextual_tasks/public/context_decoration_params.h"
@@ -33,9 +36,11 @@
 #include "components/signin/public/identity_manager/identity_test_environment.h"
 #include "components/sync/test/data_type_store_test_util.h"
 #include "components/sync/test/mock_data_type_local_change_processor.h"
+#include "net/base/url_util.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/omnibox_proto/chrome_aim_entry_point.pb.h"
 #include "url/gurl.h"
 
 namespace contextual_tasks {
@@ -57,15 +62,18 @@ class MockAimEligibilityService : public AimEligibilityService {
                               nullptr,
                               nullptr,
                               "en-US",
-                              {}) {}
+                              AimEligibilityService::Configuration()) {}
   MOCK_METHOD(bool, IsAimEligible, (), (const, override));
+  MOCK_METHOD(bool, IsCobrowseEligible, (), (const, override));
 
   // The following methods are marked as pure virtual in AimEligibilityService,
   // as they are implemented in ChromeAimEligibilityService which is the one
   // provided by the KeyedService factory. We therefore need to implement them
   // in this unit test.
-  std::string GetCountryCode() const override { return "US"; }
-  std::string GetLocale() const override { return "en-US"; }
+  std::string GetLocaleImpl() const override { return "en-US"; }
+  variations::VariationsService* GetVariationsService() const override {
+    return nullptr;
+  }
 };
 
 class MockAiThreadSyncBridge : public AiThreadSyncBridge {
@@ -86,7 +94,7 @@ class MockAiThreadSyncBridge : public AiThreadSyncBridge {
 
 class MockContextualTasksObserver : public ContextualTasksService::Observer {
  public:
-  MOCK_METHOD(void, OnInitialized, (), (override));
+  MOCK_METHOD(void, OnContextualTasksServiceInitialized, (), (override));
   MOCK_METHOD(void,
               OnTaskAdded,
               (const ContextualTask& task,
@@ -139,6 +147,8 @@ class ContextualTasksServiceImplTest : public testing::Test {
   ~ContextualTasksServiceImplTest() override = default;
 
   void SetUp() override {
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        "variations-override-country", "US");
     identity_test_environment_.MakePrimaryAccountAvailable(
         "test@example.com", signin::ConsentLevel::kSignin);
 
@@ -150,7 +160,14 @@ class ContextualTasksServiceImplTest : public testing::Test {
         pref_service_.registry());
     mock_aim_eligibility_service_ =
         std::make_unique<MockAimEligibilityService>(&pref_service_);
-    service_ = std::make_unique<ContextualTasksServiceImpl>(
+    service_ = BuildService(std::move(mock_decorator), true);
+  }
+
+  std::unique_ptr<ContextualTasksServiceImpl> BuildService(
+      std::unique_ptr<testing::NiceMock<MockCompositeContextDecorator>>
+          mock_decorator,
+      bool is_gemini_eligible) {
+    return std::make_unique<ContextualTasksServiceImpl>(
         version_info::Channel::UNKNOWN,
         syncer::DataTypeStoreTestUtil::FactoryForInMemoryStoreForTest(),
         std::move(mock_decorator), mock_aim_eligibility_service_.get(),
@@ -158,7 +175,9 @@ class ContextualTasksServiceImplTest : public testing::Test {
         SupportsEphemeralOnly(),
         base::BindRepeating(
             &MockGetActiveTaskCountCallback::Run,
-            base::Unretained(&mock_get_active_task_count_callback_)));
+            base::Unretained(&mock_get_active_task_count_callback_)),
+        base::BindRepeating([](bool eligible) { return eligible; },
+                            is_gemini_eligible));
   }
 
   virtual bool SupportsEphemeralOnly() { return false; }
@@ -1354,7 +1373,7 @@ TEST_F(ContextualTasksServiceImplTest, DisassociateAllTabsFromTask) {
   // Wait for the sync pieces to finish init so there aren't multiple code
   // paths trying to add tasks to the service.
   base::RunLoop init_run_loop;
-  EXPECT_CALL(observer_, OnInitialized()).WillOnce([&]() {
+  EXPECT_CALL(observer_, OnContextualTasksServiceInitialized()).WillOnce([&]() {
     init_run_loop.Quit();
   });
   init_run_loop.Run();
@@ -1463,27 +1482,56 @@ TEST_F(ContextualTasksServiceImplTest, GetContextForTask_NotFound) {
 }
 
 TEST_F(ContextualTasksServiceImplTest, GetFeatureEligibility) {
-  // Test case 1: Feature flag enabled, AIM eligible.
+  // Setup default pref to true for context sharing.
+  pref_service_.SetInteger(
+      contextual_search::kSearchContentSharingSettings,
+      static_cast<int>(
+          contextual_search::SearchContentSharingSettingsValue::kEnabled));
+
+  // Test case 1: All features enabled.
   feature_list_.InitAndEnableFeature(kContextualTasks);
   EXPECT_CALL(*mock_aim_eligibility_service_, IsAimEligible())
+      .WillOnce(Return(true));
+  EXPECT_CALL(*mock_aim_eligibility_service_, IsCobrowseEligible())
       .WillOnce(Return(true));
   EXPECT_TRUE(service_->GetFeatureEligibility().IsEligible());
 
   // Test case 2: Feature flag enabled, AIM not eligible.
   EXPECT_CALL(*mock_aim_eligibility_service_, IsAimEligible())
       .WillOnce(Return(false));
-  EXPECT_FALSE(service_->GetFeatureEligibility().IsEligible());
-
-  feature_list_.Reset();
-  // Test case 3: Feature flag disabled, AIM eligible.
-  feature_list_.InitAndDisableFeature(kContextualTasks);
-  EXPECT_CALL(*mock_aim_eligibility_service_, IsAimEligible())
+  EXPECT_CALL(*mock_aim_eligibility_service_, IsCobrowseEligible())
       .WillOnce(Return(true));
   EXPECT_FALSE(service_->GetFeatureEligibility().IsEligible());
 
-  // Test case 4: Feature flag disabled, AIM not eligible.
+  // Test case 3: Feature flag enabled, Cobrowse not eligible.
   EXPECT_CALL(*mock_aim_eligibility_service_, IsAimEligible())
+      .WillOnce(Return(true));
+  EXPECT_CALL(*mock_aim_eligibility_service_, IsCobrowseEligible())
       .WillOnce(Return(false));
+  EXPECT_FALSE(service_->GetFeatureEligibility().IsEligible());
+
+  // Test case 4: Feature flag enabled, Context sharing not eligible.
+  EXPECT_CALL(*mock_aim_eligibility_service_, IsAimEligible())
+      .WillOnce(Return(true));
+  EXPECT_CALL(*mock_aim_eligibility_service_, IsCobrowseEligible())
+      .WillOnce(Return(true));
+  pref_service_.SetInteger(
+      contextual_search::kSearchContentSharingSettings,
+      static_cast<int>(
+          contextual_search::SearchContentSharingSettingsValue::kDisabled));
+  EXPECT_FALSE(service_->GetFeatureEligibility().IsEligible());
+
+  feature_list_.Reset();
+  // Test case 5: Feature flag disabled, everything else eligible.
+  pref_service_.SetInteger(
+      contextual_search::kSearchContentSharingSettings,
+      static_cast<int>(
+          contextual_search::SearchContentSharingSettingsValue::kEnabled));
+  feature_list_.InitAndDisableFeature(kContextualTasks);
+  EXPECT_CALL(*mock_aim_eligibility_service_, IsAimEligible())
+      .WillOnce(Return(true));
+  EXPECT_CALL(*mock_aim_eligibility_service_, IsCobrowseEligible())
+      .WillOnce(Return(true));
   EXPECT_FALSE(service_->GetFeatureEligibility().IsEligible());
 }
 
@@ -1498,7 +1546,7 @@ TEST_F(ContextualTasksServiceImplTest,
 
   // Only the thread for the first task is returned by the AiThreadSyncBridge.
   Thread thread(ThreadType::kAiMode, thread_id, "Thread Title",
-                "conversation_turn_id");
+                /*last_turn_time_unix_epoch_millis=*/1, "conversation_turn_id");
   ON_CALL(*mock_ai_thread_bridge, GetThread(thread_id))
       .WillByDefault(Return(thread));
   ON_CALL(*mock_ai_thread_bridge, GetThreads())
@@ -1507,7 +1555,9 @@ TEST_F(ContextualTasksServiceImplTest,
   SetAiThreadSyncBridgeForTesting(std::move(mock_ai_thread_bridge));
 
   base::RunLoop run_loop;
-  EXPECT_CALL(observer_, OnInitialized()).WillOnce([&]() { run_loop.Quit(); });
+  EXPECT_CALL(observer_, OnContextualTasksServiceInitialized()).WillOnce([&]() {
+    run_loop.Quit();
+  });
 
   service_->AddObserver(&observer_);
 
@@ -1526,6 +1576,9 @@ TEST_F(ContextualTasksServiceImplTest,
   ASSERT_TRUE(result_thread.has_value());
   EXPECT_EQ(thread_id, result_thread->server_id);
   EXPECT_EQ(result_tasks[0].GetTitle(), result_thread->title);
+  EXPECT_EQ(1, result_tasks[0]
+                   .GetThread()
+                   ->last_turn_time.InMillisecondsSinceUnixEpoch());
 
   service_->RemoveObserver(&observer_);
 }
@@ -1543,8 +1596,9 @@ TEST_F(ContextualTasksServiceImplTest,
 
   // Add two threads where one isn't owned by a task.
   Thread thread(ThreadType::kAiMode, thread_id, "Thread 1",
-                "conversation_turn_id");
+                /*last_turn_time_unix_epoch_millis=*/1, "conversation_turn_id");
   Thread thread_2(ThreadType::kAiMode, thread_id_2, "Thread 2",
+                  /*last_turn_time_unix_epoch_millis=*/1,
                   "conversation_turn_id");
 
   ON_CALL(*mock_ai_thread_bridge, GetThread(thread_id))
@@ -1557,7 +1611,9 @@ TEST_F(ContextualTasksServiceImplTest,
   SetAiThreadSyncBridgeForTesting(std::move(mock_ai_thread_bridge));
 
   base::RunLoop run_loop;
-  EXPECT_CALL(observer_, OnInitialized()).WillOnce([&]() { run_loop.Quit(); });
+  EXPECT_CALL(observer_, OnContextualTasksServiceInitialized()).WillOnce([&]() {
+    run_loop.Quit();
+  });
 
   service_->AddObserver(&observer_);
 
@@ -1581,6 +1637,9 @@ TEST_F(ContextualTasksServiceImplTest,
   ASSERT_TRUE(result_thread_2.has_value());
   EXPECT_EQ(thread_id_2, result_thread_2->server_id);
   EXPECT_EQ("Thread 2", result_tasks[thread_2_task_index].GetTitle());
+  EXPECT_EQ(1, result_tasks[thread_2_task_index]
+                   .GetThread()
+                   ->last_turn_time.InMillisecondsSinceUnixEpoch());
 
   service_->RemoveObserver(&observer_);
 }
@@ -1639,6 +1698,8 @@ TEST_F(ContextualTasksServiceImplTest, OnThreadAddedOrUpdatedRemotely) {
   proto::AiThreadEntity updated_thread_entity;
   updated_thread_entity.mutable_specifics()->set_server_id(server_id);
   updated_thread_entity.mutable_specifics()->set_title("New Title");
+  updated_thread_entity.mutable_specifics()
+      ->set_last_turn_time_unix_epoch_millis(2);
   updated_thread_entity.mutable_specifics()->set_conversation_turn_id(
       "new_turn_id");
   updated_thread_entity.mutable_specifics()->set_type(
@@ -1650,6 +1711,8 @@ TEST_F(ContextualTasksServiceImplTest, OnThreadAddedOrUpdatedRemotely) {
       server_id);
   updated_thread_entity_wrong_type.mutable_specifics()->set_title(
       "Wrong Type Title");
+  updated_thread_entity_wrong_type.mutable_specifics()
+      ->set_last_turn_time_unix_epoch_millis(3);
   updated_thread_entity_wrong_type.mutable_specifics()
       ->set_conversation_turn_id("wrong_type_turn_id");
   updated_thread_entity_wrong_type.mutable_specifics()->set_type(
@@ -1670,6 +1733,8 @@ TEST_F(ContextualTasksServiceImplTest, OnThreadAddedOrUpdatedRemotely) {
         EXPECT_EQ("New Title", updated_task.GetThread()->title);
         EXPECT_EQ("new_turn_id",
                   updated_task.GetThread()->conversation_turn_id);
+        EXPECT_EQ(2, updated_task.GetThread()
+                         ->last_turn_time.InMillisecondsFSinceUnixEpoch());
         run_loop2.Quit();
       });
 
@@ -1682,6 +1747,9 @@ TEST_F(ContextualTasksServiceImplTest, OnThreadAddedOrUpdatedRemotely) {
   ASSERT_TRUE(result_task.has_value());
   ASSERT_TRUE(result_task->GetThread().has_value());
   EXPECT_EQ("New Title", result_task->GetThread()->title);
+  EXPECT_EQ(
+      2,
+      result_task->GetThread()->last_turn_time.InMillisecondsSinceUnixEpoch());
 
   service_->RemoveObserver(&observer_);
 }
@@ -1922,6 +1990,156 @@ TEST_F(ContextualTasksServiceImplTest,
   // Previously, re-associating an empty task triggered a disassociate -> delete
   // cycle while holding an iterator, causing a Use-After-Free.
   service_->AssociateTabWithTask(task.GetTaskId(), tab_id);
+}
+
+TEST_F(ContextualTasksServiceImplTest, GetThreadUrlFromTaskId_Aim) {
+  ContextualTask task = service_->CreateTask();
+
+  const std::string server_id = "1234";
+  const std::string title = "title";
+  const std::string turn_id = "5678";
+  service_->UpdateThreadForTask(task.GetTaskId(), ThreadType::kAiMode,
+                                server_id, turn_id, title);
+
+  base::RunLoop run_loop;
+  service_->GetThreadUrlFromTaskId(
+      task.GetTaskId(), "en-us",
+      omnibox::ChromeAimEntryPoint::UNKNOWN_AIM_ENTRY_POINT,
+      base::BindOnce(
+          [](const std::string& server_id, const std::string& turn_id,
+             GURL url) {
+            ASSERT_TRUE(base::StartsWith(url.host(), "www.google.com"));
+            ASSERT_EQ("/search", url.path());
+
+            std::string mstk;
+            net::GetValueForKeyInQuery(url, "mstk", &mstk);
+            ASSERT_EQ(mstk, turn_id);
+
+            std::string mtid;
+            net::GetValueForKeyInQuery(url, "mtid", &mtid);
+            ASSERT_EQ(mtid, server_id);
+          },
+          server_id, turn_id)
+          .Then(run_loop.QuitClosure()));
+  run_loop.Run();
+}
+
+// It's possible for aim to get into a state where there is a thread ID but no
+// turn ID (mstk). The most common case is shared links where a "share" turn ID
+// (smstk) is used instead.
+TEST_F(ContextualTasksServiceImplTest, GetThreadUrlFromTaskId_Aim_NoTurnId) {
+  ContextualTask task = service_->CreateTask();
+
+  const std::string server_id = "1234";
+  const std::string title = "title";
+  service_->UpdateThreadForTask(task.GetTaskId(), ThreadType::kAiMode,
+                                server_id, std::nullopt, title);
+
+  base::RunLoop run_loop;
+  service_->GetThreadUrlFromTaskId(
+      task.GetTaskId(), "en-us",
+      omnibox::ChromeAimEntryPoint::UNKNOWN_AIM_ENTRY_POINT,
+      base::BindOnce(
+          [](const std::string& server_id, GURL url) {
+            ASSERT_TRUE(base::StartsWith(url.host(), "www.google.com"));
+            ASSERT_EQ("/search", url.path());
+
+            std::string mstk;
+            ASSERT_FALSE(net::GetValueForKeyInQuery(url, "mstk", &mstk));
+
+            std::string mtid;
+            net::GetValueForKeyInQuery(url, "mtid", &mtid);
+            ASSERT_EQ(mtid, server_id);
+          },
+          server_id)
+          .Then(run_loop.QuitClosure()));
+  run_loop.Run();
+}
+
+TEST_F(ContextualTasksServiceImplTest, GetThreadUrlFromTaskId_Gemini) {
+  ContextualTask task = service_->CreateTask();
+
+  const std::string server_id = "1234";
+  const std::string title = "title";
+  service_->UpdateThreadForTask(task.GetTaskId(), ThreadType::kGemini,
+                                server_id, std::nullopt, title);
+
+  base::RunLoop run_loop;
+  service_->GetThreadUrlFromTaskId(
+      task.GetTaskId(), "en-us",
+      omnibox::ChromeAimEntryPoint::UNKNOWN_AIM_ENTRY_POINT,
+      base::BindOnce(
+          [](const std::string& server_id, GURL url) {
+            ASSERT_TRUE(base::StartsWith(url.host(), "gemini.google.com"));
+            ASSERT_TRUE(base::EndsWith(url.path(), server_id));
+          },
+          server_id)
+          .Then(run_loop.QuitClosure()));
+  run_loop.Run();
+}
+
+TEST_F(ContextualTasksServiceImplTest,
+       GetThreadUrlFromTaskId_GeminiWithPrefix) {
+  ContextualTask task = service_->CreateTask();
+
+  const std::string server_id = "1234";
+  const std::string server_id_with_prefix = "c_" + server_id;
+  const std::string title = "title";
+  service_->UpdateThreadForTask(task.GetTaskId(), ThreadType::kGemini,
+                                server_id_with_prefix, std::nullopt, title);
+
+  base::RunLoop run_loop;
+  service_->GetThreadUrlFromTaskId(
+      task.GetTaskId(), "en-us",
+      omnibox::ChromeAimEntryPoint::UNKNOWN_AIM_ENTRY_POINT,
+      base::BindOnce(
+          [](const std::string& server_id,
+             const std::string& server_id_with_prefix, GURL url) {
+            ASSERT_TRUE(base::StartsWith(url.host(), "gemini.google.com"));
+            ASSERT_TRUE(base::EndsWith(url.path(), server_id));
+            ASSERT_EQ(std::string::npos,
+                      url.path().find(server_id_with_prefix));
+          },
+          server_id, server_id_with_prefix)
+          .Then(run_loop.QuitClosure()));
+  run_loop.Run();
+}
+
+TEST_F(ContextualTasksServiceImplTest, GetThreadUrlFromTaskId_NoThread) {
+  ContextualTask task = service_->CreateTask();
+  base::RunLoop run_loop;
+  service_->GetThreadUrlFromTaskId(
+      task.GetTaskId(), "en-us",
+      omnibox::ChromeAimEntryPoint::UNKNOWN_AIM_ENTRY_POINT,
+      base::BindOnce([](GURL url) {
+        // Error case should still return a valid URL.
+        ASSERT_TRUE(url.is_valid());
+      }).Then(run_loop.QuitClosure()));
+  run_loop.Run();
+}
+
+TEST_F(ContextualTasksServiceImplTest, GetThreadUrlFromTaskId_NoTask) {
+  base::Uuid task_id =
+      base::Uuid::ParseLowercase("00000000-0000-0000-0000-000000000000");
+  base::RunLoop run_loop;
+  service_->GetThreadUrlFromTaskId(
+      task_id, "en-us", omnibox::ChromeAimEntryPoint::UNKNOWN_AIM_ENTRY_POINT,
+      base::BindOnce([](GURL url) {
+        // Error case should still return a valid URL.
+        ASSERT_TRUE(url.is_valid());
+      }).Then(run_loop.QuitClosure()));
+  run_loop.Run();
+}
+
+TEST_F(ContextualTasksServiceImplTest, GeminiThreadsEnabled) {
+  EXPECT_TRUE(service_->IsGeminiThreadsEligible());
+}
+
+TEST_F(ContextualTasksServiceImplTest, GeminiThreadsNotEnabled) {
+  auto service = BuildService(
+      std::make_unique<testing::NiceMock<MockCompositeContextDecorator>>(),
+      false);
+  EXPECT_FALSE(service->IsGeminiThreadsEligible());
 }
 
 }  // namespace contextual_tasks

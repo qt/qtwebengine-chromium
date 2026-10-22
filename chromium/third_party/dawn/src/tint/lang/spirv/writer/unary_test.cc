@@ -25,9 +25,9 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "src/tint/lang/spirv/writer/common/helper_test.h"
-
 #include "src/tint/lang/core/ir/unary.h"
+
+#include "src/tint/lang/spirv/writer/common/helper_test.h"
 
 using namespace tint::core::number_suffixes;  // NOLINT
 
@@ -66,7 +66,8 @@ TEST_P(Arithmetic, Scalar) {
         b.Return(ep);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = " + params.spirv_inst + " %" + params.spirv_type_name + " %arg");
 }
 TEST_P(Arithmetic, Vector) {
@@ -88,7 +89,8 @@ TEST_P(Arithmetic, Vector) {
         b.Return(ep);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = " + params.spirv_inst + " %v2" + params.spirv_type_name + " %arg");
 }
 INSTANTIATE_TEST_SUITE_P(
@@ -115,7 +117,8 @@ TEST_F(SpirvWriterTest, Unary_Negate_i32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
        %void = OpTypeVoid
         %int = OpTypeInt 32 1
@@ -164,7 +167,8 @@ TEST_F(SpirvWriterTest, Unary_Negate_Vector_i32) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
         %foo = OpFunction %void None %5
         %arg = OpFunctionParameter %int

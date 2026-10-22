@@ -42,7 +42,7 @@ class BarcodeTest : public testing::Test {
   CFX_Barcode* barcode() const { return barcode_.get(); }
 
   void Create(BC_TYPE type) {
-    barcode_ = CFX_Barcode::Create(type);
+    barcode_ = std::make_unique<CFX_Barcode>(type);
     barcode_->SetHeight(298);
     barcode_->SetWidth(418);
   }

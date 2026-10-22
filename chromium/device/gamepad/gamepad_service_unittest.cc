@@ -45,7 +45,6 @@ class MockGamepadConsumer : public GamepadConsumer {
     // Expect no connections or disconnections by default.
     EXPECT_CALL(*this, OnGamepadConnected).Times(0);
     EXPECT_CALL(*this, OnGamepadDisconnected).Times(0);
-    EXPECT_CALL(*this, OnGamepadRawInputChanged).Times(0);
   }
 
   MockGamepadConsumer(MockGamepadConsumer&) = delete;
@@ -1003,7 +1002,14 @@ TEST_F(GamepadServiceSimulationTest, Vibration) {
   EXPECT_EQ(disconnected_future.Get<0>(), 0u);
 }
 
-TEST_F(GamepadServiceSimulationTest, TokenNotFound) {
+// TODO(crbug.com/499019944): Re-enable this test.
+#if BUILDFLAG(IS_LINUX)
+// Flaky on linux TSAN.
+#define MAYBE_TokenNotFound DISABLED_TokenNotFound
+#else
+#define MAYBE_TokenNotFound TokenNotFound
+#endif
+TEST_F(GamepadServiceSimulationTest, MAYBE_TokenNotFound) {
   // Mark `consumer` active.
   auto* consumer = CreateConsumer();
   EXPECT_TRUE(service()->ConsumerBecameActive(consumer));

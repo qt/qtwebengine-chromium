@@ -446,6 +446,7 @@ void ProgramPipeline::updateFragmentInoutRangeAndEnablesPerSampleShading()
         fragmentExecutable->mPod.hasDepthInputAttachment;
     mState.mExecutable->mPod.hasStencilInputAttachment =
         fragmentExecutable->mPod.hasStencilInputAttachment;
+    mState.mExecutable->mPod.hasFragCoord = fragmentExecutable->mPod.hasFragCoord;
 }
 
 void ProgramPipeline::updateLinkedVaryings()

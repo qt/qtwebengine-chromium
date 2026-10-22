@@ -25,6 +25,7 @@
 #include "components/autofill/core/browser/suggestions/suggestion_hiding_reason.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
 #include "components/autofill/core/browser/ui/autofill_suggestion_delegate.h"
+#include "components/autofill/core/browser/ui/tabbed_pane_enums.h"
 #include "components/autofill/core/common/aliases.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
@@ -72,7 +73,7 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
   std::variant<AutofillDriver*, password_manager::PasswordManagerDriver*>
   GetDriver() override;
   void OnSuggestionsShown(base::span<const Suggestion> suggestions) override;
-  void OnSuggestionsHidden() override;
+  void OnSuggestionsHidden(SuggestionHidingReason reason) override;
   void DidSelectSuggestion(const Suggestion& suggestion) override;
   void DidAcceptSuggestion(const Suggestion& suggestion,
                            const SuggestionMetadata& metadata) override;
@@ -86,6 +87,8 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
   // `OnSuggestionsReturned`. Returns the filling product of the first
   // suggestion that has a filling product that is not none.
   FillingProduct GetMainFillingProduct() const override;
+
+  void OnTabSelected(TabbedPaneTabType tab_type) override;
 
   // Called when the renderer posts an Autofill query to the browser. We might
   // not want to display the warning if a website has disabled Autocomplete
@@ -169,20 +172,6 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
                                AutofillSuggestionTriggerSource)>
   CreateUpdateSuggestionsCallback();
 
-  // Returns a callback that, when run, attempts to close the currently shown
-  // suggestion UI. If the `SuggestionUiSessionId` of the currently showing UI
-  // surface has changed between when this callback is created and when it is
-  // run, running it is a no-op. The callback is also safe to call even if
-  // `this` is no longer alive.
-  base::OnceCallback<void(SuggestionHidingReason)>
-  CreateHideSuggestionsCallback();
-
-  // Creates a callback that, when run, fills the field that was last queried
-  // when the callback was created.
-  base::RepeatingCallback<void(const std::u16string&)>
-  CreateSingleFieldFillCallback(SuggestionType suggestion_type,
-                                std::optional<FieldType> field_type_used);
-
   // Private handler for DidAcceptSuggestions for address related suggestions.
   void DidAcceptAddressSuggestion(const Suggestion& suggestion,
                                   const SuggestionMetadata& metadata);
@@ -191,8 +180,10 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
   void DidAcceptPaymentsSuggestion(const Suggestion& suggestion,
                                    const SuggestionMetadata& metadata);
 
-  // Called when a credit card is scanned using device camera.
-  void OnCreditCardScanned(const CreditCard& card);
+  // Fills the queried form with the provided credit card using the specified
+  // trigger source. Used as a callback for asynchronous card fetches.
+  void OnCreditCardFetched(AutofillTriggerSource trigger_source,
+                           const CreditCard& card);
 
   // Returns the last Autofill triggering field. Derived from the `form` and
   // `field` parameters of `OnQuery(). Returns nullptr if called before
@@ -259,6 +250,9 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
 
   // Attempts to fill an Autofill AI `suggestion` into for `query_field_`;
   void FillAutofillAiFormAndHidePopup(const Suggestion& suggestion);
+
+  // Returns if the Pay Now Pay Later tabs should be shown.
+  virtual bool ShouldShowPayNowPayLaterTabs();
 
   base::WeakPtr<AutofillExternalDelegate> GetWeakPtr();
 

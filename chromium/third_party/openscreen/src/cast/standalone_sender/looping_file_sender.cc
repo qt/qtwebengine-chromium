@@ -56,6 +56,18 @@ void LoopingFileSender::SetPlaybackRate(double rate) {
   audio_capturer_->SetPlaybackRate(rate);
 }
 
+void LoopingFileSender::OnInputMessage(InputMessage message) {
+  const auto now = env_.now();
+  for (const auto& event : message.events()) {
+    if (event.type() == InputMessage::INPUT_TYPE_MOUSE_DOWN &&
+        event.has_mouse_event()) {
+      active_clicks_.push_back(Click{event.mouse_event().location().x(),
+                                     event.mouse_event().location().y(), now,
+                                     now + std::chrono::milliseconds(500)});
+    }
+  }
+}
+
 void LoopingFileSender::UpdateEncoderBitrates() {
   if (bandwidth_being_utilized_ >= kHighBandwidthThreshold) {
     audio_encoder_.UseHighQuality();
@@ -142,6 +154,9 @@ void LoopingFileSender::OnVideoFrame(const AVFrame& av_frame,
   StreamingVideoEncoder::VideoFrame frame{};
   frame.width = av_frame.width - av_frame.crop_left - av_frame.crop_right;
   frame.height = av_frame.height - av_frame.crop_top - av_frame.crop_bottom;
+
+  DrawAnimations(av_frame, frame.width, frame.height);
+
   frame.yuv_planes[0] = av_frame.data[0] + av_frame.crop_left +
                         av_frame.linesize[0] * av_frame.crop_top;
   frame.yuv_planes[1] = av_frame.data[1] + av_frame.crop_left / 2 +
@@ -161,22 +176,85 @@ void LoopingFileSender::OnVideoFrame(const AVFrame& av_frame,
 
 void LoopingFileSender::UpdateStatusOnConsole() {
   const Clock::duration elapsed = latest_frame_time_ - capture_begin_time_;
-  const auto seconds_part = to_seconds(elapsed);
-  const auto millis_part = to_milliseconds(elapsed - seconds_part);
   // The control codes here attempt to erase the current line the cursor is
   // on, and then print out the updated status text. If the terminal does not
   // support simple ANSI escape codes, the following will still work, but
   // there might sometimes be old status lines not getting erased (i.e., just
   // partially overwritten).
-  fprintf(stdout,
-          "\r\x1b[2K\rLoopingFileSender: At %01" PRId64
-          ".%03ds in file (est. network bandwidth: %d kbps). \n",
-          static_cast<int64_t>(seconds_part.count()),
-          static_cast<int>(millis_part.count()), bandwidth_estimate_ / 1024);
-  fflush(stdout);
-
+  OSP_VLOG << "LoopingFileSender: At " << elapsed
+           << " in file (est. network bandwidth: " << bandwidth_estimate_ / 1024
+           << ").";
   console_update_task_.ScheduleFromNow([this] { UpdateStatusOnConsole(); },
                                        kConsoleUpdateInterval);
+}
+
+void LoopingFileSender::DrawAnimations(const AVFrame& av_frame,
+                                       int frame_width,
+                                       int frame_height) {
+  const auto now = env_.now();
+  // Remove clicks that have exceeded their 500ms display duration.
+  active_clicks_.erase(
+      std::remove_if(active_clicks_.begin(), active_clicks_.end(),
+                     [now](const Click& c) { return c.end_time < now; }),
+      active_clicks_.end());
+
+  if (active_clicks_.empty()) {
+    return;
+  }
+
+  // We modify the AVFrame data in-place. We use the same base pointer offsets
+  // as the encoder to account for any cropping or padding in the original file.
+  uint8_t* const y_plane = av_frame.data[0] + av_frame.crop_left +
+                           av_frame.linesize[0] * av_frame.crop_top;
+  uint8_t* const u_plane = av_frame.data[1] + av_frame.crop_left / 2 +
+                           av_frame.linesize[1] * av_frame.crop_top / 2;
+  uint8_t* const v_plane = av_frame.data[2] + av_frame.crop_left / 2 +
+                           av_frame.linesize[2] * av_frame.crop_top / 2;
+
+  for (const auto& click : active_clicks_) {
+    // Map the click coordinates from the receiver's logical display space
+    // to the sender's actual video frame resolution.
+    const float scale_x = static_cast<float>(frame_width);
+    const float scale_y = static_cast<float>(frame_height);
+    const int center_x = static_cast<int>(std::round(click.x * scale_x));
+    const int center_y = static_cast<int>(std::round(click.y * scale_y));
+
+    // Calculate animation progress (0.0 to 1.0) and the resulting ring radius.
+    const double duration = (click.end_time - click.start_time).count();
+    const double elapsed = (now - click.start_time).count();
+    const double progress = std::clamp(elapsed / duration, 0.0, 1.0);
+
+    const float radius = static_cast<float>(5.0 + 40.0 * progress);
+    const float thickness = 3.0f;
+    const float inner_radius_sq = std::pow(radius - thickness, 2);
+    const float outer_radius_sq = std::pow(radius, 2);
+
+    // Iterate over a bounding box for the ring and draw pixels that fall
+    // within the calculated thickness.
+    const int box_size = static_cast<int>(radius) + 1;
+    for (int dy = -box_size; dy <= box_size; ++dy) {
+      for (int dx = -box_size; dx <= box_size; ++dx) {
+        const float dist_sq = static_cast<float>(dx * dx + dy * dy);
+        if (dist_sq >= inner_radius_sq && dist_sq <= outer_radius_sq) {
+          const int px = center_x + dx;
+          const int py = center_y + dy;
+
+          if (px >= 0 && px < frame_width && py >= 0 && py < frame_height) {
+            // In YUV, pure white is represented by maximum luminance (Y=255)
+            // and neutral chrominance (U=128, V=128).
+            y_plane[py * av_frame.linesize[0] + px] = 255;
+
+            // Chrominance (U/V) planes are sub-sampled 2x2 in YUV420p.
+            if (px % 2 == 0 && py % 2 == 0) {
+              const int uv_offset = (py / 2) * av_frame.linesize[1] + (px / 2);
+              u_plane[uv_offset] = 128;
+              v_plane[uv_offset] = 128;
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 void LoopingFileSender::OnEndOfFile(SimulatedCapturer* capturer) {

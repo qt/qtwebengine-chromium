@@ -89,7 +89,7 @@ export class ReadingListAppElement extends ReadingListAppElementBase {
   protected accessor loadingContent_: boolean = true;
   protected accessor itemSize_: number = 48;
   protected accessor minViewportHeight_: number = 0;
-  protected accessor scrollTarget_: HTMLElement|null = null;
+  protected accessor scrollTarget_: HTMLElement = document.documentElement;
   private accessor unreadHeader_: string =
       loadTimeData.getString('unreadHeader');
   private accessor readHeader_: string = loadTimeData.getString('readHeader');
@@ -218,7 +218,11 @@ export class ReadingListAppElement extends ReadingListAppElementBase {
     this.unreadExpanded_ = true;
   }
 
-  protected updateFocusedItem_() {
+  protected onViewportFilled_() {
+    this.updateFocusedItem_();
+  }
+
+  private updateFocusedItem_() {
     this.focusedItem_ = this.focusedIndex_ === -1 ?
         null :
         this.querySelector<HTMLElement>(
@@ -392,7 +396,7 @@ export class ReadingListAppElement extends ReadingListAppElementBase {
     );
   }
 
-  protected async onItemKeyDown_(e: KeyboardEvent) {
+  protected async onItemKeydown_(e: KeyboardEvent) {
     if (e.shiftKey || !navigationKeys.has(e.key)) {
       return;
     }

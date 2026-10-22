@@ -5914,6 +5914,11 @@ Options are true or false. Default is false.
 @item print_format
 Set print format for stats. Options are summary, json, or none.
 Default value is none.
+
+@item stats_file
+Write stats to specified file. Format is controlled by @option{print_format},
+which must be set. Specify @code{-} to write to standard output.
+Default is unset.
 @end table
 
 @section lowpass
@@ -7738,6 +7743,11 @@ The file path of the downloaded whisper.cpp model (mandatory).
 The language to use for transcription ('auto' for auto-detect).
 Default value: @code{"auto"}
 
+@item translate
+If enabled, translate the transcription from the source language to English. A
+multilingual model is required to enable this option.
+Default value: @code{"false"}
+
 @item queue
 The maximum size that will be queued into the filter before processing the audio
 with whisper. Using a small value the audio stream will be processed more often,
@@ -7767,6 +7777,12 @@ If the destination is a file and it already exists, it will be overwritten.
 The destination format string; it could be "text" (only the transcribed text
 will be sent to the destination), "srt" (subtitle format) or "json".
 Default value: @code{"text"}
+
+@item max_len
+Maximum segment length in characters. When set to a value greater than 0,
+transcription segments will be split to not exceed this length. This is useful
+for generating subtitles with shorter lines.
+Default value: @code{"0"}
 
 @item vad_model
 Path to the VAD model file. If set, the filter will load an additional voice
@@ -11640,6 +11656,105 @@ Median
 @item bypass
 Do not actually modify frame. Useful when one only wants metadata.
 @end table
+
+@section deinterlace_d3d12
+
+Deinterlace the input video using D3D12 hardware-accelerated video processing.
+
+This filter uses the DirectX 12 Video Processor to perform deinterlacing on
+GPU, supporting both simple bob and driver-defined advanced (motion-adaptive)
+algorithms. It requires the input to be in @code{d3d12} hardware pixel format.
+
+The filter automatically queries the hardware for the required number of
+temporal reference frames (if needed) and manages a frame queue to supply them.
+
+It accepts the following options:
+
+@table @option
+
+@item method
+The deinterlacing method. It accepts one of the following values:
+
+@table @samp
+@item default
+Select the best deinterlacing method available on the hardware.
+If the driver supports @code{custom}, that method is used; otherwise
+falls back to @code{bob}. This is the default.
+
+@item bob
+Bob deinterlacing. Each field is independently scaled to full
+frame height. Simple and fast, but may produce visible bob artifacts
+on moving content.
+
+@item custom
+Driver-defined advanced deinterlacing. The exact algorithm is
+hardware-specific and typically employs motion-adaptive techniques
+with temporal reference frames for higher quality.
+@end table
+
+The default value is @code{default}.
+
+@item mode
+Specify the interlacing mode. It accepts one of the following values:
+
+@table @samp
+@item frame
+Send one frame for each frame. The output frame rate equals the input
+frame rate. This is the default.
+
+@item field
+Send one frame for each field. The output frame rate is double the
+input frame rate.
+@end table
+
+The default value is @code{frame}.
+
+@item deint
+Specify which frames to deinterlace. It accepts one of the following values:
+
+@table @samp
+@item all
+Deinterlace all frames. This is the default.
+
+@item interlaced
+Only deinterlace frames marked as interlaced; progressive frames are
+passed through unchanged.
+@end table
+
+The default value is @code{all}.
+@end table
+
+@subsection Examples
+
+@itemize
+
+@item
+Deinterlace an interlaced video using software decoding and the best
+available hardware deinterlacing method:
+@example
+ffmpeg -init_hw_device d3d12va=d3d12 -filter_hw_device d3d12 -i input.ts \
+       -vf "format=nv12,hwupload,deinterlace_d3d12=method=default,hwdownload,format=nv12" \
+       -c:v libx264 -crf 18 output.mp4
+@end example
+
+@item
+Deinterlace at field rate (double the frame rate) using bob method with
+hardware decoding (full d3d12 pipeline):
+@example
+ffmpeg -hwaccel d3d12va -hwaccel_output_format d3d12 -i input.ts \
+       -vf "deinterlace_d3d12=method=bob:mode=field" \
+       -c:v h264_d3d12va output.mp4
+@end example
+
+@item
+Deinterlace only interlaced frames, passing progressive frames through:
+@example
+ffmpeg -init_hw_device d3d12va=d3d12 -filter_hw_device d3d12 -i input.ts \
+       -vf "format=nv12,hwupload,deinterlace_d3d12=deint=interlaced,hwdownload,format=nv12" \
+       -c:v libx264 -crf 18 output.mp4
+@end example
+
+@end itemize
 
 @section dejudder
 
@@ -16940,13 +17055,13 @@ process. Enabled by default.
 @item smoothing_period
 Peak detection smoothing period, between @code{0.0} and @code{1000.0}. Higher
 values result in peak detection becoming less responsive to changes in the
-input. Defaults to @code{100.0}.
+input. Defaults to @code{20.0}.
 
 @item scene_threshold_low
 @item scene_threshold_high
 Lower and upper thresholds for scene change detection. Expressed in a
-logarithmic scale between @code{0.0} and @code{100.0}. Default to @code{5.5}
-and @code{10.0}, respectively. Setting either to a negative value disables
+logarithmic scale between @code{0.0} and @code{100.0}. Default to @code{1.0}
+and @code{3.0}, respectively. Setting either to a negative value disables
 this functionality.
 
 @item percentile
@@ -18096,6 +18211,35 @@ Macroblock size. Default @code{16}.
 Search parameter. Default @code{7}.
 @end table
 
+@section mestimate_d3d12
+
+Estimate and export motion vectors using D3D12 hardware-accelerated motion estimation.
+This filter uses GPU hardware motion estimation capabilities available in
+DirectX 12 Video APIs to achieve significant performance improvements
+over the software-based @code{mestimate} filter.
+
+Motion vectors are stored in frame side data to be used by other filters.
+
+This filter requires the input to be in @code{d3d12} hardware pixel format.
+The filter uses quarter-pixel precision for motion vector estimation.
+
+This filter accepts the following options:
+@table @option
+@item mb_size
+Macroblock size. Only @code{8} and @code{16} are supported.
+Default @code{16}.
+@end table
+
+@subsection Examples
+
+Estimate motion vectors using D3D12 hardware acceleration with 16x16 blocks,
+and visualize them:
+@example
+ffmpeg -hwaccel d3d12va -hwaccel_output_format d3d12 -i input.mp4 \
+        -vf mestimate_d3d12=mb_size=16,hwdownload,format=nv12,codecview=mv=pf \
+        -c:v libx264 -preset fast -b:v 5M output.mp4
+@end example
+
 @section midequalizer
 
 Apply Midway Image Equalization effect using two video streams.
@@ -18757,6 +18901,69 @@ normalize=blackpt=red:whitept=cyan
 @section null
 
 Pass the video source unchanged to the output.
+
+@section ocio
+OpenColorIO library filter
+
+This filter allows you to do color management using the OpenColorIO library.
+See https://opencolorio.org/ for more details. To Enable
+compilation of this filter, you need to configure FFmpeg with @code{--enable-libopencolorio}.
+
+It accepts the following options:
+
+@table @option
+@item config
+By default the filter will use the OCIO config defined by the OCIO environment variable, but this parameter allows you to explicitly specify its location.
+If you are getting started, you can use config=ocio://studio-config-v1.0.0_aces-v1.3_ocio-v2.1 which specifies one of the built in defaults.
+
+@item input
+Set the input colorspace.
+
+@item output
+Set the output colorspace.
+
+@item display
+Set the display colorspace, used in combination with view.
+
+@item view
+Set the view colorspace, used in combination with display.
+
+@item inverse
+When used in combination with display and view, this inverts the transform, so going from a display/view to the "input colorspace".
+
+@item filetransform
+Allows you to specify an external file-transform to use instead of the OCIO config file. This is useful for applying a single transform without needing a full OCIO config file.
+
+@item format
+Allow you to specify the output pix_fmt of the OCIO filter. This *has* to be a RGB colorspace, so you really are limited to rgb24, rgba, rgb48, rgba48, gbrp10, gbrp12, gbrpf32le, gbrapf32le, for most encoding we would recommend rgb48
+
+@item context_params
+Allow you to specify additional context parameters for the OCIO filter. This is a list of key=value pairs, separated by colons.
+
+@end table
+
+@subsection Examples
+
+Map from ACEScg to ACEScct, this assumes the OCIO file is defined with the OCIO environment variable.
+@example
+input=ACEScg:output=ACEScct:format=rgb48
+@end example
+
+Map from ACEScg to a sRGB display using the "ACES 1.0 - SDR Video" view transform, this assumes the OCIO file is defined with the OCIO environment variable. Note you will need to wrap the argument in quotes to ensure that the spaces are interpreted correctly.
+@example
+input=ACEScg:display=sRGB - Display:view=ACES 1.0 - SDR Video:format=rgb48
+@end example
+
+
+As above but using the OCIO file studio-config-v1.0.0_aces-v1.3_ocio-v2.1_ns.ocio rather than the OCIO environment variable.
+@example
+config=studio-config-v1.0.0_aces-v1.3_ocio-v2.1_ns.ocio:input=ACEScg:display=sRGB - Display:view=ACES 1.0 - SDR Video:format=rgb48
+@end example
+
+If you are converting to YCrCb you still will want to set the color matrix for the conversion. This is a good example of combining the two.
+@example
+ffmpeg -y -i SOURCEFRAMES.%05d.exr -c:v libx265 -vf "ocio=input=ACEScg:output=ACEScct:format=rgb48,scale=in_color_matrix=bt709:out_color_matrix=bt709,format=yuv444p10"  OUTPUTFILE.mov
+@end example
 
 @section ocr
 Optical Character Recognition
@@ -25446,6 +25653,22 @@ Work the same as the identical @ref{scale} filter options.
 @item reset_sar
 Works the same as the identical @ref{scale} filter option.
 
+@item in_color_range
+Override input color range.
+
+@item out_color_range
+Specify output color range.
+
+The accepted values for in_trc and out_trc are:
+@table @samp
+@item studio
+Studio (or restricted, or MPEG) color range.
+
+@item full
+Full (or JPEG) color range.
+
+@end table
+
 @anchor{color_profile}
 @item color_profile
 Specify all color properties at once.
@@ -25463,10 +25686,13 @@ BT.2020
 
 @end table
 
-@item trc
+@item in_trc
+Override input transfer characteristics.
+
+@item out_trc
 Specify output transfer characteristics.
 
-The accepted values are:
+The accepted values for in_trc and out_trc are:
 @table @samp
 @item bt709
 BT.709
@@ -25518,10 +25744,13 @@ ARIB_STD_B67
 
 @end table
 
-@item primaries
+@item in_primaries
+Override input color primaries.
+
+@item out_primaries
 Specify output color primaries.
 
-The accepted values are:
+The accepted values for in_primaries and out_primaries are:
 @table @samp
 @item bt709
 BT.709
@@ -25572,6 +25801,21 @@ vpp_amf=-2:720:format=yuv420p
 Upscale to 4K and change color profile to bt2020.
 @example
 vpp_amf=4096:2160:color_profile=bt2020
+@end example
+
+@item
+Override display mastering, max CLL and max FALL metadata for filter input to represent those parameters:
+Primary G: x=0.2650 y=0.6900
+Primary B: x=0.1500 y=0.0600
+Primary R: x=0.6800 y=0.3200
+White point: x=0.3127 y=0.3290
+Max. luminance: 1100.0000 cd/m²
+Min. luminance: 0.0040 cd/m²
+MaxCLL: 1100 cd/m²
+MaxFALL: 400 cd/m²
+
+@example
+vpp_amf=color_profile=bt2020:in_trc=smpte2084:in_primaries=bt2020:master_display='G(13250,23460)B(7500,3000)R(34000,16000)WP(15635,16450)L(11000000,40)':max_cll='1100,400'
 @end example
 @end itemize
 

@@ -7,7 +7,9 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
+#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/retain_ptr.h"
+#include "core/fxcrt/widestring.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -26,8 +28,28 @@ FPDFCatalog_IsTagged(FPDF_DOCUMENT document) {
   return pMarkInfo && pMarkInfo->GetIntegerFor("Marked") != 0;
 }
 
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFCatalog_GetLanguage(FPDF_DOCUMENT document,
+                        FPDF_WCHAR* buffer,
+                        unsigned long buflen) {
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc) {
+    return 0;
+  }
+
+  const CPDF_Dictionary* catalog = doc->GetRoot();
+  if (!catalog) {
+    return 0;
+  }
+
+  // SAFETY: required from caller.
+  return Utf16EncodeMaybeCopyAndReturnLength(
+      catalog->GetUnicodeTextFor("Lang"),
+      UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen)));
+}
+
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
-FPDFCatalog_SetLanguage(FPDF_DOCUMENT document, FPDF_BYTESTRING language) {
+FPDFCatalog_SetLanguage(FPDF_DOCUMENT document, FPDF_WIDESTRING language) {
   if (!language) {
     return false;
   }
@@ -42,6 +64,9 @@ FPDFCatalog_SetLanguage(FPDF_DOCUMENT document, FPDF_BYTESTRING language) {
     return false;
   }
 
-  catalog->SetNewFor<CPDF_String>("Lang", language);
+  // SAFETY: required from caller.
+  catalog->SetNewFor<CPDF_String>(
+      "Lang",
+      UNSAFE_BUFFERS(WideStringFromFPDFWideString(language).AsStringView()));
   return true;
 }

@@ -4,6 +4,7 @@
 
 #include "services/network/public/cpp/device_bound_sessions_mojom_traits.h"
 
+#include "base/notreached.h"
 #include "base/unguessable_token.h"
 #include "components/unexportable_keys/unexportable_key_id.h"
 #include "mojo/public/cpp/base/time_mojom_traits.h"
@@ -210,19 +211,17 @@ EnumTraits<network::mojom::DeviceBoundSessionInclusionResult,
 }
 
 // static
-bool EnumTraits<network::mojom::DeviceBoundSessionInclusionResult,
-                net::device_bound_sessions::InclusionResult>::
-    FromMojom(network::mojom::DeviceBoundSessionInclusionResult input,
-              net::device_bound_sessions::InclusionResult* output) {
+net::device_bound_sessions::InclusionResult
+EnumTraits<network::mojom::DeviceBoundSessionInclusionResult,
+           net::device_bound_sessions::InclusionResult>::
+    FromMojom(network::mojom::DeviceBoundSessionInclusionResult input) {
   switch (input) {
     case network::mojom::DeviceBoundSessionInclusionResult::kExclude:
-      *output = net::device_bound_sessions::InclusionResult::kExclude;
-      return true;
+      return net::device_bound_sessions::InclusionResult::kExclude;
     case network::mojom::DeviceBoundSessionInclusionResult::kInclude:
-      *output = net::device_bound_sessions::InclusionResult::kInclude;
-      return true;
+      return net::device_bound_sessions::InclusionResult::kInclude;
   }
-  return false;
+  NOTREACHED();
 }
 
 // static
@@ -390,36 +389,29 @@ EnumTraits<network::mojom::DeviceBoundSessionRefreshResult,
 }
 
 // static
-bool EnumTraits<network::mojom::DeviceBoundSessionRefreshResult,
-                net::device_bound_sessions::RefreshResult>::
-    FromMojom(network::mojom::DeviceBoundSessionRefreshResult input,
-              net::device_bound_sessions::RefreshResult* output) {
+net::device_bound_sessions::RefreshResult
+EnumTraits<network::mojom::DeviceBoundSessionRefreshResult,
+           net::device_bound_sessions::RefreshResult>::
+    FromMojom(network::mojom::DeviceBoundSessionRefreshResult input) {
   using RefreshResult = net::device_bound_sessions::RefreshResult;
   using MojomRefreshResult = network::mojom::DeviceBoundSessionRefreshResult;
   switch (input) {
     case MojomRefreshResult::kRefreshed:
-      *output = RefreshResult::kRefreshed;
-      return true;
+      return RefreshResult::kRefreshed;
     case MojomRefreshResult::kInitializedService:
-      *output = RefreshResult::kInitializedService;
-      return true;
+      return RefreshResult::kInitializedService;
     case MojomRefreshResult::kUnreachable:
-      *output = RefreshResult::kUnreachable;
-      return true;
+      return RefreshResult::kUnreachable;
     case MojomRefreshResult::kServerError:
-      *output = RefreshResult::kServerError;
-      return true;
+      return RefreshResult::kServerError;
     case MojomRefreshResult::kRefreshQuotaExceeded:
-      *output = RefreshResult::kRefreshQuotaExceeded;
-      return true;
+      return RefreshResult::kRefreshQuotaExceeded;
     case MojomRefreshResult::kFatalError:
-      *output = RefreshResult::kFatalError;
-      return true;
+      return RefreshResult::kFatalError;
     case MojomRefreshResult::kSigningQuotaExceeded:
-      *output = RefreshResult::kSigningQuotaExceeded;
-      return true;
+      return RefreshResult::kSigningQuotaExceeded;
   }
-  return false;
+  NOTREACHED();
 }
 
 // static
@@ -444,28 +436,35 @@ EnumTraits<network::mojom::DeviceBoundSessionChallengeResult,
 }
 
 // static
-bool EnumTraits<network::mojom::DeviceBoundSessionChallengeResult,
-                net::device_bound_sessions::ChallengeResult>::
-    FromMojom(network::mojom::DeviceBoundSessionChallengeResult input,
-              net::device_bound_sessions::ChallengeResult* output) {
+net::device_bound_sessions::ChallengeResult
+EnumTraits<network::mojom::DeviceBoundSessionChallengeResult,
+           net::device_bound_sessions::ChallengeResult>::
+    FromMojom(network::mojom::DeviceBoundSessionChallengeResult input) {
   using ChallengeResult = net::device_bound_sessions::ChallengeResult;
   using MojomChallengeResult =
       network::mojom::DeviceBoundSessionChallengeResult;
   switch (input) {
     case MojomChallengeResult::kSuccess:
-      *output = ChallengeResult::kSuccess;
-      return true;
+      return ChallengeResult::kSuccess;
     case MojomChallengeResult::kNoSessionId:
-      *output = ChallengeResult::kNoSessionId;
-      return true;
+      return ChallengeResult::kNoSessionId;
     case MojomChallengeResult::kNoSessionMatch:
-      *output = ChallengeResult::kNoSessionMatch;
-      return true;
+      return ChallengeResult::kNoSessionMatch;
     case MojomChallengeResult::kCantSetBoundCookie:
-      *output = ChallengeResult::kCantSetBoundCookie;
-      return true;
+      return ChallengeResult::kCantSetBoundCookie;
   }
-  return false;
+  NOTREACHED();
+}
+
+// static
+bool StructTraits<network::mojom::DeviceBoundSessionFailedRequestDataView,
+                  net::device_bound_sessions::FailedRequest>::
+    Read(network::mojom::DeviceBoundSessionFailedRequestDataView data,
+         net::device_bound_sessions::FailedRequest* out) {
+  out->net_error = data.net_error();
+  out->response_error = data.response_error();
+  return data.ReadRequestUrl(&out->request_url) &&
+         data.ReadResponseErrorBody(&out->response_error_body);
 }
 
 // static
@@ -474,7 +473,8 @@ bool StructTraits<network::mojom::DeviceBoundSessionCreationDetailsDataView,
     Read(network::mojom::DeviceBoundSessionCreationDetailsDataView data,
          net::device_bound_sessions::CreationEventDetails* out) {
   return data.ReadFetchError(&out->fetch_error) &&
-         data.ReadNewSessionDisplay(&out->new_session_display);
+         data.ReadNewSessionDisplay(&out->new_session_display) &&
+         data.ReadFailedRequest(&out->failed_request);
 }
 
 // static
@@ -485,9 +485,9 @@ bool StructTraits<network::mojom::DeviceBoundSessionRefreshDetailsDataView,
   out->was_fully_proactive_refresh = data.was_fully_proactive_refresh();
   return data.ReadRefreshResult(&out->refresh_result) &&
          data.ReadFetchError(&out->fetch_error) &&
-         data.ReadNewSessionDisplay(&out->new_session_display);
+         data.ReadNewSessionDisplay(&out->new_session_display) &&
+         data.ReadFailedRequest(&out->failed_request);
 }
-
 // static
 bool StructTraits<network::mojom::DeviceBoundSessionTerminationDetailsDataView,
                   net::device_bound_sessions::TerminationEventDetails>::
@@ -652,6 +652,38 @@ StructTraits<network::mojom::DeviceBoundSessionTerminationDetailsDataView,
 }
 
 // static
+const GURL&
+StructTraits<network::mojom::DeviceBoundSessionFailedRequestDataView,
+             net::device_bound_sessions::FailedRequest>::
+    request_url(const net::device_bound_sessions::FailedRequest& r) {
+  return r.request_url;
+}
+
+// static
+std::optional<int32_t>
+StructTraits<network::mojom::DeviceBoundSessionFailedRequestDataView,
+             net::device_bound_sessions::FailedRequest>::
+    net_error(const net::device_bound_sessions::FailedRequest& r) {
+  return r.net_error;
+}
+
+// static
+std::optional<int32_t>
+StructTraits<network::mojom::DeviceBoundSessionFailedRequestDataView,
+             net::device_bound_sessions::FailedRequest>::
+    response_error(const net::device_bound_sessions::FailedRequest& r) {
+  return r.response_error;
+}
+
+// static
+const std::optional<std::string>&
+StructTraits<network::mojom::DeviceBoundSessionFailedRequestDataView,
+             net::device_bound_sessions::FailedRequest>::
+    response_error_body(const net::device_bound_sessions::FailedRequest& r) {
+  return r.response_error_body;
+}
+
+// static
 const std::optional<net::device_bound_sessions::SessionDisplay>&
 StructTraits<network::mojom::DeviceBoundSessionCreationDetailsDataView,
              net::device_bound_sessions::CreationEventDetails>::
@@ -661,12 +693,29 @@ StructTraits<network::mojom::DeviceBoundSessionCreationDetailsDataView,
 }
 
 // static
+const std::optional<net::device_bound_sessions::FailedRequest>&
+StructTraits<network::mojom::DeviceBoundSessionCreationDetailsDataView,
+             net::device_bound_sessions::CreationEventDetails>::
+    failed_request(
+        const net::device_bound_sessions::CreationEventDetails& obj) {
+  return obj.failed_request;
+}
+
+// static
 const std::optional<net::device_bound_sessions::SessionDisplay>&
 StructTraits<network::mojom::DeviceBoundSessionRefreshDetailsDataView,
              net::device_bound_sessions::RefreshEventDetails>::
     new_session_display(
         const net::device_bound_sessions::RefreshEventDetails& obj) {
   return obj.new_session_display;
+}
+
+// static
+const std::optional<net::device_bound_sessions::FailedRequest>&
+StructTraits<network::mojom::DeviceBoundSessionRefreshDetailsDataView,
+             net::device_bound_sessions::RefreshEventDetails>::
+    failed_request(const net::device_bound_sessions::RefreshEventDetails& obj) {
+  return obj.failed_request;
 }
 
 // static

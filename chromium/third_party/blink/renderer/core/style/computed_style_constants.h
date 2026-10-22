@@ -70,6 +70,7 @@ enum PseudoId : uint8_t {
   kPseudoIdCheckMark,
   kPseudoIdBefore,
   kPseudoIdAfter,
+  kPseudoIdExpandIcon,
   kPseudoIdPickerIcon,
   kPseudoIdInterestHint,
   kPseudoIdMarker,
@@ -266,11 +267,20 @@ enum class EFillBox : unsigned {
   kPadding,
   kContent,
   kText,
+  kBorderArea,
+  kBorderAreaText,  // [ border-area text ] combined
   kFillBox,
   kStrokeBox,
   kViewBox,
   kNoClip
 };
+
+// Returns true for clip values that don't correspond to a standard geometry
+// box and need special handling (e.g. can't produce an opaque rect).
+inline bool IsSpecialClipFillBox(EFillBox box) {
+  return box == EFillBox::kText || box == EFillBox::kBorderArea ||
+         box == EFillBox::kBorderAreaText;
+}
 
 inline EFillBox EnclosingFillBox(EFillBox box_a, EFillBox box_b) {
   if (box_a == EFillBox::kNoClip || box_b == EFillBox::kNoClip) {
@@ -282,9 +292,12 @@ inline EFillBox EnclosingFillBox(EFillBox box_a, EFillBox box_b) {
   if (box_a == EFillBox::kStrokeBox || box_b == EFillBox::kStrokeBox) {
     return EFillBox::kStrokeBox;
   }
-  // background-clip:text is clipped to the border box.
+  // background-clip:text and background-clip:border-area are clipped to the
+  // border box.
   if (box_a == EFillBox::kBorder || box_a == EFillBox::kText ||
-      box_b == EFillBox::kBorder || box_b == EFillBox::kText) {
+      box_a == EFillBox::kBorderArea || box_a == EFillBox::kBorderAreaText ||
+      box_b == EFillBox::kBorder || box_b == EFillBox::kText ||
+      box_b == EFillBox::kBorderArea || box_b == EFillBox::kBorderAreaText) {
     return EFillBox::kBorder;
   }
   if (box_a == EFillBox::kPadding || box_b == EFillBox::kPadding) {
@@ -463,9 +476,11 @@ enum class ContentDistributionType : unsigned {
   kStretch
 };
 
-// Reasonable maximum to prevent insane font sizes from causing crashes on some
+// LINT.IfChange(kMaximumAllowedFontSize)
+// A maximum to prevent unreasonable font sizes from causing crashes on some
 // platforms (such as Windows).
 static const float kMaximumAllowedFontSize = 10000.0f;
+// LINT.ThenChange(//content/app_shim_remote_cocoa/web_menu_runner_mac.mm:fontSize)
 
 enum class CSSBoxType : unsigned {
   kMissing,
@@ -628,12 +643,6 @@ inline PositionVisibility& operator|=(PositionVisibility& a,
   return a = a | b;
 }
 
-inline PositionVisibility InitialPositionVisibilityKeyword() {
-  if (RuntimeEnabledFeatures::AnchorsVisibleInitialValueEnabled()) {
-    return PositionVisibility::kAnchorsVisible;
-  }
-  return PositionVisibility::kAlways;
-}
 
 enum class FlexWrapMode : uint8_t { kNowrap, kWrap, kWrapReverse };
 

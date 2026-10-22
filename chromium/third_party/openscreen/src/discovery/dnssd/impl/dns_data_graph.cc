@@ -6,6 +6,7 @@
 
 #include <optional>
 #include <utility>
+#include <variant>
 
 #include "discovery/dnssd/impl/conversion_layer.h"
 #include "discovery/dnssd/impl/instance_key.h"
@@ -109,7 +110,7 @@ class DnsDataGraphImpl : public DnsDataGraph {
       if (it == records_.end()) {
         return std::nullopt;
       } else {
-        return std::cref(absl::get<T>(it->rdata()));
+        return std::cref(std::get<T>(it->rdata()));
       }
     }
 
@@ -251,14 +252,14 @@ Error DnsDataGraphImpl::Node::ApplyDataRecordChange(MdnsRecord record,
   std::vector<MdnsRecord>::iterator it;
 
   if (record.dns_type() == DnsType::kPTR) {
-    child_name = absl::get<PtrRecordRdata>(record.rdata()).ptr_domain();
+    child_name = std::get<PtrRecordRdata>(record.rdata()).ptr_domain();
     it = std::find_if(records_.begin(), records_.end(),
                       [record](const MdnsRecord& rhs) {
                         return record.IsReannouncementOf(rhs);
                       });
   } else {
     if (record.dns_type() == DnsType::kSRV) {
-      child_name = absl::get<SrvRecordRdata>(record.rdata()).target();
+      child_name = std::get<SrvRecordRdata>(record.rdata()).target();
     }
     it = FindRecord(record.dns_type());
   }
@@ -545,7 +546,7 @@ DnsDataGraphImpl::CalculatePtrRecordEndpoints(Node* node) const {
     }
 
     const DomainName domain =
-        absl::get<PtrRecordRdata>(record.rdata()).ptr_domain();
+        std::get<PtrRecordRdata>(record.rdata()).ptr_domain();
     const Node* child = nodes_.find(domain)->second.get();
     std::vector<ErrorOr<DnsSdInstanceEndpoint>> child_endpoints =
         CreateEndpoints(DomainGroup::kSrvAndTxt, child->name());

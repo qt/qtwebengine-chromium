@@ -4,12 +4,8 @@
 
 #include "components/autofill/core/browser/autofill_type.h"
 
-#include <string_view>
-#include <variant>
-#include <vector>
+#include <string>
 
-#include "base/containers/to_vector.h"
-#include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
 #include "components/autofill/core/browser/field_type_utils.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -189,16 +185,19 @@ FieldType AutofillType::GetPasswordManagerType() const {
 }
 
 FieldTypeSet AutofillType::GetAutofillAiTypes() const {
-  static constexpr FieldTypeSet kFieldTypes =
-      Union(FieldTypesOfGroup(FieldTypeGroup::kName),
-            FieldTypesOfGroup(FieldTypeGroup::kAutofillAi));
+  static constexpr FieldTypeSet kFieldTypes = [] {
+    FieldTypeSet field_types;
+    for (AttributeType at : DenseSet<AttributeType>::all()) {
+      field_types.insert_all(at.field_subtypes());
+    }
+    return field_types;
+  }();
   return Intersection(GetTypes(), kFieldTypes);
 }
 
 FieldTypeSet AutofillType::GetStaticAutofillAiTypes() const {
-  static constexpr FieldTypeSet kFieldTypes =
-      FieldTypesOfGroup(FieldTypeGroup::kAutofillAi);
-  return Intersection(GetTypes(), kFieldTypes);
+  return Intersection(GetAutofillAiTypes(),
+                      FieldTypesOfGroup(FieldTypeGroup::kAutofillAi));
 }
 
 std::string AutofillType::ToString() const {

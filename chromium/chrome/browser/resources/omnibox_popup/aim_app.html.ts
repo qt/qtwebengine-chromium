@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {SubmitButtonIconType} from '//resources/cr_components/composebox/composebox.js';
 import {html} from '//resources/lit/v3_0/lit.rollup.js';
 
 import type {OmniboxAimAppElement} from './aim_app.js';
@@ -10,18 +11,22 @@ export function getHtml(this: OmniboxAimAppElement) {
   // clang-format off
   return html`<!--_html_template_start_-->
 <div id="content">
+  ${this.composeboxForkEnabled_ ? html`
+  <cr-omnibox-composebox id="composebox">
+  </cr-omnibox-composebox>` : html`
   <cr-composebox id="composebox" searchbox-next-enabled
-      searchbox-layout-mode="${this.searchboxLayoutMode_}"
+      .submitButtonIconType="${SubmitButtonIconType.FORWARD}"
+      searchbox-layout-mode="${this.getSearchboxLayoutMode_()}"
       ?disable-caret-color-animation="${!this.caretAnimationsEnabled_}"
       ?disable-composebox-animation="${this.disableComposeboxAnimation_}"
-      ?disable-voice-search-animation="${true}"
-      @context-menu-entrypoint-click="${this.onContextualEntryPointClicked_}"
+      disable-voice-search-animation
+      @context-menu-entrypoint-click="${this.onContextMenuEntrypointClick_}"
       @close-composebox="${this.onCloseComposebox_}"
       @composebox-submit="${this.onComposeboxSubmit_}"
       .showMenuOnClick="${false}"
       .shouldShowGhostFiles="${true}"
       entrypoint-name="Omnibox">
-  </cr-composebox>
+  </cr-composebox>`}
 </div>
 <!--_html_template_end_-->`;
   // clang-format on

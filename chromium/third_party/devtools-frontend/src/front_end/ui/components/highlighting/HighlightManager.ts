@@ -85,7 +85,7 @@ export const CURRENT_HIGHLIGHT_REGISTRY = 'current-search-result';
 interface HighlightState {
   activeRanges: Range[];
   ranges: TextUtils.TextRange.SourceRange[];
-  currentRange: TextUtils.TextRange.SourceRange|undefined;
+  currentRange?: TextUtils.TextRange.SourceRange;
 }
 
 let highlightManagerInstance: HighlightManager;
@@ -153,7 +153,6 @@ export class HighlightManager {
       state = {
         activeRanges: [],
         ranges: [],
-        currentRange: undefined,
       };
       this.#stateByNode.set(node, state);
     }

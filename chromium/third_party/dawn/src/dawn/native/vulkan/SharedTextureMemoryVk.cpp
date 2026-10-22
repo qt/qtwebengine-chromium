@@ -225,6 +225,15 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     const VkExternalMemoryHandleTypeFlagBits handleType =
         VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
 
+    const CombinedLimits& limits = device->GetLimits();
+    DAWN_INVALID_IF(
+        descriptor->size.width == 0 || descriptor->size.width > limits.v1.maxTextureDimension2D,
+        "Resource width (%u) is zero or exceeds maxTextureDimension2D (%u).",
+        descriptor->size.width, limits.v1.maxTextureDimension2D);
+    DAWN_INVALID_IF(
+        descriptor->size.height == 0 || descriptor->size.height > limits.v1.maxTextureDimension2D,
+        "Resource height (%u) is zero or exceeds maxTextureDimension2D (%u).",
+        descriptor->size.height, limits.v1.maxTextureDimension2D);
     DAWN_INVALID_IF(descriptor->size.depthOrArrayLayers != 1, "depthOrArrayLayers was not 1.");
 
     SharedTextureMemoryProperties properties;
@@ -486,8 +495,6 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
 
     auto* aHardwareBuffer = static_cast<struct AHardwareBuffer*>(descriptor->handle);
 
-    bool useExternalFormat = descriptor->useExternalFormat;
-
     const VkExternalMemoryHandleTypeFlagBits handleType =
         VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID;
 
@@ -495,14 +502,14 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
     SharedTextureMemoryProperties properties =
         GetAHBSharedTextureMemoryProperties(ahbFunctions, aHardwareBuffer);
 
-    if (useExternalFormat) {
-        // When using the external YUV texture format, only TextureBinding usage is valid.
+    bool usesExternalFormat = properties.format == wgpu::TextureFormat::OpaqueYCbCrAndroid;
+    if (usesExternalFormat) {
+        // When using the opaque YUV texture formats, only the TextureBinding usage is valid.
         properties.usage &= wgpu::TextureUsage::TextureBinding;
     }
 
     VkFormat vkFormat;
     YCbCrVkDescriptor yCbCrAHBInfo;
-    SampleTypeBit externalSampleType;
     VkAndroidHardwareBufferPropertiesANDROID bufferProperties = {
         .sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID,
     };
@@ -524,13 +531,13 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
 
         // TODO(crbug.com/dawn/2476): Validate more as per
         // https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VkImageCreateInfo.html
-        if (useExternalFormat) {
+        if (usesExternalFormat) {
             DAWN_INVALID_IF(
                 bufferFormatProperties.externalFormat == 0,
                 "AHardwareBuffer with external sampler must have non-zero external format.");
             vkFormat = VK_FORMAT_UNDEFINED;
             externalFormatAndroid.externalFormat = bufferFormatProperties.externalFormat;
-            properties.format = wgpu::TextureFormat::External;
+            properties.format = wgpu::TextureFormat::OpaqueYCbCrAndroid;
         } else {
             vkFormat = bufferFormatProperties.format;
             externalFormatAndroid.externalFormat = 0;
@@ -556,10 +563,8 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
         uint32_t formatFeatures = bufferFormatProperties.formatFeatures;
         if (formatFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT) {
             yCbCrAHBInfo.vkChromaFilter = wgpu::FilterMode::Linear;
-            externalSampleType = SampleTypeBit::UnfilterableFloat | SampleTypeBit::Float;
         } else {
             yCbCrAHBInfo.vkChromaFilter = wgpu::FilterMode::Nearest;
-            externalSampleType = SampleTypeBit::UnfilterableFloat;
         }
         yCbCrAHBInfo.forceExplicitReconstruction =
             formatFeatures &
@@ -573,11 +578,8 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
                     "Multi-planar AHardwareBuffer not supported yet.");
 
     // Create the SharedTextureMemory object.
-    Ref<SharedTextureMemory> sharedTextureMemory =
-        SharedTextureMemory::Create(device, label, properties, VK_QUEUE_FAMILY_FOREIGN_EXT);
-
-    sharedTextureMemory->mYCbCrAHBInfo = yCbCrAHBInfo;
-    sharedTextureMemory->GetContents()->SetExternalFormatSupportedSampleTypes(externalSampleType);
+    Ref<SharedTextureMemory> sharedTextureMemory = SharedTextureMemory::Create(
+        device, label, properties, VK_QUEUE_FAMILY_FOREIGN_EXT, yCbCrAHBInfo);
 
     // Reflect properties to reify them.
     sharedTextureMemory->APIGetProperties(&properties);
@@ -606,7 +608,7 @@ ResultOrError<Ref<SharedTextureMemory>> SharedTextureMemory::Create(
         imageFormatInfo.usage = vkUsageFlags;
         imageFormatInfo.flags = 0;
 
-        if (!useExternalFormat) {
+        if (!usesExternalFormat) {
             constexpr wgpu::TextureUsage kUsageRequiringView =
                 wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding |
                 wgpu::TextureUsage::StorageBinding;
@@ -950,9 +952,10 @@ Ref<SharedTextureMemory> SharedTextureMemory::Create(
     Device* device,
     StringView label,
     const SharedTextureMemoryProperties& properties,
-    uint32_t queueFamilyIndex) {
-    Ref<SharedTextureMemory> sharedTextureMemory =
-        AcquireRef(new SharedTextureMemory(device, label, properties, queueFamilyIndex));
+    uint32_t queueFamilyIndex,
+    const YCbCrVkDescriptor& yCbCrVkDesc) {
+    Ref<SharedTextureMemory> sharedTextureMemory = AcquireRef(
+        new SharedTextureMemory(device, label, properties, queueFamilyIndex, yCbCrVkDesc));
     sharedTextureMemory->Initialize();
     return sharedTextureMemory;
 }
@@ -960,8 +963,11 @@ Ref<SharedTextureMemory> SharedTextureMemory::Create(
 SharedTextureMemory::SharedTextureMemory(Device* device,
                                          StringView label,
                                          const SharedTextureMemoryProperties& properties,
-                                         uint32_t queueFamilyIndex)
-    : SharedTextureMemoryBase(device, label, properties), mQueueFamilyIndex(queueFamilyIndex) {}
+                                         uint32_t queueFamilyIndex,
+                                         const YCbCrVkDescriptor& yCbCrVkDesc)
+    : SharedTextureMemoryBase(device, label, properties),
+      mQueueFamilyIndex(queueFamilyIndex),
+      mYCbCrVkDesc(yCbCrVkDesc) {}
 
 RefCountedVkHandle<VkDeviceMemory>* SharedTextureMemory::GetVkDeviceMemory() const {
     return mVkDeviceMemory.Get();
@@ -980,6 +986,10 @@ void SharedTextureMemory::DestroyImpl(DestroyReason reason) {
     mVkDeviceMemory = nullptr;
 }
 
+Ref<SharedResourceMemoryContents> SharedTextureMemory::CreateContents() {
+    return AcquireRef(new SharedTextureMemoryContentsVk(GetWeakRef(this), mYCbCrVkDesc));
+}
+
 ResultOrError<Ref<TextureBase>> SharedTextureMemory::CreateTextureImpl(
     const UnpackedPtr<TextureDescriptor>& descriptor) {
     return SharedTexture::Create(this, descriptor);
@@ -990,9 +1000,10 @@ MaybeError SharedTextureMemory::BeginAccessImpl(
     const UnpackedPtr<BeginAccessDescriptor>& descriptor) {
     // TODO(dawn/2276): support concurrent read access.
     DAWN_INVALID_IF(descriptor->concurrentRead, "Vulkan backend doesn't support concurrent read.");
-    DAWN_INVALID_IF(
-        texture->GetFormat().format == wgpu::TextureFormat::External && !descriptor->initialized,
-        "BeginAccess with Texture format (%s) must be initialized", texture->GetFormat().format);
+    DAWN_INVALID_IF(texture->GetFormat().format == wgpu::TextureFormat::OpaqueYCbCrAndroid &&
+                        !descriptor->initialized,
+                    "BeginAccess with Texture format (%s) must be initialized",
+                    texture->GetFormat().format);
 
     wgpu::SType type;
     DAWN_TRY_ASSIGN(
@@ -1114,9 +1125,24 @@ MaybeError SharedTextureMemory::GetChainedProperties(
             "struct.");
     }
 
-    ahbProperties->yCbCrInfo = mYCbCrAHBInfo;
+    ahbProperties->yCbCrInfo = mYCbCrVkDesc;
 
     return {};
+}
+
+// SharedTextureMemoryContentsVk
+
+SharedTextureMemoryContentsVk::SharedTextureMemoryContentsVk(
+    WeakRef<SharedTextureMemoryBase> sharedTextureMemory,
+    YCbCrVkDescriptor ycbcrVkDesc)
+    : SharedTextureMemoryContents(std::move(sharedTextureMemory)), mYCbCrVkDesc(ycbcrVkDesc) {}
+
+bool SharedTextureMemoryContentsVk::IsYCbCrFilterable() const {
+    return mYCbCrVkDesc.vkChromaFilter != wgpu::FilterMode::Nearest;
+}
+
+const YCbCrVkDescriptor& SharedTextureMemoryContentsVk::GetYCbCrVkDesc() const {
+    return mYCbCrVkDesc;
 }
 
 }  // namespace dawn::native::vulkan

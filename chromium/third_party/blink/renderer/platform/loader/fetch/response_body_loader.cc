@@ -326,7 +326,7 @@ class ResponseBodyLoader::Buffer final
                  "total_bytes_read", static_cast<int>(total_bytes_read_),
                  "added_bytes", static_cast<int>(buffer.size()));
     Vector<char> new_chunk;
-    new_chunk.AppendSpan(buffer);
+    new_chunk.append_range(buffer);
     buffered_data_.emplace_back(std::move(new_chunk));
   }
 
@@ -435,7 +435,7 @@ void ResponseBodyLoader::DidReceiveData(base::span<const char> data) {
 
 void ResponseBodyLoader::DidReceiveDecodedData(
     const String& data,
-    std::unique_ptr<ParkableStringImpl::SecureDigest> digest) {
+    std::unique_ptr<SecureStringDigest> digest) {
   if (aborted_)
     return;
 

@@ -90,18 +90,21 @@ class ParkableStringTest
     switch (algorithm) {
       case ParkableStringImpl::CompressionAlgorithm::kZlib:
         scoped_feature_list_.InitWithFeatures(
-            {}, {features::kUseSnappyForParkableStrings,
-                 features::kUseZstdForParkableStrings});
+            {features::kCompressParkableStrings},
+            {features::kUseSnappyForParkableStrings,
+             features::kUseZstdForParkableStrings});
         break;
       case ParkableStringImpl::CompressionAlgorithm::kSnappy:
         scoped_feature_list_.InitWithFeatures(
-            {features::kUseSnappyForParkableStrings},
+            {features::kCompressParkableStrings,
+             features::kUseSnappyForParkableStrings},
             {features::kUseZstdForParkableStrings});
         break;
 #if BUILDFLAG(HAS_ZSTD_COMPRESSION)
       case ParkableStringImpl::CompressionAlgorithm::kZstd:
         scoped_feature_list_.InitWithFeatures(
-            {features::kUseZstdForParkableStrings},
+            {features::kCompressParkableStrings,
+             features::kUseZstdForParkableStrings},
             {features::kUseSnappyForParkableStrings});
         break;
 #endif  // BUILDFLAG(HAS_ZSTD_COMPRESSION)
@@ -834,7 +837,7 @@ TEST_P(ParkableStringTest, ShouldPark) {
 
 TEST_P(ParkableStringTest, AsanPoisoningTest) {
   ParkableString parkable(MakeLargeString().ReleaseImpl());
-  const LChar* data = UNSAFE_TODO(parkable.ToString().Characters8());
+  const LChar* data = parkable.ToString().Span8().data();
   EXPECT_TRUE(ParkAndWait(parkable));
   UNSAFE_TODO(EXPECT_ASAN_DEATH(EXPECT_NE(0, data[10]), ""));
 }

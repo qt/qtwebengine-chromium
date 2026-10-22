@@ -32,13 +32,12 @@ export class RuntimeModel extends SDKModel<EventTypes> {
     this.target().registerRuntimeDispatcher(new RuntimeDispatcher(this));
     void this.agent.invoke_enable();
 
-    if (Common.Settings.Settings.instance().moduleSetting('custom-formatters').get()) {
+    const settings = this.target().targetManager().context.get(Common.Settings.Settings);
+    if (settings.moduleSetting('custom-formatters').get()) {
       void this.agent.invoke_setCustomObjectFormatterEnabled({enabled: true});
     }
 
-    Common.Settings.Settings.instance()
-        .moduleSetting('custom-formatters')
-        .addChangeListener(this.customFormattersStateChanged.bind(this));
+    settings.moduleSetting('custom-formatters').addChangeListener(this.customFormattersStateChanged.bind(this));
   }
 
   static isSideEffectFailure(response: Protocol.Runtime.EvaluateResponse|EvaluationResult): boolean {
@@ -262,7 +261,8 @@ export class RuntimeModel extends SDKModel<EventTypes> {
     }
 
     if (object.isNode()) {
-      void Common.Revealer.reveal(object).then(object.release.bind(object));
+      const omitFocus = hints !== null && typeof hints === 'object' && 'omitFocus' in hints && Boolean(hints.omitFocus);
+      void Common.Revealer.reveal(object, omitFocus).then(object.release.bind(object));
       return;
     }
 
@@ -300,7 +300,8 @@ export class RuntimeModel extends SDKModel<EventTypes> {
       return;
     }
 
-    const indent = Common.Settings.Settings.instance().moduleSetting('text-editor-indent').get();
+    const indent =
+        this.target().targetManager().context.get(Common.Settings.Settings).moduleSetting('text-editor-indent').get();
     void object
         .callFunctionJSON(toStringForClipboard, [{
                             value: {

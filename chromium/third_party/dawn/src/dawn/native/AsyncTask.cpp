@@ -77,7 +77,13 @@ void AsyncTask::Run() {
         state->task = nullptr;
     });
     DAWN_ASSERT(task);
+
+    // Complete the task and update the state of the task manager. Note we need to make sure we
+    // update the state of the task manager before setting the task to Complete to ensure that at
+    // teardown when the task manager is waiting on the tasks, that the tasks no longer have a
+    // reference to the manager anymore.
     task();
+    mTaskManager.ExtractAsDangling()->mTasks.Use([this](auto tasks) { tasks->erase(this); });
 
     // Update the state, notify all waiting threads, and grab the completion callbacks to call them
     // outside the lock scope.
@@ -91,9 +97,6 @@ void AsyncTask::Run() {
     for (auto completionCallback : completionCallbacks) {
         completionCallback();
     }
-
-    // Update the state of the task manager.
-    mTaskManager->mTasks.Use([this](auto tasks) { tasks->erase(this); });
 }
 
 ErrorGeneratingAsyncTask::ErrorGeneratingAsyncTask(AsyncTaskManager* taskManager,

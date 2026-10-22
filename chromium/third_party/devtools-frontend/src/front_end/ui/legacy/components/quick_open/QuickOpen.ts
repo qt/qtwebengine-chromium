@@ -5,7 +5,12 @@
 import * as i18n from '../../../../core/i18n/i18n.js';
 import type * as UI from '../../legacy.js';
 
-import {FilteredListWidget, getRegisteredProviders, type Provider} from './FilteredListWidget.js';
+import {
+  FilteredListWidget,
+  getRegisteredProviders,
+  type Provider,
+  type ProviderRegistration
+} from './FilteredListWidget.js';
 
 const UIStrings = {
   /**
@@ -42,19 +47,18 @@ export class QuickOpenImpl {
     filteredListWidget.setQuery(query);
   }
 
-  private addProvider(extension: {
-    prefix: string,
-    provider: () => Promise<Provider>,
-    titlePrefix: () => string,
-    titleSuggestion?: (() => string),
-  }): void {
+  private addProvider(extension: ProviderRegistration): void {
     const prefix = extension.prefix;
     if (prefix === null) {
       return;
     }
     this.prefixes.push(prefix);
     this.providers.set(prefix, {
-      provider: extension.provider,
+      provider: async () => {
+        const provider = await extension.provider();
+        provider.jslogContext = extension.jslogContext;
+        return provider;
+      },
       titlePrefix: extension.titlePrefix,
       titleSuggestion: extension.titleSuggestion,
     });

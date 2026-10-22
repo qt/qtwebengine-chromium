@@ -107,10 +107,26 @@ struct QUICHE_EXPORT HttpValidationPolicy {
   // or more space characters.
   bool sanitize_obs_fold_in_header_values = false;
 
+  // If true, rejects messages with stray bytes after a HTTP chunk (before the
+  // \r\n that separates it from the next chunk length).
+  bool disallow_stray_data_after_chunk = false;
+
   // If true, disallow HTTP request methods that do not conform to RFC
   // 9110, Section 5.6.2.
   // https://datatracker.ietf.org/doc/html/rfc9110#section-5.6.2
   bool disallow_invalid_request_methods = false;
+
+  // Chunk extensions are optional but, if they are present, they MUST be
+  // preceded by a semicolon and follow the grammar:
+  // chunk-ext = *( BWS ";" BWS chunk-ext-name [ BWS "=" BWS chunk-ext-val ] )
+  // where BWS is SP or HTAB. See
+  // https://datatracker.ietf.org/doc/html/rfc9112#name-chunk-extensions for
+  // more information
+  bool require_semicolon_delimited_chunk_extension = false;
+
+  // Status codes outside the range [100, 599] are invalid, per RFC 9110,
+  // Section 15 https://www.rfc-editor.org/rfc/rfc9110#section-15
+  bool disallow_invalid_response_codes = false;
 
   template <typename Sink>
   friend void AbslStringify(Sink& sink, FirstLineValidationOption option) {
@@ -148,7 +164,10 @@ struct QUICHE_EXPORT HttpValidationPolicy {
                  "require_chunked_body_end_with_crlf_crlf=%v, "
                  "sanitize_firstline_spaces=%v, "
                  "sanitize_obs_fold_in_header_values=%v, "
-                 "disallow_invalid_request_methods=%v}",
+                 "disallow_stray_data_after_chunk=%v, "
+                 "disallow_invalid_request_methods=%v, "
+                 "require_semicolon_delimited_chunk_extension=%v, "
+                 "disallow_invalid_response_codes=%v}",
                  policy.disallow_header_continuation_lines,
                  policy.require_header_colon,
                  policy.disallow_multiple_content_length,
@@ -166,9 +185,37 @@ struct QUICHE_EXPORT HttpValidationPolicy {
                  policy.require_chunked_body_end_with_crlf_crlf,
                  policy.sanitize_firstline_spaces,
                  policy.sanitize_obs_fold_in_header_values,
-                 policy.disallow_invalid_request_methods);
+                 policy.disallow_stray_data_after_chunk,
+                 policy.disallow_invalid_request_methods,
+                 policy.require_semicolon_delimited_chunk_extension,
+                 policy.disallow_invalid_response_codes);
   }
 };
+
+static constexpr HttpValidationPolicy kMostStrictHttpValidationPolicy = {
+    .disallow_header_continuation_lines = true,
+    .require_header_colon = true,
+    .disallow_multiple_content_length = true,
+    .disallow_transfer_encoding_with_content_length = true,
+    .validate_transfer_encoding = true,
+    .require_content_length_if_body_required = true,
+    .disallow_double_quote_in_header_name = true,
+    .disallow_invalid_header_characters_in_response = true,
+    .disallow_lone_cr_in_request_headers = true,
+    .disallow_lone_cr_in_chunk_extension = true,
+    .disallow_invalid_target_uris = true,
+    .sanitize_cr_tab_in_first_line =
+        quiche::HttpValidationPolicy::FirstLineValidationOption::SANITIZE,
+    .disallow_obs_text_in_field_names = true,
+    .disallow_lone_lf_in_chunk_extension = true,
+    .require_chunked_body_end_with_crlf_crlf = true,
+    .sanitize_firstline_spaces =
+        quiche::HttpValidationPolicy::FirstLineValidationOption::SANITIZE,
+    .sanitize_obs_fold_in_header_values = true,
+    .disallow_stray_data_after_chunk = true,
+    .disallow_invalid_request_methods = true,
+    .require_semicolon_delimited_chunk_extension = true,
+    .disallow_invalid_response_codes = true};
 
 }  // namespace quiche
 

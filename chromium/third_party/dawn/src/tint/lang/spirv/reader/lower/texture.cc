@@ -27,10 +27,8 @@
 
 #include "src/tint/lang/spirv/reader/lower/texture.h"
 
-#include <optional>
 #include <tuple>
 #include <utility>
-#include <vector>
 
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/clone_context.h"
@@ -339,7 +337,7 @@ struct State {
                 }
 
                 auto args = call->Args();
-                for (size_t i = 0; i < args.Length(); ++i) {
+                for (size_t i = 0; i < args.size(); ++i) {
                     auto& arg = args[i];
 
                     auto* ptr_ty = arg->Type()->As<core::type::Pointer>();
@@ -511,7 +509,7 @@ struct State {
         const auto& args = uc->Args();
 
         Vector<size_t, 2> to_convert;
-        for (size_t i = 0; i < args.Length(); ++i) {
+        for (size_t i = 0; i < args.size(); ++i) {
             if (params[i]->Type() != args[i]->Type()) {
                 to_convert.Push(i);
             }
@@ -1114,13 +1112,14 @@ struct State {
 }  // namespace
 
 Result<SuccessType> Texture(core::ir::Module& ir) {
-    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "spirv.Texture",
-                                              core::ir::Capabilities{
-                                                  core::ir::Capability::kAllowMultipleEntryPoints,
-                                                  core::ir::Capability::kAllowOverrides,
-                                                  core::ir::Capability::kAllowNonCoreTypes,
-                                                  core::ir::Capability::kAllowPointerToHandle,
-                                              }));
+    AssertValid(ir,
+                core::ir::Capabilities{
+                    core::ir::Capability::kAllowMultipleEntryPoints,
+                    core::ir::Capability::kAllowOverrides,
+                    core::ir::Capability::kAllowNonCoreTypes,
+                    core::ir::Capability::kAllowPointerToHandle,
+                },
+                "before spirv.Texture");
 
     State{ir}.Process();
 

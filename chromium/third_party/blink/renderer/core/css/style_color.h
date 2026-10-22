@@ -51,7 +51,7 @@ class ColorProvider;
 
 namespace blink {
 class CalculationValue;
-class CSSToLengthConversionData;
+class CSSLengthResolver;
 class CSSValue;
 
 class CORE_EXPORT StyleColor {
@@ -112,7 +112,7 @@ class CORE_EXPORT StyleColor {
     // function.
     virtual Color Resolve(const Color& current_color) const = 0;
 
-    enum class Type { kColorMix, kRelativeColor };
+    enum class Type { kColorMix, kRelativeColor, kContrastColor, kAlphaColor };
     Type GetType() const { return type_; }
 
     bool operator==(const UnresolvedColorFunction& other) const;
@@ -176,7 +176,7 @@ class CORE_EXPORT StyleColor {
                             const CSSValue& channel1,
                             const CSSValue& channel2,
                             const CSSValue* alpha,
-                            const CSSToLengthConversionData& conversion_data);
+                            const CSSLengthResolver& length_resolver);
     virtual ~UnresolvedRelativeColor() = default;
     void Trace(Visitor* visitor) const override;
     CSSValue* ToCSSValue() const override;
@@ -195,6 +195,38 @@ class CORE_EXPORT StyleColor {
     Member<const CalculationValue> channel0_;
     Member<const CalculationValue> channel1_;
     Member<const CalculationValue> channel2_;
+    Member<const CalculationValue> alpha_;
+  };
+
+  class CORE_EXPORT UnresolvedContrastColor : public UnresolvedColorFunction {
+   public:
+    explicit UnresolvedContrastColor(const StyleColor& param_color);
+    virtual ~UnresolvedContrastColor() = default;
+    CSSValue* ToCSSValue() const override;
+    Color Resolve(const Color& current_color) const override;
+    bool operator==(const UnresolvedContrastColor& other) const;
+    void Trace(Visitor* visitor) const override;
+
+   private:
+    ColorOrUnresolvedColorFunction param_color_;
+    UnderlyingColorType param_color_type_ = UnderlyingColorType::kColor;
+  };
+
+  class CORE_EXPORT UnresolvedAlphaColor : public UnresolvedColorFunction {
+   public:
+    UnresolvedAlphaColor(const StyleColor& origin_color,
+                         const CSSValue* alpha,
+                         const CSSLengthResolver& length_resolver);
+    virtual ~UnresolvedAlphaColor() = default;
+    CSSValue* ToCSSValue() const override;
+    Color Resolve(const Color& current_color) const override;
+    bool operator==(const UnresolvedAlphaColor& other) const;
+    void Trace(Visitor* visitor) const override;
+
+   private:
+    ColorOrUnresolvedColorFunction origin_color_;
+    UnderlyingColorType origin_color_type_ = UnderlyingColorType::kColor;
+    bool alpha_was_specified_ = false;
     Member<const CalculationValue> alpha_;
   };
 
@@ -323,6 +355,22 @@ struct DowncastTraits<StyleColor::UnresolvedRelativeColor> {
   static bool AllowFrom(const StyleColor::UnresolvedColorFunction& value) {
     return value.GetType() ==
            StyleColor::UnresolvedColorFunction::Type::kRelativeColor;
+  }
+};
+
+template <>
+struct DowncastTraits<StyleColor::UnresolvedContrastColor> {
+  static bool AllowFrom(const StyleColor::UnresolvedColorFunction& value) {
+    return value.GetType() ==
+           StyleColor::UnresolvedColorFunction::Type::kContrastColor;
+  }
+};
+
+template <>
+struct DowncastTraits<StyleColor::UnresolvedAlphaColor> {
+  static bool AllowFrom(const StyleColor::UnresolvedColorFunction& value) {
+    return value.GetType() ==
+           StyleColor::UnresolvedColorFunction::Type::kAlphaColor;
   }
 };
 

@@ -9,7 +9,7 @@ import type {AdvancedSettingsDialogElement} from './advanced_settings_dialog.js'
 export function getHtml(this: AdvancedSettingsDialogElement) {
   // clang-format off
   return html`<!--_html_template_start_-->
-<cr-dialog id="dialog" @close="${this.onCloseOrCancel_}">
+<cr-dialog id="dialog" @close="${this.onClose_}">
   <div slot="title">
     ${this.i18n('advancedSettingsDialogTitle', this.destination?.displayName || '')}
   </div>
@@ -17,7 +17,7 @@ export function getHtml(this: AdvancedSettingsDialogElement) {
     <print-preview-search-box id="searchBox"
         ?hidden="${!this.hasMultipleItems_()}"
         label="$i18n{advancedSettingsSearchBoxPlaceholder}"
-        .search-query="${this.searchQuery_}"
+        .searchQuery="${this.searchQuery_}"
         @search-query-changed="${this.onSearchQueryChanged_}" autofocus>
     </print-preview-search-box>
     <div id="itemList" class="${this.isSearching_()}">

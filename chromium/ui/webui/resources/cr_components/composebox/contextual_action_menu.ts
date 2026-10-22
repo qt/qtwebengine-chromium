@@ -35,7 +35,8 @@ export interface ContextualActionMenuElement {
 
 const ContextualActionMenuElementBase = I18nMixinLit(CrLitElement);
 
-export class ContextualActionMenuElement extends ContextualActionMenuElementBase {
+export class ContextualActionMenuElement extends
+    ContextualActionMenuElementBase {
   static get is() {
     return 'cr-composebox-contextual-action-menu';
   }
@@ -60,6 +61,7 @@ export class ContextualActionMenuElement extends ContextualActionMenuElementBase
       },
       tabPreviewUrl_: {type: String},
       tabPreviewsEnabled_: {type: Boolean},
+      showContextMenuHeaders_: {type: Boolean},
     };
   }
 
@@ -76,7 +78,7 @@ export class ContextualActionMenuElement extends ContextualActionMenuElementBase
   protected maxFileCount_: number =
       loadTimeData.getInteger('composeboxFileMaxCount');
   private metricsSource_: string = loadTimeData.getString('composeboxSource');
-  protected showContextMenuHeaders_: boolean =
+  protected accessor showContextMenuHeaders_: boolean =
       loadTimeData.getBoolean('ShowContextMenuHeaders');
   protected get supportedTools_(): Map<ToolMode, {
     icon: string,
@@ -152,9 +154,10 @@ export class ContextualActionMenuElement extends ContextualActionMenuElementBase
 
   showAt(anchor: HTMLElement) {
     this.$.menu.showAt(anchor, {
-      top: anchor.getBoundingClientRect().bottom,
       width: MENU_WIDTH_PX,
-      anchorAlignmentX: AnchorAlignment['AFTER_START'],
+      anchorAlignmentX: AnchorAlignment.AFTER_START,
+      anchorAlignmentY: AnchorAlignment.AFTER_END,
+      noOffset: true,
     });
     window.addEventListener('blur', this.onWindowBlur_);
   }
@@ -233,14 +236,14 @@ export class ContextualActionMenuElement extends ContextualActionMenuElementBase
     }
   }
 
-  protected get toolHeader_(): string {
+  protected getToolHeader_(): string {
     if (this.inputState && this.inputState.toolsSectionConfig) {
       return this.inputState.toolsSectionConfig.header;
     }
     return '';
   }
 
-  protected get modelHeader_(): string {
+  protected getModelHeader_(): string {
     if (this.inputState && this.inputState.modelSectionConfig) {
       return this.inputState.modelSectionConfig.header;
     }
@@ -262,13 +265,31 @@ export class ContextualActionMenuElement extends ContextualActionMenuElementBase
         return this.i18n('addImage');
       case InputType.kLensFile:
         return this.i18n('uploadFile');
+      case InputType.kDrive:
+        return this.i18n('addDriveFile');
       default:
         return '';
     }
   }
 
+  // Checks if the drive upload item in the context menu should be visible.
+  protected isDriveUploadAllowed_(): boolean {
+    if (this.inputState) {
+      return this.inputState.allowedInputTypes.includes(InputType.kDrive);
+    }
+    return false;
+  }
+
+  // Checks if the drive upload item in the context menu should be disabled.
+  protected isDriveUploadDisabled_(): boolean {
+    if (this.inputState) {
+      return this.inputState.disabledInputTypes.includes(InputType.kDrive);
+    }
+    return this.fileNum >= this.maxFileCount_;
+  }
+
   // Checks if the image upload item in the context menu should be visible.
-  protected get imageUploadAllowed_(): boolean {
+  protected isImageUploadAllowed_(): boolean {
     if (this.inputState) {
       return this.inputState.allowedInputTypes.includes(InputType.kLensImage);
     }
@@ -276,7 +297,7 @@ export class ContextualActionMenuElement extends ContextualActionMenuElementBase
   }
 
   // Checks if the image upload item in the context menu should be disabled.
-  protected get imageUploadDisabled_(): boolean {
+  protected isImageUploadDisabled_(): boolean {
     if (this.inputState) {
       return this.inputState.disabledInputTypes.includes(InputType.kLensImage);
     }
@@ -284,7 +305,7 @@ export class ContextualActionMenuElement extends ContextualActionMenuElementBase
   }
 
   // Checks if the file upload item in the context menu should be visible.
-  protected get fileUploadAllowed_(): boolean {
+  protected isFileUploadAllowed_(): boolean {
     if (this.inputState) {
       return this.inputState.allowedInputTypes.includes(InputType.kLensFile);
     }
@@ -292,7 +313,7 @@ export class ContextualActionMenuElement extends ContextualActionMenuElementBase
   }
 
   // Checks if the file upload item in the context menu should be disabled.
-  protected get fileUploadDisabled_(): boolean {
+  protected isFileUploadDisabled_(): boolean {
     if (this.inputState) {
       return this.inputState.disabledInputTypes.includes(InputType.kLensFile);
     }
@@ -300,7 +321,7 @@ export class ContextualActionMenuElement extends ContextualActionMenuElementBase
   }
 
   // Checks if the browser tab item in the context menu should be visible.
-  protected get browserTabAllowed_(): boolean {
+  protected isBrowserTabAllowed_(): boolean {
     if (this.inputState) {
       return this.inputState.allowedInputTypes.includes(InputType.kBrowserTab);
     }
@@ -344,25 +365,17 @@ export class ContextualActionMenuElement extends ContextualActionMenuElementBase
   }
 
   protected deleteTabContext_(uuid: UnguessableToken) {
-    this.dispatchEvent(new CustomEvent('delete-tab-context', {
-      bubbles: true,
-      composed: true,
-      detail: {uuid: uuid},
-    }));
+    this.fire('delete-tab-context', {uuid: uuid});
   }
 
   protected addTabContext_(tabInfo: TabInfo) {
-    this.dispatchEvent(new CustomEvent('add-tab-context', {
-      bubbles: true,
-      composed: true,
-      detail: {
-        id: tabInfo.tabId,
-        title: tabInfo.title,
-        url: tabInfo.url,
-        delayUpload: false,
-        origin: TabUploadOrigin.CONTEXT_MENU,
-      },
-    }));
+    this.fire('add-tab-context', {
+      id: tabInfo.tabId,
+      title: tabInfo.title,
+      url: tabInfo.url,
+      delayUpload: false,
+      origin: TabUploadOrigin.CONTEXT_MENU,
+    });
     if (!this.enableMultiTabSelection_) {
       this.$.menu.close();
     }
@@ -380,65 +393,57 @@ export class ContextualActionMenuElement extends ContextualActionMenuElementBase
     // Clear the preview URL before fetching the new one to make sure an old
     // or incorrect preview doesn't show while the new one is loading.
     this.tabPreviewUrl_ = '';
-    this.dispatchEvent(new CustomEvent('get-tab-preview', {
-      bubbles: true,
-      composed: true,
-      detail: {
-        tabId: tabInfo.tabId,
-        onPreviewFetched: (previewDataUrl: string) => {
-          this.tabPreviewUrl_ = previewDataUrl;
-        },
+    this.fire('get-tab-preview', {
+      tabId: tabInfo.tabId,
+      onPreviewFetched: (previewDataUrl: string) => {
+        this.tabPreviewUrl_ = previewDataUrl;
       },
-    }));
+    });
   }
 
   protected shouldShowTabPreview_(): boolean {
     return this.tabPreviewsEnabled_ && this.tabPreviewUrl_ !== '';
   }
 
-  protected openImageUpload_() {
-    this.dispatchEvent(new CustomEvent('open-image-upload', {
-      bubbles: true,
-      composed: true,
-    }));
+  protected onImageUploadClick_() {
+    this.fire('open-image-upload');
     this.$.menu.close();
   }
 
-  protected openFileUpload_() {
-    this.dispatchEvent(new CustomEvent('open-file-upload', {
-      bubbles: true,
-      composed: true,
-    }));
+  protected onDriveUploadClick_() {
+    this.fire('open-drive-upload');
+    this.$.menu.close();
+  }
+
+  protected onFileUploadClick_() {
+    this.fire('open-file-upload');
     this.$.menu.close();
   }
 
   protected onToolClick_(e: Event) {
     const toolMode = Number((e.currentTarget as HTMLElement).dataset['mode']);
-    this.dispatchEvent(new CustomEvent('tool-click', {
-      bubbles: true,
-      composed: true,
-      detail: {toolMode},
-    }));
+    this.fire('tool-click', {toolMode});
     this.$.menu.close();
   }
 
   protected onModelClick_(e: Event) {
     const button = e.currentTarget as HTMLElement;
     const model = Number(button.dataset['model']) as ModelMode;
-    this.dispatchEvent(new CustomEvent('model-click', {
-      bubbles: true,
-      composed: true,
-      detail: {model},
-    }));
+    this.fire('model-click', {model});
     this.$.menu.close();
   }
 
   protected onMenuClose_() {
     window.removeEventListener('blur', this.onWindowBlur_);
-    this.dispatchEvent(new CustomEvent('close', {
-      bubbles: true,
-      composed: true,
-    }));
+    this.fire('close');
+  }
+
+  protected getIconForToolMode_(mode: ToolMode): string|undefined {
+    return this.supportedTools_.get(mode)?.icon;
+  }
+
+  protected getIconForModelMode_(mode: ModelMode): string|undefined {
+    return this.supportedModels_.get(mode)?.icon;
   }
 }
 

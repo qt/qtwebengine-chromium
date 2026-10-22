@@ -10,7 +10,6 @@
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -401,7 +400,7 @@ std::string RulesRegistry::CheckAndFillInOptionalRules(
     std::vector<api::events::Rule>* rules) {
   // IDs we have inserted, in case we need to rollback this operation.
   // TODO(rdevlin.cronin, avi): Um, this variable is never inserted into; is
-  // this a bug? https://crbug.com/913655
+  // this a bug? https://crbug.com/40605870
   std::vector<std::string> rollback_log;
 
   // First we insert all rules with existing identifier, so that generated

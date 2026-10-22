@@ -16,17 +16,22 @@
 class CPDF_Dictionary;
 class CPDF_Stream;
 
-// Corresponds to PDF spec section 12.5.6.19 (Widget annotation TP dictionary).
-#define TEXTPOS_CAPTION 0
-#define TEXTPOS_ICON 1
-#define TEXTPOS_BELOW 2
-#define TEXTPOS_ABOVE 3
-#define TEXTPOS_RIGHT 4
-#define TEXTPOS_LEFT 5
-#define TEXTPOS_OVERLAID 6
-
 class CPDF_ApSettings {
  public:
+  // Corresponds to PDF spec section 12.5.6.19 (Widget annotation TP
+  // dictionary).
+  enum class TextPosition {
+    kCaption = 0,
+    kIcon = 1,
+    kBelow = 2,
+    kAbove = 3,
+    kRight = 4,
+    kLeft = 5,
+    kOverlaid = 6,
+    kMinValue = kCaption,
+    kMaxValue = kOverlaid,
+    kDefaultValue = kCaption,
+  };
   explicit CPDF_ApSettings(RetainPtr<CPDF_Dictionary> dict);
   CPDF_ApSettings(const CPDF_ApSettings& that);
   ~CPDF_ApSettings();
@@ -36,8 +41,7 @@ class CPDF_ApSettings {
 
   CPDF_IconFit GetIconFit() const;
 
-  // Returns one of the TEXTPOS_* values above.
-  int GetTextPosition() const;
+  TextPosition GetTextPosition() const;
 
   CFX_Color::TypeAndARGB GetColorARGB(ByteStringView entry) const;
 

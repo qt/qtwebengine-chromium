@@ -98,6 +98,8 @@ std::string_view ConvertIconToPrintableString(Suggestion::Icon icon) {
       return "kMagic";
     case Suggestion::Icon::kOfferTag:
       return "kOfferTag";
+    case Suggestion::Icon::kPassport:
+      return "kPassport";
     case Suggestion::Icon::kPenSpark:
       return "kPenSpark";
     case Suggestion::Icon::kPersonCheck:
@@ -148,18 +150,14 @@ std::string_view ConvertIconToPrintableString(Suggestion::Icon icon) {
       return "kNoIcon";
     case Suggestion::Icon::kBnplGeneric:
       return "kBnplGeneric";
-    case Suggestion::Icon::kBnplAffirmLinked:
-      return "kBnplAffirmLinked";
-    case Suggestion::Icon::kBnplAffirmUnlinked:
-      return "kBnplAffirmUnlinked";
-    case Suggestion::Icon::kBnplZipLinked:
-      return "kBnplZipLinked";
-    case Suggestion::Icon::kBnplZipUnlinked:
-      return "kBnplZipUnlinked";
-    case Suggestion::Icon::kBnplKlarnaLinked:
-      return "kBnplKlarnaLinked";
-    case Suggestion::Icon::kBnplKlarnaUnlinked:
-      return "kBnplKlarnaUnlinked";
+    case Suggestion::Icon::kBnplAffirm:
+      return "kBnplAffirm";
+    case Suggestion::Icon::kBnplAfterpay:
+      return "kBnplAfterpay";
+    case Suggestion::Icon::kBnplKlarna:
+      return "kBnplKlarna";
+    case Suggestion::Icon::kBnplZip:
+      return "kBnplZip";
     case Suggestion::Icon::kSaveAndFill:
       return "kSaveAndFill";
     case Suggestion::Icon::kAndroidMessages:
@@ -225,8 +223,9 @@ Suggestion::PlusAddressPayload::~PlusAddressPayload() = default;
 
 Suggestion::AutofillAiPayload::AutofillAiPayload() = default;
 
-Suggestion::AutofillAiPayload::AutofillAiPayload(EntityInstance::EntityId guid)
-    : guid(std::move(guid)) {}
+Suggestion::AutofillAiPayload::AutofillAiPayload(EntityInstance::EntityId guid,
+                                                 bool requires_server_fetch)
+    : guid(std::move(guid)), requires_server_fetch(requires_server_fetch) {}
 
 Suggestion::AutofillAiPayload::AutofillAiPayload(const AutofillAiPayload&) =
     default;
@@ -298,6 +297,23 @@ Suggestion::IdentityCredentialPayload::operator=(IdentityCredentialPayload&&) =
 
 Suggestion::IdentityCredentialPayload::~IdentityCredentialPayload() = default;
 
+Suggestion::AtMemoryPayload::AtMemoryPayload() = default;
+
+Suggestion::AtMemoryPayload::AtMemoryPayload(std::u16string value)
+    : value(std::move(value)) {}
+
+Suggestion::AtMemoryPayload::AtMemoryPayload(const AtMemoryPayload&) = default;
+
+Suggestion::AtMemoryPayload::AtMemoryPayload(AtMemoryPayload&&) = default;
+
+Suggestion::AtMemoryPayload& Suggestion::AtMemoryPayload::operator=(
+    const AtMemoryPayload&) = default;
+
+Suggestion::AtMemoryPayload& Suggestion::AtMemoryPayload::operator=(
+    AtMemoryPayload&&) = default;
+
+Suggestion::AtMemoryPayload::~AtMemoryPayload() = default;
+
 Suggestion::PaymentsPayload::PaymentsPayload() = default;
 
 Suggestion::PaymentsPayload::PaymentsPayload(
@@ -366,43 +382,43 @@ Suggestion::Suggestion(SuggestionType type) : type(type) {}
 Suggestion::Suggestion(std::u16string main_text, SuggestionType type)
     : type(type), main_text(std::move(main_text), Text::IsPrimary(true)) {}
 
-Suggestion::Suggestion(std::string_view main_text,
-                       std::string_view label,
+Suggestion::Suggestion(std::u16string main_text,
+                       std::u16string label,
                        Icon icon,
                        SuggestionType type)
     : type(type),
-      main_text(base::UTF8ToUTF16(main_text), Text::IsPrimary(true)),
+      main_text(std::move(main_text), Text::IsPrimary(true)),
       icon(icon) {
   if (!label.empty()) {
-    labels = {{Text(base::UTF8ToUTF16(label))}};
+    labels = {{Text(std::move(label))}};
   }
 }
 
-Suggestion::Suggestion(std::string_view main_text,
+Suggestion::Suggestion(std::u16string_view main_text,
                        std::vector<std::vector<Text>> labels,
                        Icon icon,
                        SuggestionType type)
     : type(type),
-      main_text(base::UTF8ToUTF16(main_text), Text::IsPrimary(true)),
+      main_text(std::u16string(main_text), Text::IsPrimary(true)),
       labels(std::move(labels)),
       icon(icon) {}
 
-Suggestion::Suggestion(std::string_view main_text,
-                       base::span<const std::string> minor_text_labels,
-                       std::string_view label,
+Suggestion::Suggestion(std::u16string_view main_text,
+                       base::span<const std::u16string> minor_text_labels,
+                       std::u16string_view label,
                        Icon icon,
                        SuggestionType type)
     : type(type),
-      main_text(base::UTF8ToUTF16(main_text), Text::IsPrimary(true)),
+      main_text(std::u16string(main_text), Text::IsPrimary(true)),
       minor_texts(base::ToVector(minor_text_labels,
-                                 [](std::string_view minor_text) {
+                                 [](std::u16string_view minor_text) {
                                    return Text(
-                                       base::UTF8ToUTF16(minor_text),
+                                       std::u16string(minor_text),
                                        Suggestion::Text::IsPrimary(true));
                                  })),
       icon(icon) {
   if (!label.empty()) {
-    labels = {{Text(base::UTF8ToUTF16(label))}};
+    labels = {{Text(std::u16string(label))}};
   }
 }
 

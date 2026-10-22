@@ -67,6 +67,9 @@ Note that tracing is not currently implemented on all backends.
 
   Saves a .gputrace file that can be loaded into XCode's Metal Debugger.
 
+  `MTL_CAPTURE_ENABLED=1` must also be set. Note that (anecdotally) this appears
+  to disable (some?) validation layer outputs.
+
 * Vulkan - not yet implemented
 
 ## Capturing with RenderDoc in Chrome

@@ -29,23 +29,6 @@ mojom::XRPlaneOrientation ToMojomPlaneOrientation(
   }
 }
 
-mojom::XRSemanticLabel ToMojomSemanticLabel(
-    const XrSpatialPlaneSemanticLabelEXT& label) {
-  switch (label) {
-    case XR_SPATIAL_PLANE_SEMANTIC_LABEL_FLOOR_EXT:
-      return mojom::XRSemanticLabel::kFloor;
-    case XR_SPATIAL_PLANE_SEMANTIC_LABEL_WALL_EXT:
-      return mojom::XRSemanticLabel::kWall;
-    case XR_SPATIAL_PLANE_SEMANTIC_LABEL_CEILING_EXT:
-      return mojom::XRSemanticLabel::kCeiling;
-    case XR_SPATIAL_PLANE_SEMANTIC_LABEL_TABLE_EXT:
-      return mojom::XRSemanticLabel::kTable;
-    case XR_SPATIAL_PLANE_SEMANTIC_LABEL_UNCATEGORIZED_EXT:
-    default:
-      return mojom::XRSemanticLabel::kOther;
-  }
-}
-
 std::vector<XrSpatialComponentTypeEXT> GetAttachableComponentTypes(
     const OpenXrExtensionMethods& extension_methods,
     XrInstance instance,
@@ -94,14 +77,13 @@ OpenXrSpatialPlaneManager::OpenXrSpatialPlaneManager(
     const OpenXrExtensionHelper& extension_helper,
     const OpenXrSpatialFrameworkManager& framework_manager,
     XrInstance instance,
-    XrSystemId system)
+    XrSystemId system,
+    bool mesh_detection_enabled)
     : mojo_space_(mojo_space),
       extension_helper_(extension_helper),
       framework_manager_(framework_manager),
-      enabled_components_({// Begin by enabling the two components required to
-                           // be present for the
-                           // XR_SPATIAL_CAPABILITY_PLANE_TRACKING_EXT
-                           XR_SPATIAL_COMPONENT_TYPE_BOUNDED_2D_EXT,
+      mesh_detection_enabled_(mesh_detection_enabled),
+      enabled_components_({XR_SPATIAL_COMPONENT_TYPE_BOUNDED_2D_EXT,
                            XR_SPATIAL_COMPONENT_TYPE_PLANE_ALIGNMENT_EXT}) {
   std::vector<XrSpatialComponentTypeEXT> plane_tracking_components =
       GetSupportedComponentTypes(
@@ -121,6 +103,19 @@ OpenXrSpatialPlaneManager::OpenXrSpatialPlaneManager(
   if (semantic_label_enabled_) {
     enabled_components_.insert(
         XR_SPATIAL_COMPONENT_TYPE_PLANE_SEMANTIC_LABEL_EXT);
+  }
+
+  if (mesh_detection_enabled_) {
+    bool mesh2d_supported = std::ranges::contains(
+        plane_tracking_components, XR_SPATIAL_COMPONENT_TYPE_MESH_2D_EXT);
+    if (mesh2d_supported) {
+      enabled_components_.insert(XR_SPATIAL_COMPONENT_TYPE_MESH_2D_EXT);
+      DVLOG(1) << __func__ << ": Mesh2D component is SUPPORTED and will "
+               << "be enabled under PLANE_TRACKING.";
+    } else {
+      DVLOG(1) << __func__ << ": Mesh2D component is NOT supported for "
+               << "PLANE_TRACKING on this runtime.";
+    }
   }
 
   std::vector<XrSpatialComponentTypeEXT> attachable_components =
@@ -214,21 +209,23 @@ void OpenXrSpatialPlaneManager::OnSnapshotChanged() {
   query_result.entityStateCapacityInput = entity_states.size();
   query_result.entityStates = entity_states.data();
 
+  XrNextChainBuilder next_chain(&query_result);
+
   std::vector<XrSpatialPlaneAlignmentEXT> plane_alignments(
       query_result.entityIdCountOutput);
   XrSpatialComponentPlaneAlignmentListEXT plane_alignment_list{
       .type = XR_TYPE_SPATIAL_COMPONENT_PLANE_ALIGNMENT_LIST_EXT,
       .planeAlignmentCount = static_cast<uint32_t>(plane_alignments.size()),
       .planeAlignments = plane_alignments.data()};
+  next_chain.Add(&plane_alignment_list);
 
   std::vector<XrSpatialBounded2DDataEXT> bounded_2d_data(
       query_result.entityIdCountOutput);
   XrSpatialComponentBounded2DListEXT bounded_2d_list{
       .type = XR_TYPE_SPATIAL_COMPONENT_BOUNDED_2D_LIST_EXT,
-      .next = &plane_alignment_list,
       .boundCount = static_cast<uint32_t>(bounded_2d_data.size()),
       .bounds = bounded_2d_data.data()};
-  query_result.next = &bounded_2d_list;
+  next_chain.Add(&bounded_2d_list);
 
   std::vector<XrSpatialPolygon2DDataEXT> polygons;
   XrSpatialComponentPolygon2DListEXT polygon_list{
@@ -237,8 +234,7 @@ void OpenXrSpatialPlaneManager::OnSnapshotChanged() {
     polygons.resize(query_result.entityIdCountOutput);
     polygon_list.polygonCount = static_cast<uint32_t>(polygons.size());
     polygon_list.polygons = polygons.data();
-    polygon_list.next = query_result.next;
-    query_result.next = &polygon_list;
+    next_chain.Add(&polygon_list);
   }
 
   std::vector<XrSpatialPlaneSemanticLabelEXT> semantic_labels;
@@ -249,8 +245,7 @@ void OpenXrSpatialPlaneManager::OnSnapshotChanged() {
     semantic_label_list.semanticLabelCount =
         static_cast<uint32_t>(semantic_labels.size());
     semantic_label_list.semanticLabels = semantic_labels.data();
-    semantic_label_list.next = query_result.next;
-    query_result.next = &semantic_label_list;
+    next_chain.Add(&semantic_label_list);
   }
 
   if (XR_FAILED(
@@ -263,6 +258,7 @@ void OpenXrSpatialPlaneManager::OnSnapshotChanged() {
   // that we said had a pending update but now we don't know about. Since we no
   // longer know about it, then we shouldn't be reporting it.
   updated_entity_ids_.clear();
+  mesh_updated_entity_ids_.clear();
   absl::flat_hash_set<XrSpatialEntityIdEXT> paused_entity_ids;
   for (uint32_t i = 0; i < query_result.entityIdCountOutput; i++) {
     XrSpatialEntityIdEXT entity_id = entity_ids[i];
@@ -305,6 +301,38 @@ void OpenXrSpatialPlaneManager::OnSnapshotChanged() {
     if (!has_polygon) {
       GetPolygonFromExtent(bounded_2d_data[i], plane_data);
     }
+
+    // Synthesize mesh data from the same plane entity.
+    if (mesh_detection_enabled_) {
+      if (!mesh_entity_id_to_data_.contains(entity_id)) {
+        mesh_entity_id_to_data_[entity_id] = mojom::XRMeshData::New();
+      }
+
+      mesh_updated_entity_ids_.insert(entity_id);
+      mojom::XRMeshDataPtr& mesh_data = mesh_entity_id_to_data_[entity_id];
+      mesh_data->id = GetMeshId(entity_id);
+      mesh_data->semantic_label = plane_data->semantic_label;
+      mesh_data->mojo_from_mesh = plane_data->mojo_from_plane;
+
+      mesh_data->vertices.clear();
+      mesh_data->indices.clear();
+      const auto& polygon = plane_data->polygon;
+      for (const auto& point : polygon) {
+        mesh_data->vertices.push_back(point->x);
+        mesh_data->vertices.push_back(point->z);
+        mesh_data->vertices.push_back(0.0f);
+      }
+      // TODO(crbug.com/499239200): Ensure the plane polygons returned by OpenXR Runtime are guaranteed to be convex
+      if (IsConvexPolygon(polygon)) {
+        for (uint32_t j = 1; j + 1 < polygon.size(); ++j) {
+          mesh_data->indices.push_back(0);
+          mesh_data->indices.push_back(j);
+          mesh_data->indices.push_back(j + 1);
+        }
+      } else {
+        mesh_data->indices = EarClipTriangulate(polygon);
+      }
+    }
   }
 
   // Remove any planes that are no longer being tracked.
@@ -319,14 +347,36 @@ void OpenXrSpatialPlaneManager::OnSnapshotChanged() {
       entity_id_to_data_.erase(it++);
     }
   }
+
+  if (mesh_detection_enabled_) {
+    auto mesh_it = mesh_entity_id_to_data_.begin();
+    while (mesh_it != mesh_entity_id_to_data_.end()) {
+      if (mesh_updated_entity_ids_.contains(mesh_it->first) ||
+          paused_entity_ids.contains(mesh_it->first)) {
+        ++mesh_it;
+      } else {
+        mesh_entity_id_to_data_.erase(mesh_it++);
+      }
+    }
+  }
 }
 
 bool OpenXrSpatialPlaneManager::GetPolygonFromBuffer(
     XrSpatialSnapshotEXT snapshot,
     const XrSpatialPolygon2DDataEXT& polygon_data,
     mojom::XRPlaneDataPtr& plane_data) const {
+  // There is currently a runtime error where some runtimes may report the
+  // presence of a polygon, but not actually have populated the buffer yet.
+  // Before querying for the spatial buffer, ensure we have a valid buffer id.
+  if (polygon_data.vertexBuffer.bufferId == XR_NULL_SPATIAL_BUFFER_ID_EXT) {
+    DLOG(ERROR) << __func__
+                << " Runtime reported polygon, but returned invalid buffer id";
+    return false;
+  }
+
   XrSpatialBufferGetInfoEXT buffer_info{XR_TYPE_SPATIAL_BUFFER_GET_INFO_EXT};
   buffer_info.bufferId = polygon_data.vertexBuffer.bufferId;
+
   uint32_t buffer_count_output = 0;
   if (XR_FAILED(
           extension_helper_->ExtensionMethods().xrGetSpatialBufferVector2fEXT(
@@ -449,6 +499,62 @@ std::optional<XrLocation> OpenXrSpatialPlaneManager::GetXrLocationFromPlane(
   gfx::Transform mojo_from_new_anchor =
       mojo_from_plane->ToTransform() * plane_id_from_object;
   return XrLocation{GfxTransformToXrPose(mojo_from_new_anchor), mojo_space_};
+}
+
+mojom::XRMeshDetectionDataPtr
+OpenXrSpatialPlaneManager::GetDetectedMeshesData(XrTime frame_time,
+                                                  XrSpace view_space) {
+  auto meshes_data = mojom::XRMeshDetectionData::New();
+  for (const auto& [entity_id, data] : mesh_entity_id_to_data_) {
+    meshes_data->all_meshes_ids.emplace_back(GetMeshId(entity_id));
+    if (mesh_updated_entity_ids_.contains(entity_id)) {
+      meshes_data->updated_meshes_data.push_back(data.Clone());
+    }
+  }
+  mesh_updated_entity_ids_.clear();
+  return meshes_data;
+}
+
+std::optional<XrLocation> OpenXrSpatialPlaneManager::GetXrLocationFromMesh(
+    MeshId mesh_id,
+    const gfx::Transform& mesh_id_from_object) const {
+  // TODO(crbug.com/498979573): Implement mesh-based native origin lookup.
+  return std::nullopt;
+}
+
+void OpenXrSpatialPlaneManager::OnReferenceSpaceChanged() {
+  mesh_entity_id_to_data_.clear();
+  mesh_updated_entity_ids_.clear();
+}
+
+std::optional<device::Pose> OpenXrSpatialPlaneManager::TryGetMojoFromMesh(
+    MeshId mesh_id) const {
+  auto it = mesh_entity_id_to_data_.find(GetMeshEntityId(mesh_id));
+  if (it == mesh_entity_id_to_data_.end() || !it->second->mojo_from_mesh) {
+    return std::nullopt;
+  }
+  return it->second->mojo_from_mesh;
+}
+
+MeshId OpenXrSpatialPlaneManager::GetMeshId(
+    XrSpatialEntityIdEXT entity_id) const {
+  if (entity_id == XR_NULL_SPATIAL_ENTITY_ID_EXT ||
+      !mesh_entity_id_to_data_.contains(entity_id)) {
+    return kInvalidMeshId;
+  }
+  return MeshId(static_cast<uint64_t>(entity_id));
+}
+
+XrSpatialEntityIdEXT OpenXrSpatialPlaneManager::GetMeshEntityId(
+    MeshId mesh_id) const {
+  if (mesh_id == kInvalidMeshId) {
+    return XR_NULL_SPATIAL_ENTITY_ID_EXT;
+  }
+  auto entity_id = static_cast<XrSpatialEntityIdEXT>(mesh_id.GetUnsafeValue());
+  if (!mesh_entity_id_to_data_.contains(entity_id)) {
+    return XR_NULL_SPATIAL_ENTITY_ID_EXT;
+  }
+  return entity_id;
 }
 
 }  // namespace device

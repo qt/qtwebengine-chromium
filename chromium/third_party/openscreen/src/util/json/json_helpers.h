@@ -158,6 +158,13 @@ inline bool TryParseStringArray(const Json::Value& value,
   return TryParseArray<std::string>(value, TryParseString, out);
 }
 
+inline bool TryParseNestedStringArray(
+    const Json::Value& value,
+    std::vector<std::vector<std::string>>* out) {
+  return TryParseArray<std::vector<std::string>>(value, TryParseStringArray,
+                                                 out);
+}
+
 template <typename T>
 Json::Value PrimitiveVectorToJson(const std::vector<T>& vec) {
   Json::Value array(Json::ValueType::arrayValue);
@@ -170,6 +177,29 @@ Json::Value PrimitiveVectorToJson(const std::vector<T>& vec) {
   return array;
 }
 
+inline Json::Value NestedStringArrayToJson(
+    const std::vector<std::vector<std::string>>& vec) {
+  Json::Value array(Json::ValueType::arrayValue);
+  array.resize(vec.size());
+
+  for (Json::Value::ArrayIndex i = 0; i < vec.size(); ++i) {
+    array[i] = PrimitiveVectorToJson(vec[i]);
+  }
+
+  return array;
+}
+
+inline bool Contains(const Json::Value& array, std::string_view value) {
+  if (!array.isArray()) {
+    return false;
+  }
+  for (const Json::Value& entry : array) {
+    if (entry.isString() && entry.asString() == value) {
+      return true;
+    }
+  }
+  return false;
+}
 }  // namespace openscreen::json
 
 #endif  // UTIL_JSON_JSON_HELPERS_H_

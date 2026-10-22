@@ -173,6 +173,9 @@ class ReceiverConstraints {
   // This feature is off by default to allow embedders to opt in and experiment
   // as desired.
   bool enable_dscp = false;
+
+  // If true, the receiver supports sending input events to the sender.
+  bool supports_input_events = false;
 };
 
 }  // namespace openscreen::cast

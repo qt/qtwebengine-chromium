@@ -43,7 +43,8 @@ TEST_F(HlslWriterTest, Loop) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -71,7 +72,8 @@ TEST_F(HlslWriterTest, LoopContinueAndBreakIf) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -88,7 +90,6 @@ void main() {
         tint_loop_idx.y = (tint_loop_idx.y - tint_carry);
         if (true) { break; }
       }
-      continue;
     }
   }
 }
@@ -110,7 +111,8 @@ TEST_F(HlslWriterTest, LoopBodyVarInContinue) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -128,7 +130,6 @@ void main() {
         tint_loop_idx.y = (tint_loop_idx.y - tint_carry);
         if (v) { break; }
       }
-      continue;
     }
   }
 }
@@ -151,7 +152,8 @@ TEST_F(HlslWriterTest, LoopInitializer) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -169,7 +171,6 @@ void main() {
         tint_loop_idx.y = (tint_loop_idx.y - tint_carry);
         if (v) { break; }
       }
-      continue;
     }
   }
 }
@@ -192,7 +193,8 @@ TEST_F(HlslWriterTest, Loop_UnconditionalReturn_NonVoid) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 int a() {
   {

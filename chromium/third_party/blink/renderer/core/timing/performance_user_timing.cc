@@ -276,23 +276,24 @@ PerformanceMeasure* UserTiming::Measure(ScriptState* script_state,
     // call).
     TRACE_EVENT("devtools.timeline", "UserTiming::Measure", "sampleTraceId",
                 hash, "traceId", hash);
-    TRACE_EVENT_BEGIN(
-        "blink.user_timing", nullptr, perfetto::Track(hash), unsafe_start_time,
-        "startTime", start_time, "callTime", callTime, "traceId", hash,
-        [&](perfetto::EventContext ctx) {
-          if (ctx.ShouldFilterDynamicEventNames()) {
-            ctx.event()->set_name("performance.measure");
-            // Emit the dynamic name as debug annotation instead.
-            ctx.AddDebugAnnotation("measureName", measure_name.Utf8());
-          } else {
-            ctx.event()->set_name(measure_name.Utf8());
-          }
-          if (serialized_detail.length()) {
-            ctx.AddDebugAnnotation("detail", serialized_detail);
-          }
-        });
-    TRACE_EVENT_END("blink.user_timing", perfetto::Track(hash),
-                    unsafe_end_time);
+    auto track =
+        perfetto::NamedTrack::ThreadScoped("performance.measure", hash);
+    TRACE_EVENT_BEGIN("blink.user_timing", nullptr, track, unsafe_start_time,
+                      "startTime", start_time, "callTime", callTime, "traceId",
+                      hash, [&](perfetto::EventContext ctx) {
+                        if (ctx.ShouldFilterDynamicEventNames()) {
+                          ctx.event()->set_name("performance.measure");
+                          // Emit the dynamic name as debug annotation instead.
+                          ctx.AddDebugAnnotation("measureName",
+                                                 measure_name.Utf8());
+                        } else {
+                          ctx.event()->set_name(measure_name.Utf8());
+                        }
+                        if (serialized_detail.length()) {
+                          ctx.AddDebugAnnotation("detail", serialized_detail);
+                        }
+                      });
+    TRACE_EVENT_END("blink.user_timing", track, unsafe_end_time);
   }
 
   PerformanceMeasure* measure = PerformanceMeasure::Create(
@@ -336,8 +337,7 @@ void UserTiming::InsertPerformanceEntry(
     PerformanceEntryMap& performance_entry_map,
     PerformanceEntryVector& performance_entry_buffer,
     PerformanceEntry& entry) {
-  performance_->InsertEntryIntoSortedBuffer(performance_entry_buffer, entry,
-                                            Performance::kDoNotRecordSwaps);
+  performance_->InsertEntryIntoSortedBuffer(performance_entry_buffer, entry);
 
   auto it = performance_entry_map.find(entry.name());
   if (it == performance_entry_map.end()) {
@@ -345,8 +345,7 @@ void UserTiming::InsertPerformanceEntry(
     return;
   }
 
-  performance_->InsertEntryIntoSortedBuffer(it->value, entry,
-                                            Performance::kDoNotRecordSwaps);
+  performance_->InsertEntryIntoSortedBuffer(it->value, entry);
 }
 
 void UserTiming::ClearPerformanceEntries(

@@ -9,6 +9,7 @@ import * as Protocol from '../../generated/protocol.js';
 import {AttributionReportingIssue} from './AttributionReportingIssue.js';
 import {BounceTrackingIssue} from './BounceTrackingIssue.js';
 import {ClientHintIssue} from './ClientHintIssue.js';
+import {ConnectionAllowlistIssue} from './ConnectionAllowlistIssue.js';
 import {ContentSecurityPolicyIssue} from './ContentSecurityPolicyIssue.js';
 import {CookieDeprecationMetadataIssue} from './CookieDeprecationMetadataIssue.js';
 import {CookieIssue} from './CookieIssue.js';
@@ -21,12 +22,12 @@ import {GenericIssue} from './GenericIssue.js';
 import {HeavyAdIssue} from './HeavyAdIssue.js';
 import type {Issue, IssueKind} from './Issue.js';
 import {Events} from './IssuesManagerEvents.js';
-import {LowTextContrastIssue} from './LowTextContrastIssue.js';
 import {MixedContentIssue} from './MixedContentIssue.js';
 import {PartitioningBlobURLIssue} from './PartitioningBlobURLIssue.js';
 import {PermissionElementIssue} from './PermissionElementIssue.js';
 import {PropertyRuleIssue} from './PropertyRuleIssue.js';
 import {QuirksModeIssue} from './QuirksModeIssue.js';
+import {SelectivePermissionsInterventionIssue} from './SelectivePermissionsInterventionIssue.js';
 import {SharedArrayBufferIssue} from './SharedArrayBufferIssue.js';
 import {SharedDictionaryIssue} from './SharedDictionaryIssue.js';
 import {SourceFrameIssuesManager} from './SourceFrameIssuesManager.js';
@@ -79,10 +80,6 @@ const issueCodeHandlers = new Map<
   [
     Protocol.Audits.InspectorIssueCode.SharedDictionaryIssue,
     SharedDictionaryIssue.fromInspectorIssue,
-  ],
-  [
-    Protocol.Audits.InspectorIssueCode.LowTextContrastIssue,
-    LowTextContrastIssue.fromInspectorIssue,
   ],
   [
     Protocol.Audits.InspectorIssueCode.CorsIssue,
@@ -145,8 +142,16 @@ const issueCodeHandlers = new Map<
     UnencodedDigestIssue.fromInspectorIssue,
   ],
   [
+    Protocol.Audits.InspectorIssueCode.ConnectionAllowlistIssue,
+    ConnectionAllowlistIssue.fromInspectorIssue,
+  ],
+  [
     Protocol.Audits.InspectorIssueCode.PermissionElementIssue,
     PermissionElementIssue.fromInspectorIssue,
+  ],
+  [
+    Protocol.Audits.InspectorIssueCode.SelectivePermissionsInterventionIssue,
+    SelectivePermissionsInterventionIssue.fromInspectorIssue,
   ],
 ]);
 

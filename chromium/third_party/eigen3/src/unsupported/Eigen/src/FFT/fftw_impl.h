@@ -16,8 +16,8 @@ namespace Eigen {
 
 namespace internal {
 
-// FFTW uses non-const arguments
-// so we must use ugly const_cast calls for all the args it uses
+// FFTW uses non-const arguments,
+// so const_cast is needed for all the args it uses.
 //
 // This should be safe as long as
 // 1. we use FFTW_ESTIMATE for all our planning

@@ -20,11 +20,13 @@ namespace Eigen {
  * This module contains an experimental Kronecker product implementation.
  *
  * \code
- * #include <Eigen/KroneckerProduct>
+ * #include <unsupported/Eigen/KroneckerProduct>
  * \endcode
  */
 
 }  // namespace Eigen
+
+#include "../../Eigen/src/Core/util/DisableStupidWarnings.h"
 
 // IWYU pragma: begin_exports
 #include "src/KroneckerProduct/KroneckerTensorProduct.h"

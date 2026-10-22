@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2025 The Khronos Group Inc.
- * Copyright (c) 2015-2025 Valve Corporation
- * Copyright (c) 2015-2025 LunarG, Inc.
+/* Copyright (c) 2015-2026 The Khronos Group Inc.
+ * Copyright (c) 2015-2026 Valve Corporation
+ * Copyright (c) 2015-2026 LunarG, Inc.
  * Modifications Copyright (C) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -65,14 +65,12 @@ void LogResult(const StateObject& state, Handle handle, const RecordObject& reco
 }
 
 class Instance : public vvl::InstanceProxy {
-    using BaseClass = vvl::InstanceProxy;
-
   public:
     using Func = vvl::Func;
     using Struct = vvl::Struct;
     using Field = vvl::Field;
 
-    Instance(vvl::dispatch::Instance* dispatch) : BaseClass(dispatch, LayerObjectTypeBestPractices) {}
+    Instance(vvl::DispatchInstance* dispatch) : vvl::InstanceProxy(dispatch, LayerObjectTypeBestPractices) {}
 
     bool VendorCheckEnabled(BPVendorFlags vendors) const { return IsVendorCheckEnabled(enabled, vendors); }
 
@@ -84,7 +82,7 @@ class Instance : public vvl::InstanceProxy {
 
     bool ValidateSpecialUseExtensions(const Location& loc, vvl::Extension extension) const;
 
-    bool ValidateGetPhysicalDeviceDisplayPlanePropertiesKHRQuery(VkPhysicalDevice physicalDevice, const Location& loc) const;
+    bool ValidateGetPhysicalDeviceDisplayPlaneProperties(VkPhysicalDevice physicalDevice, const Location& loc) const;
     bool PreCallValidateGetDisplayPlaneSupportedDisplaysKHR(VkPhysicalDevice physicalDevice, uint32_t planeIndex,
                                                             uint32_t* pDisplayCount, VkDisplayKHR* pDisplays,
                                                             const ErrorObject& error_obj) const override;
@@ -118,15 +116,13 @@ class Instance : public vvl::InstanceProxy {
 }  // namespace bp_state
 
 class BestPractices : public vvl::DeviceProxy {
-    using BaseClass = vvl::DeviceProxy;
-
   public:
     using Func = vvl::Func;
     using Struct = vvl::Struct;
     using Field = vvl::Field;
 
-    BestPractices(vvl::dispatch::Device* dev, bp_state::Instance* instance_vo)
-        : BaseClass(dev, instance_vo, LayerObjectTypeBestPractices) {}
+    BestPractices(vvl::DispatchDevice* dev, bp_state::Instance* instance_vo)
+        : DeviceProxy(dev, instance_vo, LayerObjectTypeBestPractices) {}
 
     ReadLockGuard ReadLock() const override;
     WriteLockGuard WriteLock() override;

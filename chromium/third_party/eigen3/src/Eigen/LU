@@ -23,10 +23,10 @@
  * \endcode
  */
 
+// IWYU pragma: begin_exports
 #include "src/misc/Kernel.h"
 #include "src/misc/Image.h"
-
-// IWYU pragma: begin_exports
+#include "src/misc/RankRevealingBase.h"
 #include "src/LU/FullPivLU.h"
 #include "src/LU/PartialPivLU.h"
 #ifdef EIGEN_USE_LAPACKE

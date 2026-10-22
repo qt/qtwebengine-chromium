@@ -15,6 +15,7 @@ chromium::import! {
 use crate::message_header::*;
 use mojom_value_parser::ParsingResult;
 use system::message::RawMojoMessage;
+use system::mojo_types::UntypedHandle;
 
 /// Represents a Mojom message with a structured header and unstructured
 /// payload.
@@ -25,33 +26,32 @@ use system::message::RawMojoMessage;
 /// mojom value (obtained from mojom_value_parser::serialize), and that the
 /// header matches the value. See message_header.rs for more information on
 /// headers.
-///
-/// FOR_RELEASE: Integrate/replace this with the new RawMojoMessage type in the
-/// system bindings
+// TODO(crbug.com/493265340): This is kind of a crummy type, we should come up
+// with a better API that leverages the RawMojoMessage type in the system
+// bindings. As part of the process, we should catalogue the possible errors
+// that each step might return.
 pub struct MojomMessage {
-    pub header: MessageHeaderV3,
+    pub header: MessageHeader,
     pub payload: Vec<u8>,
+    pub handles: Vec<UntypedHandle>,
 }
 
 impl MojomMessage {
-    /// Parse the header from a binary message.
-    pub fn from_bytes(mut data: Vec<u8>) -> ParsingResult<Self> {
-        let (remaining_bytes, header) = MessageHeaderV3::deserialize_with_version(&mut data)?;
-        let remaining_bytes_len = remaining_bytes.len();
-        let num_consumed_bytes = data.len() - remaining_bytes_len;
-        let _ = data.drain(0..num_consumed_bytes);
-        Ok(MojomMessage { header, payload: data })
-    }
-
     /// Parse the given raw message into a structured representation.
     pub fn from_raw(msg: &RawMojoMessage) -> ParsingResult<Self> {
-        Self::from_bytes(msg.read_bytes().unwrap().to_vec())
+        let (raw_bytes, handles) = msg.read_data().unwrap();
+        let (remaining_bytes, header) = MessageHeader::deserialize(raw_bytes)?;
+        // We might be able to avoid allocating here if we had a better
+        // MojomMessage type.
+        let payload = remaining_bytes.to_vec();
+        Ok(MojomMessage { header, payload, handles })
     }
 
-    /// Serialize this message into its binary equivalent.
-    pub fn into_bytes(self) -> Vec<u8> {
-        let mut serialized = self.header.serialize_with_version();
+    /// Serialize this message into its binary equivalent, and return the
+    /// attached handles
+    pub fn into_data(self) -> (Vec<u8>, Vec<UntypedHandle>) {
+        let mut serialized = self.header.serialize();
         serialized.extend(self.payload);
-        serialized
+        (serialized, self.handles)
     }
 }

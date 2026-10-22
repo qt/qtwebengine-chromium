@@ -385,7 +385,14 @@ void V8RuntimeAgentImpl::evaluate(
   if (silent.value_or(false)) scope.ignoreExceptionsAndMuteConsole();
   if (userGesture.value_or(false)) scope.pretendUserGesture();
 
-  if (includeCommandLineAPI.value_or(false)) scope.installCommandLineAPI();
+  if (includeCommandLineAPI.value_or(false)) {
+    scope.installCommandLineAPI();
+    if (scope.tryCatch().HasCaught()) {
+      callback->sendFailure(
+          Response::ServerError("Failed to install command line API"));
+      return;
+    }
+  }
 
   const bool replMode = maybeReplMode.value_or(false);
 
@@ -900,13 +907,13 @@ Response V8RuntimeAgentImpl::addBinding(
   }
   if (executionContextId.has_value()) {
     int contextId = executionContextId.value();
-    InspectedContext* context =
+    std::shared_ptr<InspectedContext> context =
         m_inspector->getContext(m_session->contextGroupId(), contextId);
     if (!context) {
       return Response::InvalidParams(
           "Cannot find execution context with given executionContextId");
     }
-    addBinding(context, name);
+    addBinding(context.get(), name);
     return Response::Success();
   }
 

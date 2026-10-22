@@ -78,24 +78,37 @@ export const DEFAULT_VIEW: View = (input, _output, target) => {
 };
 
 export class PlatformFontsWidget extends UI.Widget.VBox {
-  private readonly sharedModel: ComputedStyle.ComputedStyleModel.ComputedStyleModel;
   readonly #view: View;
+  #sharedModel: ComputedStyle.ComputedStyleModel.ComputedStyleModel|null = null;
 
-  constructor(sharedModel: ComputedStyle.ComputedStyleModel.ComputedStyleModel, view: View = DEFAULT_VIEW) {
-    super({useShadowDom: true});
+  constructor(element?: HTMLElement, view: View = DEFAULT_VIEW) {
+    super(element, {useShadowDom: true});
     this.#view = view;
     this.registerRequiredCSS(platformFontsWidgetStyles);
+  }
 
-    this.sharedModel = sharedModel;
-    this.sharedModel.addEventListener(
-        ComputedStyle.ComputedStyleModel.Events.CSS_MODEL_CHANGED, this.requestUpdate, this);
-    this.sharedModel.addEventListener(
-        ComputedStyle.ComputedStyleModel.Events.COMPUTED_STYLE_CHANGED, this.requestUpdate, this);
+  get sharedModel(): ComputedStyle.ComputedStyleModel.ComputedStyleModel|null {
+    return this.#sharedModel;
+  }
+
+  set sharedModel(model: ComputedStyle.ComputedStyleModel.ComputedStyleModel) {
+    if (model !== this.sharedModel) {
+      this.sharedModel?.removeEventListener(
+          ComputedStyle.ComputedStyleModel.Events.CSS_MODEL_CHANGED, this.requestUpdate, this);
+      this.sharedModel?.removeEventListener(
+          ComputedStyle.ComputedStyleModel.Events.COMPUTED_STYLE_CHANGED, this.requestUpdate, this);
+
+      model.addEventListener(ComputedStyle.ComputedStyleModel.Events.CSS_MODEL_CHANGED, this.requestUpdate, this);
+      model.addEventListener(ComputedStyle.ComputedStyleModel.Events.COMPUTED_STYLE_CHANGED, this.requestUpdate, this);
+    }
+
+    this.#sharedModel = model;
+    void this.requestUpdate();
   }
 
   override async performUpdate(): Promise<void> {
-    const cssModel = this.sharedModel.cssModel();
-    const node = this.sharedModel.node;
+    const cssModel = this.#sharedModel?.cssModel();
+    const node = this.#sharedModel?.node;
     if (!node || !cssModel) {
       this.#view({platformFonts: null}, {}, this.contentElement);
       return;

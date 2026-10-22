@@ -258,12 +258,11 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderTiling::Draw(
       } else {
         if (pPattern->colored()) {
           pScreen->CompositeBitmap(start_x, start_y, width, height,
-                                   pPatternBitmap, 0, 0, BlendMode::kNormal,
-                                   nullptr, false);
+                                   pPatternBitmap, 0, 0, BlendMode::kNormal);
         } else {
           pScreen->CompositeMask(start_x, start_y, width, height,
                                  pPatternBitmap, fill_argb, 0, 0,
-                                 BlendMode::kNormal, nullptr, false);
+                                 BlendMode::kNormal);
         }
       }
     }

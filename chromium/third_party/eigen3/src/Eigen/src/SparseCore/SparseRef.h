@@ -117,7 +117,8 @@ class Ref<SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, StrideType>
 #else
 template <typename SparseMatrixType, int Options>
 class Ref<SparseMatrixType, Options>
-    : public SparseMapBase<Derived, WriteAccessors>  // yes, that's weird to use Derived here, but that works!
+    : public SparseMapBase<Derived, WriteAccessors>  // Note: 'Derived' is used here intentionally; it resolves
+                                                     // correctly via CRTP.
 #endif
 {
   typedef SparseMatrix<MatScalar, MatOptions, MatIndex> PlainObjectType;
@@ -322,8 +323,8 @@ class Ref<const SparseVector<MatScalar, MatOptions, MatIndex>, Options, StrideTy
 
 namespace internal {
 
-// FIXME shall we introduce a general evaluatior_ref that we can specialize for any sparse object once, and thus remove
-// this copy-pasta thing...
+// FIXME: consider introducing a general evaluator_ref that we can specialize for any sparse object once, and thus
+// remove this copy-pasta thing...
 
 template <typename MatScalar, int MatOptions, typename MatIndex, int Options, typename StrideType>
 struct evaluator<Ref<SparseMatrix<MatScalar, MatOptions, MatIndex>, Options, StrideType>>

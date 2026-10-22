@@ -65,7 +65,6 @@
 #include "cc/trees/viewport_layers.h"
 #include "cc/trees/viewport_property_ids.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
-#include "services/metrics/public/cpp/ukm_source_id.h"
 #include "ui/gfx/delegated_ink_metadata.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/overlay_transform.h"
@@ -87,7 +86,6 @@ class RenderFrameMetadataObserver;
 class RenderingStatsInstrumentation;
 class TaskGraphRunner;
 class UIResourceManager;
-class UkmRecorderFactory;
 
 struct CommitState;
 struct CompositorCommitData;
@@ -161,8 +159,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
     // raster worker threads.
     scoped_refptr<base::SequencedTaskRunner> image_worker_task_runner;
 
-    std::unique_ptr<UkmRecorderFactory> ukm_recorder_factory;
-
     raw_ptr<PropertyTreeDelegate> property_tree_delegate = nullptr;
   };
 
@@ -194,6 +190,10 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // The commit state for the frame being assembled by the compositor host.
   const CommitState* pending_commit_state() const {
     DCHECK(IsMainThread());
+    return pending_commit_state_.get();
+  }
+  CommitState* pending_commit_state() {
+    DCHECK(task_runner_provider_->IsMainThread());
     return pending_commit_state_.get();
   }
 
@@ -696,12 +696,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
 
   // Used externally by blink for setting the PropertyTrees when
   // UseLayerLists() is true.
-  PropertyTrees* property_trees() {
-    return &thread_unsafe_commit_state().property_trees;
-  }
-  const PropertyTrees* property_trees() const {
-    return &thread_unsafe_commit_state().property_trees;
-  }
+  PropertyTrees* property_trees() { return &property_trees_; }
+  const PropertyTrees* property_trees() const { return &property_trees_; }
   MutatorHost* mutator_host() {
     return thread_unsafe_commit_state().mutator_host;
   }
@@ -722,6 +718,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
     DCHECK(IsMainThread());
     return in_paint_layer_contents_;
   }
+
+  bool in_will_commit() const { return inside_will_commit_; }
 
   bool in_commit() const {
     return commit_completion_event_ && !commit_completion_event_->IsSignaled();
@@ -801,7 +799,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   std::unique_ptr<CommitState> WillCommit(
       std::unique_ptr<CompletionEvent> completion,
       bool has_updates);
-  std::unique_ptr<CommitState> ActivateCommitState();
   void CommitComplete(int source_frame_number, const CommitTimestamps&);
   void RequestNewLayerTreeFrameSink();
   void DidInitializeLayerTreeFrameSink();
@@ -937,7 +934,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   }
 
   void SetSourceURL(ukm::SourceId source_id, const GURL& url);
-  base::ReadOnlySharedMemoryRegion CreateSharedMemoryForDroppedFramesUkm();
 
   void SetRenderFrameObserver(
       std::unique_ptr<RenderFrameMetadataObserver> observer);
@@ -1007,10 +1003,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
     DCHECK(IsMainThread());
     return task_graph_runner_;
   }
-  CommitState* pending_commit_state() {
-    DCHECK(task_runner_provider_->IsMainThread());
-    return pending_commit_state_.get();
-  }
   ThreadUnsafeCommitState& thread_unsafe_commit_state() {
     DCHECK(IsMainThread());
     WaitForProtectedSequenceCompletion();
@@ -1028,7 +1020,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   base::WeakPtr<CompositorDelegateForInput> compositor_delegate_weak_ptr_;
 
   scoped_refptr<base::SequencedTaskRunner> image_worker_task_runner_;
-  std::unique_ptr<UkmRecorderFactory> ukm_recorder_factory_;
 
  private:
   friend class LayerTreeHostSerializationTest;
@@ -1053,7 +1044,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
       scoped_refptr<base::SequencedTaskRunner> image_worker_task_runner,
       LayerTreeHostSchedulingClient* scheduling_client,
       RenderingStatsInstrumentation* rendering_stats_instrumentation,
-      std::unique_ptr<UkmRecorderFactory>& ukm_recorder_factory,
       base::WeakPtr<CompositorDelegateForInput>& compositor_delegate_weak_ptr);
 
   void ApplyViewportChanges(const CompositorCommitData& commit_data);
@@ -1061,7 +1051,7 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   void InitializeProxy(std::unique_ptr<Proxy> proxy);
 
   bool DoUpdateLayers();
-
+  std::unique_ptr<CommitState> ActivateCommitState();
   void WaitForCommitCompletion(bool for_protected_sequence) const;
 
   void UpdateDeferMainFrameUpdateInternal();
@@ -1089,6 +1079,7 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   std::unique_ptr<RenderingStatsInstrumentation>
       rendering_stats_instrumentation_;
 
+  PropertyTrees property_trees_;
   std::unique_ptr<CommitState> pending_commit_state_;
   ThreadUnsafeCommitState thread_unsafe_commit_state_;
 
@@ -1116,6 +1107,10 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // destroyed midway which causes a crash. crbug.com/654672
   bool inside_main_frame_ = false;
 
+  // Track when we're inside `WillCommit` to ensure commit state is not
+  // modified.
+  bool inside_will_commit_ = false;
+
   // Set to force a commit during BeginMainFrame even if there are no actual
   // rendering changes, to ensure the bits in CommitState are propagated.
   bool force_commit_for_propagation_ = true;
@@ -1137,7 +1132,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // Layer id to Layer map.
   std::unordered_map<int, raw_ptr<Layer, CtnExperimental>> layer_id_map_;
 
-  // This is for layer tree mode only.
   std::unordered_map<ElementId, raw_ptr<Layer, CtnExperimental>, ElementIdHash>
       element_layers_map_;
 

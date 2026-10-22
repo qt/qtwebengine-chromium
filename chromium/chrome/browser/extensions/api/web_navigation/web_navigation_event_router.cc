@@ -115,9 +115,12 @@ class WebNavigationEventRouter::TabHelper : public TabModelListObserver,
   // Returns true if we should track tabs in this model (window).
   bool ShouldTrackModel(TabModel* model) const {
     // Only track tabs in the profile we're observing. Only observe standard
-    // tab models, which should always have tabs with WebContents.
+    // tab models, which should always have tabs with WebContents. Ignore empty
+    // regular tab models for ephemeral or incognito CCTs as they will never
+    // navigate other than loading about:blank.
     return profile_->IsSameOrParent(model->GetProfile()) &&
-           model->GetTabModelType() == TabModel::TabModelType::kStandard;
+           model->GetTabModelType() == TabModel::TabModelType::kStandard &&
+           !model->IsEmptyRegularModelForEphemeralOrIncognitoCct();
   }
 
   raw_ptr<WebNavigationEventRouter> router_;
@@ -182,7 +185,7 @@ void WebNavigationEventRouter::TabReplaced(content::WebContents* old_contents,
 
   if (!tab_observer) {
     // If you hit this DCHECK(), please add reproduction steps to
-    // http://crbug.com/109464.
+    // http://crbug.com/40135496.
     DCHECK(GetViewType(old_contents) != mojom::ViewType::kTabContents);
     return;
   }
@@ -209,7 +212,7 @@ void WebNavigationEventRouter::RecordNewWebContents(
       WebNavigationTabObserver::Get(source_web_contents);
   if (!tab_observer) {
     // If you hit this DCHECK(), please add reproduction steps to
-    // http://crbug.com/109464.
+    // http://crbug.com/40135496.
     DCHECK(GetViewType(source_web_contents) != mojom::ViewType::kTabContents);
     return;
   }

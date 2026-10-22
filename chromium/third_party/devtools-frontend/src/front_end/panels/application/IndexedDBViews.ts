@@ -7,6 +7,7 @@ import '../../ui/components/report_view/report_view.js';
 import '../../ui/legacy/legacy.js';
 
 import * as i18n from '../../core/i18n/i18n.js';
+import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
@@ -319,45 +320,31 @@ export class IDBDataView extends UI.View.SimpleView {
   private createDataGrid(): DataGrid.DataGrid.DataGridImpl<unknown> {
     const keyPath = this.isIndex && this.index ? this.index.keyPath : this.objectStore.keyPath;
 
-    const columns = ([] as DataGrid.DataGrid.ColumnDescriptor[]);
-
-    // Create column defaults so that we avoid repetition below.
-    const columnDefaults = {
-      title: undefined,
-      titleDOMFragment: undefined,
+    const columns: DataGrid.DataGrid.ColumnDescriptor[] = [];
+    columns.push({
+      id: 'number',
+      title: '#' as Platform.UIString.LocalizedString,
       sortable: false,
-      sort: undefined,
-      align: undefined,
-      width: undefined,
-      fixedWidth: undefined,
-      editable: undefined,
-      nonSelectable: undefined,
-      longText: undefined,
-      disclosure: undefined,
-      weight: undefined,
-      allowInSortByEvenWhenHidden: undefined,
-      dataType: undefined,
-      defaultWeight: undefined,
-    };
-    columns.push(
-        ({...columnDefaults, id: 'number', title: '#', sortable: false, width: '50px'} as
-         DataGrid.DataGrid.ColumnDescriptor));
-    columns.push(({
-      ...columnDefaults,
+      width: '50px',
+    });
+    columns.push({
       id: 'key',
       titleDOMFragment: this.keyColumnHeaderFragment(i18nString(UIStrings.keyString), keyPath),
       sortable: false,
-    } as DataGrid.DataGrid.ColumnDescriptor));
+    });
     if (this.isIndex) {
-      columns.push(({
-        ...columnDefaults,
+      columns.push({
         id: 'primary-key',
         titleDOMFragment: this.keyColumnHeaderFragment(i18nString(UIStrings.primaryKey), this.objectStore.keyPath),
         sortable: false,
-      } as DataGrid.DataGrid.ColumnDescriptor));
+      });
     }
     const title = i18nString(UIStrings.valueString);
-    columns.push(({...columnDefaults, id: 'value', title, sortable: false} as DataGrid.DataGrid.ColumnDescriptor));
+    columns.push({
+      id: 'value',
+      title,
+      sortable: false,
+    });
 
     const dataGrid = new DataGrid.DataGrid.DataGridImpl({
       displayName: i18nString(UIStrings.indexedDb),

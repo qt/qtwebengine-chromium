@@ -11,6 +11,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
+#include "base/strings/stringprintf.h"
 #include "base/uuid.h"
 #include "build/build_config.h"
 #include "media/base/media_permission.h"
@@ -21,6 +22,7 @@
 #include "third_party/blink/public/mojom/media/capture_handle_config.mojom-blink.h"
 #include "third_party/blink/public/mojom/mediastream/media_devices.mojom-blink.h"
 #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+#include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/web/web_local_frame.h"
@@ -67,6 +69,7 @@
 #include "third_party/blink/renderer/platform/scheduler/public/event_loop.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 
@@ -81,6 +84,75 @@ BASE_FEATURE(kEnumerateDevicesRequestAudioCapabilities,
 BASE_FEATURE(kDeviceChangeRequiresPermission, base::FEATURE_ENABLED_BY_DEFAULT);
 
 namespace {
+
+constexpr base::TimeDelta kEnumerateDevicesTimeout = base::Seconds(4);
+
+void SendLogMessage(const std::string& message) {
+  blink::WebRtcLogMessage("MD::" + message);
+}
+
+void LogDevicesEnumerated(
+    ScriptPromiseResolverWithTracker<EnumerateDevicesResult,
+                                     IDLSequence<MediaDeviceInfo>>*
+        result_tracker,
+    const Vector<Vector<WebMediaDeviceInfo>>& enumeration,
+    const Vector<mojom::blink::VideoInputDeviceCapabilitiesPtr>&
+        video_input_capabilities,
+    const Vector<mojom::blink::AudioInputDeviceCapabilitiesPtr>&
+        audio_input_capabilities) {
+  size_t num_audio_inputs = 0;
+  size_t num_video_inputs = 0;
+  size_t num_audio_outputs = 0;
+
+  if (enumeration.size() ==
+      static_cast<wtf_size_t>(
+          mojom::blink::MediaDeviceType::kNumMediaDeviceTypes)) {
+    num_audio_inputs =
+        enumeration[static_cast<wtf_size_t>(
+                        mojom::blink::MediaDeviceType::kMediaAudioInput)]
+            .size();
+    num_video_inputs =
+        enumeration[static_cast<wtf_size_t>(
+                        mojom::blink::MediaDeviceType::kMediaVideoInput)]
+            .size();
+    num_audio_outputs =
+        enumeration[static_cast<wtf_size_t>(
+                        mojom::blink::MediaDeviceType::kMediaAudioOutput)]
+            .size();
+  }
+
+  // Extract Audio Capability details using AppendRange
+  StringBuilder audio_caps_builder;
+  audio_caps_builder.Append("[");
+  audio_caps_builder.AppendRange(
+      audio_input_capabilities, ", ", [](const auto& cap) {
+        return String::Format(
+            "{channels=%d, sample_rate=%d, latency=%" PRId64 "ms}",
+            cap->channels, cap->sample_rate, cap->latency.InMilliseconds());
+      });
+  audio_caps_builder.Append("]");
+
+  // Extract Video Capability details using AppendRange
+  StringBuilder video_caps_builder;
+  video_caps_builder.Append("[");
+  video_caps_builder.AppendRange(
+      video_input_capabilities, ", ", [](const auto& cap) {
+        return String::Format(
+            "{formats=%u, facing_mode=%d, pan_tilt_zoom=%d}",
+            cap->formats.size(), static_cast<int>(cap->facing_mode),
+            (cap->control_support.pan || cap->control_support.tilt ||
+             cap->control_support.zoom));
+      });
+  video_caps_builder.Append("]");
+
+  SendLogMessage(base::StringPrintf(
+      "DevicesEnumerated({result_tracker=%p}, {audio_inputs=%zu}, "
+      "{video_inputs=%zu}, "
+      "{audio_outputs=%zu}, {audio_capabilities=%s}, {video_capabilities=%s})",
+      result_tracker, num_audio_inputs, num_video_inputs, num_audio_outputs,
+      StringView(audio_caps_builder).Utf8().c_str(),
+      StringView(video_caps_builder).Utf8().c_str()));
+}
 
 template <typename IDLResolvedType>
 class PromiseResolverCallbacks final : public UserMediaRequest::Callbacks {
@@ -439,6 +511,7 @@ ScriptPromise<IDLSequence<MediaDeviceInfo>> MediaDevices::enumerateDevices(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   UpdateWebRTCMethodCount(RTCAPIName::kEnumerateDevices);
   if (!script_state->ContextIsValid()) {
+    SendLogMessage("enumerateDevices() => (ERROR: Current frame is detached)");
     exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
                                       "Current frame is detached.");
     return ScriptPromise<IDLSequence<MediaDeviceInfo>>();
@@ -448,10 +521,35 @@ ScriptPromise<IDLSequence<MediaDeviceInfo>> MediaDevices::enumerateDevices(
       "MediaDevices.EnumerateDevices");
   auto* result_tracker = MakeGarbageCollected<ScriptPromiseResolverWithTracker<
       EnumerateDevicesResult, IDLSequence<MediaDeviceInfo>>>(
-      script_state, "Media.MediaDevices.EnumerateDevices", base::Seconds(4));
+      script_state, "Media.MediaDevices.EnumerateDevices",
+      kEnumerateDevicesTimeout);
   const auto promise = result_tracker->Promise();
 
+  SendLogMessage(base::StringPrintf(
+      "enumerateDevices({result_tracker=%p}, "
+      "{request_audio_input_capabilities=%s})",
+      result_tracker,
+      base::FeatureList::IsEnabled(kEnumerateDevicesRequestAudioCapabilities)
+          ? "true"
+          : "false"));
+
   enumerate_device_requests_.insert(result_tracker);
+
+  // Checks if the enumerateDevices request has exceeded the timeout threshold.
+  // Note: ScriptPromiseResolverWithTracker automatically records a UMA timeout
+  // metric after kEnumerateDevicesTimeout, but it does not fire a callback to
+  // notify us. This parallel delayed task ensures we also append a matching
+  // timeout error to the WebRTC text logs for debugging. It purely logs the
+  // timeout and does not forcefully reject the pending JavaScript promise.
+  if (ExecutionContext* context = GetExecutionContext()) {
+    context->GetTaskRunner(TaskType::kMediaElementEvent)
+        ->PostDelayedTask(
+            FROM_HERE,
+            BindOnce(&MediaDevices::CheckIfEnumerateDevicesTimedOut,
+                     WrapWeakPersistent(this),
+                     WrapWeakPersistent(result_tracker)),
+            kEnumerateDevicesTimeout + base::Milliseconds(100));
+  }
 
   LocalFrame* frame = LocalDOMWindow::From(script_state)->GetFrame();
   GetDispatcherHost(frame).EnumerateDevices(
@@ -496,19 +594,6 @@ ScriptPromise<MediaStream> MediaDevices::getUserMedia(
     DCHECK(exception_state.HadException());
     resolver->RecordAndDetach(UserMediaRequestResult::kInvalidConstraints);
     return promise;
-  }
-
-  LocalDOMWindow* window = GetSupplementable()->DomWindow();
-  LocalFrame* local_frame = window ? window->GetFrame() : nullptr;
-  if (local_frame && local_frame->IsAdScriptInStack()) {
-    if (constraints->hasAudio()) {
-      UseCounter::Count(GetExecutionContext(),
-                        WebFeature::kAdScriptInStackOnMicrophoneRead);
-    }
-    if (constraints->hasVideo()) {
-      UseCounter::Count(GetExecutionContext(),
-                        WebFeature::kAdScriptInStackOnCameraRead);
-    }
   }
 
   return SendUserMediaRequest(UserMediaRequestType::kUserMedia, resolver,
@@ -779,9 +864,9 @@ void MediaDevices::OnSelectAudioOutputResult(
     mojom::blink::SelectAudioOutputResultPtr result) {
   if (result->status == mojom::blink::AudioOutputStatus::kSuccess) {
     MediaDeviceInfo* media_device_info = MakeGarbageCollected<MediaDeviceInfo>(
-        String::FromUTF8(result->device_info.device_id),
-        String::FromUTF8(result->device_info.label),
-        String::FromUTF8(result->device_info.group_id),
+        String::FromUtf8(result->device_info.device_id),
+        String::FromUtf8(result->device_info.label),
+        String::FromUtf8(result->device_info.group_id),
         mojom::MediaDeviceType::kMediaAudioOutput);
     resolver->Resolve(media_device_info, AudioOutputSelectionResult::kSuccess);
     return;
@@ -1109,6 +1194,13 @@ void MediaDevices::ContextDestroyed() {
     return;
   }
 
+  for (auto& result_tracker : enumerate_device_requests_) {
+    SendLogMessage(
+        base::StringPrintf("ContextDestroyed() => (Canceling "
+                           "enumerateDevices({result_tracker=%p}))",
+                           result_tracker.Get()));
+  }
+
   is_execution_context_active_ = false;
   enumerate_device_requests_.clear();
   StopObserving();
@@ -1144,10 +1236,44 @@ void MediaDevices::OnDevicesChanged(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(GetExecutionContext());
   CHECK(is_execution_context_active_);
+
+  const char* type_str = "invalid-type";
+  switch (type) {
+    case mojom::blink::MediaDeviceType::kMediaAudioInput:
+      type_str = "audio-input";
+      break;
+    case mojom::blink::MediaDeviceType::kMediaVideoInput:
+      type_str = "video-input";
+      break;
+    case mojom::blink::MediaDeviceType::kMediaAudioOutput:
+      type_str = "audio-output";
+      break;
+    case mojom::blink::MediaDeviceType::kNumMediaDeviceTypes:
+      NOTREACHED();
+  }
+
+  const size_t old_count =
+      current_device_infos_[static_cast<wtf_size_t>(type)].size();
+  const size_t new_count = device_infos.size();
+
   if (std::ranges::equal(current_device_infos_[static_cast<wtf_size_t>(type)],
                          device_infos, EqualDeviceForDeviceChange)) {
     return;
   }
+
+  const char* suffix = "";
+  if (new_count > old_count) {
+    suffix = " [ADDED]";
+  } else if (new_count < old_count) {
+    suffix = " [REMOVED]";
+  } else {
+    suffix = " [MODIFIED]";
+  }
+
+  SendLogMessage(
+      base::StringPrintf("OnDevicesChanged({type=%s}, {old_device_count=%zu}, "
+                         "{new_device_count=%zu}%s)",
+                         type_str, old_count, new_count, suffix));
 
   current_device_infos_[static_cast<wtf_size_t>(type)] = device_infos;
   if (DomWindow()
@@ -1276,11 +1402,18 @@ void MediaDevices::DevicesEnumerated(
     Vector<mojom::blink::AudioInputDeviceCapabilitiesPtr>
         audio_input_capabilities) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (!enumerate_device_requests_.Contains(result_tracker)) {
+  LogDevicesEnumerated(result_tracker, enumeration, video_input_capabilities,
+                       audio_input_capabilities);
+
+  auto it = enumerate_device_requests_.find(result_tracker);
+  if (it == enumerate_device_requests_.end()) {
+    SendLogMessage(base::StringPrintf(
+        "DevicesEnumerated({result_tracker=%p}) => (ERROR: Request not found)",
+        result_tracker));
     return;
   }
 
-  enumerate_device_requests_.erase(result_tracker);
+  enumerate_device_requests_.erase(it);
 
   ScriptState* script_state = result_tracker->GetScriptState();
   if (!script_state || !ExecutionContext::From(script_state) ||
@@ -1315,7 +1448,7 @@ void MediaDevices::DevicesEnumerated(
       mojom::blink::MediaDeviceType device_type =
           static_cast<mojom::blink::MediaDeviceType>(i);
       WebMediaDeviceInfo device_info = enumeration[i][j];
-      String device_label = String::FromUTF8(device_info.label);
+      String device_label = String::FromUtf8(device_info.label);
       if (device_type == mojom::blink::MediaDeviceType::kMediaAudioInput ||
           device_type == mojom::blink::MediaDeviceType::kMediaVideoInput) {
         if (!device_info.device_id.empty()) {
@@ -1323,8 +1456,8 @@ void MediaDevices::DevicesEnumerated(
         }
         InputDeviceInfo* input_device_info =
             MakeGarbageCollected<InputDeviceInfo>(
-                String::FromUTF8(device_info.device_id), device_label,
-                String::FromUTF8(device_info.group_id), device_type);
+                String::FromUtf8(device_info.device_id), device_label,
+                String::FromUtf8(device_info.group_id), device_type);
         if (device_type == mojom::blink::MediaDeviceType::kMediaVideoInput &&
             !video_input_capabilities.empty()) {
           input_device_info->SetVideoInputCapabilities(
@@ -1338,8 +1471,8 @@ void MediaDevices::DevicesEnumerated(
         media_devices.push_back(input_device_info);
       } else {
         media_devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
-            String::FromUTF8(device_info.device_id), device_label,
-            String::FromUTF8(device_info.group_id), device_type));
+            String::FromUtf8(device_info.device_id), device_label,
+            String::FromUtf8(device_info.group_id), device_type));
       }
     }
   }
@@ -1351,9 +1484,14 @@ void MediaDevices::DevicesEnumerated(
 
 void MediaDevices::OnDispatcherHostConnectionError() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   for (ScriptPromiseResolverWithTracker<EnumerateDevicesResult,
                                         IDLSequence<MediaDeviceInfo>>*
            result_tracker : enumerate_device_requests_) {
+    SendLogMessage(base::StringPrintf(
+        "OnDispatcherHostConnectionError() => (ERROR: Mojo connection lost. "
+        "Rejecting enumerateDevices({result_tracker=%p}))",
+        result_tracker));
     result_tracker->Reject<DOMException>(
         MakeGarbageCollected<DOMException>(DOMExceptionCode::kAbortError,
                                            "enumerateDevices() failed."),
@@ -1361,6 +1499,24 @@ void MediaDevices::OnDispatcherHostConnectionError() {
   }
   enumerate_device_requests_.clear();
   dispatcher_host_.reset();
+}
+
+void MediaDevices::CheckIfEnumerateDevicesTimedOut(
+    ScriptPromiseResolverWithTracker<EnumerateDevicesResult,
+                                     IDLSequence<MediaDeviceInfo>>*
+        result_tracker) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // If the resolver was garbage collected, the request already completed
+  // (or was cancelled) before the 4-second timeout.
+  if (!result_tracker) {
+    return;
+  }
+  if (enumerate_device_requests_.Contains(result_tracker)) {
+    SendLogMessage(base::StringPrintf(
+        "enumerateDevices({result_tracker=%p}) => (Slow request: still pending "
+        "after %" PRId64 " seconds)",
+        result_tracker, kEnumerateDevicesTimeout.InSeconds()));
+  }
 }
 
 mojom::blink::MediaDevicesDispatcherHost& MediaDevices::GetDispatcherHost(

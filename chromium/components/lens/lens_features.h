@@ -171,6 +171,11 @@ BASE_DECLARE_FEATURE(kLensVideoCitations);
 COMPONENT_EXPORT(LENS_FEATURES)
 BASE_DECLARE_FEATURE(kLensUpdatedFeedbackEntrypoint);
 
+// Unifies the Lens and Contextual Tasks side panels into a single cohesive
+// panel and prepares for the removal of the old LensOverlay panel.
+COMPONENT_EXPORT(LENS_FEATURES)
+BASE_DECLARE_FEATURE(kLensSidePanelUnification);
+
 // Enables using the optimization filter for triggering the action chip.
 COMPONENT_EXPORT(LENS_FEATURES)
 BASE_DECLARE_FEATURE(kLensOverlayOptimizationFilter);
@@ -195,6 +200,11 @@ BASE_DECLARE_FEATURE(kLensSendVitForSingleContextNextQueries);
 // that all file types are supported for manual uploads.
 COMPONENT_EXPORT(LENS_FEATURES)
 BASE_DECLARE_FEATURE(kLensSendRawFileMediaTypes);
+
+// Enables parsing and sending URLs from the Query Contextualizer in
+// composeboxes.
+COMPONENT_EXPORT(LENS_FEATURES)
+BASE_DECLARE_FEATURE(kLensSendUrlsInComposeboxes);
 
 // Enables restricting annotated page content to same site frames for contextual
 // next queries.
@@ -1122,6 +1132,10 @@ int GetLensOverlayNonBlockingPrivacyNoticeImpressionCap();
 // TODO(crbug.com/489495600): Also disable input limits for the file picker.
 COMPONENT_EXPORT(LENS_FEATURES)
 extern bool IsLensSendRawFileMediaTypesEnabled();
+
+// Enables sending URLs from the Query Contextualizer in composeboxes.
+COMPONENT_EXPORT(LENS_FEATURES)
+extern bool IsLensSendUrlsInComposeboxesEnabled();
 
 }  // namespace lens::features
 #endif  // COMPONENTS_LENS_LENS_FEATURES_H_

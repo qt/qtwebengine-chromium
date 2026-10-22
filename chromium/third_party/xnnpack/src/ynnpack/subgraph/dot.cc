@@ -20,6 +20,7 @@
 
 #include "ynnpack/base/arithmetic.h"
 #include "ynnpack/base/base.h"
+#include "ynnpack/base/log.h"
 #include "ynnpack/base/type.h"
 #include "ynnpack/include/ynnpack.h"
 #include "ynnpack/kernels/dot/pack.h"
@@ -60,18 +61,17 @@ auto make_dot_impl(dot_type type, bool consistent_arithmetic, bool transposed_a,
              slinky::raw_buffer init_c, slinky::raw_buffer c) -> index_t {
     // If the dot has fewer than 3 reduction dimensions, we use this dummy
     // dimension instead.
-    slinky::dim dummy_dim = slinky::dim(0, 0, 0, 0);
+    const slinky::dim& dummy_dim = slinky::dim::broadcast();
 
     // Learn what we need to know about m, n, k1, k2, k3 before slicing them.
-    const slinky::dim& init_c_m = init_c.rank > 1 ? init_c.dim(1) : dummy_dim;
-    const slinky::dim& init_c_n = init_c.rank > 0 ? init_c.dim(0) : dummy_dim;
-    const slinky::dim& c_m = c.rank > 1 ? c.dim(1) : dummy_dim;
+    const slinky::dim& init_c_m = init_c.dim(1);
+    const slinky::dim& init_c_n = init_c.dim(0);
+    const slinky::dim& c_m = c.dim(1);
     const slinky::dim& c_n = c.dim(0);
     const slinky::dim& a_k1 = a.dim(0);
     const slinky::dim& a_k2 = num_k_dims >= 2 ? a.dim(1) : dummy_dim;
     const slinky::dim& a_k3 = num_k_dims >= 3 ? a.dim(2) : dummy_dim;
-    const slinky::dim& a_m =
-        a.rank > num_k_dims ? a.dim(num_k_dims) : dummy_dim;
+    const slinky::dim& a_m = a.dim(num_k_dims);
     const slinky::dim& b_k1i = b.dim(0);
     const slinky::dim& b_ni = b.dim(1);
     const slinky::dim& b_k1o = b.dim(2);
@@ -177,9 +177,7 @@ auto make_dot_impl(dot_type type, bool consistent_arithmetic, bool transposed_a,
     for (size_t i = 0; i < num_k_dims; ++i) {
       a.slice(0);
     }
-    if (a.rank > 0) {
-      a.slice(0, c_m.min());
-    }
+    a.slice(0, c_m.min());
     if (pack_b) {
       // If b is packed, we must slice b at blocks of n.
       b.slice({0, 1, 2});
@@ -193,25 +191,17 @@ auto make_dot_impl(dot_type type, bool consistent_arithmetic, bool transposed_a,
     for (size_t i = 1; i < num_k_dims; ++i) {
       b.slice(0);
     }
-    if (init_c.rank >= 2) {
-      init_c.slice(0, c_n.min());
-      init_c.slice(0, c_m.min());
-    } else if (init_c.rank > 0) {
-      init_c.slice(0, c_n.min());
-    }
-    if (c.rank >= 2) {
-      c.slice({0, 1});
-    } else {
-      c.slice(0);
-    }
+    init_c.slice(0, c_n.min());
+    init_c.slice(0, c_m.min());
+    c.slice({0, 1});
     // TODO: At this point, we can probably fuse dimensions of c, a, b in the
     // hopes of making i bigger, which should improve performance in cases where
     // block_m does not divide c_m.extent()
 
-    // One of these strides is one tile_k, the other is the distance between
-    // rows, depending on whether it is transposed. In either case, the stride
-    // the kernel wants is the bigger stride.
-    const index_t a_stride = std::max(a_stride_k1, a_stride_m);
+    const index_t a_stride = transposed_a ? a_stride_k1 : a_stride_m;
+    // The kernels assume that the column dimension of a is stride 1 element.
+    assert(transposed_a ? (a_m.extent() == 1 || a_stride_m == a.elem_size)
+                        : (a_k1.extent() == 1 || a_stride_k1 == a.elem_size));
 
     auto call_kernel = [=, kernel = kernel.kernel](
                            index_t m, index_t n, index_t k1, const void* a,
@@ -401,14 +391,16 @@ uint32_t define_pack_b(ynn_subgraph_t subgraph, const dot_type& type,
   // Make a global variable for the alignment, which is a messy expression,
   // but keep the max outside it, so slinky can learn bounds from it
   // (hacky...).
-  block_n =
-      max(kernel.tile_n, subgraph->make_global_variable(block_n, "block_n"));
+  block_n = max(kernel.tile_n, subgraph->globals.get(block_n, "block_n"));
   slinky::expr tiles_k = slinky::ceil_div<slinky::expr>(k1, kernel.tile_k);
   slinky::expr blocks_n = slinky::ceil_div(n, block_n);
 
   assert(kernel.tile_k % element_count == 0);
   packed_b.extents = {kernel.tile_k / element_count, block_n, tiles_k,
                       blocks_n};
+  for (slinky::expr& i : packed_b.extents) {
+    i = slinky::simplify(i);
+  }
   packed_b.extents.insert(packed_b.extents.end(), b.extents.begin() + 2,
                           b.extents.end());
 
@@ -416,7 +408,7 @@ uint32_t define_pack_b(ynn_subgraph_t subgraph, const dot_type& type,
   node.inputs = {input_b_id};
   node.outputs = {packed_b_id};
   node.op = ynn_node::pack_b{};
-  node.create = [](const ynn_node& node, ynn_runtime& runtime) {
+  node.create = [num_k_dims](const ynn_node& node, ynn_runtime& runtime) {
     const ynn_runtime_value& input = runtime.value(node.inputs[0]);
     ynn_runtime_value& output = runtime.value(node.outputs[0]);
 
@@ -426,7 +418,7 @@ uint32_t define_pack_b(ynn_subgraph_t subgraph, const dot_type& type,
 
     // Split + Transpose
     std::vector<slinky::var> dims =
-        make_dims(output.buffer->rank(), runtime.symbols);
+        runtime.globals.make_dims(output.buffer->rank());
 
     slinky::func::input func_input = {input.buffer};
     slinky::expr tile_k = output.extent(0);
@@ -462,6 +454,12 @@ uint32_t define_pack_b(ynn_subgraph_t subgraph, const dot_type& type,
     ynn::scheduled_buffer sched_output_buffer = {output.buffer, 1};
     sched->scheduled_buffers.push_back(std::move(sched_output_buffer));
 
+    // TODO(vksnk): This is a temporary workaround to avoid recomputing packed
+    // buffer. The proper fix would probably involve adding a loop splits for
+    // the packing function and making scheduler match it.
+    if (num_k_dims > 1) {
+      sched->force_root = true;
+    }
     func.user_data() = sched.get();
     runtime.scheduling_info_storage.push_back(std::move(sched));
 
@@ -476,42 +474,46 @@ uint32_t define_pack_b(ynn_subgraph_t subgraph, const dot_type& type,
 // interleaving `tile_k` rows at a time.
 // TODO(b/454146513): We should try to combine both pack_b and transpose_a into
 // a `split_transpose` op that can handle padding, split, and transpose.
-auto make_transpose_a_impl(index_t tile_k) {
-  return
-      [tile_k](slinky::raw_buffer input, slinky::raw_buffer output) -> index_t {
-        const slinky::dim& input_k = input.dim(0);
-        const slinky::dim& input_m = input.dim(1);
-        const slinky::dim& output_ko = output.dim(0);
-        const slinky::dim& output_m = output.dim(1);
+auto make_transpose_a_impl(index_t tile_k, int m_dim) {
+  constexpr size_t max_rank = YNN_MAX_TENSOR_RANK + ynn_internal_extra_dims;
+  return [tile_k, m_dim](slinky::buffer<const void, max_rank> input,
+                         slinky::buffer<void, max_rank> output) -> index_t {
+    const slinky::dim& input_k = input.dim(0);
+    const slinky::dim& input_m = input.dim(m_dim);
+    const slinky::dim& output_ko = output.dim(0);
+    const slinky::dim& output_m = output.dim(m_dim);
 
-        const index_t elem_size = input.elem_size;
-        assert(output_m.stride() == elem_size * tile_k);
-        (void)output_m;
+    const index_t elem_size = input.elem_size;
+    assert(output_m.extent() == 1 || output_m.stride() == elem_size * tile_k);
+    (void)output_m;
 
-        input.slice(0);
-        input.slice(0, output_m.min());
-        output.slice({0, 1});
+    // We need the intersection of the input and output bounds.
+    const index_t m =
+        std::min(output_m.end(), input_m.end()) - output_m.begin();
+    assert(input_k.min() <= output_ko.min() * tile_k);
+    assert(output_ko.min() == 0);
+    const index_t k = std::min(output_ko.end() * tile_k, input_k.end());
 
-        // We need the intersection of the input and output bounds.
-        const index_t m =
-            std::min(output_m.end(), input_m.end()) - output_m.begin();
-        assert(input_k.min() <= output_ko.min() * tile_k);
-        assert(output_ko.min() == 0);
-        const index_t k = std::min(output_ko.end() * tile_k, input_k.end());
+    // We're transposing columns of the input to rows of the output, but
+    // doing tile_k of them at a time.
+    // TODO(b/454131137): Support already transposed inputs here.
+    packer p(/*transpose=*/true, elem_size * 8, tile_k, /*tile_n=*/m);
 
-        // We're transposing columns of the input to rows of the output, but
-        // doing tile_k of them at a time.
-        // TODO(b/454131137): Support already transposed inputs here.
-        packer p(/*transpose=*/true, elem_size * 8, tile_k, /*tile_n=*/m);
+    const index_t input_m_stride = input_m.stride();
+    const index_t output_ko_stride = output_ko.stride();
 
-        slinky::for_each_element(
-            [&](void* output, const void* input) {
-              p.pack(k, m, input_m.stride(), input, output_ko.stride(),
-                     /*output_block_stride=*/0, output);
-            },
-            output, input);
-        return 0;
-      };
+    input.slice(0);
+    input.slice(m_dim - 1, output_m.min());
+    output.slice({0, static_cast<size_t>(m_dim)});
+
+    slinky::for_each_element(
+        [&](void* output, const void* input) {
+          p.pack(k, m, input_m_stride, input, output_ko_stride,
+                 /*output_block_stride=*/0, output);
+        },
+        output, input);
+    return 0;
+  };
 }
 
 }  // namespace
@@ -519,42 +521,46 @@ auto make_transpose_a_impl(index_t tile_k) {
 // Packing means transposing
 // a(k, m, ...) => a([0, tile_k), m, k/tile_k, ...)
 void define_transpose_a(ynn_subgraph& subgraph, ynn_node& node, index_t tile_k,
-                        uint32_t input_a_id, uint32_t output_id) {
+                        int m_dim, uint32_t input_a_id, uint32_t output_id) {
   const ynn_value& a = subgraph.value(input_a_id);
   ynn_value& output = subgraph.get_output_value(&output_id, a.type);
   output.type = a.type;
 
   slinky::expr k = a.extent(0);
-  slinky::expr m = a.extent(1);
-  output.extents = {slinky::ceil_div<slinky::expr>(k, tile_k), m};
-  output.extents.insert(output.extents.end(), a.extents.begin() + 2,
-                        a.extents.end());
+  output.extents = a.extents;
+  output.extents[0] =
+      slinky::simplify(slinky::ceil_div<slinky::expr>(k, tile_k));
 
   node.inputs = {input_a_id};
   node.outputs = {output.id};
-  node.op = ynn_node::transpose_a{};
-  node.create = [tile_k](const ynn_node& node, ynn_runtime& runtime) {
+  node.op = ynn_node::transpose_a{static_cast<size_t>(tile_k), m_dim};
+  node.create = [](const ynn_node& node, ynn_runtime& runtime) {
+    const ynn_node::transpose_a& op = std::get<ynn_node::transpose_a>(node.op);
+    const index_t tile_k = op.tile_k;
+    const int m_dim = op.m_dim;
     const ynn_runtime_value& input = runtime.value(node.inputs[0]);
     ynn_runtime_value& output = runtime.value(node.outputs[0]);
 
-    output.make_buffer(runtime, input.buffer->elem_size() * tile_k);
-    output.buffer->dim(1).stride = output.buffer->elem_size();
+    slinky::expr elem_size = input.buffer->elem_size() * tile_k;
+    output.make_buffer(runtime, elem_size);
+    output.buffer->dim(m_dim).stride = elem_size;
     output.buffer->dim(0).stride =
-        output.buffer->dim(1).stride * output.buffer->dim(1).extent();
+        elem_size * output.buffer->dim(m_dim).extent();
+    // Don't allow folding of dimensions we transpose.
+    output.buffer->dim(m_dim).fold_factor = slinky::dim::unfolded;
+    output.buffer->dim(0).fold_factor = slinky::dim::unfolded;
 
     // Split + Transpose
     std::vector<slinky::var> dims =
-        make_dims(output.buffer->rank(), runtime.symbols);
+        runtime.globals.make_dims(output.buffer->rank());
 
-    slinky::expr m = dims[1];
     slinky::expr ko = dims[0];
 
     slinky::func::input func_input = {input.buffer};
     func_input.bounds = {
         slinky::min_extent(ko * tile_k, tile_k),
-        slinky::point(m),
     };
-    for (size_t i = 2; i < dims.size(); ++i) {
+    for (size_t i = 1; i < dims.size(); ++i) {
       func_input.bounds.push_back(slinky::point(dims[i]));
     }
     // This transpose handles padding the input up to tile_k.
@@ -564,7 +570,7 @@ void define_transpose_a(ynn_subgraph& subgraph, ynn_node& node, index_t tile_k,
 
     slinky::call_stmt::attributes attrs;
     attrs.name = "transpose_a";
-    auto func = slinky::func::make(make_transpose_a_impl(tile_k),
+    auto func = slinky::func::make(make_transpose_a_impl(tile_k, m_dim),
                                    {std::move(func_input)},
                                    {{output.buffer, dims}}, std::move(attrs));
 
@@ -576,10 +582,10 @@ void define_transpose_a(ynn_subgraph& subgraph, ynn_node& node, index_t tile_k,
 namespace {
 
 uint32_t define_transpose_a(ynn_subgraph& subgraph, index_t tile_k,
-                            uint32_t input_a_id) {
+                            int32_t m_dim, uint32_t input_a_id) {
   ynn_node node;
   ynn_value& output = subgraph.new_internal_value();
-  ynn::define_transpose_a(subgraph, node, tile_k, input_a_id, output.id);
+  ynn::define_transpose_a(subgraph, node, tile_k, m_dim, input_a_id, output.id);
   subgraph.add_node(std::move(node));
   return output.id;
 }
@@ -628,9 +634,9 @@ std::tuple<slinky::expr, slinky::expr> choose_split_factors(
         }
       }
       // We want to make the tile bigger, figure out which dimension to grow.
-      if ((aspect_ratio * split_n < split_m || split_m >= m) && split_n < n) {
+      if ((aspect_ratio * split_n <= split_m || split_m >= m) && split_n < n) {
         split_n *= 2;
-      } else if ((split_m < aspect_ratio * split_n || split_n >= n) &&
+      } else if ((split_m <= aspect_ratio * split_n || split_n >= n) &&
                  split_m < m) {
         split_m *= 2;
       } else {
@@ -645,11 +651,11 @@ std::tuple<slinky::expr, slinky::expr> choose_split_factors(
   slinky::expr splits = slinky::call::make(impl, {m, n, k, block_n});
 
   // Extract the two splits from the single index_t result.
-  splits = runtime.make_global_variable(splits, "dot_splits");
+  splits = runtime.globals.get(splits, "dot_splits");
   slinky::expr split_m = splits / 65536;
   slinky::expr split_n = splits % 65536;
-  split_m = runtime.make_global_variable(split_m, "split_m");
-  split_n = runtime.make_global_variable(split_n, "split_n");
+  split_m = runtime.globals.get(split_m, "split_m");
+  split_n = runtime.globals.get(split_n, "split_n");
   return {split_n, split_m};
 }
 
@@ -753,38 +759,39 @@ bool should_pack_b(const ynn_subgraph& subgraph, size_t num_k_dims,
   return true;
 }
 
-}  // namespace
+ynn_type deduce_output_type(ynn_type a_type, ynn_type b_type) {
+  // The rules here are:
+  // - If either input is float, the result should be float, otherwise integer.
+  // - The output should be max(max(a_bits, b_bits), 32) bits wide
+  if (a_type == ynn_type_fp64 || b_type == ynn_type_fp64) {
+    return ynn_type_fp64;
+  } else if (type_is_floating_point(a_type) || type_is_floating_point(b_type)) {
+    return ynn_type_fp32;
+  } else {
+    assert(type_is_integral(a_type) && type_is_integral(b_type));
+    return ynn_type_int32;
+  }
+}
 
-extern "C" {
-
-ynn_status ynn_define_dot(ynn_subgraph_t subgraph, size_t num_k_dims,
-                          uint32_t input_a_id, uint32_t input_b_id,
-                          uint32_t input_c_id, uint32_t* output_id,
-                          uint32_t flags) {
-  // Validate arguments.
-  assert(subgraph);
-  assert(subgraph->is_valid_value(input_a_id));
-  assert(subgraph->is_valid_value(input_b_id));
-  // TODO: We can handle more than this, with loops outside of dot kernels.
-  assert(num_k_dims <= 3);
-  assert(num_k_dims > 0);
-
+ynn_status define_dot(ynn_subgraph& subgraph, size_t num_k_dims,
+                      uint32_t input_a_id, uint32_t input_b_id,
+                      uint32_t input_c_id, uint32_t* output_id,
+                      uint32_t flags) {
+  assert(subgraph.is_valid_value(input_a_id));
+  assert(subgraph.is_valid_value(input_b_id));
+  assert(output_id);
   const bool b_transposed =
-      always_alias_transpose(*subgraph, input_b_id) == ynn_status_success;
+      always_alias_transpose(subgraph, input_b_id) == ynn_status_success;
 
-  const ynn_value& a = subgraph->value(input_a_id);
-  const ynn_value& b = subgraph->value(input_b_id);
-  // If any input is a float, the output should be a float.
-  const ynn_type c_type = !type_is_integral(a.type) || !type_is_integral(b.type)
-                              ? ynn_type_fp32
-                              : ynn_type_int32;
-  ynn_value& c = subgraph->get_output_value(output_id, c_type);
+  const ynn_value& a = subgraph.value(input_a_id);
+  const ynn_value& b = subgraph.value(input_b_id);
+  const ynn_type c_type = deduce_output_type(a.type, b.type);
+  ynn_value& c = subgraph.get_output_value(output_id, c_type);
   if (input_c_id != YNN_INVALID_VALUE_ID) {
-    const ynn_value& init_c = subgraph->value(input_c_id);
-    assert(init_c.type == c_type);
+    const ynn_value& init_c = subgraph.value(input_c_id);
+    assert(init_c.type == c.type);
     (void)init_c;
   }
-  assert(c.type == c_type);
 
   // Kernel selection is an interesting problem to solve. Here are the issues
   // affecting it:
@@ -807,14 +814,6 @@ ynn_status ynn_define_dot(ynn_subgraph_t subgraph, size_t num_k_dims,
   //    shape we have (now fully known), as long as the better kernel is
   //    compatible with the packed B layout and the transposed-ness of A.
 
-  // We can choose a kernel that either requires transposing A, or not.
-  std::optional<bool> require_transpose_a = std::nullopt;
-  if (num_k_dims > 1) {
-    // TODO: Support transposing A for >1 k-dim. We can also handle cases where
-    // the input is a stencil_copy by transposing the input to the stencil_copy.
-    require_transpose_a = false;
-  }
-
   dot_type type = {a.type, b.type, c.type};
   dot_shape shape;
   learn_shape_from_b(shape, num_k_dims, b);
@@ -822,9 +821,9 @@ ynn_status ynn_define_dot(ynn_subgraph_t subgraph, size_t num_k_dims,
   const dot_packed_shape* packed_shape = nullptr;
   const bool consistent_arithmetic =
       (!type_is_integral(a.type) || !type_is_integral(b.type)) &&
-      (subgraph->flags & YNN_FLAG_CONSISTENT_ARITHMETIC) != 0;
-  dot_kernel kernel = get_dot_kernel(
-      type, shape, packed_shape, consistent_arithmetic, require_transpose_a);
+      (subgraph.flags & YNN_FLAG_CONSISTENT_ARITHMETIC) != 0;
+  dot_kernel kernel =
+      get_dot_kernel(type, shape, packed_shape, consistent_arithmetic);
   dot_kernel unpacked_kernel;
   if (b_transposed) {
     // If b is transposed, we might as well use the packing to do it.
@@ -837,26 +836,26 @@ ynn_status ynn_define_dot(ynn_subgraph_t subgraph, size_t num_k_dims,
   } else {
     unpacked_kernel = kernel;
     if (kernel.tile_k != 1) {
-      unpacked_kernel = get_dot_kernel(
-          type, shape, &no_tile_k, consistent_arithmetic, require_transpose_a);
+      unpacked_kernel =
+          get_dot_kernel(type, shape, &no_tile_k, consistent_arithmetic);
     }
   }
 
   // Insert a packing node (if necessary).
   const bool pack_b =
-      should_pack_b(*subgraph, num_k_dims, a, b, kernel, unpacked_kernel);
+      should_pack_b(subgraph, num_k_dims, a, b, kernel, unpacked_kernel);
   uint32_t packed_b_id = YNN_INVALID_VALUE_ID;
   if (!pack_b) {
     // We don't want or need to pack B, but we still need to reshape it as if it
     // were packed.
     static constexpr int32_t tile_k_blocks_n[2] = {-1, -4};
     ynn_status status = ynn_define_static_expand_dims(
-        subgraph, 2, tile_k_blocks_n, input_b_id, &packed_b_id, /*flags=*/0);
+        &subgraph, 2, tile_k_blocks_n, input_b_id, &packed_b_id, /*flags=*/0);
     if (status != ynn_status_success) {
       return status;
     }
   } else {
-    packed_b_id = define_pack_b(subgraph, type, kernel, num_k_dims,
+    packed_b_id = define_pack_b(&subgraph, type, kernel, num_k_dims,
                                 consistent_arithmetic, input_b_id);
   }
 
@@ -887,20 +886,20 @@ ynn_status ynn_define_dot(ynn_subgraph_t subgraph, size_t num_k_dims,
   // batch dimensions.
 
   // inputs `b` and `c` have an elementwise dimension 0.
-  subgraph->infer_elementwise_shape(node, 1, 0, 0, 0,
-                                    type_element_count(b.type));
-  subgraph->infer_elementwise_shape(node, 2, 0, 0, 0);
+  subgraph.infer_elementwise_shape(node, 1, 0, 0, 0,
+                                   type_element_count(b.type));
+  subgraph.infer_elementwise_shape(node, 2, 0, 0, 0);
 
   if (c_rank >= 2) {
-    subgraph->infer_elementwise_shape(node, 0, 0, num_k_dims, 1);
-    subgraph->infer_elementwise_shape(node, 2, 0, 1, 1);
+    subgraph.infer_elementwise_shape(node, 0, 0, num_k_dims, 1);
+    subgraph.infer_elementwise_shape(node, 2, 0, 1, 1);
   }
 
   // The rest of the dimensions are elementwise.
   for (size_t d = 2; d < c_rank; ++d) {
-    subgraph->infer_elementwise_shape(node, 0, 0, d + num_k_dims - 1, d);
-    subgraph->infer_elementwise_shape(node, 1, 0, d + num_k_dims - 1, d);
-    subgraph->infer_elementwise_shape(node, 2, 0, d, d);
+    subgraph.infer_elementwise_shape(node, 0, 0, d + num_k_dims - 1, d);
+    subgraph.infer_elementwise_shape(node, 1, 0, d + num_k_dims - 1, d);
+    subgraph.infer_elementwise_shape(node, 2, 0, d, d);
   }
 
   // The k-dims must match.
@@ -921,8 +920,12 @@ ynn_status ynn_define_dot(ynn_subgraph_t subgraph, size_t num_k_dims,
 
   const bool transpose_a = kernel.flags & dot_flag::transpose_a;
   if (transpose_a) {
+    // We should not try to transpose A if it is rank 1.
+    assert(a.rank() >= 2);
+
     // The kernel we want to use has a transposed a.
-    node.inputs[0] = define_transpose_a(*subgraph, kernel.tile_k, input_a_id);
+    node.inputs[0] =
+        define_transpose_a(subgraph, kernel.tile_k, num_k_dims, input_a_id);
   }
 
   // If we're using an unpacked kernel, we'll be reading columns of B, make sure
@@ -951,12 +954,12 @@ ynn_status ynn_define_dot(ynn_subgraph_t subgraph, size_t num_k_dims,
     }
     output.make_buffer(runtime);
 
-    std::vector<slinky::var> dims = make_dims(output.rank(), runtime.symbols);
+    std::vector<slinky::var> dims = runtime.globals.make_dims(output.rank());
     slinky::var j = dims[0];
 
     // A: We need all of the k dims, i is elementwise.
-    slinky::box_expr a_bounds(num_k_dims);
-    for (size_t i = 0; i < num_k_dims; ++i) {
+    slinky::box_expr a_bounds(std::min<int>(input_a.rank(), num_k_dims));
+    for (size_t i = 0; i < a_bounds.size(); ++i) {
       a_bounds[i] = all_bounds(input_a.extent(i));
     }
 
@@ -1002,7 +1005,7 @@ ynn_status ynn_define_dot(ynn_subgraph_t subgraph, size_t num_k_dims,
     attrs.name = node.to_string();
     // Allow the input_c and output to be computed in-place, which means we
     // don't need to initialize the accumulator.
-    if (allow_in_place(input_c.id, output.id, runtime.subgraph)) {
+    if (allow_in_place(input_c.id, output.id, *runtime.subgraph)) {
       attrs.allow_in_place = (1 << 2);
     }
     dot_type dot_type = {input_a.type, packed_b.type, output.type};
@@ -1066,7 +1069,165 @@ ynn_status ynn_define_dot(ynn_subgraph_t subgraph, size_t num_k_dims,
     return ynn_status_success;
   };
 
-  subgraph->add_node(std::move(node));
+  subgraph.add_node(std::move(node));
+  return ynn_status_success;
+}
+
+bool can_convert_f32_to_bf16(const ynn_subgraph& subgraph, uint32_t input_a_id,
+                             uint32_t input_b_id, uint32_t flags) {
+  if (!is_constant(subgraph, input_b_id)) {
+    // TODO(b/475315838): Remove this workaround for a correctness bug when B is
+    // not constant.
+    return false;
+  }
+  return (flags & YNN_NODE_FLAG_F32_DOT_TO_BF16_X3) &&
+         subgraph.value(input_a_id).type == ynn_type_fp32 &&
+         subgraph.value(input_b_id).type == ynn_type_fp32;
+}
+
+// Splits an f32 value into 2 components:
+//     i) The bf16 conversion of the input value,
+//     ii) The residual, which is the difference between the input value and
+//         the bf16 conversion.
+ynn_status define_split_f32_to_bf16(ynn_subgraph& subgraph, uint32_t input_id,
+                                    uint32_t* bf16_id,
+                                    uint32_t* residual_bf16_id,
+                                    uint32_t flags) {
+  assert(subgraph.value(input_id).type == ynn_type_fp32);
+
+  ynn_status status = ynn_define_convert(&subgraph, input_id, ynn_type_bf16,
+                                         YNN_INVALID_VALUE_ID,
+                                         YNN_INVALID_VALUE_ID, bf16_id, flags);
+  if (status != ynn_status_success) return status;
+
+  // Explicitly define the residual as type bf16 otherwise type fp32 will be
+  // implied.
+  ynn_value& residual_bf16 = subgraph.new_internal_value(ynn_type_bf16);
+  *residual_bf16_id = residual_bf16.id;
+  return ynn_define_binary(&subgraph, ynn_binary_subtract, input_id, *bf16_id,
+                           residual_bf16_id, flags);
+}
+
+// Rewrites a dot with f32 inputs as a sum of 3 dots with bf16 inputs. We omit
+// the residual dot products since its values are negligible.
+//
+// output = a * b + c
+// output ~= (a_bf16 + a_residual) * (b_bf16 + b_residual) + c
+// output ~= a_bf16 * b_bf16 + a_bf16 * b_residual + a_residual * b_bf16 + c
+ynn_status define_bf16_dot_from_f32_inputs(
+    ynn_subgraph& subgraph, size_t num_k_dims, uint32_t input_a_id,
+    uint32_t input_b_id, uint32_t input_c_id, uint32_t* output_id,
+    uint32_t flags) {
+  assert(subgraph.value(input_a_id).type == ynn_type_fp32);
+  assert(subgraph.value(input_b_id).type == ynn_type_fp32);
+
+  uint32_t a_bf16 = YNN_INVALID_VALUE_ID;
+  uint32_t a_residual = YNN_INVALID_VALUE_ID;
+  YNN_RETURN_IF_ERROR(define_split_f32_to_bf16(subgraph, input_a_id, &a_bf16,
+                                               &a_residual, flags));
+
+  uint32_t b_bf16 = YNN_INVALID_VALUE_ID;
+  uint32_t b_residual = YNN_INVALID_VALUE_ID;
+  YNN_RETURN_IF_ERROR(define_split_f32_to_bf16(subgraph, input_b_id, &b_bf16,
+                                               &b_residual, flags));
+
+  // For numerical accuracy, we sum the smallest results together first i.e.
+  // we compute dot(a_residual, b_bf16) + dot(a_bf16, b_residual) before
+  // adding it to dot(a_bf16, b_bf16) + c.
+  uint32_t a_residual_b_bf16_dot = YNN_INVALID_VALUE_ID;
+  YNN_RETURN_IF_ERROR(define_dot(subgraph, num_k_dims, a_residual, b_bf16,
+                                 YNN_INVALID_VALUE_ID, &a_residual_b_bf16_dot,
+                                 flags));
+
+  uint32_t a_bf16_b_residual_dot = YNN_INVALID_VALUE_ID;
+  YNN_RETURN_IF_ERROR(define_dot(subgraph, num_k_dims, a_bf16, b_residual,
+                                 a_residual_b_bf16_dot, &a_bf16_b_residual_dot,
+                                 flags));
+
+  if (input_c_id != YNN_INVALID_VALUE_ID) {
+    uint32_t a_bf16_b_bf16_dot = YNN_INVALID_VALUE_ID;
+    YNN_RETURN_IF_ERROR(define_dot(subgraph, num_k_dims, a_bf16, b_bf16,
+                                   input_c_id, &a_bf16_b_bf16_dot, flags));
+
+    return ynn_define_binary(&subgraph, ynn_binary_add, a_bf16_b_bf16_dot,
+                             a_bf16_b_residual_dot, output_id, flags);
+  } else {
+    return define_dot(subgraph, num_k_dims, a_bf16, b_bf16,
+                      a_bf16_b_residual_dot, output_id, flags);
+  }
+}
+
+}  // namespace
+
+extern "C" {
+
+ynn_status ynn_define_dot(ynn_subgraph_t subgraph, size_t num_k_dims,
+                          uint32_t input_a_id, uint32_t input_b_id,
+                          uint32_t input_c_id, uint32_t* output_id,
+                          uint32_t flags) {
+  // Validate arguments.
+  YNN_RETURN_IF_ERROR(validate_subgraph("dot", subgraph));
+  YNN_RETURN_IF_ERROR(
+      validate_input_tensor("dot", subgraph, "input_a_id", input_a_id));
+  YNN_RETURN_IF_ERROR(validate_input_tensor("dot", subgraph, "input_b_id",
+                                            input_b_id, /*optional=*/true));
+  YNN_RETURN_IF_ERROR(validate_input_tensor("dot", subgraph, "input_c_id",
+                                            input_c_id, /*optional=*/true));
+  YNN_RETURN_IF_ERROR(
+      validate_output_tensor("dot", subgraph, "output_id", output_id));
+
+  if (num_k_dims == 0 || num_k_dims > 3) {
+    YNN_LOG_ERROR() << "For node `dot`, `num_k_dims` must be in [1, 3], got "
+                    << num_k_dims;
+    return ynn_status_invalid_parameter;
+  }
+
+  const ynn_value& a = subgraph->value(input_a_id);
+  const ynn_value& b = subgraph->value(input_b_id);
+  const ynn_type c_type = deduce_output_type(a.type, b.type);
+
+  if (input_c_id != YNN_INVALID_VALUE_ID) {
+    const ynn_value& input_c = subgraph->value(input_c_id);
+    if (input_c.type != c_type) {
+      uint32_t input_c_converted_id = YNN_INVALID_VALUE_ID;
+      YNN_RETURN_IF_ERROR(ynn_define_convert(
+          subgraph, input_c_id, c_type, YNN_INVALID_VALUE_ID,
+          YNN_INVALID_VALUE_ID, &input_c_converted_id, flags));
+      input_c_id = input_c_converted_id;
+    }
+  }
+
+  uint32_t convert_to_id = YNN_INVALID_VALUE_ID;
+  if (*output_id != YNN_INVALID_VALUE_ID) {
+    const ynn_value& c = subgraph->value(*output_id);
+    if (c.type != c_type) {
+      // The type we want to compute is different from the output type. We're
+      // going to compute the result into an intermediate tensor, and insert
+      // a convert to the actual output_id after.
+      convert_to_id = *output_id;
+
+      // Just let define_dot make the output.
+      *output_id = YNN_INVALID_VALUE_ID;
+    }
+  }
+
+  if (can_convert_f32_to_bf16(*subgraph, input_a_id, input_b_id, flags)) {
+    YNN_RETURN_IF_ERROR(define_bf16_dot_from_f32_inputs(
+        *subgraph, num_k_dims, input_a_id, input_b_id, input_c_id, output_id,
+        flags));
+  } else {
+    YNN_RETURN_IF_ERROR(define_dot(*subgraph, num_k_dims, input_a_id,
+                                   input_b_id, input_c_id, output_id, flags));
+  }
+
+  if (convert_to_id != YNN_INVALID_VALUE_ID) {
+    // We decided above to compute the output into an intermediate tensor, and
+    // convert it to the output here.
+    YNN_RETURN_IF_ERROR(ynn_define_unary(subgraph, ynn_unary_convert,
+                                         *output_id, &convert_to_id, flags));
+    *output_id = convert_to_id;
+  }
+
   return ynn_status_success;
 }
 

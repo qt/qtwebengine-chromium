@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {Sidenav} from './sidenav';
-import {SidenavItem} from './sidenav_item';
+import {Sidenav} from './sidenav.js';
+import {SidenavItem} from './sidenav_item.js';
 
 /** Check if an `Element` is a sidenav or not. */
 export function isSidenav(element: unknown): element is Sidenav {

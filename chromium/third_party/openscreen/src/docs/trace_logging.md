@@ -334,6 +334,10 @@ The code for Trace Logging is divided up as follows:
       *trace_logging.h*, and connecting it to the platform API.
 * *platform/api/trace_logging_platform.h*: the platform implementation that is
       used as the trace logging destination while tracing is active.
+* *platform/impl/text_trace_logging_platform.h*: a basic implementation that
+      logs trace events to the console.
+* *platform/impl/perfetto_trace_logging_platform.h*: an implementation that
+      logs trace events to a Perfetto trace file.
 
 This information is intended to be only explanatory for embedders - only the one
 file mentioned above in Imports must be imported.
@@ -353,5 +357,36 @@ For an embedder to create a custom TraceLogging implementation:
   These activate/deactivate tracing by providing the TraceLoggingPlatform
   instance and later clearing references to it.
 
-**The default implementation of this layer can be seen in
-platform/impl/trace_logging_platform.cc.**
+**Example implementations of this layer can be seen in
+platform/impl/text_trace_logging_platform.cc (console logging) and
+platform/impl/perfetto_trace_logging_platform.cc (Perfetto tracing).**
+
+## Perfetto Tracing Support
+
+Open Screen supports [Perfetto](https://perfetto.dev/) for trace logging in
+standalone builds. This allows for generating trace files that can be viewed in
+the Perfetto UI.
+
+### Enabling Perfetto
+
+To enable Perfetto support, ensure the `use_perfetto` GN argument is set to
+`true`. This is the default for standalone builds (i.e., when
+`build_with_chromium` is `false`).
+
+```bash
+gn gen out/Default --args="use_perfetto=true"
+```
+
+### Using Perfetto in Standalone Apps
+
+When Perfetto support is compiled in, you can enable it in the standalone sender
+and receiver applications using the `--perfetto` or `-P` flag.
+
+```bash
+./out/Default/cast_sender -P ...
+./out/Default/cast_receiver -P ...
+```
+
+When enabled, a trace file (e.g., `openscreen_<pid>.pftrace`) will be generated
+upon termination of the application. This file can be opened at
+[ui.perfetto.dev](https://ui.perfetto.dev/).

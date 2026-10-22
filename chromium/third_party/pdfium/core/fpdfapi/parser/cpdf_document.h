@@ -181,6 +181,18 @@ class CPDF_Document : public Observable,
     UnownedPtr<CPDF_Document::PageDataIface> const page_data_;
   };
 
+  struct PageTreeData {
+    explicit PageTreeData(RetainPtr<CPDF_Dictionary> dict);
+    PageTreeData(PageTreeData&& that) noexcept;
+    PageTreeData& operator=(PageTreeData&& that) noexcept;
+    ~PageTreeData();
+
+    // The dictionary being processed at this level.
+    RetainPtr<CPDF_Dictionary> pages_dict;
+    // Index of the child being processed within the dictionary's /Kids array.
+    size_t child_index = 0;
+  };
+
   // Retrieve page count information by getting count value from the tree nodes
   int RetrievePageCount();
 
@@ -206,11 +218,9 @@ class CPDF_Document : public Observable,
   RetainPtr<CPDF_Dictionary> root_dict_;
   RetainPtr<CPDF_Dictionary> info_dict_;
 
-  // Vector of pairs to know current position in the page tree. The index in the
-  // vector corresponds to the level being described. The pair contains a
-  // pointer to the dictionary being processed at the level, and an index of the
-  // of the child being processed within the dictionary's /Kids array.
-  std::vector<std::pair<RetainPtr<CPDF_Dictionary>, size_t>> tree_traversal_;
+  // Vector to keep track of the current position in the page tree. The index
+  // in the vector corresponds to the level being described.
+  std::vector<PageTreeData> tree_traversal_;
 
   // True if the CPDF_Parser succeeded without having to rebuild the cross
   // reference table.

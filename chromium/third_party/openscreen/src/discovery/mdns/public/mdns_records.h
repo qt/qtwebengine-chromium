@@ -13,13 +13,14 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
-#include "absl/types/variant.h"
 #include "discovery/mdns/public/mdns_constants.h"
 #include "platform/base/error.h"
 #include "platform/base/interface_info.h"
 #include "platform/base/ip_address.h"
+#include "util/hashing.h"
 #include "util/osp_logging.h"
 #include "util/string_util.h"
 
@@ -83,15 +84,6 @@ class DomainName {
   bool IsRoot() const { return labels_.empty(); }
   const std::vector<std::string>& labels() const { return labels_; }
 
-  template <typename H>
-  friend H AbslHashValue(H h, const DomainName& domain_name) {
-    std::vector<std::string> labels_clone = domain_name.labels_;
-    for (auto& label : labels_clone) {
-      ::openscreen::string_util::AsciiStrToLower(label);
-    }
-    return H::combine(std::move(h), std::move(labels_clone));
-  }
-
  private:
   DomainName(std::vector<std::string> labels, size_t max_wire_size);
 
@@ -125,11 +117,6 @@ class RawRecordRdata {
   uint16_t size() const { return rdata_.size(); }
   const uint8_t* data() const { return rdata_.data(); }
 
-  template <typename H>
-  friend H AbslHashValue(H h, const RawRecordRdata& rdata) {
-    return H::combine(std::move(h), rdata.rdata_);
-  }
-
  private:
   std::vector<uint8_t> rdata_;
 };
@@ -160,12 +147,6 @@ class SrvRecordRdata {
   uint16_t port() const { return port_; }
   const DomainName& target() const { return target_; }
 
-  template <typename H>
-  friend H AbslHashValue(H h, const SrvRecordRdata& rdata) {
-    return H::combine(std::move(h), rdata.priority_, rdata.weight_, rdata.port_,
-                      rdata.target_);
-  }
-
  private:
   uint16_t priority_ = 0;
   uint16_t weight_ = 0;
@@ -192,12 +173,6 @@ class ARecordRdata {
   const IPAddress& ipv4_address() const { return ipv4_address_; }
   NetworkInterfaceIndex interface_index() const { return interface_index_; }
 
-  template <typename H>
-  friend H AbslHashValue(H h, const ARecordRdata& rdata) {
-    const auto& bytes = rdata.ipv4_address_.bytes();
-    return H::combine_contiguous(std::move(h), bytes, 4);
-  }
-
  private:
   IPAddress ipv4_address_{0, 0, 0, 0};
   NetworkInterfaceIndex interface_index_;
@@ -222,12 +197,6 @@ class AAAARecordRdata {
   const IPAddress& ipv6_address() const { return ipv6_address_; }
   NetworkInterfaceIndex interface_index() const { return interface_index_; }
 
-  template <typename H>
-  friend H AbslHashValue(H h, const AAAARecordRdata& rdata) {
-    const auto& bytes = rdata.ipv6_address_.bytes();
-    return H::combine_contiguous(std::move(h), bytes, 16);
-  }
-
  private:
   IPAddress ipv6_address_{0x0000, 0x0000, 0x0000, 0x0000,
                           0x0000, 0x0000, 0x0000, 0x0000};
@@ -250,11 +219,6 @@ class PtrRecordRdata {
 
   size_t MaxWireSize() const;
   const DomainName& ptr_domain() const { return ptr_domain_; }
-
-  template <typename H>
-  friend H AbslHashValue(H h, const PtrRecordRdata& rdata) {
-    return H::combine(std::move(h), rdata.ptr_domain_);
-  }
 
  private:
   DomainName ptr_domain_;
@@ -284,11 +248,6 @@ class TxtRecordRdata {
 
   size_t MaxWireSize() const;
   const std::vector<Entry>& texts() const { return texts_; }
-
-  template <typename H>
-  friend H AbslHashValue(H h, const TxtRecordRdata& rdata) {
-    return H::combine(std::move(h), rdata.texts_);
-  }
 
  private:
   TxtRecordRdata(std::vector<Entry> texts, size_t max_wire_size);
@@ -346,11 +305,6 @@ class NsecRecordRdata {
   const std::vector<DnsType>& types() const { return types_; }
   const std::vector<uint8_t>& encoded_types() const { return encoded_types_; }
 
-  template <typename H>
-  friend H AbslHashValue(H h, const NsecRecordRdata& rdata) {
-    return H::combine(std::move(h), rdata.types_, rdata.next_domain_name_);
-  }
-
  private:
   std::vector<uint8_t> encoded_types_;
   std::vector<DnsType> types_;
@@ -370,11 +324,6 @@ class OptRecordRdata {
     bool operator<=(const Option& rhs) const;
     bool operator==(const Option& rhs) const;
     bool operator!=(const Option& rhs) const;
-
-    template <typename H>
-    friend H AbslHashValue(H h, const Option& option) {
-      return H::combine(std::move(h), option.code, option.length, option.data);
-    }
 
     // Code assigned by the Expert Review process as defined by the DNSEXT
     // working group and the IESG, as specified in RFC6891 section 9.1. For
@@ -414,11 +363,6 @@ class OptRecordRdata {
   // Set of options stored in this OPT record.
   const std::vector<Option>& options() { return options_; }
 
-  template <typename H>
-  friend H AbslHashValue(H h, const OptRecordRdata& rdata) {
-    return H::combine(std::move(h), rdata.options_);
-  }
-
  private:
   // NOTE: The elements of `options_` are stored is sorted order to simplify the
   // comparison operators of OptRecordRdata.
@@ -427,14 +371,14 @@ class OptRecordRdata {
   size_t max_wire_size_ = 0;
 };
 
-using Rdata = absl::variant<RawRecordRdata,
-                            SrvRecordRdata,
-                            ARecordRdata,
-                            AAAARecordRdata,
-                            PtrRecordRdata,
-                            TxtRecordRdata,
-                            NsecRecordRdata,
-                            OptRecordRdata>;
+using Rdata = std::variant<RawRecordRdata,
+                           SrvRecordRdata,
+                           ARecordRdata,
+                           AAAARecordRdata,
+                           PtrRecordRdata,
+                           TxtRecordRdata,
+                           NsecRecordRdata,
+                           OptRecordRdata>;
 
 // Resource record top level format (http://www.ietf.org/rfc/rfc1035.txt):
 // name: the name of the node to which this resource record pertains.
@@ -484,13 +428,6 @@ class MdnsRecord {
   std::chrono::seconds ttl() const { return ttl_; }
   const Rdata& rdata() const { return rdata_; }
 
-  template <typename H>
-  friend H AbslHashValue(H h, const MdnsRecord& record) {
-    return H::combine(std::move(h), record.name_, record.dns_type_,
-                      record.dns_class_, record.record_type_,
-                      record.ttl_.count(), record.rdata_);
-  }
-
  private:
   static bool IsValidConfig(const DomainName& name,
                             DnsType dns_type,
@@ -539,12 +476,6 @@ class MdnsQuestion {
   DnsType dns_type() const { return dns_type_; }
   DnsClass dns_class() const { return dns_class_; }
   ResponseType response_type() const { return response_type_; }
-
-  template <typename H>
-  friend H AbslHashValue(H h, const MdnsQuestion& record) {
-    return H::combine(std::move(h), record.name_, record.dns_type_,
-                      record.dns_class_, record.response_type_);
-  }
 
  private:
   void CopyFrom(const MdnsQuestion& other);
@@ -618,13 +549,6 @@ class MdnsMessage {
   }
   const std::vector<MdnsRecord>& additional_records() const {
     return additional_records_;
-  }
-
-  template <typename H>
-  friend H AbslHashValue(H h, const MdnsMessage& message) {
-    return H::combine(std::move(h), message.id_, message.type_,
-                      message.questions_, message.answers_,
-                      message.authority_records_, message.additional_records_);
   }
 
  private:

@@ -40,12 +40,16 @@ interface LanguageModel : EventTarget {
   static Promise<Availability> availability(
     optional LanguageModelCreateCoreOptions options = {}
   );
+
+  // **EXPERIMENTAL**: Only available in extension and experimental contexts.
   [
     MeasureAs=LanguageModel_Params,
+    RuntimeEnabled=AIPromptAPILegacyParams,
     CallWith=ScriptState,
     RaisesException
   ]
   static Promise<LanguageModelParams?> params();
+
   [
     MeasureAs=LanguageModel_Prompt,
     CallWith=ScriptState,
@@ -58,6 +62,7 @@ interface LanguageModel : EventTarget {
     LanguageModelPrompt input,
     optional LanguageModelPromptOptions options = {}
   );
+
   [
     MeasureAs=LanguageModel_PromptStreaming,
     CallWith=ScriptState,
@@ -70,6 +75,7 @@ interface LanguageModel : EventTarget {
     LanguageModelPrompt input,
     optional LanguageModelPromptOptions options = {}
   );
+
   [
     MeasureAs=LanguageModel_Append,
     CallWith=ScriptState,
@@ -81,7 +87,19 @@ interface LanguageModel : EventTarget {
   );
 
   [
-    MeasureAs=LanguageModel_MeasureInputUsage,
+    MeasureAs=LanguageModel_MeasureContextUsage,
+    CallWith=ScriptState,
+    RaisesException
+  ]
+  Promise<double> measureContextUsage(
+    LanguageModelPrompt input,
+    optional LanguageModelPromptOptions options = {}
+  );
+
+  // **DEPRECATED**: This legacy alias for measureContextUsage will be removed.
+  [
+    RuntimeEnabled=AIPromptAPILegacyIdentifiers,
+    DeprecateAs=LanguageModel_MeasureInputUsage,
     CallWith=ScriptState,
     RaisesException
   ]
@@ -90,17 +108,48 @@ interface LanguageModel : EventTarget {
     optional LanguageModelPromptOptions options = {}
   );
 
-  [MeasureAs=LanguageModel_InputUsage]
+  [MeasureAs=LanguageModel_ContextUsage]
+  readonly attribute double contextUsage;
+  [MeasureAs=LanguageModel_ContextWindow]
+  readonly attribute unrestricted double contextWindow;
+
+  // **DEPRECATED**: This legacy alias for contextUsage will be removed.
+  [
+    RuntimeEnabled=AIPromptAPILegacyIdentifiers,
+    DeprecateAs=LanguageModel_InputUsage
+  ]
   readonly attribute double inputUsage;
-  [MeasureAs=LanguageModel_InputQuota]
+
+  // **DEPRECATED**: This legacy alias for contextWindow will be removed.
+  [
+    RuntimeEnabled=AIPromptAPILegacyIdentifiers,
+    DeprecateAs=LanguageModel_InputQuota
+  ]
   readonly attribute unrestricted double inputQuota;
 
-  [MeasureAs=LanguageModel_TopK]
+  // **EXPERIMENTAL**: Only available in extension and experimental contexts.
+  [
+    RuntimeEnabled=AIPromptAPILegacyParams,
+    MeasureAs=LanguageModel_TopK
+  ]
   readonly attribute unsigned long topK;
-  [MeasureAs=LanguageModel_Temperature]
+
+  // **EXPERIMENTAL**: Only available in extension and experimental contexts.
+  [
+    RuntimeEnabled=AIPromptAPILegacyParams,
+    MeasureAs=LanguageModel_Temperature
+  ]
   readonly attribute float temperature;
 
+  // **DEPRECATED**: This legacy alias for oncontextoverflow will be removed.
+  [
+    RuntimeEnabled=AIPromptAPILegacyIdentifiers,
+    DeprecateAs=LanguageModel_OnQuotaOverflow
+  ]
   attribute EventHandler onquotaoverflow;
+
+  [MeasureAs=LanguageModel_OnContextOverflow]
+  attribute EventHandler oncontextoverflow;
 
   [
     MeasureAs=LanguageModel_Clone,

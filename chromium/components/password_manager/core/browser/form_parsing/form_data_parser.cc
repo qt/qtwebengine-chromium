@@ -17,6 +17,7 @@
 
 #include "base/feature_list.h"
 #include "base/i18n/case_conversion.h"
+#include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ptr_exclusion.h"
 #include "base/metrics/histogram_functions.h"
@@ -447,10 +448,6 @@ void ParseUsingServerPredictions(std::vector<ProcessedField>& processed_fields,
         if (CanBeConsideredAsSingleUsernameField(processed_field->field)) {
           result->username = processed_field->field;
           result->is_single_username = true;
-          base::UmaHistogramBoolean(
-              "PasswordManager.SingleUsername."
-              "ForgotPasswordServerPredictionUsed",
-              prediction.type == autofill::SINGLE_USERNAME_FORGOT_PASSWORD);
         }
         break;
       case CredentialFieldType::kCurrentPassword:

@@ -30,12 +30,12 @@ export interface IconButtonData {
 
 export class IconButton extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
-  #clickHandler: undefined|(() => void) = undefined;
+  #clickHandler?: () => void;
   #groups: IconWithTextData[] = [];
   #compact = false;
   #leadingText = '';
   #trailingText = '';
-  #accessibleName: string|undefined;
+  #accessibleName?: string;
 
   set data(data: IconButtonData) {
     this.#groups = data.groups.map(group => ({...group}));  // Ensure we make a deep copy.

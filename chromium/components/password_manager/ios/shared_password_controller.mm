@@ -17,7 +17,6 @@
 #import "base/check_op.h"
 #import "base/containers/to_vector.h"
 #import "base/debug/crash_logging.h"
-#import "base/debug/dump_without_crashing.h"
 #import "base/feature_list.h"
 #import "base/functional/bind.h"
 #import "base/memory/raw_ptr.h"
@@ -66,6 +65,7 @@
 #import "components/password_manager/ios/password_manager_java_script_feature.h"
 #import "components/password_manager/ios/shared_password_controller+private.h"
 #import "components/strings/grit/components_strings.h"
+#import "components/webauthn/ios/ios_webauthn_credentials_delegate_factory.h"
 #import "components/webauthn/ios/passkey_suggestion_utils.h"
 #import "ios/web/common/url_scheme_util.h"
 #import "ios/web/public/js_messaging/web_frame.h"
@@ -733,22 +733,9 @@ autofill::LocalFrameToken GetLocalFrameToken(web::WebFrame* frame) {
           [self retrieveWebAuthnCredentialsDelegateForFrame:frame];
       CHECK(webAuthnCredentialsDelegate);
 
-      // Get the encoded credential ID. Fall back to an empty ID if one wasn't
-      // added to the suggestion, which will result in deferring the passkey
-      // selection to the renderer.
-      const std::string encodedCredentialID =
-          std::holds_alternative<autofill::Suggestion::Guid>(suggestion.payload)
-              ? std::get<autofill::Suggestion::Guid>(suggestion.payload).value()
-              : std::string();
-
-      // An empty `encodedCredentialID` shouldn't cause a crash as there's a
-      // deferring mechanism in place, but it is unexpected.
-      if (encodedCredentialID.empty()) {
-        base::debug::DumpWithoutCrashing();
-      }
-
-      webAuthnCredentialsDelegate->SelectPasskey(encodedCredentialID,
-                                                 base::DoNothing());
+      webAuthnCredentialsDelegate->SelectPasskey(
+          webauthn::GetPasskeySuggestionEncodedCredentialId(suggestion),
+          base::BindOnce(completion));
       return;
     }
     default: {
@@ -1258,15 +1245,8 @@ autofill::LocalFrameToken GetLocalFrameToken(web::WebFrame* frame) {
 // for the given `frame`.
 - (WebAuthnCredentialsDelegate*)retrieveWebAuthnCredentialsDelegateForFrame:
     (web::WebFrame*)frame {
-  PasswordManagerClient* passwordManagerClient =
-      self.delegate.passwordManagerClient;
-  CHECK(passwordManagerClient);
-
-  IOSPasswordManagerDriver* driver =
-      [_driverHelper PasswordManagerDriver:frame];
-  CHECK(driver);
-
-  return passwordManagerClient->GetWebAuthnCredentialsDelegateForDriver(driver);
+  return webauthn::IOSWebAuthnCredentialsDelegateFactory::GetFactory(_webState)
+      ->GetDelegateForFrameId(frame->GetFrameId());
 }
 
 // Retrieves passkey suggestions for the provided `frame`.

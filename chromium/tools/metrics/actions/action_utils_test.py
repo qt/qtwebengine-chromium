@@ -6,7 +6,9 @@ import unittest
 import dataclasses
 import re
 
-import action_utils
+import setup_modules  # pylint: disable=unused-import
+
+import chromium_src.tools.metrics.actions.action_utils as action_utils
 
 
 @dataclasses.dataclass(frozen=True)

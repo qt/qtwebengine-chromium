@@ -62,26 +62,26 @@ MoqtError SetupParametersAllowedByMessage(const SetupParameters& parameters,
   return MoqtError::kNoError;
 }
 
+// Parameter types are not enforced by message in draft-16, but apparently this
+// is coming back later.
+#if 0
 const std::array<MoqtMessageType, 9> kAllowsAuthorization = {
     MoqtMessageType::kClientSetup,
     MoqtMessageType::kServerSetup,
     MoqtMessageType::kPublish,
     MoqtMessageType::kSubscribe,
-    MoqtMessageType::kSubscribeUpdate,
+    MoqtMessageType::kRequestUpdate,
     MoqtMessageType::kSubscribeNamespace,
     MoqtMessageType::kPublishNamespace,
     MoqtMessageType::kTrackStatus,
     MoqtMessageType::kFetch};
 const std::array<MoqtMessageType, 7> kAllowsDeliveryTimeout = {
-    MoqtMessageType::kTrackStatus,    MoqtMessageType::kRequestOk,
-    MoqtMessageType::kPublish,        MoqtMessageType::kPublishOk,
-    MoqtMessageType::kSubscribe,      MoqtMessageType::kSubscribeOk,
-    MoqtMessageType::kSubscribeUpdate};
-const std::array<MoqtMessageType, 4> kAllowsMaxCacheDuration = {
-    MoqtMessageType::kSubscribeOk, MoqtMessageType::kRequestOk,
-    MoqtMessageType::kFetchOk, MoqtMessageType::kPublish};
-bool VersionSpecificParametersAllowedByMessage(
-    const VersionSpecificParameters& parameters, MoqtMessageType message_type) {
+    MoqtMessageType::kTrackStatus,  MoqtMessageType::kRequestOk,
+    MoqtMessageType::kPublish,      MoqtMessageType::kPublishOk,
+    MoqtMessageType::kSubscribe,    MoqtMessageType::kSubscribeOk,
+    MoqtMessageType::kRequestUpdate};
+bool MessageParametersAllowedByMessage(
+    const MessageParameters& parameters, MoqtMessageType message_type) {
   if (!parameters.authorization_tokens.empty() &&
       !absl::c_linear_search(kAllowsAuthorization, message_type)) {
     return false;
@@ -90,12 +90,9 @@ bool VersionSpecificParametersAllowedByMessage(
       !absl::c_linear_search(kAllowsDeliveryTimeout, message_type)) {
     return false;
   }
-  if (parameters.max_cache_duration != quic::QuicTimeDelta::Infinite() &&
-      !absl::c_linear_search(kAllowsMaxCacheDuration, message_type)) {
-    return false;
-  }
   return true;
 }
+#endif
 
 std::string MoqtMessageTypeToString(const MoqtMessageType message_type) {
   switch (message_type) {
@@ -113,8 +110,8 @@ std::string MoqtMessageTypeToString(const MoqtMessageType message_type) {
       return "UNSUBSCRIBE";
     case MoqtMessageType::kPublishDone:
       return "PUBLISH_DONE";
-    case MoqtMessageType::kSubscribeUpdate:
-      return "SUBSCRIBE_UPDATE";
+    case MoqtMessageType::kRequestUpdate:
+      return "REQUEST_UPDATE";
     case MoqtMessageType::kPublishNamespaceCancel:
       return "PUBLISH_NAMESPACE_CANCEL";
     case MoqtMessageType::kTrackStatus:
@@ -133,8 +130,6 @@ std::string MoqtMessageTypeToString(const MoqtMessageType message_type) {
       return "GOAWAY";
     case MoqtMessageType::kSubscribeNamespace:
       return "SUBSCRIBE_NAMESPACE";
-    case MoqtMessageType::kUnsubscribeNamespace:
-      return "UNSUBSCRIBE_NAMESPACE";
     case MoqtMessageType::kMaxRequestId:
       return "MAX_REQUEST_ID";
     case MoqtMessageType::kPublish:
@@ -167,6 +162,10 @@ std::string MoqtDataStreamTypeToString(MoqtDataStreamType type) {
 std::string MoqtDatagramTypeToString(MoqtDatagramType type) {
   return absl::StrCat("DATAGRAM", type.has_status() ? "_STATUS" : "",
                       type.has_extension() ? "_EXTENSION" : "");
+}
+
+std::string MoqtFetchSerializationToString(MoqtFetchSerialization type) {
+  return absl::StrCat("FETCH_SERIALIZATION_", type.value());
 }
 
 std::string MoqtForwardingPreferenceToString(

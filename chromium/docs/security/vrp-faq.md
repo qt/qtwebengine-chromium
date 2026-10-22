@@ -4,13 +4,14 @@
 
 ## News and Updates
 
-Please report all Chromium security bugs in the new tracker using [this
+Please report all Chromium security bugs in the tracker using [this
 form](https://issues.chromium.org/issues/new?noWizard=true&component=1363614&template=1922342)
 or https://bughunters.google.com/report/vrp -> Chrome VRP.
 
 Please check here for any news and updates about the Chrome VRP.
 
-* 5 January 2026: Announcing the [top 20 Chrome VRP reporters of 2025](https://crbug.com/473635778)
+* March 2026 : Updated formatting criteria & added self-service hotlists.
+* January 2026: Announcing the [top 20 Chrome VRP reporters of 2025](https://crbug.com/473635778)
   -- another great year of actionable and sometimes surprising reports -- well done to every
   researcher who made the list and thanks to all VRP reporters for helping keep people using
   Chrome safe on the internet.
@@ -67,15 +68,30 @@ reports:
     reproduction by ClusterFuzz or the Security Shepherd triaging your report.
 * Please format your PoCs so they do not require running python as root.
   * Your PoC should be constructed to reproduce locally when at all possible.
-* Do *not* provide links (public or unlisted) to / as PoCs.
+* Do *not* provide links to websites (public or unlisted) as PoCs.
   * The PoC should ALWAYS be a file directly attached to the report, even if it
     cannot be reproduced in ClusterFuzz.
+* Example servers should be written only in Python, other languages may lead
+  to your report being rejected.
+
+### Patches to simulate a compromised renderer
+
+* Instead of providing a patch, use MojoJS to simulate a compromised renderer.
+* Explain why MojoJS is not sufficient.
+* Upload a git generated patch with a clear base commit.
+* Use process guards (e.g. test the commandline for `--type="renderer"`) if
+  code can run in multiple processes.
+* Use Sleep() in privileged processes to simulate a race.
+* Do not add extraneous logging like `LOG(INFO) << "EXPLOIT SUCCEEDED"`.
 
 ### Steps to Reproduce
 
 * Please include clear, concise, numbered steps to reproduce the bug you are
   reporting.
-* Provide the full command line and any build flags to reproduce.
+* Provide the full Chrome or d8 command line and any build flags to reproduce.
+  * avoid `--enable-experimental-web-platform-features` and
+    `--enable-unsafe-webgpu` and instead provide specific feature flags.
+* Do not run Chrome in a harness or via CDP.
 
 ### Report Attachments
 
@@ -121,20 +137,20 @@ reports:
     please consider performing a full bisection, detailing the commit that
     introduced the issue and / or all the active release channels impacted by
     the bug.
+* Empty initial comments will lead to your report being closed and may lead to
+  your account being suspended. Do not create then populate placeholder issues.
 
 ### Suggested Fix / Patch Rewards
 
 * If suggesting a patch to fix the issue you are reporting, please upload it to
   the report as its own attachment.
 * We reward [bonuses for your patches](https://g.co/chrome/vrp/#patch-bonus)
-  that end up being used as the fix.
-  * Bonuses are $500 - $2000 depending on how substantial the patch is.
-  * To maximize your patch rewards, please commit the patch directly to Chromium
-    and include the Gerrit (Chromium code review tool) link in the report or
-    report comment.
+  but you must upload them to gerrit for review to be eligible.
   * Remember to include the Chromium bug tracker issue number in the CL, if you
     land the patch after filing the bug report, so that it can be linked to the
     report.
+* Suggested patches (attached to the report as `fix.patch`) will contribute to
+  our assessment of report quality, but will not be eligible for a patch bonus.
 
 ## Frequently Asked Questions (FAQ)
 
@@ -226,17 +242,27 @@ reports:
   directly communicate with that vendor or project owner, and receive credit or
   acknowledgement (if they have such a mechanism to do so).
 
-#### Can I submit my report(s) and provide a working exploit later?
-Is there a time limit for submitting an exploit?
+#### Can I submit my report(s) and provide a working exploit or proof of r/w later?
 
 * Most definitely! We realize that developing an exploit is a lengthy process
   and we very much encourage this approach, as it allows us to work on fixing
   the bugs as soon as possible. It also reduces the chance that someone else
   reports the same issue while you are working on the exploit.
+* The exploit must work against a released Chrome build on the latest operating
+  system versions and architectures, and prove code execution by executing a
+  command shell with the credentials of the user running Chrome.
+* r/w and arbitrary read must work using Chrome in a special mode - details will
+  be released here soon.
+* If you have a proof to add to a bug after it has been rewarded, add the hotlist
+  [Security-Request-Exploit-Assessment](https://issues.chromium.org/hotlists/8186895)
+  (hotlist id:8186895) along with a poc and comment that demonstrates the proof.
+  We will review this queue roughly weekly.
+
+#### Is there a time limit for submitting an exploit?
+
 * Although we don't have a set time limit, we would expect that the exploit
   would follow within six  weeks of the initial report. If more time is needed,
   we are happy to discuss extended timelines.
-  * Please reach out to security-vrp@chromium.org to discuss exploit extensions.
 
 #### Will you reward for types of bugs that are not specifically listed?
 
@@ -249,6 +275,28 @@ Is there a time limit for submitting an exploit?
 #### What happens after I report a security bug to you?
 
 * Please see [Life of a Security Issue](life-of-a-security-issue.md).
+
+#### My bug was triaged incorrectly?
+
+* We are human. If you disagree with the severity assessment of an issue please
+  comment on the issue and add it to the
+  [Security-Severity-Reassessment-Request](https://issues.chromium.org/hotlists/8059196)
+  hotlist (id:8059196) which will enter the issue into a queue that is reviewed
+  on a weekly basis by the security team. Access to the hotlist is restricted to
+  people on our [VRP Updates List](#updates-on-the-vrp). If you do not have
+  permission to add the hotlist please ask on the bug and a Chromium team member
+  can add it for you.
+
+#### My bug was Fixed and the team hasn't marked it Fixed?
+
+* Identify when the issue was fixed. You can use `git bisect` or Chromium's
+  `bisect-builds.py` to help locate when the issue went away. Add this evidence
+  to the bug, ideally identifying the CL which fixed the issue.
+* Give the team a week to close the issue themselves.
+* If, after a week, the issue is still open, add it to the
+  [Security-Fixed-Issue-Request](https://issues.chromium.org/hotlists/8059017)
+  hotlist (id:8059017) where it will be addressed by the security team on a
+  weekly basis.
 
 #### Will I receive a CVE for my bug?
 
@@ -390,10 +438,18 @@ Is there a time limit for submitting an exploit?
 
 #### I don't agree with the reward amount. Can I get the reward reassessed?
 
-* We always try our best to be fair and consistent, but sometimes we may get it
-  wrong or miss something in our assessment. If you feel that is the case,
-  please reach out to us at security-vrp@chromium.org detailing why you believe
-  we should reassess your report.
+* We try our best to be fair and consistent, but sometimes we miss something in
+  our assessment. If you feel that is the case please add a comment explaining
+  your position to the issue and add the
+  [Security-VRP-Reassessment-Request](https://issues.chromium.org/hotlists/8186354)
+  hotlist (id:8186354).
+
+### Updates On The VRP
+
+<a href="join-update-list">
+#### I want to get updates on the Chrome VRP and add things to hotlists?
+
+Request to join our [low volume list](https://groups.google.com/a/chromium.org/g/vrp-reporters).
 
 ### Other
 
@@ -404,5 +460,3 @@ I have a security-related question that is not listed here.
 * Also, if you have not already, please check the [Chrome VRP Rewards and
   Policies page](https://g.co/chrome/vrp).
 * If you still need assistance, please reach out to security-vrp@chromium.org.
-
-

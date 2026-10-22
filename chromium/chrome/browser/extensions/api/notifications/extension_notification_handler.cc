@@ -6,7 +6,6 @@
 
 #include "base/check_op.h"
 #include "base/functional/callback.h"
-#include "base/metrics/histogram_macros.h"
 #include "chrome/browser/extensions/api/notifications/extension_notification_display_helper.h"
 #include "chrome/browser/extensions/api/notifications/extension_notification_display_helper_factory.h"
 #include "chrome/browser/notifications/notification_common.h"
@@ -72,8 +71,9 @@ void ExtensionNotificationHandler::OnClose(
 
   ExtensionNotificationDisplayHelper* display_helper =
       ExtensionNotificationDisplayHelperFactory::GetForProfile(profile);
-  if (display_helper)
+  if (display_helper) {
     display_helper->EraseDataForNotificationId(notification_id);
+  }
 
   std::move(completed_closure).Run();
 }
@@ -89,8 +89,9 @@ void ExtensionNotificationHandler::OnClick(
 
   ExtensionId extension_id(GetExtensionId(GURL(origin)));
   base::ListValue args = CreateBaseEventArgs(extension_id, notification_id);
-  if (action_index.has_value())
+  if (action_index.has_value()) {
     args.Append(action_index.value());
+  }
   events::HistogramValue histogram_value =
       action_index.has_value() ? events::NOTIFICATIONS_ON_BUTTON_CLICKED
                                : events::NOTIFICATIONS_ON_CLICKED;
@@ -129,12 +130,14 @@ void ExtensionNotificationHandler::SendEvent(
     const std::string& event_name,
     EventRouter::UserGestureState user_gesture,
     base::ListValue args) {
-  if (extension_id.empty())
+  if (extension_id.empty()) {
     return;
+  }
 
   EventRouter* event_router = EventRouter::Get(profile);
-  if (!event_router)
+  if (!event_router) {
     return;
+  }
 
   auto event =
       std::make_unique<Event>(histogram_value, event_name, std::move(args));

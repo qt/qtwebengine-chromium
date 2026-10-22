@@ -1,11 +1,14 @@
-### [MCP server](mcp-server)
+### [Agentic extensions debugging](extension-debugging)
 
-CrUX data in performance trace summaries, a new --slim mode, specialized skills and experimental screen recording support.
+You can now debug extensions through a coding agent using new tools in DevTools for agents,
+available through the MCP server.
 
-### [Preserve Console history edits](console-history)
+### [Sort network requests](sort-network-requests)
 
-Modify a previous command, browse for another one, and return to your draft without losing your work.
+The Network panel introduces a new Request # column, allowing you to sort requests by their
+absolute chronological order of occurrence, independent of priority or duration.
 
-### [Improved support for adopted stylesheets](adopted-stylesheets)
+### [Accessibility tree](accessibility-tree)
 
-Adopted Style Sheets are now grouped under a dedicated #adopted-style-sheets node within the DOM tree in the Elements panel.
+To streamline the Elements panel, the Accessibility tree toggle has moved from the DOM tree
+to the Accessibility tab within the panel.

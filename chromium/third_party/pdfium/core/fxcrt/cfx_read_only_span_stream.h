@@ -12,7 +12,7 @@
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/span.h"
 
-class CFX_ReadOnlySpanStream final : public IFX_SeekableReadStream {
+class CFX_ReadOnlySpanStream : public IFX_SeekableReadStream {
  public:
   CONSTRUCT_VIA_MAKE_RETAIN;
 
@@ -23,11 +23,11 @@ class CFX_ReadOnlySpanStream final : public IFX_SeekableReadStream {
 
   pdfium::span<const uint8_t> span() const { return span_; }
 
- private:
+ protected:
   explicit CFX_ReadOnlySpanStream(pdfium::span<const uint8_t> span);
   ~CFX_ReadOnlySpanStream() override;
 
-  const pdfium::raw_span<const uint8_t> span_;
+  pdfium::raw_span<const uint8_t> span_;
 };
 
 #endif  // CORE_FXCRT_CFX_READ_ONLY_SPAN_STREAM_H_

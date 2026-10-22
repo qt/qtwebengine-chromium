@@ -13,6 +13,7 @@
 #include "partition_alloc/partition_alloc_base/debug/stack_trace.h"
 #include "partition_alloc/partition_alloc_base/no_destructor.h"
 #include "partition_alloc/partition_root.h"
+#include "partition_alloc/slot_address_and_size.h"
 
 namespace base::internal {
 
@@ -56,13 +57,13 @@ void InstanceTracer::TraceImpl(uint64_t owner_id,
                                uintptr_t address) {
   PA_CHECK(owner_id);
   const auto slot_and_size =
-      partition_alloc::PartitionAllocGetSlotStartAndSizeInBRPPool(address);
+      partition_alloc::SlotAddressAndSize::FromBRPPool(address);
   const uintptr_t slot_count = reinterpret_cast<uintptr_t>(
       partition_alloc::PartitionRoot::InSlotMetadataPointerFromSlotStartAndSize(
           slot_and_size.slot_start, slot_and_size.size));
 
   const std::lock_guard guard(GetStorageMutex());
-  GetStorage().insert({owner_id, Info(slot_count, may_dangle)});
+  GetStorage().try_emplace(owner_id, slot_count, may_dangle);
 }
 
 void InstanceTracer::UntraceImpl(uint64_t owner_id) {
@@ -85,9 +86,8 @@ InstanceTracer::GetStackTracesForDanglingRefs(uintptr_t allocation) {
 
 std::vector<std::array<const void*, 32>>
 InstanceTracer::GetStackTracesForAddressForTest(const void* address) {
-  const auto slot_and_size =
-      partition_alloc::PartitionAllocGetSlotStartAndSizeInBRPPool(
-          reinterpret_cast<uintptr_t>(address));
+  const auto slot_and_size = partition_alloc::SlotAddressAndSize::FromBRPPool(
+      reinterpret_cast<uintptr_t>(address));
   const uintptr_t slot_count = reinterpret_cast<uintptr_t>(
       partition_alloc::PartitionRoot::InSlotMetadataPointerFromSlotStartAndSize(
           slot_and_size.slot_start, slot_and_size.size));

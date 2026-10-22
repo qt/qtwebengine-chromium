@@ -61,7 +61,11 @@ const UIStrings = {
   /**
    * @description Title of a setting under the Performance category in Settings
    */
-  hideChromeFrameInLayersView: 'Hide `chrome` frame in Layers view',
+  chromeFrameInLayersView: 'Chrome frame in Layers view',
+  /**
+   * @description Title of a setting under the Performance category in Settings
+   */
+  timelineShowAllEvents: 'Show all events',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/timeline/timeline-meta.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
@@ -308,8 +312,17 @@ UI.ActionRegistration.registerActionExtension({
 Common.Settings.registerSettingExtension({
   category: Common.Settings.SettingCategory.PERFORMANCE,
   storageType: Common.Settings.SettingStorageType.SYNCED,
-  title: i18nLazyString(UIStrings.hideChromeFrameInLayersView),
-  settingName: 'frame-viewer-hide-chrome-window',
+  title: i18nLazyString(UIStrings.chromeFrameInLayersView),
+  settingName: 'frame-viewer-chrome-window',
+  settingType: Common.Settings.SettingType.BOOLEAN,
+  defaultValue: true,
+});
+
+Common.Settings.registerSettingExtension({
+  category: Common.Settings.SettingCategory.PERFORMANCE,
+  storageType: Common.Settings.SettingStorageType.SYNCED,
+  title: i18nLazyString(UIStrings.timelineShowAllEvents),
+  settingName: 'timeline-show-all-events',
   settingType: Common.Settings.SettingType.BOOLEAN,
   defaultValue: false,
 });
@@ -349,6 +362,17 @@ Common.Revealer.registerRevealer({
 
 Common.Revealer.registerRevealer({
   contextTypes() {
+    return maybeRetrieveContextTypes(Timeline => [Timeline.TimelinePanel.ParsedTraceRevealable]);
+  },
+  destination: Common.Revealer.RevealerDestination.TIMELINE_PANEL,
+  async loadRevealer() {
+    const Timeline = await loadTimelineModule();
+    return new Timeline.TimelinePanel.ParsedTraceRevealer();
+  },
+});
+
+Common.Revealer.registerRevealer({
+  contextTypes() {
     return [SDK.TraceObject.RevealableEvent];
   },
   destination: Common.Revealer.RevealerDestination.TIMELINE_PANEL,
@@ -366,5 +390,38 @@ Common.Revealer.registerRevealer({
   async loadRevealer() {
     const Timeline = await loadTimelineModule();
     return new Timeline.TimelinePanel.InsightRevealer();
+  },
+});
+
+Common.Revealer.registerRevealer({
+  contextTypes() {
+    return maybeRetrieveContextTypes(Timeline => [Timeline.Utils.Helpers.RevealableCoreVitals]);
+  },
+  destination: Common.Revealer.RevealerDestination.TIMELINE_PANEL,
+  async loadRevealer() {
+    const Timeline = await loadTimelineModule();
+    return new Timeline.TimelinePanel.CoreVitalsRevealer();
+  },
+});
+
+Common.Revealer.registerRevealer({
+  contextTypes() {
+    return maybeRetrieveContextTypes(Timeline => [Timeline.Utils.Helpers.RevealableTimeRange]);
+  },
+  destination: Common.Revealer.RevealerDestination.TIMELINE_PANEL,
+  async loadRevealer() {
+    const Timeline = await loadTimelineModule();
+    return new Timeline.TimelinePanel.TimeRangeRevealer();
+  },
+});
+
+Common.Revealer.registerRevealer({
+  contextTypes() {
+    return maybeRetrieveContextTypes(Timeline => [Timeline.Utils.Helpers.RevealableBottomUpProfile]);
+  },
+  destination: Common.Revealer.RevealerDestination.TIMELINE_PANEL,
+  async loadRevealer() {
+    const Timeline = await loadTimelineModule();
+    return new Timeline.TimelinePanel.BottomUpProfileRevealer();
   },
 });

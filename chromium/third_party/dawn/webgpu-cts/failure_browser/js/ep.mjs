@@ -79,6 +79,29 @@ function parseTagGroups(lines) {
   return result;
 }
 
+const kValidCategories = new Set(['Accuracy', 'Critical', 'Spurious']);
+
+// Returns a set of triage categories in a string that looks like:
+//      #   CAT:Spurious   CAT:Accuracy
+// Repeats are deduped.
+function splitCategories(str) {
+  const result = new Set();
+  const re = new RegExp('^#\\s*(.*)');
+  let prefix_match = re.exec(str);
+  if (prefix_match) {
+    const cat_re = new RegExp('CAT:([A-Za-z]+)\\s*(.*)');
+    let cat_match = cat_re.exec(prefix_match[1]);
+    while (cat_match) {
+      const cat = cat_match[1];
+      if (kValidCategories.has(cat)) {
+        result.add(cat)
+      }
+      const remain = cat_match[2];
+      cat_match = cat_re.exec(remain);
+    }
+  }
+  return result;
+}
 
 // Parses an array of text lines from an expectations file.
 // Creates an array of objects, keeping only those that satsify
@@ -86,7 +109,7 @@ function parseTagGroups(lines) {
 function parseExpectationLines(lines, pred) {
   const filter = pred ?? ((item) => true);
   let result = new Array();
-  const re = new RegExp('^(crbug.com/\\S+)\\s+(\\[(\\s+\\S+)+?\\s*\\])?\\s*(webgpu:\\S+)\\s*\\[\\s*(\\S+)\\s*\\]');
+  const re = new RegExp('^(crbug.com/\\S+)\\s+(\\[(\\s+\\S+)+?\\s*\\])?\\s*(webgpu:\\S+)\\s*\\[\\s*(\\S+)\\s*\\]\\s*(#\\s*.*)?');
   let line_number = 0;
   for (const line of lines) {
     line_number++;
@@ -110,6 +133,7 @@ function parseExpectationLines(lines, pred) {
         tags,
         pathString,
         verdict: matches[5],
+        categories: splitCategories(matches[6]),
       };
       if (pred(d)) {
         result.push(d);
@@ -301,3 +325,9 @@ const sampleTags = `
 `.split('\n');
 
 //console.log(parseTagGroups(sampleTags));
+
+//console.log(splitCategories("").size);
+//console.log(splitCategories("# CAT:Accuracy"));
+//console.log(splitCategories("# CAT:Critical"));
+//console.log(splitCategories("# CAT:Spurious"));
+//console.log(splitCategories("# CAT:Spurious CAT:Accuracy"));

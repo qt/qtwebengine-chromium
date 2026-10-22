@@ -18,9 +18,6 @@ mod ffi {
     enum OutputLanguage {
         Null,
         Essl,
-        GlslCompatibility,
-        Glsl130,
-        Glsl140,
         Glsl150Core,
         Glsl330Core,
         Glsl400Core,
@@ -99,7 +96,11 @@ mod ffi {
 
     // Limits corresponding to ShBuiltInResources
     struct Limits {
+        max_draw_buffers: u32,
+        max_dual_source_draw_buffers: u32,
         max_combined_draw_buffers_and_pixel_local_storage_planes: u32,
+        min_point_size: f32,
+        max_point_size: f32,
     }
 
     #[derive(Copy, Clone)]
@@ -178,27 +179,166 @@ mod ffi {
         // Note: This is currently not a generalized workaround, just applied to Pixel Local
         // Storage emulation, but in theory it should be.
         pass_highp_to_pack_unorm_snorm_built_ins: bool,
+        // Whether gl_ViewID_OVR and gl_InstanceID variables need to be emulated for multiview.
+        emulate_instanced_multiview: bool,
+        // Select viewport layer/index if ARB_shader_viewport_layer_array/NV_viewport_array2 is
+        // used to implement multiview.  Requires emulate_instanced_multiview.
+        select_viewport_layer_in_emulated_multiview: bool,
+        // Whether gl_DrawID need to be emulated.
+        emulate_draw_id: bool,
+        // Whether gl_BaseVertex and gl_BaseInstance need to be emulated.
+        emulate_base_vertex_instance: bool,
+        // Whether gl_BaseVertex should be added to gl_VertexID as a driver bug workaround.  Only
+        // effective if `emulate_base_vertex_instance`.
+        add_base_vertex_to_vertex_id: bool,
+        // If the flag is enabled, gl_PointSize is clamped to the maximum point size specified in
+        // ShBuiltInResources in vertex shaders.
+        clamp_point_size: bool,
+        // Clamp gl_FragDepth to the range [0.0, 1.0].
+        clamp_frag_depth: bool,
+        // Whether lowp and mediump float uniforms should be translated as fp16.
+        transform_float_uniform_to_fp16: bool,
+        // Whether inactive variables should be removed, and of those, whether inactive fragments
+        // outputs in particular should be removed too.
+        remove_inactive_interface_variables: bool,
+        retain_inactive_fragment_outputs: bool,
+        // Whether vec and mat constructor args should be broken down into scalars.
+        scalarize_vec_and_mat_constructor_args: bool,
+        // Clamp non-constant indices to the bounds of the entity being indexed for robustness.
+        clamp_indirect_indices: bool,
 
         // Whether the ANGLE_pixel_local_storage extension has been used and there are PLS uniforms
         // to rewrite.
         rewrite_pixel_local_storage: bool,
         pls_options: PixelLocalStorageOptions,
-        // TODO(http://anglebug.com/349994211): equivalent to ShCompileOptions flags
+
+        // MSL: Ensure all loops execute side-effects or terminate.
+        ensure_loop_forward_progress: bool,
     }
 
-    // TODO(http://anglebug.com/349994211): Equivalent to sh::ShaderVariable, to be done after
-    // CollectVariables is implemented in the IR.
+    // Matching sh::InterpolationType
+    #[derive(Copy, Clone)]
+    #[repr(u32)]
+    enum Interpolation {
+        Smooth,
+        Flat,
+        NoPerspective,
+        Centroid,
+        Sample,
+        NoPerspectiveCentroid,
+        NoPerspectiveSample,
+    }
+
+    // Matching sh::BlockLayoutType
+    #[derive(Copy, Clone)]
+    #[repr(u32)]
+    enum BlockLayout {
+        Std140,
+        Std430,
+        Packed,
+        Shared,
+    }
+
+    // Matching sh::BlockType
+    #[derive(Copy, Clone)]
+    #[repr(u32)]
+    enum BlockType {
+        Uniform,
+        Buffer,
+    }
+
+    // Corresponding to sh::ShaderVariable
     struct ShaderVariable {
-        todo: i32,
+        gl_type: u32,
+        gl_precision: u32,
+        name: String,
+        mapped_name: String,
+
+        // Used by varyings of struct type, or I/O blocks.
+        struct_or_block_name: String,
+        mapped_struct_or_block_name: String,
+        fields: Vec<ShaderVariable>,
+
+        // Outermost array size is stored at the end of the vector.
+        array_sizes: Vec<u32>,
+
+        static_use: bool,
+        active: bool,
+
+        // Only applies to I/O block fields:
+        is_row_major: bool,
+
+        // Varyings and fragment outputs:
+        location: i32,
+        // Distinguish between shader-specified location and implicitly-derived location
+        is_location_implicit: bool,
+
+        // Varyings:
+        interpolation: Interpolation,
+        is_invariant: bool,
+        is_io_block: bool,
+        is_patch: bool,
+
+        // Uniforms:
+        binding: i32,
+        gl_image_unit_format: u32,
+        offset: i32,
+        raster_ordered: bool,
+        readonly: bool,
+        writeonly: bool,
+        // If the variable is a sampler that has ever been statically used with texelFetch:
+        texel_fetch_static_use: bool,
+        // If the default uniform is given an fp16 type:
+        is_float16: bool,
+
+        // EXT_shader_framebuffer_fetch / KHR_blend_equation_advanced:
+        is_fragment_inout: bool,
+
+        // EXT_blend_func_extended:
+        index: i32,
+
+        // EXT_YUV_target:
+        yuv: bool,
+
+        // SPIR-V ID:
+        id: u32,
+    }
+
+    // Corresponding to sh::InterfaceBlock
+    struct InterfaceBlock {
+        name: String,
+        mapped_name: String,
+        instance_name: String,
+
+        fields: Vec<ShaderVariable>,
+
+        static_use: bool,
+        active: bool,
+
+        array_size: u32,
+        block_type: BlockType,
+        block_layout: BlockLayout,
+        binding: i32,
+
+        // SSBOs:
+        readonly: bool,
+
+        // SPIR-V ID:
+        id: u32,
     }
 
     struct Output {
         // Note: For now, generate always results in an AST. Eventually either text or binary
         // should be returned.
         ast: *mut TIntermBlock,
-        // TODO(http://anglebug.com/349994211): Reflection data collected by the IR (equivalent to
-        // what CollectVariables produces).
-        variables: Vec<ShaderVariable>,
+
+        // Reflection info
+        inputs: Vec<ShaderVariable>,
+        outputs: Vec<ShaderVariable>,
+        uniforms: Vec<ShaderVariable>,
+        shared: Vec<ShaderVariable>,
+        uniform_blocks: Vec<InterfaceBlock>,
+        storage_blocks: Vec<InterfaceBlock>,
     }
 
     extern "C++" {
@@ -237,11 +377,16 @@ mod ffi {
     }
 }
 
+pub use ffi::BlockLayout;
+pub use ffi::BlockType;
 pub use ffi::CompileOptions as Options;
+pub use ffi::InterfaceBlock;
+pub use ffi::Interpolation;
 pub use ffi::OutputLanguage;
 pub use ffi::PixelLocalStorageImpl;
 pub use ffi::PixelLocalStorageOptions;
 pub use ffi::PixelLocalStorageSync;
+pub use ffi::ShaderVariable;
 
 unsafe fn generate_ast(
     mut ir: Box<IR>,
@@ -253,19 +398,83 @@ unsafe fn generate_ast(
 
     // Apply transforms shared by multiple generators:
     common_pre_variable_collection_transforms(&mut ir, options);
-    // TODO(http://anglebug.com/349994211): Run variable collection (reflection info) in between
-    // these two transforms.
+    collect_reflection_info(&mut ir, options);
     common_post_variable_collection_transforms(&mut ir, options);
 
+    // Generator-specific transformations and codegen.  Note that currently no codegen is actually
+    // implemented from IR, so these would only do transformations and the common IR->AST generator
+    // is used for all.
+    match options.output {
+        OutputLanguage::Null => output::null::generate(&mut ir, options),
+        OutputLanguage::Essl => {
+            #[cfg(angle_enable_essl)]
+            output::essl::generate(&mut ir, options);
+            #[cfg(not(angle_enable_essl))]
+            panic!("Internal error: ESSL generator is not built");
+        }
+        OutputLanguage::Glsl150Core
+        | OutputLanguage::Glsl330Core
+        | OutputLanguage::Glsl400Core
+        | OutputLanguage::Glsl410Core
+        | OutputLanguage::Glsl420Core
+        | OutputLanguage::Glsl430Core
+        | OutputLanguage::Glsl440Core
+        | OutputLanguage::Glsl450Core => {
+            #[cfg(angle_enable_glsl)]
+            output::glsl::generate(&mut ir, options);
+            #[cfg(not(angle_enable_glsl))]
+            panic!("Internal error: GLSL generator is not built");
+        }
+        OutputLanguage::Hlsl3 | OutputLanguage::Hlsl41 => {
+            #[cfg(angle_enable_hlsl)]
+            output::hlsl::generate(&mut ir, options);
+            #[cfg(not(angle_enable_hlsl))]
+            panic!("Internal error: HLSL generator is not built");
+        }
+        OutputLanguage::Spirv => {
+            #[cfg(angle_enable_spirv)]
+            output::spirv::generate(&mut ir, options);
+            #[cfg(not(angle_enable_spirv))]
+            panic!("Internal error: SPIR-V generator is not built");
+        }
+        OutputLanguage::Msl => {
+            #[cfg(angle_enable_msl)]
+            output::msl::generate(&mut ir, options);
+            #[cfg(not(angle_enable_msl))]
+            panic!("Internal error: MSL generator is not built");
+        }
+        OutputLanguage::Wgsl => {
+            #[cfg(angle_enable_wgsl)]
+            output::wgsl::generate(&mut ir, options);
+            #[cfg(not(angle_enable_wgsl))]
+            panic!("Internal error: WGSL generator is not built");
+        }
+        _ => panic!("Internal error: Invalid generator"),
+    };
+
+    // Run dead-code elimination again before generating output, so that any stray instructions the
+    // transformations might have left around are removed.
+    transform::run!(dead_code_eliminate, &mut ir);
+
+    let reflection_info = ir.meta.take_reflection_info();
+
     // Passes required before AST can be generated:
-    transform::dealias::run(&mut ir);
-    transform::astify::run(&mut ir);
+    transform::run!(dealias, &mut ir);
+    let uncached_registers_with_side_effect = transform::run!(astify, &mut ir);
 
     let mut ast_gen = output::legacy::Generator::new(compiler, options);
-    let mut generator = ast::Generator::new(*ir);
+    let mut generator = ast::Generator::new(*ir, uncached_registers_with_side_effect);
     let ast = generator.generate(&mut ast_gen);
 
-    ffi::Output { ast, variables: vec![] }
+    ffi::Output {
+        ast,
+        inputs: reflection_info.inputs,
+        outputs: reflection_info.outputs,
+        uniforms: reflection_info.uniforms,
+        shared: reflection_info.shared,
+        uniform_blocks: reflection_info.uniform_blocks,
+        storage_blocks: reflection_info.storage_blocks,
+    }
 }
 
 fn common_pre_variable_collection_transforms(ir: &mut IR, options: &Options) {
@@ -276,7 +485,7 @@ fn common_pre_variable_collection_transforms(ir: &mut IR, options: &Options) {
         && (options.extensions.EXT_shader_framebuffer_fetch
             || options.extensions.EXT_shader_framebuffer_fetch_non_coherent)
     {
-        transform::remove_unused_framebuffer_fetch::run(ir);
+        transform::run!(remove_unused_framebuffer_fetch, ir);
     }
 
     // For now, rewrite pixel local storage before collecting variables or any operations on images.
@@ -295,7 +504,7 @@ fn common_pre_variable_collection_transforms(ir: &mut IR, options: &Options) {
             array_of_array_of_sampler_or_image: false,
             pixel_local_storage: true,
         };
-        transform::monomorphize_unsupported_functions::run(ir, &transform_options);
+        transform::run!(monomorphize_unsupported_functions, ir, &transform_options);
 
         let transform_options = transform::rewrite_pixel_local_storage::Options {
             pls: options.pls_options,
@@ -307,15 +516,94 @@ fn common_pre_variable_collection_transforms(ir: &mut IR, options: &Options) {
             pass_highp_to_pack_unorm_snorm_built_ins: options
                 .pass_highp_to_pack_unorm_snorm_built_ins,
         };
-        transform::rewrite_pixel_local_storage::run(ir, &transform_options);
+        transform::run!(rewrite_pixel_local_storage, ir, &transform_options);
+    }
+
+    if options.emulate_instanced_multiview
+        && (options.extensions.OVR_multiview || options.extensions.OVR_multiview2)
+    {
+        let transform_options = transform::emulate_instanced_multiview::Options {
+            shader_type: ir.meta.get_shader_type(),
+            select_viewport_layer: options.select_viewport_layer_in_emulated_multiview,
+        };
+        transform::run!(emulate_instanced_multiview, ir, &transform_options);
+    }
+
+    let emulate_draw_id = options.emulate_draw_id && options.extensions.ANGLE_multi_draw;
+    let emulate_base_vertex_instance = options.emulate_base_vertex_instance
+        && options.extensions.ANGLE_base_vertex_base_instance_shader_builtin;
+    if emulate_draw_id || emulate_base_vertex_instance {
+        let transform_options = transform::emulate_multi_draw::Options {
+            emulate_draw_id,
+            emulate_base_vertex_instance,
+            add_base_vertex_to_vertex_id: options.add_base_vertex_to_vertex_id,
+        };
+        transform::run!(emulate_multi_draw, ir, &transform_options);
+    }
+
+    if ir.meta.get_shader_type() == ShaderType::Fragment
+        && options.shader_version == 100
+        && options.extensions.EXT_draw_buffers
+        && options.limits.max_draw_buffers > 1
+    {
+        let transform_options = transform::broadcast_fragcolor::Options {
+            max_draw_buffers: options.limits.max_draw_buffers,
+            max_dual_source_draw_buffers: options.limits.max_dual_source_draw_buffers,
+        };
+        transform::run!(broadcast_fragcolor, ir, &transform_options);
+    }
+
+    // Sort uniforms based on their precisions and data types for better packing.
+    transform::run!(sort_uniforms, ir);
+}
+
+fn collect_reflection_info(ir: &mut IR, options: &Options) {
+    // Basic dead-code-elimination to avoid outputting variables, constants and types that are not
+    // used by the shader.
+    //
+    // This is done before collecting reflection info so that as many interface
+    // variables can be detected as inactive.  However, reflection info for inactive variables must
+    // also be collected, so the transformation reports the set of active interface variables
+    // without removing inactive ones.
+    let active_interface_variables = transform::run!(dead_code_eliminate, ir);
+
+    {
+        let reflection_options = reflection::Options {
+            is_es1: options.shader_version == 100,
+            transform_float_uniform_to_fp16: options.transform_float_uniform_to_fp16,
+        };
+        ir.collect_reflection_info(&reflection_options, &active_interface_variables);
+    }
+
+    // Now that reflection info is collected, inactive interface variables can be pruned.
+    //
+    // Note that inactive outputs must be retained.  Imagine a situation where the VS doesn't write
+    // to a varying but the FS reads from it.  This is allowed, though the value of the varying is
+    // undefined.  If the varying is removed here, the situation is changed to VS not declaring the
+    // varying, but the FS reading from it, which is not allowed.  That's why inactive shader
+    // outputs are not removed.  Inactive fragment shader outputs can be removed though.
+    //
+    // For now, inactive built-ins are also retained.
+    if options.remove_inactive_interface_variables {
+        let retain_inactive_outputs = options.retain_inactive_fragment_outputs
+            || ir.meta.get_shader_type() != ShaderType::Fragment;
+
+        ir.meta.prune_global_variables(|variable_id, variable| {
+            // Keep the variable if:
+            //
+            // * Not an interface variable, or
+            // * Is active, or
+            // * Is output and should be kept, or
+            // * Is built-in
+            !variable.is_interface_variable()
+                || active_interface_variables.contains(&variable_id)
+                || (retain_inactive_outputs && variable.decorations.has(Decoration::Output))
+                || variable.is_built_in()
+        });
     }
 }
 
 fn common_post_variable_collection_transforms(ir: &mut IR, options: &Options) {
-    // Basic dead-code-elimination to avoid outputting variables, constants and types that are not
-    // used by the shader.
-    transform::prune_unused_variables::run(ir);
-
     // Run after unused variables are removed, initialize local and output variables if necessary.
     if options.initialize_uninitialized_variables {
         let transform_options = transform::initialize_uninitialized_variables::Options {
@@ -324,34 +612,31 @@ fn common_post_variable_collection_transforms(ir: &mut IR, options: &Options) {
             initializer_allowed_on_non_constant_global_variables: options
                 .initializer_allowed_on_non_constant_global_variables,
         };
-        transform::initialize_uninitialized_variables::run(ir, &transform_options);
+        transform::run!(initialize_uninitialized_variables, ir, &transform_options);
     }
 
-    // Note: this is a per-generator transformation, not really "common", so it should be moved to
-    // the right section when the IR part of the compilation actually starts to deviate per
-    // generator.  For now, this is run to test the transformation, with a future change calling it
-    // earlier (pre variable collection) for Pixel Local Storage, and later for the rest of the
-    // options.
-    {
-        let transform_options = transform::monomorphize_unsupported_functions::Options {
-            // Samplers in structs are unsupported by most generators.
-            // TODO(http://anglebug.com/349994211): The HLSL generator should also take advantage
-            // of this transformation, instead of dealing with samplers-in-structs independently.
-            struct_containing_samplers: matches!(
-                options.output,
-                OutputLanguage::Spirv | OutputLanguage::Msl | OutputLanguage::Wgsl
-            ),
-            // http://anglebug.com/42265954: The ESSL spec has a bug with images as function
-            // arguments. The recommended workaround is to inline functions that accept image
-            // arguments.
-            image: options.shader_version >= 310,
-            atomic_counter: options.shader_version >= 310
-                && matches!(options.output, OutputLanguage::Spirv),
-            array_of_array_of_sampler_or_image: options.shader_version >= 310
-                && matches!(options.output, OutputLanguage::Spirv),
-            pixel_local_storage: false,
+    if options.clamp_point_size {
+        transform::run!(
+            clamp_point_size,
+            ir,
+            options.limits.min_point_size,
+            options.limits.max_point_size,
+        );
+    }
+
+    if options.clamp_frag_depth {
+        transform::run!(clamp_frag_depth, ir);
+    }
+
+    if options.scalarize_vec_and_mat_constructor_args {
+        transform::run!(scalarize_vec_and_mat_constructor_args, ir);
+    }
+
+    if options.clamp_indirect_indices {
+        let transform_options = transform::localized_workarounds::Options {
+            clamp_indirect_indices: options.clamp_indirect_indices,
         };
-        transform::monomorphize_unsupported_functions::run(ir, &transform_options);
+        transform::run!(localized_workarounds, ir, &transform_options);
     }
 }
 

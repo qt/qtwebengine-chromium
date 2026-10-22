@@ -32,6 +32,7 @@
 #include <string>
 #include <utility>
 
+#include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/control_instruction.h"
 #include "src/tint/lang/core/ir/module.h"
@@ -389,9 +390,6 @@ struct Decoder {
             case pb::Instruction::KindCase::kBinary:
                 inst_out = CreateInstructionBinary(inst_in.binary());
                 break;
-            case pb::Instruction::KindCase::kBitcast:
-                inst_out = CreateInstructionBitcast(inst_in.bitcast());
-                break;
             case pb::Instruction::KindCase::kBreakIf:
                 inst_out = CreateInstructionBreakIf(inst_in.break_if());
                 break;
@@ -514,10 +512,6 @@ struct Decoder {
         auto* binary_out = mod_out_.CreateInstruction<ir::CoreBinary>();
         binary_out->SetOp(BinaryOp(binary_in.op()));
         return binary_out;
-    }
-
-    ir::Bitcast* CreateInstructionBitcast(const pb::InstructionBitcast&) {
-        return mod_out_.CreateInstruction<ir::Bitcast>();
     }
 
     ir::BreakIf* CreateInstructionBreakIf(const pb::InstructionBreakIf&) {
@@ -771,6 +765,8 @@ struct Decoder {
                 return mod_out_.Types().i8();
             case pb::TypeBasic::u8:
                 return mod_out_.Types().u8();
+            case pb::TypeBasic::u64:
+                return mod_out_.Types().u64();
 
             case pb::TypeBasic::TypeBasic_INT_MIN_SENTINEL_DO_NOT_USE_:
             case pb::TypeBasic::TypeBasic_INT_MAX_SENTINEL_DO_NOT_USE_:
@@ -951,12 +947,13 @@ struct Decoder {
 
     const type::Type* CreateTypeSampledTexture(const pb::TypeSampledTexture& texture_in) {
         auto dimension = TextureDimension(texture_in.dimension());
+        auto filterable = TextureFilterable(texture_in.filterable());
         auto sub_type = Type(texture_in.sub_type());
         if (!sub_type) {
             err_ << "invalid Sampled texture subtype\n";
             return mod_out_.Types().invalid();
         }
-        return mod_out_.Types().sampled_texture(dimension, sub_type);
+        return mod_out_.Types().sampled_texture(dimension, sub_type, filterable);
     }
 
     const type::Type* CreateTypeMultisampledTexture(const pb::TypeMultisampledTexture& texture_in) {
@@ -1013,7 +1010,12 @@ struct Decoder {
             err_ << "invalid sampler kind, " << std::to_string(sampler_in.kind()) << "\n";
             return nullptr;
         }
+
         auto kind = SamplerKind(sampler_in.kind());
+        if (kind == core::type::SamplerKind::kSampler) {
+            auto filtering = SamplerFiltering(sampler_in.filtering());
+            return mod_out_.Types().Get<type::Sampler>(kind, filtering);
+        }
         return mod_out_.Types().Get<type::Sampler>(kind);
     }
 
@@ -1630,6 +1632,50 @@ struct Decoder {
         TINT_ICE() << "invalid TexelFormat: " << in;
     }
 
+    core::TextureFilterable TextureFilterable(pb::TextureFilterable in) {
+        if (!TextureFilterable_IsValid(in)) {
+            err_ << "invalid texture filterability, " << std::to_string(in) << "\n";
+            return core::TextureFilterable::kUndefined;
+        }
+
+        switch (in) {
+            case pb::TextureFilterable::filterable_undefined:
+                return core::TextureFilterable::kUndefined;
+            case pb::TextureFilterable::filterable:
+                return core::TextureFilterable::kFilterable;
+            case pb::TextureFilterable::unfilterable:
+                return core::TextureFilterable::kUnfilterable;
+
+            case pb::TextureFilterable::TextureFilterable_INT_MIN_SENTINEL_DO_NOT_USE_:
+            case pb::TextureFilterable::TextureFilterable_INT_MAX_SENTINEL_DO_NOT_USE_:
+                break;
+        }
+
+        TINT_ICE() << "invalid SamplerFiltering: " << in;
+    }
+
+    core::SamplerFiltering SamplerFiltering(pb::SamplerFiltering in) {
+        if (!SamplerFiltering_IsValid(in)) {
+            err_ << "invalid sampler filtering, " << std::to_string(in) << "\n";
+            return core::SamplerFiltering::kUndefined;
+        }
+
+        switch (in) {
+            case pb::SamplerFiltering::filtering_undefined:
+                return core::SamplerFiltering::kUndefined;
+            case pb::SamplerFiltering::filtering:
+                return core::SamplerFiltering::kFiltering;
+            case pb::SamplerFiltering::non_filtering:
+                return core::SamplerFiltering::kNonFiltering;
+
+            case pb::SamplerFiltering::SamplerFiltering_INT_MIN_SENTINEL_DO_NOT_USE_:
+            case pb::SamplerFiltering::SamplerFiltering_INT_MAX_SENTINEL_DO_NOT_USE_:
+                break;
+        }
+
+        TINT_ICE() << "invalid SamplerFiltering: " << in;
+    }
+
     core::type::SamplerKind SamplerKind(pb::SamplerKind in) {
         switch (in) {
             case pb::SamplerKind::sampler:
@@ -1708,6 +1754,8 @@ struct Decoder {
                 return core::BuiltinValue::kFrontFacing;
             case pb::BuiltinValue::global_invocation_id:
                 return core::BuiltinValue::kGlobalInvocationId;
+            case pb::BuiltinValue::global_invocation_index:
+                return core::BuiltinValue::kGlobalInvocationIndex;
             case pb::BuiltinValue::instance_index:
                 return core::BuiltinValue::kInstanceIndex;
             case pb::BuiltinValue::local_invocation_id:
@@ -1734,6 +1782,8 @@ struct Decoder {
                 return core::BuiltinValue::kVertexIndex;
             case pb::BuiltinValue::workgroup_id:
                 return core::BuiltinValue::kWorkgroupId;
+            case pb::BuiltinValue::workgroup_index:
+                return core::BuiltinValue::kWorkgroupIndex;
             case pb::BuiltinValue::clip_distances:
                 return core::BuiltinValue::kClipDistances;
             case pb::BuiltinValue::primitive_index:
@@ -1776,6 +1826,8 @@ struct Decoder {
                 return core::BuiltinFn::kAtan2;
             case pb::BuiltinFn::atanh:
                 return core::BuiltinFn::kAtanh;
+            case pb::BuiltinFn::bitcast:
+                return core::BuiltinFn::kBitcast;
             case pb::BuiltinFn::ceil:
                 return core::BuiltinFn::kCeil;
             case pb::BuiltinFn::clamp:
@@ -1992,6 +2044,10 @@ struct Decoder {
                 return core::BuiltinFn::kAtomicExchange;
             case pb::BuiltinFn::atomic_compare_exchange_weak:
                 return core::BuiltinFn::kAtomicCompareExchangeWeak;
+            case pb::BuiltinFn::atomic_store_max:
+                return core::BuiltinFn::kAtomicStoreMax;
+            case pb::BuiltinFn::atomic_store_min:
+                return core::BuiltinFn::kAtomicStoreMin;
             case pb::BuiltinFn::subgroup_ballot:
                 return core::BuiltinFn::kSubgroupBallot;
             case pb::BuiltinFn::subgroup_elect:
@@ -2068,6 +2124,8 @@ struct Decoder {
                 return core::BuiltinFn::kBufferView;
             case pb::BuiltinFn::buffer_length:
                 return core::BuiltinFn::kBufferLength;
+            case pb::BuiltinFn::buffer_array_view:
+                return core::BuiltinFn::kBufferArrayView;
 
             case pb::BuiltinFn::BuiltinFn_INT_MIN_SENTINEL_DO_NOT_USE_:
             case pb::BuiltinFn::BuiltinFn_INT_MAX_SENTINEL_DO_NOT_USE_:

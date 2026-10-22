@@ -280,7 +280,7 @@ export class FilteredListWidget extends Common.ObjectWrapper.eventMixin<EventTyp
     if (this.provider) {
       render(this.provider.renderItem(item, this.cleanValue()), wrapperElement);
       wrapperElement.setAttribute(
-          'jslog', `${VisualLogging.item(this.provider.jslogContextAt(item)).track({click: true})}`);
+          'jslog', `${VisualLogging.item(this.provider.jslogContextAt(item)).track({click: true, resize: true})}`);
     }
     UI.ARIAUtils.markAsOption(wrapperElement);
     return wrapperElement;
@@ -590,10 +590,7 @@ export interface EventTypes {
 
 export class Provider {
   private refreshCallback!: () => void;
-  jslogContext: string;
-  constructor(jslogContext: string) {
-    this.jslogContext = jslogContext;
-  }
+  jslogContext = '';
 
   setRefreshCallback(refreshCallback: () => void): void {
     this.refreshCallback = refreshCallback;
@@ -661,4 +658,5 @@ export interface ProviderRegistration {
   helpTitle: (() => string);
   titlePrefix: (() => string);
   titleSuggestion?: (() => string);
+  jslogContext: string;
 }

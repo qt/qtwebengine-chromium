@@ -33,6 +33,10 @@ std::string GetAddEntityTypeStringForI18n(EntityType entity_type) {
       return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_ADD_VEHICLE_ENTITY);
     case EntityTypeName::kFlightReservation:
       // Flight reservations are read-only and do not use this string.
+    case EntityTypeName::kOrder:
+      // Orders are read-only and do not use this string.
+    case EntityTypeName::kShipment:
+      // Shipments are read-only and do not use this string.
       return "";
   }
   NOTREACHED();
@@ -58,6 +62,10 @@ std::string GetEditEntityTypeStringForI18n(EntityType entity_type) {
       return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_EDIT_VEHICLE_ENTITY);
     case EntityTypeName::kFlightReservation:
       // Flight reservations are read-only and do not use this string.
+    case EntityTypeName::kOrder:
+      // Orders are read-only and do not use this string.
+    case EntityTypeName::kShipment:
+      // Shipments are read-only and do not use this string.
       return "";
   }
   NOTREACHED();
@@ -83,12 +91,17 @@ std::string GetDeleteEntityTypeStringForI18n(EntityType entity_type) {
       return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_DELETE_VEHICLE_ENTITY);
     case EntityTypeName::kFlightReservation:
       // Flight reservations are read-only and do not use this string.
+    case EntityTypeName::kOrder:
+      // Orders are read-only and do not use this string.
+    case EntityTypeName::kShipment:
+      // Shipments are read-only and do not use this string.
       return "";
   }
   NOTREACHED();
 }
 
-DenseSet<EntityType> GetWritableEntityTypes(const GeoIpCountryCode& country_code) {
+DenseSet<EntityType> GetWritableEntityTypes(
+    const GeoIpCountryCode& country_code) {
   DenseSet<EntityType> entity_types;
   for (EntityType entity_type : autofill::DenseSet<EntityType>::all()) {
     if (!entity_type.enabled(country_code) || entity_type.read_only()) {

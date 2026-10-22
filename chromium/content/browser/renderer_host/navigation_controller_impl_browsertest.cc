@@ -145,14 +145,6 @@ class DataURLOriginToCommitObserver : public WebContentsObserver {
 }  // namespace
 
 class NavigationControllerBrowserTestBase : public ContentBrowserTest {
- public:
-  NavigationControllerBrowserTestBase() {
-    feature_list_.InitWithFeaturesAndParameters(
-        {{features::kQueueNavigationsWhileWaitingForCommit,
-          {{"queueing_level", "full"}}}},
-        {});
-  }
-
  protected:
   void SetUpOnMainThread() override {
     host_resolver()->AddRule("*", "127.0.0.1");
@@ -15113,27 +15105,7 @@ IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTestNoServer,
     // committed.
     EXPECT_TRUE(trigger.did_trigger_history_navigation());
 
-    if (ShouldCreateNewHostForAllFrames()) {
-      // When RenderDocument is enabled, the cross-document navigation used a
-      // new RenderFrameHost to commit the navigation, causing the previous
-      // RenderFrameHost to be deleted and the same-document navigation to be
-      // cancelled. Since there are no navigations left, just return early.
-      // TODO(crbug.com/40615943): When
-      // ShouldAvoidRedundantNavigationCancellations() returns true, we won't
-      // actually cancel the same-document navigation as it still lives in the
-      // FrameTreeNode (instead of owned by the swapped out RenderFrameHost),
-      // but apparently there is a bug with same-document history navigations
-      // that happen while there are pending cross-document commits, where we
-      // will still try to trigger beforeunload, causing the same-document
-      // history navigation to get stalled forever. After fixing that bug, we
-      // should be able to continue running the test when RenderDocument is
-      // enabled and ShouldAvoidRedundantNavigationCancellations() is true.
-      EXPECT_EQ(ShouldAvoidRedundantNavigationCancellations(),
-                !!root->navigation_request());
-      return;
-    }
-
-    // Otherwise, the same-document back navigation had to be converted to a
+    // The same-document back navigation had to be converted to a
     // cross-document navigation because it was racing with, and will complete
     // after, the cross-document navigation. It is still waiting to complete.
     EXPECT_TRUE(root->navigation_request());
@@ -19161,50 +19133,88 @@ class DidCommitNavigationCanceller : public DidCommitNavigationInterceptor {
 // When running OpenURL to an invalid URL on a frame proxy it should not spoof
 // the url by canceling a main frame navigation.
 // See https://crbug.com/966914.
-IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
+IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTestNoServer,
                        CrossProcessIframeToInvalidURLCancelsRedirectSpoof) {
   // This tests something that can only happened with out of process iframes.
   if (!AreAllSitesIsolatedForTesting()) {
     return;
   }
 
-  if (ShouldQueueNavigationsWhenPendingCommitRFHExists()) {
-    // If navigation queueing is enabled, the first navigation will be stuck at
-    // the "pending commit" stage forever, causing the second navigation to be
-    // queued indefinitely, and the test will timeout.
-    // TODO(crbug.com/40186427): Rewrite the test to defer the first
-    // navigation instead, so that it won't cause the second navigation to be
-    // stuck.
-    return;
-  }
+  net::test_server::ControllableHttpResponse fetch_response(
+      embedded_test_server(), "/fetch");
+
+  ASSERT_TRUE(embedded_test_server()->Start());
 
   const GURL main_frame_url(embedded_test_server()->GetURL(
       "a.com", "/cross_site_iframe_factory.html?a(b)"));
-  const GURL main_frame_url_2(embedded_test_server()->GetURL("/title2.html"));
+  const GURL main_frame_url_2(
+      embedded_test_server()->GetURL("a.com", "/title1.html"));
 
   // Load the initial page, containing a fully scriptable cross-site iframe.
   EXPECT_TRUE(NavigateToURL(shell(), main_frame_url));
 
-  FrameTreeNode* iframe = static_cast<WebContentsImpl*>(shell()->web_contents())
-                              ->GetPrimaryFrameTree()
-                              .root()
-                              ->child_at(0);
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetPrimaryFrameTree()
+                            .root();
+  FrameTreeNode* iframe = root->child_at(0);
 
-  DidCommitNavigationCanceller canceller(
-      shell()->web_contents(), main_frame_url_2,
-      base::BindLambdaForTesting([iframe]() {
-        EXPECT_TRUE(ExecJs(
-            iframe, "parent.location.href = 'chrome-untrusted://1234';"));
-      }));
+  // Now navigate the main frame to another same-site document, but defer its
+  // JS task completion using a synchronous XHR request that we can control.
+  TestNavigationManager nav_manager(shell()->web_contents(), main_frame_url_2);
+  ExecuteScriptAsync(root, R"(
+      location.href = '/title1.html';
+      var request = new XMLHttpRequest();
+      request.open("GET", "/fetch", /*async=*/false);
+      request.send("");
+    )");
 
-  // This navigation will be raced by a navigation started in the iframe.
-  // The NavigationRequest for the first navigation will already be in the
-  // RenderFrameHost at this point, and the iframe proxy navigation will
-  // proceed because we don't have a FrameTreeNode ongoing navigation.
-  // So the main navigation will be cancelled first, by the iframe navigation
-  // taking precedence, and the iframe navigation will not get passed network
-  // because of the invalid url, getting cancelled as well.
-  EXPECT_FALSE(NavigateToURL(shell(), main_frame_url_2));
+  EXPECT_TRUE(nav_manager.WaitForRequestStart());
+  nav_manager.ResumeNavigation();
+
+  NavigationRequest* request = root->navigation_request();
+
+  // The navigation should be able to reach the WillProcessResponse stage,
+  // and gets deferred by RendererCancellationThrottle after that. Wait for the
+  // first NavigationThrottle deferral.
+  base::RunLoop run_loop;
+  request->GetNavigationThrottleRegistryForTesting()
+      ->SetFirstDeferralCallbackForTesting(run_loop.QuitClosure());
+  run_loop.Run();
+
+  // Check that the deferral is caused by RendererCancellationThrottle.
+  EXPECT_TRUE(request->IsDeferredForTesting());
+  ASSERT_EQ(request->GetNavigationThrottleRegistryForTesting()
+                ->GetDeferringThrottles()
+                .size(),
+            1u);
+  if (!base::FeatureList::IsEnabled(
+          features::kSkipRendererCancellationThrottle)) {
+    EXPECT_STREQ("RendererCancellationThrottle",
+                 (*request->GetNavigationThrottleRegistryForTesting()
+                       ->GetDeferringThrottles()
+                       .begin())
+                     ->GetNameForLogging());
+  }
+  EXPECT_EQ(request->state(), NavigationRequest::WILL_PROCESS_RESPONSE);
+
+  // Now trigger a navigation in the main frame from the iframe to an invalid
+  // URL. The NavigationRequest for the ongoing navigation is deferred by the
+  // sync XHR, so the iframe proxy navigation will proceed because we don't
+  // have a FrameTreeNode ongoing navigation. The iframe navigation takes
+  // precedence over the original, still-deferred navigation, cancelling it;
+  // then the iframe navigation will also be cancelled since the url is
+  // invalid.
+  EXPECT_TRUE(
+      ExecJs(iframe, "parent.location.href = 'chrome-untrusted://1234';"));
+
+  // Unblock the JS task in the renderer by sending the response for the sync
+  // XHR request.
+  fetch_response.WaitForRequest();
+  fetch_response.Send(net::HTTP_OK, "foo");
+  fetch_response.Done();
+
+  ASSERT_TRUE(nav_manager.WaitForNavigationFinished());
+  EXPECT_FALSE(nav_manager.was_successful());
 
   // Check that no spoof happened.
   NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
@@ -21202,16 +21212,10 @@ IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
     // committing the new NavigationEntry which keeps the "initial" status:
     // #1 was triggered by DiscardNonCommittedEntries().
     // #2 is triggered by NotifyNavigationEntryCommitted().
+    // Only one notification will actually be sent out.
     // Note that this is different from the _Ignore test below, which wouldn't
     // fire the events because the client chooses to ignore the updates.
-    // With "SkipRedundantNavigationStateNotification" enabled, only 1 call will
-    // take place.
-    if (base::FeatureList::IsEnabled(
-            features::kSkipRedundantNavigationStateNotification)) {
-      EXPECT_EQ(1, all_navigation_state_changed_delegate.call_count());
-    } else {
-      EXPECT_EQ(2, all_navigation_state_changed_delegate.call_count());
-    }
+    EXPECT_EQ(1, all_navigation_state_changed_delegate.call_count());
   }
 
   {
@@ -21229,20 +21233,12 @@ IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
     EXPECT_EQ(1, controller.GetEntryCount());
     EXPECT_FALSE(controller.GetLastCommittedEntry()->IsInitialEntry());
 
-    // 1 or 2 additional INVALIDATE_TYPE_ALL NavigationStateChanged calls were
-    // triggered (increasing the count to either 2 or 4 depending on whether
-    // "SkipRedundantNavigationStateNotification" is enabled), and they're not
-    // for the initial NavigationEntry.
+    // 2 additional INVALIDATE_TYPE_ALL NavigationStateChanged calls were
+    // triggered (though only 1 notification will be sent, increasing the count
+    // to 2), and they're not for the initial NavigationEntry.
     // #1 was triggered by DiscardNonCommittedEntries().
     // #2 is triggered by NotifyNavigationEntryCommitted().
-    // With "SkipRedundantNavigationStateNotification" enabled, only 1 call will
-    // take place.
-    if (base::FeatureList::IsEnabled(
-            features::kSkipRedundantNavigationStateNotification)) {
-      EXPECT_EQ(2, all_navigation_state_changed_delegate.call_count());
-    } else {
-      EXPECT_EQ(4, all_navigation_state_changed_delegate.call_count());
-    }
+    EXPECT_EQ(2, all_navigation_state_changed_delegate.call_count());
   }
 }
 
@@ -22967,50 +22963,16 @@ IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
   EXPECT_TRUE(b1_navigation.WaitForResponse());
   StartNavigationOnReadyToCommit(shell(), b1_navigation, url_a3);
 
-  if (ShouldAvoidRedundantNavigationCancellations()) {
-    // Assert that the navigation to B1 didn't get cancelled, and finish
-    // committing B1. This shouldn't cancel the navigation to A3.
-    ASSERT_TRUE(b1_navigation.WaitForNavigationFinished());
-    EXPECT_TRUE(b1_navigation.was_successful());
+  // Assert that the navigation to B1 didn't get cancelled, and finish
+  // committing B1. This shouldn't cancel the navigation to A3.
+  ASSERT_TRUE(b1_navigation.WaitForNavigationFinished());
+  EXPECT_TRUE(b1_navigation.was_successful());
 
-    // B1's navigation commit didn't cancel A3's navigation.
-    EXPECT_TRUE(a3_navigation.WaitForResponse());
-    EXPECT_TRUE(a3_navigation.GetNavigationHandle());
-    ASSERT_TRUE(a3_navigation.WaitForNavigationFinished());
-    EXPECT_TRUE(a3_navigation.was_successful());
-  } else {
-    EXPECT_TRUE(a3_navigation.WaitForResponse());
-    EXPECT_EQ(url_a3, a3_navigation.GetNavigationHandle()->GetURL());
-    EXPECT_EQ(root->navigation_request(), a3_navigation.GetNavigationHandle());
-
-    // Assert that the navigation to B1 gets cancelled.
-    EXPECT_TRUE(b1_navigation.WaitForNavigationFinished());
-    EXPECT_FALSE(b1_navigation.was_committed());
-
-    // 5) Start a cross-RFH navigation to B2 after A3 gets to "pending commit"
-    // stage, which will cancel the previous same-RFH navigation to A3 when B2
-    // commits first, because when the previous RFH gets unloaded it will
-    // cancel all ongoing navigations in the pending deletion RFH.
-    TestNavigationManager b2_navigation(shell()->web_contents(), url_b2);
-    // Ignore A3's commit so that B2's navigation can start and finish
-    // committing before A3 finishes committing.
-    DidCommitNavigationCanceller ignore_a3_commit(
-        shell()->web_contents(), url_a3,
-        base::BindLambdaForTesting([&]() { shell()->LoadURL(url_b2); }));
-    // Continue the A3 navigation, but its commit will be dropped.
-    a3_navigation.ResumeNavigation();
-    // The navigation to B2 will start, but won't cancel A3's navigation just
-    // yet.
-    EXPECT_TRUE(b2_navigation.WaitForResponse());
-    EXPECT_TRUE(a3_navigation.GetNavigationHandle());
-
-    // The navigation to B2 finished committing, and cancels A3's navigation.
-    EXPECT_TRUE(b2_navigation.WaitForNavigationFinished());
-    EXPECT_TRUE(b2_navigation.was_successful());
-    // Assert A3's navigation finished but didn't get committed.
-    EXPECT_TRUE(a3_navigation.WaitForNavigationFinished());
-    EXPECT_FALSE(a3_navigation.was_committed());
-  }
+  // B1's navigation commit didn't cancel A3's navigation.
+  EXPECT_TRUE(a3_navigation.WaitForResponse());
+  EXPECT_TRUE(a3_navigation.GetNavigationHandle());
+  ASSERT_TRUE(a3_navigation.WaitForNavigationFinished());
+  EXPECT_TRUE(a3_navigation.was_successful());
 }
 
 // Tests that calling FrameTreeNode::ResetNavigationRequest() cancels the
@@ -23076,9 +23038,6 @@ IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
 // cancel other navigations happening in the same FrameTreeNode.
 IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
                        UnloadingPreviousRFHOnCommitWontCancelNavigation) {
-  if (!ShouldAvoidRedundantNavigationCancellations()) {
-    return;
-  }
   GURL main_url(embedded_test_server()->GetURL("a.com", "/title1.html"));
   GURL url_b1(embedded_test_server()->GetURL("b.com", "/title1.html"));
   GURL url_b2(embedded_test_server()->GetURL("b.com", "/title2.html"));
@@ -23150,8 +23109,7 @@ IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
 // restore navigations as long as there is a pending commit RenderFrameHost.
 IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
                        BFCacheRestoreDeferredWhenPendingCommitRFHExists) {
-  if (!ShouldAvoidRedundantNavigationCancellations() ||
-      !IsBackForwardCacheEnabled()) {
+  if (!IsBackForwardCacheEnabled()) {
     return;
   }
 
@@ -23241,8 +23199,7 @@ IN_PROC_BROWSER_TEST_P(NavigationControllerBrowserTest,
 IN_PROC_BROWSER_TEST_P(
     NavigationControllerBrowserTest,
     BFCacheRestoreDeferredAndEvictedWhenPendingCommitRFHExists) {
-  if (!ShouldAvoidRedundantNavigationCancellations() ||
-      !IsBackForwardCacheEnabled()) {
+  if (!IsBackForwardCacheEnabled()) {
     return;
   }
 
@@ -24378,6 +24335,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 IN_PROC_BROWSER_TEST_P(RestrictDuplicateNavsToOriginsBrowserTest,
                        DuplicateNavigationRendererInitiated) {
+  base::HistogramTester histogram_tester;
   GURL main_url(embedded_test_server()->GetURL(
       "/navigation_controller/page_with_links.html"));
   GURL link_url(embedded_test_server()->GetURL(
@@ -24408,6 +24366,7 @@ IN_PROC_BROWSER_TEST_P(RestrictDuplicateNavsToOriginsBrowserTest,
 
   // Wait for the first link click navigation to finish.
   EXPECT_TRUE(nav_manager.WaitForNavigationFinished());
+  FetchHistogramsFromChildProcesses();
 
   bool should_be_ignored =
       ignore_duplicate_navs() &&
@@ -24432,6 +24391,38 @@ IN_PROC_BROWSER_TEST_P(RestrictDuplicateNavsToOriginsBrowserTest,
     EXPECT_EQ(link_url, root->current_frame_host()->GetLastCommittedURL());
     EXPECT_NE(first_link_click_nav_id,
               root->current_frame_host()->navigation_id());
+  }
+  if (ignore_duplicate_navs() && restrict_duplicate_navs_to_origins()) {
+    // Record whether the navigation URL matches the target origin if the origin
+    // list is not empty.
+    histogram_tester.ExpectUniqueSample(
+        "Navigation.RendererInitiated.DuplicateNavOriginMatch",
+        navigate_to_target_origin(), 1);
+    if (navigate_to_target_origin()) {
+      // The first navigation is recorded as non-duplicate, and the second one
+      // as duplicate.
+      EXPECT_THAT(
+          histogram_tester.GetAllSamples(
+              "Navigation.RendererInitiated.IsDuplicateWithoutThresholdCheck2."
+              "OnTargetOrigins"),
+          base::BucketsAre(base::Bucket(false, 1), base::Bucket(true, 1)));
+      histogram_tester.ExpectUniqueSample(
+            "Navigation.RendererInitiated.DuplicateNavIsUnderThreshold2."
+            "OnTargetOrigins",
+            true, 1);
+    } else {
+      histogram_tester.ExpectTotalCount(
+          "Navigation.RendererInitiated.IsDuplicateWithoutThresholdCheck2."
+          "OnTargetOrigins", 0);
+    }
+  } else {
+    // Otherwise, ensure that the histogram is not recorded.
+    histogram_tester.ExpectTotalCount(
+        "Navigation.RendererInitiated.DuplicateNavOriginMatch", 0);
+    histogram_tester.ExpectTotalCount(
+        "Navigation.RendererInitiated.IsDuplicateWithoutThresholdCheck2."
+        "OnTargetOrigins",
+        0);
   }
 }
 

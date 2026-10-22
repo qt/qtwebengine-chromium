@@ -28,9 +28,7 @@
 #include "dawn/utils/TextureUtils.h"
 
 namespace dawn::utils {
-bool TextureFormatSupportsStorageTexture(wgpu::TextureFormat format,
-                                         const wgpu::Device& device,
-                                         bool isCompatibilityMode) {
+bool TextureFormatSupportsStorageTexture(const wgpu::Device& device, wgpu::TextureFormat format) {
     switch (format) {
         case wgpu::TextureFormat::R32Uint:
         case wgpu::TextureFormat::R32Sint:
@@ -46,13 +44,40 @@ bool TextureFormatSupportsStorageTexture(wgpu::TextureFormat format,
         case wgpu::TextureFormat::RGBA32Sint:
         case wgpu::TextureFormat::RGBA32Float:
             return true;
+
             // 32-bit RG* formats are unsupported in Compatibility mode.
         case wgpu::TextureFormat::RG32Uint:
         case wgpu::TextureFormat::RG32Sint:
         case wgpu::TextureFormat::RG32Float:
-            return !isCompatibilityMode;
+            return device.HasFeature(wgpu::FeatureName::CoreFeaturesAndLimits);
+
         case wgpu::TextureFormat::BGRA8Unorm:
             return device.HasFeature(wgpu::FeatureName::BGRA8UnormStorage);
+
+        case wgpu::TextureFormat::R16Unorm:
+        case wgpu::TextureFormat::RG16Unorm:
+        case wgpu::TextureFormat::RGBA16Unorm:
+        case wgpu::TextureFormat::R16Snorm:
+        case wgpu::TextureFormat::RG16Snorm:
+        case wgpu::TextureFormat::RGBA16Snorm:
+        case wgpu::TextureFormat::R8Unorm:
+        case wgpu::TextureFormat::R8Snorm:
+        case wgpu::TextureFormat::R8Uint:
+        case wgpu::TextureFormat::R8Sint:
+        case wgpu::TextureFormat::RG8Unorm:
+        case wgpu::TextureFormat::RG8Snorm:
+        case wgpu::TextureFormat::RG8Uint:
+        case wgpu::TextureFormat::RG8Sint:
+        case wgpu::TextureFormat::R16Uint:
+        case wgpu::TextureFormat::R16Sint:
+        case wgpu::TextureFormat::R16Float:
+        case wgpu::TextureFormat::RG16Uint:
+        case wgpu::TextureFormat::RG16Sint:
+        case wgpu::TextureFormat::RG16Float:
+        case wgpu::TextureFormat::RGB10A2Uint:
+        case wgpu::TextureFormat::RGB10A2Unorm:
+        case wgpu::TextureFormat::RG11B10Ufloat:
+            return device.HasFeature(wgpu::FeatureName::TextureFormatsTier1);
 
         default:
             return false;
@@ -347,12 +372,31 @@ bool TextureFormatSupportsResolveTarget(const wgpu::Device& device,
     }
 }
 
-bool TextureFormatSupportsReadWriteStorageTexture(wgpu::TextureFormat format) {
+bool TextureFormatSupportsReadWriteStorageTexture(const wgpu::Device& device,
+                                                  wgpu::TextureFormat format) {
     switch (format) {
         case wgpu::TextureFormat::R32Float:
         case wgpu::TextureFormat::R32Sint:
         case wgpu::TextureFormat::R32Uint:
             return true;
+
+        case wgpu::TextureFormat::R8Unorm:
+        case wgpu::TextureFormat::R8Uint:
+        case wgpu::TextureFormat::R8Sint:
+        case wgpu::TextureFormat::RGBA8Unorm:
+        case wgpu::TextureFormat::RGBA8Uint:
+        case wgpu::TextureFormat::RGBA8Sint:
+        case wgpu::TextureFormat::R16Uint:
+        case wgpu::TextureFormat::R16Sint:
+        case wgpu::TextureFormat::R16Float:
+        case wgpu::TextureFormat::RGBA16Uint:
+        case wgpu::TextureFormat::RGBA16Sint:
+        case wgpu::TextureFormat::RGBA16Float:
+        case wgpu::TextureFormat::RGBA32Uint:
+        case wgpu::TextureFormat::RGBA32Sint:
+        case wgpu::TextureFormat::RGBA32Float:
+            return device.HasFeature(wgpu::FeatureName::TextureFormatsTier2);
+
         default:
             return false;
     }
@@ -620,7 +664,7 @@ uint32_t GetTexelBlockSizeInBytes(wgpu::TextureFormat textureFormat) {
         case wgpu::TextureFormat::R10X6BG10X6Biplanar422Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar444Unorm:
         case wgpu::TextureFormat::R8BG8A8Triplanar420Unorm:
-        case wgpu::TextureFormat::External:
+        case wgpu::TextureFormat::OpaqueYCbCrAndroid:
 #endif  // __EMSCRIPTEN__
 
         case wgpu::TextureFormat::Undefined:
@@ -755,7 +799,7 @@ uint32_t GetTextureFormatBlockWidth(wgpu::TextureFormat textureFormat) {
         case wgpu::TextureFormat::R10X6BG10X6Biplanar422Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar444Unorm:
         case wgpu::TextureFormat::R8BG8A8Triplanar420Unorm:
-        case wgpu::TextureFormat::External:
+        case wgpu::TextureFormat::OpaqueYCbCrAndroid:
 #endif  // __EMSCRIPTEN__
 
         case wgpu::TextureFormat::Undefined:
@@ -890,7 +934,7 @@ uint32_t GetTextureFormatBlockHeight(wgpu::TextureFormat textureFormat) {
         case wgpu::TextureFormat::R10X6BG10X6Biplanar422Unorm:
         case wgpu::TextureFormat::R10X6BG10X6Biplanar444Unorm:
         case wgpu::TextureFormat::R8BG8A8Triplanar420Unorm:
-        case wgpu::TextureFormat::External:
+        case wgpu::TextureFormat::OpaqueYCbCrAndroid:
 #endif  // __EMSCRIPTEN__
 
         case wgpu::TextureFormat::Undefined:

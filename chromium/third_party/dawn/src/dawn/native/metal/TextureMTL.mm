@@ -27,6 +27,8 @@
 
 #include "dawn/native/metal/TextureMTL.h"
 
+#include <CoreVideo/CVPixelBuffer.h>
+
 #include "absl/strings/str_format.h"
 #include "dawn/common/Constants.h"
 #include "dawn/common/IOSurfaceUtils.h"
@@ -42,8 +44,6 @@
 #include "dawn/native/metal/SharedFenceMTL.h"
 #include "dawn/native/metal/SharedTextureMemoryMTL.h"
 #include "dawn/native/metal/UtilsMetal.h"
-
-#include <CoreVideo/CVPixelBuffer.h>
 
 namespace dawn::native::metal {
 
@@ -423,15 +423,15 @@ MaybeError Texture::InitializeFromSharedTextureMemory(
 }
 
 void Texture::SynchronizeTextureBeforeUse(CommandRecordingContext* commandContext) {
-        SharedTextureMemoryBase::PendingFenceList fences;
-        SharedResourceMemoryContents* contents = GetSharedResourceMemoryContents();
-        if (contents != nullptr) {
-            contents->AcquirePendingFences(&fences);
-        }
-        for (const auto& fence : fences) {
-            commandContext->WaitForSharedEvent(ToBackend(fence.object)->GetMTLSharedEvent(),
-                                               fence.signaledValue);
-        }
+    SharedTextureMemoryBase::PendingFenceList fences;
+    SharedResourceMemoryContents* contents = GetSharedResourceMemoryContents();
+    if (contents != nullptr) {
+        contents->AcquirePendingFences(&fences);
+    }
+    for (const auto& fence : fences) {
+        commandContext->WaitForSharedEvent(ToBackend(fence.object)->GetMTLSharedEvent(),
+                                           fence.signaledValue);
+    }
 
     mLastSharedTextureMemoryUsageSerial = GetDevice()->GetQueue()->GetPendingCommandSerial();
 }

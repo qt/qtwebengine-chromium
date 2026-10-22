@@ -51,14 +51,15 @@ bool CPDF_Type3Char::LoadBitmapFromSoleImageOfForm() {
   return true;
 }
 
-void CPDF_Type3Char::InitializeFromStreamData(bool bColored,
-                                              pdfium::span<const float> pData) {
-  colored_ = bColored;
-  width_ = FXSYS_roundf(TextUnitToGlyphUnit(pData[0]));
-  bbox_.left = FXSYS_roundf(TextUnitToGlyphUnit(pData[2]));
-  bbox_.bottom = FXSYS_roundf(TextUnitToGlyphUnit(pData[3]));
-  bbox_.right = FXSYS_roundf(TextUnitToGlyphUnit(pData[4]));
-  bbox_.top = FXSYS_roundf(TextUnitToGlyphUnit(pData[5]));
+void CPDF_Type3Char::InitializeFromStreamData(
+    bool colored,
+    pdfium::span<const float, 6> data) {
+  colored_ = colored;
+  width_ = FXSYS_roundf(TextUnitToGlyphUnit(data[0]));
+  bbox_.left = FXSYS_roundf(TextUnitToGlyphUnit(data[2]));
+  bbox_.bottom = FXSYS_roundf(TextUnitToGlyphUnit(data[3]));
+  bbox_.right = FXSYS_roundf(TextUnitToGlyphUnit(data[4]));
+  bbox_.top = FXSYS_roundf(TextUnitToGlyphUnit(data[5]));
 }
 
 void CPDF_Type3Char::WillBeDestroyed() {

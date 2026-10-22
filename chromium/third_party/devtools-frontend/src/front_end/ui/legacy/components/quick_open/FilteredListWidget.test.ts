@@ -110,4 +110,5 @@ describe('FilteredListWidget', () => {
   it('dangerous input escaping', async () => {
     await testMatch(['^[]{}()\\.$*+?|', '0123456789abcdef'], '^[]{}()\\.$*+?|', 0, [0]);
   });
+
 });

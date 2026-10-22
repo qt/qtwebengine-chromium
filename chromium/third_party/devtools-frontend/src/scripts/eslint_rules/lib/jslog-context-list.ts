@@ -5,16 +5,13 @@
 import type {TSESTree} from '@typescript-eslint/utils';
 import fs from 'node:fs';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
 
 import {createRule} from './utils/ruleCreator.ts';
 
 type Node = TSESTree.Node;
 
-// @ts-expect-error
-const filename = fileURLToPath(import.meta.url);
 const FILE = 'front_end/ui/visual_logging/KnownContextValues.ts';
-const FRONT_END_PARENT_FOLDER = path.join(filename, '..', '..', '..', '..');
+const FRONT_END_PARENT_FOLDER = path.join(import.meta.filename, '..', '..', '..', '..');
 const ABSOLUTE_FILE_PATH = path.join(FRONT_END_PARENT_FOLDER, FILE);
 const LICENSE_HEADER = `// Copyright 2025 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be

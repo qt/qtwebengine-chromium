@@ -65,9 +65,6 @@ const char kChangeStackGuardOnForkDisabled[] = "disable";
 // Disable antialiasing on 2d canvas.
 const char kDisable2dCanvasAntialiasing[]   = "disable-canvas-aa";
 
-// Disables Canvas2D rendering into a scanout buffer for overlay support.
-const char kDisable2dCanvasImageChromium[] = "disable-2d-canvas-image-chromium";
-
 // Disables client-visible 3D APIs, in particular WebGL.
 // This is controlled by policy and is kept separate from the other
 // enable/disable switches to avoid accidentally regressing the policy
@@ -269,9 +266,6 @@ const char kDisableThreadedCompositing[]    = "disable-threaded-compositing";
 // Disable V8 idle tasks.
 const char kDisableV8IdleTasks[]            = "disable-v8-idle-tasks";
 
-// Disables WebGL rendering into a scanout buffer for overlay support.
-const char kDisableWebGLImageChromium[]     = "disable-webgl-image-chromium";
-
 // Don't enforce the same-origin policy; meant for website testing only.
 // This switch has no effect unless --user-data-dir (as defined by the content
 // embedder) is also present.
@@ -434,9 +428,6 @@ const char kEnableWebGLDeveloperExtensions[] =
 // Enables WebGL extensions not yet approved by the community.
 const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
 
-// Enables WebGL rendering into a scanout buffer for overlay support.
-const char kEnableWebGLImageChromium[] = "enable-webgl-image-chromium";
-
 // Define an alias root directory which is replaced with the replacement string
 // in file URLs. The format is "/alias=/replacement", which would turn
 // file:///alias/some/path.html into file:///replacement/some/path.html.
@@ -447,6 +438,8 @@ const char kFileUrlPathAlias[] = "file-url-path-alias";
 // Spec: https://www.w3.org/TR/presentation-api/#interface-presentationreceiver
 const char kForcePresentationReceiverForTesting[] =
     "force-presentation-receiver-for-testing";
+
+const char kGpuClientId[] = "gpu-client-id";
 
 // Extra command line options for launching the GPU process (normally used
 // for debugging). Use like renderer-cmd-prefix.
@@ -727,6 +720,9 @@ const char kTargetDeviceScaleForTesting[] = "target-device-scale-for-testing";
 // Type of the current test harness ("browser" or "ui" or "gpu").
 const char kTestType[]                      = "test-type";
 
+// Indicates that this RenderProcess is hosting a Top Chrome WebUI.
+const char kTopChromeWebUI[] = "top-chrome-webui";
+
 // Enable support for touch event feature detection.
 const char kTouchEventFeatureDetection[] = "touch-events";
 
@@ -920,6 +916,10 @@ const char kRendererWaitForJavaDebugger[] = "renderer-wait-for-java-debugger";
 
 // Disables debug crash dumps for OOPR.
 const char kDisableOoprDebugCrashDump[] = "disable-oopr-debug-crash-dump";
+
+// Enables/disables javaless renderers based on value given.
+// "enabled" or "disabled" are valid values.
+const char kJavalessRenderers[] = "javaless-renderers";
 #endif  // BUILDFLAG(IS_ANDROID)
 
 // Enable the aggressive flushing of DOM Storage to minimize data loss.

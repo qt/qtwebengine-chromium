@@ -548,6 +548,15 @@ EIGEN_DEVICE_FUNC inline double2 ptrunc<double2>(const double2& a) {
   return make_double2(trunc(a.x), trunc(a.y));
 }
 
+template <>
+EIGEN_DEVICE_FUNC inline float4 pround<float4>(const float4& a) {
+  return make_float4(roundf(a.x), roundf(a.y), roundf(a.z), roundf(a.w));
+}
+template <>
+EIGEN_DEVICE_FUNC inline double2 pround<double2>(const double2& a) {
+  return make_double2(round(a.x), round(a.y));
+}
+
 EIGEN_DEVICE_FUNC inline void ptranspose(PacketBlock<float4, 4>& kernel) {
   float tmp = kernel.packet[0].y;
   kernel.packet[0].y = kernel.packet[1].x;

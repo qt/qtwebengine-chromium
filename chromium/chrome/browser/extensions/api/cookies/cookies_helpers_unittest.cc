@@ -7,6 +7,7 @@
 #include <limits>
 #include <memory>
 
+#include "base/logging.h"
 #include "extensions/buildflags/buildflags.h"
 #include "net/cookies/canonical_cookie.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -38,7 +39,7 @@ BuildApiPartitionKey(const std::optional<std::string>& top_level_site,
 
 // Tests that cookies with an expiration date too far in the future to represent
 // with base::Time serialize gracefully.
-// Regression test for https://crbug.com/848221.
+// Regression test for https://crbug.com/41392020.
 TEST(CookiesHelperUnittest, CookieConversionWithInfiniteExpirationDate) {
   // Set a cookie to expire at base::Time::Max(). This can happen when the
   // cookie is set to expire farther in the future than we can accurately
@@ -49,7 +50,8 @@ TEST(CookiesHelperUnittest, CookieConversionWithInfiniteExpirationDate) {
   auto cookie = net::CanonicalCookie::CreateUnsafeCookieForTesting(
       "cookiename", "cookievalue", "example.com", "/", base::Time::Now(),
       kExpirationDate, base::Time(), base::Time(), false, false,
-      net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT);
+      net::CookieSameSite::NO_RESTRICTION, net::COOKIE_PRIORITY_DEFAULT,
+      net::CookieSourceType::kOther);
 
   // Serialize the cookie to JSON. We need to gracefully handle the infinite
   // expiration date, which should be converted to the maximum value.

@@ -27,7 +27,6 @@
 #include "third_party/blink/renderer/modules/csspaint/paint_worklet.h"
 #include "third_party/blink/renderer/modules/csspaint/paint_worklet_proxy_client.h"
 #include "third_party/blink/renderer/platform/bindings/callback_method_retriever.h"
-#include "third_party/blink/renderer/platform/bindings/v8_binding_macros.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/wtf.h"
 
@@ -102,7 +101,7 @@ PaintWorkletGlobalScope* PaintWorkletGlobalScope::Create(
     WorkerReportingProxy& reporting_proxy) {
   auto* global_scope = MakeGarbageCollected<PaintWorkletGlobalScope>(
       frame, std::move(creation_params), reporting_proxy);
-  global_scope->ScriptController()->Initialize(NullURL());
+  global_scope->ScriptController()->Initialize(NullUrl());
   MainThreadDebugger::Instance(global_scope->GetIsolate())
       ->ContextCreated(global_scope->ScriptController()->GetScriptState(),
                        global_scope->GetFrame(),

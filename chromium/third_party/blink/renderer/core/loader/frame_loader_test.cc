@@ -104,8 +104,8 @@ TEST_F(FrameLoaderSimTest, LoadEventProgressBeforeUnloadCanceled) {
     base::TimeTicks before_unload_dialog_opened_time;
     base::TimeTicks before_unload_dialog_closed_time;
     ASSERT_FALSE(frame_a->Loader().ShouldClose(
-        /*is_reload=*/false, before_unload_dialog_opened_time,
-        before_unload_dialog_closed_time));
+        /*is_reload=*/false, /*force_to_proceed=*/false,
+        before_unload_dialog_opened_time, before_unload_dialog_closed_time));
 
     EXPECT_FALSE(main_frame->GetDocument()->BeforeUnloadStarted());
     EXPECT_FALSE(frame_a->GetDocument()->BeforeUnloadStarted());
@@ -119,8 +119,8 @@ TEST_F(FrameLoaderSimTest, LoadEventProgressBeforeUnloadCanceled) {
     base::TimeTicks before_unload_dialog_opened_time;
     base::TimeTicks before_unload_dialog_closed_time;
     ASSERT_TRUE(frame_a->Loader().ShouldClose(
-        /*is_reload=*/false, before_unload_dialog_opened_time,
-        before_unload_dialog_closed_time));
+        /*is_reload=*/false, /*force_to_proceed=*/false,
+        before_unload_dialog_opened_time, before_unload_dialog_closed_time));
 
     // The navigation was in frame a so it shouldn't affect the parent.
     EXPECT_FALSE(main_frame->GetDocument()->BeforeUnloadStarted());
@@ -259,7 +259,7 @@ class FrameLoaderTest : public testing::Test {
 TEST_F(FrameLoaderTest, PolicyContainerIsStoredOnCommitNavigation) {
   WebViewImpl* web_view_impl = web_view_helper_.Initialize();
 
-  const KURL& url = KURL(NullURL(), "https://www.example.com/bar.html");
+  const KURL& url = KURL(NullUrl(), "https://www.example.com/bar.html");
   std::unique_ptr<WebNavigationParams> params =
       WebNavigationParams::CreateWithEmptyHTMLForTesting(url);
   MockPolicyContainerHost mock_policy_container_host;

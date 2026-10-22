@@ -98,26 +98,29 @@ WireResult Server::DoQueueWriteBufferXl(Known<WGPUQueue> queue,
 
     // Try first to use GetSourceData if the memory transfer service implements
     // it. If so, we can avoid a copy.
-    uint8_t* sourceData = writeHandle->GetSourceData();
-    if (sourceData) {
-        mProcs->queueWriteBuffer(queue->handle, buffer->handle, bufferOffset, sourceData,
+    std::span<uint8_t> source = writeHandle->GetSource();
+    if (!source.empty()) {
+        if (source.size() < size) {
+            return WireResult::FatalError;
+        }
+
+        mProcs->queueWriteBuffer(queue->handle, buffer->handle, bufferOffset, source.data(),
                                  static_cast<size_t>(size));
         return WireResult::Success;
     }
 
     // Otherwise, fall back to DeserializeDataUpdate.
-    auto backingData = std::unique_ptr<char[]>(AllocNoThrow<char>(size));
+    auto backingData = std::unique_ptr<uint8_t[]>(AllocNoThrow<uint8_t>(size));
     if (!backingData) {
         return WireResult::FatalError;
     }
-    writeHandle->SetTarget(backingData.get());
-    writeHandle->SetDataLength(size);
 
     // Deserialize the flush info and flush updated data from the handle into the target
     // of the handle that's just a temporary allocation from above right now.
-    if (!writeHandle->DeserializeDataUpdate(writeDataUpdateInfo,
-                                            static_cast<size_t>(writeDataUpdateInfoLength), 0u,
-                                            static_cast<size_t>(size))) {
+    std::span<const uint8_t> writeDataUpdateInfoSpan(writeDataUpdateInfo,
+                                                     writeDataUpdateInfoLength);
+    std::span<uint8_t> target(backingData.get(), size);
+    if (!writeHandle->DeserializeDataUpdate(writeDataUpdateInfoSpan, target, 0u)) {
         return WireResult::FatalError;
     }
 
@@ -167,26 +170,29 @@ WireResult Server::DoQueueWriteTextureXl(Known<WGPUQueue> queue,
 
     // Try first to use GetSourceData if the memory transfer service implements
     // it. If so, we can avoid a copy.
-    uint8_t* sourceData = writeHandle->GetSourceData();
-    if (sourceData) {
-        mProcs->queueWriteTexture(queue->handle, destination, sourceData,
+    std::span<uint8_t> source = writeHandle->GetSource();
+    if (!source.empty()) {
+        if (source.size() < dataSize) {
+            return WireResult::FatalError;
+        }
+
+        mProcs->queueWriteTexture(queue->handle, destination, source.data(),
                                   static_cast<size_t>(dataSize), dataLayout, writeSize);
         return WireResult::Success;
     }
 
     // Otherwise, fall back to DeserializeDataUpdate.
-    auto backingData = std::unique_ptr<char[]>(AllocNoThrow<char>(dataSize));
+    auto backingData = std::unique_ptr<uint8_t[]>(AllocNoThrow<uint8_t>(dataSize));
     if (!backingData) {
         return WireResult::FatalError;
     }
-    writeHandle->SetTarget(backingData.get());
-    writeHandle->SetDataLength(dataSize);
 
     // Deserialize the flush info and flush updated data from the handle into the target
     // of the handle that's just a temporary allocation from above right now.
-    if (!writeHandle->DeserializeDataUpdate(writeDataUpdateInfo,
-                                            static_cast<size_t>(writeDataUpdateInfoLength), 0u,
-                                            static_cast<size_t>(dataSize))) {
+    std::span<const uint8_t> writeDataUpdateInfoSpan(writeDataUpdateInfo,
+                                                     writeDataUpdateInfoLength);
+    std::span<uint8_t> target(backingData.get(), dataSize);
+    if (!writeHandle->DeserializeDataUpdate(writeDataUpdateInfoSpan, target, 0u)) {
         return WireResult::FatalError;
     }
 

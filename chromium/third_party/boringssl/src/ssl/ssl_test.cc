@@ -44,6 +44,7 @@
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
 
+#include "../crypto/bytestring/internal.h"
 #include "../crypto/internal.h"
 #include "../crypto/test/file_util.h"
 #include "../crypto/test/test_util.h"
@@ -430,8 +431,8 @@ static const CipherTest kCipherTests[] = {
         },
         false,
     },
-    // Although aliases like "RSA" do not match 3DES when adding ciphers, they do
-    // match it when removing ciphers.
+    // Although aliases like "RSA" do not match 3DES when adding ciphers, they
+    // do match it when removing ciphers.
     {
         "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:RSA:RSA+3DES:!RSA",
         {
@@ -640,7 +641,7 @@ TEST(SSLTest, CipherRules) {
 }
 
 TEST(SSLTest, CipherRulesDeprecated) {
-  for (const auto& test : kDeprecatedCBCSHA256Rules) {
+  for (const auto &test : kDeprecatedCBCSHA256Rules) {
     SCOPED_TRACE(test.rule);
     bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
     ASSERT_TRUE(ctx);
@@ -850,10 +851,9 @@ TEST(SSLTest, ClientKeySharesResetAfterChangingGroups) {
   // An initial groups list and key shares that are compatible.
   const uint16_t kGroups1[] = {SSL_GROUP_X25519_MLKEM768, SSL_GROUP_X25519};
   const uint16_t kKeyShares[] = {SSL_GROUP_X25519_MLKEM768, SSL_GROUP_X25519};
+  ASSERT_TRUE(SSL_set1_group_ids(ssl.get(), kGroups1, std::size(kGroups1)));
   ASSERT_TRUE(
-      SSL_set1_group_ids(ssl.get(), kGroups1, std::size(kGroups1)));
-  ASSERT_TRUE(SSL_set1_client_key_shares(ssl.get(), kKeyShares,
-                                         std::size(kKeyShares)));
+      SSL_set1_client_key_shares(ssl.get(), kKeyShares, std::size(kKeyShares)));
   ASSERT_TRUE(ssl->config->client_key_share_selections.has_value());
   EXPECT_EQ(ssl->config->client_key_share_selections->size(), 2u);
 
@@ -861,16 +861,14 @@ TEST(SSLTest, ClientKeySharesResetAfterChangingGroups) {
   // shares.
   const uint16_t kGroups2[] = {SSL_GROUP_MLKEM1024, SSL_GROUP_X25519_MLKEM768,
                                SSL_GROUP_X25519};
-  ASSERT_TRUE(
-      SSL_set1_group_ids(ssl.get(), kGroups2, std::size(kGroups2)));
+  ASSERT_TRUE(SSL_set1_group_ids(ssl.get(), kGroups2, std::size(kGroups2)));
   ASSERT_TRUE(ssl->config->client_key_share_selections.has_value());
   EXPECT_EQ(ssl->config->client_key_share_selections->size(), 2u);
 
   // A new groups list that is no longer compatible with the previously set key
   // shares.
   const uint16_t kGroups3[] = {SSL_GROUP_MLKEM1024, SSL_GROUP_X25519};
-  ASSERT_TRUE(
-      SSL_set1_group_ids(ssl.get(), kGroups3, std::size(kGroups3)));
+  ASSERT_TRUE(SSL_set1_group_ids(ssl.get(), kGroups3, std::size(kGroups3)));
   EXPECT_FALSE(ssl->config->client_key_share_selections.has_value());
 }
 
@@ -1281,12 +1279,20 @@ TEST(SSLTest, SessionEncoding) {
     uint8_t *ptr = encoded.get();
     len = i2d_SSL_SESSION(session.get(), &ptr);
     ASSERT_GT(len, 0) << "i2d_SSL_SESSION failed";
-    ASSERT_EQ(static_cast<size_t>(len), input.size())
-        << "i2d_SSL_SESSION(NULL) returned invalid length";
     ASSERT_EQ(ptr, encoded.get() + input.size())
         << "i2d_SSL_SESSION did not advance ptr correctly";
-    EXPECT_EQ(Bytes(encoded.get(), encoded_len), Bytes(input))
-        << "SSL_SESSION_to_bytes did not round-trip";
+    EXPECT_EQ(Bytes(encoded.get(), len), Bytes(input))
+        << "i2d_SSL_SESSION did not round-trip";
+
+    // Verify the SSL_SESSION encoding round-trips via the legacy allocating
+    // API.
+    uint8_t *aptr = nullptr;
+    len = i2d_SSL_SESSION(session.get(), &aptr);
+    encoded.reset(aptr);
+    ASSERT_GT(len, 0) << "i2d_SSL_SESSION failed";
+    ASSERT_TRUE(aptr != nullptr) << "i2d_SSL_SESSION did not allocate ptr";
+    EXPECT_EQ(Bytes(aptr, len), Bytes(input))
+        << "i2d_SSL_SESSION did not round-trip";
   }
 
   for (const char *input_b64 : {
@@ -1321,7 +1327,7 @@ TEST(SSLTest, DefaultVersion) {
   ExpectDefaultVersion(TLS1_VERSION, TLS1_VERSION, &TLSv1_method);
   ExpectDefaultVersion(TLS1_1_VERSION, TLS1_1_VERSION, &TLSv1_1_method);
   ExpectDefaultVersion(TLS1_2_VERSION, TLS1_2_VERSION, &TLSv1_2_method);
-  ExpectDefaultVersion(DTLS1_2_VERSION, DTLS1_2_VERSION, &DTLS_method);
+  ExpectDefaultVersion(DTLS1_2_VERSION, DTLS1_3_VERSION, &DTLS_method);
   ExpectDefaultVersion(DTLS1_VERSION, DTLS1_VERSION, &DTLSv1_method);
   ExpectDefaultVersion(DTLS1_2_VERSION, DTLS1_2_VERSION, &DTLSv1_2_method);
 }
@@ -4662,7 +4668,7 @@ TEST(SSLTest, SetVersion) {
 
   // Zero is the default version.
   EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), 0));
-  EXPECT_EQ(DTLS1_2_VERSION, SSL_CTX_get_max_proto_version(ctx.get()));
+  EXPECT_EQ(DTLS1_3_VERSION, SSL_CTX_get_max_proto_version(ctx.get()));
   EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), 0));
   EXPECT_EQ(DTLS1_2_VERSION, SSL_CTX_get_min_proto_version(ctx.get()));
 }
@@ -5548,8 +5554,11 @@ TEST(SSLTest, CredentialChains) {
   ASSERT_TRUE(cred);
   bssl::UniquePtr<SSL_CREDENTIAL> cred2(SSL_CREDENTIAL_new_x509());
   ASSERT_TRUE(cred2);
+  ASSERT_FALSE(SSL_CREDENTIAL_is_complete(cred.get()));
+  ASSERT_FALSE(SSL_CREDENTIAL_is_complete(cred2.get()));
 
-  SSL_CTX_set_custom_verify(client_ctx.get(), SSL_VERIFY_PEER, AcceptAnyCertificate);
+  SSL_CTX_set_custom_verify(client_ctx.get(), SSL_VERIFY_PEER,
+                            AcceptAnyCertificate);
 
   // Configure one chain (including the leaf), then replace it with another.
   ASSERT_TRUE(SSL_CREDENTIAL_set1_cert_chain(cred.get(), wrong_chain.data(),
@@ -5580,18 +5589,23 @@ TEST(SSLTest, CredentialChains) {
 
   ASSERT_TRUE(SSL_CREDENTIAL_set1_cert_chain(cred2.get(), test_chain.data(),
                                              test_chain.size()));
+  ASSERT_FALSE(SSL_CREDENTIAL_is_complete(cred.get()));
+  ASSERT_FALSE(SSL_CREDENTIAL_is_complete(cred2.get()));
 
   ASSERT_TRUE(SSL_CREDENTIAL_set1_private_key(cred.get(), key.get()));
   ASSERT_TRUE(SSL_CREDENTIAL_set1_private_key(cred2.get(), testkey.get()));
   SSL_CREDENTIAL_set_must_match_issuer(cred.get(), 1);
   SSL_CREDENTIAL_set_must_match_issuer(cred2.get(), 1);
+  ASSERT_TRUE(SSL_CREDENTIAL_is_complete(cred.get()));
+  ASSERT_TRUE(SSL_CREDENTIAL_is_complete(cred2.get()));
   ASSERT_TRUE(SSL_CTX_add1_credential(server_ctx.get(), cred.get()));
   ASSERT_TRUE(SSL_CTX_add1_credential(server_ctx.get(), cred2.get()));
 
   bssl::UniquePtr<SSL> client, server;
 
   // With no CA requested by client, we should fail with only cred1 and cred2
-  ASSERT_FALSE(ConnectClientAndServer(&client, &server, client_ctx.get(), server_ctx.get()));
+  ASSERT_FALSE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                      server_ctx.get()));
 
   // Have the client request a bogus name that will not match
   bssl::UniquePtr<CRYPTO_BUFFER> bogus_subject = GetBogusIssuerBuffer();
@@ -5646,6 +5660,7 @@ TEST(SSLTest, CredentialChains) {
   // Add cred3 to the CTX so we have an ubiquitous credential
   bssl::UniquePtr<SSL_CREDENTIAL> cred3(SSL_CREDENTIAL_new_x509());
   ASSERT_TRUE(cred3);
+  ASSERT_FALSE(SSL_CREDENTIAL_is_complete(cred3.get()));
   ASSERT_TRUE(
       SSL_CREDENTIAL_set1_cert_chain(cred3.get(), chain.data(), chain.size()));
   ASSERT_TRUE(SSL_CREDENTIAL_set1_private_key(cred3.get(), key.get()));
@@ -5664,14 +5679,14 @@ TEST(SSLTest, CredentialCertProperties) {
   // unknown property 0xbb with 0 bytes of data.
   bssl::UniquePtr<SSL_CREDENTIAL> cred(SSL_CREDENTIAL_new_x509());
   ASSERT_TRUE(cred);
+  ASSERT_FALSE(SSL_CREDENTIAL_is_complete(cred.get()));
   static const uint8_t kTestProperties1[] = {0x00, 0x0b, 0x00, 0x00, 0x00,
                                              0x03, 0xba, 0xdb, 0x0b, 0x00,
                                              0xbb, 0x00, 0x00};
   bssl::UniquePtr<CRYPTO_BUFFER> pl(
       CRYPTO_BUFFER_new(kTestProperties1, sizeof(kTestProperties1), nullptr));
   ASSERT_TRUE(pl);
-  EXPECT_TRUE(
-      SSL_CREDENTIAL_set1_certificate_properties(cred.get(), pl.get()));
+  EXPECT_TRUE(SSL_CREDENTIAL_set1_certificate_properties(cred.get(), pl.get()));
 
   // A CertificatePropertyList containing a trust_anchors property, and an
   // unknown property 0xbb with 1 byte of data.
@@ -5681,13 +5696,12 @@ TEST(SSLTest, CredentialCertProperties) {
   pl.reset(
       CRYPTO_BUFFER_new(kTestProperties2, sizeof(kTestProperties2), nullptr));
   ASSERT_TRUE(pl);
-  EXPECT_TRUE(
-      SSL_CREDENTIAL_set1_certificate_properties(cred.get(), pl.get()));
+  EXPECT_TRUE(SSL_CREDENTIAL_set1_certificate_properties(cred.get(), pl.get()));
 
   // A CertificatePropertyList containing a trust_anchors property, and an
   // unknown but malformed property 0xbb with missing data.
   static const uint8_t kTestProperties3[] = {0x00, 0x09, 0x00, 0x00, 0x00, 0x03,
-                                      0xba, 0xdb, 0x0b, 0x00, 0xbb};
+                                             0xba, 0xdb, 0x0b, 0x00, 0xbb};
   pl.reset(
       CRYPTO_BUFFER_new(kTestProperties3, sizeof(kTestProperties3), nullptr));
   ASSERT_TRUE(pl);
@@ -5751,8 +5765,7 @@ TEST(SSLTest, CredentialCertProperties) {
   pl.reset(
       CRYPTO_BUFFER_new(kTestProperties8, sizeof(kTestProperties8), nullptr));
   ASSERT_TRUE(pl);
-  EXPECT_TRUE(
-      SSL_CREDENTIAL_set1_certificate_properties(cred.get(), pl.get()));
+  EXPECT_TRUE(SSL_CREDENTIAL_set1_certificate_properties(cred.get(), pl.get()));
 }
 
 TEST(SSLTest, SetChainAndKeyCtx) {
@@ -9349,6 +9362,41 @@ TEST(SSLTest, ALPNConfig) {
   check_alpn_proto({});
 }
 
+TEST(SSLTest, AcceptedPeerCertTypesConfig) {
+  bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(ctx);
+
+  // Valid configurations.
+  for (const auto &list : std::vector<std::vector<uint8_t>>({
+           // Listing only the default type is considered valid here; we just
+           // won't send a ClientHello extension for this list.
+           {TLSEXT_cert_type_x509},
+           {TLSEXT_cert_type_rpk},
+           {TLSEXT_cert_type_x509, TLSEXT_cert_type_rpk},
+           {TLSEXT_cert_type_rpk, TLSEXT_cert_type_x509},
+       })) {
+    EXPECT_EQ(1, SSL_CTX_set1_accepted_peer_cert_types(ctx.get(), list.data(),
+                                                       list.size()));
+  }
+
+  // Invalid configurations.
+  for (const auto &list : std::vector<std::vector<uint8_t>>({
+           // Empty list is invalid.
+           {},
+           // Bogus value.
+           {0xff},
+           // Contains duplicate.
+           {TLSEXT_cert_type_x509, TLSEXT_cert_type_x509},
+           // Too long.
+           {TLSEXT_cert_type_x509, TLSEXT_cert_type_rpk, 0x03},
+       })) {
+    EXPECT_EQ(0, SSL_CTX_set1_accepted_peer_cert_types(ctx.get(), list.data(),
+                                                       list.size()));
+    EXPECT_TRUE(ErrorEquals(ERR_get_error(), ERR_LIB_SSL,
+                            SSL_R_INVALID_CERT_TYPES_LIST));
+  }
+}
+
 // This is a basic unit-test class to verify completing handshake successfully,
 // sending the correct codepoint extension and having correct application
 // setting on different combination of ALPS codepoint settings. More integration
@@ -10170,7 +10218,7 @@ TEST(SSLTest, CertificatesFromFile) {
     ASSERT_TRUE(ctx.get());
     ASSERT_TRUE(SSL_CTX_use_PrivateKey_file(ctx.get(), file.path().c_str(),
                                             SSL_FILETYPE_PEM));
-    EXPECT_EQ(EVP_PKEY_cmp(SSL_CTX_get0_privatekey(ctx.get()), key.get()), 1);
+    EXPECT_EQ(EVP_PKEY_eq(SSL_CTX_get0_privatekey(ctx.get()), key.get()), 1);
   }
   {
     TemporaryFile file;
@@ -10179,7 +10227,7 @@ TEST(SSLTest, CertificatesFromFile) {
     ASSERT_TRUE(ctx.get());
     ASSERT_TRUE(SSL_CTX_use_RSAPrivateKey_file(ctx.get(), file.path().c_str(),
                                                SSL_FILETYPE_PEM));
-    EXPECT_EQ(EVP_PKEY_cmp(SSL_CTX_get0_privatekey(ctx.get()), key.get()), 1);
+    EXPECT_EQ(EVP_PKEY_eq(SSL_CTX_get0_privatekey(ctx.get()), key.get()), 1);
   }
 
   // Empty files are errors.
@@ -10189,7 +10237,7 @@ TEST(SSLTest, CertificatesFromFile) {
     bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
     ASSERT_TRUE(ctx.get());
     EXPECT_FALSE(SSL_CTX_use_certificate_file(ctx.get(), file.path().c_str(),
-                                             SSL_FILETYPE_PEM));
+                                              SSL_FILETYPE_PEM));
     EXPECT_TRUE(ErrorEquals(ERR_get_error(), ERR_LIB_PEM, PEM_R_NO_START_LINE));
     ERR_clear_error();
   }
@@ -10209,7 +10257,7 @@ TEST(SSLTest, CertificatesFromFile) {
     bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
     ASSERT_TRUE(ctx.get());
     EXPECT_FALSE(SSL_CTX_use_PrivateKey_file(ctx.get(), file.path().c_str(),
-                                            SSL_FILETYPE_PEM));
+                                             SSL_FILETYPE_PEM));
     EXPECT_TRUE(ErrorEquals(ERR_get_error(), ERR_LIB_PEM, PEM_R_NO_START_LINE));
     ERR_clear_error();
   }
@@ -10219,7 +10267,7 @@ TEST(SSLTest, CertificatesFromFile) {
     bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
     ASSERT_TRUE(ctx.get());
     EXPECT_FALSE(SSL_CTX_use_RSAPrivateKey_file(ctx.get(), file.path().c_str(),
-                                               SSL_FILETYPE_PEM));
+                                                SSL_FILETYPE_PEM));
     EXPECT_TRUE(ErrorEquals(ERR_get_error(), ERR_LIB_PEM, PEM_R_NO_START_LINE));
     ERR_clear_error();
   }
@@ -10732,7 +10780,7 @@ TEST_P(SSLVersionTest, KeyLog) {
                                                    /*epoch=*/3));
       read_secret = Span(data, len);
       ASSERT_TRUE(SSL_get_dtls_write_traffic_secret(client_.get(), &data, &len,
-                                                   /*epoch=*/3));
+                                                    /*epoch=*/3));
       write_secret = Span(data, len);
     } else {
       ASSERT_TRUE(

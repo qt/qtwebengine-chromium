@@ -28,6 +28,8 @@
 #include "dawn/native/RenderPassEncoder.h"
 
 #include <math.h>
+
+#include <cstdint>
 #include <cstring>
 #include <utility>
 
@@ -71,8 +73,7 @@ RenderPassEncoder::RenderPassEncoder(DeviceBase* device,
                                      EncodingContext* encodingContext,
                                      RenderPassResourceUsageTracker usageTracker,
                                      Ref<AttachmentState> attachmentState,
-                                     uint32_t renderTargetWidth,
-                                     uint32_t renderTargetHeight,
+                                     const RenderAreaRect& renderArea,
                                      bool depthReadOnly,
                                      bool stencilReadOnly,
                                      EndCallback endCallback)
@@ -83,8 +84,7 @@ RenderPassEncoder::RenderPassEncoder(DeviceBase* device,
                         depthReadOnly,
                         stencilReadOnly),
       mCommandEncoder(commandEncoder),
-      mRenderTargetWidth(renderTargetWidth),
-      mRenderTargetHeight(renderTargetHeight),
+      mRenderArea(renderArea),
       mOcclusionQuerySet(descriptor->occlusionQuerySet),
       mEndCallback(std::move(endCallback)) {
     mUsageTracker = std::move(usageTracker);
@@ -92,9 +92,6 @@ RenderPassEncoder::RenderPassEncoder(DeviceBase* device,
         mMaxDrawCount = maxDrawCountInfo->maxDrawCount;
     }
     GetObjectTrackingList()->Track(this);
-    if (auto* resourceTable = mCommandEncoder->GetResourceTable()) {
-        mCommandBufferState.SetResourceTable(resourceTable);
-    }
 }
 
 // static
@@ -105,15 +102,14 @@ Ref<RenderPassEncoder> RenderPassEncoder::Create(
     EncodingContext* encodingContext,
     RenderPassResourceUsageTracker usageTracker,
     Ref<AttachmentState> attachmentState,
-    uint32_t renderTargetWidth,
-    uint32_t renderTargetHeight,
+    const RenderAreaRect& renderArea,
     bool depthReadOnly,
     bool stencilReadOnly,
     EndCallback endCallback) {
     return AcquireRef(new RenderPassEncoder(device, descriptor, commandEncoder, encodingContext,
                                             std::move(usageTracker), std::move(attachmentState),
-                                            renderTargetWidth, renderTargetHeight, depthReadOnly,
-                                            stencilReadOnly, std::move(endCallback)));
+                                            renderArea, depthReadOnly, stencilReadOnly,
+                                            std::move(endCallback)));
 }
 
 RenderPassEncoder::RenderPassEncoder(DeviceBase* device,
@@ -313,11 +309,15 @@ void RenderPassEncoder::APISetScissorRect(uint32_t x, uint32_t y, uint32_t width
         [&](CommandAllocator* allocator) -> MaybeError {
             if (IsValidationEnabled()) {
                 DAWN_INVALID_IF(
-                    width > mRenderTargetWidth || height > mRenderTargetHeight ||
-                        x > mRenderTargetWidth - width || y > mRenderTargetHeight - height,
+                    x < mRenderArea.x ||
+                        static_cast<uint64_t>(x) + static_cast<uint64_t>(width) >
+                            mRenderArea.x + mRenderArea.width ||
+                        y < mRenderArea.y ||
+                        static_cast<uint64_t>(y) + static_cast<uint64_t>(height) >
+                            mRenderArea.y + mRenderArea.height,
                     "Scissor rect (x: %u, y: %u, width: %u, height: %u) is not contained in "
-                    "the render target dimensions (%u x %u).",
-                    x, y, width, height, mRenderTargetWidth, mRenderTargetHeight);
+                    "the render area dimensions %s.",
+                    x, y, width, height, mRenderArea);
             }
 
             SetScissorRectCmd* cmd =

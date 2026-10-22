@@ -24,8 +24,6 @@ const base::Feature* GetFeatureOfRegexFeature(RegexFeature feature) {
       return &features::kAutofillSupportPhoneticNameForJP;
     case RegexFeature::kAutofillSupportLastNamePrefix:
       return &features::kAutofillSupportLastNamePrefix;
-    case RegexFeature::kAutofillEnableLoyaltyCardsFilling:
-      return &features::kAutofillEnableLoyaltyCardsFilling;
     case RegexFeature::kAutofillSupportSplitZipCode:
       return &features::kAutofillSupportSplitZipCode;
     case RegexFeature::kAutofillDisallowMoreHyphenLikeLabels:
@@ -40,8 +38,6 @@ const base::Feature* GetFeatureOfRegexFeature(RegexFeature feature) {
       return &features::kAutofillNewRegexForPhoneCountryCode;
     case RegexFeature::kAutofillSupportCombinedZipAndCityFR:
       return &features::kAutofillSupportCombinedZipAndCityFR;
-    case RegexFeature::kAutofillImprovePhoneFieldParser:
-      return &features::kAutofillImprovePhoneFieldParser;
   }
   NOTREACHED();
 }

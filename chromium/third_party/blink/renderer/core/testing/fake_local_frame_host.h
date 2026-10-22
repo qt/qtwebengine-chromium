@@ -50,9 +50,6 @@ class FakeLocalFrameHost : public mojom::blink::LocalFrameHost {
   void SetVirtualKeyboardMode(
       ui::mojom::blink::VirtualKeyboardMode mode) override;
   void VisibilityChanged(mojom::blink::FrameVisibility visibility) override;
-  void DidChangeThemeColor(std::optional<::SkColor> theme_color) override;
-  void DidChangeBackgroundColor(const SkColor4f& background_color,
-                                bool color_adjust) override;
   void DidFailLoadWithError(const ::blink::KURL& url,
                             int32_t error_code) override;
   void DidFocusFrame() override;
@@ -87,8 +84,7 @@ class FakeLocalFrameHost : public mojom::blink::LocalFrameHost {
       base::TimeTicks actual_navigation_start,
       std::optional<blink::scheduler::TaskAttributionId> task_id) override {}
   void NavigateEventHandlerPresenceChanged(bool present) override {}
-  void UpdateTitle(const String& title,
-                   base::i18n::TextDirection title_direction) override;
+  void UpdateTitle(const String& title) override;
   void UpdateApplicationTitle(const String& application_title) override;
   void UpdateUserActivationState(
       mojom::blink::UserActivationUpdateType update_type,
@@ -228,7 +224,6 @@ class FakeLocalFrameHost : public mojom::blink::LocalFrameHost {
       uint64_t length,
       InitializeCrashReportContextCallback callback) override;
   void NotifyDocumentInteractive() override;
-  void SetStorageAccessApiStatus(net::StorageAccessApiStatus status) override;
 
  private:
   void BindFrameHostReceiver(mojo::ScopedInterfaceEndpointHandle handle);

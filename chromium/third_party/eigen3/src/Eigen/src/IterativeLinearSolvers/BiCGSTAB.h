@@ -168,6 +168,7 @@ struct traits<BiCGSTAB<MatrixType_, Preconditioner_> > {
  */
 template <typename MatrixType_, typename Preconditioner_>
 class BiCGSTAB : public IterativeSolverBase<BiCGSTAB<MatrixType_, Preconditioner_> > {
+ protected:
   typedef IterativeSolverBase<BiCGSTAB> Base;
   using Base::m_error;
   using Base::m_info;

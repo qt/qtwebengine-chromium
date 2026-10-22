@@ -39,6 +39,10 @@ struct ShaderInstrumentationMetadata;
 struct ShaderObjectInstrumentationData;
 }  // namespace chassis
 
+namespace spirv {
+struct Module;
+}
+
 namespace gpuav {
 class Validator;
 
@@ -67,11 +71,9 @@ struct InstrumentedShader {
 // Handles shader instrumentation (reserve a descriptor slot, create descriptor
 // sets, pipeline layout, hook into pipeline creation, etc...)
 class GpuShaderInstrumentor : public vvl::DeviceProxy {
-    using BaseClass = vvl::DeviceProxy;
-
   public:
-    GpuShaderInstrumentor(vvl::dispatch::Device *dev, vvl::InstanceProxy *instance, LayerObjectTypeId type)
-        : BaseClass(dev, instance, type) {
+    GpuShaderInstrumentor(vvl::DispatchDevice* dev, vvl::InstanceProxy* instance, LayerObjectTypeId type)
+        : DeviceProxy(dev, instance, type) {
         for (uint32_t i = 0; i < vvl::DescriptorModeCount; i++) {
             dummy_desc_layout_[i] = VK_NULL_HANDLE;
             instrumentation_desc_layout_[i] = VK_NULL_HANDLE;
@@ -106,9 +108,10 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
                                           const RecordObject &record_obj, chassis::CreateShaderModule &chassis_state) override;
     void PreCallRecordGetShaderBinaryDataEXT(VkDevice device, VkShaderEXT shader, size_t *pDataSize, void *pData,
                                              const RecordObject &record_obj, chassis::ShaderBinaryData &chassis_state) override;
-    bool PreCallRecordShaderObjectInstrumentation(vku::safe_VkShaderCreateInfoEXT &modified_create_info,
-                                                  const Location &create_info_loc,
-                                                  chassis::ShaderObjectInstrumentationData &shader_instrumentation_data);
+    bool PreCallRecordShaderObjectInstrumentation(vku::safe_VkShaderCreateInfoEXT& modified_create_info,
+                                                  const Location& create_info_loc,
+                                                  chassis::ShaderObjectInstrumentationData& shader_instrumentation_data,
+                                                  const vvl::DescriptorMode descriptor_mode);
     void PreCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT *pCreateInfos,
                                        const VkAllocationCallbacks *pAllocator, VkShaderEXT *pShaders,
                                        const RecordObject &record_obj, chassis::ShaderObject &chassis_state) override;
@@ -160,16 +163,8 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
 
     bool IsSelectiveInstrumentationEnabled(const void *pNext);
 
-    struct ShaderMessageInfo {
-        uint32_t stage_id;
-        uint32_t stage_info_0;
-        uint32_t stage_info_1;
-        uint32_t stage_info_2;
-        uint32_t instruction_position_offset;
-        uint32_t shader_id;
-    };
-    std::string GenerateDebugInfoMessage(VkCommandBuffer commandBuffer, const ShaderMessageInfo &shader_info,
-                                         const InstrumentedShader *instrumented_shader, VkPipelineBindPoint pipeline_bind_point,
+    std::string GenerateDebugInfoMessage(VkCommandBuffer commandBuffer, const uint32_t* error_record,
+                                         const InstrumentedShader* instrumented_shader, VkPipelineBindPoint pipeline_bind_point,
                                          uint32_t operation_index) const;
 
   protected:
@@ -207,6 +202,7 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
   public:
     void SetupClassicDescriptor(const Location &loc);
     void SetupDescriptorBuffers(const Location &loc);
+    void SetupDescriptorHeap(const Location &loc);
 
     VkDescriptorSetLayout GetInstrumentationDescriptorSetLayout(vvl::DescriptorMode mode) {
         return instrumentation_desc_layout_[mode];
@@ -238,6 +234,12 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
     // Each vector index maps to the binding number with the offset to map to (with the start offset included)
     std::vector<VkDeviceSize> resource_descriptor_buffer_offsets_;
 
+    // Size to reserve in front of reserved range in resource heap
+    VkDeviceSize resource_heap_reserved_bytes_ = 0;
+    VkDeviceSize buffer_descriptor_size_ = 0;
+    VkDeviceSize buffer_descriptor_alignment_ = 0;
+    uint32_t push_data_offset_ = 0;
+
     // These are the same as enabled_features, but may have been altered at setup time. This should be use for any feature GPU-AV
     // might force on. We need to track these changes separately so that they don't influence non-GPU-AV parts of validation.
     DeviceExtensions modified_extensions;
@@ -247,6 +249,7 @@ class GpuShaderInstrumentor : public vvl::DeviceProxy {
     bool IsPipelineSelectedForInstrumentation(VkPipeline pipeline, const Location &loc);
     bool IsShaderSelectedForInstrumentation(vku::safe_VkShaderModuleCreateInfo *modified_shader_module_ci,
                                             VkShaderModule modified_shader, const Location &loc);
+    void AddDescriptorHeapMappings(VkBaseOutStructure *create_info);
     void Cleanup();
     VkDescriptorSetLayout instrumentation_desc_layout_[vvl::DescriptorModeCount];
     VkPipelineLayout instrumentation_pipeline_layout_[vvl::DescriptorModeCount];

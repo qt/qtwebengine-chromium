@@ -14,10 +14,12 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
+#include "base/time/tick_clock.h"
 #include "media/base/cross_origin_data_source.h"
 #include "media/base/data_source.h"
 #include "media/base/ranges.h"
 #include "media/base/tuneable.h"
+#include "third_party/blink/renderer/platform/media/buffered_data_source_host_impl.h"
 #include "third_party/blink/renderer/platform/media/url_index.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -44,7 +46,45 @@ class PLATFORM_EXPORT MultiBufferDataSource
     : public media::CrossOriginDataSource {
  public:
   using DownloadingCB = base::RepeatingCallback<void(bool)>;
-  using RedirectCB = base::RepeatingCallback<void()>;
+
+  class PLATFORM_EXPORT Factory : public media::DataSource::Factory {
+   public:
+    using UrlDataCb = base::RepeatingCallback<void(
+        const GURL& url,
+        bool ignore_cache,
+        base::OnceCallback<void(scoped_refptr<UrlData>)>)>;
+
+    ~Factory() override;
+    Factory(std::unique_ptr<media::MediaLog> media_log,
+            UrlDataCb get_url_data,
+            bool is_audio_element,
+            Preload preload,
+            EventCb data_source_tainted_cb,
+            const base::TickClock* tick_clock,
+            scoped_refptr<base::SingleThreadTaskRunner> main_task_runner);
+
+    void Create(const GURL& uri, bool ignore_cache, DataSourceCb cb) override;
+
+   private:
+    void OnUrlData(DataSourceCb cb,
+                   base::RepeatingCallback<void(bool)> download_cb,
+                   scoped_refptr<UrlData> data);
+
+    // Flags & Options passed to the created MultiBufferDataSources in `Create`.
+    const bool is_audio_element_;
+    const Preload preload_;
+    std::unique_ptr<media::MediaLog> media_log_;
+
+    EventCb tainted_source_cb_;
+
+    UrlDataCb get_url_data_;
+
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
+
+    std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
+
+    base::WeakPtrFactory<Factory> weak_factory_{this};
+  };
 
   // |url| and |cors_mode| are passed to the object. Buffered byte range changes
   // will be reported to |host|. |downloading_cb| will be called whenever the
@@ -71,18 +111,13 @@ class PLATFORM_EXPORT MultiBufferDataSource
   // Adjusts the buffering algorithm based on the given preload value.
   void SetPreload(media::DataSource::Preload preload) override;
 
-  // Returns true if the media resource has a single origin, false otherwise.
-  // Only valid to call after Initialize() has completed.
-  //
-  // Method called on the render thread.
-  bool HasSingleOrigin();
-
-  // Provides a callback to be run when the underlying url is redirected.
-  void OnRedirect(RedirectCB callback);
+  // Provides a callback to be run when the request becomes CORS tainted via
+  // redirection or some other mechanism.
+  void SetTaintedCallback(media::DataSource::EventCb callback);
 
   bool PassedTimingAllowOriginCheck() override;
 
-  bool WouldTaintOrigin() override;
+  bool WouldTaintOrigin() const override;
 
   // Returns the CorsMode of the underlying UrlData.
   UrlData::CorsMode cors_mode() const;
@@ -111,7 +146,7 @@ class PLATFORM_EXPORT MultiBufferDataSource
             base::span<uint8_t> data,
             media::DataSource::ReadCB read_cb) override;
   [[nodiscard]] bool GetSize(int64_t* size_out) override;
-  bool IsStreaming() override;
+  bool IsStreaming() const override;
   void SetBitrate(int bitrate) override;
   void SetIsClientAudioElement(bool is_client_audio_element) {
     is_client_audio_element_ = is_client_audio_element;
@@ -237,8 +272,8 @@ class PLATFORM_EXPORT MultiBufferDataSource
   // go between different origins.
   bool single_origin_ = true;
 
-  // Callback used when a redirect occurs.
-  RedirectCB redirect_cb_;
+  // Callback used when a data source becomes tainted.
+  media::DataSource::EventCb notify_tainted_cb_;
 
   // Stops preloading and closes the connection when we have enough data.
   bool cancel_on_defer_ = false;

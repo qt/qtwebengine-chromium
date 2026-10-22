@@ -1,0 +1,357 @@
+// Copyright 2026 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include "components/autofill/core/browser/at_memory/autofill_data_provider_impl.h"
+
+#include <algorithm>
+#include <cmath>
+#include <string_view>
+#include <vector>
+
+#include "base/containers/extend.h"
+#include "base/i18n/case_conversion.h"
+#include "base/strings/strcat.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "components/accessibility_annotator/core/annotation_reducer/memory_search_result.h"
+#include "components/autofill/core/browser/at_memory/at_memory_data_type.h"
+#include "components/autofill/core/browser/data_manager/addresses/address_data_manager.h"
+#include "components/autofill/core/browser/data_manager/autofill_ai/entity_data_manager.h"
+#include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
+#include "components/autofill/core/browser/data_manager/personal_data_manager.h"
+#include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+#include "components/autofill/core/browser/data_model/autofill_ai/entity_type_names.h"
+#include "components/autofill/core/browser/data_model/autofill_ai/from_accessibility_annotator.h"
+#include "components/autofill/core/browser/data_model/payments/iban.h"
+#include "components/autofill/core/browser/data_model/usage_history_information.h"
+#include "components/autofill/core/browser/field_types.h"
+#include "components/autofill/core/browser/ui/addresses/autofill_address_util.h"
+#include "components/strings/grit/components_strings.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
+#include "ui/base/l10n/l10n_util.h"
+
+namespace autofill {
+
+namespace {
+
+using ::accessibility_annotator::EntryMetadata;
+using ::accessibility_annotator::MemoryEntrySource;
+using ::accessibility_annotator::MemoryEntrySourceType;
+using ::accessibility_annotator::MemorySearchResult;
+using ::accessibility_annotator::QueryIntentType;
+
+// Calculates a ranking score for an entity, based on frequency and recency of
+// use.
+double CalculateRankingScore(int64_t use_count, base::Time use_date) {
+  UsageHistoryInformation usage_history;
+  usage_history.set_use_count(use_count);
+  usage_history.set_use_date(use_date);
+  return usage_history.GetRankingScore(base::Time::Now());
+}
+
+// Creates a data entry for a specific attribute of an Autofill AI entity.
+MemorySearchResult CreateResultFromEntityAttribute(
+    const EntityInstance& entity,
+    const AttributeInstance& attr,
+    QueryIntentType intent_type,
+    std::string_view app_locale) {
+  CHECK_EQ(entity.type(), attr.type().entity_type());
+  MemorySearchResult entry = MemorySearchResult(
+      intent_type, GetEntryTypeNameForI18n(intent_type),
+      attr.GetCompleteInfo(app_locale),
+      CalculateRankingScore(entity.use_count(), entity.use_date()));
+
+  // Add all other non-empty attributes as metadata.
+  for (const AttributeInstance& other_attr : entity.attributes()) {
+    if (other_attr.type() == attr.type()) {
+      continue;
+    }
+    std::u16string other_value = other_attr.GetCompleteInfo(app_locale);
+    if (!other_value.empty()) {
+      QueryIntentType metadata_type =
+          AttributeTypeToQueryIntentType(other_attr.type());
+      entry.metadata_list.emplace_back(metadata_type,
+                                       GetEntryTypeNameForI18n(metadata_type),
+                                       std::move(other_value));
+    }
+  }
+
+  return entry;
+}
+
+// Creates a data entry from an address profile for a specific field type.
+MemorySearchResult CreateResultFromAddressProfile(
+    const AutofillProfile& profile,
+    std::u16string value,
+    QueryIntentType intent_type,
+    FieldType field_type,
+    const std::string& app_locale) {
+  MemorySearchResult entry = MemorySearchResult(
+      intent_type, GetEntryTypeNameForI18n(intent_type), std::move(value),
+      profile.GetRankingScore(base::Time::Now()));
+
+  // Add other address fields as metadata.
+  auto add_metadata = [&](QueryIntentType other_intent_type) {
+    std::optional<AtMemoryDataType> data_type =
+        ToAtMemoryDataType(other_intent_type);
+    FieldType other_field_type = std::get<FieldType>(*data_type);
+    if (other_field_type == field_type) {
+      return;
+    }
+    std::u16string metadata_value =
+        profile.GetInfo(other_field_type, app_locale);
+    if (!metadata_value.empty()) {
+      entry.metadata_list.emplace_back(
+          other_intent_type, GetEntryTypeNameForI18n(other_intent_type),
+          std::move(metadata_value));
+    }
+  };
+
+  add_metadata(QueryIntentType::kNameFull);
+  add_metadata(QueryIntentType::kAddressCity);
+  add_metadata(QueryIntentType::kAddressState);
+  add_metadata(QueryIntentType::kAddressZip);
+  add_metadata(QueryIntentType::kAddressCountry);
+
+  entry.confidence_score = profile.GetRankingScore(base::Time::Now());
+  return entry;
+}
+
+// Fetches data for a specific field type from all available address profiles.
+std::vector<MemorySearchResult> FetchDataFromAddressProfiles(
+    const PersonalDataManager& personal_data_manager,
+    FieldType field_type,
+    QueryIntentType intent_type) {
+  std::vector<MemorySearchResult> entries;
+  std::string app_locale =
+      personal_data_manager.address_data_manager().app_locale();
+
+  for (const AutofillProfile* profile :
+       personal_data_manager.address_data_manager().GetProfiles()) {
+    std::u16string value = profile->GetInfo(field_type, app_locale);
+    if (value.empty()) {
+      continue;
+    }
+
+    entries.push_back(CreateResultFromAddressProfile(
+        *profile, std::move(value), intent_type, field_type, app_locale));
+  }
+  return entries;
+}
+
+// Fetches full address representation from all profiles.
+std::vector<MemorySearchResult> FetchFullAddressData(
+    const PersonalDataManager& personal_data_manager) {
+  std::vector<MemorySearchResult> entries;
+  std::string app_locale =
+      personal_data_manager.address_data_manager().app_locale();
+  for (const AutofillProfile* profile :
+       personal_data_manager.address_data_manager().GetProfiles()) {
+    // Profiles that don't have at least a street address are not useful for
+    // full address suggestions (e.g. profiles with only name, email, and
+    // country).
+    if (!profile->HasRawInfo(ADDRESS_HOME_STREET_ADDRESS)) {
+      continue;
+    }
+
+    std::u16string full_address = GetEnvelopeStyleAddress(
+        *profile, app_locale, /*include_recipient=*/false,
+        /*include_country=*/true);
+    if (full_address.empty()) {
+      continue;
+    }
+
+    std::u16string separator =
+        l10n_util::GetStringUTF16(IDS_AUTOFILL_ADDRESS_SUMMARY_SEPARATOR);
+    base::ReplaceChars(full_address, u"\n", separator, &full_address);
+
+    entries.push_back(CreateResultFromAddressProfile(
+        *profile, std::move(full_address), QueryIntentType::kAddressFull,
+        ADDRESS_HOME_ADDRESS, app_locale));
+  }
+  return entries;
+}
+
+// Fetches data from EntityDataManager (Autofill AI) for the requested entity.
+std::vector<MemorySearchResult> FetchAutofillAiEntityData(
+    const EntityDataManager* entity_data_manager,
+    QueryIntentType intent_type,
+    EntityType entity_type,
+    std::string_view app_locale) {
+  std::vector<MemorySearchResult> entries;
+  if (!entity_data_manager) {
+    return entries;
+  }
+  for (const EntityInstance& entity :
+       entity_data_manager->GetEntityInstances()) {
+    if (entity.type() != entity_type) {
+      continue;
+    }
+
+    // Combined entry with all non-empty attributes concatenated.
+    std::vector<std::u16string> values;
+    std::vector<EntryMetadata> all_metadata;
+    for (const AttributeInstance& attr : entity.attributes()) {
+      std::u16string attr_value = attr.GetCompleteInfo(app_locale);
+      if (!attr_value.empty()) {
+        values.push_back(attr_value);
+        QueryIntentType metadata_type =
+            AttributeTypeToQueryIntentType(attr.type());
+        all_metadata.emplace_back(metadata_type,
+                                  GetEntryTypeNameForI18n(metadata_type),
+                                  std::move(attr_value));
+      }
+    }
+    if (!values.empty()) {
+      MemorySearchResult entry = MemorySearchResult(
+          intent_type, GetEntryTypeNameForI18n(intent_type),
+          base::JoinString(values, u" "),
+          CalculateRankingScore(entity.use_count(), entity.use_date()));
+      entry.metadata_list = std::move(all_metadata);
+      entries.push_back(std::move(entry));
+    }
+
+    // Also add individual attributes as separate entries.
+    for (const AttributeInstance& attr : entity.attributes()) {
+      std::u16string attr_value = attr.GetCompleteInfo(app_locale);
+      if (attr_value.empty()) {
+        continue;
+      }
+      entries.push_back(CreateResultFromEntityAttribute(
+          entity, attr, AttributeTypeToQueryIntentType(attr.type()),
+          app_locale));
+    }
+  }
+  return entries;
+}
+
+// Fetches data from EntityDataManager (Autofill AI) for the requested
+// attribute.
+std::vector<MemorySearchResult> FetchAutofillAiAttributeData(
+    const EntityDataManager* entity_data_manager,
+    QueryIntentType intent_type,
+    AttributeType attribute_type,
+    std::string_view app_locale) {
+  std::vector<MemorySearchResult> entries;
+  if (!entity_data_manager) {
+    return entries;
+  }
+  for (const EntityInstance& entity :
+       entity_data_manager->GetEntityInstances()) {
+    if (entity.type() != attribute_type.entity_type()) {
+      continue;
+    }
+    base::optional_ref<const AttributeInstance> attr =
+        entity.attribute(attribute_type);
+    if (!attr) {
+      continue;
+    }
+
+    std::u16string attr_value = attr->GetCompleteInfo(app_locale);
+    if (attr_value.empty()) {
+      continue;
+    }
+
+    entries.push_back(CreateResultFromEntityAttribute(entity, *attr,
+                                                      intent_type, app_locale));
+  }
+  return entries;
+}
+
+// Fetches IBAN data from PersonalDataManager.
+std::vector<MemorySearchResult> FetchIbanData(
+    const PersonalDataManager& personal_data_manager) {
+  std::vector<MemorySearchResult> entries;
+  for (const Iban* iban :
+       personal_data_manager.payments_data_manager().GetIbans()) {
+    MemorySearchResult entry(
+        QueryIntentType::kIban, GetEntryTypeNameForI18n(QueryIntentType::kIban),
+        iban->value(),
+        iban->usage_history().GetRankingScore(base::Time::Now()));
+    if (!iban->nickname().empty()) {
+      entry.metadata_list.emplace_back(
+          QueryIntentType::kIbanNickname,
+          GetEntryTypeNameForI18n(QueryIntentType::kIbanNickname),
+          std::u16string(iban->nickname()));
+    }
+    entries.push_back(std::move(entry));
+  }
+  return entries;
+}
+
+}  // namespace
+
+AutofillDataProviderImpl::AutofillDataProviderImpl(
+    const PersonalDataManager* personal_data_manager,
+    const EntityDataManager* entity_data_manager)
+    : personal_data_manager_(personal_data_manager),
+      entity_data_manager_(entity_data_manager) {}
+
+AutofillDataProviderImpl::~AutofillDataProviderImpl() = default;
+
+void AutofillDataProviderImpl::RetrieveAll(
+    QueryIntentType intent_type,
+    base::OnceCallback<void(std::vector<MemorySearchResult>)> callback) {
+  if (intent_type == QueryIntentType::kCreditCardFull) {
+    // TODO(crbug.com/497795513): Handle credit card data once re-auth
+    // flow is implemented.
+    std::move(callback).Run({});
+    return;
+  }
+
+  std::optional<AtMemoryDataType> at_memory_type =
+      ToAtMemoryDataType(intent_type);
+  if (!at_memory_type) {
+    std::move(callback).Run({});
+    return;
+  }
+  std::move(callback).Run(GetAutofillData(intent_type, *at_memory_type));
+}
+
+std::vector<MemorySearchResult> AutofillDataProviderImpl::GetAutofillData(
+    QueryIntentType intent_type,
+    AtMemoryDataType at_memory_type) {
+  if (!personal_data_manager_) {
+    return {};
+  }
+  std::vector<MemorySearchResult> entries = std::visit(
+      absl::Overload{
+          [this, intent_type](
+              FieldType field_type) -> std::vector<MemorySearchResult> {
+            if (field_type == IBAN_VALUE) {
+              return FetchIbanData(*personal_data_manager_);
+            }
+            if (field_type == ADDRESS_HOME_ADDRESS) {
+              return FetchFullAddressData(*personal_data_manager_);
+            }
+            return FetchDataFromAddressProfiles(*personal_data_manager_,
+                                                field_type, intent_type);
+          },
+          [this, intent_type](
+              EntityType entity_type) -> std::vector<MemorySearchResult> {
+            return FetchAutofillAiEntityData(
+                entity_data_manager_, intent_type, entity_type,
+                personal_data_manager_->address_data_manager().app_locale());
+          },
+          [this, intent_type](
+              AttributeType attribute_type) -> std::vector<MemorySearchResult> {
+            return FetchAutofillAiAttributeData(
+                entity_data_manager_, intent_type, attribute_type,
+                personal_data_manager_->address_data_manager().app_locale());
+          },
+      },
+      at_memory_type);
+
+  std::ranges::stable_sort(
+      entries, [](const MemorySearchResult& a, const MemorySearchResult& b) {
+        return a.confidence_score > b.confidence_score;
+      });
+
+  for (MemorySearchResult& entry : entries) {
+    entry.sources.emplace_back(MemoryEntrySourceType::kAutofill);
+  }
+  return entries;
+}
+
+}  // namespace autofill

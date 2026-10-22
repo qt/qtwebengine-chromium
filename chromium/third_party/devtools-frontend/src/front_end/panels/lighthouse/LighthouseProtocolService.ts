@@ -7,8 +7,7 @@ import type * as Platform from '../../core/platform/platform.js';
 import type * as ProtocolClient from '../../core/protocol_client/protocol_client.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
-
-import type * as ReportRenderer from './LighthouseReporterTypes.js';
+import type * as LighthouseModel from '../../models/lighthouse/lighthouse.js';
 
 /**
  * @file
@@ -56,6 +55,13 @@ export interface LighthouseRun {
     formFactor: (string|undefined),
     mode: string,
   };
+  isAIControlled?: boolean;
+}
+
+export class CancelledError extends Error {
+  constructor() {
+    super('Lighthouse run cancelled');
+  }
 }
 
 /**
@@ -70,6 +76,14 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
   private removeDialogHandler?: () => void;
   private configForTesting?: object;
   private connection?: ProtocolClient.CDPConnection.CDPConnection;
+
+  /**
+   * Tracks pending requests to the Lighthouse worker.
+   * Key: The message ID sent to the worker.
+   * Value: The rejection function for the corresponding promise.
+   * This is used to gracefully cancel hanging promises if the ProtocolService is detached before the worker replies.
+   */
+  readonly #pendingRequests = new Map<number, (reason: Error) => void>();
 
   async attach(): Promise<void> {
     await SDK.TargetManager.TargetManager.instance().suspendAllTargets();
@@ -149,7 +163,8 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
     });
   }
 
-  async collectLighthouseResults(currentLighthouseRun: LighthouseRun): Promise<ReportRenderer.RunnerResult> {
+  async collectLighthouseResults(currentLighthouseRun: LighthouseRun):
+      Promise<LighthouseModel.ReporterTypes.RunnerResult> {
     const {inspectedURL, categoryIDs, flags} = currentLighthouseRun;
 
     if (!this.mainSessionId || !this.rootTargetId) {
@@ -173,6 +188,10 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
   }
 
   async detach(): Promise<void> {
+    for (const reject of this.#pendingRequests.values()) {
+      reject(new CancelledError());
+    }
+    this.#pendingRequests.clear();
     const oldLighthouseWorker = this.lighthouseWorkerPromise;
     const oldRootTarget = this.rootTarget;
 
@@ -244,7 +263,7 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
     return this.lighthouseWorkerPromise;
   }
 
-  private async ensureWorkerExists(): Promise<Worker> {
+  async ensureWorkerExists(): Promise<Worker> {
     let worker: Worker;
     if (!this.lighthouseWorkerPromise) {
       worker = await this.initWorker();
@@ -289,19 +308,24 @@ export class ProtocolService implements ProtocolClient.CDPConnection.CDPConnecti
 
   /** sendWithResponse currently only handles the original startLighthouse request and LHR-filled response. */
   private async sendWithResponse(action: string, args: Record<string, string|string[]|object|undefined> = {}):
-      Promise<ReportRenderer.RunnerResult> {
+      Promise<LighthouseModel.ReporterTypes.RunnerResult> {
     const worker = await this.ensureWorkerExists();
     const messageId = lastId++;
-    const messageResult = new Promise<ReportRenderer.RunnerResult>(resolve => {
+    const messageResult = new Promise<LighthouseModel.ReporterTypes.RunnerResult>((resolve, reject) => {
       const workerListener = (event: MessageEvent): void => {
         const lighthouseMessage = event.data;
 
         if (lighthouseMessage.id === messageId) {
           worker.removeEventListener('message', workerListener);
+          this.#pendingRequests.delete(messageId);
           resolve(lighthouseMessage.result);
         }
       };
       worker.addEventListener('message', workerListener);
+      this.#pendingRequests.set(messageId, (err: Error) => {
+        worker.removeEventListener('message', workerListener);
+        reject(err);
+      });
     });
     worker.postMessage({id: messageId, action, args: {...args, id: messageId}});
 

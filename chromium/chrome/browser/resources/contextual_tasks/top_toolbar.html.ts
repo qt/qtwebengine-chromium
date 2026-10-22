@@ -11,6 +11,7 @@ import type {TopToolbarElement} from './top_toolbar.js';
 // clang-format off
 export function getHtml(this: TopToolbarElement) {
   return html`<!--_html_template_start_-->
+<div id="top-row">
 <if expr="_google_chrome">
     <img src="chrome://resources/cr_components/searchbox/icons/google_g_gradient.svg"
         class="top-toolbar-logo">
@@ -26,6 +27,14 @@ export function getHtml(this: TopToolbarElement) {
     ${this.title}
   </div>
   <div class="top-toolbar-action-buttons">
+    <cr-icon-button id="pinButton"
+        @click="${this.onPinClick_}"
+        iron-icon="${this.isPinned ?
+            'contextual_tasks:keep' : 'contextual_tasks:keep_off'}"
+        title="${this.getPinButtonTooltip_()}"
+        aria-label="${this.getPinButtonTooltip_()}"
+        ?hidden="${!this.shouldShowPinButton_()}">
+    </cr-icon-button>
     <cr-icon-button id="newThreadButton"
         @click="${this.onNewThreadClick_}"
         iron-icon="contextual_tasks:edit_square"
@@ -52,22 +61,25 @@ export function getHtml(this: TopToolbarElement) {
         class="no-overlap" title="$i18n{openInNewTab}"
         aria-label="$i18n{openInNewTab}"
         @click="${this.onOpenInNewTabClick_}"
-        ?disabled="${!this.isAiPage}">
+        ?disabled="${!this.enableOpenInNewTabButton}">
       </cr-icon-button>
-    ` :html`
+    ` : html`
       <cr-icon-button id="more" iron-icon="cr:more-vert"
         class="no-overlap" title="$i18n{moreOptionsTooltip}"
         aria-label="$i18n{moreOptionsTooltip}"
-        @click="${this.onMoreClick_}">
+        @click="${this.onMoreClick_}"
+        ?hidden="${this.hideMenuButton_}">
       </cr-icon-button>
     `}
     <cr-icon-button id="closeButton"
         @click="${this.onCloseButtonClick_}"
         iron-icon="cr:close"
         title="$i18n{closeTooltip}"
-        aria-label="$i18n{closeTooltip}">
+        aria-label="$i18n{closeTooltip}"
+        rounded-corner="${this.isExpandButtonEnabled ? 'false' : 'true'}">
     </cr-icon-button>
   </div>
+</div>
   <cr-lazy-render-lit id="sourcesMenu" .template="${() => html`
     <contextual-tasks-sources-menu .contextInfos="${this.contextInfos}">
     </contextual-tasks-sources-menu>`}">
@@ -76,7 +88,7 @@ export function getHtml(this: TopToolbarElement) {
     <cr-action-menu>
       <button class="dropdown-item"
           @click="${this.onOpenInNewTabClick_}"
-          ?disabled="${!this.isAiPage}">
+          ?disabled="${!this.enableOpenInNewTabButton}">
         <cr-icon icon="contextual_tasks:open_in_full_tab"></cr-icon>
         $i18n{openInNewTab}
       </button>
@@ -90,12 +102,17 @@ export function getHtml(this: TopToolbarElement) {
 </if>
         $i18n{myActivity}
       </button>
-      <button class="dropdown-item" @click="${this.onHelpClick_}">
+      <button class="dropdown-item" @click="${this.onFeedbackClick_}">
         <cr-icon icon="contextual_tasks:feedback"></cr-icon>
         $i18n{feedback}
       </button>
     </cr-action-menu>`}">
   </cr-lazy-render-lit>
+  ${this.showReopenTabs_ ? html`
+    <reopen-tabs
+        @reopen-click="${this.onReopenTabsReopenClick_}"
+        @dismiss-click="${this.onReopenTabsDismissClick_}">
+    </reopen-tabs>` : ''}
   <!--_html_template_end_-->`;
 }
 // clang-format on

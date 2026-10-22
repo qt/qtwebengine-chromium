@@ -182,7 +182,8 @@ tr.exportTo('tr.metrics.sh', function() {
     let totalBlockedDuration = rangeOfInterest.duration;
     for (const [title, component] of Object.entries(breakdownTree)) {
       // v8_runtime is a subcategory of script_execute.
-      // See github.com/catapult-project/catapult/commit/f3881d commit message.
+      // See https://crrev.com/f3881da3d75a86a79da280eb64daa3691d6683f4
+      // commit message.
       // TODO(#2572) Make user friendly category hierarchy friend so this is not
       // needed.
       if (title === 'v8_runtime') continue;

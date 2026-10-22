@@ -31,9 +31,13 @@
 #include "libavutil/mem.h"
 #include "libavutil/mem_internal.h"
 #include "libavutil/pixdesc.h"
+#include "libavutil/hwcontext.h"
 #include "config.h"
 #include "swscale_internal.h"
 #include "swscale.h"
+#if CONFIG_VULKAN
+#include "vulkan/ops.h"
+#endif
 
 DECLARE_ALIGNED(8, const uint8_t, ff_dither_8x8_128)[9][8] = {
     {  36, 68,  60, 92,  34, 66,  58, 90, },
@@ -1204,6 +1208,8 @@ static int scale_internal(SwsContext *sws,
 void sws_frame_end(SwsContext *sws)
 {
     SwsInternal *c = sws_internal(sws);
+    if (!c->is_legacy_init)
+        return;
     av_frame_unref(c->frame_src);
     av_frame_unref(c->frame_dst);
     c->src_ranges.nb_ranges = 0;
@@ -1213,6 +1219,8 @@ int sws_frame_start(SwsContext *sws, AVFrame *dst, const AVFrame *src)
 {
     SwsInternal *c = sws_internal(sws);
     int ret, allocated = 0;
+    if (!c->is_legacy_init)
+        return AVERROR(EINVAL);
 
     ret = av_frame_ref(c->frame_src, src);
     if (ret < 0)
@@ -1245,6 +1253,8 @@ int sws_send_slice(SwsContext *sws, unsigned int slice_start,
 {
     SwsInternal *c = sws_internal(sws);
     int ret;
+    if (!c->is_legacy_init)
+        return AVERROR(EINVAL);
 
     ret = ff_range_add(&c->src_ranges, slice_start, slice_height);
     if (ret < 0)
@@ -1268,6 +1278,8 @@ int sws_receive_slice(SwsContext *sws, unsigned int slice_start,
     SwsInternal *c = sws_internal(sws);
     unsigned int align = sws_receive_slice_alignment(sws);
     uint8_t *dst[4];
+    if (!c->is_legacy_init)
+        return AVERROR(EINVAL);
 
     /* wait until complete input has been received */
     if (!(c->src_ranges.nb_ranges == 1        &&
@@ -1317,41 +1329,13 @@ int sws_receive_slice(SwsContext *sws, unsigned int slice_start,
                           dst, c->frame_dst->linesize, slice_start, slice_height);
 }
 
-static void get_frame_pointers(const AVFrame *frame, uint8_t *data[4],
-                               int linesize[4], int field)
-{
-    for (int i = 0; i < 4; i++) {
-        data[i]     = frame->data[i];
-        linesize[i] = frame->linesize[i];
-    }
-
-    if (!(frame->flags & AV_FRAME_FLAG_INTERLACED)) {
-        av_assert1(!field);
-        return;
-    }
-
-    if (field == FIELD_BOTTOM) {
-        /* Odd rows, offset by one line */
-        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(frame->format);
-        for (int i = 0; i < 4; i++) {
-            data[i] += linesize[i];
-            if (desc->flags & AV_PIX_FMT_FLAG_PAL)
-                break;
-        }
-    }
-
-    /* Take only every second line */
-    for (int i = 0; i < 4; i++)
-        linesize[i] <<= 1;
-}
-
 /* Subset of av_frame_ref() that only references (video) data buffers */
 static int frame_ref(AVFrame *dst, const AVFrame *src)
 {
     /* ref the buffers */
     for (int i = 0; i < FF_ARRAY_ELEMS(src->buf); i++) {
         if (!src->buf[i])
-            continue;
+            break;
         dst->buf[i] = av_buffer_ref(src->buf[i]);
         if (!dst->buf[i])
             return AVERROR(ENOMEM);
@@ -1369,9 +1353,9 @@ int sws_scale_frame(SwsContext *sws, AVFrame *dst, const AVFrame *src)
     if (!src || !dst)
         return AVERROR(EINVAL);
 
-    if (c->frame_src) {
+    if (c->is_legacy_init) {
         /* Context has been initialized with explicit values, fall back to
-         * legacy API */
+         * legacy API behavior. */
         ret = sws_frame_start(sws, dst, src);
         if (ret < 0)
             return ret;
@@ -1392,32 +1376,29 @@ int sws_scale_frame(SwsContext *sws, AVFrame *dst, const AVFrame *src)
     if (!src->data[0])
         return 0;
 
-    if (c->graph[FIELD_TOP]->noop &&
-        (!c->graph[FIELD_BOTTOM] || c->graph[FIELD_BOTTOM]->noop) &&
-        src->buf[0] && !dst->buf[0] && !dst->data[0])
-    {
-        /* Lightweight refcopy */
-        ret = frame_ref(dst, src);
+    const SwsGraph *top = c->graph[FIELD_TOP];
+    const SwsGraph *bot = c->graph[FIELD_BOTTOM];
+    if (dst->data[0]) /* user-provided buffers */
+        goto process_frame;
+
+    /* Sanity */
+    memset(dst->buf, 0, sizeof(dst->buf));
+    memset(dst->data, 0, sizeof(dst->data));
+    memset(dst->linesize, 0, sizeof(dst->linesize));
+    dst->extended_data = dst->data;
+
+    if (src->buf[0] && top->noop && (!bot || bot->noop))
+        return frame_ref(dst, src);
+
+    ret = av_frame_get_buffer(dst, 0);
+    if (ret < 0)
+        return ret;
+
+process_frame:
+    for (int field = 0; field < (bot ? 2 : 1); field++) {
+        ret = ff_sws_graph_run(c->graph[field], dst, src);
         if (ret < 0)
             return ret;
-    } else {
-        if (!dst->data[0]) {
-            ret = av_frame_get_buffer(dst, 0);
-            if (ret < 0)
-                return ret;
-        }
-
-        for (int field = 0; field < 2; field++) {
-            SwsGraph *graph = c->graph[field];
-            uint8_t *dst_data[4], *src_data[4];
-            int dst_linesize[4], src_linesize[4];
-            get_frame_pointers(dst, dst_data, dst_linesize, field);
-            get_frame_pointers(src, src_data, src_linesize, field);
-            ff_sws_graph_run(graph, dst_data, dst_linesize,
-                          (const uint8_t **) src_data, src_linesize);
-            if (!graph->dst.interlaced)
-                break;
-        }
     }
 
     return 0;
@@ -1448,6 +1429,35 @@ int sws_frame_setup(SwsContext *ctx, const AVFrame *dst, const AVFrame *src)
         return AVERROR(EINVAL);
     if ((ret = validate_params(ctx)) < 0)
         return ret;
+
+    /* For now, if a single frame has a context, then both need a context */
+    if (!!src->hw_frames_ctx != !!dst->hw_frames_ctx) {
+        return AVERROR(ENOTSUP);
+    } else if (!!src->hw_frames_ctx) {
+        /* Both hardware frames must already be allocated */
+        if (!src->data[0] || !dst->data[0])
+            return AVERROR(EINVAL);
+
+        AVHWFramesContext *src_hwfc, *dst_hwfc;
+        src_hwfc = (AVHWFramesContext *)src->hw_frames_ctx->data;
+        dst_hwfc = (AVHWFramesContext *)dst->hw_frames_ctx->data;
+
+        /* Both frames must live on the same device */
+        if (src_hwfc->device_ref->data != dst_hwfc->device_ref->data)
+            return AVERROR(EINVAL);
+
+        /* Only Vulkan devices are supported */
+        AVHWDeviceContext *dev_ctx;
+        dev_ctx = (AVHWDeviceContext *)src_hwfc->device_ref->data;
+        if (dev_ctx->type != AV_HWDEVICE_TYPE_VULKAN)
+            return AVERROR(ENOTSUP);
+
+#if CONFIG_UNSTABLE && CONFIG_VULKAN
+        ret = ff_sws_vk_init(ctx, src_hwfc->device_ref);
+        if (ret < 0)
+            return ret;
+#endif
+    }
 
     for (int field = 0; field < 2; field++) {
         SwsFormat src_fmt = ff_fmt_from_frame(src, field);
@@ -1516,6 +1526,9 @@ int attribute_align_arg sws_scale(SwsContext *sws,
                                   const int dstStride[])
 {
     SwsInternal *c = sws_internal(sws);
+    if (!c->is_legacy_init)
+        return AVERROR(EINVAL);
+
     if (c->nb_slice_ctx) {
         sws = c->slice_ctx[0];
         c = sws_internal(sws);

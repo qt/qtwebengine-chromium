@@ -208,7 +208,7 @@ bool idrstabl(const MatrixType &mat, const Rhs &rhs, Dest &x, const Precondition
   // Pre-allocate sigma.
   DenseMatrixType sigma(S, S);
 
-  bool reset_while = false;  // Should the while loop be reset for some reason?
+  bool reset_while = false;  // Should the while loop be reset?
 
   while (k < maxIters) {
     for (Index j = 1; j <= L; ++j) {
@@ -410,6 +410,7 @@ struct traits<IDRSTABL<MatrixType_, Preconditioner_>> {
 
 template <typename MatrixType_, typename Preconditioner_>
 class IDRSTABL : public IterativeSolverBase<IDRSTABL<MatrixType_, Preconditioner_>> {
+ protected:
   typedef IterativeSolverBase<IDRSTABL> Base;
   using Base::m_error;
   using Base::m_info;

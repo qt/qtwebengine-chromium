@@ -17,6 +17,7 @@
 #include "components/contextual_tasks/public/contextual_task_context.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/sessions/core/session_id.h"
+#include "third_party/omnibox_proto/chrome_aim_entry_point.pb.h"
 #include "url/gurl.h"
 
 namespace syncer {
@@ -35,11 +36,14 @@ struct FeatureEligibility {
   bool contextual_tasks_enabled;
   // Whether the AIM backend is eligible for use.
   bool aim_eligible;
+  // Whether the cobrowse experience is eligible for use.
+  bool cobrowse_eligible;
   // Whether context sharing is enabled.
   bool context_sharing_enabled;
 
   bool IsEligible() const {
-    return contextual_tasks_enabled && aim_eligible && context_sharing_enabled;
+    return contextual_tasks_enabled && aim_eligible && cobrowse_eligible &&
+           context_sharing_enabled;
   }
 };
 
@@ -64,7 +68,7 @@ class ContextualTasksService : public KeyedService {
 
     // The service is initialized and ready to take calls and return stored
     // tasks and threads.
-    virtual void OnInitialized() {}
+    virtual void OnContextualTasksServiceInitialized() {}
 
     // A new task was added at the given |source|.
     virtual void OnTaskAdded(const ContextualTask& task, TriggerSource source) {
@@ -145,6 +149,14 @@ class ContextualTasksService : public KeyedService {
       base::OnceCallback<void(std::unique_ptr<ContextualTaskContext>)>
           context_callback) = 0;
 
+  // Get a thread URL based on the task ID. If no task is found or the task does
+  // not have a thread ID, the default AI URL is returned.
+  virtual void GetThreadUrlFromTaskId(
+      const base::Uuid& task_id,
+      const std::string& locale,
+      omnibox::ChromeAimEntryPoint entry_point,
+      base::OnceCallback<void(GURL)> callback) = 0;
+
   // Methods related to associating tabs to tasks using their tab ID.
   virtual void AssociateTabWithTask(const base::Uuid& task_id,
                                     SessionID tab_id) = 0;
@@ -162,6 +174,9 @@ class ContextualTasksService : public KeyedService {
   // Returns DataTypeControllerDelegate for the contextual task thread datatype.
   virtual base::WeakPtr<syncer::DataTypeControllerDelegate>
   GetAiThreadControllerDelegate() = 0;
+  virtual base::WeakPtr<syncer::DataTypeControllerDelegate>
+  GetGeminiThreadControllerDelegate() = 0;
+  virtual bool IsGeminiThreadsEligible() = 0;
 };
 
 }  // namespace contextual_tasks

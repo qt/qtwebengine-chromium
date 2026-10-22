@@ -218,15 +218,13 @@ bool ProgressiveDecoder::GifInputRecordPositionBuf(
 void ProgressiveDecoder::GifReadScanline(int32_t row_num,
                                          pdfium::span<uint8_t> row_buf) {
   RetainPtr<CFX_DIBitmap> pDIBitmap = device_bitmap_;
-  DCHECK(pDIBitmap);
-  int32_t img_width = gif_frame_rect_.Width();
+  const size_t img_width = static_cast<size_t>(gif_frame_rect_.Width());
+  const pdfium::span<uint8_t> row_span = row_buf.first(img_width);
   if (!pDIBitmap->IsAlphaFormat()) {
-    pdfium::span<uint8_t> byte_span = row_buf;
-    for (int i = 0; i < img_width; i++) {
-      if (byte_span.front() == gif_trans_index_) {
-        byte_span.front() = gif_bg_index_;
+    for (auto& byte_ref : row_span) {
+      if (byte_ref == gif_trans_index_) {
+        byte_ref = gif_bg_index_;
       }
-      byte_span = byte_span.subspan<1u>();
     }
   }
   int32_t pal_index = gif_bg_index_;
@@ -237,14 +235,11 @@ void ProgressiveDecoder::GifReadScanline(int32_t row_num,
   const pdfium::span<uint8_t> decode_span = decode_buf_;
   std::ranges::fill(decode_span.first(static_cast<size_t>(src_width_)),
                     pal_index);
-  fxcrt::Copy(row_buf.first(static_cast<size_t>(img_width)),
-              decode_span.subspan(static_cast<size_t>(left)));
-
+  fxcrt::Copy(row_span, decode_span.subspan(static_cast<size_t>(left)));
   int32_t line = row_num + gif_frame_rect_.top;
   if (line < 0 || line >= src_height_) {
     return;
   }
-
   ResampleScanline(pDIBitmap, line, decode_span, src_format_);
 }
 #endif  // PDF_ENABLE_XFA_GIF

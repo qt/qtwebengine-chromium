@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import './sidenav_item';
+import './sidenav_item.js';
 
 import {css, CSSResultGroup, html, LitElement} from 'lit';
 
-import {castExists, isRTL} from '../helpers/helpers';
+import {castExists, isRTL} from '../helpers/helpers.js';
 
-import {SidenavItem, SidenavItemCollapsedEvent, SidenavItemEnabledChangedEvent, SidenavItemExpandedEvent} from './sidenav_item';
-import {isSidenavItem, shadowPiercingActiveItem} from './sidenav_util';
+import {SidenavItem, SidenavItemCollapsedEvent, SidenavItemEnabledChangedEvent, SidenavItemExpandedEvent} from './sidenav_item.js';
+import {isSidenavItem, shadowPiercingActiveItem} from './sidenav_util.js';
 
 /**
  * Allow calling `scrollIntoViewIfNeeded`.

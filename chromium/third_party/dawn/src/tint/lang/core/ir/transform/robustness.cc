@@ -70,6 +70,7 @@ struct State {
         Vector<ir::StoreVectorElement*, 64> vector_stores;
         Vector<ir::CoreBuiltinCall*, 64> subgroup_matrix_calls;
         Vector<ir::CoreBuiltinCall*, 64> texture_calls;
+        Vector<ir::CoreBuiltinCall*, 64> buffer_view_calls;
 
         if (config.use_integer_range_analysis) {
             integer_range_analysis.emplace(&ir);
@@ -113,6 +114,13 @@ struct State {
                         call->Func() == core::BuiltinFn::kSubgroupMatrixStore) {
                         subgroup_matrix_calls.Push(call);
                     }
+                    // Check if this is a buffer view builtin that needs to be clamped.
+                    if (call->Func() == core::BuiltinFn::kBufferView ||
+                        call->Func() == core::BuiltinFn::kBufferArrayView) {
+                        if (ShouldClamp(call->Args()[0])) {
+                            buffer_view_calls.Push(call);
+                        }
+                    }
                 });
         }
 
@@ -152,6 +160,13 @@ struct State {
         for (auto* call : subgroup_matrix_calls) {
             b.InsertBefore(call, [&] {  //
                 PredicateSubgroupMatrixCall(call);
+            });
+        }
+
+        // Clamp offset and size for buffer[Array]View calls.
+        for (auto* call : buffer_view_calls) {
+            b.InsertBefore(call, [&] {  //
+                ClampBufferViewArgs(call);
             });
         }
     }
@@ -272,7 +287,7 @@ struct State {
     void ClampAccessIndices(ir::Access* access) {
         auto* type = access->Object()->Type()->UnwrapPtr();
         auto indices = access->Indices();
-        for (size_t i = 0; i < indices.Length(); i++) {
+        for (size_t i = 0; i < indices.size(); i++) {
             auto* idx = indices[i];
             auto* const_idx = idx->As<ir::Constant>();
 
@@ -362,10 +377,18 @@ struct State {
                              b.Min(CastToU32(args[idx]), limit)->Result());
         };
 
+        // Helper for clamping the sample index.
+        auto clamp_sample_index = [&](uint32_t idx) {
+            auto* num_samples = b.Call(ty.u32(), core::BuiltinFn::kTextureNumSamples, args[0]);
+            auto* limit = b.Subtract(num_samples, 1_u);
+            call->SetOperand(CoreBuiltinCall::kArgsOperandOffset + idx,
+                             b.Min(CastToU32(args[idx]), limit)->Result());
+        };
+
         // Select which arguments to clamp based on the function overload.
         switch (call->Func()) {
             case core::BuiltinFn::kTextureDimensions: {
-                if (args.Length() > 1) {
+                if (args.size() > 1) {
                     clamp_level(1u);
                 }
                 break;
@@ -378,14 +401,10 @@ struct State {
                 if (texture->IsAnyOf<type::SampledTexture, type::DepthTexture>()) {
                     clamp_level(next_arg++);
                 }
-                clamp_coords(1u);  // Must run after clamp_level
-                break;
-            }
-            case core::BuiltinFn::kTextureStore: {
-                clamp_coords(1u);
-                if (type::IsTextureArray(texture->Dim())) {
-                    clamp_array_index(2u);
+                if (texture->IsAnyOf<type::MultisampledTexture, type::DepthMultisampledTexture>()) {
+                    clamp_sample_index(next_arg++);
                 }
+                clamp_coords(1u);  // Must run after clamp_level
                 break;
             }
             default:
@@ -519,6 +538,135 @@ struct State {
         });
     }
 
+    void ClampBufferViewArgs(ir::CoreBuiltinCall* call) {
+        // bufferView %ptr, %offset, [%length]
+        // bufferArrayView %ptr, %offset, %size, [%length]
+
+        // Determine the minimum size need for the return type.
+        // If the type does not have a fixed footprint (i.e. contains a runtime-sized array) then we
+        // want to ensure at least one element of it is included.
+        auto* store_ty = call->Result()->Type()->UnwrapPtrOrRef();
+        uint32_t ty_required_size = 0;
+        uint32_t ty_stride = 0;
+        uint32_t ty_offset = 0;
+        if (store_ty->HasFixedFootprint()) {
+            ty_required_size = store_ty->Size();
+        } else {
+            if (auto* str_ty = store_ty->As<type::Struct>()) {
+                auto last = str_ty->Members().Back();
+                auto last_ty = last->Type();
+                TINT_IR_ASSERT(ir, last_ty->Is<type::Array>());
+                ty_offset = last->Offset();
+                ty_stride = last_ty->As<type::Array>()->ImplicitStride();
+                ty_required_size = ty_offset + ty_stride;
+            } else {
+                TINT_IR_ASSERT(ir, store_ty->Is<type::Array>());
+                ty_stride = store_ty->As<type::Array>()->ImplicitStride();
+                ty_required_size = ty_stride;
+            }
+        }
+
+        b.InsertBefore(call, [&] {
+            uint32_t required_size = 0;
+            auto* offset = call->Args()[1];
+            auto* size = call->Func() == BuiltinFn::kBufferArrayView ? call->Args()[2] : nullptr;
+            // If the length arg exists, use it. Otherwise, insert a bufferLength call.
+            Value* length = nullptr;
+            if (call->Func() == BuiltinFn::kBufferView && call->Args().size() > 2) {
+                length = call->Args()[2];
+            } else if (call->Func() == BuiltinFn::kBufferArrayView && call->Args().size() > 3) {
+                length = call->Args()[3];
+            } else {
+                length = b.Call(ty.u32(), BuiltinFn::kBufferLength, call->Args()[0])->Result();
+            }
+
+            // Handle constant arguments.
+            bool const_offset = false;
+            bool const_size = false;
+            if (auto* offset_cnst = offset->As<Constant>()) {
+                uint32_t offset_val = offset_cnst->Value()->ValueAs<uint32_t>();
+                TINT_IR_ASSERT(ir, offset_val == (offset_val & ~(store_ty->Align() - 1)));
+                required_size += offset_val;
+                const_offset = true;
+            }
+            if (size) {
+                if (auto* size_cnst = size->As<Constant>()) {
+                    auto size_val = size_cnst->Value()->ValueAs<uint32_t>();
+                    // Bad constant values should be caught in the frontend.
+                    TINT_IR_ASSERT(ir, ty_stride == 0 || (size_val - ty_offset) % ty_stride == 0);
+                    required_size += size_val;
+                    const_size = true;
+                }
+            } else {
+                required_size += ty_required_size;
+            }
+
+            Value* total_required_size =
+                required_size == 0 ? nullptr : b.Constant(u32(required_size));
+            if (!const_offset) {
+                offset = b.InsertBitcastIfNeeded(ty.u32(), offset);
+                // Adjust to correct alignment.
+                offset = b.And(offset, b.Constant(u32(~(store_ty->Align() - 1))))->Result();
+                if (total_required_size) {
+                    total_required_size = b.Add(total_required_size, offset)->Result();
+                } else {
+                    total_required_size = offset;
+                }
+            }
+            if (size && !const_size) {
+                size = b.InsertBitcastIfNeeded(ty.u32(), size);
+                if (ty_offset != 0) {
+                    // Remove the non-array size from the struct.
+                    size = b.Subtract(size, b.Constant(u32(ty_offset)))->Result();
+                }
+                if (ty_stride != 0) {
+                    // Round down to a multiple of stride.
+                    size = b.Divide(size, b.Constant(u32(ty_stride)))->Result();
+                    size = b.Multiply(size, b.Constant(u32(ty_stride)))->Result();
+                }
+                if (ty_offset != 0) {
+                    // Now, add back the non-array size after rounding the other part.
+                    size = b.Add(size, b.Constant(u32(ty_offset)))->Result();
+                }
+                // Use the larger of the size arg or the type required size.
+                size = b.Call(ty.u32(), BuiltinFn::kMax, size, b.Constant(u32(ty_required_size)))
+                           ->Result();
+                total_required_size = b.Add(total_required_size, size)->Result();
+            }
+
+            // Now check if length < total_required_size
+            // If true, this is an invalid memory view and we will try to patch it safely.
+            // If false, use the args as is.
+            //
+            // In the bad case we have the liberty to generate anything safe.
+            // So just use offset = 0 and size = required_size.
+            // This will generate at least one element in the runtime array.
+            // This should be always safe as minimum binding sizes ought to be based on these values
+            // via inspection.
+            // TODO(github.com/gpuweb/issues/5410): If this resolution changes we may need to
+            // introduce predication instead of clamping.
+            if (length->Is<Constant>() && total_required_size->Is<Constant>()) {
+                bool cmp = length->As<Constant>()->Value()->ValueAs<uint32_t>() <
+                           total_required_size->As<Constant>()->Value()->ValueAs<uint32_t>();
+                call->SetArg(1, (cmp ? b.Constant(0_u) : offset));
+                if (size) {
+                    call->SetArg(2, (cmp ? b.Constant(u32(ty_required_size)) : size));
+                }
+                return;
+            }
+
+            auto* len_less_than = b.LessThan(length, total_required_size);
+            auto* offset_select = b.Call(ty.u32(), BuiltinFn::kSelect, offset, 0_u, len_less_than);
+            call->SetArg(1, offset_select->Result());
+            Instruction* size_select = nullptr;
+            if (size) {
+                size_select = b.Call(ty.u32(), BuiltinFn::kSelect, size,
+                                     b.Constant(u32(ty_required_size)), len_less_than);
+                call->SetArg(2, size_select->Result());
+            }
+        });
+    }
+
     // Returns the root Var for `value` by walking up the chain of instructions,
     // or nullptr if none is found.
     Var* RootVarFor(Value* value) {
@@ -569,7 +717,7 @@ struct State {
 }  // namespace
 
 Result<SuccessType> Robustness(Module& ir, const RobustnessConfig& config) {
-    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "core.Robustness", kRobustnessCapabilities));
+    AssertValid(ir, kRobustnessCapabilities, "before core.Robustness");
 
     State{config, ir}.Process();
 

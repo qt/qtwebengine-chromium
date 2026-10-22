@@ -46,6 +46,9 @@ struct ConnectionSettings {
 
   // Whether DSCP support should be enabled for Quality of Service.
   bool enable_dscp = true;
+
+  // Whether input event API should be enabled for this session.
+  bool enable_input_events = false;
 };
 
 }  // namespace openscreen::cast

@@ -5,7 +5,6 @@
 #include "components/facilitated_payments/core/metrics/facilitated_payments_metrics.h"
 
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/strings/strcat.h"
 #include "base/time/time.h"
 #include "components/facilitated_payments/core/mojom/pix_code_validator.mojom.h"
@@ -115,12 +114,28 @@ std::string SchemeToString(PaymentLinkValidator::Scheme scheme) {
   }
 }
 
-void LogPixCodeCopied(ukm::SourceId ukm_source_id) {
+void LogPixCodeCopied(ukm::SourceId ukm_source_id, bool has_iframe) {
   base::UmaHistogramBoolean("FacilitatedPayments.Pix.PixCodeCopied",
                             /*sample=*/true);
   ukm::builders::FacilitatedPayments_PixCodeCopied(ukm_source_id)
       .SetPixCodeCopied(true)
+      .SetHasIframe(has_iframe)
       .Record(ukm::UkmRecorder::Get());
+}
+
+void LogPixCodeCopiedInIframe() {
+  base::UmaHistogramBoolean("FacilitatedPayments.Pix.PixCodeCopied.Iframe",
+                            /*sample=*/true);
+}
+
+void LogPixIframeUrlType(PixIframeUrlType url_type) {
+  base::UmaHistogramEnumeration("FacilitatedPayments.Pix.Iframe.UrlType",
+                                url_type);
+}
+
+void LogPixIframeIsSameOriginAsMainFrame(bool is_same_origin) {
+  base::UmaHistogramBoolean("FacilitatedPayments.Pix.Iframe.IsSameOrigin",
+                            is_same_origin);
 }
 
 void LogPaymentLinkDetected(ukm::SourceId ukm_source_id) {
@@ -404,6 +419,15 @@ void LogPixTransactionResultAndLatency(PurchaseActionResult result,
       base::StrCat({"FacilitatedPayments.Pix.Transaction.",
                     GetPurchaseActionResultString(result), ".Latency"}),
       duration);
+}
+
+void LogPixTransactionResultPerFrameType(bool pix_code_is_in_iframe,
+                                         PurchaseActionResult result) {
+  base::UmaHistogramBoolean(
+      base::StrCat({"FacilitatedPayments.Pix.Transaction",
+                    pix_code_is_in_iframe ? ".Iframe" : ".MainFrame", ".",
+                    GetPurchaseActionResultString(result)}),
+      /*sample=*/true);
 }
 
 void LogEwalletInitiatePurchaseActionResultAndLatency(

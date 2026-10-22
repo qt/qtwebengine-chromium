@@ -44,6 +44,9 @@ class ReceiverSocketFactory final : public TlsConnectionFactory::Client {
                           const IPEndpoint& remote_address) override;
   void OnError(TlsConnectionFactory* factory, const Error& error) override;
 
+  // Accepts a generic Connection.
+  void CreateSocket(std::unique_ptr<Connection> connection);
+
  private:
   Client& client_;
   CastSocket::Client& socket_client_;

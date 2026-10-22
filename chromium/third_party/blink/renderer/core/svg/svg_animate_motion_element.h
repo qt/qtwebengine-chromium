@@ -35,6 +35,10 @@ class SVGAnimateMotionElement final : public SVGAnimationElement {
   explicit SVGAnimateMotionElement(Document&);
   ~SVGAnimateMotionElement() override;
 
+  ElementType GetElementType() const final {
+    return ElementType::kSVGAnimateMotionElement;
+  }
+
   void ChildMPathChanged();
 
   void Trace(Visitor*) const override;
@@ -63,6 +67,8 @@ class SVGAnimateMotionElement final : public SVGAnimationElement {
                                unsigned repeat_count) const override;
   void ApplyResultsToTarget(const SMILAnimationValue&) override;
   float CalculateDistance(const Keyframe&) const override;
+  wtf_size_t DiscretePathKeyframeCount() const override;
+  bool CalculatePathValues() override;
 
   enum RotateMode { kRotateAngle, kRotateAuto, kRotateAutoReverse };
   RotateMode GetRotateMode() const;
@@ -79,6 +85,12 @@ class SVGAnimateMotionElement final : public SVGAnimationElement {
 
   Path path_;
   Path animation_path_;
+
+  // Cached path segment points for discrete calcMode, computed once in
+  // `CalculatePathValues()` to avoid per-frame path walks.
+  Vector<gfx::PointF> discrete_points_;
+  // Index into `discrete_points_`, set by `UpdateKeyframeValues()`.
+  wtf_size_t discrete_path_index_ = 0;
 };
 
 }  // namespace blink

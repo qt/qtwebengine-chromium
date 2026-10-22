@@ -17,7 +17,6 @@
 #include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/observer_list.h"
 #include "base/power_monitor/power_monitor.h"
 #include "base/strings/string_number_conversions.h"
@@ -73,6 +72,7 @@
 #include "ui/gl/gl_switches.h"
 
 #if BUILDFLAG(IS_WIN)
+#include "base/time/time.h"
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
 #endif
 
@@ -254,7 +254,7 @@ Compositor::Compositor(const viz::FrameSinkId& frame_sink_id,
 
   host_ = cc::LayerTreeHost::CreateSingleThreaded(this, std::move(params));
   if (uses_layer_lists_) {
-    property_trees_.emplace(*host_);
+    property_trees_.emplace();
   }
 
   const base::WeakPtr<cc::CompositorDelegateForInput>& compositor_delegate =
@@ -748,7 +748,10 @@ void Compositor::RemoveAnimationObserver(
   if (!animation_observer_list_.HasObserver(observer))
     return;
 
-  animation_observer_list_.Notify(&CompositorAnimationObserver::Check);
+  // This may be called when an animation ends while processing OnAnimationStep,
+  // and `Check()` is a concrete method that can be called reentrantly.
+  animation_observer_list_.NotifyAllowReentrancy(
+      &CompositorAnimationObserver::Check);
 
   animation_observer_list_.RemoveObserver(observer);
   if (animation_observer_list_.empty()) {

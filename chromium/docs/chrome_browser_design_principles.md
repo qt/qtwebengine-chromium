@@ -54,7 +54,7 @@ documentation](http://go/chrome-project-bedrock). Public contributors can visit
 Public](https://docs.google.com/document/d/1aQRPDX9RjWHE48rAHntsV64VU1-4uZO_nkL6A7ohr2k/).
 
 To keep the dependency graph as precise as possible, we use a pattern called
-[UnownedUserData](ui/base/unowned_user_data/README.md). This allows consumers of
+[UnownedUserData](../ui/base/unowned_user_data/README.md). This allows consumers of
 `BrowserWindowInterface` and `TabInterface` to depend on a specific
 `BrowserWindowFeature` or `TabFeature` without depending on features. This also
 allows for easier unit and integration testing.
@@ -139,7 +139,7 @@ integrates with `TabFeatures::GetUserDataFactory()`.
     `GetUserDataFactory().CreateInstance<...>()`.
     *   This automatically manages the lifetime of the object and allows it to
         be accessed via `TabInterface::GetUnownedUserDataHost()`.
-    *   The impl uses the unowned user data pattern to to expose the class
+    *   The impl uses the unowned user data pattern to expose the class
         instance via the static `CommerceUiTabHelper::From(TabInterface*)`.
 *   **Modular BUILD.gn:** It lives in its own directory
     `chrome/browser/ui/commerce/BUILD.gn`
@@ -217,7 +217,7 @@ strip.
     using `GetUserDataFactory().CreateInstance<...>()`.
     *   This automatically manages the lifetime of the object and allows it to
         be accessed via `BrowserWindowInterface::GetUnownedUserDataHost()`
-    *   The impl uses the unowned user data pattern to to expose the class
+    *   The impl uses the unowned user data pattern to expose the class
         instance via the static
         `VerticalTabStripStateController::From(BrowserWindowInterface*)`.
 *   **Modular BUILD.gn:** It has a modular build setup in
@@ -258,7 +258,7 @@ All features should be logically grouped in the directory structure with
 well-defined API surfaces. Dependencies should be injected during construction.
 
 Modularity has many positive externalities:
-* Smaller, co-located logical units reduces cognitive complexity in
+* Smaller, co-located logical units reduce cognitive complexity in
   understanding and modifying the code base.
 * Separation of interface from implementation prevents tight coupling between
   features. This in turn reduces spooky action at a distance, where seemingly
@@ -293,7 +293,7 @@ Requirements:
       is an example of a feature with logical circular dependencies.
         * The header files are moved into a "cookie_controls" target with no
           circular dependencies.
-        * The cc files are moved into a "impl" target, with circular
+        * The cc files are moved into an "impl" target, with circular
           dependencies allowed with `//chrome/browser:browser` and
           `//chrome/browser/ui:ui`. These circular dependencies will
           disappear when all sources are removed from `//chrome/browser:browser` and `//chrome/browser/ui:ui`.
@@ -308,7 +308,7 @@ Requirements:
     * [Lens
       overlay](https://source.chromium.org/chromium/chromium/src/+/main:chrome/browser/ui/lens/BUILD.gn;drc=8e2c1c747f15a93c55ab2f10ebc8b32801ba129e)
       is an example with *almost* no circular dependencies.
-        * It has a logical circular dependency on `//chrome/browser/browser/ui:ui`,
+        * It has a logical circular dependency on `//chrome/browser/ui:ui`,
           which will no longer be necessary once NTP is also modularized (crbug.com/382237520).
         * The BUILD.gn should use public/sources separation.
             * The main reason for this is to guard against future, unexpected usage
@@ -413,7 +413,7 @@ FooFeature::DoStuff() { DoStuffWith(prefs_); }
 ```cpp
 // Properly scoped state avoids categories of bugs and subtle issues. For
 // example: one common mistake is to store window-scoped state on a tab-scoped
-// object. This results in subtle bugs (or crashes) when tab is dragged into a
+// object. This results in subtle bugs (or crashes) when a tab is dragged into a
 // new window.
 
 // Do not do this:
@@ -544,9 +544,9 @@ class Sparkles {
   }
 };
 ```
-* Most features should be gated by base::Feature, API keys and/or gn build
-  configuration, not C preprocessor conditionals e.g. `#if
-  BUILDFLAG(FEATURE_FOO)`.
+* Avoid C preprocessor conditionals e.g. `#if BUILDFLAG(FEATURE_FOO)`. Use
+  runtime logic (e.g. base::Feature or API keys) or build-time GN
+  conditionals, e.g. `if (is_win)`.
     * We ship a single product (Chrome) to multiple platforms. The purpose of
       preprocessor conditionals is:
         * (1) to allow platform-agnostic code to reference platform-specific
@@ -568,11 +568,21 @@ class Sparkles {
       accomplishing this goal.
     * In all cases, large segments of code should not be gated behind
       preprocessor conditionals. Instead, they should be pulled into separate
-      files via gn.
-    * In the event that a feature does have large swathes of code in separate
-      build files/translation units (e.g. extensions), using a custom feature
-      flag (e.g. `BUILDFLAG(ENABLE_EXTENSIONS)`) to glue this into the main source
-      is allowed. The glue code should be kept to a minimum.
+      files via GN.
+    * We have some grandfathered features that have large swathes of code in
+      separate build files/translation units (e.g. extensions). Using a custom
+      feature flag (e.g. `BUILDFLAG(ENABLE_EXTENSIONS)`) to glue this into the
+      main source is allowed. The glue code should be kept to a minimum.
+* New //chrome scoped GN arguments are disallowed.
+  * Each new argument exponentially increases the number of unique build
+    configurations. We are not scaling the number of test or production
+    configurations, so adding new arguments resulted in untested and unshipped
+    configurations. Use the existing platform build flags to control
+    compilation, and use runtime logic to control availability within a
+    platform. Reach out to //chrome OWNERS if you think your use case requires
+    an exception.
+  * GN variables are allowed. GN variables allow reduction of duplicated GN
+    code, but cannot be overridden by `gn args`.
 * Avoid run-time channel checking.
 * Macros are rarely appropriate. See google [style
   guide](https://google.github.io/styleguide/cppguide.html#Preprocessor_Macros)
@@ -647,7 +657,7 @@ control flows, which often leads to incorrect handling of one.
 Avoid the following:
 ```cpp
 if (result.cached) {
-  RunCallbackSync())
+  RunCallbackSync()
 } else {
   GetResultAndRunCallbackAsync()
 }

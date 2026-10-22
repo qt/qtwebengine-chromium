@@ -8,11 +8,10 @@ import * as Root from '../../core/root/root.js';
 let instance: Prototypes|null = null;
 
 export interface GreenDevSettings {
-  inDevToolsFloaty: Common.Settings.Setting<boolean>;
-  inlineWidgets: Common.Settings.Setting<boolean>;
-  artifactViewer: Common.Settings.Setting<boolean>;
   aiAnnotations: Common.Settings.Setting<boolean>;
   copyToGemini: Common.Settings.Setting<boolean>;
+  breakpointDebuggerAgent: Common.Settings.Setting<boolean>;
+  emulationCapabilities: Common.Settings.Setting<boolean>;
 }
 
 export class Prototypes {
@@ -38,24 +37,24 @@ export class Prototypes {
 
   settings(): Readonly<GreenDevSettings> {
     const settings = Common.Settings.Settings.instance();
-    const inDevToolsFloaty =
-        settings.createSetting('greendev-in-devtools-floaty-enabled', false, Common.Settings.SettingStorageType.LOCAL);
-
-    const inlineWidgets =
-        settings.createSetting('greendev-inline-widgets-enabled', false, Common.Settings.SettingStorageType.LOCAL);
-
     const aiAnnotations = settings.createSetting(
         'greendev-ai-annotations-enabled',
         false,
         Common.Settings.SettingStorageType.LOCAL,
     );
-
-    const artifactViewer =
-        settings.createSetting('greendev-artifact-viewer-enabled', false, Common.Settings.SettingStorageType.LOCAL);
-
     const copyToGemini =
         settings.createSetting('greendev-copy-to-gemini-enabled', false, Common.Settings.SettingStorageType.LOCAL);
+    const breakpointDebuggerAgent = settings.createSetting(
+        'greendev-breakpoint-debugger-agent-enabled',
+        false,
+        Common.Settings.SettingStorageType.LOCAL,
+    );
+    const emulationCapabilities = settings.createSetting(
+        'greendev-emulation-capabilities-enabled',
+        false,
+        Common.Settings.SettingStorageType.LOCAL,
+    );
 
-    return {inDevToolsFloaty, inlineWidgets, aiAnnotations, artifactViewer, copyToGemini};
+    return {aiAnnotations, copyToGemini, breakpointDebuggerAgent, emulationCapabilities};
   }
 }

@@ -64,7 +64,7 @@ class Swapchain;
 enum class AcquireSyncStatus { NotSpecified, Signaled, WasWaitedOn };
 
 struct SwapchainImage {
-    vvl::Image *image_state = nullptr;
+    vvl::Image* image_state = nullptr;
 
     // Acquire state
     bool acquired = false;
@@ -87,10 +87,10 @@ struct SwapchainImage {
 // Parent -> child relationships in the object usage tree:
 //    vvl::Swapchain [N] -> [1] vvl::Surface
 //    However, only 1 swapchain for each surface can be !retired.
-class Swapchain : public StateObject, public SubStateManager<SwapchainSubState> {
+class Swapchain : public RefcountedStateObject, public SubStateManager<SwapchainSubState> {
   public:
     const vku::safe_VkSwapchainCreateInfoKHR safe_create_info;
-    const VkSwapchainCreateInfoKHR &create_info;
+    const VkSwapchainCreateInfoKHR& create_info;
 
     std::vector<VkPresentModeKHR> present_modes;
     std::vector<SwapchainImage> images;
@@ -136,9 +136,14 @@ class Swapchain : public StateObject, public SubStateManager<SwapchainSubState> 
     // New swapchain state:
     // Present wait semaphores from the the old swapchain presentations.
     std::vector<std::shared_ptr<vvl::Semaphore>> old_swapchain_present_wait_semaphores;
+    std::weak_ptr<Swapchain> old_swapchain;
 
     // Number of bits set in VkPresentTimingInfoEXT::presentStageQueries for each present that hasn't been completed
-    std::deque<std::pair<uint64_t, uint32_t>> present_timing_stage_queries;
+    struct PresentTimingInfo {
+        uint32_t num_present_stage_queries;
+        SubmissionReference present_submission_ref;
+    };
+    std::deque<std::pair<uint64_t, PresentTimingInfo>> present_timing_stage_queries;
     // Present timing queue size for the swapchain set by vkSetSwapchainPresentTimingQueueSizeEXT
     uint32_t present_timing_queue_size = 0;
     // Present timing id to domain map
@@ -154,6 +159,7 @@ class Swapchain : public StateObject, public SubStateManager<SwapchainSubState> 
         }
     }
 
+    const VulkanTypedHandle* InUse() const override;
     VkSwapchainKHR VkHandle() const { return handle_.Cast<VkSwapchainKHR>(); }
 
     void PresentImage(uint32_t image_index, uint64_t present_id, const SubmissionReference &present_submission_ref,

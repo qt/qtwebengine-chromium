@@ -6,9 +6,11 @@
 
 #include <stdint.h>
 
+#include <limits>
 #include <optional>
 #include <utility>
 
+#include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/time/time.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -18,6 +20,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_microtasks_scope.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_throw_dom_exception.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_arraybuffer_arraybufferview.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_web_transport_close_info.h"
@@ -48,6 +51,7 @@
 #include "third_party/blink/renderer/modules/webtransport/receive_stream.h"
 #include "third_party/blink/renderer/modules/webtransport/send_stream.h"
 #include "third_party/blink/renderer/modules/webtransport/web_transport_error.h"
+#include "third_party/blink/renderer/modules/webtransport/web_transport_send_group.h"
 #include "third_party/blink/renderer/platform/bindings/exception_code.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
@@ -234,7 +238,7 @@ class WebTransport::DatagramUnderlyingSink final : public UnderlyingSinkBase {
                          WrapWeakPersistent(this)));
     } else {
       Vector<uint8_t> datagram;
-      datagram.AppendSpan(data);
+      datagram.append_range(data);
       pending_datagrams_.push_back(std::move(datagram));
     }
     int high_water_mark = datagrams_->outgoingHighWaterMark();
@@ -692,9 +696,7 @@ class WebTransport::ReceiveStreamVendor final
     auto* receive_stream = MakeGarbageCollected<ReceiveStream>(
         script_state_, web_transport_, stream_id, std::move(readable));
     auto* isolate = script_state_->GetIsolate();
-    v8::MicrotasksScope microtasks_scope(
-        isolate, ToMicrotaskQueue(script_state_),
-        v8::MicrotasksScope::kDoNotRunMicrotasks);
+    V8DoNotRunMicrotasksScope microtasks_scope(script_state_);
     v8::TryCatch try_catch(isolate);
     receive_stream->Init(PassThroughException(isolate));
 
@@ -762,9 +764,7 @@ class WebTransport::BidirectionalStreamVendor final
         std::move(incoming_consumer));
 
     auto* isolate = script_state_->GetIsolate();
-    v8::MicrotasksScope microtasks_scope(
-        isolate, ToMicrotaskQueue(script_state_),
-        v8::MicrotasksScope::kDoNotRunMicrotasks);
+    V8DoNotRunMicrotasksScope microtasks_scope(script_state_);
     v8::TryCatch try_catch(isolate);
     bidirectional_stream->Init(PassThroughException(isolate));
     if (try_catch.HasCaught()) {
@@ -812,6 +812,7 @@ WebTransport* WebTransport::Create(ScriptState* script_state,
                     WebFeature::kWebTransport);
   auto* transport =
       MakeGarbageCollected<WebTransport>(PassKey(), script_state, url);
+  transport->UpdateStateIfNeeded();
   transport->Init(url, *options, exception_state);
   return transport;
 }
@@ -825,9 +826,9 @@ WebTransport::WebTransport(ScriptState* script_state,
                            const String& url,
                            ExecutionContext* context)
     : ActiveScriptWrappable<WebTransport>({}),
-      ExecutionContextLifecycleObserver(context),
+      ExecutionContextLifecycleStateObserver(context),
       script_state_(script_state),
-      url_(NullURL(), url),
+      url_(NullUrl(), url),
       connector_(context),
       transport_remote_(context),
       handshake_client_receiver_(this, context),
@@ -1229,6 +1230,42 @@ void WebTransport::ContextDestroyed() {
   Dispose();
 }
 
+void WebTransport::ContextLifecycleStateChanged(
+    mojom::blink::FrameLifecycleState state) {
+  if (state == mojom::blink::FrameLifecycleState::kFrozen) {
+    if (!connector_.is_bound() && !transport_remote_.is_bound()) {
+      // This session has been closed or errored.
+      return;
+    }
+
+    if (transport_remote_.is_bound()) {
+      // The state is "connected".
+      transport_remote_->Close(nullptr);
+    }
+    DVLOG(1) << "WebTransport::ContextLifecycleStateChanged() frozen, closing "
+                "connection. this="
+             << this;
+    GetExecutionContext()
+        ->GetTaskRunner(TaskType::kNetworking)
+        ->PostTask(
+            FROM_HERE,
+            BindOnce(
+                [](WebTransport* transport) {
+                  if (!transport ||
+                      !transport->script_state_->ContextIsValid()) {
+                    return;
+                  }
+                  ScriptState::Scope scope(transport->script_state_);
+                  v8::Isolate* isolate = transport->script_state_->GetIsolate();
+                  v8::Local<v8::Value> error = WebTransportError::Create(
+                      isolate, std::nullopt, "Page entered back/forward cache.",
+                      V8WebTransportErrorSource::Enum::kSession);
+                  transport->Cleanup(nullptr, error, /*abruptly=*/true);
+                },
+                WrapWeakPersistent(this)));
+  }
+}
+
 bool WebTransport::HasPendingActivity() const {
   DVLOG(1) << "WebTransport::HasPendingActivity() this=" << this;
   return handshake_client_receiver_.is_bound() || client_receiver_.is_bound();
@@ -1295,6 +1332,7 @@ void WebTransport::Trace(Visitor* visitor) const {
   visitor->Trace(received_streams_underlying_source_);
   visitor->Trace(received_bidirectional_streams_);
   visitor->Trace(received_bidirectional_streams_underlying_source_);
+  visitor->Trace(send_groups_);
   ScriptWrappable::Trace(visitor);
   ExecutionContextLifecycleObserver::Trace(visitor);
 }
@@ -1408,16 +1446,16 @@ void WebTransport::Init(const String& url_for_diagnostics,
   }
 
   if (auto* scheduler = execution_context->GetScheduler()) {
-    // Two features are registered with `DisableBackForwardCache` policy here:
-    // - `kWebTransport`: a non-sticky feature that will disable BFCache for any
-    // page. It will be reset after the `WebTransport` is disposed.
+    // Two features are registered here:
+    // - `kWebTransport`: a non-sticky feature that will disable aggressive
+    // throttling for any page. It will be reset after the `WebTransport` is
+    // disposed.
     // - `kWebTransportSticky`: a sticky feature that will only disable BFCache
     // for the page containing "Cache-Control: no-store" header. It won't be
     // reset even if the `WebTransport` is disposed.
     feature_handle_for_scheduler_ = scheduler->RegisterFeature(
         SchedulingPolicy::Feature::kWebTransport,
-        SchedulingPolicy{SchedulingPolicy::DisableAggressiveThrottling(),
-                         SchedulingPolicy::DisableBackForwardCache()});
+        SchedulingPolicy{SchedulingPolicy::DisableAggressiveThrottling()});
     scheduler->RegisterStickyFeature(
         SchedulingPolicy::Feature::kWebTransportSticky,
         SchedulingPolicy{SchedulingPolicy::DisableBackForwardCache()});
@@ -1510,6 +1548,7 @@ void WebTransport::Dispose() {
   // let the garbage collector free the memory.
   // Clear pending close notifications.
   closed_potentially_pending_streams_.clear();
+  send_groups_.clear();
   connector_.reset();
   transport_remote_.reset();
   handshake_client_receiver_.reset();
@@ -1634,9 +1673,7 @@ void WebTransport::OnCreateSendStreamResponse(
       script_state_, this, stream_id, std::move(producer));
 
   auto* isolate = script_state_->GetIsolate();
-  v8::MicrotasksScope microtasks_scope(
-      isolate, ToMicrotaskQueue(script_state_),
-      v8::MicrotasksScope::kDoNotRunMicrotasks);
+  V8DoNotRunMicrotasksScope microtasks_scope(script_state_);
   v8::TryCatch try_catch(isolate);
   send_stream->Init(PassThroughException(isolate));
   if (try_catch.HasCaught()) {
@@ -1681,9 +1718,7 @@ void WebTransport::OnCreateBidirectionalStreamResponse(
       script_state_, this, stream_id, std::move(outgoing_producer),
       std::move(incoming_consumer));
 
-  v8::MicrotasksScope microtasks_scope(
-      isolate, ToMicrotaskQueue(script_state_),
-      v8::MicrotasksScope::kDoNotRunMicrotasks);
+  V8DoNotRunMicrotasksScope microtasks_scope(script_state_);
   v8::TryCatch try_catch(isolate);
   bidirectional_stream->Init(PassThroughException(isolate));
   if (try_catch.HasCaught()) {
@@ -1737,6 +1772,20 @@ WebTransportConnectionStats* WebTransport::ConvertStatsFromMojom(
 
 const String& WebTransport::protocol() {
   return selected_application_protocol_;
+}
+
+WebTransportSendGroup* WebTransport::createSendGroup(
+    ExceptionState& exception_state) {
+  if (next_send_group_id_ == std::numeric_limits<uint32_t>::max()) {
+    exception_state.ThrowRangeError(
+        "Cannot create more send groups: group ID limit reached.");
+    return nullptr;
+  }
+  uint32_t group_id = next_send_group_id_;
+  next_send_group_id_ = base::CheckAdd(next_send_group_id_, 1).ValueOrDie();
+  auto* group = MakeGarbageCollected<WebTransportSendGroup>(this, group_id);
+  send_groups_.insert(group);
+  return group;
 }
 
 }  // namespace blink

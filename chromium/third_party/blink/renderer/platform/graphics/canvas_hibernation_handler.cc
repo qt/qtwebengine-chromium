@@ -441,8 +441,8 @@ void CanvasHibernationHandler::Hibernate(
   // No HibernationEvent reported on success. This is on purppose to avoid
   // non-complementary stats. Each HibernationScheduled event is paired with
   // exactly one failure or exit event.
-  provider->FlushCanvas();
-  scoped_refptr<StaticBitmapImage> snapshot = provider->Snapshot();
+  provider->FlushCanvas2D();
+  scoped_refptr<StaticBitmapImage> snapshot = provider->SnapshotForCanvas2D();
   if (!snapshot) {
     ReportHibernationEvent(
         HibernationEvent::kHibernationAbortedDueSnapshotFailure);
@@ -455,8 +455,8 @@ void CanvasHibernationHandler::Hibernate(
         HibernationEvent::kHibernationAbortedDueSnapshotFailure);
     return;
   }
-  SaveForHibernation(std::move(sw_image), provider->ReleaseRecorder(), context,
-                     delay);
+  SaveForHibernation(std::move(sw_image),
+                     provider->ReleaseRecorderForCanvas2D(), context, delay);
 
   delegate_->ResetResourceProvider();
   delegate_->ClearCanvas2DLayerTexture();
@@ -487,8 +487,8 @@ void CanvasHibernationHandler::InitiateHibernationIfNecessary() {
     // potentially blocking rendering for an extended-ish period of time. To
     // mitigate that, make the delay random.
     constexpr int max_delay_in_ms = kMaxHibernationDelay.InMilliseconds();
-    base::TimeDelta delay =
-        base::Milliseconds(base::RandInt(max_delay_in_ms / 2, max_delay_in_ms));
+    base::TimeDelta delay = base::Milliseconds(
+        base::RandIntInclusive(max_delay_in_ms / 2, max_delay_in_ms));
 
     base::PostDelayedMemoryReductionTask(
         GetMainThreadTaskRunner(), FROM_HERE,

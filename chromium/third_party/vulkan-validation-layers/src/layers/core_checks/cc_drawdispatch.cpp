@@ -20,11 +20,15 @@
 #include <sstream>
 #include <vulkan/utility/vk_format_utils.h>
 #include <vulkan/vk_enum_string_helper.h>
+#include <vulkan/vulkan_core.h>
 #include <cstdint>
+#include <string>
 #include "core_checks/cc_buffer_address.h"
 #include "core_checks/cc_state_tracker.h"
+#include "core_checks/cc_vuid_maps.h"
 #include "drawdispatch/drawdispatch_vuids.h"
 #include "core_validation.h"
+#include "error_message/error_location.h"
 #include "error_message/error_strings.h"
 #include "error_message/logging.h"
 #include "generated/error_location_helper.h"
@@ -40,6 +44,7 @@
 #include "state_tracker/shader_module.h"
 #include "state_tracker/cmd_buffer_state.h"
 #include "state_tracker/pipeline_state.h"
+#include "state_tracker/shader_stage_state.h"
 #include "utils/assert_utils.h"
 #include "utils/math_utils.h"
 #include "utils/image_utils.h"
@@ -49,12 +54,11 @@
 using vvl::DrawDispatchVuid;
 using vvl::GetDrawDispatchVuid;
 
-bool CoreChecks::ValidateGraphicsIndexedCmd(const vvl::CommandBuffer &cb_state, const vvl::Buffer *index_buffer_state,
-                                            const DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateGraphicsIndexedCmd(const vvl::CommandBuffer& cb_state, const DrawDispatchVuid& vuid) const {
     bool skip = false;
     // maintenance6 allows null buffers to be bound
-    if (!index_buffer_state && !cb_state.index_buffer_binding.bound) {
-        const char *extra =
+    if (!cb_state.index_buffer_binding.bound) {
+        const char* extra =
             enabled_features.maintenance6
                 ? "Even with maintenance6, you need to set the buffer in vkCmdBindIndexBuffer to be VK_NULL_HANDLE, not "
                   "calling vkCmdBindIndexBuffer still has the buffer as undeclared."
@@ -67,21 +71,21 @@ bool CoreChecks::ValidateGraphicsIndexedCmd(const vvl::CommandBuffer &cb_state, 
     return skip;
 }
 
-bool CoreChecks::ValidateCmdDrawInstance(const LastBound &last_bound_state, uint32_t instanceCount, uint32_t firstInstance,
-                                         const DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateCmdDrawInstance(const LastBound& last_bound_state, uint32_t instanceCount, uint32_t firstInstance,
+                                         const Location& loc) const {
     bool skip = false;
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
-    const auto *pipeline_state = last_bound_state.pipeline_state;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
+    const auto* pipeline_state = last_bound_state.pipeline_state;
 
     // Verify maxMultiviewInstanceIndex
     if (cb_state.active_render_pass && cb_state.active_render_pass->has_multiview_enabled &&
         ((static_cast<uint64_t>(instanceCount) + static_cast<uint64_t>(firstInstance)) >
          static_cast<uint64_t>(phys_dev_props_core11.maxMultiviewInstanceIndex))) {
-        skip |=
-            LogError(vuid.max_multiview_instance_index_02688, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                     "render pass instance has multiview enabled, and maxMultiviewInstanceIndex: %" PRIu32
-                     ", but instanceCount: %" PRIu32 " and firstInstance: %" PRIu32 ".",
-                     phys_dev_props_core11.maxMultiviewInstanceIndex, instanceCount, firstInstance);
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::MAX_MULTIVIEW_INSTANCE_INDEX_02688),
+                         cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                         "render pass instance has multiview enabled, and maxMultiviewInstanceIndex: %" PRIu32
+                         ", but instanceCount: %" PRIu32 " and firstInstance: %" PRIu32 ".",
+                         phys_dev_props_core11.maxMultiviewInstanceIndex, instanceCount, firstInstance);
     }
 
     // supportsNonZeroFirstInstance was added from the EXT to KHR (not 1.4) version of VK_KHR_vertex_attribute_divisor
@@ -91,15 +95,15 @@ bool CoreChecks::ValidateCmdDrawInstance(const LastBound &last_bound_state, uint
     if (IsExtEnabled(extensions.vk_khr_vertex_attribute_divisor) && !phys_dev_props_core14.supportsNonZeroFirstInstance) {
         if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT)) {
             if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT) && firstInstance != 0u) {
-                for (const auto &binding_state : cb_state.dynamic_state_value.vertex_bindings) {
-                    const auto &desc = binding_state.second.desc;
+                for (const auto& binding_state : cb_state.dynamic_state_value.vertex_bindings) {
+                    const auto& desc = binding_state.second.desc;
                     if (desc.divisor != 1u) {
-                        skip |=
-                            LogError(vuid.vertex_input_09462, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                                     "vkCmdSetVertexInputEXT set pVertexBindingDivisors[%" PRIu32 "] (binding %" PRIu32
-                                     ") divisor as %" PRIu32 ", but firstInstance is %" PRIu32
-                                     " and supportsNonZeroFirstInstance is VK_FALSE.",
-                                     binding_state.second.index, desc.binding, desc.divisor, firstInstance);
+                        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::VERTEX_INPUT_09462),
+                                         cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                                         "vkCmdSetVertexInputEXT set pVertexBindingDivisors[%" PRIu32 "] (binding %" PRIu32
+                                         ") divisor as %" PRIu32 ", but firstInstance is %" PRIu32
+                                         " and supportsNonZeroFirstInstance is VK_FALSE.",
+                                         binding_state.second.index, desc.binding, desc.divisor, firstInstance);
                         break;
                     }
                 }
@@ -110,11 +114,12 @@ bool CoreChecks::ValidateCmdDrawInstance(const LastBound &last_bound_state, uint
             if (vertex_input_divisor_state && firstInstance != 0u) {
                 for (uint32_t i = 0; i < vertex_input_divisor_state->vertexBindingDivisorCount; ++i) {
                     if (vertex_input_divisor_state->pVertexBindingDivisors[i].divisor != 1u) {
-                        skip |= LogError(
-                            vuid.vertex_input_09461, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                            "VkPipelineVertexInputDivisorStateCreateInfo::pVertexBindingDivisors[%" PRIu32 "].divisor is %" PRIu32
-                            " and firstInstance is %" PRIu32 ", but supportsNonZeroFirstInstance is VK_FALSE.",
-                            i, vertex_input_divisor_state->pVertexBindingDivisors[i].divisor, firstInstance);
+                        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::VERTEX_INPUT_09461),
+                                         cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                                         "VkPipelineVertexInputDivisorStateCreateInfo::pVertexBindingDivisors[%" PRIu32
+                                         "].divisor is %" PRIu32 " and firstInstance is %" PRIu32
+                                         ", but supportsNonZeroFirstInstance is VK_FALSE.",
+                                         i, vertex_input_divisor_state->pVertexBindingDivisors[i].divisor, firstInstance);
                         break;  // only report first instance of the error
                     }
                 }
@@ -126,14 +131,14 @@ bool CoreChecks::ValidateCmdDrawInstance(const LastBound &last_bound_state, uint
 }
 
 // VTG = Vertex Tessellation Geometry
-bool CoreChecks::ValidateVTGShaderStages(const LastBound &last_bound_state, const DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateVTGShaderStages(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
 
     if (last_bound_state.pipeline_state &&
         last_bound_state.pipeline_state->active_shaders & (VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT)) {
         skip |= LogError(
-            vuid.invalid_mesh_shader_stages_06481, last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
-            vuid.loc(),
+            CreateActionVuid(loc.function, vvl::ActionVUID::INVALID_MESH_SHADER_STAGES_06481),
+            last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
             "The bound graphics pipeline must not have been created with "
             "VK_SHADER_STAGE_TASK_BIT_EXT or VK_SHADER_STAGE_MESH_BIT_EXT. Active shader stages on the bound pipeline are %s.",
             string_VkShaderStageFlags(last_bound_state.pipeline_state->active_shaders).c_str());
@@ -141,23 +146,34 @@ bool CoreChecks::ValidateVTGShaderStages(const LastBound &last_bound_state, cons
     return skip;
 }
 
-bool CoreChecks::ValidateMeshShaderStage(const LastBound& last_bound_state, const DrawDispatchVuid& vuid) const {
+bool CoreChecks::ValidateMeshShaderStage(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
-    const auto *pipeline_state = last_bound_state.pipeline_state;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
+    const auto* pipeline_state = last_bound_state.pipeline_state;
 
     if (pipeline_state) {
         if (!(pipeline_state->active_shaders & VK_SHADER_STAGE_MESH_BIT_EXT)) {
-            skip |=
-                LogError(vuid.missing_mesh_shader_stages_07091, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                         "The current pipeline bound to VK_PIPELINE_BIND_POINT_GRAPHICS must contain a shader stage using the "
-                         "MeshEXT Execution Model. Active shader stages on the bound pipeline are %s.",
-                         string_VkShaderStageFlags(pipeline_state->active_shaders).c_str());
+            // The real VU says to check the Execution Model, but the NV vs EXT is checked elsewhere
+            const char* vuid =
+                loc.function == vvl::Func::vkCmdDrawMeshTasksEXT           ? "VUID-vkCmdDrawMeshTasksEXT-MeshEXT-07087"
+                : loc.function == vvl::Func::vkCmdDrawMeshTasksIndirectEXT ? "VUID-vkCmdDrawMeshTasksIndirectEXT-MeshEXT-07091"
+                : loc.function == vvl::Func::vkCmdDrawMeshTasksIndirectCountEXT
+                    ? "VUID-vkCmdDrawMeshTasksIndirectCountEXT-MeshEXT-07100"
+                : loc.function == vvl::Func::vkCmdDrawMeshTasksNV         ? "VUID-vkCmdDrawMeshTasksNV-MeshNV-07080"
+                : loc.function == vvl::Func::vkCmdDrawMeshTasksIndirectNV ? "VUID-vkCmdDrawMeshTasksIndirectNV-MeshNV-07081"
+                : loc.function == vvl::Func::vkCmdDrawMeshTasksIndirectCountNV
+                    ? "VUID-vkCmdDrawMeshTasksIndirectCountNV-MeshNV-07082"
+                    : kVUIDUndefined;
+            skip |= LogError(vuid, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                             "The current pipeline bound to VK_PIPELINE_BIND_POINT_GRAPHICS must contain a MeshEXT shader stage to "
+                             "call %s\nThe current active shader stages on the bound pipeline are %s.",
+                             String(loc.function), string_VkShaderStageFlags(pipeline_state->active_shaders).c_str());
         }
         if (pipeline_state->active_shaders & (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
                                               VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT)) {
             skip |= LogError(
-                vuid.mesh_shader_stages_06480, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                CreateActionVuid(loc.function, vvl::ActionVUID::MESH_SHADER_STAGES_06480),
+                cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                 "The bound graphics pipeline must not have been created with "
                 "VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, "
                 "VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT or VK_SHADER_STAGE_GEOMETRY_BIT.\nActive shader stages on the "
@@ -165,16 +181,44 @@ bool CoreChecks::ValidateMeshShaderStage(const LastBound& last_bound_state, cons
                 string_VkShaderStageFlags(pipeline_state->active_shaders).c_str());
         }
     }
-    for (const auto &query : cb_state.active_queries) {
+    for (const auto& query : cb_state.active_queries) {
         if (const auto query_pool_state = Get<vvl::QueryPool>(query.pool)) {
             const VkQueryType query_type = query_pool_state->create_info.queryType;
             if (query_type == VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT) {
-                skip |= LogError(vuid.xfb_queries_07074, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                                 "Query with type VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT is active.");
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::XFB_QUERIES_07074),
+                                 cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                                 "query %" PRIu32
+                                 " in %s with type VK_QUERY_TYPE_TRANSFORM_FEEDBACK_STREAM_EXT is active.\nHint: vkCmdEndQuery "
+                                 "must be called on Transform Feedback prior to drawing with a mesh shader.",
+                                 query.slot, FormatHandle(query.pool).c_str());
+            } else if (query_type == VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT) {
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PG_QUERIES_07075),
+                                 cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                                 "query %" PRIu32
+                                 " in %s with type VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT is active.\nHint: vkCmdEndQuery must be "
+                                 "called on Transform Feedback prior to drawing with a mesh shader.",
+                                 query.slot, FormatHandle(query.pool).c_str());
             }
-            if (query_type == VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT) {
-                skip |= LogError(vuid.pg_queries_07075, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                                 "Query with type VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT is active.");
+            const VkQueryPipelineStatisticFlags invalid_flags =
+                VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_VERTICES_BIT |
+                VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_PRIMITIVES_BIT |
+                VK_QUERY_PIPELINE_STATISTIC_VERTEX_SHADER_INVOCATIONS_BIT |
+                VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_INVOCATIONS_BIT |
+                VK_QUERY_PIPELINE_STATISTIC_GEOMETRY_SHADER_PRIMITIVES_BIT | VK_QUERY_PIPELINE_STATISTIC_CLIPPING_INVOCATIONS_BIT |
+                VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT |
+                VK_QUERY_PIPELINE_STATISTIC_TESSELLATION_CONTROL_SHADER_PATCHES_BIT |
+                VK_QUERY_PIPELINE_STATISTIC_TESSELLATION_EVALUATION_SHADER_INVOCATIONS_BIT;
+            if (query_type == VK_QUERY_TYPE_PIPELINE_STATISTICS &&
+                (query_pool_state->create_info.pipelineStatistics & invalid_flags)) {
+                skip |= LogError(
+                    CreateActionVuid(loc.function, vvl::ActionVUID::PIPELINE_STATISTICS_QUERIES_07076),
+                    cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                    "query %" PRIu32
+                    " in %s with type VK_QUERY_TYPE_PIPELINE_STATISTICS is active, which is invalid because it was created with "
+                    "pipelineStatistics (%s) which is incompatible with mesh shaders. (You need to call vkCmdEndQuery prior to "
+                    "drawing with a mesh shader.)",
+                    query.slot, FormatHandle(query.pool).c_str(),
+                    string_VkQueryPipelineStatisticFlags(query_pool_state->create_info.pipelineStatistics & invalid_flags).c_str());
             }
         }
     }
@@ -182,29 +226,29 @@ bool CoreChecks::ValidateMeshShaderStage(const LastBound& last_bound_state, cons
 }
 
 bool CoreChecks::PreCallValidateCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
-                                        uint32_t firstVertex, uint32_t firstInstance, const ErrorObject &error_obj) const {
+                                        uint32_t firstVertex, uint32_t firstInstance, const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateCmdDrawInstance(last_bound_state, instanceCount, firstInstance, vuid);
-    skip |= ValidateVTGShaderStages(last_bound_state, vuid);
+    skip |= ValidateCmdDrawInstance(last_bound_state, instanceCount, firstInstance, error_obj.location);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
     return skip;
 }
 
 bool CoreChecks::PreCallValidateCmdDrawMultiEXT(VkCommandBuffer commandBuffer, uint32_t drawCount,
-                                                const VkMultiDrawInfoEXT *pVertexInfo, uint32_t instanceCount,
-                                                uint32_t firstInstance, uint32_t stride, const ErrorObject &error_obj) const {
+                                                const VkMultiDrawInfoEXT* pVertexInfo, uint32_t instanceCount,
+                                                uint32_t firstInstance, uint32_t stride, const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateCmdDrawInstance(last_bound_state, instanceCount, firstInstance, vuid);
-    skip |= ValidateVTGShaderStages(last_bound_state, vuid);
+    skip |= ValidateCmdDrawInstance(last_bound_state, instanceCount, firstInstance, error_obj.location);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
 
     if (!enabled_features.multiDraw) {
         skip |= LogError("VUID-vkCmdDrawMultiEXT-None-04933", cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
@@ -228,30 +272,34 @@ bool CoreChecks::PreCallValidateCmdDrawMultiEXT(VkCommandBuffer commandBuffer, u
     return skip;
 }
 
-bool CoreChecks::ValidateCmdDrawIndexedBufferSize(const vvl::CommandBuffer &cb_state, const vvl::Buffer &index_buffer_state,
-                                                  uint32_t indexCount, uint32_t firstIndex, const Location &loc,
-                                                  const char *first_index_vuid) const {
+bool CoreChecks::ValidateCmdDrawIndexedBufferSize(const vvl::CommandBuffer& cb_state, uint32_t indexCount, uint32_t firstIndex,
+                                                  const Location& loc, const char* first_index_vuid) const {
     bool skip = false;
     if (enabled_features.robustBufferAccess2) {
         return skip;
     }
 
-    const uint32_t index_size = IndexTypeSize(cb_state.index_buffer_binding.index_type);
+    if (cb_state.index_buffer_binding.Buffer() == VK_NULL_HANDLE) {
+        // Missing VU https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/5322#note_591426
+        return skip;
+    }
+
+    const uint32_t index_size = IndexTypeByteSize(cb_state.index_buffer_binding.index_type);
     // This doesn't exactly match the pseudocode of the VUID, but the binding size is the *bound* size, such that the offset
     // has already been accounted for (subtracted from the buffer size), and is consistent with the use of
     // BufferBinding::size for vertex buffer bindings (which record the *bound* size, not the size of the bound buffer)
     VkDeviceSize end_offset = static_cast<VkDeviceSize>(index_size * (firstIndex + indexCount));
     if (end_offset > cb_state.index_buffer_binding.size) {
         LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
-        objlist.add(index_buffer_state.Handle());
+        objlist.add(cb_state.index_buffer_binding.Buffer());
+        const VkDeviceSize buffer_offset = cb_state.index_buffer_binding.BufferOffset();
         skip |= LogError(first_index_vuid, objlist, loc,
                          "index size (%" PRIu32 ") * (firstIndex (%" PRIu32 ") + indexCount (%" PRIu32
                          ")) "
                          "+ binding offset (%" PRIuLEAST64 ") = an ending offset of %" PRIuLEAST64
                          " bytes, which is greater than the index buffer size (%" PRIuLEAST64 ").",
-                         index_size, firstIndex, indexCount, cb_state.index_buffer_binding.offset,
-                         end_offset + cb_state.index_buffer_binding.offset,
-                         cb_state.index_buffer_binding.size + cb_state.index_buffer_binding.offset);
+                         index_size, firstIndex, indexCount, buffer_offset, end_offset + buffer_offset,
+                         cb_state.index_buffer_binding.size + buffer_offset);
     }
 
     return skip;
@@ -259,40 +307,37 @@ bool CoreChecks::ValidateCmdDrawIndexedBufferSize(const vvl::CommandBuffer &cb_s
 
 bool CoreChecks::PreCallValidateCmdDrawIndexed(VkCommandBuffer commandBuffer, uint32_t indexCount, uint32_t instanceCount,
                                                uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance,
-                                               const ErrorObject &error_obj) const {
+                                               const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateCmdDrawInstance(last_bound_state, instanceCount, firstInstance, vuid);
-    skip |= ValidateVTGShaderStages(last_bound_state, vuid);
+    skip |= ValidateCmdDrawInstance(last_bound_state, instanceCount, firstInstance, error_obj.location);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
 
-    {
-        const auto index_buffer_state = Get<vvl::Buffer>(cb_state.index_buffer_binding.buffer);
-        skip |= ValidateGraphicsIndexedCmd(cb_state, index_buffer_state.get(), vuid);
-        if (index_buffer_state) {
-            skip |= ValidateCmdDrawIndexedBufferSize(cb_state, *index_buffer_state, indexCount, firstIndex, error_obj.location,
-                                                     "VUID-vkCmdDrawIndexed-robustBufferAccess2-08798");
-        }
+    skip |= ValidateGraphicsIndexedCmd(cb_state, vuid);
+    if (cb_state.index_buffer_binding.HasNonNullBuffer()) {
+        skip |= ValidateCmdDrawIndexedBufferSize(cb_state, indexCount, firstIndex, error_obj.location,
+                                                 "VUID-vkCmdDrawIndexed-robustBufferAccess2-08798");
     }
 
     return skip;
 }
 
 bool CoreChecks::PreCallValidateCmdDrawMultiIndexedEXT(VkCommandBuffer commandBuffer, uint32_t drawCount,
-                                                       const VkMultiDrawIndexedInfoEXT *pIndexInfo, uint32_t instanceCount,
-                                                       uint32_t firstInstance, uint32_t stride, const int32_t *pVertexOffset,
-                                                       const ErrorObject &error_obj) const {
+                                                       const VkMultiDrawIndexedInfoEXT* pIndexInfo, uint32_t instanceCount,
+                                                       uint32_t firstInstance, uint32_t stride, const int32_t* pVertexOffset,
+                                                       const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateCmdDrawInstance(last_bound_state, instanceCount, firstInstance, vuid);
-    skip |= ValidateVTGShaderStages(last_bound_state, vuid);
+    skip |= ValidateCmdDrawInstance(last_bound_state, instanceCount, firstInstance, error_obj.location);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
 
     if (!enabled_features.multiDraw) {
         skip |= LogError("VUID-vkCmdDrawMultiIndexedEXT-None-04937", cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
@@ -313,23 +358,22 @@ bool CoreChecks::PreCallValidateCmdDrawMultiIndexedEXT(VkCommandBuffer commandBu
     }
     skip |= invalid_stride;
 
-    const auto index_buffer_state = Get<vvl::Buffer>(cb_state.index_buffer_binding.buffer);
-    skip |= ValidateGraphicsIndexedCmd(cb_state, index_buffer_state.get(), vuid);
+    skip |= ValidateGraphicsIndexedCmd(cb_state, vuid);
 
     // only index into pIndexInfo if we know parameters are sane
     if (drawCount != 0 && !pIndexInfo) {
         skip |= LogError("VUID-vkCmdDrawMultiIndexedEXT-drawCount-04940", cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
                          error_obj.location.dot(Field::drawCount), "is %" PRIu32 " but pIndexInfo is NULL.", drawCount);
-    } else if (index_buffer_state) {
+    } else if (cb_state.index_buffer_binding.HasNonNullBuffer()) {
         // Continuing on from this point invokes undefined behavior due to invalid stride size.
         if (invalid_stride) {
             return skip;
         }
 
-        const auto info_bytes = reinterpret_cast<const char *>(pIndexInfo);
+        const auto info_bytes = reinterpret_cast<const char*>(pIndexInfo);
         for (uint32_t i = 0; i < drawCount; i++) {
-            const auto info_ptr = reinterpret_cast<const VkMultiDrawIndexedInfoEXT *>(info_bytes + i * stride);
-            skip |= ValidateCmdDrawIndexedBufferSize(cb_state, *index_buffer_state, info_ptr->indexCount, info_ptr->firstIndex,
+            const auto info_ptr = reinterpret_cast<const VkMultiDrawIndexedInfoEXT*>(info_bytes + i * stride);
+            skip |= ValidateCmdDrawIndexedBufferSize(cb_state, info_ptr->indexCount, info_ptr->firstIndex,
                                                      error_obj.location.dot(Field::pIndexInfo, i),
                                                      "VUID-vkCmdDrawMultiIndexedEXT-robustBufferAccess2-08798");
         }
@@ -338,14 +382,14 @@ bool CoreChecks::PreCallValidateCmdDrawMultiIndexedEXT(VkCommandBuffer commandBu
 }
 
 bool CoreChecks::PreCallValidateCmdDrawIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
-                                                uint32_t drawCount, uint32_t stride, const ErrorObject &error_obj) const {
+                                                uint32_t drawCount, uint32_t stride, const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateVTGShaderStages(last_bound_state, vuid);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
 
     {
         auto indirect_buffer_state = Get<vvl::Buffer>(buffer);
@@ -385,25 +429,41 @@ bool CoreChecks::PreCallValidateCmdDrawIndirect(VkCommandBuffer commandBuffer, V
         skip |= LogError("VUID-vkCmdDrawIndirect-offset-02710", cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
                          error_obj.location.dot(Field::offset), "(%" PRIu64 ") must be a multiple of 4.", offset);
     }
-    // TODO: If the drawIndirectFirstInstance feature is not enabled, all the firstInstance members of the
-    // VkDrawIndirectCommand structures accessed by this command must be 0, which will require access to the contents of 'buffer'.
+
+    return skip;
+}
+
+bool CoreChecks::PreCallValidateCmdDrawIndirect2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo,
+                                                    const ErrorObject& error_obj) const {
+    bool skip = false;
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
+
+    skip |= ValidateActionState(last_bound_state, vuid);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
+
+    const Location info_loc = error_obj.location.dot(Field::pInfo);
+    skip |=
+        ValidateIndirectBufferDeviceAddress(cb_state, pInfo->addressRange.address, pInfo->addressRange.size, true, info_loc, vuid);
+
+    skip |= ValidateDeviceAddressCommands(commandBuffer, pInfo->addressRange.address, pInfo->addressRange.size, pInfo->addressFlags,
+                                          error_obj.location.dot(Field::addressRange));
+
     return skip;
 }
 
 bool CoreChecks::PreCallValidateCmdDrawIndexedIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
-                                                       uint32_t drawCount, uint32_t stride, const ErrorObject &error_obj) const {
+                                                       uint32_t drawCount, uint32_t stride, const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateVTGShaderStages(last_bound_state, vuid);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
 
-    {
-        const auto index_buffer_state = Get<vvl::Buffer>(cb_state.index_buffer_binding.buffer);
-        skip |= ValidateGraphicsIndexedCmd(cb_state, index_buffer_state.get(), vuid);
-    }
+    skip |= ValidateGraphicsIndexedCmd(cb_state, vuid);
 
     {
         auto indirect_buffer_state = Get<vvl::Buffer>(buffer);
@@ -449,12 +509,37 @@ bool CoreChecks::PreCallValidateCmdDrawIndexedIndirect(VkCommandBuffer commandBu
     return skip;
 }
 
-bool CoreChecks::PreCallValidateCmdDispatch(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY,
-                                            uint32_t groupCountZ, const ErrorObject &error_obj) const {
+bool CoreChecks::PreCallValidateCmdDrawIndexedIndirect2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo,
+                                                           const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundCompute();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
+
+    skip |= ValidateActionState(last_bound_state, vuid);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
+
+    skip |= ValidateGraphicsIndexedCmd(cb_state, vuid);
+
+    const Location info_loc = error_obj.location.dot(Field::pInfo);
+    skip |=
+        ValidateIndirectBufferDeviceAddress(cb_state, pInfo->addressRange.address, pInfo->addressRange.size, true, info_loc, vuid);
+
+    skip |= ValidateDeviceAddressCommands(commandBuffer, pInfo->addressRange.address, pInfo->addressRange.size, pInfo->addressFlags,
+                                          error_obj.location.dot(Field::addressRange));
+
+    // TODO: If the drawIndirectFirstInstance feature is not enabled, all the firstInstance members of the
+    // VkDrawIndexedIndirectCommand structures accessed by this command must be 0, which will require access to the contents of
+    // 'buffer'.
+    return skip;
+}
+
+bool CoreChecks::PreCallValidateCmdDispatch(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY,
+                                            uint32_t groupCountZ, const ErrorObject& error_obj) const {
+    bool skip = false;
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundCompute();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
 
@@ -484,11 +569,11 @@ bool CoreChecks::PreCallValidateCmdDispatch(VkCommandBuffer commandBuffer, uint3
 
 bool CoreChecks::PreCallValidateCmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t baseGroupX, uint32_t baseGroupY,
                                                 uint32_t baseGroupZ, uint32_t groupCountX, uint32_t groupCountY,
-                                                uint32_t groupCountZ, const ErrorObject &error_obj) const {
+                                                uint32_t groupCountZ, const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundCompute();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundCompute();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
 
@@ -546,7 +631,7 @@ bool CoreChecks::PreCallValidateCmdDispatchBase(VkCommandBuffer commandBuffer, u
                                  baseGroupX, baseGroupY, baseGroupZ);
             }
         } else {
-            const auto *shader_object = last_bound_state.GetShaderObjectState(ShaderObjectStage::COMPUTE);
+            const auto* shader_object = last_bound_state.GetShaderObjectState(ShaderObjectStage::COMPUTE);
             if (shader_object && ((shader_object->create_info.flags & VK_SHADER_CREATE_DISPATCH_BASE_BIT_EXT) == 0)) {
                 skip |= LogError("VUID-vkCmdDispatchBase-baseGroupX-00427", cb_state.GetObjectList(VK_SHADER_STAGE_COMPUTE_BIT),
                                  error_obj.location,
@@ -563,17 +648,17 @@ bool CoreChecks::PreCallValidateCmdDispatchBase(VkCommandBuffer commandBuffer, u
 
 bool CoreChecks::PreCallValidateCmdDispatchBaseKHR(VkCommandBuffer commandBuffer, uint32_t baseGroupX, uint32_t baseGroupY,
                                                    uint32_t baseGroupZ, uint32_t groupCountX, uint32_t groupCountY,
-                                                   uint32_t groupCountZ, const ErrorObject &error_obj) const {
+                                                   uint32_t groupCountZ, const ErrorObject& error_obj) const {
     return PreCallValidateCmdDispatchBase(commandBuffer, baseGroupX, baseGroupY, baseGroupZ, groupCountX, groupCountY, groupCountZ,
                                           error_obj);
 }
 
 bool CoreChecks::PreCallValidateCmdDispatchIndirect(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
-                                                    const ErrorObject &error_obj) const {
+                                                    const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundCompute();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundCompute();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
 
@@ -596,16 +681,37 @@ bool CoreChecks::PreCallValidateCmdDispatchIndirect(VkCommandBuffer commandBuffe
 
     return skip;
 }
-bool CoreChecks::PreCallValidateCmdDrawIndirectCount(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
-                                                     VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
-                                                     uint32_t stride, const ErrorObject &error_obj) const {
+
+bool CoreChecks::PreCallValidateCmdDispatchIndirect2KHR(VkCommandBuffer commandBuffer, const VkDispatchIndirect2InfoKHR* pInfo,
+                                                        const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundCompute();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateVTGShaderStages(last_bound_state, vuid);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
+
+    const Location info_loc = error_obj.location.dot(Field::pInfo);
+    skip |=
+        ValidateIndirectBufferDeviceAddress(cb_state, pInfo->addressRange.address, pInfo->addressRange.size, false, info_loc, vuid);
+
+    skip |= ValidateDeviceAddressCommands(commandBuffer, pInfo->addressRange.address, pInfo->addressRange.size, pInfo->addressFlags,
+                                          error_obj.location.dot(Field::addressRange));
+
+    return skip;
+}
+
+bool CoreChecks::PreCallValidateCmdDrawIndirectCount(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                                                     VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
+                                                     uint32_t stride, const ErrorObject& error_obj) const {
+    bool skip = false;
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
+
+    skip |= ValidateActionState(last_bound_state, vuid);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
 
     if (!IsIntegerMultipleOf(offset, 4)) {
         skip |= LogError("VUID-vkCmdDrawIndirectCount-offset-02710", cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
@@ -650,22 +756,45 @@ bool CoreChecks::PreCallValidateCmdDrawIndirectCount(VkCommandBuffer commandBuff
 
 bool CoreChecks::PreCallValidateCmdDrawIndirectCountKHR(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                         VkBuffer countBuffer, VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
-                                                        uint32_t stride, const ErrorObject &error_obj) const {
+                                                        uint32_t stride, const ErrorObject& error_obj) const {
     return PreCallValidateCmdDrawIndirectCount(commandBuffer, buffer, offset, countBuffer, countBufferOffset, maxDrawCount, stride,
                                                error_obj);
+}
+
+bool CoreChecks::PreCallValidateCmdDrawIndirectCount2KHR(VkCommandBuffer commandBuffer, const VkDrawIndirectCount2InfoKHR* pInfo,
+                                                         const ErrorObject& error_obj) const {
+    bool skip = false;
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
+
+    skip |= ValidateActionState(last_bound_state, vuid);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
+
+    const Location info_loc = error_obj.location.dot(Field::pInfo);
+    skip |=
+        ValidateIndirectBufferDeviceAddress(cb_state, pInfo->addressRange.address, pInfo->addressRange.size, true, info_loc, vuid);
+    skip |= ValidateIndirectCountBufferDeviceAddress(cb_state, pInfo->countAddressRange.address, info_loc, vuid);
+
+    skip |= ValidateDeviceAddressCommands(commandBuffer, pInfo->addressRange.address, pInfo->addressRange.size, pInfo->addressFlags,
+                                          error_obj.location.dot(Field::addressRange));
+    skip |= ValidateDeviceAddressCommands(commandBuffer, pInfo->countAddressRange.address, pInfo->countAddressRange.size,
+                                          pInfo->countAddressFlags, error_obj.location.dot(Field::countAddressRange));
+
+    return skip;
 }
 
 bool CoreChecks::PreCallValidateCmdDrawIndexedIndirectCount(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                             VkBuffer countBuffer, VkDeviceSize countBufferOffset,
                                                             uint32_t maxDrawCount, uint32_t stride,
-                                                            const ErrorObject &error_obj) const {
+                                                            const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateVTGShaderStages(last_bound_state, vuid);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
 
     if (!IsIntegerMultipleOf(offset, 4)) {
         skip |= LogError("VUID-vkCmdDrawIndexedIndirectCount-offset-02710", cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
@@ -690,10 +819,7 @@ bool CoreChecks::PreCallValidateCmdDrawIndexedIndirectCount(VkCommandBuffer comm
         skip |= ValidateIndirectCountCmd(cb_state, *count_buffer_state, countBufferOffset, vuid);
     }
 
-    {
-        const auto index_buffer_state = Get<vvl::Buffer>(cb_state.index_buffer_binding.buffer);
-        skip |= ValidateGraphicsIndexedCmd(cb_state, index_buffer_state.get(), vuid);
-    }
+    skip |= ValidateGraphicsIndexedCmd(cb_state, vuid);
 
     {
         auto indirect_buffer_state = Get<vvl::Buffer>(buffer);
@@ -715,23 +841,49 @@ bool CoreChecks::PreCallValidateCmdDrawIndexedIndirectCount(VkCommandBuffer comm
 bool CoreChecks::PreCallValidateCmdDrawIndexedIndirectCountKHR(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                                VkBuffer countBuffer, VkDeviceSize countBufferOffset,
                                                                uint32_t maxDrawCount, uint32_t stride,
-                                                               const ErrorObject &error_obj) const {
+                                                               const ErrorObject& error_obj) const {
     return PreCallValidateCmdDrawIndexedIndirectCount(commandBuffer, buffer, offset, countBuffer, countBufferOffset, maxDrawCount,
                                                       stride, error_obj);
+}
+
+bool CoreChecks::PreCallValidateCmdDrawIndexedIndirectCount2KHR(VkCommandBuffer commandBuffer,
+                                                                const VkDrawIndirectCount2InfoKHR* pInfo,
+                                                                const ErrorObject& error_obj) const {
+    bool skip = false;
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
+
+    skip |= ValidateActionState(last_bound_state, vuid);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
+
+    skip |= ValidateGraphicsIndexedCmd(cb_state, vuid);
+
+    const Location info_loc = error_obj.location.dot(Field::pInfo);
+    skip |=
+        ValidateIndirectBufferDeviceAddress(cb_state, pInfo->addressRange.address, pInfo->addressRange.size, true, info_loc, vuid);
+    skip |= ValidateIndirectCountBufferDeviceAddress(cb_state, pInfo->countAddressRange.address, info_loc, vuid);
+
+    skip |= ValidateDeviceAddressCommands(commandBuffer, pInfo->addressRange.address, pInfo->addressRange.size, pInfo->addressFlags,
+                                          error_obj.location.dot(Field::addressRange));
+    skip |= ValidateDeviceAddressCommands(commandBuffer, pInfo->countAddressRange.address, pInfo->countAddressRange.size,
+                                          pInfo->countAddressFlags, error_obj.location.dot(Field::countAddressRange));
+
+    return skip;
 }
 
 bool CoreChecks::PreCallValidateCmdDrawIndirectByteCountEXT(VkCommandBuffer commandBuffer, uint32_t instanceCount,
                                                             uint32_t firstInstance, VkBuffer counterBuffer,
                                                             VkDeviceSize counterBufferOffset, uint32_t counterOffset,
-                                                            uint32_t vertexStride, const ErrorObject &error_obj) const {
+                                                            uint32_t vertexStride, const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateCmdDrawInstance(last_bound_state, instanceCount, firstInstance, vuid);
-    skip |= ValidateVTGShaderStages(last_bound_state, vuid);
+    skip |= ValidateCmdDrawInstance(last_bound_state, instanceCount, firstInstance, error_obj.location);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
 
     if (!enabled_features.transformFeedback) {
         skip |= LogError("VUID-vkCmdDrawIndirectByteCountEXT-transformFeedback-02287",
@@ -769,6 +921,28 @@ bool CoreChecks::PreCallValidateCmdDrawIndirectByteCountEXT(VkCommandBuffer comm
     return skip;
 }
 
+bool CoreChecks::PreCallValidateCmdDrawIndirectByteCount2EXT(VkCommandBuffer commandBuffer, uint32_t instanceCount,
+                                                             uint32_t firstInstance,
+                                                             const VkBindTransformFeedbackBuffer2InfoEXT* pCounterInfo,
+                                                             uint32_t counterOffset, uint32_t vertexStride,
+                                                             const ErrorObject& error_obj) const {
+    bool skip = false;
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
+
+    skip |= ValidateActionState(last_bound_state, vuid);
+    skip |= ValidateCmdDrawInstance(last_bound_state, instanceCount, firstInstance, error_obj.location);
+    skip |= ValidateVTGShaderStages(last_bound_state, error_obj.location);
+
+    skip |= ValidateDeviceAddressRange(pCounterInfo->addressRange.address, pCounterInfo->addressRange.size, false,
+                                       error_obj.location.dot(Field::pCounterInfo).dot(Field::addressRange),
+                                       LogObjectList(commandBuffer), VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT,
+                                       vuid.indirect_buffer_bit_02290);
+
+    return skip;
+}
+
 bool CoreChecks::PreCallValidateCmdTraceRaysNV(VkCommandBuffer commandBuffer, VkBuffer raygenShaderBindingTableBuffer,
                                                VkDeviceSize raygenShaderBindingOffset, VkBuffer missShaderBindingTableBuffer,
                                                VkDeviceSize missShaderBindingOffset, VkDeviceSize missShaderBindingStride,
@@ -776,11 +950,11 @@ bool CoreChecks::PreCallValidateCmdTraceRaysNV(VkCommandBuffer commandBuffer, Vk
                                                VkDeviceSize hitShaderBindingStride, VkBuffer callableShaderBindingTableBuffer,
                                                VkDeviceSize callableShaderBindingOffset, VkDeviceSize callableShaderBindingStride,
                                                uint32_t width, uint32_t height, uint32_t depth,
-                                               const ErrorObject &error_obj) const {
+                                               const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundRayTracing();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundRayTracing();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
 
@@ -915,22 +1089,22 @@ bool CoreChecks::PreCallValidateCmdTraceRaysNV(VkCommandBuffer commandBuffer, Vk
     return skip;
 }
 
-bool CoreChecks::ValidateCmdTraceRaysKHR(const Location &loc, const LastBound &last_bound_state,
-                                         const VkStridedDeviceAddressRegionKHR *pRaygenShaderBindingTable,
-                                         const VkStridedDeviceAddressRegionKHR *pMissShaderBindingTable,
-                                         const VkStridedDeviceAddressRegionKHR *pHitShaderBindingTable,
-                                         const VkStridedDeviceAddressRegionKHR *pCallableShaderBindingTable) const {
+bool CoreChecks::ValidateCmdTraceRaysKHR(const Location& loc, const LastBound& last_bound_state,
+                                         const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
+                                         const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable,
+                                         const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
+                                         const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable) const {
     bool skip = false;
-    const vvl::Pipeline *pipeline_state = last_bound_state.pipeline_state;
+    const vvl::Pipeline* pipeline_state = last_bound_state.pipeline_state;
     if (!pipeline_state) return skip;  // possible wasn't bound correctly, check caught elsewhere
     const bool is_indirect = loc.function == Func::vkCmdTraceRaysIndirectKHR;
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
 
     if (pHitShaderBindingTable) {
         const Location table_loc = loc.dot(Field::pHitShaderBindingTable);
         if (pipeline_state->create_flags & VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_INTERSECTION_SHADERS_BIT_KHR) {
             if ((pHitShaderBindingTable->size == 0 || pHitShaderBindingTable->stride == 0)) {
-                const char *vuid =
+                const char* vuid =
                     is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-flags-03514" : "VUID-vkCmdTraceRaysKHR-flags-03514";
                 skip |= LogError(vuid, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR), table_loc,
                                  "either size (%" PRIu64 ") and stride (%" PRIu64 ") is zero.", pHitShaderBindingTable->size,
@@ -939,7 +1113,7 @@ bool CoreChecks::ValidateCmdTraceRaysKHR(const Location &loc, const LastBound &l
         }
         if (pipeline_state->create_flags & VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_CLOSEST_HIT_SHADERS_BIT_KHR) {
             if ((pHitShaderBindingTable->size == 0 || pHitShaderBindingTable->stride == 0)) {
-                const char *vuid =
+                const char* vuid =
                     is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-flags-03513" : "VUID-vkCmdTraceRaysKHR-flags-03513";
                 skip |= LogError(vuid, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR), table_loc,
                                  "either size (%" PRIu64 ") and stride (%" PRIu64 ") is zero.", pHitShaderBindingTable->size,
@@ -950,7 +1124,7 @@ bool CoreChecks::ValidateCmdTraceRaysKHR(const Location &loc, const LastBound &l
             // No vuid to check for pHitShaderBindingTable->deviceAddress == 0 with this flag
 
             if (pHitShaderBindingTable->size == 0 || pHitShaderBindingTable->stride == 0) {
-                const char *vuid =
+                const char* vuid =
                     is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-flags-03512" : "VUID-vkCmdTraceRaysKHR-flags-03512";
                 skip |= LogError(vuid, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR), table_loc,
                                  "either size (%" PRIu64 ") and stride (%" PRIu64 ") is zero.", pHitShaderBindingTable->size,
@@ -958,14 +1132,14 @@ bool CoreChecks::ValidateCmdTraceRaysKHR(const Location &loc, const LastBound &l
             }
         }
 
-        const char *vuid_binding_table_flag = is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-pHitShaderBindingTable-03688"
+        const char* vuid_binding_table_flag = is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-pHitShaderBindingTable-03688"
                                                           : "VUID-vkCmdTraceRaysKHR-pHitShaderBindingTable-03688";
         skip |= ValidateRaytracingShaderBindingTable(cb_state, table_loc, vuid_binding_table_flag, *pHitShaderBindingTable);
     }
 
     if (pRaygenShaderBindingTable) {
         const Location table_loc = loc.dot(Field::pRaygenShaderBindingTable);
-        const char *vuid_binding_table_flag = is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-pRayGenShaderBindingTable-03681"
+        const char* vuid_binding_table_flag = is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-pRayGenShaderBindingTable-03681"
                                                           : "VUID-vkCmdTraceRaysKHR-pRayGenShaderBindingTable-03681";
         // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9368
         // TODO - waiting for https://gitlab.khronos.org/vulkan/vulkan/-/issues/4173
@@ -979,14 +1153,14 @@ bool CoreChecks::ValidateCmdTraceRaysKHR(const Location &loc, const LastBound &l
 
     if (pMissShaderBindingTable) {
         const Location table_loc = loc.dot(Field::pMissShaderBindingTable);
-        const char *vuid_binding_table_flag = is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-pMissShaderBindingTable-03684"
+        const char* vuid_binding_table_flag = is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-pMissShaderBindingTable-03684"
                                                           : "VUID-vkCmdTraceRaysKHR-pMissShaderBindingTable-03684";
         skip |= ValidateRaytracingShaderBindingTable(cb_state, table_loc, vuid_binding_table_flag, *pMissShaderBindingTable);
     }
 
     if (pCallableShaderBindingTable) {
         const Location table_loc = loc.dot(Field::pCallableShaderBindingTable);
-        const char *vuid_binding_table_flag = is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-pCallableShaderBindingTable-03692"
+        const char* vuid_binding_table_flag = is_indirect ? "VUID-vkCmdTraceRaysIndirectKHR-pCallableShaderBindingTable-03692"
                                                           : "VUID-vkCmdTraceRaysKHR-pCallableShaderBindingTable-03692";
         skip |= ValidateRaytracingShaderBindingTable(cb_state, table_loc, vuid_binding_table_flag, *pCallableShaderBindingTable);
     }
@@ -994,15 +1168,15 @@ bool CoreChecks::ValidateCmdTraceRaysKHR(const Location &loc, const LastBound &l
 }
 
 bool CoreChecks::PreCallValidateCmdTraceRaysKHR(VkCommandBuffer commandBuffer,
-                                                const VkStridedDeviceAddressRegionKHR *pRaygenShaderBindingTable,
-                                                const VkStridedDeviceAddressRegionKHR *pMissShaderBindingTable,
-                                                const VkStridedDeviceAddressRegionKHR *pHitShaderBindingTable,
-                                                const VkStridedDeviceAddressRegionKHR *pCallableShaderBindingTable, uint32_t width,
-                                                uint32_t height, uint32_t depth, const ErrorObject &error_obj) const {
+                                                const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
+                                                const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable,
+                                                const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
+                                                const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable, uint32_t width,
+                                                uint32_t height, uint32_t depth, const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundRayTracing();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundRayTracing();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
     skip |= ValidateCmdTraceRaysKHR(error_obj.location, last_bound_state, pRaygenShaderBindingTable, pMissShaderBindingTable,
@@ -1010,16 +1184,16 @@ bool CoreChecks::PreCallValidateCmdTraceRaysKHR(VkCommandBuffer commandBuffer,
     return skip;
 }
 
-bool CoreChecks::ValidateCmdTraceRaysIndirect(const Location &loc, const LastBound &last_bound_state,
+bool CoreChecks::ValidateCmdTraceRaysIndirect(const Location& loc, const LastBound& last_bound_state,
                                               VkDeviceAddress indirect_device_address) const {
     bool skip = false;
     const bool is_2khr = loc.function == Func::vkCmdTraceRaysIndirect2KHR;
 
-    const char *usage_vuid = is_2khr ? "VUID-vkCmdTraceRaysIndirect2KHR-indirectDeviceAddress-03633"
+    const char* usage_vuid = is_2khr ? "VUID-vkCmdTraceRaysIndirect2KHR-indirectDeviceAddress-03633"
                                      : "VUID-vkCmdTraceRaysIndirectKHR-indirectDeviceAddress-03633";
     BufferAddressValidation<1> buffer_address_validator = {
         {{{usage_vuid,
-           [](const vvl::Buffer &buffer_state) { return (buffer_state.usage & VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT) == 0; },
+           [](const vvl::Buffer& buffer_state) { return (buffer_state.usage & VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT) == 0; },
            []() { return "The following buffers are missing VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT"; }, kUsageErrorMsgBuffer}}}};
 
     skip |= buffer_address_validator.ValidateDeviceAddress(
@@ -1028,15 +1202,15 @@ bool CoreChecks::ValidateCmdTraceRaysIndirect(const Location &loc, const LastBou
 }
 
 bool CoreChecks::PreCallValidateCmdTraceRaysIndirectKHR(VkCommandBuffer commandBuffer,
-                                                        const VkStridedDeviceAddressRegionKHR *pRaygenShaderBindingTable,
-                                                        const VkStridedDeviceAddressRegionKHR *pMissShaderBindingTable,
-                                                        const VkStridedDeviceAddressRegionKHR *pHitShaderBindingTable,
-                                                        const VkStridedDeviceAddressRegionKHR *pCallableShaderBindingTable,
-                                                        VkDeviceAddress indirectDeviceAddress, const ErrorObject &error_obj) const {
+                                                        const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
+                                                        const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable,
+                                                        const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
+                                                        const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable,
+                                                        VkDeviceAddress indirectDeviceAddress, const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundRayTracing();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundRayTracing();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
     skip |= ValidateCmdTraceRaysKHR(error_obj.location, last_bound_state, pRaygenShaderBindingTable, pMissShaderBindingTable,
@@ -1046,11 +1220,11 @@ bool CoreChecks::PreCallValidateCmdTraceRaysIndirectKHR(VkCommandBuffer commandB
 }
 
 bool CoreChecks::PreCallValidateCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress,
-                                                         const ErrorObject &error_obj) const {
+                                                         const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundRayTracing();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundRayTracing();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
     skip |= ValidateCmdTraceRaysIndirect(error_obj.location, last_bound_state, indirectDeviceAddress);
@@ -1058,14 +1232,14 @@ bool CoreChecks::PreCallValidateCmdTraceRaysIndirect2KHR(VkCommandBuffer command
 }
 
 bool CoreChecks::PreCallValidateCmdDrawMeshTasksNV(VkCommandBuffer commandBuffer, uint32_t taskCount, uint32_t firstTask,
-                                                   const ErrorObject &error_obj) const {
+                                                   const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateMeshShaderStage(last_bound_state, vuid);
+    skip |= ValidateMeshShaderStage(last_bound_state, error_obj.location);
 
     if (taskCount > phys_dev_ext_props.mesh_shader_props_nv.maxDrawMeshTasksCount) {
         skip |= LogError(
@@ -1080,14 +1254,14 @@ bool CoreChecks::PreCallValidateCmdDrawMeshTasksNV(VkCommandBuffer commandBuffer
 
 bool CoreChecks::PreCallValidateCmdDrawMeshTasksIndirectNV(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                            uint32_t drawCount, uint32_t stride,
-                                                           const ErrorObject &error_obj) const {
+                                                           const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateMeshShaderStage(last_bound_state, vuid);
+    skip |= ValidateMeshShaderStage(last_bound_state, error_obj.location);
 
     {
         auto indirect_buffer_state = Get<vvl::Buffer>(buffer);
@@ -1137,14 +1311,14 @@ bool CoreChecks::PreCallValidateCmdDrawMeshTasksIndirectNV(VkCommandBuffer comma
 bool CoreChecks::PreCallValidateCmdDrawMeshTasksIndirectCountNV(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                                 VkBuffer countBuffer, VkDeviceSize countBufferOffset,
                                                                 uint32_t maxDrawCount, uint32_t stride,
-                                                                const ErrorObject &error_obj) const {
+                                                                const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateMeshShaderStage(last_bound_state, vuid);
+    skip |= ValidateMeshShaderStage(last_bound_state, error_obj.location);
 
     if (!IsIntegerMultipleOf(offset, 4)) {
         skip |=
@@ -1183,14 +1357,14 @@ bool CoreChecks::PreCallValidateCmdDrawMeshTasksIndirectCountNV(VkCommandBuffer 
 }
 
 bool CoreChecks::PreCallValidateCmdDrawMeshTasksEXT(VkCommandBuffer commandBuffer, uint32_t groupCountX, uint32_t groupCountY,
-                                                    uint32_t groupCountZ, const ErrorObject &error_obj) const {
+                                                    uint32_t groupCountZ, const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateMeshShaderStage(last_bound_state, vuid);
+    skip |= ValidateMeshShaderStage(last_bound_state, error_obj.location);
 
     // Without the optional task shader, the draw goes right to the mesh shader.
     // When the task shader is used, the mesh shader info is done in GPU-AV
@@ -1256,14 +1430,14 @@ bool CoreChecks::PreCallValidateCmdDrawMeshTasksEXT(VkCommandBuffer commandBuffe
 
 bool CoreChecks::PreCallValidateCmdDrawMeshTasksIndirectEXT(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
                                                             uint32_t drawCount, uint32_t stride,
-                                                            const ErrorObject &error_obj) const {
+                                                            const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateMeshShaderStage(last_bound_state, vuid);
+    skip |= ValidateMeshShaderStage(last_bound_state, error_obj.location);
 
     {
         auto indirect_buffer_state = Get<vvl::Buffer>(buffer);
@@ -1288,10 +1462,14 @@ bool CoreChecks::PreCallValidateCmdDrawMeshTasksIndirectEXT(VkCommandBuffer comm
                          "or equal to the size of buffer (%" PRIu64 ").",
                          (offset + sizeof(VkDrawMeshTasksIndirectCommandEXT)), indirect_buffer_state->create_info.size);
         }
+
+        if (!IsIntegerMultipleOf(offset, 4)) {
+            skip |=
+                LogError("VUID-vkCmdDrawMeshTasksIndirectEXT-offset-02710", cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
+                         error_obj.location.dot(Field::offset), "(%" PRIu64 ") must be a multiple of 4.", offset);
+        }
     }
 
-    // TODO: vkMapMemory() and check the contents of buffer at offset
-    // issue #4547 (https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/4547)
     if (!enabled_features.multiDrawIndirect && ((drawCount > 1))) {
         skip |= LogError("VUID-vkCmdDrawMeshTasksIndirectEXT-drawCount-02718",
                          cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), error_obj.location.dot(Field::drawCount),
@@ -1309,14 +1487,33 @@ bool CoreChecks::PreCallValidateCmdDrawMeshTasksIndirectEXT(VkCommandBuffer comm
 bool CoreChecks::PreCallValidateCmdDrawMeshTasksIndirectCountEXT(VkCommandBuffer commandBuffer, VkBuffer buffer,
                                                                  VkDeviceSize offset, VkBuffer countBuffer,
                                                                  VkDeviceSize countBufferOffset, uint32_t maxDrawCount,
-                                                                 uint32_t stride, const ErrorObject &error_obj) const {
+                                                                 uint32_t stride, const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto &cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
-    const auto &last_bound_state = cb_state.GetLastBoundGraphics();
-    const DrawDispatchVuid &vuid = GetDrawDispatchVuid(error_obj.location.function);
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
 
     skip |= ValidateActionState(last_bound_state, vuid);
-    skip |= ValidateMeshShaderStage(last_bound_state, vuid);
+    skip |= ValidateMeshShaderStage(last_bound_state, error_obj.location);
+
+    if (!IsIntegerMultipleOf(offset, 4)) {
+        skip |= LogError("VUID-vkCmdDrawMeshTasksIndirectCountEXT-offset-02710",
+                         cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), error_obj.location.dot(Field::offset),
+                         "(%" PRIu64 ") must be a multiple of 4.", offset);
+    }
+    if (!IsIntegerMultipleOf(countBufferOffset, 4)) {
+        skip |= LogError("VUID-vkCmdDrawMeshTasksIndirectCountEXT-countBufferOffset-02716",
+                         cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), error_obj.location.dot(Field::countBufferOffset),
+                         "(%" PRIu64 "), is not a multiple of 4.", countBufferOffset);
+    }
+
+    if ((extensions.vk_khr_draw_indirect_count != kEnabledByCreateinfo) &&
+        ((api_version >= VK_API_VERSION_1_2) && (enabled_features.drawIndirectCount == VK_FALSE))) {
+        skip |= LogError("VUID-vkCmdDrawMeshTasksIndirectCountEXT-None-04445",
+                         cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), error_obj.location,
+                         "Starting in Vulkan 1.2 the VkPhysicalDeviceVulkan12Features::drawIndirectCount must be enabled to "
+                         "call this command.");
+    }
 
     auto count_buffer_state = Get<vvl::Buffer>(countBuffer);
     ASSERT_AND_RETURN_SKIP(count_buffer_state);
@@ -1345,12 +1542,56 @@ bool CoreChecks::PreCallValidateCmdDrawMeshTasksIndirectCountEXT(VkCommandBuffer
     return skip;
 }
 
+bool CoreChecks::PreCallValidateCmdDrawMeshTasksIndirect2EXT(VkCommandBuffer commandBuffer, const VkDrawIndirect2InfoKHR* pInfo,
+                                                             const ErrorObject& error_obj) const {
+    bool skip = false;
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
+
+    skip |= ValidateActionState(last_bound_state, vuid);
+    skip |= ValidateMeshShaderStage(last_bound_state, error_obj.location);
+
+    const Location info_loc = error_obj.location.dot(Field::pInfo);
+    skip |=
+        ValidateIndirectBufferDeviceAddress(cb_state, pInfo->addressRange.address, pInfo->addressRange.size, true, info_loc, vuid);
+
+    skip |= ValidateDeviceAddressCommands(commandBuffer, pInfo->addressRange.address, pInfo->addressRange.size, pInfo->addressFlags,
+                                          error_obj.location.dot(Field::addressRange));
+
+    return skip;
+}
+
+bool CoreChecks::PreCallValidateCmdDrawMeshTasksIndirectCount2EXT(VkCommandBuffer commandBuffer,
+                                                                  const VkDrawIndirectCount2InfoKHR* pInfo,
+                                                                  const ErrorObject& error_obj) const {
+    bool skip = false;
+    const auto& cb_state = *GetRead<vvl::CommandBuffer>(commandBuffer);
+    const auto& last_bound_state = cb_state.GetLastBoundGraphics();
+    const DrawDispatchVuid& vuid = GetDrawDispatchVuid(error_obj.location.function);
+
+    skip |= ValidateActionState(last_bound_state, vuid);
+    skip |= ValidateMeshShaderStage(last_bound_state, error_obj.location);
+
+    const Location info_loc = error_obj.location.dot(Field::pInfo);
+    skip |=
+        ValidateIndirectBufferDeviceAddress(cb_state, pInfo->addressRange.address, pInfo->addressRange.size, true, info_loc, vuid);
+    skip |= ValidateIndirectCountBufferDeviceAddress(cb_state, pInfo->countAddressRange.address, info_loc, vuid);
+
+    skip |= ValidateDeviceAddressCommands(commandBuffer, pInfo->addressRange.address, pInfo->addressRange.size, pInfo->addressFlags,
+                                          error_obj.location.dot(Field::addressRange));
+    skip |= ValidateDeviceAddressCommands(commandBuffer, pInfo->countAddressRange.address, pInfo->countAddressRange.size,
+                                          pInfo->countAddressFlags, error_obj.location.dot(Field::countAddressRange));
+
+    return skip;
+}
+
 // Action command == vkCmdDraw*, vkCmdDispatch*, vkCmdTraceRays*
 // This is the main logic shared by all action commands
-bool CoreChecks::ValidateActionState(const LastBound &last_bound_state, const DrawDispatchVuid &vuid) const {
-    const Location &loc = vuid.loc();
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
-    const vvl::Pipeline *pipeline = last_bound_state.pipeline_state;
+bool CoreChecks::ValidateActionState(const LastBound& last_bound_state, const DrawDispatchVuid& vuid) const {
+    const Location& loc = vuid.loc();
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
+    const vvl::Pipeline* pipeline = last_bound_state.pipeline_state;
     const VkPipelineBindPoint bind_point = last_bound_state.bind_point;
 
     bool skip = false;
@@ -1364,51 +1605,51 @@ bool CoreChecks::ValidateActionState(const LastBound &last_bound_state, const Dr
     }
 
     if (bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
-        skip |= ValidateDrawDynamicState(last_bound_state, vuid);
-        skip |= ValidateDrawPrimitivesGeneratedQuery(last_bound_state, vuid);
-        skip |= ValidateDrawFragmentShadingRate(last_bound_state, vuid);
-        skip |= ValidateDrawAttachmentColorBlend(last_bound_state, vuid);
-        skip |= ValidateDrawAttachmentSampleLocation(last_bound_state, vuid);
-        skip |= ValidateDrawDepthStencilAttachments(last_bound_state, vuid);
-        skip |= ValidateDrawTessellation(last_bound_state, vuid);
+        skip |= ValidateDrawDynamicState(last_bound_state, loc);
+        skip |= ValidateDrawPrimitivesGeneratedQuery(last_bound_state, loc);
+        skip |= ValidateDrawFragmentShadingRate(last_bound_state, loc);
+        skip |= ValidateDrawAttachmentColorBlend(last_bound_state, loc);
+        skip |= ValidateDrawAttachmentSampleLocation(last_bound_state, loc);
+        skip |= ValidateDrawDepthStencilAttachments(last_bound_state, loc);
+        skip |= ValidateDrawTessellation(last_bound_state, loc);
         skip |= ValidateDrawVertexBinding(last_bound_state, vuid);
 
         if (cb_state.active_render_pass && cb_state.active_render_pass->UsesDynamicRendering()) {
             skip |= ValidateDrawDynamicRenderingFsOutputs(last_bound_state, cb_state, loc);
-            skip |= ValidateDrawDynamicRenderpassExternalFormatResolve(last_bound_state, *cb_state.active_render_pass, vuid);
-            const auto &cb_sub_state = core::SubState(cb_state);
-            skip |= ValidateDrawCustomResolve(last_bound_state, *cb_state.active_render_pass, cb_sub_state, vuid);
+            skip |= ValidateDrawDynamicRenderpassExternalFormatResolve(last_bound_state, *cb_state.active_render_pass, loc);
+            const auto& cb_sub_state = core::SubState(cb_state);
+            skip |= ValidateDrawCustomResolve(last_bound_state, *cb_state.active_render_pass, cb_sub_state, loc);
         }
 
         if (cb_state.active_render_pass && enabled_features.tileMemoryHeap) {
             // Because vkCmdBindTileMemoryQCOM sets the size, we check regardless if using dynamic rendering or not
-            skip |= ValidateDrawRenderingTileMemoryOutputs(last_bound_state, cb_state, vuid);
+            skip |= ValidateDrawRenderingTileMemoryOutputs(last_bound_state, cb_state, loc);
         }
 
         if (pipeline) {
             skip |= ValidateDrawPipeline(last_bound_state, *pipeline, vuid);
         } else {
-            skip |= ValidateDrawShaderObject(last_bound_state, vuid);
+            skip |= ValidateDrawShaderObject(last_bound_state, loc);
         }
 
     } else if (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
-        skip |= InsideRenderPass(cb_state, loc, vuid.compute_inside_rp_10672);
+        skip |= InsideRenderPass(cb_state, loc);
 
         if (!pipeline && !last_bound_state.IsValidShaderObjectBound(ShaderObjectStage::COMPUTE)) {
             const bool is_null_bound = last_bound_state.IsValidShaderObjectOrNullBound(ShaderObjectStage::COMPUTE);
             return LogError(
-                vuid.compute_not_bound_10743, cb_state.GetObjectList(bind_point), loc,
+                CreateActionVuid(loc.function, vvl::ActionVUID::COMPUTE_NOT_BOUND_10743), cb_state.GetObjectList(bind_point), loc,
                 "No compute shader is bound, before this dispatch command, you either need to call vkCmdBindPipeline with a valid "
                 "compute pipeline or vkCmdBindShadersEXT with a valid compute shader object.%s",
                 is_null_bound ? " (vkCmdBindShadersEXT was called, but it set the compute stage to VK_NULL_HANDLE)" : "");
         }
     } else if (bind_point == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) {
         if (pipeline) {
-            skip |= ValidateTraceRaysDynamicStateSetStatus(last_bound_state, *pipeline, vuid);
+            skip |= ValidateTraceRaysDynamicStateSetStatus(last_bound_state, *pipeline, loc);
         }
         if (!cb_state.unprotected) {
-            skip |= LogError(vuid.ray_query_protected_cb_03635, cb_state.GetObjectList(bind_point), loc,
-                             "called in a protected command buffer.");
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::RAY_QUERY_PROTECT_03635),
+                             cb_state.GetObjectList(bind_point), loc, "called in a protected command buffer.");
         }
     }
 
@@ -1421,10 +1662,10 @@ bool CoreChecks::ValidateActionState(const LastBound &last_bound_state, const Dr
         skip |= ValidateActionStateDescriptorsShaderObject(last_bound_state, bind_point, vuid);
     }
 
-    skip |= ValidateActionStatePushConstant(last_bound_state, pipeline, vuid);
+    skip |= ValidateActionStatePushConstant(last_bound_state, pipeline, loc);
 
     if (!cb_state.unprotected) {
-        skip |= ValidateActionStateProtectedMemory(last_bound_state, bind_point, pipeline, vuid);
+        skip |= ValidateActionStateProtectedMemory(last_bound_state, bind_point, pipeline, loc);
     }
 
     return skip;
@@ -1436,8 +1677,8 @@ bool CoreChecks::ValidateActionState(const LastBound &last_bound_state, const Dr
 // any dynamic descriptors, always revalidate rather than caching the values. We currently only
 // apply this optimization if IsManyDescriptors is true, to avoid the overhead of copying the
 // binding_req_map which could potentially be expensive.
-static bool NeedDrawStateValidated(const vvl::CommandBuffer &cb_state, const vvl::DescriptorSet *descriptor_set,
-                                   const LastBound::DescriptorSetSlot &ds_slot, bool disabled_image_layout_validation) {
+static bool NeedDrawStateValidated(const vvl::CommandBuffer& cb_state, const vvl::DescriptorSet* descriptor_set,
+                                   const LastBound::DescriptorSetSlot& ds_slot, bool disabled_image_layout_validation) {
     return ds_slot.dynamic_offsets.size() > 0 ||
            // Revalidate if descriptor set (or contents) has changed
            ds_slot.validated_set != descriptor_set || ds_slot.validated_set_change_count != descriptor_set->GetChangeCount() ||
@@ -1445,58 +1686,67 @@ static bool NeedDrawStateValidated(const vvl::CommandBuffer &cb_state, const vvl
             ds_slot.validated_set_image_layout_change_count != cb_state.image_layout_change_count);
 }
 
-bool CoreChecks::ValidateActionStateDescriptorsPipeline(const LastBound &last_bound_state, const VkPipelineBindPoint bind_point,
-                                                        const vvl::Pipeline &pipeline, const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateActionStateDescriptorsPipeline(const LastBound& last_bound_state, const VkPipelineBindPoint bind_point,
+                                                        const vvl::Pipeline& pipeline, const vvl::DrawDispatchVuid& vuid) const {
     bool skip = false;
     const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
-
-    if (pipeline.descriptor_heap_mode) {
-        for (const auto& stage_state : pipeline.stage_states) {
-            const spirv::Module* module_state = stage_state.spirv_state.get();
-            const spirv::EntryPoint* entry_point = stage_state.entrypoint.get();
-            if (!module_state || !entry_point) {
-                continue;
-            }
-            skip |= ValidateActionStateDescriptorHeapUntyped(cb_state, *module_state, *entry_point, bind_point, vuid);
-
-            // Only need to validate if we know there is a embedded sampler to check against
-            if (pipeline.descriptor_heap_embedded_samplers_count > 0) {
-                if (const auto* mapping_info =
-                        vku::FindStructInPNextChain<VkShaderDescriptorSetAndBindingMappingInfoEXT>(stage_state.GetPNext())) {
-                    skip |= ValidateActionStateDescriptorHeapSamplers(cb_state, *mapping_info, *module_state, *entry_point,
-                                                                      bind_point, vuid);
-                }
-            }
-        }
-    }
 
     // If the pipeline is not using any descriptors, then any descriptor state set can be ignored
     if (pipeline.active_slots.empty()) {
         return skip;
     }
 
-    for (const auto &ds_slot : last_bound_state.ds_slots) {
-        // TODO - This currently implicitly is checking for VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT being set
+    if (pipeline.descriptor_heap_mode) {
+        for (const ShaderStageState& stage_state : pipeline.stage_states) {
+            if (!stage_state.HasSpirv()) {
+                continue;
+            }
+            const bool has_embedded_samplers = pipeline.descriptor_heap_embedded_samplers_count != 0;
+
+            skip |= ValidateActionStateDescriptorHeap(last_bound_state, stage_state, has_embedded_samplers, vuid.loc());
+
+            // Only need to validate if we know there is a embedded sampler to check against
+            if (has_embedded_samplers) {
+                skip |= ValidateActionStateDescriptorHeapSamplers(cb_state, stage_state, bind_point, vuid.loc());
+            }
+        }
+    }
+
+    bool has_bound_descriptor_buffer = false;
+    for (const auto& ds_slot : last_bound_state.ds_slots) {
         if (pipeline.descriptor_buffer_mode) {
+            const bool is_push_descriptor = ds_slot.ds_state && ds_slot.ds_state->IsPushDescriptor();
+            has_bound_descriptor_buffer |= ds_slot.descriptor_buffer_binding.has_value() || is_push_descriptor;
+
+            // ds_state is null if using a non-push descriptor buffer, as there is no VkDescriptorSet handle anymore
             if (ds_slot.ds_state && !ds_slot.ds_state->IsPushDescriptor()) {
                 LogObjectList objlist = cb_state.GetObjectList(bind_point);
                 objlist.add(ds_slot.ds_state->Handle());
                 skip |= LogError(vuid.descriptor_buffer_bit_not_set_08115, objlist, vuid.loc(),
                                  "pipeline bound to %s requires a descriptor buffer (because it was created with "
-                                 "VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT), but has a bound VkDescriptorSet (%s)",
-                                 string_VkPipelineBindPoint(bind_point), FormatHandle(ds_slot.ds_state->Handle()).c_str());
+                                 "VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT), but has a bound VkDescriptorSet (%s)%s",
+                                 string_VkPipelineBindPoint(bind_point), FormatHandle(ds_slot.ds_state->Handle()).c_str(),
+                                 last_bound_state.DescribeInvalidDescriptorMode().c_str());
                 break;
             }
-
         } else if (ds_slot.descriptor_buffer_binding.has_value()) {
             skip |= LogError(vuid.descriptor_buffer_set_offset_missing_08117, cb_state.GetObjectList(bind_point), vuid.loc(),
                              "pipeline bound to %s requires a VkDescriptorSet (because it was not created with "
                              "VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT), but has a bound descriptor buffer"
-                             " (index=%" PRIu32 " offset=%" PRIu64 ")",
+                             " (index=%" PRIu32 " offset=%" PRIu64 ")%s",
                              string_VkPipelineBindPoint(bind_point), ds_slot.descriptor_buffer_binding->index,
-                             ds_slot.descriptor_buffer_binding->offset);
+                             ds_slot.descriptor_buffer_binding->offset, last_bound_state.DescribeInvalidDescriptorMode().c_str());
             break;
         }
+    }
+
+    if (pipeline.descriptor_buffer_mode && !has_bound_descriptor_buffer) {
+        // While it is totally normal to not call vkCmdBindDescriptorBuffersEXT on all the sets if you are not going to use
+        // them, if there are no sets bound with an offset, this is highly likly a bug, and we should warn early
+        skip |= LogWarning("WARNING-Missing-vkCmdSetDescriptorBufferOffsets", cb_state.GetObjectList(bind_point), vuid.loc(),
+                           "the bound pipeline is statically accessing descriptors, but there has never been a call to "
+                           "vkCmdSetDescriptorBufferOffsetsEXT for %s since the last vkCmdBindDescriptorBuffersEXT call.",
+                           string_VkPipelineBindPoint(bind_point));
     }
 
     // Check if the current pipeline is compatible for the maximum used set with the bound sets.
@@ -1506,10 +1756,10 @@ bool CoreChecks::ValidateActionStateDescriptorsPipeline(const LastBound &last_bo
 
     // If we are here and using heaps, things have gone bad
     if (last_bound_state.GetDescriptorMode() == vvl::DescriptorModeHeap) {
-        skip |= LogError(vuid.compatible_pipeline_08600, cb_state.GetObjectList(bind_point), vuid.loc(),
-                         "The %s is using classic VkDescriptorSet/VkPushConstantsInfo, but the command buffer has called "
-                         "vkCmdBindResourceHeapEXT, vkCmdBindSamplerHeapEXT, or vkCmdPushDataEXT and invalidated the descriptors",
-                         FormatHandle(pipeline).c_str());
+        skip |= LogError(
+            vuid.compatible_pipeline_08600, cb_state.GetObjectList(bind_point), vuid.loc(),
+            "The %s is using classic VkDescriptorSet/VkPushConstantsInfo, but the command buffer has set a Descriptor Heap.%s",
+            FormatHandle(pipeline).c_str(), last_bound_state.DescribeInvalidDescriptorMode().c_str());
         return skip;
     }
 
@@ -1519,7 +1769,7 @@ bool CoreChecks::ValidateActionStateDescriptorsPipeline(const LastBound &last_bo
         if (!last_bound_state.desc_set_pipeline_layout) {
             skip |= LogError(vuid.compatible_pipeline_08600, cb_state.GetObjectList(bind_point), vuid.loc(),
                              "The %s statically uses descriptor set %" PRIu32
-                             ", but because a descriptor was never bound, the pipeline layouts are not compatible.\nIf using a "
+                             ", but because a descriptor was never bound, the VkPipelineLayouts are not compatible.\nIf using a "
                              "descriptor, make sure to call one of vkCmdBindDescriptorSets, vkCmdPushDescriptorSet, "
                              "vkCmdSetDescriptorBufferOffset, etc for %s",
                              FormatHandle(pipeline).c_str(), pipeline.max_active_slot, string_VkPipelineBindPoint(bind_point));
@@ -1532,7 +1782,7 @@ bool CoreChecks::ValidateActionStateDescriptorsPipeline(const LastBound &last_bo
         std::ostringstream pipe_layouts_log;
         if (layouts.size() > 1) {
             pipe_layouts_log << "a union of layouts [ ";
-            for (const auto &layout : layouts) {
+            for (const auto& layout : layouts) {
                 objlist.add(layout->Handle());
                 pipe_layouts_log << FormatHandle(*layout) << " ";
             }
@@ -1547,14 +1797,14 @@ bool CoreChecks::ValidateActionStateDescriptorsPipeline(const LastBound &last_bo
             pipeline.max_active_slot == 0 ? "set 0 is" : "all sets 0 to " + std::to_string(pipeline.max_active_slot) + " are";
         skip |= LogError(vuid.compatible_pipeline_08600, objlist, vuid.loc(),
                          "The %s (created with %s) statically uses descriptor set %" PRIu32
-                         ", but %s not compatible with the pipeline layout bound with %s (%s)\n%s",
+                         ", but %s not compatible with the %s bound with %s\n%s",
                          FormatHandle(pipeline).c_str(), pipe_layouts_log.str().c_str(), pipeline.max_active_slot, range.c_str(),
-                         String(last_bound_state.desc_set_bound_command),
                          FormatHandle(last_bound_state.desc_set_pipeline_layout->Handle()).c_str(),
+                         String(last_bound_state.desc_set_bound_command),
                          last_bound_state.DescribeNonCompatibleSet(pipeline.max_active_slot, *pipeline_layout).c_str());
     } else {
         // if the bound set is not compatible, the rest will just be extra redundant errors
-        for (const auto &[set_index, binding_req_map] : pipeline.active_slots) {
+        for (const auto& [set_index, binding_req_map] : pipeline.active_slots) {
             std::string error_string;
             const auto ds_slot = last_bound_state.ds_slots[set_index];
             if (!ds_slot.ds_state) {
@@ -1574,7 +1824,7 @@ bool CoreChecks::ValidateActionStateDescriptorsPipeline(const LastBound &last_bo
                                  error_string.c_str());
             } else {  // Valid set is bound and layout compatible, validate that it's updated
                 // Pull the set node
-                const auto *descriptor_set = ds_slot.ds_state.get();
+                const auto* descriptor_set = ds_slot.ds_state.get();
                 ASSERT_AND_CONTINUE(descriptor_set);
 
                 const bool need_validate =
@@ -1589,71 +1839,100 @@ bool CoreChecks::ValidateActionStateDescriptorsPipeline(const LastBound &last_bo
     return skip;
 }
 
-bool CoreChecks::ValidateActionStateDescriptorHeapUntyped(const vvl::CommandBuffer& cb_state, const spirv::Module& module_state,
-                                                          const spirv::EntryPoint& entry_point,
-                                                          const VkPipelineBindPoint bind_point,
-                                                          const vvl::DrawDispatchVuid& vuid) const {
+bool CoreChecks::ValidateActionStateDescriptorHeap(const LastBound& last_bound_state, const ShaderStageState& stage_state,
+                                                   const bool has_embedded_samplers, const Location& loc) const {
     bool skip = false;
 
-    if (!module_state.static_data_.has_descriptor_heap) {
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
+
+    // If both heaps are bound, no point to look at the variables
+    if (cb_state.IsPrimary() && cb_state.descriptor_heap.sampler_bound && cb_state.descriptor_heap.resource_bound) {
+        return skip;
+    } else if (cb_state.IsSecondary() && cb_state.inheritance_descriptor_heap_info.pSamplerHeapBindInfo &&
+               cb_state.inheritance_descriptor_heap_info.pResourceHeapBindInfo) {
         return skip;
     }
 
-    for (const spirv::ResourceInterfaceVariable& resource_variable : entry_point.resource_interface_variables) {
-        // If untyped, there will be no mapping to validate
-        if (resource_variable.decorations.IsDescriptorSet()) {
-            continue;
+    const spirv::EntryPoint& entry_point = *stage_state.entrypoint;
+
+    auto print_used_variables = [&entry_point](bool check_sampler) {
+        std::stringstream ss;
+        ss << "\nThe following " << (check_sampler ? "sampler" : "resource") << " descriptors were found:\n";
+        const uint32_t limit = 4;  // after so many, it is just spam if they simply forgot to bind the heap
+        uint32_t count = 0;
+        for (const spirv::ResourceInterfaceVariable& resource_variable : entry_point.resource_interface_variables) {
+            const bool is_sampler = resource_variable.is_sampler_heap || resource_variable.is_sampler;
+            if ((check_sampler && is_sampler) || (!check_sampler && !is_sampler)) {
+                count++;
+                if (count < limit) {
+                    ss << "  " << resource_variable.DescribeDescriptor() << "\n";
+                }
+            }
         }
-        if (resource_variable.is_sampler_heap) {
-            if (cb_state.IsPrimary()) {
-                if (!cb_state.descriptor_heap.sampler_bound) {
-                    skip |= LogError(vuid.descriptor_heap_11308, cb_state.GetObjectList(bind_point), vuid.loc(),
-                                     "SPIR-V (%s) uses %s, but a sampler heap was not bound (with vkCmdBindSamplerHeapEXT)",
-                                     string_SpvExecutionModel(entry_point.execution_model),
-                                     resource_variable.DescribeDescriptor().c_str());
-                }
-            } else {
-                if (!cb_state.inheritance_descriptor_heap_info.pSamplerHeapBindInfo) {
-                    skip |= LogError(vuid.descriptor_heap_11308, cb_state.GetObjectList(bind_point), vuid.loc(),
-                                     "SPIR-V (%s) uses %s, but "
-                                     "VkCommandBufferInheritanceDescriptorHeapInfoEXT::pSamplerHeapBindInfo is NULL",
-                                     string_SpvExecutionModel(entry_point.execution_model),
-                                     resource_variable.DescribeDescriptor().c_str());
-                }
+        if (count >= limit) {
+            ss << "  ... " << count - limit + 1 << " more";
+        }
+        return ss.str();
+    };
+
+    // TODO - Currently at this level we don't know if the sampler is embedded or not
+    // If there is only embedded samplers, the sampler heap isn't required to be bound
+    if (stage_state.uses_sampler_heap && !has_embedded_samplers) {
+        if (cb_state.IsPrimary()) {
+            if (!cb_state.descriptor_heap.sampler_bound) {
+                skip |= LogError(
+                    CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
+                    cb_state.GetObjectList(last_bound_state.bind_point), loc,
+                    "The shader %s uses sampler descriptors, but a sampler heap was not bound with vkCmdBindSamplerHeapEXT.%s%s",
+                    entry_point.Describe().c_str(), last_bound_state.DescribeInvalidDescriptorMode().c_str(),
+                    print_used_variables(true).c_str());
             }
-        } else if (resource_variable.is_resource_heap) {
-            if (cb_state.IsPrimary()) {
-                if (!cb_state.descriptor_heap.resource_bound) {
-                    skip |= LogError(vuid.descriptor_heap_11308, cb_state.GetObjectList(bind_point), vuid.loc(),
-                                     "SPIR-V (%s) uses %s, but a resource heap was not bound (with vkCmdBindResourceHeapEXT)",
-                                     string_SpvExecutionModel(entry_point.execution_model),
-                                     resource_variable.DescribeDescriptor().c_str());
-                }
-            } else {
-                if (!cb_state.inheritance_descriptor_heap_info.pResourceHeapBindInfo) {
-                    skip |= LogError(vuid.descriptor_heap_11308, cb_state.GetObjectList(bind_point), vuid.loc(),
-                                     "SPIR-V (%s) uses %s, but "
-                                     "VkCommandBufferInheritanceDescriptorHeapInfoEXT::pResourceHeapBindInfo is NULL",
-                                     string_SpvExecutionModel(entry_point.execution_model),
-                                     resource_variable.DescribeDescriptor().c_str());
-                }
+        } else if (!cb_state.inheritance_descriptor_heap_info.pSamplerHeapBindInfo) {
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
+                             cb_state.GetObjectList(last_bound_state.bind_point), loc,
+                             "The shader %s uses sampler descriptors, but "
+                             "VkCommandBufferInheritanceDescriptorHeapInfoEXT::pSamplerHeapBindInfo is NULL.%s",
+                             entry_point.Describe().c_str(), print_used_variables(true).c_str());
+        }
+    } else if (stage_state.uses_resource_heap) {
+        if (cb_state.IsPrimary()) {
+            if (!cb_state.descriptor_heap.resource_bound) {
+                skip |= LogError(
+                    CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
+                    cb_state.GetObjectList(last_bound_state.bind_point), loc,
+                    "The shader %s uses resource descriptors, but a resource heap was not bound with vkCmdBindResourceHeapEXT.%s%s",
+                    entry_point.Describe().c_str(), last_bound_state.DescribeInvalidDescriptorMode().c_str(),
+                    print_used_variables(false).c_str());
             }
+        } else if (!cb_state.inheritance_descriptor_heap_info.pResourceHeapBindInfo) {
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11308),
+                             cb_state.GetObjectList(last_bound_state.bind_point), loc,
+                             "The shader %s uses resource descriptors, but "
+                             "VkCommandBufferInheritanceDescriptorHeapInfoEXT::pResourceHeapBindInfo is NULL%s",
+                             entry_point.Describe().c_str(), print_used_variables(false).c_str());
         }
     }
     return skip;
 }
 
-bool CoreChecks::ValidateActionStateDescriptorHeapSamplers(const vvl::CommandBuffer& cb_state,
-                                                           const VkShaderDescriptorSetAndBindingMappingInfoEXT& mapping_info,
-                                                           const spirv::Module& module_state, const spirv::EntryPoint& entry_point,
-                                                           const VkPipelineBindPoint bind_point,
-                                                           const vvl::DrawDispatchVuid& vuid) const {
+bool CoreChecks::ValidateActionStateDescriptorHeapSamplers(const vvl::CommandBuffer& cb_state, const ShaderStageState& stage_state,
+                                                           const VkPipelineBindPoint bind_point, const Location& loc) const {
     bool skip = false;
 
     // It is possible to only have embedded samplers, in that case, you are not required to
     if (cb_state.descriptor_heap.sampler_reserved.empty() || !cb_state.descriptor_heap.sampler_reserved.valid()) {
         return skip;
     }
+
+    const auto* mapping_info_ptr =
+        vku::FindStructInPNextChain<VkShaderDescriptorSetAndBindingMappingInfoEXT>(stage_state.GetPNext());
+    if (!mapping_info_ptr) {
+        return skip;
+    }
+    const VkShaderDescriptorSetAndBindingMappingInfoEXT& mapping_info = *mapping_info_ptr;
+
+    const spirv::Module& module_state = *stage_state.spirv_state;
+    const spirv::EntryPoint& entry_point = *stage_state.entrypoint;
 
     // First loop mappings, likely there might be 100+ mappings, but only 1 or 2 using embedded samplers
     for (uint32_t i = 0; i < mapping_info.mappingCount; i++) {
@@ -1695,17 +1974,17 @@ bool CoreChecks::ValidateActionStateDescriptorHeapSamplers(const vvl::CommandBuf
 
             if (cb_state.descriptor_heap.sampler_reserved.distance() <
                 phys_dev_ext_props.descriptor_heap_props.minSamplerHeapReservedRangeWithEmbedded) {
-                skip |=
-                    LogError(vuid.descriptor_heap_11375, cb_state.GetObjectList(bind_point), vuid.loc(),
-                             "SPIR-V (%s) uses %s which is an embedded sampler set with pMappings[%" PRIu32
-                             "].sourceData.%s.pEmbeddedSampler\n"
-                             "The last call to vkCmdBindSamplerHeapEXT sets reservedRangeSize to %" PRIu64
-                             ", that is less than minSamplerHeapReservedRangeWithEmbedded (%" PRIu64 ").\n  %s\n",
-                             string_SpvExecutionModel(entry_point.execution_model), resource_variable.DescribeDescriptor().c_str(),
-                             i, String(vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source)),
-                             cb_state.descriptor_heap.sampler_reserved.distance(),
-                             phys_dev_ext_props.descriptor_heap_props.minSamplerHeapReservedRangeWithEmbedded,
-                             module_state.DescribeInstruction(*type).c_str());
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11375),
+                                 cb_state.GetObjectList(bind_point), loc,
+                                 "The shader %s uses %s which is an embedded sampler set with pMappings[%" PRIu32
+                                 "].sourceData.%s.pEmbeddedSampler\n"
+                                 "The last call to vkCmdBindSamplerHeapEXT sets reservedRangeSize to %" PRIu64
+                                 ", that is less than minSamplerHeapReservedRangeWithEmbedded (%" PRIu64 ").\n  %s\n",
+                                 entry_point.Describe().c_str(), resource_variable.DescribeDescriptor().c_str(), i,
+                                 String(vvl::Field_VkDescriptorMappingSourceDataEXT(mapping.source)),
+                                 cb_state.descriptor_heap.sampler_reserved.distance(),
+                                 phys_dev_ext_props.descriptor_heap_props.minSamplerHeapReservedRangeWithEmbedded,
+                                 module_state.DescribeInstruction(*type).c_str());
             }
         }
     }
@@ -1713,92 +1992,92 @@ bool CoreChecks::ValidateActionStateDescriptorHeapSamplers(const vvl::CommandBuf
     return skip;
 }
 
-bool CoreChecks::ValidateActionStateDescriptorsShaderObject(const LastBound &last_bound_state, const VkPipelineBindPoint bind_point,
-                                                            const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateActionStateDescriptorsShaderObject(const LastBound& last_bound_state, const VkPipelineBindPoint bind_point,
+                                                            const vvl::DrawDispatchVuid& vuid) const {
     bool skip = false;
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
 
     // Check if the current shader objects are compatible for the maximum used set with the bound sets.
-    for (const auto &shader_state : last_bound_state.shader_object_states) {
-        if (shader_state && shader_state->descriptor_heap_mode) {
-            const spirv::Module* module_state = shader_state->spirv.get();
-            const spirv::EntryPoint* entry_point = shader_state->entrypoint.get();
-            if (module_state && entry_point) {
-                skip |= ValidateActionStateDescriptorHeapUntyped(cb_state, *module_state, *entry_point, bind_point, vuid);
+    for (const auto& shader_object_ptr : last_bound_state.shader_object_states) {
+        if (!shader_object_ptr) {
+            continue;
+        }
+        const vvl::ShaderObject& shader_object = *shader_object_ptr;
+
+        // If the shader is not using any descriptors, then any descriptor state set can be ignored
+        if (shader_object.active_slots.empty()) {
+            continue;
+        }
+
+        if (shader_object.descriptor_heap_mode) {
+            if (shader_object.stage.HasSpirv()) {
+                const bool has_embedded_samplers = shader_object.descriptor_heap_embedded_samplers_count != 0;
+
+                skip |= ValidateActionStateDescriptorHeap(last_bound_state, shader_object.stage, has_embedded_samplers, vuid.loc());
 
                 // Only need to validate if we know there is a embedded sampler to check against
-                if (shader_state->descriptor_heap_embedded_samplers_count > 0) {
-                    if (const auto* mapping_info = vku::FindStructInPNextChain<VkShaderDescriptorSetAndBindingMappingInfoEXT>(
-                            shader_state->safe_create_info.pNext)) {
-                        skip |= ValidateActionStateDescriptorHeapSamplers(cb_state, *mapping_info, *module_state, *entry_point,
-                                                                          bind_point, vuid);
-                    }
+                if (has_embedded_samplers) {
+                    skip |= ValidateActionStateDescriptorHeapSamplers(cb_state, shader_object.stage, bind_point, vuid.loc());
                 }
             }
             continue;
         }
 
-        // If the shader is not using any descriptors, then any descriptor state set can be ignored
-        if (!shader_state || shader_state->active_slots.empty()) {
-            continue;
-        }
-
-        if (!last_bound_state.IsBoundSetCompatible(shader_state->max_active_slot, *shader_state)) {
-            LogObjectList objlist(cb_state.Handle(), shader_state->Handle());
+        if (!last_bound_state.IsBoundSetCompatible(shader_object.max_active_slot, shader_object)) {
+            LogObjectList objlist(cb_state.Handle(), shader_object.Handle());
 
             if (!last_bound_state.desc_set_pipeline_layout) {
                 // If they never bound any descriptors
                 skip |= LogError(vuid.compatible_pipeline_08600, cb_state.GetObjectList(bind_point), vuid.loc(),
                                  "The %s statically uses descriptor set %" PRIu32
-                                 ", but because a descriptor was never bound, the pipeline layouts are not compatible.\nIf using "
+                                 ", but because a descriptor was never bound, the VkPipelineLayouts are not compatible.\nIf using "
                                  "a descriptor, make sure to call one of vkCmdBindDescriptorSets, vkCmdPushDescriptorSet, "
                                  "vkCmdSetDescriptorBufferOffset, etc for %s",
-                                 FormatHandle(shader_state->Handle()).c_str(), shader_state->max_active_slot,
+                                 FormatHandle(shader_object.Handle()).c_str(), shader_object.max_active_slot,
                                  string_VkPipelineBindPoint(bind_point));
 
             } else {
                 objlist.add(last_bound_state.desc_set_pipeline_layout->Handle());
-                std::string range = shader_state->max_active_slot == 0
+                std::string range = shader_object.max_active_slot == 0
                                         ? "set 0 is"
-                                        : "all sets 0 to " + std::to_string(shader_state->max_active_slot) + " are";
+                                        : "all sets 0 to " + std::to_string(shader_object.max_active_slot) + " are";
                 skip |= LogError(vuid.compatible_pipeline_08600, objlist, vuid.loc(),
-                                 "The %s statically uses descriptor set %" PRIu32
-                                 " but %s not compatible with the pipeline layout bound with %s (%s)\n%s",
-                                 FormatHandle(shader_state->Handle()).c_str(), shader_state->max_active_slot, range.c_str(),
-                                 String(last_bound_state.desc_set_bound_command),
+                                 "The %s statically uses descriptor set %" PRIu32 " but %s not compatible with the %s with %s\n%s",
+                                 FormatHandle(shader_object.Handle()).c_str(), shader_object.max_active_slot, range.c_str(),
                                  FormatHandle(last_bound_state.desc_set_pipeline_layout->Handle()).c_str(),
-                                 last_bound_state.DescribeNonCompatibleSet(shader_state->max_active_slot, *shader_state).c_str());
+                                 String(last_bound_state.desc_set_bound_command),
+                                 last_bound_state.DescribeNonCompatibleSet(shader_object.max_active_slot, shader_object).c_str());
             }
         } else {
             // if the bound set is not copmatible, the rest will just be extra redundant errors
-            for (const auto &[set_index, binding_req_map] : shader_state->active_slots) {
+            for (const auto& [set_index, binding_req_map] : shader_object.active_slots) {
                 std::string error_string;
                 const auto ds_slot = last_bound_state.ds_slots[set_index];
                 if (!ds_slot.ds_state) {
-                    const LogObjectList objlist(cb_state.Handle(), shader_state->Handle());
+                    const LogObjectList objlist(cb_state.Handle(), shader_object.Handle());
                     skip |= LogError(vuid.compatible_pipeline_08600, objlist, vuid.loc(),
                                      "%s uses set %" PRIu32 " but that set is not bound.",
-                                     FormatHandle(shader_state->Handle()).c_str(), set_index);
-                } else if (shader_state->set_layouts.list[set_index] &&
-                           !VerifyDescriptorSetIsCompatibile(*ds_slot.ds_state, *shader_state->set_layouts.list[set_index],
+                                     FormatHandle(shader_object.Handle()).c_str(), set_index);
+                } else if (shader_object.set_layouts.list[set_index] &&
+                           !VerifyDescriptorSetIsCompatibile(*ds_slot.ds_state, *shader_object.set_layouts.list[set_index],
                                                              error_string)) {
                     // Set is bound but not compatible w/ corresponding VkShaderCreateInfoEXT::pSetLayouts
                     VkDescriptorSet set_handle = ds_slot.ds_state->VkHandle();
-                    const LogObjectList objlist(cb_state.Handle(), set_handle, shader_state->Handle());
+                    const LogObjectList objlist(cb_state.Handle(), set_handle, shader_object.Handle());
                     skip |= LogError(vuid.compatible_pipeline_08600, objlist, vuid.loc(),
                                      "%s bound as set %" PRIu32 " is not compatible with corresponding %s\n%s",
-                                     FormatHandle(set_handle).c_str(), set_index, FormatHandle(shader_state->Handle()).c_str(),
+                                     FormatHandle(set_handle).c_str(), set_index, FormatHandle(shader_object.Handle()).c_str(),
                                      error_string.c_str());
                 } else {  // Valid set is bound and layout compatible, validate that it's updated
                     // Pull the set node
-                    const auto *descriptor_set = ds_slot.ds_state.get();
+                    const auto* descriptor_set = ds_slot.ds_state.get();
                     ASSERT_AND_CONTINUE(descriptor_set);
 
                     const bool need_validate =
                         NeedDrawStateValidated(cb_state, descriptor_set, ds_slot, disabled[image_layout_validation]);
                     if (need_validate) {
                         skip |= ValidateDrawState(*descriptor_set, set_index, binding_req_map, cb_state, vuid,
-                                                  LogObjectList(shader_state->Handle()));
+                                                  LogObjectList(shader_object.Handle()));
                     }
                 }
             }
@@ -1809,8 +2088,7 @@ bool CoreChecks::ValidateActionStateDescriptorsShaderObject(const LastBound &las
 
 bool CoreChecks::ValidateActionStatePushConstantDescriptorHeap(const vvl::CommandBuffer& cb_state,
                                                                const spirv::EntryPoint* entry_point,
-                                                               const VkPipelineBindPoint bind_point,
-                                                               const vvl::DrawDispatchVuid& vuid) const {
+                                                               const VkPipelineBindPoint bind_point, const Location& loc) const {
     bool skip = false;
     if (!entry_point || !entry_point->push_constant_variable) {
         return skip;
@@ -1837,31 +2115,32 @@ bool CoreChecks::ValidateActionStatePushConstantDescriptorHeap(const vvl::Comman
                 }
             }
             if (unset_start != size) {
-                skip |= LogError(vuid.descriptor_heap_11376, cb_state.GetObjectList(bind_point), vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11376),
+                                 cb_state.GetObjectList(bind_point), loc,
                                  "Shader in %s uses push-constant statically at range [%" PRIu32 ", %" PRIu32
                                  "), but vkCmdPushDataEXT was never called for range [%" PRIu32 ", %" PRIu32 ").",
                                  string_VkShaderStageFlags(entry_point->stage).c_str(), pc_variable.offset,
                                  pc_variable.offset + pc_variable.size, unset_start, unset_end);
             }
         } else {
-            skip |= LogError(vuid.descriptor_heap_11376, cb_state.GetObjectList(bind_point), vuid.loc(),
-                             "Shader in %s uses push-constant statically at range [%" PRIu32 ", %" PRIu32
-                             "), while there was no call to vkCmdPushDataEXT.",
-                             string_VkShaderStageFlags(entry_point->stage).c_str(), pc_variable.offset,
-                             pc_variable.offset + pc_variable.size);
+            skip |= LogError(
+                CreateActionVuid(loc.function, vvl::ActionVUID::DESCRIPTOR_HEAP_11376), cb_state.GetObjectList(bind_point), loc,
+                "Shader in %s uses push-constant statically at range [%" PRIu32 ", %" PRIu32
+                "), while there was no call to vkCmdPushDataEXT.",
+                string_VkShaderStageFlags(entry_point->stage).c_str(), pc_variable.offset, pc_variable.offset + pc_variable.size);
         }
     }
 
     return skip;
 }
 
-bool CoreChecks::ValidateActionStatePushConstant(const LastBound &last_bound_state, const vvl::Pipeline *pipeline,
-                                                 const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateActionStatePushConstant(const LastBound& last_bound_state, const vvl::Pipeline* pipeline,
+                                                 const Location& loc) const {
     bool skip = false;
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
 
     // Push constants validation for DGC will need to be done in GPU-AV
-    if (vuid.loc().function == vvl::Func::vkCmdExecuteGeneratedCommandsEXT) {
+    if (loc.function == vvl::Func::vkCmdExecuteGeneratedCommandsEXT) {
         return skip;
     }
 
@@ -1873,10 +2152,10 @@ bool CoreChecks::ValidateActionStatePushConstant(const LastBound &last_bound_sta
         if (pipeline->descriptor_heap_mode) {
             for (const auto& stage_state : pipeline->stage_states) {
                 skip |= ValidateActionStatePushConstantDescriptorHeap(cb_state, stage_state.entrypoint.get(),
-                                                                      last_bound_state.bind_point, vuid);
+                                                                      last_bound_state.bind_point, loc);
             }
         }
-        auto const &pipeline_layout = pipeline->PipelineLayoutState();
+        auto const& pipeline_layout = pipeline->PipelineLayoutState();
         if (pipeline_layout) {
             if (!cb_state.push_constant_ranges_layout ||
                 (pipeline_layout->push_constant_ranges_layout == cb_state.push_constant_ranges_layout)) {
@@ -1888,9 +2167,9 @@ bool CoreChecks::ValidateActionStatePushConstant(const LastBound &last_bound_sta
                     // Edge case where if the shader is using push constants statically and there never was a vkCmdPushConstants
                     if (!cb_state.push_constant_ranges_layout && !enabled_features.maintenance4) {
                         const LogObjectList objlist(cb_state.Handle(), pipeline_layout->Handle(), pipeline->Handle());
-                        skip |= LogError(vuid.push_constants_set_08602, objlist, vuid.loc(),
+                        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PUSH_CONSTANT_08602), objlist, loc,
                                          "Shader in %s uses push-constant statically but vkCmdPushConstants was not called yet for "
-                                         "pipeline layout %s.",
+                                         "%s bound by vkCmdBindPipeline.",
                                          string_VkShaderStageFlags(stage.GetStage()).c_str(),
                                          FormatHandle(pipeline_layout->Handle()).c_str());
                     }
@@ -1899,20 +2178,21 @@ bool CoreChecks::ValidateActionStatePushConstant(const LastBound &last_bound_sta
         }
     } else {
         if (!cb_state.push_constant_ranges_layout) {
-            for (const auto &stage : last_bound_state.shader_object_states) {
-                if (!stage || !stage->entrypoint || !stage->entrypoint->push_constant_variable) {
+            for (const auto& shader_object : last_bound_state.shader_object_states) {
+                if (!shader_object || !shader_object->stage.entrypoint ||
+                    !shader_object->stage.entrypoint->push_constant_variable) {
                     continue;
                 }
-                if (stage->descriptor_heap_mode) {
-                    skip |= ValidateActionStatePushConstantDescriptorHeap(cb_state, stage->entrypoint.get(),
-                                                                          last_bound_state.bind_point, vuid);
+                if (shader_object->descriptor_heap_mode) {
+                    skip |= ValidateActionStatePushConstantDescriptorHeap(cb_state, shader_object->stage.entrypoint.get(),
+                                                                          last_bound_state.bind_point, loc);
                 } else {
                     // Edge case where if the shader is using push constants statically and there never was a vkCmdPushConstants
                     if (!cb_state.push_constant_ranges_layout && !enabled_features.maintenance4) {
-                        const LogObjectList objlist(cb_state.Handle(), stage->Handle());
-                        skip |= LogError(vuid.push_constants_set_08602, objlist, vuid.loc(),
+                        const LogObjectList objlist(cb_state.Handle(), shader_object->Handle());
+                        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PUSH_CONSTANT_08602), objlist, loc,
                                          "Shader in %s uses push-constant statically but vkCmdPushConstants was not called yet.",
-                                         string_VkShaderStageFlags(stage->create_info.stage).c_str());
+                                         string_VkShaderStageFlags(shader_object->create_info.stage).c_str());
                     }
                 }
             }
@@ -1922,29 +2202,34 @@ bool CoreChecks::ValidateActionStatePushConstant(const LastBound &last_bound_sta
     return skip;
 }
 
-bool CoreChecks::ValidateActionStateProtectedMemory(const LastBound &last_bound_state, const VkPipelineBindPoint bind_point,
-                                                    const vvl::Pipeline *pipeline, const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateActionStateProtectedMemory(const LastBound& last_bound_state, const VkPipelineBindPoint bind_point,
+                                                    const vvl::Pipeline* pipeline, const Location& loc) const {
     bool skip = false;
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
 
     if (pipeline) {
-        for (const auto &stage : pipeline->stage_states) {
-            // Stage may not have SPIR-V data (e.g. due to the use of shader module identifier or in Vulkan SC)
-            if (!stage.spirv_state) continue;
+        for (const ShaderStageState& stage : pipeline->stage_states) {
+            if (!stage.HasSpirv()) {
+                continue;
+            }
 
             if (stage.spirv_state->HasCapability(spv::CapabilityRayQueryKHR)) {
-                skip |= LogError(vuid.ray_query_04617, cb_state.GetObjectList(bind_point), vuid.loc(),
-                                 "Shader in %s uses OpCapability RayQueryKHR but the command buffer is protected.",
-                                 string_VkShaderStageFlags(stage.GetStage()).c_str());
+                skip |=
+                    LogError(CreateActionVuid(loc.function, vvl::ActionVUID::RAY_QUERY_04617), cb_state.GetObjectList(bind_point),
+                             loc, "Shader in %s uses OpCapability RayQueryKHR but the command buffer is protected.",
+                             string_VkShaderStageFlags(stage.GetStage()).c_str());
             }
         }
     } else {
-        for (const auto &stage : last_bound_state.shader_object_states) {
-            if (stage && stage->spirv->HasCapability(spv::CapabilityRayQueryKHR)) {
-                const LogObjectList objlist(cb_state.Handle(), stage->Handle());
-                skip |= LogError(vuid.ray_query_04617, objlist, vuid.loc(),
+        for (const vvl::ShaderObject* shader_object : last_bound_state.shader_object_states) {
+            if (!shader_object || !shader_object->stage.HasSpirv()) {
+                continue;
+            }
+            if (shader_object->stage.spirv_state->HasCapability(spv::CapabilityRayQueryKHR)) {
+                const LogObjectList objlist(cb_state.Handle(), shader_object->Handle());
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::RAY_QUERY_04617), objlist, loc,
                                  "Shader in %s uses OpCapability RayQueryKHR but the command buffer is protected.",
-                                 string_VkShaderStageFlags(stage->create_info.stage).c_str());
+                                 string_VkShaderStageFlags(shader_object->create_info.stage).c_str());
             }
         }
     }
@@ -1953,8 +2238,8 @@ bool CoreChecks::ValidateActionStateProtectedMemory(const LastBound &last_bound_
 
 // Note, these don't include the RTX Indirect commands (vkCmdTraceRaysIndirectKHR) because
 // they use a VkDeviceAddress instead of a VkBuffer
-bool CoreChecks::ValidateIndirectCmd(const vvl::CommandBuffer &cb_state, const vvl::Buffer &buffer_state,
-                                     const DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateIndirectCmd(const vvl::CommandBuffer& cb_state, const vvl::Buffer& buffer_state,
+                                     const DrawDispatchVuid& vuid) const {
     bool skip = false;
     LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
     objlist.add(buffer_state.Handle());
@@ -1970,8 +2255,8 @@ bool CoreChecks::ValidateIndirectCmd(const vvl::CommandBuffer &cb_state, const v
     return skip;
 }
 
-bool CoreChecks::ValidateIndirectCountCmd(const vvl::CommandBuffer &cb_state, const vvl::Buffer &count_buffer_state,
-                                          VkDeviceSize count_buffer_offset, const DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateIndirectCountCmd(const vvl::CommandBuffer& cb_state, const vvl::Buffer& count_buffer_state,
+                                          VkDeviceSize count_buffer_offset, const DrawDispatchVuid& vuid) const {
     bool skip = false;
     LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
     objlist.add(count_buffer_state.Handle());
@@ -1988,9 +2273,58 @@ bool CoreChecks::ValidateIndirectCountCmd(const vvl::CommandBuffer &cb_state, co
     return skip;
 }
 
-bool CoreChecks::ValidateDrawPrimitivesGeneratedQuery(const LastBound &last_bound_state, const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateIndirectBufferDeviceAddress(const vvl::CommandBuffer& cb_state, VkDeviceAddress address, VkDeviceSize size,
+                                                     bool strided, const Location& info_loc,
+                                                     const vvl::DrawDispatchVuid& vuid) const {
     bool skip = false;
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
+
+    if (!cb_state.unprotected) {
+        const Location top_loc(info_loc.function);
+        skip |= LogError(vuid.indirect_protected_cb_02711, cb_state.Handle(), top_loc.dot(Field::commandBuffer),
+                         "is a protected command buffer.");
+    }
+
+    if (!phys_dev_props_core11.protectedNoFault) {
+        const char* vuid_13108 = vvl::GetDispatchIndirectProtectVUID(info_loc);
+        BufferAddressValidation<1> buffer_address_validator = {{{
+            {vuid_13108,
+             [](const vvl::Buffer& buffer_state) { return (buffer_state.create_info.flags & VK_BUFFER_CREATE_PROTECTED_BIT) != 0; },
+             []() { return "The following buffers were created with VK_BUFFER_CREATE_PROTECTED_BIT"; }, kFlagErrorMsgBuffer},
+        }}};
+
+        skip |= buffer_address_validator.ValidateDeviceAddress(*this, info_loc.dot(Field::addressRange).dot(Field::address),
+                                                               LogObjectList(cb_state.Handle()), address);
+
+        skip |=
+            ValidateDeviceAddressRange(address, size, strided, info_loc.dot(Field::addressRange), LogObjectList(cb_state.Handle()),
+                                       VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT, vuid.indirect_buffer_bit_02290);
+    } else {
+        skip |=
+            ValidateDeviceAddressRange(address, size, strided, info_loc.dot(Field::addressRange), LogObjectList(cb_state.Handle()),
+                                       VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT, vuid.indirect_buffer_bit_02290);
+    }
+
+    return skip;
+}
+
+bool CoreChecks::ValidateIndirectCountBufferDeviceAddress(const vvl::CommandBuffer& cb_state, VkDeviceAddress address,
+                                                          const Location& info_loc, const vvl::DrawDispatchVuid& vuid) const {
+    bool skip = false;
+
+    BufferAddressValidation<1> buffer_address_validator = {
+        {{{vuid.indirect_count_buffer_bit_02715,
+           [](const vvl::Buffer& buffer_state) { return (buffer_state.usage & VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT) == 0; },
+           []() { return "The following buffers are missing VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT"; }, kUsageErrorMsgBuffer}}}};
+
+    skip |= buffer_address_validator.ValidateDeviceAddress(*this, info_loc.dot(Field::countAddressRange).dot(Field::address),
+                                                           LogObjectList(cb_state.Handle()), address);
+
+    return skip;
+}
+
+bool CoreChecks::ValidateDrawPrimitivesGeneratedQuery(const LastBound& last_bound_state, const Location& loc) const {
+    bool skip = false;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
 
     const bool with_rasterizer_discard = enabled_features.primitivesGeneratedQueryWithRasterizerDiscard == VK_TRUE;
     const bool with_non_zero_streams = enabled_features.primitivesGeneratedQueryWithNonZeroStreams == VK_TRUE;
@@ -1999,44 +2333,48 @@ bool CoreChecks::ValidateDrawPrimitivesGeneratedQuery(const LastBound &last_boun
         return skip;
     }
 
-    bool primitives_generated_query = false;
-    for (const auto &query : cb_state.active_queries) {
+    for (const auto& query : cb_state.active_queries) {
         auto query_pool_state = Get<vvl::QueryPool>(query.pool);
-        if (query_pool_state && query_pool_state->create_info.queryType == VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT) {
-            primitives_generated_query = true;
-            break;
+        if (!query_pool_state || query_pool_state->create_info.queryType != VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT) {
+            continue;
         }
-    }
 
-    if (primitives_generated_query) {
         if (!with_rasterizer_discard && last_bound_state.IsRasterizationDisabled()) {
-            skip |= LogError(vuid.primitives_generated_06708, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                             "a VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT query is active and pipeline was created with "
-                             "VkPipelineRasterizationStateCreateInfo::rasterizerDiscardEnable set to VK_TRUE, but "
-                             "primitivesGeneratedQueryWithRasterizerDiscard feature is not enabled.");
+            skip |=
+                LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PRIMITIVES_GENERATED_06708),
+                         cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                         "query %" PRIu32
+                         " in %s with type VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT query is active and %s is VK_TRUE, but the "
+                         "primitivesGeneratedQueryWithRasterizerDiscard feature was not enabled.",
+                         query.slot, FormatHandle(query.pool).c_str(), last_bound_state.DescribeRasterizationDisabled().c_str());
         }
-        const vvl::Pipeline *pipeline = last_bound_state.pipeline_state;
+
+        // rasterizationStream doesn't have dynamic state, so only possible from a pipeline
+        const vvl::Pipeline* pipeline = last_bound_state.pipeline_state;
         if (!with_non_zero_streams && pipeline) {
             const auto rasterization_state_stream_ci =
                 vku::FindStructInPNextChain<VkPipelineRasterizationStateStreamCreateInfoEXT>(pipeline->RasterizationStatePNext());
             if (rasterization_state_stream_ci && rasterization_state_stream_ci->rasterizationStream != 0) {
-                skip |= LogError(vuid.primitives_generated_streams_06709, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
-                                 vuid.loc(),
-                                 "a VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT query is active and pipeline was created with "
-                                 "VkPipelineRasterizationStateStreamCreateInfoEXT::rasterizationStream set to %" PRIu32
-                                 ", but primitivesGeneratedQueryWithNonZeroStreams feature is not enabled.",
-                                 rasterization_state_stream_ci->rasterizationStream);
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::PRIMITIVES_GENERATED_STREAMS_06709),
+                                 cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                                 "query %" PRIu32
+                                 " in %s with type VK_QUERY_TYPE_PRIMITIVES_GENERATED_EXT query is active and "
+                                 "VkPipelineRasterizationStateStreamCreateInfoEXT::rasterizationStream was set to %" PRIu32
+                                 ", but the primitivesGeneratedQueryWithNonZeroStreams feature was not enabled.",
+                                 query.slot, FormatHandle(query.pool).c_str(), rasterization_state_stream_ci->rasterizationStream);
             }
         }
+
+        break;  // only need to check the feature VUs once
     }
 
     return skip;
 }
 
-bool CoreChecks::ValidateDrawFragmentShadingRate(const LastBound &last_bound_state, const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateDrawFragmentShadingRate(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
-    const auto *pipeline = last_bound_state.pipeline_state;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
+    const auto* pipeline = last_bound_state.pipeline_state;
 
     if (!enabled_features.primitiveFragmentShadingRate ||
         phys_dev_ext_props.fragment_shading_rate_props.primitiveFragmentShadingRateWithMultipleViewports) {
@@ -2044,36 +2382,37 @@ bool CoreChecks::ValidateDrawFragmentShadingRate(const LastBound &last_bound_sta
     }
 
     if (pipeline) {
-        for (auto &stage_state : pipeline->stage_states) {
+        for (auto& stage_state : pipeline->stage_states) {
             const VkShaderStageFlagBits stage = stage_state.GetStage();
             if (!IsValueIn(stage, {VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_GEOMETRY_BIT, VK_SHADER_STAGE_MESH_BIT_EXT})) {
                 continue;
             }
             if (pipeline->IsDynamic(CB_DYNAMIC_STATE_VIEWPORT_WITH_COUNT) && cb_state.dynamic_state_value.viewport_count != 1) {
                 if (stage_state.entrypoint && stage_state.entrypoint->written_built_in_primitive_shading_rate_khr) {
-                    skip |=
-                        LogError(vuid.viewport_count_primitive_shading_rate_04552, stage_state.module_state->Handle(), vuid.loc(),
-                                 "%s shader of currently bound pipeline statically writes to PrimitiveShadingRateKHR built-in, "
-                                 "but multiple viewports (%" PRIu32
-                                 ") are set by the last call to vkCmdSetViewportWithCountEXT,"
-                                 "and the primitiveFragmentShadingRateWithMultipleViewports limit is not supported.",
-                                 string_VkShaderStageFlagBits(stage), cb_state.dynamic_state_value.viewport_count);
+                    skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::VIEWPORT_COUNT_PRIMITIVE_SHADING_RATE_04552),
+                                     stage_state.module_state->Handle(), loc,
+                                     "shader %s in the last bound pipeline statically writes to PrimitiveShadingRateKHR built-in, "
+                                     "but multiple viewports (%" PRIu32
+                                     ") are set by the last call to vkCmdSetViewportWithCountEXT,"
+                                     "and the primitiveFragmentShadingRateWithMultipleViewports limit is not supported.",
+                                     stage_state.entrypoint->Describe().c_str(), cb_state.dynamic_state_value.viewport_count);
                 }
             }
         }
     } else {
         for (uint32_t stage = 0; stage < kShaderObjectStageCount; ++stage) {
             const auto shader_object = last_bound_state.GetShaderObjectState(static_cast<ShaderObjectStage>(stage));
-            if (shader_object && shader_object->entrypoint &&
-                shader_object->entrypoint->written_built_in_primitive_shading_rate_khr) {
+            if (shader_object && shader_object->stage.entrypoint &&
+                shader_object->stage.entrypoint->written_built_in_primitive_shading_rate_khr) {
                 if (cb_state.dynamic_state_value.viewport_count != 1) {
-                    skip |= LogError(vuid.set_viewport_with_count_08642, cb_state.Handle(), vuid.loc(),
-                                     "%s shader of currently bound pipeline statically writes to PrimitiveShadingRateKHR built-in, "
-                                     "but multiple viewports (%" PRIu32
-                                     ") are set by the last call to vkCmdSetViewportWithCountEXT,"
-                                     "and the primitiveFragmentShadingRateWithMultipleViewports limit is not supported.",
-                                     string_VkShaderStageFlagBits(shader_object->create_info.stage),
-                                     cb_state.dynamic_state_value.viewport_count);
+                    skip |= LogError(
+                        CreateActionVuid(loc.function, vvl::ActionVUID::SET_VIEWPORT_WITH_COUNT_08642), cb_state.Handle(), loc,
+                        "the %s shader in the last bound pipeline statically writes to PrimitiveShadingRateKHR built-in, "
+                        "but multiple viewports (%" PRIu32
+                        ") are set by the last call to vkCmdSetViewportWithCountEXT,"
+                        "and the primitiveFragmentShadingRateWithMultipleViewports limit is not supported.",
+                        string_VkShaderStageFlagBits(shader_object->create_info.stage),
+                        cb_state.dynamic_state_value.viewport_count);
                 }
                 break;
             }
@@ -2083,10 +2422,10 @@ bool CoreChecks::ValidateDrawFragmentShadingRate(const LastBound &last_bound_sta
     return skip;
 }
 
-bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_state, const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
 
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
     const bool has_pipeline = last_bound_state.pipeline_state != nullptr;
 
     if (has_pipeline && !last_bound_state.pipeline_state->ColorBlendState()) {
@@ -2107,7 +2446,7 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
             if (dynamic_attachment_count < blend_attachment_count) {
                 LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
                 skip |=
-                    LogError(vuid.dynamic_color_write_enable_count_07750, objlist, vuid.loc(),
+                    LogError(CreateActionVuid(loc.function, vvl::ActionVUID::COLOR_WRITE_ENABLE_COUNT_07750), objlist, loc,
                              "There are currently (%" PRIu32
                              ") active color attachments, but the last call to vkCmdSetColorWriteEnableEXT() only set the color "
                              "write enables for attachmentCount of %" PRIu32
@@ -2125,9 +2464,11 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
     const bool dynamic_write_mask = last_bound_state.IsDynamic(CB_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT);
     const bool dynamic_blend_constants = last_bound_state.IsDynamic(CB_DYNAMIC_STATE_BLEND_CONSTANTS);
 
+    const spirv::EntryPoint* fragment_entry_point = last_bound_state.GetFragmentEntryPoint();
+
     for (uint32_t i = 0; i < cb_state.active_attachments.size(); ++i) {
-        const auto &attachment_info = cb_state.active_attachments[i];
-        const auto *attachment = attachment_info.image_view;
+        const auto& attachment_info = cb_state.active_attachments[i];
+        const auto* attachment = attachment_info.image_view;
         if (!attachment || !attachment_info.IsColor()) {
             continue;
         }
@@ -2137,7 +2478,7 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
             !cb_state.dynamic_state_value.color_write_mask_attachments[color_index]) {
             LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
             objlist.add(attachment->Handle());
-            skip |= LogError(vuid.dynamic_color_write_mask_07478, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::COLOR_WRITE_MASK_07478), objlist, loc,
                              "vkCmdSetColorWriteMaskEXT was not set for color attachment index %" PRIu32
                              " for this command buffer.%s\n%s",
                              color_index, cb_state.DescribeInvalidatedState(CB_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT).c_str(),
@@ -2148,7 +2489,7 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
             !cb_state.dynamic_state_value.color_blend_enable_attachments[color_index]) {
             LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
             objlist.add(attachment->Handle());
-            skip |= LogError(vuid.dynamic_color_blend_enable_07476, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::COLOR_BLEND_ENABLE_07476), objlist, loc,
                              "vkCmdSetColorBlendEnableEXT was not set for color attachment index %" PRIu32
                              " for this command buffer.%s\n%s",
                              color_index, cb_state.DescribeInvalidatedState(CB_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT).c_str(),
@@ -2164,7 +2505,7 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
         if (!has_blend_bit) {
             LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
             objlist.add(attachment->Handle());
-            skip |= LogError(vuid.blend_enable_04727, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::BLEND_ENABLE_04727), objlist, loc,
                              "%s was created with %s which doesn't support VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT, but %s\n"
                              "(supported features: %s)",
                              attachment_info.Describe(cb_state, i).c_str(), string_VkFormat(attachment->create_info.format),
@@ -2180,7 +2521,7 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
                 !cb_state.dynamic_state_value.color_blend_advanced_attachments[color_index]) {
                 LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
                 objlist.add(attachment->Handle());
-                skip |= LogError(vuid.dynamic_color_blend_equation_10864, objlist, vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::COLOR_BLEND_EQUATION_10864), objlist, loc,
                                  "%s needs to be set for color attachmet index %" PRIu32 " (%s)\n%s\n%s",
                                  IsExtEnabled(extensions.vk_ext_blend_operation_advanced)
                                      ? "Either vkCmdSetColorBlendEquationEXT or vkCmdSetColorBlendAdvancedEXT"
@@ -2194,7 +2535,7 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
             if (!cb_state.dynamic_state_value.color_blend_equation_attachments[color_index]) {
                 const LogObjectList objlist(cb_state.Handle(), attachment->VkHandle(), last_bound_state.pipeline_state->Handle());
                 skip |= LogError(
-                    vuid.dynamic_color_blend_equation_10862, objlist, vuid.loc(),
+                    CreateActionVuid(loc.function, vvl::ActionVUID::COLOR_BLEND_EQUATION_10862), objlist, loc,
                     "The pipeline was created with VK_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT, but "
                     "vkCmdSetColorBlendEquationEXT was never set for color attachment index %" PRIu32 " (%s).%s\n%s\n%s",
                     color_index, attachment_info.Describe(cb_state, i).c_str(),
@@ -2206,7 +2547,7 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
             if (!cb_state.dynamic_state_value.color_blend_advanced_attachments[color_index]) {
                 const LogObjectList objlist(cb_state.Handle(), attachment->VkHandle(), last_bound_state.pipeline_state->Handle());
                 skip |= LogError(
-                    vuid.dynamic_color_blend_equation_10863, objlist, vuid.loc(),
+                    CreateActionVuid(loc.function, vvl::ActionVUID::COLOR_BLEND_EQUATION_10863), objlist, loc,
                     "The pipeline was created with VK_DYNAMIC_STATE_COLOR_BLEND_ADVANCED_EXT, but "
                     "vkCmdSetColorBlendAdvancedEXT was never set for color attachment index %" PRIu32 " (%s).%s\n%s\n%s",
                     color_index, attachment_info.Describe(cb_state, i).c_str(),
@@ -2221,7 +2562,7 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
                 LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
                 objlist.add(attachment->Handle());
                 skip |= LogError(
-                    vuid.blend_advanced_07480, objlist, vuid.loc(),
+                    CreateActionVuid(loc.function, vvl::ActionVUID::BLEND_ADVANCED_07480), objlist, loc,
                     "vkCmdSetColorBlendAdvancedEXT has set color attachment index %" PRIu32
                     " (%s) to advanced blending, but the total active color attachment count (%zu) is greater than "
                     "advancedBlendMaxColorAttachments (%" PRIu32 ").%s\n%s\n%s",
@@ -2236,7 +2577,7 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
             last_bound_state.IsBlendConstantsEnabled(color_index)) {
             LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
             objlist.add(attachment->Handle());
-            skip |= LogError(vuid.dynamic_blend_constants_07835, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::BLEND_CONSTANTS_07835), objlist, loc,
                              "%svkCmdSetBlendConstants was never called, but color attachment index %" PRIu32
                              " (%s) has blending enabled (%s), and the blend factor is constant.\n%s\n%s\n%s",
                              has_pipeline ? "VK_DYNAMIC_STATE_BLEND_CONSTANT state is dynamic, " : "", color_index,
@@ -2249,28 +2590,25 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
 
         // Validation needing access to spir-v information
         // ---
-        const spirv::EntryPoint *fragment_entry_point = last_bound_state.GetFragmentEntryPoint();
         if (fragment_entry_point && last_bound_state.IsDualBlending(color_index)) {
-            const auto get_max_fragment_location = [fragment_entry_point]() {
-                uint32_t max_fragment_location = 0;
-                for (const auto *variable : fragment_entry_point->user_defined_interface_variables) {
-                    if (variable->storage_class != spv::StorageClassOutput) {
-                        continue;
-                    }
-                    if (variable->decorations.location != spirv::kInvalidValue) {
-                        max_fragment_location = std::max(max_fragment_location, variable->decorations.location);
+            // Can start at zero, Location zero can't be higher than maxFragmentDualSrcAttachments
+            uint32_t max_fragment_location = 0;
+            const spirv::StageInterfaceVariable* max_output_variable = nullptr;
+            for (const auto* variable : fragment_entry_point->user_defined_interface_variables) {
+                if (variable->storage_class == spv::StorageClassOutput && variable->decorations.location != spirv::kInvalidValue) {
+                    if (variable->decorations.location > max_fragment_location) {
+                        max_fragment_location = variable->decorations.location;
+                        max_output_variable = variable;
                     }
                 }
-                return max_fragment_location;
-            };
+            }
 
-            const uint32_t max_fragment_location = get_max_fragment_location();
             if (max_fragment_location >= phys_dev_props.limits.maxFragmentDualSrcAttachments) {
                 std::ostringstream ss;
                 ss << "color attachment index " << color_index << " (" << attachment_info.Describe(cb_state, i)
-                   << ") is using Dual-Source Blending, but the largest output fragment Location (" << max_fragment_location
-                   << ") is not less than maxFragmentDualSrcAttachments (" << phys_dev_props.limits.maxFragmentDualSrcAttachments
-                   << ").\n";
+                   << ") is using Dual-Source Blending, but the Fragment shader " << max_output_variable->Describe()
+                   << " Location must be less than maxFragmentDualSrcAttachments ("
+                   << phys_dev_props.limits.maxFragmentDualSrcAttachments << ").\n";
                 if (max_fragment_location == 1 && phys_dev_props.limits.maxFragmentDualSrcAttachments == 1) {
                     // maxFragmentDualSrcAttachments is basically 1 for everyone and common case of trying to use dual-blending
                     // incorrectly
@@ -2280,8 +2618,8 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
                 }
                 ss << last_bound_state.DescribeColorBlendEnabled(color_index) << "\n"
                    << last_bound_state.DescribeBlendFactorEquation(color_index);
-                skip |= LogError(vuid.blend_dual_source_09239, cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                                 "%s", ss.str().c_str());
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::BLEND_DUAL_SOURCE_09239),
+                                 cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc, "%s", ss.str().c_str());
                 break;
             }
         }
@@ -2290,26 +2628,26 @@ bool CoreChecks::ValidateDrawAttachmentColorBlend(const LastBound &last_bound_st
     return skip;
 }
 
-bool CoreChecks::ValidateDrawAttachmentSampleLocation(const LastBound &last_bound_state, const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateDrawAttachmentSampleLocation(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
     if (!last_bound_state.IsStageBound(VK_SHADER_STAGE_FRAGMENT_BIT)) {
         return skip;
     }
 
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
     if (last_bound_state.IsSampleLocationsEnable()) {
         for (uint32_t i = 0; i < cb_state.active_attachments.size(); i++) {
-            const auto &attachment_info = cb_state.active_attachments[i];
-            const auto *attachment = attachment_info.image_view;
+            const auto& attachment_info = cb_state.active_attachments[i];
+            const auto* attachment = attachment_info.image_view;
             if (!attachment || !attachment_info.IsDepth()) {
                 continue;
             }
             if ((attachment->image_state->create_info.flags & VK_IMAGE_CREATE_SAMPLE_LOCATIONS_COMPATIBLE_DEPTH_BIT_EXT) == 0) {
                 const LogObjectList objlist(cb_state.Handle(), attachment->Handle());
-                const char *err = last_bound_state.IsDynamic(CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT)
-                                      ? vuid.sample_locations_enable_07484
-                                      : vuid.sample_location_02689;
-                skip |= LogError(err, objlist, vuid.loc(),
+                const vvl::ActionVUID vuid = last_bound_state.IsDynamic(CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT)
+                                                 ? vvl::ActionVUID::SAMPLE_LOCATION_07484
+                                                 : vvl::ActionVUID::SAMPLE_LOCATION_02689;
+                skip |= LogError(CreateActionVuid(loc.function, vuid), objlist, loc,
                                  "sampleLocationsEnable is true, but %s (%s created with %s) was not created with "
                                  "VK_IMAGE_CREATE_SAMPLE_LOCATIONS_COMPATIBLE_DEPTH_BIT_EXT.",
                                  attachment_info.Describe(cb_state, i).c_str(), FormatHandle(attachment->Handle()).c_str(),
@@ -2321,13 +2659,13 @@ bool CoreChecks::ValidateDrawAttachmentSampleLocation(const LastBound &last_boun
     return skip;
 }
 
-bool CoreChecks::ValidateDrawDepthStencilAttachments(const LastBound &last_bound_state, const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateDrawDepthStencilAttachments(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
 
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
     for (uint32_t i = 0; i < cb_state.active_attachments.size(); i++) {
-        const auto &attachment_info = cb_state.active_attachments[i];
-        const auto *attachment = attachment_info.image_view;
+        const auto& attachment_info = cb_state.active_attachments[i];
+        const auto* attachment = attachment_info.image_view;
         if (!attachment) {
             continue;
         }
@@ -2336,7 +2674,7 @@ bool CoreChecks::ValidateDrawDepthStencilAttachments(const LastBound &last_bound
             IsImageLayoutDepthReadOnly(attachment_info.layout)) {
             LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
             objlist.add(attachment->Handle());
-            skip |= LogError(vuid.depth_read_only_06886, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::DEPTH_READ_ONLY_06886), objlist, loc,
                              "depthWriteEnable is VK_TRUE, but %s (%s created with %s) has a layout %s which is READ_ONLY.",
                              attachment_info.Describe(cb_state, i).c_str(), FormatHandle(attachment->Handle()).c_str(),
                              FormatHandle(attachment->image_state->Handle()).c_str(), string_VkImageLayout(attachment_info.layout));
@@ -2363,7 +2701,7 @@ bool CoreChecks::ValidateDrawDepthStencilAttachments(const LastBound &last_bound
                     LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
                     objlist.add(attachment->Handle());
                     skip |= LogError(
-                        vuid.stencil_read_only_06887, objlist, vuid.loc(),
+                        CreateActionVuid(loc.function, vvl::ActionVUID::STENCIL_READ_ONLY_06887), objlist, loc,
                         "%s (%s created with %s) has a layout of %s which is READ_ONLY, but stencilTestEnable is VK_TRUE, "
                         "writeMask is non-zero, and all stencil ops are not VK_STENCIL_OP_KEEP.\n"
                         "front:\n%sback:\n%s",
@@ -2378,17 +2716,17 @@ bool CoreChecks::ValidateDrawDepthStencilAttachments(const LastBound &last_bound
     return skip;
 }
 
-bool CoreChecks::ValidateDrawTessellation(const LastBound &last_bound_state, const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateDrawTessellation(const LastBound& last_bound_state, const Location& loc) const {
     bool skip = false;
     if ((last_bound_state.GetAllActiveBoundStages() & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT) == 0) {
         return skip;
     }
 
-    const spirv::ExecutionModeSet *tesc_execution_mode = nullptr;
-    const spirv::ExecutionModeSet *tese_execution_mode = nullptr;
+    const spirv::ExecutionModeSet* tesc_execution_mode = nullptr;
+    const spirv::ExecutionModeSet* tese_execution_mode = nullptr;
 
     if (last_bound_state.pipeline_state) {
-        for (const auto &stage_state : last_bound_state.pipeline_state->stage_states) {
+        for (const auto& stage_state : last_bound_state.pipeline_state->stage_states) {
             const VkShaderStageFlagBits stage = stage_state.GetStage();
             if (stage & VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT) {
                 if (stage_state.entrypoint) {
@@ -2402,12 +2740,12 @@ bool CoreChecks::ValidateDrawTessellation(const LastBound &last_bound_state, con
         }
     } else {
         const auto tesc_shader = last_bound_state.GetShaderObjectState(ShaderObjectStage::TESSELLATION_CONTROL);
-        if (tesc_shader && tesc_shader->entrypoint) {
-            tesc_execution_mode = &tesc_shader->entrypoint->execution_mode;
+        if (tesc_shader && tesc_shader->stage.entrypoint) {
+            tesc_execution_mode = &tesc_shader->stage.entrypoint->execution_mode;
         }
         const auto tese_shader = last_bound_state.GetShaderObjectState(ShaderObjectStage::TESSELLATION_EVALUATION);
-        if (tese_shader && tese_shader->entrypoint) {
-            tese_execution_mode = &tese_shader->entrypoint->execution_mode;
+        if (tese_shader && tese_shader->stage.entrypoint) {
+            tese_execution_mode = &tese_shader->stage.entrypoint->execution_mode;
         }
     }
 
@@ -2419,8 +2757,8 @@ bool CoreChecks::ValidateDrawTessellation(const LastBound &last_bound_state, con
     const uint32_t tese_subdivision = tese_execution_mode->GetTessellationSubdivision();
     if (tesc_subdivision != spirv::kInvalidValue && tese_subdivision != spirv::kInvalidValue &&
         tesc_subdivision != tese_subdivision) {
-        skip |= LogError(vuid.tessellation_subdivision_12239,
-                         last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::TESSELLATION_SUBDIVISION_12239),
+                         last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                          "The subdivision specified in tessellation control shader (%s) does not match the subdivision in "
                          "tessellation evaluation shader (%s).",
                          string_SpvExecutionMode(tesc_subdivision), string_SpvExecutionMode(tese_subdivision));
@@ -2430,8 +2768,8 @@ bool CoreChecks::ValidateDrawTessellation(const LastBound &last_bound_state, con
     const uint32_t tese_orientation = tese_execution_mode->GetTessellationOrientation();
     if (tesc_orientation != spirv::kInvalidValue && tese_orientation != spirv::kInvalidValue &&
         tesc_orientation != tese_orientation) {
-        skip |= LogError(vuid.tessellation_triangles_12240,
-                         last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::TESSELLATION_TRIANGLES_12240),
+                         last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                          "The orientation specified in tessellation control shader (%s) does not match the orientation in "
                          "tessellation evaluation shader (%s).",
                          string_SpvExecutionMode(tesc_orientation), string_SpvExecutionMode(tese_orientation));
@@ -2440,8 +2778,8 @@ bool CoreChecks::ValidateDrawTessellation(const LastBound &last_bound_state, con
     const uint32_t tesc_spacing = tesc_execution_mode->GetTessellationSpacing();
     const uint32_t tese_spacing = tese_execution_mode->GetTessellationSpacing();
     if (tesc_spacing != spirv::kInvalidValue && tese_spacing != spirv::kInvalidValue && tesc_spacing != tese_spacing) {
-        skip |= LogError(vuid.tessellation_segment_12241, last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
-                         vuid.loc(),
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::TESSELLATION_SEGMENT_12241),
+                         last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                          "The spacing specified in tessellation control shader (%s) does not match the spacing in "
                          "tessellation evaluation shader (%s).",
                          string_SpvExecutionMode(tesc_spacing), string_SpvExecutionMode(tese_spacing));
@@ -2449,8 +2787,9 @@ bool CoreChecks::ValidateDrawTessellation(const LastBound &last_bound_state, con
     const uint32_t tesc_patch_size = tesc_execution_mode->output_vertices;
     const uint32_t tese_patch_size = tese_execution_mode->output_vertices;
     if (tesc_patch_size != spirv::kInvalidValue && tese_patch_size != spirv::kInvalidValue && tesc_patch_size != tese_patch_size) {
-        skip |= LogError(vuid.tessellation_patch_size_12242,
-                         last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::TESSELLATION_PATCH_SIZE_12242),
+
+                         last_bound_state.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                          "The OutputVertices (patch size) specified in tessellation control shader (%" PRIu32
                          ") does not match the spacing in "
                          "tessellation evaluation shader (%" PRIu32 ").",
@@ -2460,9 +2799,9 @@ bool CoreChecks::ValidateDrawTessellation(const LastBound &last_bound_state, con
     return skip;
 }
 
-bool CoreChecks::ValidateDrawVertexBinding(const LastBound &last_bound, const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateDrawVertexBinding(const LastBound& last_bound, const vvl::DrawDispatchVuid& vuid) const {
     bool skip = false;
-    const vvl::CommandBuffer &cb_state = last_bound.cb_state;
+    const vvl::CommandBuffer& cb_state = last_bound.cb_state;
 
     if ((last_bound.GetAllActiveBoundStages() & VK_SHADER_STAGE_VERTEX_BIT) == 0) {
         return skip;
@@ -2479,7 +2818,7 @@ bool CoreChecks::ValidateDrawVertexBinding(const LastBound &last_bound, const vv
     }
 
     const bool has_dynamic_descriptions = last_bound.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT);
-    const auto &vertex_bindings = has_dynamic_descriptions ? cb_state.dynamic_state_value.vertex_bindings
+    const auto& vertex_bindings = has_dynamic_descriptions ? cb_state.dynamic_state_value.vertex_bindings
                                                            : last_bound.pipeline_state->vertex_input_state->bindings;
 
     const bool robust_pipeline = last_bound.pipeline_state && last_bound.pipeline_state->uses_pipeline_vertex_robustness;
@@ -2493,8 +2832,8 @@ bool CoreChecks::ValidateDrawVertexBinding(const LastBound &last_bound, const vv
         }
         ss << " has pVertexBindingDescriptions[" << binding_description.index << "].binding (" << binding_description.desc.binding
            << ") (pointing to Locations [";
-        const char *separator = "";
-        for (const auto &location : binding_description.locations) {
+        const char* separator = "";
+        for (const auto& location : binding_description.locations) {
             ss << separator << location.first;
             separator = ", ";
         }
@@ -2502,25 +2841,25 @@ bool CoreChecks::ValidateDrawVertexBinding(const LastBound &last_bound, const vv
         return ss.str();
     };
 
-    const spirv::EntryPoint *vertex_entry_point = last_bound.GetVertexEntryPoint();
+    const spirv::EntryPoint* vertex_entry_point = last_bound.GetVertexEntryPoint();
     // Can be NULL if pipeline binaries are used
     if (!vertex_entry_point) {
         return skip;
     }
     vvl::unordered_set<uint32_t> spirv_input_locations;
-    for (const auto &pair : vertex_entry_point->input_interface_slots) {
+    for (const auto& pair : vertex_entry_point->input_interface_slots) {
         spirv_input_locations.emplace(pair.first.Location());
     }
 
     // It is ok to have binding descriptions not used, them and find if there is matching buffer tied to it or not
-    for (const auto &[binding_index, binding_description] : vertex_bindings) {
+    for (const auto& [binding_index, binding_description] : vertex_bindings) {
         // If no attribute points to a binding, it is unused
         if (binding_description.locations.empty()) {
             continue;
         }
 
         bool shader_has_location = false;
-        for (const auto &location : binding_description.locations) {
+        for (const auto& location : binding_description.locations) {
             if (spirv_input_locations.find(location.first) != spirv_input_locations.end()) {
                 shader_has_location = true;
                 break;
@@ -2531,46 +2870,48 @@ bool CoreChecks::ValidateDrawVertexBinding(const LastBound &last_bound, const vv
             continue;
         }
 
-        const auto *vertex_buffer_binding = vvl::Find(cb_state.current_vertex_buffer_binding_info, binding_index);
+        const auto* vertex_buffer_binding = vvl::Find(cb_state.current_vertex_buffer_binding_info, binding_index);
         if (!vertex_buffer_binding || !vertex_buffer_binding->bound) {
             // Likely to not get
-            skip |=
-                LogError(vuid.vertex_binding_04007, last_bound.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                         "%s which didn't have a buffer bound from any vkCmdBindVertexBuffers call in this command buffer.",
-                         print_binding(binding_description).c_str());
+            skip |= LogError(CreateActionVuid(vuid, vvl::ActionVUID::VERTEX_BINDING_04007),
+                             last_bound.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                             "%s which didn't have a buffer bound from any vkCmdBindVertexBuffers call in this command buffer.",
+                             print_binding(binding_description).c_str());
             continue;
         }
 
         // This means the app actively set the buffer to null
         // Going to hit VUID-vkCmdBindVertexBuffers-pBuffers-04001 first anyway
-        if (vertex_buffer_binding->buffer == VK_NULL_HANDLE) {
+        if (!vertex_buffer_binding->HasNonNullBuffer()) {
             if (!enabled_features.nullDescriptor) {
-                skip |=
-                    LogError(vuid.vertex_binding_null_04008, last_bound.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
-                             vuid.loc(), "%s which was bound with a buffer of VK_NULL_HANDLE, but nullDescriptor is not enabled.",
-                             print_binding(binding_description).c_str());
+                skip |= LogError(CreateActionVuid(vuid, vvl::ActionVUID::VERTEX_BINDING_04008),
+                                 last_bound.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                                 "%s which was bound with a buffer of VK_NULL_HANDLE, but nullDescriptor is not enabled.",
+                                 print_binding(binding_description).c_str());
             }
             continue;
+        } else if (vertex_buffer_binding->Buffer() != VK_NULL_HANDLE) {
+            const auto vertex_buffer_state = Get<vvl::Buffer>(vertex_buffer_binding->Buffer());
+            if (!vertex_buffer_state) {
+                skip |= LogError(
+                    CreateActionVuid(vuid, vvl::ActionVUID::VERTEX_BINDING_04007),
+                    last_bound.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                    "%s which has an invalid/destroyed buffer bound from a vkCmdBindVertexBuffers call in this command buffer.",
+                    print_binding(binding_description).c_str());
+                continue;
+            }
         }
 
-        const auto vertex_buffer_state = Get<vvl::Buffer>(vertex_buffer_binding->buffer);
-        if (!vertex_buffer_state) {
-            skip |= LogError(
-                vuid.vertex_binding_04007, last_bound.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                "%s which has an invalid/destroyed buffer bound from a vkCmdBindVertexBuffers call in this command buffer.",
-                print_binding(binding_description).c_str());
-            continue;
-        }
-
-        for (const auto &location : binding_description.locations) {
+        for (const auto& location : binding_description.locations) {
             const auto attr_index = location.second.index;
-            const auto &attr_desc = location.second.desc;
+            const auto& attr_desc = location.second.desc;
 
             if (last_bound.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE)) {
                 const VkDeviceSize attribute_binding_extent = attr_desc.offset + GetVertexInputFormatSize(attr_desc.format);
                 if (vertex_buffer_binding->stride != 0 && vertex_buffer_binding->stride < attribute_binding_extent) {
-                    skip |= LogError("VUID-vkCmdBindVertexBuffers2-pStrides-06209",
-                                     last_bound.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                    const char* vuid_str = cb_state.bind_vertex_buffer_3_used ? "VUID-vkCmdBindVertexBuffers3KHR-addressRange-13073"
+                                                                              : "VUID-vkCmdBindVertexBuffers2-pStrides-06209";
+                    skip |= LogError(vuid_str, last_bound.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
                                      "(attribute binding %" PRIu32 ", attribute location %" PRIu32 ") The pStrides value (%" PRIu64
                                      ") parameter in the last call to %s is not 0 "
                                      "and is less than the extent of the binding for the attribute (%" PRIu64 ").",
@@ -2579,8 +2920,9 @@ bool CoreChecks::ValidateDrawVertexBinding(const LastBound &last_bound, const vv
                 }
             }
 
-            if (!enabled_features.robustBufferAccess && !robust_pipeline) {
-                const VkDeviceSize vertex_buffer_offset = vertex_buffer_binding->offset;
+            // TODO - Handle https://gitlab.khronos.org/vulkan/Vulkan-ValidationLayers/-/issues/45
+            if (!enabled_features.robustBufferAccess && !robust_pipeline && vertex_buffer_binding->Buffer() != VK_NULL_HANDLE) {
+                const VkDeviceSize vertex_buffer_offset = vertex_buffer_binding->BufferOffset();
 
                 // Use 1 as vertex/instance index to use buffer stride as well
                 const VkDeviceSize attrib_address = vertex_buffer_offset + vertex_buffer_binding->stride + attr_desc.offset;
@@ -2597,7 +2939,7 @@ bool CoreChecks::ValidateDrawVertexBinding(const LastBound &last_bound, const vv
 
                 if (!IsPointerAligned(attrib_address, vtx_attrib_req_alignment)) {
                     LogObjectList objlist(last_bound.cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS));
-                    objlist.add(vertex_buffer_state->Handle());
+                    objlist.add(vertex_buffer_binding->Buffer());
                     skip |= LogError(vuid.vertex_binding_attribute_02721, objlist, vuid.loc(),
                                      "Format %s has an alignment of %" PRIu64 " but the alignment of attribAddress (0x%" PRIx64
                                      ") is not aligned in pVertexAttributeDescriptions[%" PRIu32 "] (binding=%" PRIu32
@@ -2614,9 +2956,8 @@ bool CoreChecks::ValidateDrawVertexBinding(const LastBound &last_bound, const vv
     return skip;
 }
 
-bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vvl::RenderPass &rp_state,
-                                           const core::CommandBufferSubState &cb_sub_state,
-                                           const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateDrawCustomResolve(const LastBound& last_bound, const vvl::RenderPass& rp_state,
+                                           const core::CommandBufferSubState& cb_sub_state, const Location& loc) const {
     bool skip = false;
 
     const VkRenderingFlags rendering_flags = rp_state.GetRenderingFlags();
@@ -2624,10 +2965,10 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
                                                                               : vvl::Struct::VkRenderingInfo;
     if (rendering_flags & VK_RENDERING_FRAGMENT_REGION_BIT_EXT) {
         if (last_bound.IsSampleShadingEnabled() && last_bound.GetMinSampleShading() != 0.0) {
-            skip |=
-                LogError(vuid.custom_resolve_11521, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                         "%s::flags includes VK_RENDERING_FRAGMENT_REGION_BIT_EXT, but minSampleShading needs to be 0\n%s",
-                         String(flags_struct), last_bound.DescribeSampleShading().c_str());
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11521),
+                             cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                             "%s::flags includes VK_RENDERING_FRAGMENT_REGION_BIT_EXT, but minSampleShading needs to be 0\n%s",
+                             String(flags_struct), last_bound.DescribeSampleShading().c_str());
         }
     }
 
@@ -2636,16 +2977,16 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
     // The remaining checks are only for pipeline, Shader Object doesn't have an explicit custom resolve info (except FDM)
     if (!last_bound.pipeline_state) {
         if (last_bound.IsStageBound(VK_SHADER_STAGE_FRAGMENT_BIT) && enabled_features.fragmentDensityMap && rp_has_custom_resolve) {
-            const AttachmentInfo &fdm_attachment =
+            const AttachmentInfo& fdm_attachment =
                 cb_sub_state.base.active_attachments[cb_sub_state.base.GetDynamicRenderingAttachmentIndex(
                     AttachmentInfo::Type::FragmentDensityMap)];
             if (fdm_attachment.image_view) {
-                const auto &shader_object = last_bound.GetShaderObjectState(ShaderObjectStage::FRAGMENT);
+                const auto& shader_object = last_bound.GetShaderObjectState(ShaderObjectStage::FRAGMENT);
                 if (const auto shader_object_cr_info =
                         vku::FindStructInPNextChain<VkCustomResolveCreateInfoEXT>(shader_object->create_info.pNext)) {
                     if (cb_sub_state.custom_resolve.started && !shader_object_cr_info->customResolve) {
-                        skip |= LogError(vuid.custom_resolve_11529,
-                                         cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11529),
+                                         cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                                          "vkCmdBeginCustomResolveEXT was called in this render pass, %s is an active "
                                          "FragmentDensityMap attachment, but the bound fragment shader object "
                                          "VkCustomResolveCreateInfoEXT::customResolve is VK_FALSE",
@@ -2655,8 +2996,8 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
                         // vkCmdExecuteCommands
                         if (!cb_sub_state.base.IsSecondary() || !cb_sub_state.custom_resolve.inherited_resolve) {
                             skip |=
-                                LogError(vuid.custom_resolve_11530,
-                                         cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                                LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11530),
+                                         cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                                          "vkCmdBeginCustomResolveEXT was not yet called in this render pass, %s is an active "
                                          "FragmentDensityMap attachment, but the bound fragment shader object "
                                          "VkCustomResolveCreateInfoEXT::customResolve is VK_TRUE%s",
@@ -2674,7 +3015,7 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
         return skip;
     }
 
-    const VkCustomResolveCreateInfoEXT *pipeline_cr_info = nullptr;
+    const VkCustomResolveCreateInfoEXT* pipeline_cr_info = nullptr;
     if (last_bound.pipeline_state->fragment_output_state) {
         // Will get normal and GPL Fragment Output pipelines
         pipeline_cr_info = vku::FindStructInPNextChain<VkCustomResolveCreateInfoEXT>(
@@ -2684,24 +3025,24 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
     if (rp_has_custom_resolve) {
         if (!pipeline_cr_info) {
             if (!enabled_features.dynamicRenderingUnusedAttachments) {
-                skip |= LogError(vuid.custom_resolve_11522, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
-                                 vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11522),
+                                 cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                                  "%s::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound pipeline was not "
                                  "created with a VkCustomResolveCreateInfoEXT struct",
                                  String(flags_struct));
             }
         } else if (cb_sub_state.custom_resolve.started && !pipeline_cr_info->customResolve) {
             if (!enabled_features.dynamicRenderingUnusedAttachments) {
-                skip |= LogError(vuid.custom_resolve_11524, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
-                                 vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11524),
+                                 cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                                  "vkCmdBeginCustomResolveEXT was called in this render pass, but the bound pipeline "
                                  "VkCustomResolveCreateInfoEXT::customResolve is VK_FALSE");
             }
         } else if (!cb_sub_state.custom_resolve.started && pipeline_cr_info->customResolve) {
             // Exception if inside the seconary, as the vkCmdBeginCustomResolveEXT can be called prior to vkCmdExecuteCommands
             if (!cb_sub_state.base.IsSecondary() || !cb_sub_state.custom_resolve.inherited_resolve) {
-                skip |= LogError(vuid.custom_resolve_11525, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
-                                 vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11525),
+                                 cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                                  "vkCmdBeginCustomResolveEXT was not yet called in this render pass, but the bound pipeline "
                                  "VkCustomResolveCreateInfoEXT::customResolve is VK_TRUE%s",
                                  cb_sub_state.base.IsSecondary()
@@ -2711,7 +3052,8 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
             }
         }
     } else if (pipeline_cr_info) {
-        skip |= LogError(vuid.custom_resolve_11523, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11523),
+                         cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                          "%s::flags did not include VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound pipeline was "
                          "created with a VkCustomResolveCreateInfoEXT struct",
                          String(flags_struct));
@@ -2722,11 +3064,12 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
         return skip;
     }
 
-    const VkRenderingInfo &rendering_info = *rp_state.dynamic_rendering_begin_rendering_info.ptr();
+    const VkRenderingInfo& rendering_info = *rp_state.dynamic_rendering_begin_rendering_info.ptr();
 
     if (pipeline_cr_info->colorAttachmentCount != rendering_info.colorAttachmentCount &&
         !enabled_features.dynamicRenderingUnusedAttachments) {
-        skip |= LogError(vuid.custom_resolve_11861, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11861),
+                         cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                          "%s::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound pipeline "
                          "VkCustomResolveCreateInfoEXT::colorAttachmentCount (%" PRIu32
                          ") doesn't match %s::colorAttachmentCount (%" PRIu32 ")",
@@ -2744,18 +3087,20 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
             if (enabled_features.dynamicRenderingUnusedAttachments) {
                 if (pipeline_cr_info->pColorAttachmentFormats[i] != resolve_image_view_state->create_info.format &&
                     pipeline_cr_info->pColorAttachmentFormats[i] != VK_FORMAT_UNDEFINED) {
-                    skip |= LogError(
-                        vuid.custom_resolve_11864, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                        "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound "
-                        "pipeline VkCustomResolveCreateInfoEXT::pColorAttachmentFormats[%" PRIu32
-                        "] (%s) doesn't match VkRenderingInfo::pColorAttachments[%" PRIu32
-                        "]->resolveImageView (%s) created with %s",
-                        i, string_VkFormat(pipeline_cr_info->pColorAttachmentFormats[i]), i,
-                        FormatHandle(resolve_image_view).c_str(), string_VkFormat(resolve_image_view_state->create_info.format));
+                    skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11864),
+                                     cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                                     "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound "
+                                     "pipeline VkCustomResolveCreateInfoEXT::pColorAttachmentFormats[%" PRIu32
+                                     "] (%s) doesn't match VkRenderingInfo::pColorAttachments[%" PRIu32
+                                     "]->resolveImageView (%s) created with %s",
+                                     i, string_VkFormat(pipeline_cr_info->pColorAttachmentFormats[i]), i,
+                                     FormatHandle(resolve_image_view).c_str(),
+                                     string_VkFormat(resolve_image_view_state->create_info.format));
                 }
             } else if (pipeline_cr_info->pColorAttachmentFormats[i] != resolve_image_view_state->create_info.format) {
                 skip |= LogError(
-                    vuid.custom_resolve_11862, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
+                    CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11862),
+                    cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                     "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound "
                     "pipeline VkCustomResolveCreateInfoEXT::pColorAttachmentFormats[%" PRIu32
                     "] (%s) doesn't match VkRenderingInfo::pColorAttachments[%" PRIu32 "]->resolveImageView (%s) created with %s",
@@ -2764,13 +3109,14 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
             }
         } else if (pipeline_cr_info->pColorAttachmentFormats[i] != VK_FORMAT_UNDEFINED &&
                    !enabled_features.dynamicRenderingUnusedAttachments) {
-            skip |= LogError(
-                vuid.custom_resolve_11863, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, "
-                "VkRenderingInfo::pColorAttachments[%" PRIu32
-                "]->resolveImageView is VK_NULL_HANDLE, but the bound "
-                "pipeline VkCustomResolveCreateInfoEXT::pColorAttachmentFormats[%" PRIu32 "] (%s) is not VK_FORMAT_UNDEFINED",
-                i, i, string_VkFormat(pipeline_cr_info->pColorAttachmentFormats[i]));
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11863),
+                             cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                             "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, "
+                             "VkRenderingInfo::pColorAttachments[%" PRIu32
+                             "]->resolveImageView is VK_NULL_HANDLE, but the bound "
+                             "pipeline VkCustomResolveCreateInfoEXT::pColorAttachmentFormats[%" PRIu32
+                             "] (%s) is not VK_FORMAT_UNDEFINED",
+                             i, i, string_VkFormat(pipeline_cr_info->pColorAttachmentFormats[i]));
         }
     }
 
@@ -2779,8 +3125,8 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
         if (resolve_image_view == VK_NULL_HANDLE) {
             if (pipeline_cr_info->depthAttachmentFormat != VK_FORMAT_UNDEFINED &&
                 !enabled_features.dynamicRenderingUnusedAttachments) {
-                skip |= LogError(vuid.custom_resolve_11865, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
-                                 vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11865),
+                                 cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                                  "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, "
                                  "VkRenderingInfo::pDepthAttachment->resolveImageView is VK_NULL_HANDLE, but the bound "
                                  "pipeline VkCustomResolveCreateInfoEXT::depthAttachmentFormat (%s) is not VK_FORMAT_UNDEFINED",
@@ -2793,17 +3139,18 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
             if (enabled_features.dynamicRenderingUnusedAttachments) {
                 if (pipeline_cr_info->depthAttachmentFormat != resolve_image_view_state->create_info.format &&
                     pipeline_cr_info->depthAttachmentFormat != VK_FORMAT_UNDEFINED) {
-                    skip |= LogError(
-                        vuid.custom_resolve_11867, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                        "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound "
-                        "pipeline VkCustomResolveCreateInfoEXT::depthAttachmentFormat (%s) doesn't match "
-                        "VkRenderingInfo::pDepthAttachment->resolveImageView (%s) created with %s",
-                        string_VkFormat(pipeline_cr_info->depthAttachmentFormat), FormatHandle(resolve_image_view).c_str(),
-                        string_VkFormat(resolve_image_view_state->create_info.format));
+                    skip |=
+                        LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11867),
+                                 cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                                 "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound "
+                                 "pipeline VkCustomResolveCreateInfoEXT::depthAttachmentFormat (%s) doesn't match "
+                                 "VkRenderingInfo::pDepthAttachment->resolveImageView (%s) created with %s",
+                                 string_VkFormat(pipeline_cr_info->depthAttachmentFormat), FormatHandle(resolve_image_view).c_str(),
+                                 string_VkFormat(resolve_image_view_state->create_info.format));
                 }
             } else if (pipeline_cr_info->depthAttachmentFormat != resolve_image_view_state->create_info.format) {
-                skip |= LogError(vuid.custom_resolve_11866, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
-                                 vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11866),
+                                 cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                                  "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound "
                                  "pipeline VkCustomResolveCreateInfoEXT::depthAttachmentFormat (%s) doesn't match "
                                  "VkRenderingInfo::pDepthAttachment->resolveImageView (%s) created with %s",
@@ -2818,8 +3165,8 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
         if (resolve_image_view == VK_NULL_HANDLE) {
             if (pipeline_cr_info->stencilAttachmentFormat != VK_FORMAT_UNDEFINED &&
                 !enabled_features.dynamicRenderingUnusedAttachments) {
-                skip |= LogError(vuid.custom_resolve_11868, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS),
-                                 vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11868),
+                                 cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
                                  "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, "
                                  "VkRenderingInfo::pStencilAttachment->resolveImageView is VK_NULL_HANDLE, but the bound "
                                  "pipeline VkCustomResolveCreateInfoEXT::stencilAttachmentFormat (%s) is not VK_FORMAT_UNDEFINED",
@@ -2832,22 +3179,24 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
             if (enabled_features.dynamicRenderingUnusedAttachments) {
                 if (pipeline_cr_info->stencilAttachmentFormat != resolve_image_view_state->create_info.format &&
                     pipeline_cr_info->stencilAttachmentFormat != VK_FORMAT_UNDEFINED) {
-                    skip |= LogError(
-                        vuid.custom_resolve_11870, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                        "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound "
-                        "pipeline VkCustomResolveCreateInfoEXT::stencilAttachmentFormat (%s) doesn't match "
-                        "VkRenderingInfo::pStencilAttachment->resolveImageView (%s) created with %s",
-                        string_VkFormat(pipeline_cr_info->stencilAttachmentFormat), FormatHandle(resolve_image_view).c_str(),
-                        string_VkFormat(resolve_image_view_state->create_info.format));
+                    skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11870),
+                                     cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                                     "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound "
+                                     "pipeline VkCustomResolveCreateInfoEXT::stencilAttachmentFormat (%s) doesn't match "
+                                     "VkRenderingInfo::pStencilAttachment->resolveImageView (%s) created with %s",
+                                     string_VkFormat(pipeline_cr_info->stencilAttachmentFormat),
+                                     FormatHandle(resolve_image_view).c_str(),
+                                     string_VkFormat(resolve_image_view_state->create_info.format));
                 }
             } else if (pipeline_cr_info->stencilAttachmentFormat != resolve_image_view_state->create_info.format) {
-                skip |= LogError(
-                    vuid.custom_resolve_11869, cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), vuid.loc(),
-                    "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound "
-                    "pipeline VkCustomResolveCreateInfoEXT::stencilAttachmentFormat (%s) doesn't match "
-                    "VkRenderingInfo::pStencilAttachment->resolveImageView (%s) created with %s",
-                    string_VkFormat(pipeline_cr_info->stencilAttachmentFormat), FormatHandle(resolve_image_view).c_str(),
-                    string_VkFormat(resolve_image_view_state->create_info.format));
+                skip |=
+                    LogError(CreateActionVuid(loc.function, vvl::ActionVUID::CUSTOM_RESOLVE_11869),
+                             cb_sub_state.base.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS), loc,
+                             "VkRenderingInfo::flags includes VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT, but the bound "
+                             "pipeline VkCustomResolveCreateInfoEXT::stencilAttachmentFormat (%s) doesn't match "
+                             "VkRenderingInfo::pStencilAttachment->resolveImageView (%s) created with %s",
+                             string_VkFormat(pipeline_cr_info->stencilAttachmentFormat), FormatHandle(resolve_image_view).c_str(),
+                             string_VkFormat(resolve_image_view_state->create_info.format));
             }
         }
     }
@@ -2855,9 +3204,8 @@ bool CoreChecks::ValidateDrawCustomResolve(const LastBound &last_bound, const vv
     return skip;
 }
 
-bool CoreChecks::ValidateDrawDynamicRenderpassExternalFormatResolve(const LastBound &last_bound_state,
-                                                                    const vvl::RenderPass &rp_state,
-                                                                    const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateDrawDynamicRenderpassExternalFormatResolve(const LastBound& last_bound_state,
+                                                                    const vvl::RenderPass& rp_state, const Location& loc) const {
     bool skip = false;
 
     if (!last_bound_state.pipeline_state) {
@@ -2870,15 +3218,15 @@ bool CoreChecks::ValidateDrawDynamicRenderpassExternalFormatResolve(const LastBo
         return skip;
     }
 
-    const vvl::CommandBuffer &cb_state = last_bound_state.cb_state;
+    const vvl::CommandBuffer& cb_state = last_bound_state.cb_state;
     LogObjectList objlist = cb_state.GetObjectList(VK_PIPELINE_BIND_POINT_GRAPHICS);
-    const VkRenderingInfo &rendering_info = *(rp_state.dynamic_rendering_begin_rendering_info.ptr());
+    const VkRenderingInfo& rendering_info = *(rp_state.dynamic_rendering_begin_rendering_info.ptr());
 
     if (rendering_info.colorAttachmentCount == 1 &&
         rendering_info.pColorAttachments[0].resolveMode == VK_RESOLVE_MODE_EXTERNAL_FORMAT_DOWNSAMPLE_BIT_ANDROID) {
         if (auto resolve_image_view_state = Get<vvl::ImageView>(rendering_info.pColorAttachments[0].resolveImageView)) {
             if (resolve_image_view_state->image_state->ahb_format != pipeline_external_format) {
-                skip |= LogError(vuid.external_format_resolve_09362, objlist, vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::EXTERNAL_FORMAT_RESOLVE_09362), objlist, loc,
                                  "pipeline externalFormat is %" PRIu64
                                  " but the resolveImageView's image was created with externalFormat %" PRIu64 "",
                                  pipeline_external_format, resolve_image_view_state->image_state->ahb_format);
@@ -2887,7 +3235,7 @@ bool CoreChecks::ValidateDrawDynamicRenderpassExternalFormatResolve(const LastBo
 
         if (auto color_image_view_state = Get<vvl::ImageView>(rendering_info.pColorAttachments[0].imageView)) {
             if (color_image_view_state->image_state->ahb_format != pipeline_external_format) {
-                skip |= LogError(vuid.external_format_resolve_09363, objlist, vuid.loc(),
+                skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::EXTERNAL_FORMAT_RESOLVE_09363), objlist, loc,
                                  "pipeline externalFormat is %" PRIu64
                                  " but the imageView's image was created with externalFormat %" PRIu64 "",
                                  pipeline_external_format, color_image_view_state->image_state->ahb_format);
@@ -2897,25 +3245,25 @@ bool CoreChecks::ValidateDrawDynamicRenderpassExternalFormatResolve(const LastBo
 
     if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT) &&
         cb_state.dynamic_state_value.color_blend_enable_attachments.test(0)) {
-        skip |= LogError(vuid.external_format_resolve_09364, objlist, vuid.loc(),
+        skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::EXTERNAL_FORMAT_RESOLVE_09364), objlist, loc,
                          "pipeline externalFormat is %" PRIu64 ", but dynamic blend enable for attachment zero was set to VK_TRUE.",
                          pipeline_external_format);
     }
     if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT) &&
         cb_state.dynamic_state_value.rasterization_samples != VK_SAMPLE_COUNT_1_BIT) {
         skip |=
-            LogError(vuid.external_format_resolve_09365, objlist, vuid.loc(),
+            LogError(CreateActionVuid(loc.function, vvl::ActionVUID::EXTERNAL_FORMAT_RESOLVE_09365), objlist, loc,
                      "pipeline externalFormat is %" PRIu64 ", but dynamic rasterization samples set to %s.",
                      pipeline_external_format, string_VkSampleCountFlagBits(cb_state.dynamic_state_value.rasterization_samples));
     }
     if (last_bound_state.IsDynamic(CB_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR)) {
         if (cb_state.dynamic_state_value.fragment_size.width != 1) {
-            skip |= LogError(vuid.external_format_resolve_09368, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::EXTERNAL_FORMAT_RESOLVE_09368), objlist, loc,
                              "pipeline externalFormat is %" PRIu64 ", but dynamic fragment size width is %" PRIu32 ".",
                              pipeline_external_format, cb_state.dynamic_state_value.fragment_size.width);
         }
         if (cb_state.dynamic_state_value.fragment_size.height != 1) {
-            skip |= LogError(vuid.external_format_resolve_09369, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::EXTERNAL_FORMAT_RESOLVE_09369), objlist, loc,
                              "pipeline externalFormat is %" PRIu64 ", but dynamic fragment size height is %" PRIu32 ".",
                              pipeline_external_format, cb_state.dynamic_state_value.fragment_size.height);
         }
@@ -2923,11 +3271,11 @@ bool CoreChecks::ValidateDrawDynamicRenderpassExternalFormatResolve(const LastBo
 
     if (auto fragment_entry_point = last_bound_state.GetFragmentEntryPoint()) {
         if (fragment_entry_point->execution_mode.Has(spirv::ExecutionModeSet::depth_replacing_bit)) {
-            skip |= LogError(vuid.external_format_resolve_09372, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::EXTERNAL_FORMAT_RESOLVE_09372), objlist, loc,
                              "pipeline externalFormat is %" PRIu64 " but the fragment shader declares DepthReplacing.",
                              pipeline_external_format);
         } else if (fragment_entry_point->execution_mode.Has(spirv::ExecutionModeSet::stencil_ref_replacing_bit)) {
-            skip |= LogError(vuid.external_format_resolve_09372, objlist, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::EXTERNAL_FORMAT_RESOLVE_09372), objlist, loc,
                              "pipeline externalFormat is %" PRIu64 " but the fragment shader declares StencilRefReplacingEXT.",
                              pipeline_external_format);
         }
@@ -2936,17 +3284,17 @@ bool CoreChecks::ValidateDrawDynamicRenderpassExternalFormatResolve(const LastBo
     return skip;
 }
 
-bool CoreChecks::ValidateBoundTileMemory(const vvl::Bindable &bindable, const vvl::CommandBuffer &cb_state,
-                                         const vvl::DrawDispatchVuid &vuid) const {
+bool CoreChecks::ValidateBoundTileMemory(const vvl::Bindable& bindable, const vvl::CommandBuffer& cb_state,
+                                         const Location& loc) const {
     bool skip = false;
 
     auto bound_memory_states = bindable.GetBoundMemoryStates();
     VkDeviceMemory bound_tile_memory_handle =
         (cb_state.bound_tile_memory != VK_NULL_HANDLE) ? cb_state.bound_tile_memory->VkHandle() : VK_NULL_HANDLE;
-    for (const auto &bound_memory : bound_memory_states) {
+    for (const auto& bound_memory : bound_memory_states) {
         if (HasTileMemoryType(bound_memory->allocate_info.memoryTypeIndex) &&
             (bound_memory->VkHandle() != bound_tile_memory_handle)) {
-            skip |= LogError(vuid.tile_memory_heap_10746, device, vuid.loc(),
+            skip |= LogError(CreateActionVuid(loc.function, vvl::ActionVUID::TILE_MEMORY_HEAP_10746), cb_state.Handle(), loc,
                              "%s is bound to a %s from memoryTypes[%" PRIu32
                              "]"
                              " that corresponds to Tile Memory but does not match the active bound"

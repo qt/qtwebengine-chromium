@@ -26,6 +26,7 @@
 #include "third_party/webrtc/media/engine/internal_encoder_factory.h"
 #include "third_party/webrtc/media/engine/simulcast_encoder_adapter.h"
 #include "third_party/webrtc/modules/video_coding/codecs/h264/include/h264.h"
+#include "third_party/webrtc/video/null_video_decoder.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "media/base/android/media_codec_util.h"
@@ -66,12 +67,16 @@ std::unique_ptr<webrtc::VideoDecoder> Wrap(
     const webrtc::Environment& env,
     std::unique_ptr<webrtc::VideoDecoder> software_decoder,
     std::unique_ptr<webrtc::VideoDecoder> hardware_decoder) {
-  if (software_decoder && hardware_decoder) {
+  if (hardware_decoder) {
+    if (!software_decoder) {
+      // If the HW becomes unusable after creation, the NullVideoDecoder serves
+      // to ensure the decoderImplementation string in getStats() reflects this.
+      software_decoder = std::make_unique<webrtc::NullVideoDecoder>();
+    }
     return webrtc::CreateVideoDecoderSoftwareFallbackWrapper(
         env, std::move(software_decoder), std::move(hardware_decoder));
   }
-  return hardware_decoder ? std::move(hardware_decoder)
-                          : std::move(software_decoder);
+  return software_decoder;
 }
 
 // This class combines a hardware factory with the internal factory and adds
@@ -79,10 +84,15 @@ std::unique_ptr<webrtc::VideoDecoder> Wrap(
 class EncoderAdapter : public webrtc::VideoEncoderFactory {
  public:
   explicit EncoderAdapter(
-      std::unique_ptr<webrtc::VideoEncoderFactory> hardware_encoder_factory,
+      std::unique_ptr<RTCVideoEncoderFactory> hardware_encoder_factory,
       StatsCollector::StoreProcessingStatsCB stats_callback)
       : hardware_encoder_factory_(std::move(hardware_encoder_factory)),
-        stats_callback_(stats_callback) {}
+        stats_callback_(stats_callback) {
+    if (hardware_encoder_factory_) {
+      hardware_encoder_factory_->SetAvailableSoftwareFallbackCodecs(
+          software_encoder_factory_.GetSupportedFormats());
+    }
+  }
 
   std::unique_ptr<webrtc::VideoEncoder> Create(
       const webrtc::Environment& env,
@@ -115,9 +125,10 @@ class EncoderAdapter : public webrtc::VideoEncoderFactory {
     if (!supported_in_software && !supported_in_hardware)
       return nullptr;
 
-    VideoEncoderFactory* primary_factory = supported_in_hardware
-                                               ? hardware_encoder_factory_.get()
-                                               : &software_encoder_factory_;
+    VideoEncoderFactory* primary_factory =
+        supported_in_hardware ? static_cast<webrtc::VideoEncoderFactory*>(
+                                    hardware_encoder_factory_.get())
+                              : &software_encoder_factory_;
     VideoEncoderFactory* fallback_factory =
         supported_in_hardware && supported_in_software
             ? &software_encoder_factory_
@@ -156,7 +167,7 @@ class EncoderAdapter : public webrtc::VideoEncoderFactory {
 
  private:
   webrtc::InternalEncoderFactory software_encoder_factory_;
-  const std::unique_ptr<webrtc::VideoEncoderFactory> hardware_encoder_factory_;
+  const std::unique_ptr<RTCVideoEncoderFactory> hardware_encoder_factory_;
   StatsCollector::StoreProcessingStatsCB stats_callback_;
 };
 
@@ -220,11 +231,11 @@ class DecoderAdapter : public webrtc::VideoDecoderFactory {
 
 }  // namespace
 
-std::unique_ptr<webrtc::VideoEncoderFactory> CreateHWVideoEncoderFactory(
+std::unique_ptr<RTCVideoEncoderFactory> CreateHWVideoEncoderFactory(
     media::GpuVideoAcceleratorFactories* gpu_factories,
     scoped_refptr<media::MojoVideoEncoderMetricsProviderFactory>
         encoder_metrics_provider_factory) {
-  std::unique_ptr<webrtc::VideoEncoderFactory> encoder_factory;
+  std::unique_ptr<RTCVideoEncoderFactory> encoder_factory;
 
   if (gpu_factories && gpu_factories->IsGpuVideoEncodeAcceleratorEnabled() &&
       Platform::Current()->IsWebRtcHWEncodingEnabled()) {

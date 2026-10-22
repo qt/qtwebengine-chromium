@@ -184,3 +184,42 @@ impl AvifError {
         AvifError::InvalidExifPayload
     }
 }
+
+impl std::fmt::Display for AvifError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AvifError::UnknownError(str) => write!(f, "UnknownError: {str}"),
+            AvifError::BmffParseFailed(str) => write!(f, "BmffParseFailed: {str}"),
+            AvifError::InvalidImageGrid(str) => write!(f, "InvalidImageGrid: {str}"),
+            AvifError::InvalidToneMappedImage(str) => write!(f, "InvalidToneMappedImage: {str}"),
+            AvifError::Ok
+            | AvifError::InvalidFtyp
+            | AvifError::NoContent
+            | AvifError::NoYuvFormatSelected
+            | AvifError::ReformatFailed
+            | AvifError::UnsupportedDepth
+            | AvifError::EncodeColorFailed
+            | AvifError::EncodeAlphaFailed
+            | AvifError::MissingImageItem
+            | AvifError::DecodeColorFailed
+            | AvifError::DecodeAlphaFailed
+            | AvifError::ColorAlphaSizeMismatch
+            | AvifError::IspeSizeMismatch
+            | AvifError::NoCodecAvailable
+            | AvifError::NoImagesRemaining
+            | AvifError::InvalidExifPayload
+            | AvifError::InvalidCodecSpecificOption
+            | AvifError::TruncatedData
+            | AvifError::IoNotSet
+            | AvifError::IoError
+            | AvifError::WaitingOnIo
+            | AvifError::InvalidArgument
+            | AvifError::NotImplemented
+            | AvifError::OutOfMemory
+            | AvifError::CannotChangeSetting
+            | AvifError::IncompatibleImage
+            | AvifError::EncodeGainMapFailed
+            | AvifError::DecodeGainMapFailed => std::fmt::Debug::fmt(self, f),
+        }
+    }
+}

@@ -199,6 +199,17 @@ bool CompositedAnimationRequiresProperties(const PropertyHandle& property,
   }
 }
 
+bool IsPartOfSVGResource(const LayoutObject& layout_object) {
+  const LayoutObject* current = &layout_object;
+  while (current) {
+    if (current->IsSVGResourceContainer()) {
+      return true;
+    }
+    current = current->Parent();
+  }
+  return false;
+}
+
 }  // namespace
 
 CompositorElementIdNamespace
@@ -256,7 +267,7 @@ CompositorAnimations::CheckCanStartEffectOnCompositor(
   // Elements with subtrees containing will-change: contents are not
   // composited for animations as if the contents change the tiles
   // would need to be rerastered anyways.
-  if (layout_object && layout_object->Style()->SubtreeWillChangeContents()) {
+  if (layout_object && layout_object->StyleRef().SubtreeWillChangeContents()) {
     reasons |= kTargetHasInvalidCompositingState;
   }
 
@@ -399,7 +410,7 @@ CompositorAnimations::CheckCanStartEffectOnCompositor(
             // If a custom property is not used by CSS Paint, then we should not
             // support that on the compositor thread.
             if (layout_object && layout_object->Style() &&
-                !layout_object->Style()->HasCSSPaintImagesUsingCustomProperty(
+                !layout_object->StyleRef().HasCSSPaintImagesUsingCustomProperty(
                     property.CustomPropertyName(),
                     layout_object->GetDocument())) {
               DefaultToUnsupportedProperty(unsupported_properties_for_tracing,
@@ -1196,6 +1207,13 @@ CompositorAnimations::CheckCanStartSVGElementOnCompositor(
     // themmselves and create their own blink::Animation objects for CSS
     // animations and transitions.
     reasons |= kTargetHasInvalidCompositingState;
+  }
+  if (const auto* layout_object = svg_element.GetLayoutObject()) {
+    if (IsPartOfSVGResource(*layout_object)) {
+      // If the element is either a resource container or a descendant of one,
+      // we don't paint it directly, and thus animation can not be composited.
+      reasons |= kTargetHasInvalidCompositingState;
+    }
   }
   return reasons;
 }

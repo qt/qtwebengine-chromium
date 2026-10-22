@@ -902,8 +902,12 @@ class TemplateURL {
   // OMNIBOX_API_EXTENSION.
   std::string GetExtensionId() const;
 
+  // Returns the resource ID base associated with this template URL, if it is
+  // provided from built-in data.
+  std::optional<std::string_view> GetBaseBuiltinResourceId() const;
+
   // Returns the resource ID for the logo (small / favicon style) associated
-  // with this template URL, or an empty string if none is associated with it.
+  // with this template URL, or a default image if none is associated with it.
   std::string GetBuiltinImageResourceId() const;
 
   // Returns the resource ID for the search engine description string associated
@@ -1012,14 +1016,20 @@ class TemplateURL {
   // Returns whether this search engine was created by the Default Search
   // Provider Enterprise policy.
   bool CreatedByDefaultSearchProviderPolicy() const;
-  // Returns whether this search engine was created by an Enterprise policy that
-  // doesn't define the Default Search Provider.
+  // Returns whether this search engine was created by an Enterprise policy,
+  // but not by the Default Search Provider policy (e.g., created by the
+  // SiteSearchSettings or EnterpriseSearchAggregatorSettings policies).
   bool CreatedByNonDefaultSearchProviderPolicy() const;
   // Returns whether this search engine was created by the
   // EnterpriseSearchAggregatorSettings policy.
   bool CreatedByEnterpriseSearchAggregatorPolicy() const;
   // Returns whether this search engine was created by a regulatory program.
   bool CreatedByRegulatoryProgram() const;
+
+  // Returns true if the user should be asked to confirm before removing this
+  // engine. Currently, only built-in search engines and non default search
+  // engines created by policy require confirmation before removal.
+  bool RequiresRemovalConfirmation() const;
 
   void SetURL(const std::string& url);
   void SetPrepopulateId(int id);
@@ -1061,10 +1071,6 @@ class TemplateURL {
                             std::u16string* search_terms,
                             url::Parsed::ComponentType* search_terms_component,
                             url::Component* search_terms_position) const;
-
-  // Returns the resource ID base associated with this template URL, if it is
-  // provided from built-in data.
-  std::optional<std::string_view> GetBaseBuiltinResourceId() const;
 
   // Returns the built-in marketing snippet string for the search engine, or
   // `std::nullopt` if a marketing snippets are not included in this build of

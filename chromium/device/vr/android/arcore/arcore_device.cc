@@ -21,6 +21,7 @@
 #include "device/vr/android/xr_java_coordinator.h"
 #include "device/vr/public/cpp/features.h"
 #include "device/vr/public/cpp/xr_frame_sink_client.h"
+#include "ipc/constants.mojom-forward.h"
 #include "third_party/perfetto/include/perfetto/tracing/track_event_args.h"
 #include "ui/android/window_android.h"
 #include "ui/display/display.h"
@@ -42,8 +43,7 @@ const std::vector<mojom::XRSessionFeature>& GetSupportedFeatures() {
                           mojom::XRSessionFeature::ANCHORS,
                           mojom::XRSessionFeature::DEPTH,
                           mojom::XRSessionFeature::IMAGE_TRACKING,
-                          mojom::XRSessionFeature::HIT_TEST,
-                          mojom::XRSessionFeature::FRONT_FACING}};
+                          mojom::XRSessionFeature::HIT_TEST}};
 
   return *kSupportedFeatures;
 }
@@ -91,6 +91,11 @@ ArCoreDevice::ArCoreDevice(
   // and shared buffers will be used.
   if (base::FeatureList::IsEnabled(features::kWebXRWebGPUBinding)) {
     device_features.emplace_back(mojom::XRSessionFeature::WEBGPU);
+  }
+
+  // Only support Front Facing mode if the WebXR incubations flag is enabled.
+  if (base::FeatureList::IsEnabled(features::kWebXRIncubations)) {
+    device_features.emplace_back(mojom::XRSessionFeature::FRONT_FACING);
   }
 
   SetSupportedFeatures(device_features);
@@ -161,10 +166,17 @@ void ArCoreDevice::RequestSession(
   // OnSessionEnded().
   DCHECK(mailbox_bridge_);
 
+  network::RendererProcessId render_process_id;
+  int render_frame_id = IPC::mojom::kRoutingIdNone;
+  if (options->renderer_information) {
+    render_process_id = options->renderer_information->render_process_id;
+    render_frame_id = options->renderer_information->render_frame_id;
+  }
+
   // We create the FrameSinkClient here and clear it in OnSessionEnded.
   DCHECK(!frame_sink_client_);
-  frame_sink_client_ = xr_frame_sink_client_factory_.Run(
-      options->render_process_id, options->render_frame_id);
+  frame_sink_client_ =
+      xr_frame_sink_client_factory_.Run(render_process_id, render_frame_id);
   DCHECK(frame_sink_client_);
 
   for (auto& image : options->tracked_images) {
@@ -178,12 +190,11 @@ void ArCoreDevice::RequestSession(
       base::BindPostTask(
           main_thread_task_runner_,
           base::BindOnce(&ArCoreDevice::OnGlThreadReady, GetWeakPtr(),
-                         options->render_process_id, options->render_frame_id,
-                         use_dom_overlay)));
+                         render_process_id, render_frame_id, use_dom_overlay)));
   session_state_->arcore_gl_thread_->Start();
 }
 
-void ArCoreDevice::OnGlThreadReady(int render_process_id,
+void ArCoreDevice::OnGlThreadReady(network::RendererProcessId render_process_id,
                                    int render_frame_id,
                                    bool use_overlay) {
   auto ready_callback =

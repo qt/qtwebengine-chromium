@@ -13,7 +13,6 @@ let veDebuggingEnabled = false;
 let debugOverlay: HTMLElement|null = null;
 let debugPopover: HTMLElement|null = null;
 const highlightedElements: HTMLElement[] = [];
-const nonDomDebugElements = new WeakMap<Loggable, HTMLElement>();
 let onInspect: ((query: string) => void)|undefined = undefined;
 
 function ensureDebugOverlay(): void {
@@ -96,8 +95,6 @@ export function processForDebugging(loggable: Loggable): void {
   }
   if (loggable instanceof HTMLElement) {
     processElementForDebugging(loggable, loggingState);
-  } else {
-    processNonDomLoggableForDebugging(loggable, loggingState);
   }
 }
 
@@ -241,7 +238,7 @@ export function processEventForIntuitiveDebugging(
 
 export function processEventForTestDebugging(
     event: EventType, state: LoggingState|null, _extraInfo?: EventAttributes): void {
-  if (event !== 'SettingAccess' && event !== 'FunctionCall') {
+  if (event !== 'SettingAccess' && event !== 'FunctionCall' && event !== 'Resize') {
     lastImpressionLogEntry = null;
   }
   maybeLogDebugEvent({interaction: event, veid: state?.veid || 0});
@@ -406,35 +403,6 @@ function processImpressionsForAdHocAnalysisDebugLog(states: LoggingState[]): voi
     const entry = {...buildVe(state), interactions: [], time: Date.now() - sessionStartTime};
     adHocAnalysisEntries.set(state.veid, entry);
     maybeLogDebugEvent(entry);
-  }
-}
-
-function processNonDomLoggableForDebugging(loggable: Loggable, loggingState: LoggingState): void {
-  let debugElement = nonDomDebugElements.get(loggable);
-  if (!debugElement) {
-    debugElement = document.createElement('div');
-    debugElement.classList.add('ve-debug');
-    debugElement.style.background = 'black';
-    debugElement.style.color = 'white';
-    debugElement.style.zIndex = '100000';
-    debugElement.textContent = debugString(loggingState.config);
-    nonDomDebugElements.set(loggable, debugElement);
-    setTimeout(() => {
-      if (!loggingState.size?.width || !loggingState.size?.height) {
-        debugElement?.parentElement?.removeChild(debugElement);
-        nonDomDebugElements.delete(loggable);
-      }
-    }, 10000);
-  }
-  const parentDebugElement =
-      parent instanceof HTMLElement ? parent : nonDomDebugElements.get(parent as Loggable) || debugPopover;
-  assertNotNullOrUndefined(parentDebugElement);
-  if (!parentDebugElement.classList.contains('ve-debug')) {
-    debugElement.style.position = 'absolute';
-    parentDebugElement.insertBefore(debugElement, parentDebugElement.firstChild);
-  } else {
-    debugElement.style.marginLeft = '10px';
-    parentDebugElement.appendChild(debugElement);
   }
 }
 
@@ -821,50 +789,71 @@ ${JSON.stringify(allLogs, null, 2)}
 
 let numMatchedEvents = 0;
 
+function recordUnmatchedEvent(
+    pendingExpectation: PendingEventExpectation, actualEvent: TestLogEntry, expectedEvent: TestLogEntry,
+    matchedImpressions: Set<string>): void {
+  const unmatched = {...actualEvent};
+  if ('impressions' in unmatched && 'impressions' in expectedEvent) {
+    unmatched.impressions = unmatched.impressions.filter(impression => {
+      const matched = expectedEvent.impressions.includes(impression);
+      if (matched) {
+        matchedImpressions.add(impression);
+      }
+      return !matched;
+    });
+  }
+  pendingExpectation.unmatchedEvents.push(unmatched);
+}
+
+function processMissingEvents(
+    pendingExpectation: PendingEventExpectation, expectedEventIndex: number, matchedImpressions: Set<string>): void {
+  pendingExpectation.missingEvents = pendingExpectation.expectedEvents.slice(expectedEventIndex);
+  for (const event of pendingExpectation.missingEvents) {
+    if ('impressions' in event) {
+      event.impressions = event.impressions.filter(impression => !matchedImpressions.has(impression));
+    }
+  }
+  pendingExpectation.missingEvents =
+      pendingExpectation.missingEvents.filter(event => !('impressions' in event) || event.impressions.length > 0);
+}
+
 function checkPendingEventExpectation(): void {
   if (!pendingEventExpectation) {
     return;
   }
-  const actualEvents = [...veDebugEventsLog] as TestLogEntry[];
-  let partialMatch = false;
+  const actualEvents = veDebugEventsLog as TestLogEntry[];
+  let actualEventIndex = 0;
+  let matchStarted = false;
   const matchedImpressions = new Set<string>();
   pendingEventExpectation.unmatchedEvents = [];
-  for (let i = 0; i < pendingEventExpectation.expectedEvents.length; ++i) {
-    const expectedEvent = pendingEventExpectation.expectedEvents[i];
-    while (true) {
-      if (actualEvents.length <= i) {
-        pendingEventExpectation.missingEvents = pendingEventExpectation.expectedEvents.slice(i);
-        for (const event of pendingEventExpectation.missingEvents) {
-          if ('impressions' in event) {
-            event.impressions = event.impressions.filter(impression => !matchedImpressions.has(impression));
-          }
-        }
-        pendingEventExpectation.missingEvents = pendingEventExpectation.missingEvents.filter(
-            event => !('impressions' in event) || event.impressions.length > 0);
-        return;
-      }
-      if (!compareVeEvents(actualEvents[i], expectedEvent)) {
-        if (partialMatch) {
-          const unmatched = {...actualEvents[i]};
-          if ('impressions' in unmatched && 'impressions' in expectedEvent) {
-            unmatched.impressions = unmatched.impressions.filter(impression => {
-              const matched = expectedEvent.impressions.includes(impression);
-              if (matched) {
-                matchedImpressions.add(impression);
-              }
-              return !matched;
-            });
-          }
-          pendingEventExpectation.unmatchedEvents.push(unmatched);
-        }
-        actualEvents.splice(i, 1);
-      } else {
-        partialMatch = true;
+
+  for (let expectedEventIndex = 0; expectedEventIndex < pendingEventExpectation.expectedEvents.length;
+       ++expectedEventIndex) {
+    const expectedEvent = pendingEventExpectation.expectedEvents[expectedEventIndex];
+    let found = false;
+    while (actualEventIndex < actualEvents.length) {
+      if (compareVeEvents(actualEvents[actualEventIndex], expectedEvent)) {
+        found = true;
+        matchStarted = true;
+        actualEventIndex++;
         break;
       }
+      if (matchStarted) {
+        recordUnmatchedEvent(
+            pendingEventExpectation, actualEvents[actualEventIndex], expectedEvent, matchedImpressions);
+      }
+      actualEventIndex++;
+    }
+    if (!found) {
+      processMissingEvents(pendingEventExpectation, expectedEventIndex, matchedImpressions);
+      if (!pendingEventExpectation.missingEvents?.length) {
+        numMatchedEvents = actualEventIndex;
+        pendingEventExpectation.success();
+      }
+      return;
     }
   }
-  numMatchedEvents = veDebugEventsLog.length - actualEvents.length + pendingEventExpectation.expectedEvents.length;
+  numMatchedEvents = actualEventIndex;
   pendingEventExpectation.success();
 }
 

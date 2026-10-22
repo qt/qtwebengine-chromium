@@ -1396,11 +1396,7 @@ TEST_F(AXPlatformNodeWinTest, IAccessible2TextFieldSetSelection) {
   EXPECT_HRESULT_FAILED(text_field->setSelection(0, 0, 50));
 }
 
-// This test is disabled until UpdateStep2ComputeHypertext is migrated over
-// to AXPlatformNodeWin because |hypertext_| is only initialized
-// on the BrowserAccessibility side.
-TEST_F(AXPlatformNodeWinTest,
-       DISABLED_IAccessible2ContentEditableSetSelection) {
+TEST_F(AXPlatformNodeWinTest, IAccessible2ContentEditableSetSelection) {
   Init(BuildContentEditable());
 
   ComPtr<IAccessible2> ia2_text_field = ToIAccessible2(GetRootIAccessible());
@@ -2198,7 +2194,7 @@ TEST_F(AXPlatformNodeWinTest, IAccessible2_TestRelationTargetsOfType) {
   }
 }
 
-TEST_F(AXPlatformNodeWinTest, DISABLED_TestRelationTargetsOfType) {
+TEST_F(AXPlatformNodeWinTest, TestRelationTargetsOfType) {
   AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -3492,11 +3488,7 @@ TEST_F(AXPlatformNodeWinTest, IAccessibleTextTextFieldAddSelection) {
   EXPECT_EQ(2, end_offset);
 }
 
-// This test is disabled until UpdateStep2ComputeHypertext is migrated over
-// to AXPlatformNodeWin because |hypertext_| is only initialized
-// on the BrowserAccessibility side.
-TEST_F(AXPlatformNodeWinTest,
-       DISABLED_IAccessibleTextContentEditableAddSelection) {
+TEST_F(AXPlatformNodeWinTest, IAccessibleTextContentEditableAddSelection) {
   Init(BuildContentEditable());
 
   ComPtr<IAccessible2> ia2_text_field = ToIAccessible2(GetRootIAccessible());
@@ -8028,8 +8020,7 @@ class TestIChromeAccessibleDelegate
   base::RepeatingClosure run_loop_quit_closure_;
 };
 
-// http://crbug.com/1087206: failing on Win7 builders.
-TEST_F(AXPlatformNodeWinTest, DISABLED_BulkFetch) {
+TEST_F(AXPlatformNodeWinTest, BulkFetch) {
   base::test::SingleThreadTaskEnvironment task_environment;
   AXNodeData root;
   root.id = 1;
@@ -8223,6 +8214,41 @@ TEST_F(AXPlatformNodeWinTest, UiaMathMlFeatureFlag) {
     scoped_feature_list.InitAndDisableFeature(features::kUiaMathMlSupport);
     EXPECT_FALSE(base::FeatureList::IsEnabled(features::kUiaMathMlSupport));
   }
+}
+
+// Regression test for crbug.com/503419515: a node destroyed mid-event must
+// not be inserted into the global alert targets set.
+TEST_F(AXPlatformNodeWinTest, DestroyedNodeNotAddedToAlertTargets) {
+  AXNodeData root;
+  root.id = 1;
+  root.role = ax::mojom::Role::kRootWebArea;
+  root.child_ids = {2};
+
+  AXNodeData alert;
+  alert.id = 2;
+  alert.role = ax::mojom::Role::kAlert;
+
+  Init(root, alert);
+  AXNode* alert_ax_node = GetRoot()->children()[0];
+
+  auto* alert_node = static_cast<AXPlatformNodeWin*>(
+      AXPlatformNodeFromNode(alert_ax_node));
+  ASSERT_TRUE(alert_node);
+
+  const size_t initial_count =
+      AXPlatformNodeWin::GetAlertTargetCountForTesting();
+
+  // Put the node in the IsDestroyed() state without actually destroying it,
+  // so the wrapper can still tear down cleanly at the end of the test.
+  AXPlatformNodeDelegate* original_delegate =
+      alert_node->SetDelegateForTesting(nullptr);
+  ASSERT_TRUE(alert_node->IsDestroyed());
+
+  alert_node->AddAlertTargetForTesting();
+  EXPECT_EQ(initial_count,
+            AXPlatformNodeWin::GetAlertTargetCountForTesting());
+
+  alert_node->SetDelegateForTesting(original_delegate);
 }
 
 }  // namespace ui

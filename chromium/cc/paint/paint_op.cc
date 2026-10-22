@@ -1972,8 +1972,7 @@ bool DrawPathOp::EqualsForTesting(const DrawPathOp& other) const {
 }
 
 bool DrawRecordOp::EqualsForTesting(const DrawRecordOp& other) const {
-  return placeholder_id == other.placeholder_id &&
-         record.EqualsForTesting(other.record);  // IN-TEST
+  return record.EqualsForTesting(other.record);  // IN-TEST
 }
 
 bool DrawRectOp::EqualsForTesting(const DrawRectOp& other) const {
@@ -2609,9 +2608,6 @@ DrawRecordOp::DrawRecordOp(PaintRecord record, bool local_ctm)
       record(std::move(record)),
       local_ctm(local_ctm) {}
 
-DrawRecordOp::DrawRecordOp(ElementId id)
-    : PaintOpBaseInternal(kType), placeholder_id(id) {}
-
 DrawRecordOp::~DrawRecordOp() = default;
 
 size_t DrawRecordOp::AdditionalBytesUsed() const {
@@ -2645,8 +2641,8 @@ DrawVerticesOp::DrawVerticesOp(
     scoped_refptr<RefCountedBuffer<SkPoint>> vertices,
     scoped_refptr<RefCountedBuffer<SkPoint>> uvs,
     scoped_refptr<RefCountedBuffer<uint16_t>> indices,
-    const PaintFlags& flags)
-    : PaintOpWithFlagsBaseInternal(kType, flags),
+    const PaintFlags& paint_flags)
+    : PaintOpWithFlagsBaseInternal(kType, paint_flags),
       vertices(std::move(vertices)),
       uvs(std::move(uvs)),
       indices(std::move(indices)) {}
@@ -2690,8 +2686,8 @@ DrawTextBlobOp::DrawTextBlobOp() : PaintOpWithFlagsBaseInternal(kType) {}
 DrawTextBlobOp::DrawTextBlobOp(sk_sp<SkTextBlob> blob,
                                SkScalar x,
                                SkScalar y,
-                               const PaintFlags& flags)
-    : PaintOpWithFlagsBaseInternal(kType, flags),
+                               const PaintFlags& paint_flags)
+    : PaintOpWithFlagsBaseInternal(kType, paint_flags),
       blob(std::move(blob)),
       x(x),
       y(y) {}
@@ -2700,8 +2696,8 @@ DrawTextBlobOp::DrawTextBlobOp(sk_sp<SkTextBlob> blob,
                                SkScalar x,
                                SkScalar y,
                                NodeId node_id,
-                               const PaintFlags& flags)
-    : PaintOpWithFlagsBaseInternal(kType, flags),
+                               const PaintFlags& paint_flags)
+    : PaintOpWithFlagsBaseInternal(kType, paint_flags),
       blob(std::move(blob)),
       x(x),
       y(y),
@@ -2711,16 +2707,17 @@ DrawTextBlobOp::~DrawTextBlobOp() = default;
 
 DrawSlugOp::DrawSlugOp() : PaintOpWithFlagsBaseInternal(kType) {}
 
-DrawSlugOp::DrawSlugOp(sk_sp<sktext::gpu::Slug> slug, const PaintFlags& flags)
-    : PaintOpWithFlagsBaseInternal(kType, flags), slug(std::move(slug)) {}
+DrawSlugOp::DrawSlugOp(sk_sp<sktext::gpu::Slug> slug,
+                       const PaintFlags& paint_flags)
+    : PaintOpWithFlagsBaseInternal(kType, paint_flags), slug(std::move(slug)) {}
 
 DrawSlugOp::~DrawSlugOp() = default;
 
 SaveLayerFiltersOp::SaveLayerFiltersOp(
     base::span<const sk_sp<PaintFilter>> filters,
     const sk_sp<PaintFilter> backdrop_filter,
-    const PaintFlags& flags)
-    : PaintOpWithFlagsBaseInternal(kType, flags),
+    const PaintFlags& paint_flags)
+    : PaintOpWithFlagsBaseInternal(kType, paint_flags),
       bounds(kUnsetRect),
       filters(filters.begin(), filters.end()),
       backdrop_filter(backdrop_filter) {}
@@ -2729,8 +2726,8 @@ SaveLayerFiltersOp::SaveLayerFiltersOp(
     const SkRect& bounds,
     base::span<const sk_sp<PaintFilter>> filters,
     const sk_sp<PaintFilter> backdrop_filter,
-    const PaintFlags& flags)
-    : PaintOpWithFlagsBaseInternal(kType, flags),
+    const PaintFlags& paint_flags)
+    : PaintOpWithFlagsBaseInternal(kType, paint_flags),
       bounds(bounds),
       filters(filters.begin(), filters.end()),
       backdrop_filter(backdrop_filter) {}

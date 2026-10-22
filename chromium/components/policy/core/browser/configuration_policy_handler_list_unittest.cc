@@ -20,7 +20,9 @@
 #include "components/policy/core/common/policy_types.h"
 #include "components/policy/policy_constants.h"
 #include "components/prefs/pref_value_map.h"
+#include "components/strings/grit/components_strings.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace policy {
 
@@ -58,9 +60,7 @@ class StubPolicyHandler : public ConfigurationPolicyHandler {
 
 class ConfigurationPolicyHandlerListTest : public ::testing::Test {
  public:
-  void SetUp() override {
-    CreateHandlerList();
-  }
+  void SetUp() override { CreateHandlerList(); }
 
   void AddSimplePolicy() {
     AddPolicy(kPolicyName, /*is_cloud=*/true, base::Value(kPolicyValue));
@@ -109,8 +109,9 @@ class ConfigurationPolicyHandlerListTest : public ::testing::Test {
     int pref_value;
 
     ASSERT_EQ(in_pref, prefs_.GetInteger(policy_name, &pref_value));
-    if (in_pref)
+    if (in_pref) {
       EXPECT_EQ(kPolicyValue, pref_value);
+    }
 
     // Pref filter never affects PolicyMap.
     const base::Value* policy_value =
@@ -124,13 +125,41 @@ class ConfigurationPolicyHandlerListTest : public ::testing::Test {
               future_policies_.find(policy_name) != future_policies_.end());
   }
 
+  void ClearErrors() { errors_.Clear(); }
+
+  void ClearPolicies() { policies_.Clear(); }
+
+  void ClearPrefs() { prefs_.Clear(); }
+
+  bool IsErrorsEmpty() const { return errors_.empty(); }
+
+  std::u16string GetErrorMessages(const std::string& policy_name) {
+    return errors_.GetErrorMessages(policy_name);
+  }
+
+  void SetPolicy(const std::string& policy,
+                 PolicyLevel level,
+                 PolicyScope scope,
+                 PolicySource source,
+                 base::Value value) {
+    policies_.Set(policy, level, scope, source, std::move(value), nullptr);
+  }
+
+  void SetPolicyEntry(const std::string& policy, PolicyMap::Entry entry) {
+    policies_.Set(policy, std::move(entry));
+  }
+
+  void RegisterHandler(const std::string& policy_name) {
+    handler_list_->AddHandler(std::make_unique<StubPolicyHandler>(policy_name));
+  }
+
  private:
   PrefValueMap prefs_;
   PolicyErrorMap errors_;
   PolicyMap policies_;
   PoliciesSet deprecated_policies_;
   PoliciesSet future_policies_;
-  PolicyDetails details_{false, false, kProfile, 0, 0, {}};
+  PolicyDetails details_{false, false, kProfile, kSourceRestrictionNone, 0, {}};
 
   std::unique_ptr<ConfigurationPolicyHandlerList> handler_list_;
 };
@@ -142,10 +171,8 @@ TEST_F(ConfigurationPolicyHandlerListTest, ApplySettingsWithNormalPolicy) {
 }
 
 // Future policy will be filter out unless it's whitelisted by
-// kEnableExperimentalPolicies or the feature kFuturePoliciesOnDesktopAndroid is
-// enabled (for Desktop Android dogfooders).
+// kEnableExperimentalPolicies.
 TEST_F(ConfigurationPolicyHandlerListTest, ApplySettingsWithFuturePolicy) {
-
   AddSimplePolicy();
   details()->is_future = true;
 
@@ -153,16 +180,6 @@ TEST_F(ConfigurationPolicyHandlerListTest, ApplySettingsWithFuturePolicy) {
 
   VerifyPolicyAndPref(kPolicyName, /*in_pref=*/false,
                       /*in_deprecated=*/false, /*in_future=*/true);
-
-#if BUILDFLAG(IS_DESKTOP_ANDROID)
-  // Future policy will not be filtered out if kFuturePoliciesOnDesktopAndroid
-  // is enabled (for Desktop Android dogfooders, see
-  // https://crbug.com/452666657).
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(features::kFuturePoliciesOnDesktopAndroid);
-
-  VerifyPolicyAndPref(kPolicyName, /*in_pref=*/true);
-#endif  // BUILDFLAG(IS_DESKTOP_ANDROID)
 
   // Whitelist a different policy.
   base::ListValue enabled_future_policies;
@@ -184,6 +201,32 @@ TEST_F(ConfigurationPolicyHandlerListTest, ApplySettingsWithFuturePolicy) {
 
   VerifyPolicyAndPref(kPolicyName, /*in_pref=*/true);
 }
+
+// Future policy will be filter out unless it's whitelisted by
+// kEnableExperimentalPolicies or the feature kFuturePoliciesOnDesktopAndroid is
+// enabled.
+#if BUILDFLAG(IS_DESKTOP_ANDROID)
+TEST_F(ConfigurationPolicyHandlerListTest,
+       ApplySettingsWithFuturePolicyOnDesktopAndroid) {
+  AddSimplePolicy();
+  details()->is_future = true;
+
+  ApplySettings();
+
+  VerifyPolicyAndPref(kPolicyName, /*in_pref=*/false,
+                      /*in_deprecated=*/false, /*in_future=*/true);
+
+  // Future policy will not be filtered out if kFuturePoliciesOnDesktopAndroid
+  // is enabled (for Desktop Android dogfooders, see
+  // https://crbug.com/452666657).
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(features::kFuturePoliciesOnDesktopAndroid);
+
+  ApplySettings();
+
+  VerifyPolicyAndPref(kPolicyName, /*in_pref=*/true);
+}
+#endif  // BUILDFLAG(IS_DESKTOP_ANDROID)
 
 TEST_F(ConfigurationPolicyHandlerListTest,
        ApplySettingsWithoutFutureFilterPolicy) {
@@ -220,11 +263,129 @@ TEST_F(ConfigurationPolicyHandlerListTest, ApplySettingsWithDeprecatedPolicy) {
   VerifyPolicyAndPref(kPolicyName, /*in_pref=*/true, /*in_deprecated=*/true);
 }
 
-#if BUILDFLAG(IS_DESKTOP_ANDROID)
-// Test that policy is applied when kDesktopAndroidPolicy is not enabled by
-// default.
+#if !BUILDFLAG(IS_CHROMEOS)
+TEST_F(ConfigurationPolicyHandlerListTest, ApplySettingsWithCloudOnlyPolicy) {
+  details()->source_restriction = kSourceRestrictionCloudOnly;
+
+  // Cloud source: allowed.
+  AddPolicy(kPolicyName, /*is_cloud=*/true, base::Value(kPolicyValue));
+  ApplySettings();
+  VerifyPolicyAndPref(kPolicyName, /*in_pref=*/true);
+  EXPECT_TRUE(IsErrorsEmpty());
+
+  // Platform source: disallowed.
+  ClearPrefs();
+  AddPolicy(kPolicyName, /*is_cloud=*/false, base::Value(kPolicyValue));
+  ApplySettings();
+  VerifyPolicyAndPref(kPolicyName, /*in_pref=*/false);
+  EXPECT_EQ(GetErrorMessages(kPolicyName),
+            l10n_util::GetStringUTF16(IDS_POLICY_CLOUD_SOURCE_ONLY_ERROR));
+  ClearErrors();
+
+  // Cloud source from Ash: allowed.
+  ClearPrefs();
+  SetPolicy(kPolicyName, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
+            POLICY_SOURCE_CLOUD_FROM_ASH, base::Value(kPolicyValue));
+  ApplySettings();
+  VerifyPolicyAndPref(kPolicyName, /*in_pref=*/true);
+  EXPECT_TRUE(IsErrorsEmpty());
+
+  // Command line source: allowed on Android, disallowed otherwise.
+  ClearPrefs();
+  SetPolicy(kPolicyName, POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
+            POLICY_SOURCE_COMMAND_LINE, base::Value(kPolicyValue));
+  ApplySettings();
+#if BUILDFLAG(IS_ANDROID)
+  VerifyPolicyAndPref(kPolicyName, /*in_pref=*/true);
+  EXPECT_TRUE(IsErrorsEmpty());
+#else
+  VerifyPolicyAndPref(kPolicyName, /*in_pref=*/false);
+  EXPECT_EQ(GetErrorMessages(kPolicyName),
+            l10n_util::GetStringUTF16(IDS_POLICY_CLOUD_SOURCE_ONLY_ERROR));
+  ClearErrors();
+#endif
+}
+
+// TODO(crbug.com/491119520): Remove this test once the CloudReportingEnabled
+// exemption is removed.
 TEST_F(ConfigurationPolicyHandlerListTest,
-       DesktopAndroidAllowlist_FeatureDisabled) {
+       ApplySettingsWithCloudOnlyPolicyCloudReportingEnabled) {
+  details()->source_restriction = kSourceRestrictionCloudOnly;
+
+  // Cloud source: allowed.
+  AddPolicy(key::kCloudReportingEnabled, /*is_cloud=*/true,
+            base::Value(kPolicyValue));
+  ApplySettings();
+  VerifyPolicyAndPref(key::kCloudReportingEnabled, /*in_pref=*/true);
+  EXPECT_TRUE(IsErrorsEmpty());
+
+  // Platform source: allowed (for now, until we figure out if it's safe to
+  // remove the exception for this policy).
+  ClearPrefs();
+  AddPolicy(key::kCloudReportingEnabled, /*is_cloud=*/false,
+            base::Value(kPolicyValue));
+  ApplySettings();
+  VerifyPolicyAndPref(key::kCloudReportingEnabled, /*in_pref=*/true);
+  EXPECT_TRUE(IsErrorsEmpty());
+}
+
+TEST_F(ConfigurationPolicyHandlerListTest,
+       ApplySettingsWithCloudOnlyPolicyMerged) {
+  details()->source_restriction = kSourceRestrictionCloudOnly;
+
+  RegisterHandler(kPolicyName);
+
+  // Merged source with all cloud conflicts: allowed.
+  {
+    PolicyMap::Entry conflict1(POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+                               POLICY_SOURCE_CLOUD, base::Value(kPolicyValue),
+                               nullptr);
+    PolicyMap::Entry conflict2(POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
+                               POLICY_SOURCE_CLOUD, base::Value(kPolicyValue),
+                               nullptr);
+    PolicyMap::Entry entry(POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
+                           POLICY_SOURCE_MERGED, base::Value(kPolicyValue),
+                           nullptr);
+    entry.conflicts.emplace_back(PolicyMap::ConflictType::None,
+                                 std::move(conflict1));
+    entry.conflicts.emplace_back(PolicyMap::ConflictType::None,
+                                 std::move(conflict2));
+    SetPolicyEntry(kPolicyName, std::move(entry));
+  }
+
+  ApplySettings();
+  VerifyPolicyAndPref(kPolicyName, /*in_pref=*/true);
+  EXPECT_TRUE(IsErrorsEmpty());
+
+  // Merged source with mixed conflicts: disallowed.
+  ClearPrefs();
+  {
+    PolicyMap::Entry conflict1(POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+                               POLICY_SOURCE_CLOUD, base::Value(kPolicyValue),
+                               nullptr);
+    PolicyMap::Entry conflict2(POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
+                               POLICY_SOURCE_PLATFORM,
+                               base::Value(kPolicyValue), nullptr);
+    PolicyMap::Entry entry(POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
+                           POLICY_SOURCE_MERGED, base::Value(kPolicyValue),
+                           nullptr);
+    entry.conflicts.emplace_back(PolicyMap::ConflictType::None,
+                                 std::move(conflict1));
+    entry.conflicts.emplace_back(PolicyMap::ConflictType::None,
+                                 std::move(conflict2));
+    SetPolicyEntry(kPolicyName, std::move(entry));
+  }
+
+  ApplySettings();
+  VerifyPolicyAndPref(kPolicyName, /*in_pref=*/false);
+  EXPECT_EQ(GetErrorMessages(kPolicyName),
+            l10n_util::GetStringUTF16(IDS_POLICY_CLOUD_SOURCE_ONLY_ERROR));
+  ClearErrors();
+}
+#endif  // !BUILDFLAG(IS_CHROMEOS)
+
+#if BUILDFLAG(IS_DESKTOP_ANDROID)
+TEST_F(ConfigurationPolicyHandlerListTest, DesktopAndroidBlocklist_Default) {
   base::test::ScopedFeatureList feature_list;
 
   AddSimplePolicy();
@@ -233,13 +394,11 @@ TEST_F(ConfigurationPolicyHandlerListTest,
   VerifyPolicyAndPref(kPolicyName, /*in_pref=*/true);
 }
 
-// Test that policy is not applied when kDesktopAndroidPolicy is enabled and
-// policy is not in allowlist.
-TEST_F(ConfigurationPolicyHandlerListTest, DesktopAndroidAllowlist_Blocked) {
+TEST_F(ConfigurationPolicyHandlerListTest, DesktopAndroidBlocklist_Blocked) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kDesktopAndroidPolicy,
-      {{features::kDesktopAndroidPolicyAllowlist.name, kPolicyName2}});
+      {{features::kDesktopAndroidPolicyBlocklist.name, kPolicyName}});
 
   AddSimplePolicy();
   ApplySettings();
@@ -247,27 +406,31 @@ TEST_F(ConfigurationPolicyHandlerListTest, DesktopAndroidAllowlist_Blocked) {
   VerifyPolicyAndPref(kPolicyName, /*in_pref=*/false);
 }
 
-// Test that policy is applied when kDesktopAndroidPolicy is enabled and policy
-// is in allowlist.
-TEST_F(ConfigurationPolicyHandlerListTest, DesktopAndroidAllowlist_Allowed) {
+TEST_F(ConfigurationPolicyHandlerListTest,
+       DesktopAndroidBlocklist_AllowedAndBlocked) {
+  const char kPolicyName3[] = "PolicyName3";
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kDesktopAndroidPolicy,
-      {{features::kDesktopAndroidPolicyAllowlist.name, base::StrCat({kPolicyName, ", ", kPolicyName2})}});
+      {{features::kDesktopAndroidPolicyBlocklist.name,
+        base::StrCat({kPolicyName2, ", ", kPolicyName3})}});
 
   AddSimplePolicy();
+  AddPolicy(kPolicyName2, /*is_cloud=*/true, base::Value(kPolicyValue));
+
   ApplySettings();
 
   VerifyPolicyAndPref(kPolicyName, /*in_pref=*/true);
+  VerifyPolicyAndPref(kPolicyName2, /*in_pref=*/false);
 }
 
 // Test that other filters still works.
 TEST_F(ConfigurationPolicyHandlerListTest,
-       DesktopAndroidAllowlist_AllowedButBlockedByOtherFilter) {
+       DesktopAndroidBlocklist_AllowedButBlockedByOtherFilter) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kDesktopAndroidPolicy,
-      {{features::kDesktopAndroidPolicyAllowlist.name, kPolicyName}});
+      {{features::kDesktopAndroidPolicyBlocklist.name, kPolicyName2}});
 
   AddSimplePolicy();
   details()->is_future = true;

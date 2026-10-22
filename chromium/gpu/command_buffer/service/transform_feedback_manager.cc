@@ -4,9 +4,11 @@
 
 #include "gpu/command_buffer/service/transform_feedback_manager.h"
 
+#include "base/check.h"
 #include "base/notreached.h"
 #include "base/numerics/checked_math.h"
 #include "gpu/command_buffer/service/buffer_manager.h"
+#include "gpu/command_buffer/service/program_manager.h"
 #include "ui/gl/gl_version_info.h"
 
 namespace gpu {
@@ -71,6 +73,19 @@ void TransformFeedback::DoBindTransformFeedback(
   }
 }
 
+void TransformFeedback::SetActiveProgram(Program* program) {
+  CHECK(!active_program_);
+  CHECK(program);
+  active_program_ = program;
+  program->IncrementActiveTransformFeedbackCount();
+}
+
+void TransformFeedback::ClearActiveProgram() {
+  CHECK(active_program_);
+  active_program_->DecrementActiveTransformFeedbackCount();
+  active_program_ = nullptr;
+}
+
 void TransformFeedback::DoBeginTransformFeedback(GLenum primitive_mode) {
   DCHECK(!active_);
   DCHECK(primitive_mode == GL_POINTS ||
@@ -109,8 +124,8 @@ bool TransformFeedback::GetVerticesNeededForDraw(GLenum mode,
   // Transform feedback only outputs complete primitives, so we need to round
   // down to the nearest complete primitive before multiplying by the number of
   // instances.
-  base::CheckedNumeric<GLsizei> checked_vertices =
-      vertices_drawn_ + pending_vertices_drawn;
+  base::CheckedNumeric<GLsizei> checked_vertices = vertices_drawn_;
+  checked_vertices += pending_vertices_drawn;
   base::CheckedNumeric<GLsizei> checked_count = count;
   base::CheckedNumeric<GLsizei> checked_primcount = primcount;
   switch (mode) {

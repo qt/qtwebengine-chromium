@@ -2114,6 +2114,12 @@ angle::Result Renderer11::drawLineLoop(const gl::Context *context,
 
     if (instances > 0)
     {
+        // D3D11 requires that indexCount * instances fits in 32 bits.
+        ANGLE_CHECK(GetImplAs<Context11>(context),
+                    static_cast<uint64_t>(indexCount) * static_cast<uint64_t>(instances) <=
+                        std::numeric_limits<uint32_t>::max(),
+                    "Failed to draw: instance count * index count overflows 32 bits.",
+                    GL_OUT_OF_MEMORY);
         mDeviceContext->DrawIndexedInstanced(indexCount, instances, 0, baseVertex, 0);
     }
     else
@@ -2198,6 +2204,12 @@ angle::Result Renderer11::drawTriangleFan(const gl::Context *context,
 
     if (instances > 0)
     {
+        // D3D11 requires that indexCount * instances fits in 32 bits.
+        ANGLE_CHECK(GetImplAs<Context11>(context),
+                    static_cast<uint64_t>(indexCount) * static_cast<uint64_t>(instances) <=
+                        std::numeric_limits<uint32_t>::max(),
+                    "Failed to draw: instance count * index count overflows 32 bits.",
+                    GL_OUT_OF_MEMORY);
         mDeviceContext->DrawIndexedInstanced(indexCount, instances, 0, baseVertex, 0);
     }
     else
@@ -3916,7 +3928,11 @@ angle::Result Renderer11::blitRenderbufferRect(const gl::Context *context,
 
         // D3D11 needs depth-stencil CopySubresourceRegions to have a NULL pSrcBox
         // We also require complete framebuffer copies for depth-stencil blit.
-        D3D11_BOX *pSrcBox = wholeBufferCopy && readLayer == 0 ? nullptr : &readBox;
+        // For 3D source textures, always provide a srcBox to limit the copy to a single
+        // depth slice; a NULL pSrcBox would copy all depth slices of the source subresource
+        // which does not fit in a 2D destination.
+        D3D11_BOX *pSrcBox =
+            wholeBufferCopy && readLayer == 0 && !readTexture.is3D() ? nullptr : &readBox;
 
         mDeviceContext->CopySubresourceRegion(drawTexture.get(), drawSubresource, dstX, dstY, dstZ,
                                               readTexture.get(), readSubresource, pSrcBox);

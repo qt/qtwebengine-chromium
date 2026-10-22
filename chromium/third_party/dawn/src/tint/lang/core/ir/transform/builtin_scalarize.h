@@ -43,6 +43,7 @@ namespace tint::core::ir::transform {
 const Capabilities kBuiltinScalarizeCapabilities{
     core::ir::Capability::kAllowDuplicateBindings,
     core::ir::Capability::kAllow8BitIntegers,
+    core::ir::Capability::kAllow16BitIntegers,
     core::ir::Capability::kAllow64BitIntegers,
     core::ir::Capability::kAllowPointSizeBuiltin,
     core::ir::Capability::kAllowVectorElementPointer,

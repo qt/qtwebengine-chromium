@@ -41,6 +41,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Formatter from '../../models/formatter/formatter.js';
 import * as SourceMapScopes from '../../models/source_map_scopes/source_map_scopes.js';
+import * as StackTrace from '../../models/stack_trace/stack_trace.js';
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
@@ -140,7 +141,8 @@ export class WatchExpressionsSidebarPane extends UI.Widget.VBox implements
         new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSectionsTreeExpandController(this.treeOutline);
 
     UI.Context.Context.instance().addFlavorChangeListener(SDK.RuntimeModel.ExecutionContext, this.requestUpdate, this);
-    UI.Context.Context.instance().addFlavorChangeListener(SDK.DebuggerModel.CallFrame, this.requestUpdate, this);
+    UI.Context.Context.instance().addFlavorChangeListener(
+        StackTrace.StackTrace.DebuggableFrameFlavor, this.requestUpdate, this);
     this.linkifier = new Components.Linkifier.Linkifier();
     this.requestUpdate();
   }
@@ -523,7 +525,11 @@ export class WatchExpression extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     if (!exceptionDetails && expressionValue && expressionValue.hasChildren && !expressionValue.customPreview()) {
       headerElement.classList.add('watch-expression-object-header');
       this.#treeElement = new ObjectUI.ObjectPropertiesSection.RootElement(
-          new ObjectUI.ObjectPropertiesSection.ObjectTree(expressionValue), this.linkifier);
+          new ObjectUI.ObjectPropertiesSection.ObjectTree(expressionValue, {
+            readOnly: true,
+            propertiesMode: ObjectUI.ObjectPropertiesSection.ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
+          }),
+          this.linkifier);
       this.expandController.watchSection(
           (this.#expression as string), (this.#treeElement as ObjectUI.ObjectPropertiesSection.RootElement));
       this.#treeElement.toggleOnClick = false;

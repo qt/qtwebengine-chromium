@@ -56,6 +56,7 @@
 #include "third_party/blink/public/web/web_node.h"
 #include "third_party/blink/public/web/web_plugin.h"
 #include "third_party/blink/public/web/web_popup_menu_info.h"
+#include "third_party/blink/public/web/web_record_replay_client.h"
 #include "third_party/blink/public/web/web_settings.h"
 #include "third_party/blink/public/web/web_view_client.h"
 #include "third_party/blink/public/web/web_window_features.h"
@@ -163,12 +164,12 @@ String TruncateDialogMessage(const String& message) {
 
   // 10k ought to be enough for anyone.
   const wtf_size_t kMaxMessageSize = 10 * 1024;
-  return message.Substring(0, kMaxMessageSize);
+  return message.substr(0, kMaxMessageSize);
 }
 
 bool DisplayModeIsBorderless(LocalFrame& frame) {
   FrameWidget* widget = frame.GetWidgetForLocalRoot();
-  return widget->DisplayMode() == mojom::blink::DisplayMode::kBorderless;
+  return widget->DisplayMode() == mojom::blink::DisplayMode::kUnframed;
 }
 
 gfx::Rect AdjustWindowRectForMinimum(const gfx::Rect& pending_rect,
@@ -286,6 +287,17 @@ void ChromeClientImpl::DidAccessInitialMainDocument() {
   web_view_->DidAccessInitialMainDocument();
 }
 
+void ChromeClientImpl::DidChangeThemeColor(std::optional<SkColor> theme_color) {
+  DCHECK(web_view_);
+  web_view_->DidChangeThemeColor(theme_color);
+}
+
+void ChromeClientImpl::DidChangeBackgroundColor(SkColor4f background_color,
+                                                bool color_adjust) {
+  DCHECK(web_view_);
+  web_view_->DidChangeBackgroundColor(background_color, color_adjust);
+}
+
 void ChromeClientImpl::FocusPage() {
   DCHECK(web_view_);
   web_view_->Focus();
@@ -384,7 +396,7 @@ Page* ChromeClientImpl::CreateWindowDelegate(
 
   NotifyPopupOpeningObservers();
   const AtomicString& frame_name =
-      !EqualIgnoringASCIICase(name, "_blank") ? name : g_empty_atom;
+      !EqualIgnoringAsciiCase(name, "_blank") ? name : g_empty_atom;
   WebViewImpl* new_view =
       static_cast<WebViewImpl*>(web_frame->Client()->CreateNewWindow(
           WrappedResourceRequest(r.GetResourceRequest()), features, frame_name,
@@ -596,7 +608,6 @@ gfx::Rect ChromeClientImpl::LocalRootToScreenDIPs(
 
 float ChromeClientImpl::WindowToViewportScalar(LocalFrame* frame,
                                                const float scalar_value) const {
-
   // TODO(darin): Clean up callers to not pass null. E.g., VisualViewport::
   // ScrollbarThickness() is one such caller. See https://pastebin.com/axgctw0N
   // for a sample call stack.
@@ -909,11 +920,6 @@ void ChromeClientImpl::AutoscrollEnd(LocalFrame* local_frame) {
   if (WebFrameWidgetImpl* widget =
           WebLocalFrameImpl::FromFrame(local_frame)->LocalRootFrameWidget())
     widget->AutoscrollEnd();
-}
-
-String ChromeClientImpl::AcceptLanguages() {
-  DCHECK(web_view_);
-  return String::FromUTF8(web_view_->GetRendererPreferences().accept_languages);
 }
 
 void ChromeClientImpl::AttachRootLayer(scoped_refptr<cc::Layer> root_layer,
@@ -1275,9 +1281,13 @@ void ChromeClientImpl::ShowVirtualKeyboardOnElementFocus(LocalFrame& frame) {
 }
 
 void ChromeClientImpl::OnMouseDown(Node& mouse_down_node) {
-  if (auto* fill_client =
-          AutofillClientFromFrame(mouse_down_node.GetDocument().GetFrame())) {
+  LocalFrame* frame = mouse_down_node.GetDocument().GetFrame();
+  if (auto* fill_client = AutofillClientFromFrame(frame)) {
     fill_client->DidReceiveLeftMouseDownOrGestureTapInNode(
+        WebNode(&mouse_down_node));
+  }
+  if (auto* record_replay_client = RecordReplayClientFromFrame(frame)) {
+    record_replay_client->DidReceiveLeftMouseDownOrGestureTapInNode(
         WebNode(&mouse_down_node));
   }
 }
@@ -1338,9 +1348,13 @@ void ChromeClientImpl::DidUserChangeContentEditableContent(Element& element) {
 
 void ChromeClientImpl::DidEndEditingOnTextField(
     HTMLInputElement& input_element) {
-  if (auto* fill_client =
-          AutofillClientFromFrame(input_element.GetDocument().GetFrame())) {
+  LocalFrame* frame = input_element.GetDocument().GetFrame();
+  if (auto* fill_client = AutofillClientFromFrame(frame)) {
     fill_client->TextFieldDidEndEditing(WebInputElement(&input_element));
+  }
+  if (auto* record_replay_client = RecordReplayClientFromFrame(frame)) {
+    record_replay_client->TextFieldDidEndEditing(
+        WebInputElement(&input_element));
   }
 }
 
@@ -1361,9 +1375,13 @@ void ChromeClientImpl::TextFieldDataListChanged(HTMLInputElement& input) {
 
 void ChromeClientImpl::DidChangeSelectionInSelectControl(
     HTMLFormControlElement& element) {
-  Document& doc = element.GetDocument();
-  if (auto* fill_client = AutofillClientFromFrame(doc.GetFrame())) {
+  LocalFrame* frame = element.GetDocument().GetFrame();
+  if (auto* fill_client = AutofillClientFromFrame(frame)) {
     fill_client->SelectControlSelectionChanged(WebFormControlElement(&element));
+  }
+  if (auto* record_replay_client = RecordReplayClientFromFrame(frame)) {
+    record_replay_client->SelectControlSelectionChanged(
+        WebFormControlElement(&element));
   }
 }
 
@@ -1439,6 +1457,15 @@ WebAutofillClient* ChromeClientImpl::AutofillClientFromFrame(
   }
 
   return WebLocalFrameImpl::FromFrame(frame)->AutofillClient();
+}
+
+WebRecordReplayClient* ChromeClientImpl::RecordReplayClientFromFrame(
+    LocalFrame* frame) {
+  if (!frame) {
+    return nullptr;
+  }
+
+  return WebLocalFrameImpl::FromFrame(frame)->RecordReplayClient();
 }
 
 void ChromeClientImpl::DidUpdateTextAutosizerPageInfo(

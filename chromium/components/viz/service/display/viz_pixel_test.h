@@ -22,6 +22,11 @@ namespace viz {
 // RendererType.
 class VizPixelTest : public cc::PixelTest {
  public:
+  static constexpr char kGraphiteStr[] = "_graphite";
+  static constexpr char kANGLEMetalStr[] = "_angle_metal";
+
+  static bool IsANGLEMetal();
+
   explicit VizPixelTest(RendererType type);
 
   // cc::PixelTest implementation.
@@ -37,7 +42,6 @@ class VizPixelTest : public cc::PixelTest {
       case RendererType::kSkiaVk:
         return "skia";
       case RendererType::kSkiaGraphiteDawn:
-      case RendererType::kSkiaGraphiteMetal:
         return "graphite";
     }
   }
@@ -46,8 +50,7 @@ class VizPixelTest : public cc::PixelTest {
     return renderer_type_ == RendererType::kSoftware;
   }
   bool is_skia_graphite() const {
-    return renderer_type_ == RendererType::kSkiaGraphiteDawn ||
-           renderer_type_ == RendererType::kSkiaGraphiteMetal;
+    return renderer_type_ == RendererType::kSkiaGraphiteDawn;
   }
 
  protected:

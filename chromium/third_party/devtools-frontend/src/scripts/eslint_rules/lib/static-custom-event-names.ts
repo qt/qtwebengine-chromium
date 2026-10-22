@@ -20,9 +20,9 @@ type RuleFixer = TSESLint.RuleFixer;
 
 /** Define the structure for the return value of findConstructorAndSuperCallAndFirstArgumentToSuper **/
 interface FoundNodes {
-  constructor: MethodDefinition|undefined;
-  superExpression: ExpressionStatement|undefined;
-  firstArgumentToSuper: MemberExpression|Literal|Identifier|undefined;
+  constructor?: MethodDefinition;
+  superExpression?: ExpressionStatement;
+  firstArgumentToSuper?: MemberExpression|Literal|Identifier;
 }
 
 export default createRule({

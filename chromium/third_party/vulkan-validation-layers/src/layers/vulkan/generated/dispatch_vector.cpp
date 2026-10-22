@@ -41,94 +41,98 @@
 #include "best_practices/best_practices_validation.h"
 #include "gpuav/core/gpuav.h"
 #include "sync/sync_validation.h"
+#include "gpu_dump/gpu_dump.h"
 
 namespace vvl {
-namespace dispatch {
 
-void Device::InitObjectDispatchVectors() {
+void DispatchDevice::InitObjectDispatchVectors() {
 #define BUILD_DISPATCH_VECTOR(name)                                                                                       \
-    init_object_dispatch_vector(InterceptId##name, typeid(&vvl::base::Device::name), typeid(&threadsafety::Device::name), \
+    init_object_dispatch_vector(InterceptId##name, typeid(&vvl::BaseDevice::name), typeid(&threadsafety::Device::name),   \
                                 typeid(&stateless::Device::name), typeid(&legacy::Device::name),                          \
                                 typeid(&object_lifetimes::Device::name), typeid(&vvl::DeviceState::name),                 \
                                 typeid(&CoreChecks::name), typeid(&BestPractices::name), typeid(&gpuav::Validator::name), \
-                                typeid(&syncval::SyncValidator::name), false);
+                                typeid(&syncval::SyncValidator::name), typeid(&gpudump::GpuDump::name), false);
 #define BUILD_DESTROY_DISPATCH_VECTOR(name)                                                                               \
-    init_object_dispatch_vector(InterceptId##name, typeid(&vvl::base::Device::name), typeid(&threadsafety::Device::name), \
+    init_object_dispatch_vector(InterceptId##name, typeid(&vvl::BaseDevice::name), typeid(&threadsafety::Device::name),   \
                                 typeid(&stateless::Device::name), typeid(&legacy::Device::name),                          \
                                 typeid(&object_lifetimes::Device::name), typeid(&vvl::DeviceState::name),                 \
                                 typeid(&CoreChecks::name), typeid(&BestPractices::name), typeid(&gpuav::Validator::name), \
-                                typeid(&syncval::SyncValidator::name), true);
+                                typeid(&syncval::SyncValidator::name), typeid(&gpudump::GpuDump::name), true);
 
-    auto init_object_dispatch_vector = [this](InterceptId id, const std::type_info& vo_typeid, const std::type_info& t_typeid,
-                                              const std::type_info& pv_typeid, const std::type_info& l_typeid,
-                                              const std::type_info& ot_typeid, const std::type_info& st_typeid,
-                                              const std::type_info& cv_typeid, const std::type_info& bp_typeid,
-                                              const std::type_info& ga_typeid, const std::type_info& sv_typeid, bool is_destroy) {
-        vvl::base::Device* state_tracker = nullptr;
-        auto* intercept_vector = &this->intercept_vectors[id];
-        for (auto& vo : this->object_dispatch) {
-            auto* item = vo.get();
-            switch (item->container_type) {
-                case LayerObjectTypeThreading:
-                    if (t_typeid != vo_typeid) intercept_vector->push_back(item);
-                    break;
+    auto init_object_dispatch_vector =
+        [this](InterceptId id, const std::type_info& vo_typeid, const std::type_info& t_typeid, const std::type_info& pv_typeid,
+               const std::type_info& l_typeid, const std::type_info& ot_typeid, const std::type_info& st_typeid,
+               const std::type_info& cv_typeid, const std::type_info& bp_typeid, const std::type_info& ga_typeid,
+               const std::type_info& sv_typeid, const std::type_info& gd_typeid, bool is_destroy) {
+            vvl::BaseDevice* state_tracker = nullptr;
+            auto* intercept_vector = &this->intercept_vectors[id];
+            for (auto& vo : this->object_dispatch) {
+                auto* item = vo.get();
+                switch (item->container_type) {
+                    case LayerObjectTypeThreading:
+                        if (t_typeid != vo_typeid) intercept_vector->push_back(item);
+                        break;
 
-                case LayerObjectTypeParameterValidation:
-                    if (pv_typeid != vo_typeid) intercept_vector->push_back(item);
-                    break;
+                    case LayerObjectTypeParameterValidation:
+                        if (pv_typeid != vo_typeid) intercept_vector->push_back(item);
+                        break;
 
-                case LayerObjectTypeLegacy:
-                    if (l_typeid != vo_typeid) intercept_vector->push_back(item);
-                    break;
+                    case LayerObjectTypeLegacy:
+                        if (l_typeid != vo_typeid) intercept_vector->push_back(item);
+                        break;
 
-                case LayerObjectTypeObjectTracker:
-                    if (ot_typeid != vo_typeid) intercept_vector->push_back(item);
-                    break;
+                    case LayerObjectTypeObjectTracker:
+                        if (ot_typeid != vo_typeid) intercept_vector->push_back(item);
+                        break;
 
-                case LayerObjectTypeStateTracker:
-                    if (st_typeid != vo_typeid) {
-                        // For destroy/free commands, the state tracker must run last so that
-                        // other validation objects can still access the state object which
-                        // is being destroyed.
-                        if (is_destroy) {
-                            state_tracker = item;
-                        } else {
-                            intercept_vector->push_back(item);
+                    case LayerObjectTypeStateTracker:
+                        if (st_typeid != vo_typeid) {
+                            // For destroy/free commands, the state tracker must run last so that
+                            // other validation objects can still access the state object which
+                            // is being destroyed.
+                            if (is_destroy) {
+                                state_tracker = item;
+                            } else {
+                                intercept_vector->push_back(item);
+                            }
                         }
-                    }
-                    break;
+                        break;
 
-                case LayerObjectTypeCoreValidation:
-                    if (cv_typeid != vo_typeid) intercept_vector->push_back(item);
-                    break;
+                    case LayerObjectTypeCoreValidation:
+                        if (cv_typeid != vo_typeid) intercept_vector->push_back(item);
+                        break;
 
-                case LayerObjectTypeBestPractices:
-                    if (bp_typeid != vo_typeid) intercept_vector->push_back(item);
-                    break;
+                    case LayerObjectTypeBestPractices:
+                        if (bp_typeid != vo_typeid) intercept_vector->push_back(item);
+                        break;
 
-                case LayerObjectTypeGpuAssisted:
-                    if (ga_typeid != vo_typeid) intercept_vector->push_back(item);
-                    break;
+                    case LayerObjectTypeGpuAssisted:
+                        if (ga_typeid != vo_typeid) intercept_vector->push_back(item);
+                        break;
 
-                case LayerObjectTypeSyncValidation:
-                    if (sv_typeid != vo_typeid) intercept_vector->push_back(item);
-                    break;
+                    case LayerObjectTypeSyncValidation:
+                        if (sv_typeid != vo_typeid) intercept_vector->push_back(item);
+                        break;
 
-                case LayerObjectTypeMaxEnum:
-                    /* Chassis codegen needs to be updated for unknown validation object type */
-                    assert(0);
-                    break;
+                    case LayerObjectTypeGpuDump:
+                        if (gd_typeid != vo_typeid) intercept_vector->push_back(item);
+                        break;
 
-                default:
-                    /* Handle unsupported layer types (e.g. Vulkan SC does not support GPU AV or best practices) */
-                    assert(0);
-                    break;
+                    case LayerObjectTypeMaxEnum:
+                        /* Chassis codegen needs to be updated for unknown validation object type */
+                        assert(0);
+                        break;
+
+                    default:
+                        /* Handle unsupported layer types (e.g. Vulkan SC does not support GPU AV or best practices) */
+                        assert(0);
+                        break;
+                }
             }
-        }
-        if (state_tracker) {
-            intercept_vector->push_back(state_tracker);
-        }
-    };
+            if (state_tracker) {
+                intercept_vector->push_back(state_tracker);
+            }
+        };
 
     intercept_vectors.resize(InterceptIdCount);
     BUILD_DISPATCH_VECTOR(PreCallValidateGetDeviceQueue);
@@ -997,6 +1001,72 @@ void Device::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateQueueSubmit2KHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordQueueSubmit2KHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordQueueSubmit2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdBindIndexBuffer3KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdBindIndexBuffer3KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdBindIndexBuffer3KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdBindVertexBuffers3KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdBindVertexBuffers3KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdBindVertexBuffers3KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdDrawIndirect2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdDrawIndirect2KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdDrawIndirect2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdDrawIndexedIndirect2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdDrawIndexedIndirect2KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdDrawIndexedIndirect2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdDispatchIndirect2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdDispatchIndirect2KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdDispatchIndirect2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdCopyMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdCopyMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdCopyMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdCopyMemoryToImageKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdCopyMemoryToImageKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdCopyMemoryToImageKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdCopyImageToMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdCopyImageToMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdCopyImageToMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdUpdateMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdUpdateMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdUpdateMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdFillMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdFillMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdFillMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdCopyQueryPoolResultsToMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdCopyQueryPoolResultsToMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdCopyQueryPoolResultsToMemoryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdDrawIndirectCount2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdDrawIndirectCount2KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdDrawIndirectCount2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdDrawIndexedIndirectCount2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdDrawIndexedIndirectCount2KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdDrawIndexedIndirectCount2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdBeginConditionalRendering2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdBeginConditionalRendering2EXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdBeginConditionalRendering2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdBindTransformFeedbackBuffers2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdBindTransformFeedbackBuffers2EXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdBindTransformFeedbackBuffers2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdBeginTransformFeedback2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdBeginTransformFeedback2EXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdBeginTransformFeedback2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdEndTransformFeedback2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdEndTransformFeedback2EXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdEndTransformFeedback2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdDrawIndirectByteCount2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdDrawIndirectByteCount2EXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdDrawIndirectByteCount2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdDrawMeshTasksIndirect2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdDrawMeshTasksIndirect2EXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdDrawMeshTasksIndirect2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdDrawMeshTasksIndirectCount2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdDrawMeshTasksIndirectCount2EXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdDrawMeshTasksIndirectCount2EXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdWriteMarkerToMemoryAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdWriteMarkerToMemoryAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdWriteMarkerToMemoryAMD);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCreateAccelerationStructure2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCreateAccelerationStructure2KHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCreateAccelerationStructure2KHR);
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdCopyBuffer2KHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdCopyBuffer2KHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdCopyBuffer2KHR);
@@ -1090,6 +1160,12 @@ void Device::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdCopyMemoryToImageIndirectKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdCopyMemoryToImageIndirectKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdCopyMemoryToImageIndirectKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetDeviceFaultReportsKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetDeviceFaultReportsKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetDeviceFaultReportsKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetDeviceFaultDebugInfoKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetDeviceFaultDebugInfoKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetDeviceFaultDebugInfoKHR);
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdEndRendering2KHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdEndRendering2KHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdEndRendering2KHR);
@@ -2032,6 +2108,24 @@ void Device::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallRecordGetMemoryMetalHandlePropertiesEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetMemoryMetalHandlePropertiesEXT);
 #endif  // VK_USE_PLATFORM_METAL_EXT
+    BUILD_DISPATCH_VECTOR(PreCallValidateCreateShaderInstrumentationARM);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCreateShaderInstrumentationARM);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCreateShaderInstrumentationARM);
+    BUILD_DESTROY_DISPATCH_VECTOR(PreCallValidateDestroyShaderInstrumentationARM);
+    BUILD_DESTROY_DISPATCH_VECTOR(PreCallRecordDestroyShaderInstrumentationARM);
+    BUILD_DESTROY_DISPATCH_VECTOR(PostCallRecordDestroyShaderInstrumentationARM);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdBeginShaderInstrumentationARM);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdBeginShaderInstrumentationARM);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdBeginShaderInstrumentationARM);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdEndShaderInstrumentationARM);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdEndShaderInstrumentationARM);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdEndShaderInstrumentationARM);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetShaderInstrumentationValuesARM);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetShaderInstrumentationValuesARM);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetShaderInstrumentationValuesARM);
+    BUILD_DISPATCH_VECTOR(PreCallValidateClearShaderInstrumentationMetricsARM);
+    BUILD_DISPATCH_VECTOR(PreCallRecordClearShaderInstrumentationMetricsARM);
+    BUILD_DISPATCH_VECTOR(PostCallRecordClearShaderInstrumentationMetricsARM);
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdEndRendering2EXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdEndRendering2EXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdEndRendering2EXT);
@@ -2114,7 +2208,6 @@ void Device::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdDrawMeshTasksIndirectCountEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdDrawMeshTasksIndirectCountEXT);
 }
-}  // namespace dispatch
 }  // namespace vvl
 
 // NOLINTEND

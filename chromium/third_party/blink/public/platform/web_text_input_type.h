@@ -77,6 +77,7 @@ enum WebTextInputType {
 //
 // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.blink_public.web
 // GENERATED_JAVA_PREFIX_TO_STRIP: WebTextInputFlag
+// LINT.IfChange(WebTextInputFlags)
 enum WebTextInputFlags {
   kWebTextInputFlagNone = 0,
   kWebTextInputFlagAutocompleteOn = 1 << 0,
@@ -95,7 +96,12 @@ enum WebTextInputFlags {
   // type we don't want autocomplete or a keyboard to memorize the content.
   kWebTextInputFlagHasBeenPasswordField = 1 << 12,
   kWebTextInputFlagVertical = 1 << 13,
+  // Whether an input field is or has been a custom password field. This is a
+  // best effort heuristic to determine what a "password" is based on the
+  // field's behavior.
+  kWebTextInputFlagHasBeenCustomPassword = 1 << 14,
 };
+// LINT.ThenChange(//ui/base/ime/text_input_flags.h:TextInputFlags)
 
 }  // namespace blink
 

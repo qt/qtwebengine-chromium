@@ -21,7 +21,6 @@
 #include "third_party/skia/include/core/SkRefCnt.h"  // nogncheck
 #endif
 
-class CFX_AggClipRgn;
 class CFX_DIBitmap;
 class CFX_Matrix;
 class PauseIndicatorIface;
@@ -112,7 +111,7 @@ class CFX_DIBBase : public Retainable {
                       int src_height,
                       int& src_left,
                       int& src_top,
-                      const CFX_AggClipRgn* pClipRgn) const;
+                      const FX_RECT* clip_rect) const;
 
   bool IsPremultiplied() const {
 #if defined(PDF_USE_SKIA)

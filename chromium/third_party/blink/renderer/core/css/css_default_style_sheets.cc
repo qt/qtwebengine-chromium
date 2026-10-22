@@ -41,11 +41,11 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/html_anchor_element.h"
+#include "third_party/blink/renderer/core/html/html_capability_element_base.h"
 #include "third_party/blink/renderer/core/html/html_geolocation_element.h"
 #include "third_party/blink/renderer/core/html/html_html_element.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html/html_install_element.h"
-#include "third_party/blink/renderer/core/html/html_permission_element.h"
 #include "third_party/blink/renderer/core/html/html_user_media_element.h"
 #include "third_party/blink/renderer/core/html/media/html_audio_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
@@ -63,8 +63,8 @@ namespace blink {
 namespace {
 String MaybeRemoveCSSImportant(String string) {
   const blink::StringView kImportantSuffix(" !important");
-  return string.EndsWith(kImportantSuffix)
-             ? string.Substring(0, string.length() - kImportantSuffix.length())
+  return string.ends_with(kImportantSuffix)
+             ? string.substr(0, string.length() - kImportantSuffix.length())
              : string;
 }
 }  // namespace
@@ -151,6 +151,7 @@ void CSSDefaultStyleSheets::Reset() {
   permission_element_style_sheet_.Clear();
   view_source_style_sheet_.Clear();
   json_style_sheet_.Clear();
+  default_view_transition_style_sheet_.Clear();
   // Recreate the default style sheet to clean up possible SVG resources.
   String default_rules =
       StrCat({UncompressResourceAsASCIIString(IDR_UASTYLE_HTML_CSS),
@@ -199,7 +200,7 @@ void CSSDefaultStyleSheets::VerifyUniversalRuleCount() {
   }
 
   if (marker_style_sheet_ || scroll_button_style_sheet_ ||
-      scroll_marker_style_sheet_) {
+      scroll_marker_style_sheet_ || overscroll_style_sheet_) {
     default_pseudo_element_style_->CompactRulesIfNeeded();
     size_t expected_rule_count = 0u;
     if (marker_style_sheet_) {
@@ -210,6 +211,12 @@ void CSSDefaultStyleSheets::VerifyUniversalRuleCount() {
     }
     if (scroll_marker_style_sheet_) {
       expected_rule_count += 6u;
+    }
+    if (overscroll_style_sheet_) {
+      expected_rule_count += 1u;
+    }
+    if (default_view_transition_style_sheet_) {
+      expected_rule_count += 11u;
     }
     DCHECK_EQ(default_pseudo_element_style_->UniversalRules().size(),
               expected_rule_count);
@@ -359,10 +366,9 @@ bool CSSDefaultStyleSheets::EnsureDefaultStyleSheetsForElement(
     changed_default_style = true;
   }
 
-  if (!permission_element_style_sheet_ && IsA<HTMLPermissionElement>(element)) {
-    CHECK(RuntimeEnabledFeatures::PermissionElementEnabled(
-              element.GetExecutionContext()) ||
-          (RuntimeEnabledFeatures::UserMediaElementEnabled(
+  if (!permission_element_style_sheet_ &&
+      IsA<HTMLCapabilityElementBase>(element)) {
+    CHECK((RuntimeEnabledFeatures::UserMediaElementEnabled(
                element.GetExecutionContext()) &&
            IsA<HTMLUserMediaElement>(element)) ||
           (RuntimeEnabledFeatures::GeolocationElementEnabled(
@@ -372,7 +378,7 @@ bool CSSDefaultStyleSheets::EnsureDefaultStyleSheetsForElement(
                element.GetExecutionContext()) &&
            IsA<HTMLInstallElement>(element)));
     permission_element_style_sheet_ = ParseUASheet(
-        UncompressResourceAsASCIIString(IDR_UASTYLE_PERMISSION_ELEMENT_CSS));
+        UncompressResourceAsASCIIString(IDR_UASTYLE_CAPABILITY_ELEMENT_CSS));
     AddRulesToDefaultStyleSheets(permission_element_style_sheet_,
                                  NamespaceType::kHTML);
     changed_default_style = true;
@@ -501,6 +507,25 @@ bool CSSDefaultStyleSheets::EnsureDefaultStyleSheetsForPseudoElement(
       }
       default_pseudo_element_style_->AddRulesFromSheet(
           MarkerStyleSheet(), ScreenEval(), /*mixins=*/{});
+      default_pseudo_element_style_->CompactRulesIfNeeded();
+      return true;
+    }
+    case kPseudoIdViewTransition:
+    case kPseudoIdViewTransitionGroup:
+    case kPseudoIdViewTransitionGroupChildren:
+    case kPseudoIdViewTransitionImagePair:
+    case kPseudoIdViewTransitionOld:
+    case kPseudoIdViewTransitionNew: {
+      if (default_view_transition_style_sheet_) {
+        return false;
+      }
+      default_view_transition_style_sheet_ = ParseUASheet(
+          UncompressResourceAsASCIIString(IDR_UASTYLE_TRANSITION_CSS));
+      if (!default_pseudo_element_style_) {
+        default_pseudo_element_style_ = MakeGarbageCollected<RuleSet>();
+      }
+      default_pseudo_element_style_->AddRulesFromSheet(
+          DefaultViewTransitionStyleSheet(), ScreenEval(), /*mixins=*/{});
       default_pseudo_element_style_->CompactRulesIfNeeded();
       return true;
     }
@@ -670,6 +695,7 @@ void CSSDefaultStyleSheets::Trace(Visitor* visitor) const {
   visitor->Trace(overscroll_style_sheet_);
   visitor->Trace(view_source_style_sheet_);
   visitor->Trace(json_style_sheet_);
+  visitor->Trace(default_view_transition_style_sheet_);
 
   visitor->Trace(rule_set_group_cache_);
 }

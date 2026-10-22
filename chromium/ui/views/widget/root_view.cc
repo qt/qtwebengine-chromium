@@ -143,8 +143,10 @@ class AnnounceTextView : public View {
 
     UpdateAccessibleRole(announce_role);
     GetViewAccessibility().SetIsInvisible(true);
-    GetViewAccessibility().SetLiveAtomic(true);
-    GetViewAccessibility().SetLiveStatus("polite");
+    GetViewAccessibility().SetLiveRegionContainer(
+        ViewAccessibility::LiveRegionStatus::kPolite,
+        ViewAccessibility::kLiveRegionRelevantDefault,
+        /*atomic=*/true);
 
     if (announce_text.empty()) {
       GetViewAccessibility().SetName(
@@ -152,27 +154,12 @@ class AnnounceTextView : public View {
     } else {
       GetViewAccessibility().SetName(announce_text);
     }
-
-    if (base::FeatureList::IsEnabled(
-            features::kAnnounceTextAdditionalAttributes)) {
-      GetViewAccessibility().SetContainerLiveStatus("polite");
-      GetViewAccessibility().SetLiveRelevant("additions text");
-      GetViewAccessibility().SetContainerLiveRelevant("additions text");
-    } else {
-      GetViewAccessibility().RemoveContainerLiveStatus();
-      GetViewAccessibility().RemoveLiveRelevant();
-      GetViewAccessibility().RemoveContainerLiveRelevant();
-    }
   }
 
   void UpdateAccessibleRole(ax::mojom::Role announce_role) {
 #if BUILDFLAG(IS_CHROMEOS)
     // On ChromeOS, kAlert role can invoke an unnecessary event on reparenting.
     GetViewAccessibility().SetRole(ax::mojom::Role::kStaticText);
-#elif BUILDFLAG(IS_LINUX)
-    // TODO(crbug.com/40658933): Use live regions (do not use alerts).
-    // May require setting kLiveStatus, kContainerLiveStatus to "polite".
-    GetViewAccessibility().SetRole(ax::mojom::Role::kAlert);
 #else
     GetViewAccessibility().SetRole(announce_role);
 #endif
@@ -210,8 +197,6 @@ class PreEventDispatchHandler : public ui::EventHandler {
   // ui::EventHandler:
   void OnKeyEvent(ui::KeyEvent* event) override {
     CHECK_EQ(ui::EP_PRETARGET, event->phase());
-// macOS doesn't have keyboard-triggered context menus.
-#if !BUILDFLAG(IS_MAC)
     if (event->handled()) {
       return;
     }
@@ -220,10 +205,23 @@ class PreEventDispatchHandler : public ui::EventHandler {
     if (owner_->GetFocusManager()) {  // Can be NULL in unittests.
       v = owner_->GetFocusManager()->GetFocusedView();
     }
+    bool is_shift_f10 =
+#if BUILDFLAG(IS_MAC)
+        false;
+#else
+        event->key_code() == ui::VKEY_F10 && event->IsShiftDown();
+#endif
+
     // Special case to handle keyboard-triggered context menus.
+    bool is_valid_menu_key = event->key_code() == ui::VKEY_APPS;
+#if BUILDFLAG(IS_MAC)
+    // ui::VKEY_APPS aliases right command on macOS. Avoid using command
+    // modifier transitions as context menu triggers.
+    is_valid_menu_key &=
+        event->type() == ui::EventType::kKeyPressed && !event->IsCommandDown();
+#endif
     if (v && v->GetEnabledInViewsSubtree() &&
-        ((event->key_code() == ui::VKEY_APPS) ||
-         (event->key_code() == ui::VKEY_F10 && event->IsShiftDown()))) {
+        (is_valid_menu_key || is_shift_f10)) {
       // Clamp the menu location within the visible bounds of each ancestor view
       // to avoid showing the menu over a completely different view or window.
       gfx::Point location = v->GetKeyboardContextMenuLocation();
@@ -235,7 +233,6 @@ class PreEventDispatchHandler : public ui::EventHandler {
       v->ShowContextMenu(location, ui::mojom::MenuSourceType::kKeyboard);
       event->StopPropagation();
     }
-#endif
   }
 
   std::string_view GetLogContext() const override {
@@ -618,7 +615,10 @@ void RootView::OnMouseReleased(const ui::MouseEvent& event) {
                                   mouse_pressed_handler_.get());
     // We allow the view to delete us from the event dispatch callback. As such,
     // configure state such that we're done first, then call View.
-    View* mouse_pressed_handler = mouse_pressed_handler_;
+    // TODO(crbug.com/497948894): according to the suggestion, use `ViewTracker`
+    // instead.
+    raw_ptr<View, DisableDanglingPtrDetection> mouse_pressed_handler =
+        mouse_pressed_handler_.get();
 
     // During mouse event handling, `SetMouseAndGestureHandler()` may be called
     // to set the gesture handler. Therefore we should reset the gesture handler

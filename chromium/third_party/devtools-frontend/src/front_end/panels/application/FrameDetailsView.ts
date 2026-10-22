@@ -30,7 +30,7 @@ import * as ApplicationComponents from './components/components.js';
 import frameDetailsReportViewStyles from './frameDetailsReportView.css.js';
 import {OriginTrialTreeView} from './OriginTrialTreeView.js';
 
-const {widgetConfig} = UI.Widget;
+const {widget} = UI.Widget;
 
 const UIStrings = {
   /**
@@ -265,15 +265,14 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export interface FrameDetailsReportViewData {
   frame: SDK.ResourceTreeModel.ResourceTreeFrame;
   target?: SDK.Target.Target;
-  adScriptAncestry: Protocol.Page.AdScriptAncestry|null;
+  adScriptAncestry: Protocol.Network.AdAncestry|null;
 }
 
-interface FrameDetailsViewInput {
+export interface FrameDetailsViewInput {
   frame: SDK.ResourceTreeModel.ResourceTreeFrame;
   target: SDK.Target.Target|null;
   creationStackTrace: StackTrace.StackTrace.StackTrace|null;
-  creationTarget: SDK.Target.Target|null;
-  adScriptAncestry: Protocol.Page.AdScriptAncestry|null;
+  adScriptAncestry: Protocol.Network.AdAncestry|null;
   linkTargetDOMNode: SDK.DOMModel.DOMNode|null;
   permissionsPolicies: Protocol.Page.PermissionsPolicyFeatureState[]|null;
   protocolMonitorExperimentEnabled: boolean;
@@ -283,9 +282,9 @@ interface FrameDetailsViewInput {
   onRevealInSources: () => void;
 }
 
-type View = (input: FrameDetailsViewInput, output: undefined, target: HTMLElement) => void;
+export type View = (input: FrameDetailsViewInput, output: undefined, target: HTMLElement) => void;
 
-const DEFAULT_VIEW: View = (input, _output, target) => {
+export const DEFAULT_VIEW: View = (input, _output, target) => {
   if (!input.frame) {
     return;
   }
@@ -298,11 +297,10 @@ const DEFAULT_VIEW: View = (input, _output, target) => {
       ${renderIsolationSection(input)}
       ${renderApiAvailabilitySection(input.frame)}
       ${renderOriginTrial(input.trials)}
-      ${input.permissionsPolicies ? html`
-          <devtools-widget .widgetConfig=${widgetConfig(ApplicationComponents.PermissionsPolicySection.PermissionsPolicySection, {
+      ${input.permissionsPolicies ?
+          widget(ApplicationComponents.PermissionsPolicySection.PermissionsPolicySection, {
              policies: input.permissionsPolicies,
-             showDetails: false})}>
-          </devtools-widget>` : nothing}
+             showDetails: false}) : nothing}
       ${input.protocolMonitorExperimentEnabled ? renderAdditionalInfoSection(input.frame) : nothing}
     </devtools-report>
   `, target);
@@ -329,7 +327,7 @@ function renderOriginTrial(trials: Protocol.Page.OriginTrial[]|null): LitTemplat
         </devtools-link>
       </span>
     </devtools-report-section>
-    <devtools-widget class="span-cols" .widgetConfig=${widgetConfig(OriginTrialTreeView, {data})}>
+    <devtools-widget class="span-cols" ${widget(OriginTrialTreeView, {data})}>
     </devtools-widget>
     <devtools-report-divider></devtools-report-divider>`;
   // clang-format on
@@ -354,7 +352,7 @@ function renderDocumentSection(input: FrameDetailsViewInput): LitTemplate {
       ${maybeRenderUnreachableURL(input.frame?.unreachableUrl())}
       ${maybeRenderOrigin(input.frame?.securityOrigin)}
       ${renderOwnerElement(input.linkTargetDOMNode)}
-      ${maybeRenderCreationStacktrace(input.creationStackTrace, input.creationTarget)}
+      ${maybeRenderCreationStacktrace(input.creationStackTrace)}
       ${maybeRenderAdStatus(input.frame?.adFrameType(), input.frame?.adFrameStatus())}
       ${maybeRenderCreatorAdScriptAncestry(input.frame?.adFrameType(), input.target, input.adScriptAncestry)}
       <devtools-report-divider></devtools-report-divider>`;
@@ -435,10 +433,7 @@ function renderOwnerElement(linkTargetDOMNode: SDK.DOMModel.DOMNode|null): LitTe
         <devtools-report-key>${i18nString(UIStrings.ownerElement)}</devtools-report-key>
         <devtools-report-value class="without-min-width">
           <div class="inline-items">
-            <devtools-widget .widgetConfig=${widgetConfig(PanelCommon.DOMLinkifier.DOMNodeLink, {
-              node: linkTargetDOMNode
-            })}>
-            </devtools-widget>
+            ${widget(PanelCommon.DOMLinkifier.DOMNodeLink, {node: linkTargetDOMNode})}
           </div>
         </devtools-report-value>
       `;
@@ -447,18 +442,16 @@ function renderOwnerElement(linkTargetDOMNode: SDK.DOMModel.DOMNode|null): LitTe
   return nothing;
 }
 
-function maybeRenderCreationStacktrace(
-    stackTrace: StackTrace.StackTrace.StackTrace|null, target: SDK.Target.Target|null): LitTemplate {
-  if (stackTrace && target) {
+function maybeRenderCreationStacktrace(stackTrace: StackTrace.StackTrace.StackTrace|null): LitTemplate {
+  if (stackTrace) {
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
       return html`
         <devtools-report-key title=${i18nString(UIStrings.creationStackTraceExplanation)}>${
           i18nString(UIStrings.creationStackTrace)}</devtools-report-key>
         <devtools-report-value jslog=${VisualLogging.section('frame-creation-stack-trace')}>
-          <devtools-widget .widgetConfig=${UI.Widget.widgetConfig(
-              Components.JSPresentationUtils.StackTracePreviewContent, {target, stackTrace, options: {expandable: true}})}>
-          </devtools-widget>
+          ${widget(Components.JSPresentationUtils.StackTracePreviewContent,
+                   {stackTrace, options: {expandable: true}})}
         </devtools-report-value>
       `;
     // clang-format on
@@ -513,7 +506,7 @@ function maybeRenderAdStatus(
 
 function maybeRenderCreatorAdScriptAncestry(
     adFrameType: Protocol.Page.AdFrameType|null, target: SDK.Target.Target|null,
-    adScriptAncestry: Protocol.Page.AdScriptAncestry|null): LitTemplate {
+    adScriptAncestry: Protocol.Network.AdAncestry|null): LitTemplate {
   if (adFrameType === Protocol.Page.AdFrameType.None) {
     return nothing;
   }
@@ -526,9 +519,8 @@ function maybeRenderCreatorAdScriptAncestry(
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
     return html`<div>
-      <devtools-widget .widgetConfig=${widgetConfig(Components.Linkifier.ScriptLocationLink, {
-        target, scriptId: adScriptId.scriptId, options: {jslogContext: 'ad-script'}})}>
-      </devtools-widget>
+      ${widget(Components.Linkifier.ScriptLocationLink,
+              {target, scriptId: adScriptId.scriptId, options: {jslogContext: 'ad-script'}})}
     </div>`;
     // clang-format on
   });
@@ -844,14 +836,13 @@ export class FrameDetailsReportView extends UI.Widget.Widget {
   #frame?: SDK.ResourceTreeModel.ResourceTreeFrame;
   #target: SDK.Target.Target|null = null;
   #creationStackTrace: StackTrace.StackTrace.StackTrace|null = null;
-  #creationTarget: SDK.Target.Target|null = null;
   #securityIsolationInfo: Protocol.Network.SecurityIsolationStatus|null = null;
   #linkTargetDOMNode: SDK.DOMModel.DOMNode|null = null;
   #trials: Protocol.Page.OriginTrial[]|null = null;
   #protocolMonitorExperimentEnabled = false;
   #permissionsPolicies: Protocol.Page.PermissionsPolicyFeatureState[]|null = null;
   #linkifier = new Components.Linkifier.Linkifier();
-  #adScriptAncestry: Protocol.Page.AdScriptAncestry|null = null;
+  #adScriptAncestry: Protocol.Network.AdAncestry|null = null;
   #view: View;
 
   constructor(element?: HTMLElement, view = DEFAULT_VIEW) {
@@ -869,7 +860,6 @@ export class FrameDetailsReportView extends UI.Widget.Widget {
     });
     const {creationStackTrace: rawCreationStackTrace, creationStackTraceTarget: creationTarget} =
         frame.getCreationStackTraceData();
-    this.#creationTarget = creationTarget;
     if (rawCreationStackTrace) {
       void Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
           .createStackTraceFromProtocolRuntime(rawCreationStackTrace, creationTarget)
@@ -902,16 +892,7 @@ export class FrameDetailsReportView extends UI.Widget.Widget {
     const result = await this.#frame?.parentFrame()?.getAdScriptAncestry(this.#frame?.id);
     if (result && result.ancestryChain.length > 0) {
       this.#adScriptAncestry = result;
-
-      // Obtain the Target associated with the first ad script, because in most scenarios all
-      // scripts share the same debuggerId. However, discrepancies might arise when content scripts
-      // from browser extensions are involved. We will monitor the debugging experiences and revisit
-      // this approach if it proves problematic.
-      const firstScript = this.#adScriptAncestry.ancestryChain[0];
-      const debuggerModel = firstScript?.debuggerId ?
-          await SDK.DebuggerModel.DebuggerModel.modelForDebuggerId(firstScript.debuggerId) :
-          null;
-      this.#target = debuggerModel?.target() ?? null;
+      this.#target = this.#frame?.resourceTreeModel().target() ?? null;
     }
 
     const frame = this.#frame;
@@ -924,7 +905,6 @@ export class FrameDetailsReportView extends UI.Widget.Widget {
       frame,
       target: this.#target,
       creationStackTrace: this.#creationStackTrace,
-      creationTarget: this.#creationTarget,
       protocolMonitorExperimentEnabled: this.#protocolMonitorExperimentEnabled,
       permissionsPolicies: this.#permissionsPolicies,
       adScriptAncestry: this.#adScriptAncestry,

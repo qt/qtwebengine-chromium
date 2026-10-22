@@ -181,7 +181,7 @@ void ExtensionWebContentsObserver::SetUpRenderFrameHost(
   if (type == Manifest::TYPE_EXTENSION ||
       type == Manifest::Type::kLegacyPackagedApp) {
     util::InitializeFileSchemeAccessForExtension(
-        render_frame_host->GetProcess()->GetDeprecatedID(), extension->id(),
+        render_frame_host->GetProcess()->GetID(), extension->id(),
         browser_context_);
   }
 
@@ -209,12 +209,12 @@ void ExtensionWebContentsObserver::RenderFrameDeleted(
 void ExtensionWebContentsObserver::ReadyToCommitNavigation(
     content::NavigationHandle* navigation_handle) {
 #if !BUILDFLAG(IS_ANDROID)
-  // If the navigation is for the initial WebUI, we can skip extension
+  // If the navigation is for the TopChrome WebUI, we can skip extension
   // initialization for optimization. Otherwise, we ensure the renderer process
-  // is initialized including the non-initial WebUI navigation.
+  // is initialized including the non-TopChrome WebUI navigation.
   content::RenderProcessHost* process =
       navigation_handle->GetRenderFrameHost()->GetProcess();
-  if (process->IsForInitialWebUI() &&
+  if (process->IsForTopChromeWebUI() &&
       base::FeatureList::IsEnabled(
           blink::features::kInitialWebUIWithoutExtensions)) {
     if (!navigation_handle->IsInitialWebUINavigation()) {

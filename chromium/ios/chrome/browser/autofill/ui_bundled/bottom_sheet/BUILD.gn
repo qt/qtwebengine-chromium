@@ -9,6 +9,7 @@ group("unit_tests") {
     ":save_card_bottom_sheet_coordinator_unittest",
     ":save_card_bottom_sheet_mediator_unittest",
     ":save_card_bottom_sheet_view_controller_unittest",
+    ":scanned_card_bottom_sheet_view_controller_unittest",
     ":virtual_card_enrollment_bottom_sheet_coordinator_unittest",
     ":virtual_card_enrollment_bottom_sheet_mediator_unittest",
   ]
@@ -146,6 +147,7 @@ source_set("bottom_sheet_unit_tests") {
     "//ios/chrome/browser/tips_manager/model:factory",
     "//ios/chrome/browser/webdata_services/model",
     "//ios/chrome/test:test_support",
+    "//ios/chrome/test/app:test_support",
     "//ios/testing:block_swizzler",
     "//ios/web/public/test",
     "//ios/web/public/test/fakes",
@@ -170,6 +172,7 @@ source_set("bottom_sheet_egtest") {
     "//ios/chrome/browser/autofill/ui_bundled:autofill_ui_constants",
     "//ios/chrome/browser/autofill/ui_bundled:eg_test_support+eg2",
     "//ios/chrome/browser/autofill/ui_bundled/manual_fill:eg_test_support+eg2",
+    "//ios/chrome/browser/device_reauth/test:eg_test_support+eg2",
     "//ios/chrome/browser/metrics/model:eg_test_support+eg2",
     "//ios/chrome/browser/settings/ui_bundled:settings_root_constants",
     "//ios/chrome/test/earl_grey:eg_test_support+eg2",
@@ -191,11 +194,13 @@ source_set("save_card_bottom_sheet_coordinator") {
     ":save_card_bottom_sheet_delegate",
     ":save_card_bottom_sheet_mediator",
     ":save_card_bottom_sheet_view_controller",
+    ":scanned_card_bottom_sheet_view_controller",
     "//base",
     "//components/autofill/ios/browser",
     "//ios/chrome/browser/autofill/model/bottom_sheet",
     "//ios/chrome/browser/autofill/model/bottom_sheet:save_card_bottom_sheet_model",
     "//ios/chrome/browser/net/model:crurl",
+    "//ios/chrome/browser/settings/ui_bundled/credit_card_scanner",
     "//ios/chrome/browser/shared/coordinator/chrome_coordinator",
     "//ios/chrome/browser/shared/model/browser",
     "//ios/chrome/browser/shared/model/web_state_list",
@@ -211,6 +216,7 @@ source_set("save_card_bottom_sheet_coordinator_unittest") {
   deps = [
     ":save_card_bottom_sheet_coordinator",
     ":save_card_bottom_sheet_mediator",
+    ":scanned_card_bottom_sheet_view_controller",
     "//base/test:test_support",
     "//components/autofill/ios/browser",
     "//ios/chrome/browser/autofill/model/bottom_sheet",
@@ -220,6 +226,7 @@ source_set("save_card_bottom_sheet_coordinator_unittest") {
     "//ios/chrome/browser/shared/model/profile/test",
     "//ios/chrome/browser/shared/model/web_state_list",
     "//ios/chrome/browser/shared/public/commands",
+    "//ios/chrome/test/app:test_support",
     "//ios/web/public/test",
     "//testing/gtest",
     "//third_party/ocmock",
@@ -234,7 +241,7 @@ source_set("save_card_bottom_sheet_consumer") {
 
 source_set("save_card_bottom_sheet_mutator") {
   sources = [ "save_card_bottom_sheet_mutator.h" ]
-  deps = []
+  deps = [ "//components/autofill/core/browser" ]
   frameworks = [ "UIKit.framework" ]
 }
 
@@ -271,7 +278,12 @@ source_set("save_card_bottom_sheet_view_controller_unittest") {
   deps = [
     ":save_card_bottom_sheet_consumer",
     ":save_card_bottom_sheet_view_controller",
+    "//base/test:test_support",
+    "//build:branding_buildflags",
     "//components/strings:components_strings_grit",
+    "//ios/chrome/browser/autofill/model/message",
+    "//ios/chrome/browser/shared/ui/table_view/cells",
+    "//ios/chrome/browser/shared/ui/table_view/content_configuration",
     "//ios/chrome/common/ui/button_stack",
     "//ios/chrome/common/ui/confirmation_alert",
     "//testing/gtest",
@@ -373,6 +385,7 @@ source_set("virtual_card_enrollment_bottom_sheet_coordinator_unittest") {
     "//ios/chrome/browser/shared/model/web_state_list",
     "//ios/chrome/browser/shared/public/commands",
     "//ios/chrome/test:test_support",
+    "//ios/chrome/test/app:test_support",
     "//ios/web/public",
     "//ios/web/public/test",
     "//testing/gtest",
@@ -497,4 +510,58 @@ source_set("virtual_card_enrollment_bottom_sheet_egtest") {
     "//ui/base",
   ]
   frameworks = [ "UIKit.framework" ]
+}
+
+source_set("scanned_card_bottom_sheet_view_controller") {
+  sources = [
+    "scanned_card_bottom_sheet_view_controller.h",
+    "scanned_card_bottom_sheet_view_controller.mm",
+  ]
+  deps = [
+    ":constants",
+    ":save_card_bottom_sheet_consumer",
+    ":save_card_bottom_sheet_delegate",
+    ":save_card_bottom_sheet_mutator",
+    "//base",
+    "//build:branding_buildflags",
+    "//components/autofill/core/browser",
+    "//components/strings",
+    "//ios/chrome/app/strings",
+    "//ios/chrome/browser/autofill/model/message",
+    "//ios/chrome/browser/autofill/ui_bundled:ui_type",
+    "//ios/chrome/browser/autofill/ui_bundled:util",
+    "//ios/chrome/browser/net/model:crurl",
+    "//ios/chrome/browser/settings/ui_bundled/credit_card_scanner",
+    "//ios/chrome/browser/shared/ui/bottom_sheet:table_view_bottom_sheet_view_controller",
+    "//ios/chrome/browser/shared/ui/symbols",
+    "//ios/chrome/browser/shared/ui/table_view",
+    "//ios/chrome/browser/shared/ui/table_view:utils",
+    "//ios/chrome/browser/shared/ui/table_view/cells",
+    "//ios/chrome/browser/shared/ui/table_view/content_configuration",
+    "//ios/chrome/browser/shared/ui/util",
+    "//ios/chrome/common/ui/button_stack",
+    "//ios/chrome/common/ui/colors",
+    "//ios/chrome/common/ui/confirmation_alert",
+    "//ios/chrome/common/ui/util",
+    "//ui/base",
+  ]
+  frameworks = [ "UIKit.framework" ]
+}
+
+source_set("scanned_card_bottom_sheet_view_controller_unittest") {
+  testonly = true
+  sources = [ "scanned_card_bottom_sheet_view_controller_unittest.mm" ]
+  deps = [
+    ":save_card_bottom_sheet_delegate",
+    ":save_card_bottom_sheet_mutator",
+    ":scanned_card_bottom_sheet_view_controller",
+    "//base",
+    "//components/autofill/core/browser",
+    "//ios/chrome/app/strings",
+    "//ios/chrome/browser/autofill/ui_bundled:ui_type",
+    "//ios/chrome/browser/shared/ui/table_view:test_support",
+    "//ios/chrome/browser/shared/ui/table_view/cells",
+    "//testing/gtest",
+    "//third_party/ocmock",
+  ]
 }

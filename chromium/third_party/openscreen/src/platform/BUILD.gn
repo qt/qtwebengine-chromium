@@ -81,6 +81,16 @@ openscreen_source_set("api") {
   ]
 }
 
+declare_args() {
+  use_perfetto = !build_with_chromium
+}
+
+config("standalone_config") {
+  if (use_perfetto) {
+    defines = [ "USE_PERFETTO" ]
+  }
+}
+
 # The following target is only activated in standalone builds (see :platform).
 # Disable standalone implementation for IOS. It is not supported.
 if (!is_ios) {
@@ -119,7 +129,10 @@ if (!is_ios) {
       "impl/tls_write_buffer.h",
     ]
 
-    public_configs = [ "../util:trace_logging_config" ]
+    public_configs = [
+      "../util:trace_logging_config",
+      ":standalone_config",
+    ]
 
     if (is_linux || is_chromeos || is_android) {
       sources += [ "impl/network_interface_linux.cc" ]
@@ -163,10 +176,16 @@ if (!is_ios) {
 
     deps = [
       ":api",
-      "../third_party/abseil",
       "../third_party/boringssl",
       "../util",
     ]
+
+    if (use_perfetto) {
+      public += [ "impl/perfetto_trace_logging_platform.h" ]
+      sources += [ "impl/perfetto_trace_logging_platform.cc" ]
+      deps += [ "../third_party/perfetto" ]
+    }
+
     friend = [ ":unittests" ]
   }
 }
@@ -221,7 +240,6 @@ openscreen_source_set("test") {
 
   deps = [
     ":platform",
-    "../third_party/abseil",
     "../third_party/googletest:gmock",
     "../util",
   ]
@@ -246,7 +264,6 @@ openscreen_source_set("unittests") {
   deps = [
     ":platform",
     ":test",
-    "../third_party/abseil",
     "../third_party/boringssl",
     "../third_party/googletest:gmock",
     "../third_party/googletest:gtest",
@@ -278,6 +295,10 @@ openscreen_source_set("unittests") {
         "impl/tls_write_buffer_unittest.cc",
         "impl/udp_socket_reader_posix_unittest.cc",
       ]
+    }
+
+    if (use_perfetto) {
+      sources += [ "impl/perfetto_trace_logging_platform_unittest.cc" ]
     }
   }
 }

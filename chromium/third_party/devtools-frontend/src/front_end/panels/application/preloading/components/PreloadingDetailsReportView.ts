@@ -57,11 +57,23 @@ const UIStrings = {
   /**
    * @description Text in details
    */
+  detailsFormSubmission: 'Form submission',
+  /**
+   * @description Text in details
+   */
   detailsFailureReason: 'Failure reason',
   /**
    * @description Header of rule set
    */
   detailsRuleSet: 'Rule set',
+  /**
+   * @description Text indicating that the preloading field is true.
+   */
+  yes: 'Yes',
+  /**
+   * @description Text indicating that the preloading field is false.
+   */
+  no: 'No',
   /**
    * @description Description: status
    */
@@ -202,6 +214,7 @@ export class PreloadingDetailsReportView extends LegacyWrapper.LegacyWrapper.Wra
           ${this.#action(isFallbackToPrefetch)}
           ${this.#status(isFallbackToPrefetch)}
           ${this.#targetHint()}
+          ${this.#formSubmission()}
           ${this.#maybePrefetchFailureReason()}
           ${this.#maybePrerenderFailureReason()}
 
@@ -349,7 +362,10 @@ export class PreloadingDetailsReportView extends LegacyWrapper.LegacyWrapper.Wra
       return Lit.nothing;
     }
 
-    const failureDescription = prefetchFailureReason(attempt);
+    // Lookup status code for Non2XX failures.
+    const statusCode = PreloadingHelper.PreloadingForward.preloadStatusCode(attempt);
+
+    const failureDescription = prefetchFailureReason(attempt, statusCode);
     if (failureDescription === null) {
       return Lit.nothing;
     }
@@ -378,6 +394,22 @@ export class PreloadingDetailsReportView extends LegacyWrapper.LegacyWrapper.Wra
     `;
   }
 
+  #formSubmission(): Lit.LitTemplate {
+    assertNotNullOrUndefined(this.#data);
+    const attempt = this.#data.pipeline.getOriginallyTriggered();
+    const hasFormSubmission = attempt.key.formSubmission !== undefined;
+    if (!hasFormSubmission || !this.#isPrerenderLike(attempt.action)) {
+      return Lit.nothing;
+    }
+
+    return html`
+        <devtools-report-key>${i18nString(UIStrings.detailsFormSubmission)}</devtools-report-key>
+        <devtools-report-value>
+          ${attempt.key.formSubmission ? i18nString(UIStrings.yes) : i18nString(UIStrings.no)}
+        </devtools-report-value>
+    `;
+  }
+
   #maybePrerenderFailureReason(): Lit.LitTemplate {
     assertNotNullOrUndefined(this.#data);
     const attempt = this.#data.pipeline.getOriginallyTriggered();
@@ -386,8 +418,11 @@ export class PreloadingDetailsReportView extends LegacyWrapper.LegacyWrapper.Wra
       return Lit.nothing;
     }
 
+    // Lookup status code from the network log for NavigationBadHttpStatus.
+    const statusCode = PreloadingHelper.PreloadingForward.preloadStatusCode(attempt);
+
     const failureReason = prerenderFailureReason(
-        attempt as SDK.PreloadingModel.PrerenderAttempt | SDK.PreloadingModel.PrerenderUntilScriptAttempt);
+        attempt as SDK.PreloadingModel.PrerenderAttempt | SDK.PreloadingModel.PrerenderUntilScriptAttempt, statusCode);
     if (failureReason === null) {
       return Lit.nothing;
     }

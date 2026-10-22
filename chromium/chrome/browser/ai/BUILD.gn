@@ -21,6 +21,7 @@ source_set("ai") {
     "ai_proofreader.h",
     "ai_rewriter.h",
     "ai_summarizer.h",
+    "ai_utils.h",
     "ai_writer.h",
     "features.cc",
     "features.h",
@@ -33,15 +34,13 @@ source_set("ai") {
   public_deps = [
     "//base",
     "//chrome/browser/actor",
+    "//chrome/browser/glic",
     "//chrome/browser/profiles:profile",
     "//components/component_updater",
     "//components/on_device_ai",
     "//components/optimization_guide/core",
     "//content/public/browser",
   ]
-  if (enable_glic) {
-    public_deps += [ "//chrome/browser/glic" ]
-  }
 }
 
 source_set("impl") {
@@ -56,6 +55,7 @@ source_set("impl") {
     "ai_proofreader.cc",
     "ai_rewriter.cc",
     "ai_summarizer.cc",
+    "ai_utils.cc",
     "ai_writer.cc",
   ]
 
@@ -71,10 +71,12 @@ source_set("impl") {
   ]
   deps = [
     ":ai",
+    "//chrome/browser/history_embeddings",
     "//chrome/browser/ui/tabs:tabs_public",
     "//components/autofill/content/browser",
     "//components/autofill/core/browser",
-    "//components/history_embeddings",
+    "//components/history_embeddings/content",
+    "//components/history_embeddings/core",
     "//components/language/core/common",
     "//components/optimization_guide/content/browser",
     "//components/site_engagement/content",
@@ -119,7 +121,9 @@ source_set("unit_tests") {
     "ai_language_model_unittest.cc",
     "ai_manager_unittest.cc",
     "ai_proofreader_unittest.cc",
+    "ai_rewriter_unittest.cc",
     "ai_summarizer_unittest.cc",
+    "ai_utils_unittest.cc",
     "ai_writer_unittest.cc",
   ]
   deps = [

@@ -10,6 +10,7 @@
 
 #include "base/auto_reset.h"
 #include "base/feature_list.h"
+#include "base/memory/weak_auto_reset.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/trace_event.h"
@@ -125,11 +126,8 @@ void PassthroughTouchEventQueue::PrependTouchScrollNotification(
   TRACE_EVENT0("input",
                "PassthroughTouchEventQueue::PrependTouchScrollNotification");
 
-  if (base::FeatureList::IsEnabled(
-          blink::features::kAsyncTouchMovesImmediatelyAfterScroll)) {
-    send_touch_events_async_ = true;
-    SetAckStateForPendingTouchMovesFromSequence(primary_unique_touch_event_id);
-  }
+  send_touch_events_async_ = true;
+  SetAckStateForPendingTouchMovesFromSequence(primary_unique_touch_event_id);
 
   TouchEventWithLatencyInfo touch(
       WebInputEvent::Type::kTouchScrollStarted, WebInputEvent::kNoModifiers,
@@ -246,30 +244,36 @@ bool PassthroughTouchEventQueue::Empty() const {
 void PassthroughTouchEventQueue::FlushQueue() {
   // Don't allow acks to be processed in AckCompletedEvents as that can
   // interfere with gesture event dispatch ordering.
-  base::AutoReset<bool> process_acks(&processing_acks_, true);
+  base::WeakAutoReset reset_processing_acks(
+      weak_ptr_factory_.GetWeakPtr(),
+      &PassthroughTouchEventQueue::processing_acks_, true);
+
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
   drop_remaining_touches_in_sequence_ = true;
   client_->FlushDeferredGestureQueue();
+  if (!weak_this) {
+    return;
+  }
+
   while (!outstanding_touches_.empty()) {
     auto iter = outstanding_touches_.begin();
     TouchEventWithLatencyInfoAndAckState event = *iter;
     outstanding_touches_.erase(iter);
-    if (event.ack_state() == blink::mojom::InputEventResultState::kUnknown)
+    if (event.ack_state() == blink::mojom::InputEventResultState::kUnknown) {
       event.set_ack_info(
           blink::mojom::InputEventResultSource::kBrowser,
           blink::mojom::InputEventResultState::kNoConsumerExists);
+    }
     AckTouchEventToClient(event, event.ack_source(), event.ack_state());
   }
 }
 
 void PassthroughTouchEventQueue::OnTouchActionFromMain() {
-  if (base::FeatureList::IsEnabled(
-          blink::features::kAsyncTouchMovesImmediatelyAfterScroll)) {
-    // It's possible a deferred scroll might have actually started upon
-    // receiving touch action from main. And as a result ack of some touch moves
-    // would have been set locally in Browser itself in
-    // `SetAckStateForPendingTouchMovesFromSequence`.
-    AckCompletedEvents();
-  }
+  // It's possible a deferred scroll might have actually started upon
+  // receiving touch action from main. And as a result ack of some touch moves
+  // would have been set locally in Browser itself in
+  // `SetAckStateForPendingTouchMovesFromSequence`.
+  AckCompletedEvents();
 }
 
 void PassthroughTouchEventQueue::StopTimeoutMonitor() {
@@ -284,7 +288,11 @@ void PassthroughTouchEventQueue::AckCompletedEvents() {
     TRACE_EVENT_INSTANT("input", "ProcessingAcksAlready");
     return;
   }
-  base::AutoReset<bool> process_acks(&processing_acks_, true);
+  base::WeakAutoReset reset_processing_acks(
+      weak_ptr_factory_.GetWeakPtr(),
+      &PassthroughTouchEventQueue::processing_acks_, true);
+
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
   while (!outstanding_touches_.empty()) {
     auto iter = outstanding_touches_.begin();
     if (iter->ack_state() == blink::mojom::InputEventResultState::kUnknown) {
@@ -294,6 +302,9 @@ void PassthroughTouchEventQueue::AckCompletedEvents() {
     TouchEventWithLatencyInfoAndAckState event = *iter;
     outstanding_touches_.erase(iter);
     AckTouchEventToClient(event, event.ack_source(), event.ack_state());
+    if (!weak_this) {
+      return;
+    }
   }
 }
 

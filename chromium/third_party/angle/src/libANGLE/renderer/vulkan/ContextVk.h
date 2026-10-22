@@ -65,6 +65,20 @@ enum class UpdateDepthFeedbackLoopReason
     Clear,
 };
 
+// Whether the image being presented needs to transition to the VK_IMAGE_LAYOUT_PRESENT_SRC or not.
+enum class PresentImageLayout
+{
+    Keep,
+    PresentSrc,
+};
+
+// Whether the contents of the ancillary buffer should be invalidated on swap
+enum class SurfaceAncillaryColorBehavior
+{
+    Retain,
+    InvalidateOnPresent,
+};
+
 static constexpr GLbitfield kBufferMemoryBarrierBits =
     GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_ELEMENT_ARRAY_BARRIER_BIT | GL_UNIFORM_BARRIER_BIT |
     GL_COMMAND_BARRIER_BIT | GL_PIXEL_BUFFER_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT |
@@ -77,6 +91,8 @@ static constexpr GLbitfield kImageMemoryBarrierBits =
 class ContextVk : public ContextImpl, public vk::Context, public MultisampleTextureInitializer
 {
   public:
+    using VertexArrayGeneration = UniqueSerial;
+
     ContextVk(const gl::State &state, gl::ErrorSet *errorSet, vk::Renderer *renderer);
     ~ContextVk() override;
 
@@ -346,7 +362,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // Query and Fence creation
     QueryImpl *createQuery(gl::QueryType type) override;
     FenceNVImpl *createFenceNV() override;
-    SyncImpl *createSync() override;
+    SyncImpl *createSync(const gl::Context *context) override;
 
     // Transform Feedback creation
     TransformFeedbackImpl *createTransformFeedback(
@@ -447,8 +463,9 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     angle::Result optimizeRenderPassForPresent(vk::ImageViewHelper *colorImageView,
                                                vk::ImageHelper *colorImage,
-                                               vk::ImageHelper *colorImageMS,
-                                               bool isSharedPresentMode,
+                                               vk::ImageHelper *ancillaryColorImage,
+                                               PresentImageLayout layout,
+                                               SurfaceAncillaryColorBehavior ancillaryBehavior,
                                                bool *imageResolved);
 
     vk::DynamicQueryPool *getQueryPool(gl::QueryType queryType);
@@ -785,6 +802,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
         if (newBufferOut)
         {
             mHasInFlightStreamedVertexBuffers.set(attribIndex);
+            mDefaultAttribsGeneration = mDefaultAttribsGenerationFactory.generate();
+            mGraphicsDirtyBits.set(DIRTY_BIT_DEFAULT_ATTRIBS);
         }
         return angle::Result::Continue;
     }
@@ -904,6 +923,11 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // Restore all graphics state based on current gl::State.
     void restoreAllGraphicsState();
     bool hasActiveRenderPassQuery() const { return mActiveRenderPassQueryBitmask.any(); }
+
+    angle::Result onBindTexImage();
+
+    void invalidateGraphicsDriverUniforms();
+    void invalidateDriverUniforms();
 
   private:
     // Dirty bits.
@@ -1090,6 +1114,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                             gl::PrimitiveMode mode,
                             GLint firstVertexOrInvalid,
                             GLsizei vertexOrIndexCount,
+                            GLsizei baseInstance,
                             GLsizei instanceCount,
                             gl::DrawElementsType indexTypeOrInvalid,
                             const void *indices,
@@ -1098,6 +1123,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     angle::Result setupIndexedDraw(const gl::Context *context,
                                    gl::PrimitiveMode mode,
                                    GLsizei indexCount,
+                                   GLsizei baseInstance,
                                    GLsizei instanceCount,
                                    gl::DrawElementsType indexType,
                                    const void *indices);
@@ -1127,6 +1153,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                                     gl::PrimitiveMode mode,
                                     GLint firstVertex,
                                     GLsizei vertexOrIndexCount,
+                                    GLsizei baseInstance,
+                                    GLsizei instanceCount,
                                     gl::DrawElementsType indexTypeOrInvalid,
                                     const void *indices,
                                     uint32_t *numIndicesOut);
@@ -1174,8 +1202,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     angle::Result invalidateCurrentTextures(const gl::Context *context, gl::Command command);
     angle::Result invalidateCurrentShaderResources(gl::Command command);
     angle::Result invalidateCurrentShaderUniformBuffers();
-    void invalidateGraphicsDriverUniforms();
-    void invalidateDriverUniforms();
 
     angle::Result handleNoopDrawEvent() override;
     angle::Result handleNoopMultiDrawEvent() override;
@@ -1212,12 +1238,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
         DirtyBits dirtyBitMask);
     angle::Result handleDirtyGraphicsIndexBuffer(DirtyBits::Iterator *dirtyBitsIterator,
                                                  DirtyBits dirtyBitMask);
-    angle::Result handleDirtyGraphicsDriverUniformsImpl(const vk::PipelineLayout &pipelineLayout);
     angle::Result handleDirtyGraphicsDriverUniforms(DirtyBits::Iterator *dirtyBitsIterator,
                                                     DirtyBits dirtyBitMask);
-    angle::Result handleDirtyGraphicsDriverUniformsWithXFBEmulation(
-        DirtyBits::Iterator *dirtyBitsIterator,
-        DirtyBits dirtyBitMask);
     angle::Result handleDirtyGraphicsShaderResources(DirtyBits::Iterator *dirtyBitsIterator,
                                                      DirtyBits dirtyBitMask);
     angle::Result handleDirtyGraphicsUniformBuffers(DirtyBits::Iterator *dirtyBitsIterator,
@@ -1318,8 +1340,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     angle::Result handleDirtyDescriptorSetsImpl(CommandBufferHelperT *commandBufferHelper,
                                                 PipelineType pipelineType);
     void handleDirtyGraphicsDynamicScissorImpl(bool isPrimitivesGeneratedQueryActive);
-
-    void writeAtomicCounterBufferDriverUniformOffsets(uint32_t *offsetsOut, size_t offsetsSize);
 
     void updateUniformBufferBlocksOffset();
 
@@ -1437,6 +1457,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     vk::RenderPassCommandBuffer *mRenderPassCommandBuffer;
 
+    const vk::PipelineLayout *mCurrentPipelineLayout;
+
     vk::PipelineHelper *mCurrentGraphicsPipeline;
     vk::PipelineHelper *mCurrentGraphicsPipelineShaders;
     vk::PipelineHelper *mCurrentComputePipeline;
@@ -1495,6 +1517,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     DirtyBits mComputeDirtyBits;
     DirtyBits mNonIndexedDirtyBitsMask;
     DirtyBits mIndexedDirtyBitsMask;
+    DirtyBits mNewRenderPassDirtyBits;
     DirtyBits mNewGraphicsCommandBufferDirtyBits;
     DirtyBits mNewComputeCommandBufferDirtyBits;
     DirtyBits mDynamicStateDirtyBits;
@@ -1521,14 +1544,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     VkDeviceSize mCurrentIndexBufferOffset;
     gl::DrawElementsType mCurrentDrawElementsType;
     angle::PackedEnumMap<gl::DrawElementsType, VkIndexType> mIndexTypeMap;
-
-    // Cache the current draw call's firstVertex to be passed to
-    // TransformFeedbackVk::getBufferOffsets.  Unfortunately, gl_BaseVertex support in Vulkan is
-    // not yet ubiquitous, which would have otherwise removed the need for this value to be passed
-    // as a uniform.
-    GLint mXfbBaseVertex;
-    // Cache the current draw call's vertex count as well to support instanced draw calls
-    GLuint mXfbVertexCountPerInstance;
 
     // Cached clear value/mask for color and depth/stencil.
     VkClearValue mClearColorValue;
@@ -1561,6 +1576,10 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     // "Current Value" aka default vertex attribute state.
     gl::AttributesMask mDirtyDefaultAttribsMask;
+
+    // Tracks if default vertex attribute buffers have been invalidated.
+    UniqueSerialFactory mDefaultAttribsGenerationFactory;
+    VertexArrayGeneration mDefaultAttribsGeneration;
 
     // DynamicBuffers for streaming vertex data from client memory pointer as well as for default
     // attributes. mHasInFlightStreamedVertexBuffers indicates if the dynamic buffer has any
@@ -1695,7 +1714,6 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     uint32_t mCommandsPendingSubmissionCount;
 
     GraphicsDriverUniforms mGraphicsDriverUniforms;
-    XFBEmulationGraphicsDriverUniforms mXFBEmulationDriverUniforms;
 };
 
 ANGLE_INLINE angle::Result ContextVk::endRenderPassIfTransformFeedbackBuffer(

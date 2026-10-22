@@ -28,6 +28,7 @@
 #include "components/autofill/core/browser/single_field_fillers/payments/merchant_promo_code_manager.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
 #include "components/autofill/core/browser/test_utils/autofill_test_utils.h"
+#include "components/autofill/core/browser/ui/payments/autofill_progress_ui_type.h"
 #include "components/autofill/core/browser/ui/payments/bnpl_ui_delegate.h"
 #include "components/autofill/core/common/autofill_prefs.h"
 
@@ -43,6 +44,7 @@
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 #include "components/autofill/core/browser/payments/desktop_bnpl_strategy.h"
+#include "components/autofill/core/browser/ui/payments/omnibox_autofill_delegate.h"
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
 namespace autofill::payments {
@@ -56,7 +58,14 @@ TestPaymentsAutofillClient::TestPaymentsAutofillClient(AutofillClient* client)
       mock_save_and_fill_manager_(
           std::make_unique<NiceMock<MockSaveAndFillManager>>()),
       mock_merchant_promo_code_manager_(
-          &client_->GetPersonalDataManager().payments_data_manager()) {}
+          &client_->GetPersonalDataManager().payments_data_manager()) {
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+  if (base::FeatureList::IsEnabled(features::kAutofillEnableOmniboxAutofill)) {
+    omnibox_autofill_delegate_ =
+        std::make_unique<OmniboxAutofillDelegate>(client);
+  }
+#endif
+}
 
 TestPaymentsAutofillClient::~TestPaymentsAutofillClient() = default;
 
@@ -106,9 +115,7 @@ void TestPaymentsAutofillClient::ConfirmExpirationDateFixFlow(
     base::OnceCallback<void(const std::u16string&, const std::u16string&)>
         callback) {
   credit_card_name_fix_flow_bubble_was_shown_ = true;
-  std::move(callback).Run(
-      std::u16string(u"03"),
-      std::u16string(base::ASCIIToUTF16(test::NextYear().c_str())));
+  std::move(callback).Run(u"03", base::ASCIIToUTF16(test::NextYear()));
 }
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
@@ -174,7 +181,7 @@ void TestPaymentsAutofillClient::IbanUploadCompleted(bool iban_saved,
                                                      bool hit_max_strikes) {}
 
 void TestPaymentsAutofillClient::ShowAutofillProgressDialog(
-    AutofillProgressDialogType autofill_progress_dialog_type,
+    AutofillProgressUiType autofill_progress_dialog_type,
     base::OnceClosure cancel_callback) {
   autofill_progress_dialog_shown_ = true;
   autofill_progress_dialog_type_ = autofill_progress_dialog_type;
@@ -483,6 +490,13 @@ BnplStrategy* TestPaymentsAutofillClient::GetBnplStrategy() {
 BnplUiDelegate* TestPaymentsAutofillClient::GetBnplUiDelegate() {
   return bnpl_ui_delegate_.get();
 }
+
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+OmniboxAutofillDelegate*
+TestPaymentsAutofillClient::GetOmniboxAutofillDelegate() {
+  return omnibox_autofill_delegate_.get();
+}
+#endif
 
 bool TestPaymentsAutofillClient::GetMandatoryReauthOptInPromptWasShown() {
   return mandatory_reauth_opt_in_prompt_was_shown_;

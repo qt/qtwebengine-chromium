@@ -46,15 +46,19 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
   let viewManagerIsViewVisibleStub: sinon.SinonStub<[viewId: string], boolean>;
 
-  function enableAllFeatureAndSetting() {
+  async function enableAllFeatureAndSetting() {
     viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'elements');
+    await createNetworkPanelForMockConnection();
     Common.Settings.moduleSetting('ai-assistance-enabled').set(true);
+    sinon.stub(AiAssistanceModel.StylingAgent.NodeContext.prototype, 'getSuggestions')
+        .returns(Promise.resolve([{title: 'test suggestion'}]));
     const featureFlags =
         [
           'devToolsFreestyler',
           'devToolsAiAssistanceNetworkAgent',
           'devToolsAiAssistanceFileAgent',
           'devToolsAiAssistancePerformanceAgent',
+          'devToolsAiAssistanceV2',
         ]
             .reduce(
                 (acc, flag) => {
@@ -72,7 +76,6 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
   beforeEach(() => {
     viewManagerIsViewVisibleStub = sinon.stub(UI.ViewManager.ViewManager.instance(), 'isViewVisible');
-    AiAssistanceModel.ConversationHandler.ConversationHandler.removeInstance();
     registerNoopActions([
       'elements.toggle-element-search',
       'timeline.record-reload',
@@ -176,8 +179,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
   });
 
   describe('rating', () => {
-    beforeEach(() => {
-      enableAllFeatureAndSetting();
+    beforeEach(async () => {
+      await enableAllFeatureAndSetting();
     });
 
     it('should allow logging if configured', async () => {
@@ -285,8 +288,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
   describe('contexts', () => {
     beforeEach(async () => {
-      await createNetworkPanelForMockConnection();
-      enableAllFeatureAndSetting();
+      await enableAllFeatureAndSetting();
     });
 
     afterEach(async () => {
@@ -300,8 +302,6 @@ describeWithMockConnection('AI Assistance Panel', () => {
           const node = sinon.createStubInstance(SDK.DOMModel.DOMNode, {
             nodeType: Node.ELEMENT_NODE,
           });
-          sinon.stub(AiAssistanceModel.StylingAgent.NodeContext.prototype, 'getSuggestions')
-              .returns(Promise.resolve([{title: 'test suggestion'}]));
           return new AiAssistanceModel.StylingAgent.NodeContext(node);
         },
         action: 'freestyler.elements-floating-button',
@@ -346,7 +346,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
         const nextInput = await view.nextInput;
         assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-        expect(nextInput.props.selectedContext?.getItem()).equals(contextItem);
+        assert.isTrue(nextInput.props.isContextSelected);
+        expect(nextInput.props.context?.getItem()).equals(contextItem);
       });
 
       it(`should update the selected ${test.flavor.name} context whenever flavor changes`, async () => {
@@ -354,7 +355,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
         void panel.handleAction(test.action);
         let nextInput = await view.nextInput;
         assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-        assert.isNull(nextInput.props.selectedContext);
+        assert.isFalse(nextInput.props.isContextSelected);
         const context = test.createContext();
         const contextItem = context.getItem();
         if (!contextItem) {
@@ -364,13 +365,14 @@ describeWithMockConnection('AI Assistance Panel', () => {
         UI.Context.Context.instance().setFlavor(test.flavor, contextItem);
         nextInput = await view.nextInput;
         assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-        expect(nextInput.props.selectedContext?.getItem()).equals(contextItem);
+        assert.isTrue(nextInput.props.isContextSelected);
+        expect(nextInput.props.context?.getItem()).equals(contextItem);
       });
 
       it(`should ignore ${test.flavor.name} flavor change after the panel was hidden`, async () => {
         const {view, panel} = await createAiAssistancePanel();
         assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-        assert.isNull(view.input.props.selectedContext);
+        assert.isFalse(view.input.props.isContextSelected);
         const callCount = view.callCount;
         panel.hideWidget();
         const context = test.createContext();
@@ -388,7 +390,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       void panel.handleAction('freestyler.elements-floating-button');
       let nextInput = await view.nextInput;
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isNull(nextInput.props.selectedContext);
+      assert.isFalse(nextInput.props.isContextSelected);
 
       const node = sinon.createStubInstance(SDK.DOMModel.DOMNode, {
         nodeType: Node.COMMENT_NODE,
@@ -396,7 +398,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, node);
       nextInput = await view.nextInput;
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.isNull(nextInput.props.selectedContext);
+      assert.isFalse(nextInput.props.isContextSelected);
     });
 
     it('should clear the text input when the context changes to null', async () => {
@@ -417,15 +419,113 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.isTrue(nextInput.props.isTextInputDisabled);
     });
+
+    it('should suspend auto-selection when context is manually removed', async () => {
+      updateHostConfig({
+        devToolsAiAssistanceContextSelectionAgent: {
+          enabled: true,
+        },
+      });
+      const {panel, view} = await createAiAssistancePanel();
+      const initialNode = sinon.createStubInstance(SDK.DOMModel.DOMNode, {
+        nodeType: Node.ELEMENT_NODE,
+      });
+
+      UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, initialNode);
+
+      void panel.handleAction('freestyler.elements-floating-button');
+      let nextInput = await view.nextInput;
+      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+      assert.isTrue(nextInput.props.isContextSelected);
+
+      nextInput.props.onContextRemoved?.();
+      nextInput = await view.nextInput;
+
+      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+      assert.isFalse(nextInput.props.isContextSelected);
+
+      const node = sinon.createStubInstance(SDK.DOMModel.DOMNode, {
+        nodeType: Node.ELEMENT_NODE,
+      });
+      UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, node);
+      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+      assert.isFalse(nextInput.props.isContextSelected);
+
+      nextInput.props.onContextAdd?.();
+      nextInput = await view.nextInput;
+
+      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+      assert.isTrue(nextInput.props.isContextSelected);
+
+      const node2 = sinon.createStubInstance(SDK.DOMModel.DOMNode, {
+        nodeType: Node.ELEMENT_NODE,
+      });
+      UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, node2);
+      nextInput = await view.nextInput;
+      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+      assert.isTrue(nextInput.props.isContextSelected);
+      assert.strictEqual(nextInput.props.context?.getItem(), node2);
+    });
+    it('should not update the context when the conversation is not empty if the feature is enabled', async () => {
+      updateHostConfig({
+        devToolsAiAssistanceContextSelectionAgent: {
+          enabled: true,
+        },
+      });
+
+      const networkRequest = createNetworkRequest({url: urlString`https://example.com`});
+      UI.Context.Context.instance().setFlavor(SDK.NetworkRequest.NetworkRequest, networkRequest);
+
+      const initialNode = sinon.createStubInstance(SDK.DOMModel.DOMNode, {
+        nodeType: Node.ELEMENT_NODE,
+      });
+      UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, initialNode);
+      viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'elements');
+
+      const {panel, view} = await createAiAssistancePanel({
+        aidaClient: mockAidaClient([
+          [{explanation: 'test response'}, {explanation: 'test response'}],
+        ]),
+      });
+
+      void panel.handleAction('freestyler.elements-floating-button');
+
+      let nextInput = await view.nextInput;
+
+      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+      assert.isTrue(nextInput.props.isContextSelected);
+      assert.isTrue(nextInput.props.isContextSelected);
+      assert.strictEqual(nextInput.props.context?.getItem(), initialNode);
+
+      // Send a message to make the conversation not empty
+      nextInput.props.onTextSubmit('test');
+      nextInput = await view.nextInput;
+      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+
+      viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'network');
+      UI.ViewManager.ViewManager.instance().dispatchEventToListeners(
+          UI.ViewManager.Events.VIEW_VISIBILITY_CHANGED,
+          {location: 'panel', revealedViewId: 'network', hiddenViewId: undefined},
+      );
+      nextInput.props.onTextSubmit('test');
+      nextInput = await view.nextInput;
+
+      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+      assert.strictEqual(
+          nextInput.props.context?.getItem(),
+          initialNode,
+          'selectedContext should be initial node',
+      );
+    });
   });
 
   describe('toggle search element action', () => {
     let toggleSearchElementAction: UI.ActionRegistration.Action;
-    beforeEach(() => {
+    beforeEach(async () => {
       toggleSearchElementAction =
           UI.ActionRegistry.ActionRegistry.instance().getAction('elements.toggle-element-search');
       toggleSearchElementAction.setToggled(false);
-      enableAllFeatureAndSetting();
+      await enableAllFeatureAndSetting();
     });
 
     it('should set inspectElementToggled when the widget is shown', async () => {
@@ -464,8 +564,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
   });
 
   describe('AI explorer badge', () => {
-    beforeEach(() => {
-      enableAllFeatureAndSetting();
+    beforeEach(async () => {
+      await enableAllFeatureAndSetting();
     });
 
     it('should trigger started-ai-conversation action', async () => {
@@ -544,8 +644,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
   });
 
   describe('history interactions', () => {
-    beforeEach(() => {
-      enableAllFeatureAndSetting();
+    beforeEach(async () => {
+      await enableAllFeatureAndSetting();
     });
 
     it('should have empty messages after new chat', async () => {
@@ -1057,13 +1157,18 @@ describeWithMockConnection('AI Assistance Panel', () => {
       nextInput = await view.nextInput;
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
 
+      const modelResponse =
+          nextInput.props.messages.find(m => m.entity === AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL);
+      assert.isOk(modelResponse);
       view.input.onDeleteClick();
 
       nextInput = await view.nextInput;
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+      nextInput.props.walkthrough.onOpen(modelResponse);
       assert.deepEqual(nextInput.props.messages, []);
       sinon.assert.callCount(deleteHistoryEntrySpy, 1);
       assert.isString(deleteHistoryEntrySpy.lastCall.args[0]);
+      assert.isNull(nextInput.props.walkthrough.activeSidebarMessage);
 
       const menuAfterDelete = openHistoryContextMenu(view.input, 'User question to Freestyler?');
       assert.isUndefined(menuAfterDelete.id);
@@ -1097,8 +1202,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
   });
 
   describe('empty state', () => {
-    beforeEach(() => {
-      enableAllFeatureAndSetting();
+    beforeEach(async () => {
+      await enableAllFeatureAndSetting();
     });
 
     it('should have empty state after clear chat', async () => {
@@ -1267,17 +1372,18 @@ describeWithMockConnection('AI Assistance Panel', () => {
   describe('cross-origin', () => {
     beforeEach(async () => {
       createTarget();
-      await createNetworkPanelForMockConnection();
-      enableAllFeatureAndSetting();
+
+      await enableAllFeatureAndSetting();
     });
 
     afterEach(async () => {
       Network.NetworkPanel.NetworkPanel.instance().detach();
     });
 
-    it('blocks input on cross origin requests', async () => {
+    it('blocks input on requests with a different document origin', async () => {
       const networkRequest = createNetworkRequest({
-        url: urlString`https://a.test`,
+        url: urlString`https://a.test/app.js`,
+        documentURL: urlString`https://a.test`,
       });
       UI.Context.Context.instance().setFlavor(SDK.NetworkRequest.NetworkRequest, networkRequest);
 
@@ -1292,7 +1398,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.isFalse(nextInput.props.blockedByCrossOrigin);
       assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.strictEqual(view.input.props.selectedContext?.getItem(), networkRequest);
+      assert.isTrue(view.input.props.isContextSelected);
+      assert.strictEqual(view.input.props.context?.getItem(), networkRequest);
 
       // Send a query for https://a.test.
       void panel.handleAction('drjones.network-floating-button');
@@ -1302,7 +1409,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
       // Change context to https://b.test.
       const networkRequest2 = createNetworkRequest({
-        url: urlString`https://b.test`,
+        url: urlString`https://b.test/app.js`,
+        documentURL: urlString`https://b.test`,
       });
       UI.Context.Context.instance().setFlavor(SDK.NetworkRequest.NetworkRequest, networkRequest2);
 
@@ -1311,7 +1419,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
       nextInput = await view.nextInput;
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
       assert.isTrue(nextInput.props.blockedByCrossOrigin);
-      assert.strictEqual(nextInput.props.selectedContext?.getItem(), networkRequest2);
+      assert.isTrue(nextInput.props.isContextSelected);
+      assert.strictEqual(nextInput.props.context?.getItem(), networkRequest2);
     });
 
     it('should be able to continue same-origin requests', async () => {
@@ -1386,6 +1495,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
          viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'network');
          const networkRequest = createNetworkRequest({
            url: urlString`https://a.test`,
+           documentURL: urlString`https://a.test`,
          });
          UI.Context.Context.instance().setFlavor(SDK.NetworkRequest.NetworkRequest, networkRequest);
 
@@ -1399,7 +1509,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
          let nextInput = await view.nextInput;
          assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
          assert.isFalse(nextInput.props.blockedByCrossOrigin);
-         assert.strictEqual(nextInput.props.selectedContext?.getItem(), networkRequest);
+         assert.isTrue(nextInput.props.isContextSelected);
+         assert.strictEqual(nextInput.props.context?.getItem(), networkRequest);
 
          // Send a query for https://a.test.
          void panel.handleAction('drjones.network-floating-button');
@@ -1413,6 +1524,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
          // Change context to https://b.test.
          const networkRequest2 = createNetworkRequest({
            url: urlString`https://b.test`,
+           documentURL: urlString`https://b.test`,
          });
          UI.Context.Context.instance().setFlavor(SDK.NetworkRequest.NetworkRequest, networkRequest2);
 
@@ -1421,7 +1533,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
          nextInput = await view.nextInput;
          assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-         assert.strictEqual(nextInput.props.selectedContext?.getItem(), networkRequest2);
+         assert.isTrue(nextInput.props.isContextSelected);
+         assert.strictEqual(nextInput.props.context?.getItem(), networkRequest2);
          assert.isTrue(nextInput.props.blockedByCrossOrigin);
        });
 
@@ -1458,7 +1571,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
   describe('copy response', () => {
     it('should copy the response to clipboard when copy button is clicked', async () => {
-      enableAllFeatureAndSetting();
+      await enableAllFeatureAndSetting();
       const {view} = await createAiAssistancePanel();
       const modelMessage: AiAssistancePanel.ChatMessage.ModelChatMessage = {
         entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
@@ -1634,7 +1747,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
   });
 
   it('erases previous partial response on blocked error', async () => {
-    enableAllFeatureAndSetting();
+    await enableAllFeatureAndSetting();
 
     const {panel, view} = await createAiAssistancePanel({
       aidaClient: mockAidaClient([[{
@@ -1667,9 +1780,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
       it('should be disabled when the next message is blocked by cross origin and show crossOriginError placeholder',
          async () => {
            Common.Settings.moduleSetting('ai-assistance-enabled').set(true);
-           const networkRequest = createNetworkRequest({
-             url: urlString`https://a.test`,
-           });
+           const networkRequest =
+               createNetworkRequest({url: urlString`https://a.test`, documentURL: urlString`https://a.test`});
            UI.Context.Context.instance().setFlavor(SDK.NetworkRequest.NetworkRequest, networkRequest);
 
            const {panel, view} = await createAiAssistancePanel({
@@ -1682,7 +1794,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
            let nextInput = await view.nextInput;
            assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
            assert.isFalse(nextInput.props.blockedByCrossOrigin);
-           assert.strictEqual(nextInput.props.selectedContext?.getItem(), networkRequest);
+           assert.isTrue(nextInput.props.isContextSelected);
+           assert.strictEqual(nextInput.props.context?.getItem(), networkRequest);
 
            // Send a query for https://a.test.
            void panel.handleAction('drjones.network-floating-button');
@@ -1691,9 +1804,8 @@ describeWithMockConnection('AI Assistance Panel', () => {
            assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
 
            // Change context to https://b.test.
-           const networkRequest2 = createNetworkRequest({
-             url: urlString`https://b.test`,
-           });
+           const networkRequest2 =
+               createNetworkRequest({url: urlString`https://b.test`, documentURL: urlString`https://b.test`});
            UI.Context.Context.instance().setFlavor(SDK.NetworkRequest.NetworkRequest, networkRequest2);
 
            void panel.handleAction('drjones.network-floating-button');
@@ -1722,7 +1834,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
            const nextInput = await view.nextInput;
            assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-           assert.isNull(nextInput.props.selectedContext);
+           assert.isFalse(nextInput.props.isContextSelected);
            assert.isTrue(nextInput.props.isTextInputDisabled);
            assert.strictEqual(nextInput.props.inputPlaceholder, 'Select an element to ask a question');
          });
@@ -1743,7 +1855,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
         const nextInput = await view.nextInput;
         assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-        assert.isNull(nextInput.props.selectedContext);
+        assert.isFalse(nextInput.props.isContextSelected);
         assert.isTrue(nextInput.props.isTextInputDisabled);
         assert.strictEqual(
             nextInput.props.inputPlaceholder, 'Record a performance trace and select an item to ask a question');
@@ -1768,7 +1880,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
            const nextInput = await view.nextInput;
            assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-           assert.isNull(nextInput.props.selectedContext);
+           assert.isFalse(nextInput.props.isContextSelected);
            assert.isTrue(nextInput.props.isTextInputDisabled);
            assert.strictEqual(
                nextInput.props.inputPlaceholder, 'Record or select a performance trace to ask a question');
@@ -1805,7 +1917,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
     describe('removing context', () => {
       it('should remove context when button is pressed', async () => {
-        enableAllFeatureAndSetting();
+        await enableAllFeatureAndSetting();
         updateHostConfig({devToolsAiAssistanceContextSelectionAgent: {enabled: true}});
         const {view} = await createAiAssistancePanel();
 
@@ -1815,21 +1927,19 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
         const nextInput = await view.nextInput;
         assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-        assert.isNull(nextInput.props.selectedContext);
+        assert.isFalse(nextInput.props.isContextSelected);
       });
     });
 
     describe('add context', () => {
       it('should add context when button is pressed', async () => {
-        enableAllFeatureAndSetting();
+        await enableAllFeatureAndSetting();
         updateHostConfig({devToolsAiAssistanceContextSelectionAgent: {enabled: true}});
 
         const node = sinon.createStubInstance(SDK.DOMModel.DOMNode, {
           nodeType: Node.ELEMENT_NODE,
         });
         UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, node);
-        sinon.stub(AiAssistanceModel.StylingAgent.NodeContext.prototype, 'getSuggestions')
-            .returns(Promise.resolve([{title: 'test suggestion'}]));
         const {view} = await createAiAssistancePanel({
           aidaClient: mockAidaClient([
             [{explanation: 'test'}],
@@ -1849,7 +1959,80 @@ describeWithMockConnection('AI Assistance Panel', () => {
         nextInput = await view.nextInput;
 
         assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-        assert.strictEqual(nextInput.props.selectedContext?.getItem(), node);
+        assert.isTrue(nextInput.props.isContextSelected);
+        assert.strictEqual(nextInput.props.context?.getItem(), node);
+      });
+    });
+
+    describe('switching panel states', () => {
+      beforeEach(async () => {
+        await enableAllFeatureAndSetting();
+      });
+
+      it('removes context correctly after navigating a panel', async () => {
+        updateHostConfig({
+          devToolsAiAssistanceContextSelectionAgent: {
+            enabled: true,
+          },
+        });
+        const {panel, view} = await createAiAssistancePanel({aidaClient: mockAidaClient([[{explanation: 'test'}]])});
+
+        void panel.handleAction('freestyler.elements-floating-button');
+        await view.nextInput;
+
+        viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'elements');
+
+        assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+        view.input.props.onTextSubmit('test');
+
+        let nextInput = await view.nextInput;
+        assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+
+        viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'console');
+        UI.ViewManager.ViewManager.instance().dispatchEventToListeners(
+            UI.ViewManager.Events.VIEW_VISIBILITY_CHANGED,
+            {location: 'panel', revealedViewId: 'console', hiddenViewId: undefined},
+        );
+
+        nextInput = await view.nextInput;
+        assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+        assert.isFalse(nextInput.props.isContextSelected);
+        assert.isNull(nextInput.props.context);
+      });
+
+      it('does not remove context after navigating a panel with a chat', async () => {
+        updateHostConfig({
+          devToolsAiAssistanceContextSelectionAgent: {
+            enabled: true,
+          },
+        });
+        const {panel, view} = await createAiAssistancePanel({aidaClient: mockAidaClient([[{explanation: 'test'}]])});
+
+        const node = sinon.createStubInstance(SDK.DOMModel.DOMNode, {
+          nodeType: Node.ELEMENT_NODE,
+        });
+        UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, node);
+        viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'elements');
+
+        void panel.handleAction('freestyler.elements-floating-button');
+        await view.nextInput;
+
+        assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+        view.input.props.onTextSubmit('test');
+
+        let nextInput = await view.nextInput;
+        assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+
+        viewManagerIsViewVisibleStub.callsFake(viewName => viewName === 'console');
+        UI.ViewManager.ViewManager.instance().dispatchEventToListeners(
+            UI.ViewManager.Events.VIEW_VISIBILITY_CHANGED,
+            {location: 'panel', revealedViewId: 'console', hiddenViewId: undefined},
+        );
+
+        nextInput = await view.nextInput;
+        assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
+        assert.isTrue(nextInput.props.isContextSelected);
+        assert.strictEqual(nextInput.props.context?.getItem(), node);
       });
     });
   });
@@ -1902,11 +2085,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
 
     it('should announce the context title from the agent as status', async () => {
       const stubbedResponses: AsyncGenerator<AiAssistanceModel.AiAgent.ResponseData> = (async function*() {
-        yield {
-          type: AiAssistanceModel.AiAgent.ResponseType.CONTEXT,
-          title: 'context-title',
-          details: [{title: 'mock', text: 'mock'}]
-        };
+        yield {type: AiAssistanceModel.AiAgent.ResponseType.CONTEXT, details: [{title: 'mock', text: 'mock'}]};
       })();
       sinon.stub(AiAssistanceModel.StylingAgent.StylingAgent.prototype, 'run').returns(stubbedResponses);
       const {panel, view} = await createAiAssistancePanel();
@@ -1919,7 +2098,7 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
 
       assert.isTrue(
-          liveAnnouncerStatusStub.calledWith('context-title'),
+          liveAnnouncerStatusStub.calledWith('Analyzing data'),
           'Expected live announcer status to be called with the context title');
     });
 
@@ -1980,89 +2159,9 @@ describeWithMockConnection('AI Assistance Panel', () => {
     });
   });
 
-  describe('external requests', () => {
-    it('can switch contexts', async () => {
-      Common.Settings.moduleSetting('ai-assistance-enabled').set(true);
-      updateHostConfig({
-        devToolsFreestyler: {
-          enabled: true,
-        }
-      });
-      const aidaClient = mockAidaClient([[{explanation: 'test'}], [{explanation: 'test2'}], [{explanation: 'test3'}]]);
-      const conversationHandler = AiAssistanceModel.ConversationHandler.ConversationHandler.instance({
-        aidaClient,
-        aidaAvailability: Host.AidaClient.AidaAccessPreconditions.AVAILABLE,
-      });
-      const {panel, view} = await createAiAssistancePanel({aidaClient});
-
-      await panel.handleAction('drjones.network-floating-button');
-      let nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      nextInput.props.onTextSubmit('User question to DrJones?');
-
-      nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.deepEqual(nextInput.props.messages, [
-        {
-          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
-          text: 'User question to DrJones?',
-          imageInput: undefined,
-        },
-        {
-          parts: [{
-            type: 'answer',
-            text: 'test',
-          }],
-          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
-          rpcId: undefined,
-        },
-      ]);
-
-      const generator = await conversationHandler.handleExternalRequest({
-        prompt: 'Please help me debug this problem',
-        conversationType: AiAssistanceModel.AiHistoryStorage.ConversationType.STYLING
-      });
-      const response = await generator.next();
-      assert.strictEqual(response.value.message, 'test2');
-
-      assert(view.input.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      view.input.props.onTextSubmit('Follow-up question to DrJones?');
-      nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      assert.deepEqual(nextInput.props.messages, [
-        {
-          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
-          text: 'User question to DrJones?',
-          imageInput: undefined,
-        },
-        {
-          parts: [{
-            type: 'answer',
-            text: 'test',
-          }],
-          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
-          rpcId: undefined,
-        },
-        {
-          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.USER,
-          text: 'Follow-up question to DrJones?',
-          imageInput: undefined,
-        },
-        {
-          parts: [{
-            type: 'answer',
-            text: 'test3',
-          }],
-          entity: AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL,
-          rpcId: undefined,
-        },
-      ]);
-    });
-  });
-
   describe('Interleaved Responses', () => {
-    beforeEach(() => {
-      enableAllFeatureAndSetting();
+    beforeEach(async () => {
+      await enableAllFeatureAndSetting();
     });
 
     it('should handle interleaved text and steps correctly', async () => {
@@ -2166,12 +2265,291 @@ describeWithMockConnection('AI Assistance Panel', () => {
       assert.strictEqual((part1 as AiAssistancePanel.ChatMessage.AnswerPart).text, 'Part 1 updated');
     });
   });
+
+  describe('Walkthrough', () => {
+    function assertChatViewState(input: AiAssistancePanel.ViewInput): asserts input is AiAssistancePanel.ViewInput&{
+      state: AiAssistancePanel.ViewState.CHAT_VIEW,
+    }
+    {
+      assert.strictEqual(input.state, AiAssistancePanel.ViewState.CHAT_VIEW);
+    }
+
+    beforeEach(async () => {
+      await enableAllFeatureAndSetting();
+    });
+
+    it('should open walkthrough when onOpenWalkthrough is called', async () => {
+      const {panel, view} = await createAiAssistancePanel({
+        aidaClient: mockAidaClient([[{
+          explanation: 'test',
+          metadata: {
+            rpcGlobalId: 123,
+          },
+        }]]),
+      });
+
+      void panel.handleAction('freestyler.elements-floating-button');
+      let nextInput = await view.nextInput;
+      assertChatViewState(nextInput);
+      nextInput.props.onTextSubmit('test');
+
+      nextInput = await view.nextInput;  // User message
+
+      // Drain updates until loading is done
+      while (nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW && nextInput.props.isLoading) {
+        nextInput = await view.nextInput;
+      }
+
+      assertChatViewState(nextInput);
+      assert.isFalse(nextInput.props.walkthrough.isExpanded);
+      const lastMessage = nextInput.props.messages.at(-1) as AiAssistancePanel.ChatMessage.ModelChatMessage;
+      nextInput.props.walkthrough.onToggle(true, lastMessage);
+
+      nextInput = await view.nextInput;
+      assertChatViewState(nextInput);
+      assert.isTrue(nextInput.props.walkthrough.isExpanded);
+    });
+
+    it('should open walkthrough for the specific message when onOpenWalkthrough is called with a message', async () => {
+      const runStub = sinon.stub(AiAssistanceModel.StylingAgent.StylingAgent.prototype, 'run');
+      runStub.callsFake(async function*(initialQuery) {
+        yield {
+          type: AiAssistanceModel.AiAgent.ResponseType.USER_QUERY,
+          query: initialQuery,
+        };
+        if (initialQuery === 'test 1') {
+          yield {
+            type: AiAssistanceModel.AiAgent.ResponseType.THOUGHT,
+            thought: 'step 1',
+            rpcId: 1,
+          };
+          yield {
+            type: AiAssistanceModel.AiAgent.ResponseType.ANSWER,
+            text: 'answer 1',
+            rpcId: 1,
+            complete: true,
+          };
+        } else if (initialQuery === 'test 2') {
+          yield {
+            type: AiAssistanceModel.AiAgent.ResponseType.THOUGHT,
+            thought: 'step 2',
+            rpcId: 2,
+          };
+          yield {
+            type: AiAssistanceModel.AiAgent.ResponseType.ANSWER,
+            text: 'answer 2',
+            rpcId: 2,
+            complete: true,
+          };
+        }
+      });
+
+      const {panel, view} = await createAiAssistancePanel();
+      void panel.handleAction('freestyler.elements-floating-button');
+
+      // 1. Send first message
+      let nextInput = await view.nextInput;
+      assertChatViewState(nextInput);
+      nextInput.props.onTextSubmit('test 1');
+      nextInput = await view.nextInput;  // User message
+
+      while (nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW && nextInput.props.isLoading) {
+        nextInput = await view.nextInput;
+      }
+
+      // 2. Send second message
+      assertChatViewState(nextInput);
+      nextInput.props.onTextSubmit('test 2');
+      nextInput = await view.nextInput;  // User message
+      while (nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW && nextInput.props.isLoading) {
+        nextInput = await view.nextInput;
+      }
+
+      // 3. Get messages
+      assertChatViewState(nextInput);
+      const modelMessages = nextInput.props.messages.filter(
+          m => m.entity === AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL && m.parts.length > 0);
+      assert.lengthOf(modelMessages, 2);
+      const [msg1, msg2] = modelMessages as AiAssistancePanel.ChatMessage.ModelChatMessage[];
+
+      // 4. Open walkthrough for first message
+      nextInput.props.walkthrough.onOpen(msg1);
+      nextInput = await view.nextInput;
+      assertChatViewState(nextInput);
+      assert.isTrue(nextInput.props.walkthrough.isExpanded);
+      // Verify steps match msg1
+      const msg1Steps = nextInput.props.walkthrough.activeSidebarMessage?.parts
+                            .filter((p): p is AiAssistancePanel.ChatMessage.StepPart => p.type === 'step')
+                            .map(p => p.step) ??
+          [];
+      assert.strictEqual(msg1Steps.at(0)?.thought, 'step 1');
+
+      // 5. Open walkthrough for second message
+      nextInput.props.walkthrough.onOpen(msg2);
+      nextInput = await view.nextInput;
+      assertChatViewState(nextInput);
+      assert.isTrue(nextInput.props.walkthrough.isExpanded);
+      // Verify steps match msg2
+      const msg2Steps = nextInput.props.walkthrough.activeSidebarMessage?.parts
+                            .filter((p): p is AiAssistancePanel.ChatMessage.StepPart => p.type === 'step')
+                            .map(p => p.step) ??
+          [];
+      assert.strictEqual(msg2Steps.at(0)?.thought, 'step 2');
+    });
+
+    it('should automatically swap the walkthrough to the new message if the walkthrough is already expanded in the sidebar',
+       async () => {
+         const runStub = sinon.stub(AiAssistanceModel.StylingAgent.StylingAgent.prototype, 'run');
+         runStub.callsFake(async function*(initialQuery) {
+           yield {
+             type: AiAssistanceModel.AiAgent.ResponseType.USER_QUERY,
+             query: initialQuery,
+           };
+           yield {
+             type: AiAssistanceModel.AiAgent.ResponseType.ANSWER,
+             text: 'answer',
+             complete: true,
+           };
+         });
+
+         const {panel, view} = await createAiAssistancePanel();
+         void panel.handleAction('freestyler.elements-floating-button');
+
+         // 1. Send first message and open walkthrough
+         let nextInput = await view.nextInput;
+         assertChatViewState(nextInput);
+         nextInput.props.onTextSubmit('test 1');
+
+         // Wait for it to finish loading
+         nextInput = await view.nextInput;  // User message
+         while (nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW && nextInput.props.isLoading) {
+           nextInput = await view.nextInput;
+         }
+
+         // Open walkthrough
+         assertChatViewState(nextInput);
+         const msg1 = nextInput.props.messages.at(-1) as AiAssistancePanel.ChatMessage.ModelChatMessage;
+         nextInput.props.walkthrough.onOpen(msg1);
+
+         nextInput = await view.nextInput;
+         assertChatViewState(nextInput);
+         assert.isTrue(nextInput.props.walkthrough.isExpanded);
+
+         // 2. Send second message
+         nextInput.props.onTextSubmit('test 2');
+
+         // The USER_QUERY response should trigger the walkthrough swap
+         nextInput = await view.nextInput;  // User message
+
+         // Verify that after the user message is added, the walkthrough.activeSidebarMessage
+         // has been updated to the second model message.
+         assertChatViewState(nextInput);
+         const modelMessages =
+             nextInput.props.messages.filter(m => m.entity === AiAssistancePanel.ChatMessage.ChatMessageEntity.MODEL);
+         const msg2 = modelMessages.at(-1) as AiAssistancePanel.ChatMessage.ModelChatMessage;
+
+         // Verify the walkthrough is still expanded and the active message is the second message
+         assert.strictEqual(nextInput.props.walkthrough.activeSidebarMessage, msg2);
+         assert.isTrue(nextInput.props.walkthrough.isExpanded);
+       });
+
+    describe('Responsiveness', () => {
+      it('should maintain expanded walkthroughs when resizing from wide to narrow', async () => {
+        const {panel, view} = await createAiAssistancePanel({aidaClient: mockAidaClient([[{explanation: 'test'}]])});
+        void panel.handleAction('freestyler.elements-floating-button');
+
+        // Start in wide mode
+        sinon.stub(panel.contentElement, 'offsetWidth').get(() => 1000);
+        panel.onResize();
+        let nextInput = await view.nextInput;
+        assertChatViewState(nextInput);
+        assert.isFalse(nextInput.props.walkthrough.isInlined);
+
+        nextInput.props.onTextSubmit('test');
+        nextInput = await view.nextInput;  // User message
+        while (nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW && nextInput.props.isLoading) {
+          nextInput = await view.nextInput;
+        }
+
+        assertChatViewState(nextInput);
+        const msg = nextInput.props.messages.at(-1) as AiAssistancePanel.ChatMessage.ModelChatMessage;
+        nextInput.props.walkthrough.onOpen(msg);
+        nextInput = await view.nextInput;
+        assertChatViewState(nextInput);
+        assert.isTrue(nextInput.props.walkthrough.isExpanded);
+        assert.strictEqual(nextInput.props.walkthrough.activeSidebarMessage, msg);
+
+        // Resize to narrow
+        sinon.restore();
+        sinon.stub(panel.contentElement, 'offsetWidth').get(() => 600);
+        panel.onResize();
+        nextInput = await view.nextInput;
+
+        assertChatViewState(nextInput);
+        assert.isTrue(nextInput.props.walkthrough.isInlined);
+        assert.deepEqual(nextInput.props.walkthrough.inlineExpandedMessages, [msg]);
+      });
+
+      it('should expand the last opened walkthrough when resizing from narrow to wide', async () => {
+        const {panel, view} = await createAiAssistancePanel(
+            {aidaClient: mockAidaClient([[{explanation: 'test 1'}], [{explanation: 'test 2'}]])});
+
+        // Start in narrow mode
+        sinon.stub(panel.contentElement, 'offsetWidth').get(() => 600);
+        panel.onResize();
+        void panel.handleAction('freestyler.elements-floating-button');
+        let nextInput = await view.nextInput;
+        assertChatViewState(nextInput);
+        assert.isTrue(nextInput.props.walkthrough.isInlined);
+
+        // Send 2 messages
+        nextInput.props.onTextSubmit('test 1');
+        nextInput = await view.nextInput;  // User 1
+        while (nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW && nextInput.props.isLoading) {
+          nextInput = await view.nextInput;
+        }
+        assertChatViewState(nextInput);
+        const msg1 = nextInput.props.messages.at(-1) as AiAssistancePanel.ChatMessage.ModelChatMessage;
+
+        nextInput.props.onTextSubmit('test 2');
+        nextInput = await view.nextInput;  // User 2
+        while (nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW && nextInput.props.isLoading) {
+          nextInput = await view.nextInput;
+        }
+        assertChatViewState(nextInput);
+        const msg2 = nextInput.props.messages.at(-1) as AiAssistancePanel.ChatMessage.ModelChatMessage;
+
+        // Expand both
+        nextInput.props.walkthrough.onToggle(true, msg1);
+        nextInput = await view.nextInput;
+        assertChatViewState(nextInput);
+        nextInput.props.walkthrough.onToggle(true, msg2);
+        nextInput = await view.nextInput;
+
+        assertChatViewState(nextInput);
+        assert.isTrue(nextInput.props.walkthrough.isInlined);
+        assert.deepEqual(nextInput.props.walkthrough.inlineExpandedMessages, [msg1, msg2]);
+
+        // Resize to wide
+        sinon.restore();
+        sinon.stub(panel.contentElement, 'offsetWidth').get(() => 1000);
+        panel.onResize();
+        nextInput = await view.nextInput;
+
+        assertChatViewState(nextInput);
+        assert.isFalse(nextInput.props.walkthrough.isInlined);
+        assert.isTrue(nextInput.props.walkthrough.isExpanded);
+        assert.strictEqual(nextInput.props.walkthrough.activeSidebarMessage, msg2);
+      });
+    });
+  });
 });
 
 describeWithEnvironment('AiAssistancePanel.ActionDelegate', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     UI.ViewManager.ViewManager.instance({forceNew: true});
     UI.InspectorView.InspectorView.instance({forceNew: true});
+    await createNetworkPanelForMockConnection();
   });
 
   it('should set drawer size to 25% of total size if it\'s less than that size', async () => {
@@ -2248,35 +2626,6 @@ describeWithEnvironment('AiAssistancePanel.ActionDelegate', () => {
 
       const [fileName] = fileManager.save.getCall(0).args;
       assert.strictEqual(fileName, 'devtools_test_question.md');
-    });
-
-    it('should truncate a long file name when exporting', async () => {
-      const fileManager = stubFileManager();
-      const {panel, view} = await createAiAssistancePanel({
-        aidaClient: mockAidaClient([[{explanation: 'test'}]]),
-      });
-      void panel.handleAction('freestyler.elements-floating-button');
-      const longTitle = 'this is a very long title that should be truncated when exporting the conversation to a file';
-      let nextInput = await view.nextInput;
-      assert(nextInput.state === AiAssistancePanel.ViewState.CHAT_VIEW);
-      nextInput.props.onTextSubmit(longTitle);
-
-      nextInput = await view.nextInput;
-      view.input.onExportConversationClick();
-      await Promise.resolve();
-
-      sinon.assert.calledOnce(fileManager.save);
-      sinon.assert.calledOnce(fileManager.close);
-
-      const [fileName] = fileManager.save.getCall(0).args;
-      const expectedSnakeCase =
-          'this_is_a_very_long_title_that_should_be_truncated_when_exporting_the_conversation_to_a_file';
-      const prefix = 'devtools_';
-      const suffix = '.md';
-      const maxTitleLength = 64 - prefix.length - suffix.length;
-      const expectedFileName = `${prefix}${expectedSnakeCase.substring(0, maxTitleLength)}${suffix}`;
-      assert.strictEqual(fileName, expectedFileName);
-      assert.isAtMost(fileName.length, 64);
     });
   });
 });

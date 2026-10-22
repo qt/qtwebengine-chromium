@@ -266,9 +266,7 @@ class GranularityAdjuster final {
 
         // If we're selecting within a table cell, constrain the selection
         // to stay within that cell to avoid including unwanted table structure
-        if (RuntimeEnabledFeatures::
-                RestrictTableCellSelectionToBoundaryEnabled() &&
-            EnclosingTableCell(visible_paragraph_end.DeepEquivalent())) {
+        if (EnclosingTableCell(visible_paragraph_end.DeepEquivalent())) {
           return visible_paragraph_end.DeepEquivalent();
         }
 
@@ -801,6 +799,13 @@ class SelectionTypeAdjuster final {
     }
     if (IsEditablePosition(forward_start_position) &&
         CanonicalPositionOf(backward_end_position).IsNull()) {
+      backward_end_position = range.EndPosition();
+    }
+    // After the canonicalization above, the start and end positions may become
+    // inverted when the selection crosses editing boundaries in shadow DOM with
+    // slotted content. Fall back to the original range positions in this case.
+    if (forward_start_position > backward_end_position) {
+      forward_start_position = range.StartPosition();
       backward_end_position = range.EndPosition();
     }
     const EphemeralRangeTemplate<Strategy> minimal_range(forward_start_position,

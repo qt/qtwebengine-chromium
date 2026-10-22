@@ -34,10 +34,6 @@ import {getHtml} from './most_visited.html.js';
 import type {MostVisitedInfo, MostVisitedPageCallbackRouter, MostVisitedPageHandlerRemote, MostVisitedTheme, MostVisitedTile} from './most_visited.mojom-webui.js';
 import {MostVisitedWindowProxy} from './window_proxy.js';
 
-export const MAX_TILES_DEFAULT = 8;
-export const MAX_TILES_FOR_CUSTOM_LINKS = 10;
-const MAX_TILES_FOR_ENTERPRISE_SHORTCUTS = 10;
-
 function resetTilePosition(tile: HTMLElement) {
   tile.style.position = '';
   tile.style.left = '';
@@ -162,14 +158,15 @@ export class MostVisitedElement extends MostVisitedElementBase {
       maxTiles_: {type: Number, state: true},
       maxVisibleTiles_: {type: Number, state: true},
       showAdd_: {type: Boolean, state: true},
-      showToastButtons_: {type: Boolean, state: true},
       maxVisibleColumnCount_: {type: Number, state: true},
       tiles_: {type: Array, state: true},
-      toastContent_: {type: String, state: true},
       toastSource_: {type: Number, state: true},
 
       expandableTilesEnabled: {type: Boolean, reflect: true},
-      maxTilesBeforeShowMore: {type: Number, reflect: true},
+      maxTilesInCollapsedState: {type: Number, reflect: true},
+      maxShortcutsInExpandedState: {type: Number, reflect: true},
+      maxMostVisitedTilesInExpandedState: {type: Number, reflect: true},
+      maxEnterpriseShortcuts: {type: Number, reflect: true},
       showAll_: {type: Boolean, state: true},
       showShowMore_: {type: Boolean, state: true},
       showShowLess_: {type: Boolean, state: true},
@@ -185,7 +182,10 @@ export class MostVisitedElement extends MostVisitedElementBase {
   accessor reflowOnOverflow: boolean = false;
   accessor singleRow: boolean = false;
   accessor expandableTilesEnabled: boolean = false;
-  accessor maxTilesBeforeShowMore: number = 0;
+  accessor maxTilesInCollapsedState: number = 6;
+  accessor maxShortcutsInExpandedState: number = 10;
+  accessor maxMostVisitedTilesInExpandedState: number = 8;
+  accessor maxEnterpriseShortcuts: number = 10;
   private accessor showAll_: boolean = false;
   protected accessor showShowMore_: boolean = false;
   protected accessor showShowLess_: boolean = false;
@@ -317,11 +317,10 @@ export class MostVisitedElement extends MostVisitedElementBase {
       this.visible_ = this.info_.visible;
       this.customLinksEnabled_ = this.info_.customLinksEnabled;
       this.enterpriseShortcutsEnabled_ = this.info_.enterpriseShortcutsEnabled;
-      this.maxTiles_ = (this.customLinksEnabled_ ? MAX_TILES_FOR_CUSTOM_LINKS :
-                                                   MAX_TILES_DEFAULT) +
-          (this.enterpriseShortcutsEnabled_ ?
-               MAX_TILES_FOR_ENTERPRISE_SHORTCUTS :
-               0);
+      this.maxTiles_ =
+          (this.customLinksEnabled_ ? this.maxShortcutsInExpandedState :
+                                      this.maxMostVisitedTilesInExpandedState) +
+          (this.enterpriseShortcutsEnabled_ ? this.maxEnterpriseShortcuts : 0);
       this.tiles_ = this.info_.tiles.slice(0, this.maxTiles_);
     }
 
@@ -399,7 +398,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
     const canShowShowMore = this.expandableTilesEnabled && this.showShowMore_;
     const canShowShowLess = this.expandableTilesEnabled && this.showShowLess_;
     const visibleShortcutCount =
-        canShowShowMore ? this.maxTilesBeforeShowMore + 1 : shortcutCount;
+        canShowShowMore ? this.maxTilesInCollapsedState : shortcutCount;
     const totalTileCount = visibleShortcutCount + (canShowAdd ? 1 : 0) +
         (canShowShowMore || canShowShowLess ? 1 : 0);
     const columnCount = totalTileCount <= this.maxVisibleColumnCount_ ?
@@ -418,7 +417,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
     if (this.reflowOnOverflow && this.tiles_) {
       const visibleShortcutCount =
           this.expandableTilesEnabled && this.showShowMore_ ?
-          this.maxTilesBeforeShowMore + 1 :
+          this.maxTilesInCollapsedState :
           this.tiles_.length;
       return Math.ceil(
           (visibleShortcutCount + (this.showAdd_ ? 1 : 0) +
@@ -436,7 +435,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
 
   private computeMaxVisibleTiles_(): number {
     if (this.expandableTilesEnabled && this.showShowMore_) {
-      return this.maxTilesBeforeShowMore + 1;
+      return this.maxTilesInCollapsedState;
     }
 
     if (this.reflowOnOverflow) {
@@ -461,24 +460,24 @@ export class MostVisitedElement extends MostVisitedElementBase {
     return this.tiles_.length < (this.expandableTilesEnabled && this.showAll_ ?
                                      this.maxTiles_ :
                                      this.maxVisibleTiles_) &&
-        customLinkTilesCount < MAX_TILES_FOR_CUSTOM_LINKS;
+        customLinkTilesCount < this.maxShortcutsInExpandedState;
   }
 
   private computeShowShowMore_(): boolean {
     return this.expandableTilesEnabled && !this.showAll_ && this.tiles_ &&
-        this.tiles_.length > this.maxTilesBeforeShowMore;
+        this.tiles_.length >= this.maxTilesInCollapsedState;
   }
 
   private computeShowShowLess_(): boolean {
     return this.expandableTilesEnabled && this.showAll_ && this.tiles_ &&
-        this.tiles_.length > this.maxTilesBeforeShowMore;
+        this.tiles_.length >= this.maxTilesInCollapsedState;
   }
 
   protected async onShowMoreClick_() {
     this.showAll_ = true;
     this.pageHandler_.setMostVisitedExpandedState(this.showAll_);
     await this.updateComplete;
-    this.tileFocus_(this.maxTilesBeforeShowMore + 1);
+    this.tileFocus_(this.maxTilesInCollapsedState);
   }
 
   protected async onShowLessClick_() {
@@ -771,7 +770,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
     updateCount();
   }
 
-  protected onAdd_() {
+  protected onAddClick_() {
     this.dialogIsReadonly_ = false;
     this.dialogSource_ = TileSource.CUSTOM_LINKS;
     this.dialogTitle_ = loadTimeData.getString('addLinkTitle');
@@ -782,7 +781,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
     this.$.dialog.showModal();
   }
 
-  protected onAddShortcutKeyDown_(e: KeyboardEvent) {
+  protected onAddShortcutKeydown_(e: KeyboardEvent) {
     if (hasKeyModifiers(e)) {
       return;
     }
@@ -803,18 +802,18 @@ export class MostVisitedElement extends MostVisitedElementBase {
     }
   }
 
-  protected onShowMoreKeyDown_(e: KeyboardEvent) {
+  protected onShowMoreKeydown_(e: KeyboardEvent) {
     if (hasKeyModifiers(e)) {
       return;
     }
 
     const backKey = this.isRtl_ ? 'ArrowRight' : 'ArrowLeft';
     if (e.key === backKey || e.key === 'ArrowUp') {
-      this.tileFocus_(this.maxTilesBeforeShowMore);
+      this.tileFocus_(this.maxTilesInCollapsedState - 1);
     }
   }
 
-  protected onShowLessKeyDown_(e: KeyboardEvent) {
+  protected onShowLessKeydown_(e: KeyboardEvent) {
     if (hasKeyModifiers(e)) {
       return;
     }
@@ -829,7 +828,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
     }
   }
 
-  protected onDialogCancel_() {
+  protected onDialogCancelClick_() {
     this.actionMenuTargetIndex_ = -1;
     this.$.dialog.cancel();
   }
@@ -850,12 +849,12 @@ export class MostVisitedElement extends MostVisitedElementBase {
     }
   }
 
-  protected onDialogTileUrlChange_(e: Event) {
+  protected onDialogTileUrlValueChanged_(e: Event) {
     this.dialogTileUrl_ = (e.target as HTMLInputElement).value;
     this.dialogTileUrlInvalid_ = false;
   }
 
-  protected onDialogTileNameChange_(e: Event) {
+  protected onDialogTileNameValueChanged_(e: Event) {
     this.dialogTileTitle_ = (e.target as HTMLInputElement).value;
   }
 
@@ -872,7 +871,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
     }
   }
 
-  protected onDragStart_(e: DragEvent) {
+  protected onDragstart_(e: DragEvent) {
     const item = this.tiles_[this.getCurrentTargetIndex_(e)]!;
     assert(item);
     if (!this.customLinksEnabled_ &&
@@ -920,7 +919,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
     }, {once: true});
   }
 
-  protected onViewOrEdit_() {
+  protected onViewOrEditClick_() {
     this.$.actionMenu.close();
     const tile = this.tiles_[this.actionMenuTargetIndex_]!;
     const isReadonly = !tile.allowUserEdit;
@@ -942,13 +941,13 @@ export class MostVisitedElement extends MostVisitedElementBase {
     this.pageHandler_.restoreMostVisitedDefaults(this.toastSource_);
   }
 
-  protected async onRemove_() {
+  protected async onRemoveClick_() {
     this.$.actionMenu.close();
     await this.tileRemove_(this.actionMenuTargetIndex_);
     this.actionMenuTargetIndex_ = -1;
   }
 
-  protected async onSave_() {
+  protected async onSaveClick_() {
     if (this.dialogIsReadonly_) {
       this.$.dialog.close();
       return;
@@ -1013,7 +1012,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
         item, index, e.button || 0, e.altKey, e.ctrlKey, e.metaKey, e.shiftKey);
   }
 
-  protected onTileKeyDown_(e: KeyboardEvent) {
+  protected onTileKeydown_(e: KeyboardEvent) {
     if (hasKeyModifiers(e)) {
       return;
     }
@@ -1032,14 +1031,14 @@ export class MostVisitedElement extends MostVisitedElementBase {
     const advanceKey = this.isRtl_ ? 'ArrowLeft' : 'ArrowRight';
     const delta = (e.key === advanceKey || e.key === 'ArrowDown') ? 1 : -1;
     const newIndex = Math.max(0, index + delta);
-    if (this.showShowMore_ && newIndex === this.maxTilesBeforeShowMore + 1) {
+    if (this.showShowMore_ && newIndex === this.maxTilesInCollapsedState) {
       this.$.showMore.focus();
     } else {
       this.tileFocus_(newIndex);
     }
   }
 
-  protected onTileHover_(e: Event) {
+  protected onTileMouseenter_(e: Event) {
     if (e.defaultPrevented) {
       // Ignore previously handled events.
       return;
@@ -1065,7 +1064,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
     }
   }
 
-  protected onTileMouseDown_(e: Event) {
+  protected onTileMousedown_(e: Event) {
     if (e.defaultPrevented) {
       // Ignore previously handled events.
       return;
@@ -1083,7 +1082,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
     }
   }
 
-  protected onTileExit_(e: Event) {
+  protected onTileMouseleave_(e: Event) {
     if (e.defaultPrevented) {
       // Ignore previously handled events.
       return;
@@ -1111,7 +1110,7 @@ export class MostVisitedElement extends MostVisitedElementBase {
     return true;
   }
 
-  protected onTouchStart_(e: TouchEvent) {
+  protected onTouchstart_(e: TouchEvent) {
     if (this.reordering_) {
       return;
     }

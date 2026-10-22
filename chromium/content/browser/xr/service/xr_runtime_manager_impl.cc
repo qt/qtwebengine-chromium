@@ -12,6 +12,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/no_destructor.h"
 #include "base/observer_list.h"
@@ -20,6 +21,7 @@
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/typed_macros.h"
 #include "build/build_config.h"
+#include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/xr/service/xr_frame_sink_client_impl.h"
 #include "content/browser/xr/webxr_internals/mojom/webxr_internals.mojom.h"
 #include "content/browser/xr/webxr_internals/webxr_internals_handler_impl.h"
@@ -27,9 +29,10 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/device_service.h"
-#include "content/public/browser/gpu_data_manager.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/gpu_utils.h"
 #include "content/public/browser/xr_runtime_manager.h"
+#include "content/public/common/child_process_id_util.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "device/vr/buildflags/buildflags.h"
@@ -110,16 +113,16 @@ std::optional<device::mojom::XRDeviceId> GetForcedRuntime(
 }
 
 std::unique_ptr<device::XrFrameSinkClient> FrameSinkClientFactory(
-    int32_t render_process_id,
-    int32_t render_frame_id) {
+    network::RendererProcessId render_process_id,
+    int render_frame_id) {
   // The XrFrameSinkClientImpl needs to be constructed (and destructed) on the
   // main thread. Currently, the only runtime that uses this is ArCore, which
   // runs on the browser main thread (which per comments in
   // content/public/browser/browser_thread.h is also the UI thread).
   DCHECK(GetUIThreadTaskRunner({})->BelongsToCurrentThread())
       << "Must construct XrFrameSinkClient from UI thread";
-  return std::make_unique<XrFrameSinkClientImpl>(render_process_id,
-                                                 render_frame_id);
+  return std::make_unique<XrFrameSinkClientImpl>(GlobalRenderFrameHostId(
+      content::ToChildProcessId(render_process_id), render_frame_id));
 }
 
 }  // namespace
@@ -321,10 +324,9 @@ BrowserXRRuntimeImpl* XRRuntimeManagerImpl::GetImmersiveArRuntime() {
 #if BUILDFLAG(ENABLE_OPENXR)
   // If OpenXR is available and the runtime supports an AR blend mode, prefer
   // it over ARCore to unify VR/AR rendering paths.
-  if (device::features::IsOpenXrArEnabled()) {
-    auto* openxr = GetRuntime(device::mojom::XRDeviceId::OPENXR_DEVICE_ID);
-    if (openxr && openxr->SupportsArBlendMode())
-      return openxr;
+  auto* openxr = GetRuntime(device::mojom::XRDeviceId::OPENXR_DEVICE_ID);
+  if (openxr && openxr->SupportsArBlendMode()) {
+    return openxr;
   }
 #endif
 
@@ -423,12 +425,9 @@ void XRRuntimeManagerImpl::MakeXrCompatible() {
     // runtime doesn't specify a LUID.
     DCHECK(luid && (luid->HighPart != 0 || luid->LowPart != 0));
 
-    // Add the XR compatible adapter LUID to the browser command line.
-    // GpuProcessHost::LaunchGpuProcess passes this to the GPU process.
-    std::string luid_string = base::NumberToString(luid->HighPart) + "," +
-                              base::NumberToString(luid->LowPart);
-    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-        switches::kUseAdapterLuid, luid_string);
+    // Set the XR compatible adapter LUID in GpuDataManager.
+    // GpuDataManagerImpl::AppendGpuCommandLine passes this to the GPU process.
+    content::GpuDataManagerImpl::GetInstance()->SetUseAdapterLuid(*luid);
 
     // Store the current GPU so we can revert back once XR is no longer needed.
     // If default_gpu_ is nonzero, we have already previously stored the
@@ -513,12 +512,17 @@ XRRuntimeManagerImpl::~XRRuntimeManagerImpl() {
   CHECK_EQ(g_xr_runtime_manager, this);
   g_xr_runtime_manager = nullptr;
 
-  // If a GPU adapter LUID was added to the command line to pass to the GPU
-  // process, remove the switch so subsequent GPU processes initialize on the
-  // default GPU.
+  // If a GPU adapter LUID was specified for the GPU process, clear it so
+  // subsequent GPU processes initialize on the default GPU.
   if (xr_compatible_restarted_gpu_) {
-    base::CommandLine::ForCurrentProcess()->RemoveSwitch(
-        switches::kUseAdapterLuid);
+#if BUILDFLAG(IS_WIN)
+    content::GpuDataManagerImpl::GetInstance()->ClearUseAdapterLuid();
+#endif
+
+    // Ensure this object is no longer registered as a GpuDataManager observer,
+    // which may happen if MakeXrCompatible is called and the page is navigated
+    // before the GPU process restarts.
+    content::GpuDataManager::GetInstance()->RemoveObserver(this);
 
 #if BUILDFLAG(IS_WIN)
     // If we changed the GPU, revert it back to the default GPU. This is

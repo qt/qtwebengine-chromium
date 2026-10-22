@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 /* eslint-disable @devtools/no-imperative-dom-api */
+/* eslint-disable @devtools/no-lit-render-outside-of-view */
 
 /*
  * Copyright (C) 2013 Google Inc. All rights reserved.
@@ -34,6 +35,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+import '../../ui/kit/kit.js';
+
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -50,13 +53,13 @@ import * as CodeHighlighter from '../../ui/components/code_highlighter/code_high
 // eslint-disable-next-line @devtools/es-modules-import
 import codeHighlighterStyles from '../../ui/components/code_highlighter/codeHighlighter.css.js';
 import * as uiI18n from '../../ui/i18n/i18n.js';
-import {Link} from '../../ui/kit/kit.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 // eslint-disable-next-line @devtools/es-modules-import
 import imagePreviewStyles from '../../ui/legacy/components/utils/imagePreview.css.js';
 import * as LegacyComponents from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
+import {html, render} from '../../ui/lit/lit.js';
 import * as PanelsCommon from '../common/common.js';
 
 import {getDurationString} from './AppenderUtils.js';
@@ -64,7 +67,6 @@ import * as TimelineComponents from './components/components.js';
 import * as Extensions from './extensions/extensions.js';
 import {ModificationsManager} from './ModificationsManager.js';
 import {targetForEvent} from './TargetForEvent.js';
-import * as ThirdPartyTreeView from './ThirdPartyTreeView.js';
 import {TimelinePanel} from './TimelinePanel.js';
 import {selectionFromEvent} from './TimelineSelection.js';
 import * as Utils from './utils/utils.js';
@@ -461,10 +463,6 @@ const UIStrings = {
    */
   priority: 'Priority',
   /**
-   * @description Label for third party table.
-   */
-  thirdPartyTable: '1st / 3rd party table',
-  /**
    * @description Label for the a source URL.
    */
   source: 'Source',
@@ -787,7 +785,7 @@ export class TimelineUIUtils {
 
   static linkifyTopCallFrame(
       event: Trace.Types.Events.Event, target: SDK.Target.Target|null, linkifier: LegacyComponents.Linkifier.Linkifier,
-      isFreshOrEnhanced = false): Element|null {
+      isFreshOrEnhanced = false, maxLength?: number): Element|null {
     let frame = Trace.Helpers.Trace.getZeroIndexedStackTraceInEventPayload(event)?.[0];
     if (Trace.Types.Events.isProfileCall(event)) {
       frame = event.callFrame;
@@ -802,6 +800,7 @@ export class TimelineUIUtils {
       showColumnNumber: true,
       columnNumber: frame.columnNumber,
       lineNumber: frame.lineNumber,
+      maxLength,
     };
     if (isFreshOrEnhanced) {
       return linkifier.maybeLinkifyConsoleCallFrame(target, frame, {showColumnNumber: true, inlineFrameIndex: 0});
@@ -833,9 +832,10 @@ export class TimelineUIUtils {
         break;
     }
 
-    const html = UI.Fragment.html`<div>${
-        Link.create(link, i18nString(UIStrings.learnMore), undefined, 'learn-more')} about ${name}.</div>`;
-    return html as HTMLElement;
+    const div = document.createElement('div');
+
+    render(html`<devtools-link href=${link}>${i18nString(UIStrings.learnMore)}</devtools-link> about ${name}.`, div);
+    return div;
   }
 
   static buildConsumeCacheDetails(
@@ -930,7 +930,6 @@ export class TimelineUIUtils {
         if (url) {
           previewElement = await LegacyComponents.ImagePreview.ImagePreview.build(url, false, {
             imageAltText: LegacyComponents.ImagePreview.ImagePreview.defaultAltTextForImageURL(url),
-            precomputedFeatures: undefined,
             align: LegacyComponents.ImagePreview.Align.START,
           });
         } else if (Trace.Types.Events.isPaint(event)) {
@@ -1501,7 +1500,8 @@ export class TimelineUIUtils {
     const relatedNodes = relatedNodesMap?.values() || [];
     for (const relatedNode of relatedNodes) {
       if (relatedNode) {
-        const nodeSpan = PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(relatedNode);
+        const nodeSpan = document.createElement('span');
+        render(PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(relatedNode), nodeSpan);
         contentHelper.appendElementRow(relatedNodeLabel || i18nString(UIStrings.relatedNode), nodeSpan);
       }
     }
@@ -1540,124 +1540,6 @@ export class TimelineUIUtils {
     }
 
     return contentHelper.fragment;
-  }
-
-  static statsForTimeRange(
-      events: Trace.Types.Events.Event[], startTime: Trace.Types.Timing.Milli,
-      endTime: Trace.Types.Timing.Milli): TimeRangeCategoryStats {
-    if (!events.length) {
-      return {idle: endTime - startTime};
-    }
-
-    buildRangeStatsCacheIfNeeded(events);
-    const aggregatedStats = subtractStats(aggregatedStatsAtTime(endTime), aggregatedStatsAtTime(startTime));
-    const aggregatedTotal = Object.values(aggregatedStats).reduce((a, b) => a + b, 0);
-    aggregatedStats['idle'] = Math.max(0, endTime - startTime - aggregatedTotal);
-    return aggregatedStats;
-
-    function aggregatedStatsAtTime(time: number): TimeRangeCategoryStats {
-      const stats: TimeRangeCategoryStats = {};
-      // @ts-expect-error TODO(crbug.com/1011811): Remove symbol usage.
-      const cache = events[categoryBreakdownCacheSymbol];
-      for (const category in cache) {
-        const categoryCache = cache[category];
-        const index =
-            Platform.ArrayUtilities.upperBound(categoryCache.time, time, Platform.ArrayUtilities.DEFAULT_COMPARATOR);
-        let value;
-        if (index === 0) {
-          value = 0;
-        } else if (index === categoryCache.time.length) {
-          value = categoryCache.value[categoryCache.value.length - 1];
-        } else {
-          const t0 = categoryCache.time[index - 1];
-          const t1 = categoryCache.time[index];
-          const v0 = categoryCache.value[index - 1];
-          const v1 = categoryCache.value[index];
-          value = v0 + (v1 - v0) * (time - t0) / (t1 - t0);
-        }
-        stats[category] = value;
-      }
-      return stats;
-    }
-
-    function subtractStats(a: TimeRangeCategoryStats, b: TimeRangeCategoryStats): TimeRangeCategoryStats {
-      const result = Object.assign({}, a);
-      for (const key in b) {
-        result[key] -= b[key];
-      }
-      return result;
-    }
-
-    function buildRangeStatsCacheIfNeeded(events: Trace.Types.Events.Event[]): void {
-      // @ts-expect-error TODO(crbug.com/1011811): Remove symbol usage.
-      if (events[categoryBreakdownCacheSymbol]) {
-        return;
-      }
-
-      // aggregatedStats is a map by categories. For each category there's an array
-      // containing sorted time points which records accumulated value of the category.
-      const aggregatedStats: Record<string, {
-        time: number[],
-        value: number[],
-      }> = {};
-      const categoryStack: string[] = [];
-      let lastTime = 0;
-      Trace.Helpers.Trace.forEachEvent(events, {
-        onStartEvent,
-        onEndEvent,
-      });
-
-      function updateCategory(category: string, time: number): void {
-        let statsArrays: {
-          time: number[],
-          value: number[],
-        } = aggregatedStats[category];
-        if (!statsArrays) {
-          statsArrays = {time: [], value: []};
-          aggregatedStats[category] = statsArrays;
-        }
-        if (statsArrays.time.length && statsArrays.time[statsArrays.time.length - 1] === time || lastTime > time) {
-          return;
-        }
-        const lastValue = statsArrays.value.length > 0 ? statsArrays.value[statsArrays.value.length - 1] : 0;
-        statsArrays.value.push(lastValue + time - lastTime);
-        statsArrays.time.push(time);
-      }
-
-      function categoryChange(from: string|null, to: string|null, time: number): void {
-        if (from) {
-          updateCategory(from, time);
-        }
-        lastTime = time;
-        if (to) {
-          updateCategory(to, time);
-        }
-      }
-
-      function onStartEvent(e: Trace.Types.Events.Event): void {
-        const {startTime} = Trace.Helpers.Timing.eventTimingsMilliSeconds(e);
-        const category = Trace.Styles.getEventStyle(e.name as Trace.Types.Events.Name)?.category.name ||
-            Trace.Styles.getCategoryStyles().other.name;
-        const parentCategory = categoryStack.length ? categoryStack[categoryStack.length - 1] : null;
-        if (category !== parentCategory) {
-          categoryChange(parentCategory || null, category, startTime);
-        }
-        categoryStack.push(category);
-      }
-
-      function onEndEvent(e: Trace.Types.Events.Event): void {
-        const {endTime} = Trace.Helpers.Timing.eventTimingsMilliSeconds(e);
-        const category = categoryStack.pop();
-        const parentCategory = categoryStack.length ? categoryStack[categoryStack.length - 1] : null;
-        if (category !== parentCategory) {
-          categoryChange(category || null, parentCategory || null, endTime || 0);
-        }
-      }
-
-      const obj = (events as Object);
-      // @ts-expect-error TODO(crbug.com/1011811): Remove symbol usage.
-      obj[categoryBreakdownCacheSymbol] = aggregatedStats;
-    }
   }
 
   private static renderEventJson(event: Trace.Types.Events.Event, contentHelper: TimelineDetailsContentHelper): void {
@@ -1852,7 +1734,7 @@ export class TimelineUIUtils {
           null;
       if (node) {
         const nodeSpan = document.createElement('span');
-        nodeSpan.appendChild(PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(node));
+        render(PanelsCommon.DOMLinkifier.Linkifier.instance().linkify(node), nodeSpan);
         return nodeSpan;
       }
       if (invalidation.args.data.nodeName) {
@@ -2106,55 +1988,6 @@ export class TimelineUIUtils {
 
     return element;
   }
-  // Generates a Summary component given a aggregated stats for categories.
-  static generateSummaryDetails(
-      aggregatedStats: Record<string, number>, rangeStart: number, rangeEnd: number,
-      selectedEvents: Trace.Types.Events.Event[],
-      thirdPartyTree: ThirdPartyTreeView.ThirdPartyTreeViewWidget): Element {
-    const element = document.createElement('div');
-    element.classList.add('timeline-details-range-summary', 'hbox');
-
-    // First, the category bar chart.
-    let total = 0;
-    let categories: TimelineComponents.TimelineSummary.CategoryData[] = [];
-    // Calculate total of all categories.
-    for (const categoryName in aggregatedStats) {
-      total += aggregatedStats[categoryName];
-    }
-
-    // Get stats values from categories.
-    for (const categoryName in Trace.Styles.getCategoryStyles()) {
-      const category = Trace.Styles.getCategoryStyles()[categoryName as keyof Trace.Styles.CategoryPalette];
-      if (category.name === Trace.Styles.EventCategory.IDLE) {
-        continue;
-      }
-      const value = aggregatedStats[category.name];
-      if (!value) {
-        continue;
-      }
-      const title = category.title;
-      const color = category.getCSSValue();
-      categories.push({value, color, title});
-    }
-
-    // Keeps the most useful categories on top.
-    categories = categories.sort((a, b) => b.value - a.value);
-    const start = Trace.Types.Timing.Milli(rangeStart);
-    const end = Trace.Types.Timing.Milli(rangeEnd);
-    const categorySummaryTable = new TimelineComponents.TimelineSummary.CategorySummary();
-    categorySummaryTable.rangeStart = start;
-    categorySummaryTable.rangeEnd = end;
-    categorySummaryTable.total = total;
-    categorySummaryTable.categories = categories;
-    element.append(categorySummaryTable.contentElement);
-    // Add the 3p datagrid
-    const treeView = new ThirdPartyTreeView.ThirdPartyTreeElement();
-    treeView.treeView = thirdPartyTree;
-    UI.ARIAUtils.setLabel(treeView, i18nString(UIStrings.thirdPartyTable));
-    element.append(treeView);
-
-    return element;
-  }
 
   static generateDetailsContentForFrame(
       frame: Trace.Types.Events.LegacyTimelineFrame, filmStrip: Trace.Extras.FilmStrip.Data|null,
@@ -2293,8 +2126,17 @@ export class TimelineUIUtils {
 
   static colorForId(id: string): string {
     if (!colorGenerator) {
-      colorGenerator =
-          new Common.Color.Generator({min: 30, max: 330, count: undefined}, {min: 50, max: 80, count: 3}, 85);
+      colorGenerator = new Common.Color.Generator(
+          {
+            min: 30,
+            max: 330,
+          },
+          {
+            min: 50,
+            max: 80,
+            count: 3,
+          },
+          85);
       colorGenerator.setColorForID('', '#f2ecdc');
     }
     return colorGenerator.colorForID(id);
@@ -2498,27 +2340,20 @@ export class TimelineDetailsContentHelper {
    * contains any entries, and discards it if it's empty.
    */
   async createChildStackTraceElement(runtimeStackTrace: Protocol.Runtime.StackTrace): Promise<HTMLElement|null> {
-    if (!this.#linkifier) {
+    // Fallback to the main page/root target. Maybe the main page has a source map we need.
+    // Worst case the stack is identity mapped.
+    const targetManager = SDK.TargetManager.TargetManager.instance();
+    const target = this.target ?? targetManager.primaryPageTarget() ?? targetManager.rootTarget();
+    if (!target) {
       return null;
     }
 
-    let callFrameContents;
-    if (this.target) {
-      const stackTrace = await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
-                             .createStackTraceFromProtocolRuntime(runtimeStackTrace, this.target);
-      callFrameContents = new LegacyComponents.JSPresentationUtils.StackTracePreviewContent(
-          undefined, this.target ?? undefined, this.#linkifier, {tabStops: true, showColumnNumber: true});
-      callFrameContents.stackTrace = stackTrace;
-    } else {
-      // I _think_ this only happens during tests.
-      // See "TimelineFlameChartView > shows the details for a selected main thread event".
-      // For now, just defer to the still-supported legacy runtime stack trace. When
-      // that is removed, we could instead create a stub StackTrace ourselves, even
-      // without a `target`.
-      callFrameContents = new LegacyComponents.JSPresentationUtils.StackTracePreviewContent(
-          undefined, this.target ?? undefined, this.#linkifier,
-          {runtimeStackTrace, tabStops: true, showColumnNumber: true});
-    }
+    const stackTrace =
+        await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().createStackTraceFromProtocolRuntime(
+            runtimeStackTrace, target);
+    const callFrameContents = new LegacyComponents.JSPresentationUtils.StackTracePreviewContent();
+    callFrameContents.options = {tabStops: true, showColumnNumber: true};
+    callFrameContents.stackTrace = stackTrace;
 
     await callFrameContents.updateComplete;
     if (!callFrameContents.hasContent()) {

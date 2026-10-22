@@ -54,10 +54,10 @@ class FakeWebNNGraphImpl final : public WebNNGraphImpl {
  public:
   FakeWebNNGraphImpl(
       mojo::PendingAssociatedReceiver<mojom::WebNNGraph> receiver,
-      base::WeakPtr<WebNNContextImpl> context,
+      WebNNContextImpl& context,
       ComputeResourceInfo compute_resource_info)
       : WebNNGraphImpl(std::move(receiver),
-                       std::move(context),
+                       context,
                        std::move(compute_resource_info),
                        /*devices=*/{}) {}
 
@@ -68,8 +68,7 @@ class FakeWebNNGraphImpl final : public WebNNGraphImpl {
       ComputeResourceInfo compute_resource_info,
       WebNNContextImpl::CreateGraphImplCallback callback) {
     std::move(callback).Run(base::MakeRefCounted<FakeWebNNGraphImpl>(
-        std::move(receiver), std::move(context),
-        std::move(compute_resource_info)));
+        std::move(receiver), *context, std::move(compute_resource_info)));
   }
 
  private:
@@ -89,11 +88,9 @@ class FakeWebNNTensorImpl final : public WebNNTensorImpl {
  public:
   FakeWebNNTensorImpl(
       mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
-      base::WeakPtr<WebNNContextImpl> context,
+      WebNNContextImpl& context,
       mojom::TensorInfoPtr tensor_info)
-      : WebNNTensorImpl(std::move(receiver),
-                        std::move(context),
-                        std::move(tensor_info)) {}
+      : WebNNTensorImpl(std::move(receiver), context, std::move(tensor_info)) {}
 
  private:
   ~FakeWebNNTensorImpl() override = default;
@@ -104,8 +101,7 @@ class FakeWebNNTensorImpl final : public WebNNTensorImpl {
   void WriteTensorImpl(mojo_base::BigBuffer src_buffer) override {}
   // Interop is not required by tests.
   bool ImportTensorImpl(ScopedAccessPtr access) override { return false; }
-  void ExportTensorImpl(ScopedAccessPtr access,
-                        ExportTensorCallback callback) override {}
+  void ExportTensorImpl(ScopedAccessPtr access) override {}
 };
 
 // A fake WebNNContext Mojo interface implementation that binds a pipe for
@@ -122,6 +118,8 @@ class FakeWebNNContextImpl final : public WebNNContextImpl {
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner)
       : WebNNContextImpl(std::move(receiver),
                          std::move(context_provider),
+                         // The backend type is ignored for testing.
+                         ContextBackendUma::kNotSupported,
                          GetContextPropertiesForTesting(),
                          mojom::CreateContextOptions::New(),
                          mojo::ScopedDataPipeConsumerHandle(),
@@ -148,7 +146,9 @@ class FakeWebNNContextImpl final : public WebNNContextImpl {
       base::flat_map<
           OperandId,
           std::unique_ptr<WebNNConstantOperand>> /*constant_operands*/,
-      base::flat_map<OperandId, WebNNTensorImpl*> /*constant_tensor_operands*/,
+      base::flat_map<
+          OperandId,
+          scoped_refptr<WebNNTensorImpl>> /*constant_tensor_operands*/,
       CreateGraphImplCallback callback) override {
     FakeWebNNGraphImpl::CreateAndBuild(
         std::move(receiver), AsWeakPtr(), *graph_info,
@@ -158,8 +158,8 @@ class FakeWebNNContextImpl final : public WebNNContextImpl {
   base::expected<scoped_refptr<WebNNTensorImpl>, mojom::ErrorPtr>
   CreateTensorImpl(mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
                    mojom::TensorInfoPtr tensor_info) override {
-    return base::MakeRefCounted<FakeWebNNTensorImpl>(
-        std::move(receiver), AsWeakPtr(), std::move(tensor_info));
+    return base::MakeRefCounted<FakeWebNNTensorImpl>(std::move(receiver), *this,
+                                                     std::move(tensor_info));
   }
 
   base::expected<scoped_refptr<WebNNTensorImpl>, mojom::ErrorPtr>
@@ -170,6 +170,8 @@ class FakeWebNNContextImpl final : public WebNNContextImpl {
     return base::unexpected(mojom::Error::New(
         mojom::Error::Code::kNotSupportedError, "Not implemented"));
   }
+
+  std::string_view GetBackendName() const override { return "Fake Backend"; }
 
   base::WeakPtrFactory<FakeWebNNContextImpl> weak_factory_{this};
 };
@@ -1280,6 +1282,20 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
         .output = {.type = OperandDataType::kFloat32,
                    .dimensions = {1, 1, 3, 3}},
         .expected = false}
+        .Test(*this);
+  }
+  {
+    // Test invalid conv2d: output_channels is not a multiple of groups.
+    // output_channels (7) % groups (2) != 0.
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
+                 .input = {.type = OperandDataType::kFloat32,
+                           .dimensions = {1, 4, 5, 5}},
+                 .filter = {.type = OperandDataType::kFloat32,
+                            .dimensions = {7, 2, 3, 3}},
+                 .attributes = {.groups = 2},
+                 .output = {.type = OperandDataType::kFloat32,
+                            .dimensions = {1, 7, 3, 3}},
+                 .expected = false}
         .Test(*this);
   }
   {

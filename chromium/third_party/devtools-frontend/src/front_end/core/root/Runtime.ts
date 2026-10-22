@@ -175,6 +175,7 @@ export class ExperimentsSupport {
     title: string,
     aboutFlag: string,
     isEnabled: boolean,
+    requiresChromeRestart: boolean,
     docLink?: Platform.DevToolsPath.UrlString,
     readonly feedbackLink?: Platform.DevToolsPath.UrlString,
   }): HostExperiment {
@@ -377,6 +378,7 @@ export class HostExperiment {
   // It is NOT the the name of the corresponding Chromium `base::Feature`.
   aboutFlag: string;
   #isEnabled: boolean;
+  readonly requiresChromeRestart: boolean;
   docLink?: Platform.DevToolsPath.UrlString;
   readonly feedbackLink?: Platform.DevToolsPath.UrlString;
 
@@ -386,6 +388,7 @@ export class HostExperiment {
     experiments: ExperimentsSupport,
     aboutFlag: string,
     isEnabled: boolean,
+    requiresChromeRestart: boolean,
     docLink?: Platform.DevToolsPath.UrlString,
     feedbackLink?: Platform.DevToolsPath.UrlString,
   }) {
@@ -394,6 +397,7 @@ export class HostExperiment {
     this.#experiments = params.experiments;
     this.aboutFlag = params.aboutFlag;
     this.#isEnabled = params.isEnabled;
+    this.requiresChromeRestart = params.requiresChromeRestart;
     this.docLink = params.docLink;
     this.feedbackLink = params.feedbackLink;
   }
@@ -472,6 +476,10 @@ export interface HostConfigAiAssistanceFileAgent {
   userTier: string;
 }
 
+export interface HostConfigAiAssistanceAccessibilityAgent {
+  enabled: boolean;
+}
+
 export interface HostConfigAiCodeCompletion {
   modelId: string;
   temperature: number;
@@ -480,6 +488,13 @@ export interface HostConfigAiCodeCompletion {
 }
 
 export interface HostConfigAiCodeGeneration {
+  modelId: string;
+  temperature: number;
+  enabled: boolean;
+  userTier: string;
+}
+
+export interface HostConfigAiCodeCompletionStyles {
   modelId: string;
   temperature: number;
   enabled: boolean;
@@ -523,11 +538,8 @@ export interface HostConfigAnimationStylesInStylesTab {
   enabled: boolean;
 }
 
-export interface HostConfigThirdPartyCookieControls {
-  thirdPartyCookieRestrictionEnabled: boolean;
-  thirdPartyCookieMetadataEnabled: boolean;
-  thirdPartyCookieHeuristicsEnabled: boolean;
-  managedBlockThirdPartyCookies: string|boolean;
+export interface HostConfigJpegXlImageFormat {
+  enabled: boolean;
 }
 
 export interface HostConfigAiAssistanceV2 {
@@ -577,15 +589,6 @@ interface DeviceBoundSessionsDebugging {
   enabled: boolean;
 }
 
-interface AiPromptApi {
-  enabled: boolean;
-  allowWithoutGpu: boolean;
-}
-
-interface DevToolsIndividualRequestThrottling {
-  enabled: boolean;
-}
-
 export interface DevToolsEnableDurableMessages {
   enabled: boolean;
 }
@@ -599,7 +602,15 @@ interface ConsoleInsightsTeasers {
   allowWithoutGpu: boolean;
 }
 
+interface UseGcaApi {
+  enabled: boolean;
+}
+
 interface DevToolsProtocolMonitor {
+  enabled: boolean;
+}
+
+interface DevToolsWebMCPSupport {
   enabled: boolean;
 }
 
@@ -626,12 +637,13 @@ export type HostConfig = Platform.TypeScriptUtilities.RecursivePartial<{
   devToolsAiAssistanceNetworkAgent: HostConfigAiAssistanceNetworkAgent,
   devToolsAiAssistanceFileAgent: HostConfigAiAssistanceFileAgent,
   devToolsAiAssistancePerformanceAgent: HostConfigAiAssistancePerformanceAgent,
+  devToolsAiAssistanceAccessibilityAgent: HostConfigAiAssistanceAccessibilityAgent,
   devToolsAiAssistanceV2: HostConfigAiAssistanceV2,
   devToolsAiCodeCompletion: HostConfigAiCodeCompletion,
   devToolsAiCodeGeneration: HostConfigAiCodeGeneration,
+  devToolsAiCodeCompletionStyles: HostConfigAiCodeCompletionStyles,
   devToolsVeLogging: HostConfigVeLogging,
   devToolsWellKnown: HostConfigWellKnown,
-  devToolsIndividualRequestThrottling: DevToolsIndividualRequestThrottling,
   /**
    * OffTheRecord here indicates that the user's profile is either incognito,
    * or guest mode, rather than a "normal" profile.
@@ -639,7 +651,7 @@ export type HostConfig = Platform.TypeScriptUtilities.RecursivePartial<{
   isOffTheRecord: boolean,
   devToolsEnableOriginBoundCookies: HostConfigEnableOriginBoundCookies,
   devToolsAnimationStylesInStylesTab: HostConfigAnimationStylesInStylesTab,
-  thirdPartyCookieControls: HostConfigThirdPartyCookieControls,
+  devToolsJpegXlImageFormat: HostConfigJpegXlImageFormat,
   devToolsAiGeneratedTimelineLabels: AiGeneratedTimelineLabels,
   devToolsAllowPopoverForcing: AllowPopoverForcing,
   devToolsGlobalAiButton: GlobalAiButton,
@@ -648,12 +660,13 @@ export type HostConfig = Platform.TypeScriptUtilities.RecursivePartial<{
   devToolsLiveEdit: LiveEdit,
   devToolsFlexibleLayout: DevToolsFlexibleLayout,
   deviceBoundSessionsDebugging: DeviceBoundSessionsDebugging,
-  devToolsAiPromptApi: AiPromptApi,
   devToolsEnableDurableMessages: DevToolsEnableDurableMessages,
   devToolsAiAssistanceContextSelectionAgent: HostConfigAiAssistanceContextSelectionAgent,
   devToolsConsoleInsightsTeasers: ConsoleInsightsTeasers,
   devToolsGeminiRebranding: HostConfigGeminiRebranding,
   devToolsProtocolMonitor: DevToolsProtocolMonitor,
+  devToolsWebMCPSupport: DevToolsWebMCPSupport,
+  devToolsUseGcaApi: UseGcaApi,
 }>;
 
 /**

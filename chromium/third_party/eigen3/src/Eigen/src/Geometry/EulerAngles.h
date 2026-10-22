@@ -37,7 +37,7 @@ namespace Eigen {
  * For proper Euler angle configurations (a0 == a2), the returned angles are in the ranges [-pi:pi]x[0:pi]x[-pi:pi].
  *
  * The approach used is also described here:
- * https://d3cw3dd2w32x2b.cloudfront.net/wp-content/uploads/2012/07/euler-angles.pdf
+ * https://web.archive.org/web/20240715191429/https://d3cw3dd2w32x2b.cloudfront.net/wp-content/uploads/2012/07/euler-angles.pdf
  *
  * \sa class AngleAxis
  */

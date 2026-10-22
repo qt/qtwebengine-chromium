@@ -15,6 +15,7 @@
 #include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
+#include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/observer_list.h"
@@ -256,11 +257,14 @@ std::unique_ptr<Layer> Layer::Clone() const {
 
   // Background filters.
   clone->SetBackgroundBlur(background_blur_sigma_);
+  clone->SetBackgroundInverted(background_inverted_);
   clone->SetBackgroundZoom(zoom_, zoom_inset_);
   clone->SetBackdropFilterQuality(backdrop_filter_quality_);
-  auto backdrop_filter_bounds = cc_layer_->backdrop_filter_bounds();
-  if (backdrop_filter_bounds) {
-    clone->SetBackdropFilterBounds(*backdrop_filter_bounds);
+  if (has_explicit_backdrop_filter_bounds_) {
+    auto backdrop_filter_bounds = cc_layer_->backdrop_filter_bounds();
+    if (backdrop_filter_bounds) {
+      clone->SetBackdropFilterBounds(*backdrop_filter_bounds);
+    }
   }
 
   // Filters.
@@ -574,6 +578,7 @@ float Layer::GetCombinedOpacity() const {
 }
 
 void Layer::SetBackdropFilterBounds(const SkPath& bounds) {
+  has_explicit_backdrop_filter_bounds_ = true;
   cc_layer_->SetBackdropFilterBounds(bounds);
 }
 
@@ -582,11 +587,22 @@ void Layer::SetBackdropFilterBounds(const gfx::RRectF& bounds) {
 }
 
 void Layer::ClearBackdropFilterBounds() {
+  has_explicit_backdrop_filter_bounds_ = false;
   cc_layer_->ClearBackdropFilterBounds();
+  RecomputeBackdropFilterBounds();
 }
 
 void Layer::SetBackgroundBlur(float blur_sigma) {
   background_blur_sigma_ = blur_sigma;
+
+  SetLayerBackgroundFilters();
+}
+
+void Layer::SetBackgroundInverted(bool inverted) {
+  if (background_inverted_ == inverted) {
+    return;
+  }
+  background_inverted_ = inverted;
 
   SetLayerBackgroundFilters();
 }
@@ -780,6 +796,10 @@ void Layer::SetLayerFilters() {
 void Layer::SetLayerBackgroundFilters() {
   cc::FilterOperations filters;
 
+  if (background_inverted_) {
+    filters.Append(cc::FilterOperation::CreateInvertFilter(1.0f));
+  }
+
   if (background_blur_sigma_) {
     filters.Append(cc::FilterOperation::CreateBlurFilter(background_blur_sigma_,
                                                          SkTileMode::kClamp));
@@ -794,6 +814,34 @@ void Layer::SetLayerBackgroundFilters() {
   }
 
   cc_layer_->SetBackdropFilters(filters);
+  RecomputeBackdropFilterBounds();
+}
+
+void Layer::RecomputeBackdropFilterBounds() {
+  // Don't override explicitly set bounds.
+  if (has_explicit_backdrop_filter_bounds_) {
+    return;
+  }
+
+  // Only set bounds when backdrop filters are active.
+  if (!background_blur_sigma_ && zoom_ == 1 && !background_inverted_) {
+    cc_layer_->ClearBackdropFilterBounds();
+    return;
+  }
+
+  const gfx::Size& size = bounds_.size();
+  if (size.IsEmpty()) {
+    cc_layer_->ClearBackdropFilterBounds();
+    return;
+  }
+
+  // Set backdrop filter bounds to the layer's rectangular bounds in DIP.
+  // Note: rounded corners are intentionally not included here. The layer's
+  // SetRoundedCornerRadius() already clips the final rendered output. Adding
+  // rounded corners to backdrop_filter_bounds would also clip the blur's
+  // input sampling, causing edge artifacts and visual differences.
+  cc_layer_->SetBackdropFilterBounds(
+      gfx::RRectF(gfx::RectF(gfx::SizeF(size)), 0));
 }
 
 float Layer::GetTargetOpacity() const {
@@ -1644,6 +1692,9 @@ void Layer::SetBoundsFromAnimation(const gfx::Rect& bounds,
   RecomputeDrawsContentAndUVRect();
   if (old_bounds.origin() != bounds_.origin())
     RecomputePosition();
+  if (old_bounds.size() != bounds_.size()) {
+    RecomputeBackdropFilterBounds();
+  }
 
   auto ptr = weak_ptr_factory_.GetWeakPtr();
 

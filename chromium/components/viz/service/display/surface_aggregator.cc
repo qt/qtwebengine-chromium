@@ -962,11 +962,9 @@ void SurfaceAggregator::EmitSurfaceContent(
     }
     copy_pass->SetAll(
         resolved_pass.remapped_id(), output_rect, output_rect,
-        source.transform_to_root_target, source.filters,
-        source.backdrop_filters, source.backdrop_filter_bounds,
-        root_content_color_usage_, source.has_transparent_background,
-        source.cache_render_pass, resolved_pass.aggregation().has_damage,
-        source.generate_mipmap);
+        source.transform_to_root_target, root_content_color_usage_,
+        source.has_transparent_background, source.cache_render_pass,
+        resolved_pass.aggregation().has_damage, source.generate_mipmap);
 
     copy_pass->is_from_surface_root_pass = resolved_pass.is_root();
 
@@ -1094,6 +1092,12 @@ void SurfaceAggregator::EmitSurfaceContent(
                    remapped_pass_id, kInvalidResourceId, gfx::RectF(),
                    gfx::Size(), tex_coord_rect,
                    /*force_anti_aliasing_off=*/false);
+      quad->SetFilters(resolved_root_pass.render_pass().filters,
+                       resolved_root_pass.render_pass().backdrop_filters,
+                       resolved_root_pass.render_pass().backdrop_filter_bounds,
+                       /*filters_scale=*/gfx::Vector2dF(1.0f, 1.0f),
+                       /*filters_origin=*/gfx::PointF(),
+                       /*backdrop_filter_quality=*/1.0f);
     }
   }
 
@@ -1187,18 +1191,10 @@ void SurfaceAggregator::AddRootReadbackPass() {
   bool needs_readback_pass = false;
   // Check if there are any render passes that draw into the root pass with
   // a backdrop filter.
-  base::flat_set<AggregatedRenderPassId> pass_ids_drawing_to_root;
   for (auto* quad : root_render_pass->quad_list) {
     if (auto* render_pass_quad =
             quad->DynamicCast<AggregatedRenderPassDrawQuad>()) {
-      pass_ids_drawing_to_root.insert(render_pass_quad->render_pass_id);
-    }
-  }
-  if (!pass_ids_drawing_to_root.empty()) {
-    for (auto& render_pass : *dest_pass_list_) {
-      if (!pass_ids_drawing_to_root.contains(render_pass->id))
-        continue;
-      if (!render_pass->backdrop_filters.IsEmpty()) {
+      if (!render_pass_quad->backdrop_filters.IsEmpty()) {
         needs_readback_pass = true;
         break;
       }
@@ -1279,10 +1275,7 @@ void SurfaceAggregator::AddRenderPassHelper(
   auto render_pass = std::make_unique<AggregatedRenderPass>(1, 1);
   render_pass->SetAll(render_pass_id, render_pass_output_rect,
                       render_pass_damage_rect, gfx::Transform(),
-                      /*filters=*/cc::FilterOperations(),
-                      /*backdrop_filters=*/cc::FilterOperations(),
-                      /*backdrop_filter_bounds=*/SkPath(), pass_color_usage,
-                      pass_has_transparent_background,
+                      pass_color_usage, pass_has_transparent_background,
                       /*cache_render_pass=*/false,
                       /*has_damage_from_contributing_content=*/false,
                       /*generate_mipmap=*/false);
@@ -1438,12 +1431,12 @@ void SurfaceAggregator::CopyQuadsToPass(
       if (const auto* pass_quad =
               quad->DynamicCast<CompositorRenderPassDrawQuad>()) {
         CompositorRenderPassId original_pass_id = pass_quad->render_pass_id;
-        AggregatedRenderPassId remapped_pass_id =
-            resolved_frame.GetRenderPassDataById(original_pass_id)
-                .remapped_id();
+        const ResolvedPassData& resolved_pass_data =
+            resolved_frame.GetRenderPassDataById(original_pass_id);
 
         dest_quad = dest_pass->CopyFromAndAppendRenderPassDrawQuad(
-            pass_quad, remapped_pass_id);
+            pass_quad, resolved_pass_data.render_pass(),
+            resolved_pass_data.remapped_id());
 
         if (needs_surface_damage_rect_list_ &&
             resolved_pass.aggregation().will_draw) {
@@ -1552,8 +1545,7 @@ void SurfaceAggregator::CopyPasses(ResolvedFrameData& resolved_frame) {
 
     copy_pass->SetAll(
         resolved_pass.remapped_id(), output_rect, output_rect,
-        transform_to_root_target, source.filters, source.backdrop_filters,
-        source.backdrop_filter_bounds, root_content_color_usage_,
+        transform_to_root_target, root_content_color_usage_,
         source.has_transparent_background, source.cache_render_pass,
         resolved_pass.aggregation().has_damage, source.generate_mipmap);
 
@@ -1665,10 +1657,6 @@ gfx::Rect SurfaceAggregator::PrewalkRenderPass(
     PrewalkResult& result) {
   const CompositorRenderPass& render_pass = resolved_pass.render_pass();
 
-  if (render_pass.backdrop_filters.HasFilterThatMovesPixels()) {
-    has_pixel_moving_backdrop_filter_ = true;
-  }
-
   if (parent_pass && parent_pass->aggregation().will_draw)
     resolved_pass.aggregation().will_draw = true;
 
@@ -1683,7 +1671,6 @@ gfx::Rect SurfaceAggregator::PrewalkRenderPass(
   if (render_pass.filters.HasFilterThatMovesPixels() ||
       (parent_pass && parent_pass->aggregation().in_pixel_moving_filter_pass)) {
     resolved_pass.aggregation().in_pixel_moving_filter_pass = true;
-    stats_->has_pixel_moving_filter = true;
   }
 
   const FrameDamageType damage_type = resolved_frame.GetFrameDamageType();
@@ -2006,7 +1993,6 @@ gfx::Rect SurfaceAggregator::PrewalkSurface(ResolvedFrameData& resolved_frame,
     // pass, but other attributes related to the embedding hierarchy are still
     // important to propagate.
     if (resolved_pass.IsUnembedded()) {
-      stats_->has_unembedded_pass = true;
       resolved_pass.aggregation().added_damage =
           PrewalkRenderPass(resolved_frame, resolved_pass,
                             /*damage_from_parent=*/gfx::Rect(),
@@ -2154,9 +2140,6 @@ AggregatedFrame SurfaceAggregator::Aggregate(
 
   root_surface_id_ = surface_id;
 
-  // Start recording new stats for this aggregation.
-  stats_.emplace();
-
   ResolvedFrameData* resolved_frame = GetResolvedFrame(surface_id);
 
   if (!resolved_frame || !resolved_frame->is_valid()) {
@@ -2268,8 +2251,6 @@ AggregatedFrame SurfaceAggregator::Aggregate(
   referenced_surfaces_.erase(surface_id);
   DCHECK(referenced_surfaces_.empty());
 
-  RecordStatHistograms();
-
   if (dest_pass_list_->empty()) {
     ResetAfterAggregate();
     return {};
@@ -2342,22 +2323,6 @@ AggregatedFrame SurfaceAggregator::Aggregate(
   return frame;
 }
 
-void SurfaceAggregator::RecordStatHistograms() {
-  UMA_HISTOGRAM_BOOLEAN("Compositing.SurfaceAggregator.HasCopyRequestsPerFrame",
-                        has_copy_requests_);
-  UMA_HISTOGRAM_BOOLEAN(
-      "Compositing.SurfaceAggregator.HasPixelMovingFiltersPerFrame",
-      stats_->has_pixel_moving_filter);
-  UMA_HISTOGRAM_BOOLEAN(
-      "Compositing.SurfaceAggregator.HasPixelMovingBackdropFiltersPerFrame",
-      has_pixel_moving_backdrop_filter_);
-  UMA_HISTOGRAM_BOOLEAN(
-      "Compositing.SurfaceAggregator.HasUnembeddedRenderPassesPerFrame",
-      stats_->has_unembedded_pass);
-
-  stats_.reset();
-}
-
 void SurfaceAggregator::ResetAfterAggregate() {
   DCHECK(is_inside_aggregate_);
 
@@ -2367,7 +2332,6 @@ void SurfaceAggregator::ResetAfterAggregate() {
   current_zero_damage_rect_is_not_recorded_ = false;
   expected_display_time_ = base::TimeTicks();
   display_trace_id_ = -1;
-  has_pixel_moving_backdrop_filter_ = false;
   has_copy_requests_ = false;
   resolved_surface_ranges_.clear();
   contained_surfaces_.clear();

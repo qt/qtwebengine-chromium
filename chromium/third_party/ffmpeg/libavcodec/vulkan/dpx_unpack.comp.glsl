@@ -18,11 +18,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#version 460
 #pragma shader_stage(compute)
 #extension GL_GOOGLE_include_directive : require
 
-#include "common.comp"
+#include "common.glsl"
 
 layout (constant_id = 0) const bool big_endian = false;
 layout (constant_id = 1) const bool packed_10bit = false;
@@ -91,14 +90,15 @@ i16vec4 parse_packed_in_32(ivec2 pos, int stride)
 void main(void)
 {
     ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
-    if (any(greaterThanEqual(pos, imageSize(dst[0]))))
+    ivec2 size = imageSize(dst[0]);
+    if (any(greaterThanEqual(pos, size)))
         return;
 
     i16vec4 p;
     if (packed_10bit)
-        p = parse_packed10_in_32(pos, imageSize(dst[0]).x);
+        p = parse_packed10_in_32(pos, size.x);
     else
-        p = parse_packed_in_32(pos, imageSize(dst[0]).x);
+        p = parse_packed_in_32(pos, size.x);
 
     if (nb_images == 1) {
         imageStore(dst[0], pos, p);

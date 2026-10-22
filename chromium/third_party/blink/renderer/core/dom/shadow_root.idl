@@ -54,13 +54,23 @@ interface ShadowRoot : DocumentFragment {
     // See https://crbug.com/346835896
     [RuntimeEnabled=ShadowRootReferenceTarget] attribute DOMString? referenceTarget;
 
+    // TODO(nrosenthal): remove duplicates once flags are merged.
     [RaisesException,MeasureAs=SetHTMLUnsafe,CEReactions] void setHTMLUnsafe((TrustedHTML or DOMString) string);
     [RuntimeEnabled=SanitizerAPI,RaisesException,MeasureAs=SetHTMLUnsafe,CEReactions] void setHTMLUnsafe((TrustedHTML or DOMString) html, SetHTMLUnsafeOptions options);
     [RuntimeEnabled=SanitizerAPI,RaisesException,MeasureAs=SetHTMLSafe,CEReactions] void setHTML(DOMString html, optional SetHTMLOptions options = {});
+    [RuntimeEnabled=TrustedTypesCreateParserOptions,RaisesException,MeasureAs=SetHTMLUnsafe,CEReactions] void setHTMLUnsafe((TrustedHTML or DOMString) html, TrustedParserOptions options);
 
-    // https://github.com/whatwg/html/issues/2142
-    [RuntimeEnabled=DocumentPatching, CallWith=ScriptState, RaisesException] WritableStream streamAppendHTMLUnsafe(optional SetHTMLUnsafeOptions options = {});
-    [RuntimeEnabled=DocumentPatching, CallWith=ScriptState, RaisesException] WritableStream streamHTMLUnsafe(optional SetHTMLUnsafeOptions options = {});
+    // https://github.com/whatwg/html/issues/11669
+    [RuntimeEnabled=NewHTMLSettingMethods, CallWith=ScriptState, RaisesException, MeasureAs=HTMLStreaming] WritableStream streamAppendHTMLUnsafe(optional (SetHTMLUnsafeOptions or TrustedParserOptions) options = {});
+    [RuntimeEnabled=NewHTMLSettingMethods, CallWith=ScriptState, RaisesException, MeasureAs=HTMLStreaming] WritableStream streamHTMLUnsafe(optional (SetHTMLUnsafeOptions or TrustedParserOptions) options = {});
+    [RuntimeEnabled=NewHTMLSettingMethods, CallWith=ScriptState, RaisesException, MeasureAs=HTMLStreaming] WritableStream streamAppendHTML(optional SetHTMLOptions options = {});
+    [RuntimeEnabled=NewHTMLSettingMethods, CallWith=ScriptState, RaisesException, MeasureAs=HTMLStreaming] WritableStream streamHTML(optional SetHTMLOptions options = {});
+    [RuntimeEnabled=NewHTMLSettingMethods, CallWith=ScriptState, RaisesException, MeasureAs=HTMLStreaming] WritableStream streamPrependHTMLUnsafe(optional (SetHTMLUnsafeOptions or TrustedParserOptions) options = {});
+    [RuntimeEnabled=NewHTMLSettingMethods, CallWith=ScriptState, RaisesException, MeasureAs=HTMLStreaming] WritableStream streamPrependHTML(optional SetHTMLOptions options = {});
+    [RuntimeEnabled=NewHTMLSettingMethods, RaisesException, MeasureAs=HTMLPositionalSetters] void appendHTML(DOMString html, optional SetHTMLOptions options = {});
+    [RuntimeEnabled=NewHTMLSettingMethods, RaisesException, MeasureAs=HTMLPositionalSetters] void appendHTMLUnsafe((TrustedHTML or DOMString) html, optional (SetHTMLUnsafeOptions or TrustedParserOptions) options = {});
+    [RuntimeEnabled=NewHTMLSettingMethods, RaisesException, MeasureAs=HTMLPositionalSetters] void prependHTML(DOMString html, optional SetHTMLOptions options = {});
+    [RuntimeEnabled=NewHTMLSettingMethods, RaisesException, MeasureAs=HTMLPositionalSetters] void prependHTMLUnsafe((TrustedHTML or DOMString) html, optional (SetHTMLUnsafeOptions or TrustedParserOptions) options = {});
 };
 
 ShadowRoot includes DocumentOrShadowRoot;

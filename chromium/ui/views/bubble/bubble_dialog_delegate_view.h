@@ -20,6 +20,8 @@
 #include "build/build_config.h"
 #include "ui/accessibility/ax_enums.mojom-forward.h"
 #include "ui/base/class_property.h"
+#include "ui/base/interaction/element_highlighter.h"
+#include "ui/base/interaction/element_tracker.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/metadata/metadata_utils.h"
 #include "ui/base/mojom/dialog_button.mojom.h"
@@ -118,8 +120,6 @@ class TestBubbleDialogDelegateView;
 class TestBubbleDialogDelegate;
 class TrayBubbleView;
 FORWARD_DECLARE_TEST(OverviewSessionTest, DoNotHideBubbleTransient);
-FORWARD_DECLARE_TEST(ResizeShadowAndCursorTest,
-                     DefaultCursorOnBubbleWidgetCorners);
 FORWARD_DECLARE_TEST(SnapGroupOverviewTest, BubbleTransientIsVisibleInOverview);
 FORWARD_DECLARE_TEST(
     SnapGroupDesksTest,
@@ -168,10 +168,6 @@ class SendTabToSelfToolbarBubbleView;
 namespace toasts {
 class ToastView;
 }
-
-namespace ui {
-class TrackedElement;
-}  // namespace ui
 
 namespace ui::ime {
 class AnnouncementView;
@@ -237,7 +233,7 @@ FORWARD_DECLARE_TEST(InteractionTestUtilViewsTest, Confirm);
 //   views::BubbleDialogDelegate::CreateBubble(std::move(bubble_delegate));
 //   ...
 //
-using BubbleAnchor = std::variant<View*, ui::TrackedElement*, std::nullptr_t>;
+using BubbleAnchor = std::variant<std::nullptr_t, View*, ui::TrackedElement*>;
 
 class VIEWS_EXPORT BubbleDialogDelegate : public DialogDelegate {
  public:
@@ -433,7 +429,12 @@ class VIEWS_EXPORT BubbleDialogDelegate : public DialogDelegate {
   // TODO(ellyjones): Is there ever a situation where this is the right thing to
   // do UX-wise? It seems very odd to highlight something other than the anchor
   // view.
+  // DEPRECATED: Please use SetHighlightedElement instead.
   void SetHighlightedButton(Button* highlighted_button);
+
+  // Like SetHighlightedButton, but using a TrackedElement that's looked up
+  // by id, in the context based on the anchor widget.
+  void SetHighlightedElement(ui::ElementIdentifier id);
 
   // The bubble's parent window - this can only be usefully set before creating
   // the bubble's widget. If there is one, the bubble will be stacked above it,
@@ -469,7 +470,8 @@ class VIEWS_EXPORT BubbleDialogDelegate : public DialogDelegate {
 
   // If this is true and either:
   // - The anchor View is a Button, or
-  // - The highlighted Button is set,
+  // - The anchor is a TrackedElement that can be highlighted, or
+  // - The highlighted Button or the highlighted element are set,
   // then BubbleDialogDelegate will ask the anchor View / highlighted button to
   // highlight itself when the BubbleDialogDelegate's Widget is shown.
   void set_highlight_button_when_shown(bool highlight) {
@@ -565,7 +567,7 @@ class VIEWS_EXPORT BubbleDialogDelegate : public DialogDelegate {
     // - "Bubble.{bubble_name}.{histogram_name}" for a specific bubble
     //   subclass, if `bubble_name` is set.
     template <typename Value>
-    void LogMetric(void (*uma_func)(std::string_view, Value),
+    void LogMetric(void (*uma_func)(const std::string&, Value),
                    std::string_view histogram_name,
                    Value value) const;
 
@@ -610,6 +612,9 @@ class VIEWS_EXPORT BubbleDialogDelegate : public DialogDelegate {
                            VisibleWidgetShowsInkDropOnAttaching);
   FRIEND_TEST_ALL_PREFIXES(BubbleDialogDelegateViewTest,
                            AttachedWidgetShowsInkDropWhenVisible);
+  FRIEND_TEST_ALL_PREFIXES(BubbleDialogDelegateViewTest, HighlightPriority);
+  FRIEND_TEST_ALL_PREFIXES(BubbleDialogDelegateViewTest,
+                           DelayedHighlightByElement);
   FRIEND_TEST_ALL_PREFIXES(BubbleDialogDelegateViewTest,
                            MultipleBubbleAnchorHighlightTestInOrder);
   FRIEND_TEST_ALL_PREFIXES(BubbleDialogDelegateViewTest,
@@ -649,6 +654,9 @@ class VIEWS_EXPORT BubbleDialogDelegate : public DialogDelegate {
 
   gfx::Rect GetDesiredBubbleBounds();
 
+  // Can be called with nullptr.
+  void SetResolvedHighlightedElement(ui::TrackedElement* element);
+
   BubbleBorder::Arrow arrow_ = BubbleBorder::NONE;
   BubbleBorder::Shadow shadow_;
   ui::ColorVariant color_ = ui::kColorBubbleBackground;
@@ -660,6 +668,9 @@ class VIEWS_EXPORT BubbleDialogDelegate : public DialogDelegate {
   bool adjust_if_offscreen_ = true;
   bool focus_traversable_from_anchor_view_ = true;
   ViewTracker highlighted_button_tracker_;
+  std::optional<ui::ElementTracker::Subscription>
+      highlighted_element_shown_subscription_;
+  ui::SafeElementReference highlighted_element_tracker_;
   ui::ImageModel main_image_;
   std::u16string subtitle_;
   bool subtitle_allow_character_break_ = false;
@@ -694,6 +705,8 @@ class VIEWS_EXPORT BubbleDialogDelegate : public DialogDelegate {
 
   // Used to ensure the button remains anchored while this dialog is open.
   std::optional<Button::ScopedAnchorHighlight> button_anchor_highlight_;
+  // Same if going via TrackedElement.
+  std::unique_ptr<ui::ElementHighlighter::Highlight> element_anchor_highlight_;
 
   // The helper class that logs common bubble metrics.
   BubbleUmaLogger bubble_uma_logger_;
@@ -853,8 +866,6 @@ class VIEWS_EXPORT BubbleDialogDelegateView : public View,
   friend class ::ash::TrayBubbleView;
   FRIEND_TEST_ALL_PREFIXES(::ash::OverviewSessionTest,
                            DoNotHideBubbleTransient);
-  FRIEND_TEST_ALL_PREFIXES(::ash::ResizeShadowAndCursorTest,
-                           DefaultCursorOnBubbleWidgetCorners);
   FRIEND_TEST_ALL_PREFIXES(::ash::SnapGroupOverviewTest,
                            BubbleTransientIsVisibleInOverview);
   FRIEND_TEST_ALL_PREFIXES(

@@ -103,7 +103,9 @@ bool CPDFXFA_Page::LoadPDFPage() {
   }
 
   if (!pdfpage_ || pdfpage_->GetDict() != dict) {
-    LoadPDFPageFromDict(std::move(dict));
+    if (!LoadPDFPageFromDict(std::move(dict))) {
+      return false;
+    }
   }
 
   return true;
@@ -127,11 +129,16 @@ bool CPDFXFA_Page::LoadPage() {
   }
 }
 
-void CPDFXFA_Page::LoadPDFPageFromDict(RetainPtr<CPDF_Dictionary> pPageDict) {
-  DCHECK(pPageDict);
-  pdfpage_ = pdfium::MakeRetain<CPDF_Page>(GetDocument(), std::move(pPageDict));
+bool CPDFXFA_Page::LoadPDFPageFromDict(RetainPtr<CPDF_Dictionary> page_dict) {
+  CHECK(page_dict);
+  if (!CPDF_Page::IsValidPageDictLoose(page_dict)) {
+    return false;
+  }
+
+  pdfpage_ = pdfium::MakeRetain<CPDF_Page>(GetDocument(), std::move(page_dict));
   pdfpage_->AddPageImageCache();
   pdfpage_->ParseContent();
+  return true;
 }
 
 float CPDFXFA_Page::GetPageWidth() const {

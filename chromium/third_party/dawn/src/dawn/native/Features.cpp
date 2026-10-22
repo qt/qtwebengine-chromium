@@ -171,8 +171,9 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       "implicit_device_synchronization.md",
       FeatureInfo::FeatureState::Stable}},
     {Feature::TransientAttachments,
-     {"Support transient attachments that allow render pass operations to stay in tile memory, "
-      "avoiding VRAM traffic and potentially avoiding VRAM allocation for the textures.",
+     {"Presence of this feature on an Adapter is a hint indicating that the TransientAttachment "
+      "usage will be used by the backend. If it's not present, the usage is allowed, but it is a "
+      "no-op. Enabling this feature on a Device doesn't do anything.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
       "transient_attachments.md",
       FeatureInfo::FeatureState::Stable}},
@@ -319,6 +320,11 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
       "adapter_properties.md",
       FeatureInfo::FeatureState::Stable}},
+    {Feature::AdapterPropertiesDrm,
+     {"Support querying DRM info from the adapter.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "adapter_properties.md",
+      FeatureInfo::FeatureState::Stable}},
     {Feature::SharedBufferMemoryD3D12Resource,
      {"Support importing ID3D12Resource as shared buffer memory.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/shared_buffer.md",
@@ -437,7 +443,44 @@ static constexpr FeatureEnumAndInfo kFeatureInfo[] = {
      {"Support the \"enable chromium_experimental_subgroup_size_control;\" directive in WGSL.",
       "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/tint/extensions/"
       "chromium_experimental_subgroup_size_control.md",
-      FeatureInfo::FeatureState::Experimental}}};
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::AtomicVec2uMinMax,
+     {"Support the \"enable atomic_vec2u_min_max;\" directive for 64-bit atomics via vec2<u32> "
+      "types",
+      "https://github.com/gpuweb/gpuweb/blob/main/proposals/atomic-64-min-max.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::Unorm16FormatsForExternalTexture,
+     {"Supports R/RG/RGBA16Unorm formats for ExternalTexture planes even if not all the required "
+      "feature support has been enabled.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "unorm16_formats_for_external_texture.md",
+      FeatureInfo::FeatureState::Stable}},
+    {Feature::OpaqueYCbCrAndroidForExternalTexture,
+     {"Allows creating an ExternalTexture from an imported AHardwareBuffer with an opaque YCbCr "
+      "format.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "opaque_ycbcr_android_for_external_texture.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::Unorm16Filterable,
+     {"Allows textures with formats \"r16unorm\" \"rg16unorm\" and \"rgba16unorm\" to be "
+      "filtered.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "unorm16_filterable.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::RenderPassRenderArea,
+     {"Supports specifying render area for render pass.",
+      "https://dawn.googlesource.com/dawn/+/refs/heads/main/docs/dawn/features/"
+      "render_pass_render_area.md",
+      FeatureInfo::FeatureState::Experimental}},
+    {Feature::DawnNativeSpontaneousQueueEvents,
+     {"Support spontaneous queue event completion in native. When this feature is supported and "
+      "enabled, queue events may complete spontaneously on any thread.",
+      "https://github.com/webgpu-native/webgpu-headers/blob/main/doc/articles/"
+      "Asynchronous%20Operations.md",
+      FeatureInfo::FeatureState::Stable}},
+
+    // Comment to separate the } so it is clearer what to copy-paste to add a feature.
+};
 
 }  // anonymous namespace
 

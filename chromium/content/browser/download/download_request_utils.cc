@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/logging.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_frame_host.h"
@@ -21,10 +22,8 @@ DownloadRequestUtils::CreateDownloadForWebContentsMainFrame(
     WebContents* web_contents,
     const GURL& url,
     const net::NetworkTrafficAnnotationTag& traffic_annotation) {
-  RenderFrameHost* render_frame_host = web_contents->GetPrimaryMainFrame();
-  return std::make_unique<download::DownloadUrlParameters>(
-      url, render_frame_host->GetProcess()->GetDeprecatedID(),
-      render_frame_host->GetRoutingID(), traffic_annotation);
+  return web_contents->GetPrimaryMainFrame()->CreateDownloadUrlParameters(
+      url, traffic_annotation);
 }
 
 // static

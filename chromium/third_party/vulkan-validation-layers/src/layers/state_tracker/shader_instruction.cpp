@@ -172,6 +172,13 @@ uint32_t Instruction::GetBitWidth() const {
     return bit_width;
 }
 
+spv::FPEncoding Instruction::GetFPEncoding() const {
+    if (Opcode() == spv::Op::OpTypeFloat && Length() > 3) {
+        return static_cast<spv::FPEncoding>(Word(3));
+    }
+    return spv::FPEncoding::FPEncodingMax;
+}
+
 spv::BuiltIn Instruction::GetBuiltIn() const {
     if (Opcode() == spv::OpDecorate) {
         return static_cast<spv::BuiltIn>(Word(3));
@@ -359,7 +366,8 @@ void Instruction::ReplaceLinkedId(vvl::unordered_map<uint32_t, uint32_t>& id_swa
     };
 
     // Swap all Reference IDs (ignores Result ID)
-    switch (Opcode()) {
+    const uint32_t op_code = Opcode();
+    switch (op_code) {
         case spv::OpCompositeExtract:
         case spv::OpLoad:
         case spv::OpArrayLength:
@@ -454,6 +462,7 @@ void Instruction::ReplaceLinkedId(vvl::unordered_map<uint32_t, uint32_t>& id_swa
             break;
         case spv::OpAtomicStore:
         case spv::OpBranchConditional:
+        case spv::OpControlBarrier:
             swap_to_end(1);
             break;
         case spv::OpAtomicLoad:
@@ -499,6 +508,24 @@ void Instruction::ReplaceLinkedId(vvl::unordered_map<uint32_t, uint32_t>& id_swa
             assert(false && "Need to add support for new instruction");
     }
 
+    UpdateDebugInfo();
+}
+
+void Instruction::FreezeSpecConstant() {
+    const uint32_t opcode = Opcode();
+    if (opcode == spv::OpSpecConstant) {
+        SetNewOpcode(spv::OpConstant);
+    } else if (opcode == spv::OpSpecConstantTrue) {
+        SetNewOpcode(spv::OpConstantTrue);
+    } else if (opcode == spv::OpSpecConstantFalse) {
+        SetNewOpcode(spv::OpConstantFalse);
+    } else if (opcode == spv::OpSpecConstantComposite) {
+        SetNewOpcode(spv::OpConstantComposite);
+    }
+}
+
+void Instruction::SetNewOpcode(uint32_t opcode) {
+    words_[0] = (words_[0] & 0xffff0000u) | (opcode & 0x0ffffu);
     UpdateDebugInfo();
 }
 
@@ -590,6 +617,32 @@ ImageInstruction::ImageInstruction(const uint32_t* words) {
             is_zero_extended = true;
         }
     }
+}
+
+uint32_t Instruction::GetCalledFunctionId() const {
+    const uint32_t opcode = Opcode();
+    if (opcode == spv::OpFunctionCall) {
+        return Word(3);
+    } else if (opcode == spv::OpCooperativeMatrixPerElementOpNV) {
+        return Word(4);
+    } else if (opcode == spv::OpCooperativeMatrixReduceNV) {
+        return Word(5);
+    } else if (opcode == spv::OpCooperativeMatrixLoadTensorNV) {
+        uint32_t idx = 7;
+        const uint32_t mem_operand = Word(6);
+        if (mem_operand & spv::MemoryAccessAlignedMask) idx++;
+        if (mem_operand & spv::MemoryAccessMakePointerAvailableMask) idx++;
+        if (mem_operand & spv::MemoryAccessMakePointerVisibleMask) idx++;
+        if (idx < Length()) {
+            const uint32_t tensor_operand = Word(idx);
+            idx++;
+            if (tensor_operand & spv::TensorAddressingOperandsTensorViewMask) idx++;
+            if ((tensor_operand & spv::TensorAddressingOperandsDecodeFuncMask) && idx < Length()) {
+                return Word(idx);
+            }
+        }
+    }
+    return 0;
 }
 
 }  // namespace spirv

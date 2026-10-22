@@ -49,7 +49,7 @@ Ref<ComputePipeline> ComputePipeline::CreateUninitialized(
     return AcquireRef(new ComputePipeline(device, descriptor));
 }
 
-MaybeError ComputePipeline::InitializeImpl() {
+ResultOrError<Extent3D> ComputePipeline::InitializeImpl() {
     Device* device = ToBackend(GetDevice());
     uint32_t compileFlags = 0;
 
@@ -135,7 +135,7 @@ MaybeError ComputePipeline::InitializeImpl() {
 
     SetLabelImpl();
 
-    return {};
+    return {compiledShader.workgroupSize};
 }
 
 ComputePipeline::~ComputePipeline() = default;

@@ -91,14 +91,15 @@ std::string VideoFrame::StorageTypeToString(
       return "DMABUFS";
 #endif
     case VideoFrame::STORAGE_MAPPABLE_SHARED_IMAGE:
-      return "GPU_MEMORY_BUFFER";
+      return "MAPPABLE_SHARED_IMAGE";
   }
 
   NOTREACHED() << "Invalid StorageType provided: " << storage_type;
 }
 
 // static
-bool VideoFrame::IsStorageTypeMappable(VideoFrame::StorageType storage_type) {
+bool VideoFrame::StorageTypeAllowsDirectCpuAccess(
+    VideoFrame::StorageType storage_type) {
   // CPU memory is the only kind of storage that is mappable at the level of
   // VideoFrame itself (other types of storage such as DMA bufs and
   // MappableSharedImage can be mapped, but not at the level of VideoFrame).
@@ -369,25 +370,41 @@ scoped_refptr<VideoFrame> VideoFrame::WrapSharedImage(
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
     base::TimeDelta timestamp) {
+  CHECK(shared_image);
+  if (coded_size != shared_image->size()) {
+    DLOG(ERROR) << "coded_size (" << coded_size.ToString()
+                << ") does not match shared_image size ("
+                << shared_image->size().ToString() << ")";
+    return nullptr;
+  }
+
   scoped_refptr<VideoFrame> frame = CreateFrameForNativeTexturesInternal(
-      format, coded_size, visible_rect, natural_size, timestamp);
+      format, shared_image->size(), visible_rect, natural_size, timestamp);
   if (!frame) {
     return nullptr;
   }
 
-  if (shared_image) {
-    frame->acquire_sync_token_ = sync_token;
-    frame->shared_image_ = shared_image->MakeUnowned();
-    CHECK_EQ(coded_size, shared_image->size())
-        << "coded_size (" << coded_size.ToString()
-        << ") does not match shared_image size ("
-        << shared_image->size().ToString() << ")";
+  frame->acquire_sync_token_ = sync_token;
+  frame->shared_image_ = shared_image->MakeUnowned();
+  if (shared_image_release_cb) {
+    frame->SetReleaseMailboxCB(std::move(shared_image_release_cb));
   }
-  frame->shared_image_release_cb_ = std::move(shared_image_release_cb);
-
-  DCHECK(frame->HasSharedImage());
-
   return frame;
+}
+
+// static
+scoped_refptr<VideoFrame> VideoFrame::WrapSharedImage(
+    VideoPixelFormat format,
+    scoped_refptr<gpu::ClientSharedImage> shared_image,
+    gpu::SyncToken sync_token,
+    ReleaseMailboxCB shared_image_release_cb,
+    const gfx::Rect& visible_rect,
+    const gfx::Size& natural_size,
+    base::TimeDelta timestamp) {
+  CHECK(shared_image);
+  return WrapSharedImage(
+      format, shared_image, sync_token, std::move(shared_image_release_cb),
+      shared_image->size(), visible_rect, natural_size, timestamp);
 }
 
 scoped_refptr<VideoFrame> VideoFrame::WrapMappableSharedImage(
@@ -466,24 +483,14 @@ scoped_refptr<VideoFrame> VideoFrame::WrapMappableSharedImage(
     DLOG(ERROR) << __func__ << " Couldn't create VideoFrame instance";
     return nullptr;
   }
-  frame->shared_image_release_cb_ = std::move(shared_image_release_cb);
+  if (shared_image_release_cb) {
+    frame->SetReleaseMailboxCB(std::move(shared_image_release_cb));
+  }
   frame->acquire_sync_token_ = sync_token;
 
-  // Note that we can not use |shared_image|->MakeUnOwned() here since that
-  // will not work for MappableSI due to it owning a GMB internally and we can
-  // not create an unowned reference to it. Additionally
-  // removing the use of ClientSharedImage::MakeUnOwned() everywhere is
-  // currently work in progress as a part of Automatic shared image management
-  // for ClientSharedImage project, so we don't want to use it here as well. The
-  // downside right now with below code is that while destroying the
-  // ClientSharedImage when MappableSI is enabled, there will be more than one
-  // reference of it and we will hit CHECKs in
-  // ClientSharedImageInterface::DestroySharedImage(). To avoid this CHECKs, we
-  // will need to replace the ClientSharedImageInterface::DestroySharedImage()
-  // call sites with ClientSharedImage::UpdateDestructionSyncToken() for every
-  // VideoFrame MappableSI client. This works well since it is also eventual
-  // goal of ClientSharedImage for rest of the chrome. crbug.com/40286368 for
-  // more details on the work.
+  // Note that we cannot use |shared_image|->MakeUnowned() here since MappableSI
+  // owns a MappableBuffer internally, which we cannot create an unowned
+  // reference to.
   frame->shared_image_ = std::move(shared_image);
   return frame;
 }
@@ -730,7 +737,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapExternalDmabufs(
     return nullptr;
   }
 
-  frame->shared_image_release_cb_ = ReleaseMailboxCB();
+  frame->shared_image_release_cb_ = ReleaseMailboxCBWithLostResource();
   frame->dmabuf_fds_ = std::move(dmabuf_fds);
   DCHECK(frame->HasDmaBufs());
 
@@ -869,7 +876,7 @@ scoped_refptr<VideoFrame> VideoFrame::WrapVideoFrame(
   wrapping_frame->set_color_space(frame->ColorSpace());
   wrapping_frame->set_hdr_metadata(frame->hdr_metadata());
 
-  if (frame->IsMappable()) {
+  if (frame->HasDirectCpuAccess()) {
     for (size_t i = 0; i < new_plane_count; ++i) {
       wrapping_frame->data_[i] = frame->data_[i];
     }
@@ -1161,8 +1168,8 @@ void VideoFrame::BackWithOwnedSharedMemory(
   owned_shm_mapping_ = std::move(mapping);
 }
 
-bool VideoFrame::IsMappable() const {
-  return IsStorageTypeMappable(storage_type_);
+bool VideoFrame::HasDirectCpuAccess() const {
+  return StorageTypeAllowsDirectCpuAccess(storage_type_);
 }
 
 bool VideoFrame::HasSharedImage() const {
@@ -1223,6 +1230,25 @@ gfx::ColorSpace VideoFrame::ColorSpace() const {
   return color_space_;
 }
 
+void VideoFrame::set_color_space(const gfx::ColorSpace& color_space) {
+  // Check color spaces are same for video frames created from shared image
+  // from WrapSharedImage codepaths.
+  if (HasSharedImage() && !HasMappableSharedImage() &&
+      color_space != shared_image()->color_space()) {
+    SCOPED_CRASH_KEY_STRING256("video_frame", "si_color_space",
+                               shared_image()->color_space().ToString());
+    SCOPED_CRASH_KEY_STRING256("video_frame", "color_space",
+                               color_space.ToString());
+    SCOPED_CRASH_KEY_STRING256("video_frame", "si_label",
+                               shared_image()->debug_label());
+    DUMP_WILL_BE_CHECK(false)
+        << "VideoFrame color space (" << color_space.ToString()
+        << ") does not match SharedImage color_space ("
+        << shared_image()->color_space().ToString() << ")";
+  }
+  color_space_ = color_space;
+}
+
 gfx::ColorSpace VideoFrame::CompatRGBColorSpace() const {
   const auto rgb_color_space = ColorSpace().GetAsFullRangeRGB();
   if (!rgb_color_space.IsValid()) {
@@ -1280,7 +1306,7 @@ template <typename T>
 base::span<T> VideoFrame::GetVisibleDataInternal(base::span<T> data,
                                                  size_t plane) const {
   DCHECK(IsValidPlane(format(), plane));
-  DCHECK(IsMappable());
+  DCHECK(HasDirectCpuAccess());
   if (data.empty()) [[unlikely]] {
     return {};
   }
@@ -1292,19 +1318,35 @@ base::span<T> VideoFrame::GetVisibleDataInternal(base::span<T> data,
                           base::bits::AlignDownDeprecatedDoNotUse(
                               visible_rect_.y(), alignment.height()));
 
-  const int plane_stride = stride(plane);
+  const size_t plane_stride = stride(plane);
   const gfx::Size subsample = SampleSize(format(), plane);
   DCHECK(offset.x() % subsample.width() == 0);
   DCHECK(offset.y() % subsample.height() == 0);
-  const auto visible_plane_offset = base::checked_cast<size_t>(
-      // Row offset.
-      plane_stride * (offset.y() / subsample.height()) +
-      // Column offset.
+
+  // Use CheckedNumeric for offset calculation to prevent overflow.
+  // Row offset.
+  base::CheckedNumeric<size_t> checked_offset = plane_stride;
+  checked_offset *= base::checked_cast<size_t>(offset.y() / subsample.height());
+  // Column offset.
+  checked_offset += base::checked_cast<size_t>(
       BytesPerElement(format(), plane) * (offset.x() / subsample.width()));
+  const size_t visible_plane_offset = checked_offset.ValueOrDie();
+
+  const size_t visible_rows = base::checked_cast<size_t>(GetVisibleRows(plane));
+  const size_t visible_row_bytes =
+      base::checked_cast<size_t>(GetVisibleRowBytes(plane));
+
+  // Use CheckedNumeric for size calculation to prevent overflow.
   // In the last row, bytes between visible width and the full stride are not
   // the part of the visible plane.
-  size_t visible_plane_size =
-      plane_stride * (GetVisibleRows(plane) - 1) + GetVisibleRowBytes(plane);
+  base::CheckedNumeric<size_t> checked_visible_plane_size = 0;
+  if (visible_rows > 0) {
+    checked_visible_plane_size = plane_stride;
+    checked_visible_plane_size *= (visible_rows - 1);
+    checked_visible_plane_size += visible_row_bytes;
+  }
+  const size_t visible_plane_size = checked_visible_plane_size.ValueOrDie();
+
   return data.subspan(visible_plane_offset, visible_plane_size);
 }
 
@@ -1357,6 +1399,7 @@ SkYUVAInfo VideoFrame::GetVisibleSkYUVAInfo() const {
 
 std::vector<SkPixmap> VideoFrame::GetVisiblePlanesSkPixmaps() const {
   const auto yuva_info = GetVisibleSkYUVAInfo();
+  const auto color_space = ColorSpace().GetAsFullRangeRGB().ToSkColorSpace();
   std::array<SkISize, kMaxPlanes> plane_dimensions = {
       SkISize::Make(visible_rect_.width(), visible_rect_.height()),
   };
@@ -1376,8 +1419,8 @@ std::vector<SkPixmap> VideoFrame::GetVisiblePlanesSkPixmaps() const {
     const auto alpha_type = SkColorTypeIsAlwaysOpaque(color_type)
                                 ? kOpaque_SkAlphaType
                                 : kUnpremul_SkAlphaType;
-    const SkImageInfo plane_info =
-        SkImageInfo::Make(plane_dimensions[p], color_type, alpha_type);
+    const SkImageInfo plane_info = SkImageInfo::Make(
+        plane_dimensions[p], color_type, alpha_type, color_space);
     planes[p] = SkPixmap(plane_info, visible_data(p), stride(p));
   }
   return planes;
@@ -1423,12 +1466,37 @@ void VideoFrame::SetReleaseMailboxCB(ReleaseMailboxCB release_mailbox_cb) {
   // is not thread safe.  This method should only be called by the owner of
   // |wrapped_frame_| directly.
   DCHECK(!wrapped_frame_);
+  // Binds `release_mailbox_cb` and runs it with SyncToken ignoring the bool.
+  // Returns a OnceCallback<void (const gpu::SyncToken &, bool)> which is then
+  // stored.
+  SetReleaseMailboxCB(
+      base::BindOnce([](ReleaseMailboxCB cb, const gpu::SyncToken& sync_token,
+                        bool lost_resource) { std::move(cb).Run(sync_token); },
+                     std::move(release_mailbox_cb)));
+}
+
+void VideoFrame::SetReleaseMailboxCB(
+    ReleaseMailboxCBWithLostResource release_mailbox_cb) {
+  DCHECK(release_mailbox_cb);
+  DCHECK(!shared_image_release_cb_);
+  // We don't relay SetReleaseMailboxCB to |wrapped_frame_| because the method
+  // is not thread safe.  This method should only be called by the owner of
+  // |wrapped_frame_| directly.
+  DCHECK(!wrapped_frame_);
   shared_image_release_cb_ = std::move(release_mailbox_cb);
 }
 
 bool VideoFrame::HasReleaseMailboxCB() const {
   return wrapped_frame_ ? wrapped_frame_->HasReleaseMailboxCB()
                         : !!shared_image_release_cb_;
+}
+
+void VideoFrame::SetLostSharedImageResource() {
+  if (wrapped_frame_) {
+    wrapped_frame_->SetLostSharedImageResource();
+    return;
+  }
+  lost_shared_image_resource_ = true;
 }
 
 void VideoFrame::AddDestructionObserver(base::OnceClosure callback) {
@@ -1514,9 +1582,9 @@ VideoFrame::~VideoFrame() {
       base::AutoLock locker(release_sync_token_lock_);
       release_sync_token = release_sync_token_;
     }
-    std::move(shared_image_release_cb_).Run(release_sync_token);
+    std::move(shared_image_release_cb_)
+        .Run(release_sync_token, lost_shared_image_resource_);
   }
-
   // Prevents dangling raw ptr, see https://docs.google.com/document/d/156O7kBZqIhe1dUcqTMcN5T-6YEAcg0yNnj5QlnZu9xU/edit?usp=sharing.
   shm_region_ = nullptr;
 

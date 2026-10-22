@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "base/debug/dump_without_crashing.h"
 #include "content/browser/preloading/prerender/prerender_final_status.h"
 #include "content/browser/preloading/prerender/prerender_host.h"
 #include "content/browser/preloading/prerender/prerender_host_registry.h"
@@ -16,12 +17,6 @@
 namespace content {
 
 namespace {
-
-int32_t GetNextHandleId() {
-  static int32_t next_handle_id = 1;
-  CHECK_LT(next_handle_id, std::numeric_limits<int32_t>::max());
-  return next_handle_id++;
-}
 
 // Returns true when the error callback should be fired. The callback does not
 // need to be fired when prerendering succeed but is never activated, or it is
@@ -145,6 +140,9 @@ bool ShouldFireErrorCallback(PrerenderFinalStatus status) {
     // The PrerenderHost is reused by another prerender request.
     case PrerenderFinalStatus::kPrerenderHostReused:
       return false;
+    case PrerenderFinalStatus::kFormSubmitWhenPrerendering:
+    case PrerenderFinalStatus::kCrossDocumentRestart:
+      return false;
   }
 }
 
@@ -155,8 +153,7 @@ PrerenderHandleImpl::PrerenderHandleImpl(
     PrerenderHostId prerender_host_id,
     const GURL& prerendering_url,
     std::optional<net::HttpNoVarySearchData> no_vary_search_hint)
-    : handle_id_(GetNextHandleId()),
-      prerender_host_id_(prerender_host_id),
+    : prerender_host_id_(prerender_host_id),
       prerender_host_registry_(std::move(prerender_host_registry)),
       prerendering_url_(prerendering_url),
       no_vary_search_hint_(std::move(no_vary_search_hint)) {
@@ -177,8 +174,8 @@ PrerenderHandleImpl::~PrerenderHandleImpl() {
   }
 }
 
-int32_t PrerenderHandleImpl::GetHandleId() const {
-  return handle_id_;
+PrerenderHostId PrerenderHandleImpl::GetPrerenderHostId() const {
+  return prerender_host_id_;
 }
 
 const GURL& PrerenderHandleImpl::GetInitialPrerenderingUrl() const {
@@ -205,20 +202,21 @@ void PrerenderHandleImpl::SetPreloadingAttemptFailureReason(
 
 void PrerenderHandleImpl::AddActivationCallback(
     base::OnceClosure activation_callback) {
-  CHECK_EQ(State::kValid, state_);
+  CHECK(IsValid());
   CHECK(activation_callback);
   activation_callbacks_.push_back(std::move(activation_callback));
 }
 
 void PrerenderHandleImpl::AddErrorCallback(base::OnceClosure error_callback) {
-  CHECK_EQ(State::kValid, state_);
+  CHECK(IsValid());
   CHECK(error_callback);
   error_callbacks_.push_back(std::move(error_callback));
 }
 
 bool PrerenderHandleImpl::IsValid() const {
   switch (state_) {
-    case State::kValid:
+    case State::kLoading:
+    case State::kReady:
       return true;
     case State::kActivated:
     case State::kCanceled:
@@ -226,8 +224,19 @@ bool PrerenderHandleImpl::IsValid() const {
   }
 }
 
+bool PrerenderHandleImpl::IsWaitingForResponseHeaders() const {
+  CHECK(IsValid());
+  return state_ == State::kLoading;
+}
+
+void PrerenderHandleImpl::AddOnResponseHeadersReceivedCallback(
+    base::OnceClosure callback) {
+  CHECK(IsWaitingForResponseHeaders());
+  on_headers_received_callbacks_.push_back(std::move(callback));
+}
+
 void PrerenderHandleImpl::OnActivated() {
-  CHECK_EQ(State::kValid, state_);
+  CHECK_EQ(State::kReady, state_);
   state_ = State::kActivated;
 
   // An error should not be reported after activation.
@@ -242,11 +251,21 @@ void PrerenderHandleImpl::OnActivated() {
 }
 
 void PrerenderHandleImpl::OnFailed(PrerenderFinalStatus status) {
-  CHECK_EQ(State::kValid, state_);
+  // The prerender page can either be activated or fail.
+  // However an activated page will never receive this callback.
+  CHECK(IsValid());
   state_ = State::kCanceled;
 
   // An activation never happen after cancellation.
   activation_callbacks_.clear();
+
+  // Call the header callbacks to unthrottle other requests anyway.
+  // If the header has already been received, on_headers_received_callbacks_
+  // will be empty.
+  for (auto& callback : on_headers_received_callbacks_) {
+    std::move(callback).Run();
+  }
+  on_headers_received_callbacks_.clear();
 
   if (!ShouldFireErrorCallback(status)) {
     error_callbacks_.clear();
@@ -267,6 +286,23 @@ void PrerenderHandleImpl::OnFailed(PrerenderFinalStatus status) {
 
 void PrerenderHandleImpl::OnHostDestroyed(PrerenderFinalStatus status) {
   obs_.Reset();
+}
+
+void PrerenderHandleImpl::OnHeadersReceived(
+    NavigationHandle& navigation_handle) {
+  // There is a small chance that the headers received callback
+  // will be called for a cancelled prerender host because the
+  // deferred destruction of the PrerenderHost.
+  if (state_ == State::kCanceled) {
+    return;
+  }
+  CHECK_EQ(state_, State::kLoading);
+  state_ = State::kReady;
+
+  for (auto& callback : on_headers_received_callbacks_) {
+    std::move(callback).Run();
+  }
+  on_headers_received_callbacks_.clear();
 }
 
 }  // namespace content

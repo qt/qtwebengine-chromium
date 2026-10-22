@@ -10,7 +10,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/types/variant.h"
 #include "cast/common/public/message_port.h"
 #include "cast/streaming/public/answer_messages.h"
 #include "cast/streaming/public/offer_messages.h"
@@ -78,6 +77,9 @@ class SenderSessionMessenger final : public SessionMessenger {
   // Convenience method for sending a valid RPC message.
   [[nodiscard]] Error SendRpcMessage(ByteView message);
 
+  // Convenience method for sending a valid INPUT message.
+  [[nodiscard]] Error SendInputMessage(ByteView message);
+
   // Send a request (with optional reply callback).
   [[nodiscard]] Error SendRequest(SenderMessage message,
                                   ReceiverMessage::Type reply_type,
@@ -104,6 +106,7 @@ class SenderSessionMessenger final : public SessionMessenger {
   // Currently we can only set a handler for RPC messages, so no need for
   // a flatmap here.
   ReplyCallback rpc_callback_;
+  ReplyCallback input_callback_;
 
   WeakPtrFactory<SenderSessionMessenger> weak_factory_{this};
 };
@@ -120,6 +123,14 @@ class ReceiverSessionMessenger final : public SessionMessenger {
   // Set sender message handler.
   void SetHandler(SenderMessage::Type type, RequestCallback cb);
   void ResetHandler(SenderMessage::Type type);
+
+  // Convenience method for sending a valid RPC message.
+  [[nodiscard]] Error SendRpcMessage(const std::string& source_id,
+                                     ByteView message);
+
+  // Convenience method for sending a valid INPUT message.
+  [[nodiscard]] Error SendInputMessage(const std::string& source_id,
+                                       ByteView message);
 
   // Send a JSON message.
   [[nodiscard]] Error SendMessage(const std::string& source_id,

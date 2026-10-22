@@ -51,9 +51,9 @@ enum ExtEnabled : unsigned char {
 // Map of promoted extension information per version (a separate map exists for instance and device extensions).
 // The map is keyed by the version number (e.g. VK_API_VERSION_1_1) and each value is a pair consisting of the
 // version string (e.g. "VK_VERSION_1_1") and the set of name of the promoted extensions.
-typedef vvl::unordered_map<uint32_t, std::pair<const char *, vvl::unordered_set<vvl::Extension>>> PromotedExtensionInfoMap;
-const PromotedExtensionInfoMap &GetInstancePromotionInfoMap();
-const PromotedExtensionInfoMap &GetDevicePromotionInfoMap();
+typedef vvl::unordered_map<uint32_t, std::pair<const char*, vvl::unordered_set<vvl::Extension>>> PromotedExtensionInfoMap;
+const PromotedExtensionInfoMap& GetInstancePromotionInfoMap();
+const PromotedExtensionInfoMap& GetDevicePromotionInfoMap();
 
 /*
 This function is a helper to know if the extension is enabled.
@@ -135,21 +135,21 @@ struct InstanceExtensions {
     ExtEnabled vk_sec_ubm_surface{kNotSupported};
 
     struct Requirement {
-        const ExtEnabled InstanceExtensions::*enabled;
-        const char *name;
+        const ExtEnabled InstanceExtensions::* enabled;
+        const char* name;
     };
     typedef std::vector<Requirement> RequirementVec;
     struct Info {
-        Info(ExtEnabled InstanceExtensions::*state_, const RequirementVec requirements_)
+        Info(ExtEnabled InstanceExtensions::* state_, const RequirementVec requirements_)
             : state(state_), requirements(requirements_) {}
-        ExtEnabled InstanceExtensions::*state;
+        ExtEnabled InstanceExtensions::* state;
         RequirementVec requirements;
     };
 
-    const Info &GetInfo(vvl::Extension extension_name) const;
+    const Info& GetInfo(vvl::Extension extension_name) const;
 
     InstanceExtensions() = default;
-    InstanceExtensions(APIVersion requested_api_version, const VkInstanceCreateInfo *pCreateInfo);
+    InstanceExtensions(APIVersion requested_api_version, const VkInstanceCreateInfo* pCreateInfo);
 };
 
 struct DeviceExtensions : public InstanceExtensions {
@@ -216,7 +216,9 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_khr_vulkan_memory_model{kNotSupported};
     ExtEnabled vk_khr_shader_terminate_invocation{kNotSupported};
     ExtEnabled vk_khr_fragment_shading_rate{kNotSupported};
+    ExtEnabled vk_khr_shader_constant_data{kNotSupported};
     ExtEnabled vk_khr_dynamic_rendering_local_read{kNotSupported};
+    ExtEnabled vk_khr_shader_abort{kNotSupported};
     ExtEnabled vk_khr_shader_quad_control{kNotSupported};
     ExtEnabled vk_khr_spirv_1_4{kNotSupported};
     ExtEnabled vk_khr_separate_depth_stencil_layouts{kNotSupported};
@@ -232,6 +234,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_khr_present_id{kNotSupported};
     ExtEnabled vk_khr_video_encode_queue{kNotSupported};
     ExtEnabled vk_khr_synchronization2{kNotSupported};
+    ExtEnabled vk_khr_device_address_commands{kNotSupported};
     ExtEnabled vk_khr_fragment_shader_barycentric{kNotSupported};
     ExtEnabled vk_khr_shader_subgroup_uniform_control_flow{kNotSupported};
     ExtEnabled vk_khr_zero_initialize_workgroup_memory{kNotSupported};
@@ -270,6 +273,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_khr_video_encode_quantization_map{kNotSupported};
     ExtEnabled vk_khr_shader_relaxed_extended_instruction{kNotSupported};
     ExtEnabled vk_khr_maintenance7{kNotSupported};
+    ExtEnabled vk_khr_device_fault{kNotSupported};
     ExtEnabled vk_khr_maintenance8{kNotSupported};
     ExtEnabled vk_khr_shader_fma{kNotSupported};
     ExtEnabled vk_khr_maintenance9{kNotSupported};
@@ -541,6 +545,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_arm_pipeline_opacity_micromap{kNotSupported};
     ExtEnabled vk_ext_external_memory_metal{kNotSupported};
     ExtEnabled vk_arm_performance_counters_by_region{kNotSupported};
+    ExtEnabled vk_arm_shader_instrumentation{kNotSupported};
     ExtEnabled vk_ext_vertex_attribute_robustness{kNotSupported};
     ExtEnabled vk_arm_format_pack{kNotSupported};
     ExtEnabled vk_valve_fragment_density_map_layered{kNotSupported};
@@ -555,36 +560,37 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_shader_uniform_buffer_unsized_array{kNotSupported};
     ExtEnabled vk_nv_compute_occupancy_priority{kNotSupported};
     ExtEnabled vk_ext_shader_subgroup_partitioned{kNotSupported};
+    ExtEnabled vk_valve_shader_mixed_float_dot_product{kNotSupported};
     ExtEnabled vk_khr_acceleration_structure{kNotSupported};
     ExtEnabled vk_khr_ray_tracing_pipeline{kNotSupported};
     ExtEnabled vk_khr_ray_query{kNotSupported};
     ExtEnabled vk_ext_mesh_shader{kNotSupported};
 
     struct Requirement {
-        const ExtEnabled DeviceExtensions::*enabled;
-        const char *name;
+        const ExtEnabled DeviceExtensions::* enabled;
+        const char* name;
     };
     typedef std::vector<Requirement> RequirementVec;
     struct Info {
-        Info(ExtEnabled DeviceExtensions::*state_, const RequirementVec requirements_)
+        Info(ExtEnabled DeviceExtensions::* state_, const RequirementVec requirements_)
             : state(state_), requirements(requirements_) {}
-        ExtEnabled DeviceExtensions::*state;
+        ExtEnabled DeviceExtensions::* state;
         RequirementVec requirements;
     };
 
-    const Info &GetInfo(vvl::Extension extension_name) const;
+    const Info& GetInfo(vvl::Extension extension_name) const;
 
     DeviceExtensions() = default;
-    DeviceExtensions(const InstanceExtensions &instance_ext) : InstanceExtensions(instance_ext) {}
+    DeviceExtensions(const InstanceExtensions& instance_ext) : InstanceExtensions(instance_ext) {}
 
-    DeviceExtensions(const InstanceExtensions &instance_extensions, APIVersion requested_api_version,
-                     const VkDeviceCreateInfo *pCreateInfo = nullptr);
-    DeviceExtensions(const InstanceExtensions &instance_ext, APIVersion requested_api_version,
-                     const std::vector<VkExtensionProperties> &props);
+    DeviceExtensions(const InstanceExtensions& instance_extensions, APIVersion requested_api_version,
+                     const VkDeviceCreateInfo* pCreateInfo = nullptr);
+    DeviceExtensions(const InstanceExtensions& instance_ext, APIVersion requested_api_version,
+                     const std::vector<VkExtensionProperties>& props);
 };
 
-const InstanceExtensions::Info &GetInstanceVersionMap(const char *version);
-const DeviceExtensions::Info &GetDeviceVersionMap(const char *version);
+const InstanceExtensions::Info& GetInstanceVersionMap(const char* version);
+const DeviceExtensions::Info& GetDeviceVersionMap(const char* version);
 
 constexpr bool IsInstanceExtension(vvl::Extension extension) {
     switch (extension) {
@@ -698,7 +704,9 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_KHR_vulkan_memory_model:
         case vvl::Extension::_VK_KHR_shader_terminate_invocation:
         case vvl::Extension::_VK_KHR_fragment_shading_rate:
+        case vvl::Extension::_VK_KHR_shader_constant_data:
         case vvl::Extension::_VK_KHR_dynamic_rendering_local_read:
+        case vvl::Extension::_VK_KHR_shader_abort:
         case vvl::Extension::_VK_KHR_shader_quad_control:
         case vvl::Extension::_VK_KHR_spirv_1_4:
         case vvl::Extension::_VK_KHR_separate_depth_stencil_layouts:
@@ -714,6 +722,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_KHR_present_id:
         case vvl::Extension::_VK_KHR_video_encode_queue:
         case vvl::Extension::_VK_KHR_synchronization2:
+        case vvl::Extension::_VK_KHR_device_address_commands:
         case vvl::Extension::_VK_KHR_fragment_shader_barycentric:
         case vvl::Extension::_VK_KHR_shader_subgroup_uniform_control_flow:
         case vvl::Extension::_VK_KHR_zero_initialize_workgroup_memory:
@@ -752,6 +761,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_KHR_video_encode_quantization_map:
         case vvl::Extension::_VK_KHR_shader_relaxed_extended_instruction:
         case vvl::Extension::_VK_KHR_maintenance7:
+        case vvl::Extension::_VK_KHR_device_fault:
         case vvl::Extension::_VK_KHR_maintenance8:
         case vvl::Extension::_VK_KHR_shader_fma:
         case vvl::Extension::_VK_KHR_maintenance9:
@@ -1023,6 +1033,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_ARM_pipeline_opacity_micromap:
         case vvl::Extension::_VK_EXT_external_memory_metal:
         case vvl::Extension::_VK_ARM_performance_counters_by_region:
+        case vvl::Extension::_VK_ARM_shader_instrumentation:
         case vvl::Extension::_VK_EXT_vertex_attribute_robustness:
         case vvl::Extension::_VK_ARM_format_pack:
         case vvl::Extension::_VK_VALVE_fragment_density_map_layered:
@@ -1037,6 +1048,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_EXT_shader_uniform_buffer_unsized_array:
         case vvl::Extension::_VK_NV_compute_occupancy_priority:
         case vvl::Extension::_VK_EXT_shader_subgroup_partitioned:
+        case vvl::Extension::_VK_VALVE_shader_mixed_float_dot_product:
         case vvl::Extension::_VK_KHR_acceleration_structure:
         case vvl::Extension::_VK_KHR_ray_tracing_pipeline:
         case vvl::Extension::_VK_KHR_ray_query:

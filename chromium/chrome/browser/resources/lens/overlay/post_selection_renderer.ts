@@ -2,23 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import '//resources/cr_elements/cr_icon_button/cr_icon_button.js';
+
 import {I18nMixin} from '//resources/cr_elements/i18n_mixin.js';
 import {assert, assertInstanceof, assertNotReached} from '//resources/js/assert.js';
 import {EventTracker} from '//resources/js/event_tracker.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
-import {PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import type {RectF} from '//resources/mojo/ui/gfx/geometry/mojom/geometry.mojom-webui.js';
+import {flush, PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-import {BrowserProxyImpl} from './browser_proxy.js';
-import type {BrowserProxy} from './browser_proxy.js';
 import {GLIF_HEX_COLORS} from './color_utils.js';
 import {CenterRotatedBox_CoordinateType} from './geometry.mojom-webui.js';
 import type {CenterRotatedBox} from './geometry.mojom-webui.js';
-import {UserAction} from './lens.mojom-webui.js';
-import {INVOCATION_SOURCE} from './lens_overlay_app.js';
-import {recordLensOverlayInteraction} from './metrics_utils.js';
 import {getTemplate} from './post_selection_renderer.html.js';
 import {ScreenshotBitmapBrowserProxyImpl} from './screenshot_bitmap_browser_proxy.js';
 import {renderScreenshot} from './screenshot_utils.js';
+import {RegionSource, SelectionOverlayBaseHandler} from './selection_overlay_base_handler.js';
+import type {SelectedRegion} from './selection_overlay_base_handler.js';
 import {focusShimmerOnRegion, ShimmerControlRequester, unfocusShimmer} from './selection_utils.js';
 import type {GestureEvent} from './selection_utils.js';
 import {toPercent, toPixels} from './values_converter.js';
@@ -30,6 +30,15 @@ export interface PostSelectionBoundingBox {
   left: number;
   width: number;
   height: number;
+}
+
+export interface StaticRegion {
+  id: string;
+  left: string;
+  top: string;
+  width: string;
+  height: string;
+  clipPath: string;
 }
 
 // The target currently being dragged on by the user.
@@ -118,10 +127,22 @@ export class PostSelectionRendererElement extends
         type: Array,
         value: () => ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'],
       },
-      canvasHeight: Number,
-      canvasWidth: Number,
-      canvasPhysicalHeight: Number,
-      canvasPhysicalWidth: Number,
+      canvasHeight: {
+        type: Number,
+        reflectToAttribute: true,
+      },
+      canvasWidth: {
+        type: Number,
+        reflectToAttribute: true,
+      },
+      canvasPhysicalHeight: {
+        type: Number,
+        reflectToAttribute: true,
+      },
+      canvasPhysicalWidth: {
+        type: Number,
+        reflectToAttribute: true,
+      },
       regionSelectedGlowEnabled: {
         type: Boolean,
         reflectToAttribute: true,
@@ -138,7 +159,48 @@ export class PostSelectionRendererElement extends
         value: () => loadTimeData.getBoolean('cornerSlidersEnabled'),
         reflectToAttribute: true,
       },
+      backgroundGradientHidden: {
+        type: Boolean,
+        reflectToAttribute: true,
+        value: false,
+      },
+      multiRegionSelectionEnabled: {
+        type: Boolean,
+        value: () => loadTimeData.getBoolean('enableMultiRegionSelection'),
+        reflectToAttribute: true,
+      },
+      staticRegions: {
+        type: Array,
+        value: () => [],
+      },
+      activeRegionId: {
+        type: String,
+        value: '',
+        reflectToAttribute: true,
+      },
+      selectedRegions: {
+        type: Array,
+        value: () => [],
+      },
     };
+  }
+
+  static get observers() {
+    return [
+      'calculateStaticRegions(' +
+          'selectedRegions.*, activeRegionId, multiRegionSelectionEnabled)',
+      'syncActiveRegion(selectedRegions.*, activeRegionId)',
+    ];
+  }
+
+  private syncActiveRegion() {
+    const activeRegion =
+        this.selectedRegions.find(r => r.id === this.activeRegionId);
+    if (activeRegion) {
+      const {x, y, width, height} = activeRegion.region;
+      this.setDimensions(y - height / 2, x - width / 2, height, width);
+      this.rerender();
+    }
   }
 
   private eventTracker_: EventTracker = new EventTracker();
@@ -160,21 +222,30 @@ export class PostSelectionRendererElement extends
   // Whether the region selected glow is enabled via feature flag.
   declare private regionSelectedGlowEnabled: boolean;
   declare private selectionOverlayRect: DOMRect;
+  // Whether the background gradient should be hidden.
+  declare private backgroundGradientHidden: boolean;
+  declare private multiRegionSelectionEnabled: boolean;
+  declare private staticRegions: StaticRegion[];
+  declare private activeRegionId: string;
+  declare private selectedRegions: SelectedRegion[];
 
+  private currentScreenshot: ImageBitmap|null = null;
+  private renderedCanvasElements_: Set<HTMLCanvasElement> = new Set();
   private context: CanvasRenderingContext2D;
   // Listener IDs for events tracked from the browser.
   private listenerIds: number[];
   // The original bounds from the start of a drag or slider change.
   private originalBounds:
       PostSelectionBoundingBox = {left: 0, top: 0, width: 0, height: 0};
-  private browserProxy: BrowserProxy = BrowserProxyImpl.getInstance();
+  private baseHandler: SelectionOverlayBaseHandler =
+      SelectionOverlayBaseHandler.getInstance();
   private resizeObserver: ResizeObserver = new ResizeObserver(() => {
     this.handleResize();
   });
   private newBoxAnimation: Animation|null = null;
   private animateOnResize = false;
   // Whether to darken the post selection scrim.
-  declare private shouldDarkenScrim;
+  declare private shouldDarkenScrim: boolean;
   // Whether to enable corner sliders for keyboard control.
   declare private cornerSlidersEnabled: boolean;
   // Timeout for calling handleGestureEnd() after a slider change.
@@ -187,11 +258,22 @@ export class PostSelectionRendererElement extends
     super.connectedCallback();
     ScreenshotBitmapBrowserProxyImpl.getInstance().fetchScreenshot(
         (screenshot: ImageBitmap) => {
-          renderScreenshot(this.$.backgroundImageCanvas, screenshot);
+          this.currentScreenshot = screenshot;
+          // renderScreenshot detaches the bitmap, so we create a copy to keep
+          // the original alive for the static region canvases.
+          createImageBitmap(screenshot).then(bmp => {
+            renderScreenshot(this.$.backgroundImageCanvas, bmp);
+          });
+          this.renderStaticRegionCanvases();
         });
     ScreenshotBitmapBrowserProxyImpl.getInstance().addOnOverlayReshownListener(
         (screenshot: ImageBitmap) => {
-          renderScreenshot(this.$.backgroundImageCanvas, screenshot);
+          this.currentScreenshot = screenshot;
+          this.renderedCanvasElements_.clear();
+          createImageBitmap(screenshot).then(bmp => {
+            renderScreenshot(this.$.backgroundImageCanvas, bmp);
+          });
+          this.renderStaticRegionCanvases();
         });
     this.eventTracker_.add(
         document, 'render-post-selection',
@@ -213,15 +295,20 @@ export class PostSelectionRendererElement extends
         this.shouldDarkenScrim = true;
       }
     });
+    this.eventTracker_.add(this, 'pointermove', (e: PointerEvent) => {
+      this.handlePointerMoveForFocus(e);
+    });
     this.resizeObserver.observe(this);
     // Set up listener to listen to events from C++.
     this.listenerIds = [
-      this.browserProxy.callbackRouter.clearAllSelections.addListener(
+      this.baseHandler.addClearAllSelectionsListener(
           this.clearSelection.bind(this)),
-      this.browserProxy.callbackRouter.clearRegionSelection.addListener(
+      this.baseHandler.addClearRegionSelectionListener(
           this.clearRegionSelection.bind(this)),
-      this.browserProxy.callbackRouter.setPostRegionSelection.addListener(
+      this.baseHandler.addSetPostRegionSelectionListener(
           this.setSelection.bind(this)),
+      this.baseHandler.addMultiRegionSelectionListener(
+          this.onMultiRegionSelectionUpdated.bind(this)),
     ];
   }
 
@@ -229,9 +316,151 @@ export class PostSelectionRendererElement extends
     super.disconnectedCallback();
     this.eventTracker_.removeAll();
     this.resizeObserver.unobserve(this);
-    this.listenerIds.forEach(
-        id => assert(this.browserProxy.callbackRouter.removeListener(id)));
+    this.listenerIds.forEach(id => {
+      if (id !== -1) {
+        this.baseHandler.removeListener(id);
+      }
+    });
     this.listenerIds = [];
+  }
+
+  private handlePointerMoveForFocus(event: PointerEvent) {
+    // Don't switch focus if the user is currently dragging/resizing.
+    if (this.currentDragTarget !== DragTarget.NONE) {
+      return;
+    }
+
+    const elements =
+        this.shadowRoot!.elementsFromPoint(event.clientX, event.clientY) as
+        HTMLElement[];
+
+    // If we're hovering over the active region's controls (close button, corners),
+    // don't switch focus.
+    if (elements.some(
+            el => el.classList.contains('close-button') ||
+                el.classList.contains('corner-hit-box'))) {
+      return;
+    }
+
+    // Filter for elements that represent a selection region and map them to
+    // their corresponding region ID and normalized area.
+    const smallestRegion =
+        elements
+            .filter(
+                el => el.classList.contains('static-region') ||
+                    el.id === 'postSelection')
+            .map(el => {
+              const id = el.id === 'postSelection' ? this.activeRegionId :
+                                                     el.dataset['id'];
+              const region = this.selectedRegions.find(r => r.id === id);
+              return {
+                id,
+                area: region ? region.region.width * region.region.height :
+                               Infinity,
+              };
+            })
+            .reduce(
+                (prev, curr) => (curr.area < prev.area ? curr : prev),
+                {id: '', area: Infinity});
+
+    // If the smallest region at this point isn't already the active one,
+    // request a focus switch.
+    if (smallestRegion.id && smallestRegion.id !== this.activeRegionId) {
+      this.dispatchEvent(new CustomEvent('activate-region', {
+        bubbles: true,
+        composed: true,
+        detail: {id: smallestRegion.id},
+      }));
+    }
+  }
+
+  private onCloseActiveButtonClick(event: Event) {
+    if (this.activeRegionId) {
+      this.baseHandler.deleteRegion(this.activeRegionId);
+    }
+    event.stopPropagation();
+  }
+
+  private onCloseButtonPointerdown(event: PointerEvent) {
+    event.stopPropagation();
+  }
+
+  private onMultiRegionSelectionUpdated(regions: SelectedRegion[]) {
+    this.selectedRegions = regions;
+    if (regions.length === 0) {
+      this.activeRegionId = '';
+    }
+    this.calculateStaticRegions();
+  }
+
+  private calculateStaticRegions() {
+    if (!this.multiRegionSelectionEnabled) {
+      this.staticRegions = [];
+      return;
+    }
+
+    this.staticRegions =
+        this.selectedRegions.filter(r => r.id !== this.activeRegionId)
+            .map(r => this.selectedRegionToStaticRegion(r));
+
+    this.updateCornerDimensions();
+    // Draw canvases immediately to prevent flicker on static regions.
+    flush();
+    this.renderStaticRegionCanvases();
+  }
+
+  private selectedRegionToStaticRegion(region: SelectedRegion): StaticRegion {
+    const widthPercent = region.region.width * 100;
+    const heightPercent = region.region.height * 100;
+    const leftPercent = (region.region.x - region.region.width / 2) * 100;
+    const topPercent = (region.region.y - region.region.height / 2) * 100;
+
+    const rightOffset = 100 - (leftPercent + widthPercent);
+    const bottomOffset = 100 - (topPercent + heightPercent);
+
+    const cornerRadius = 'var(--post-selection-cutout-corner-radius, 8px)';
+
+    return {
+      id: region.id,
+      left: `${leftPercent}%`,
+      top: `${topPercent}%`,
+      width: `${widthPercent}%`,
+      height: `${heightPercent}%`,
+      clipPath: `inset(${topPercent}% ${rightOffset}% ${bottomOffset}% ${
+          leftPercent}% round ${cornerRadius})`,
+    };
+  }
+
+  private renderStaticRegionCanvases() {
+    if (!this.multiRegionSelectionEnabled || !this.currentScreenshot) {
+      return;
+    }
+
+    const canvases = this.shadowRoot!.querySelectorAll<HTMLCanvasElement>(
+        '.static-region-cutout');
+
+    // Prune any canvases that were removed from the DOM to prevent memory
+    // leaks.
+    const currentCanvasSet = new Set(canvases);
+    for (const canvas of this.renderedCanvasElements_) {
+      if (!currentCanvasSet.has(canvas)) {
+        this.renderedCanvasElements_.delete(canvas);
+      }
+    }
+
+    for (const canvas of canvases) {
+      if (!this.renderedCanvasElements_.has(canvas)) {
+        // Draw synchronously using a 2D context to avoid flickering and bitmap
+        // detachment.
+        canvas.width = this.currentScreenshot.width;
+        canvas.height = this.currentScreenshot.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(this.currentScreenshot, 0, 0);
+          this.renderedCanvasElements_.add(canvas);
+        }
+      }
+    }
   }
 
   setCanvasSizeTo(width: number, height: number) {
@@ -273,10 +502,18 @@ export class PostSelectionRendererElement extends
       this.shouldDarkenScrim = false;
       return true;
     }
-    return false;
+
+    // Check if the user is clicking on a close button.
+    const elementsAtPoint =
+        this.shadowRoot!.elementsFromPoint(event.startX, event.startY);
+    return elementsAtPoint.some(el => el.classList.contains('close-button'));
   }
 
   handleGestureDrag(event: GestureEvent) {
+    if (!this.selectionOverlayRect) {
+      return;
+    }
+
     const imageBounds = this.selectionOverlayRect;
     const normalizedX = (event.clientX - imageBounds.left) / imageBounds.width;
     const normalizedY = (event.clientY - imageBounds.top) / imageBounds.height;
@@ -344,8 +581,9 @@ export class PostSelectionRendererElement extends
   handleGestureEnd() {
     if (this.areBoundsChanging()) {
       // Issue Lens request for new bounds
-      BrowserProxyImpl.getInstance().handler.issueLensRegionRequest(
-          this.getNormalizedCenterRotatedBox(), /*is_click=*/ false);
+      this.baseHandler.adjustRegionSelected(
+          this.getNormalizedCenterRotatedBox().box,
+          RegionSource.SELECTION_CHANGE, this.activeRegionId);
 
       // Check for selectable text
       this.dispatchEvent(new CustomEvent('detect-text-in-region', {
@@ -353,9 +591,6 @@ export class PostSelectionRendererElement extends
         composed: true,
         detail: this.getNormalizedCenterRotatedBox(),
       }));
-
-      recordLensOverlayInteraction(
-          INVOCATION_SOURCE, UserAction.kRegionSelectionChange);
     }
 
     this.originalBounds = {left: 0, top: 0, width: 0, height: 0};
@@ -397,6 +632,9 @@ export class PostSelectionRendererElement extends
     }
 
     const imageBounds = this.selectionOverlayRect;
+    if (!imageBounds) {
+      return;
+    }
     const normalizedMinBoxWidth = MIN_BOX_SIZE_PX / imageBounds.width;
     const normalizedMinBoxHeight = MIN_BOX_SIZE_PX / imageBounds.height;
 
@@ -544,12 +782,12 @@ export class PostSelectionRendererElement extends
     }
   }
 
-  private setSelection(region: CenterRotatedBox) {
-    const normalizedTop = region.box.y - (region.box.height / 2);
-    const normalizedLeft = region.box.x - (region.box.width / 2);
+  private setSelection(region: RectF) {
+    const normalizedTop = region.y - (region.height / 2);
+    const normalizedLeft = region.x - (region.width / 2);
 
     this.setDimensions(
-        normalizedTop, normalizedLeft, region.box.height, region.box.width);
+        normalizedTop, normalizedLeft, region.height, region.width);
     this.originalBounds = {left: 0, top: 0, width: 0, height: 0};
 
     this.rerender();
@@ -569,6 +807,15 @@ export class PostSelectionRendererElement extends
   private getClampedBounds(bounds?: PostSelectionBoundingBox):
       PostSelectionBoundingBox {
     const imageBounds = this.selectionOverlayRect;
+    if (!imageBounds) {
+      return bounds || {
+        left: this.left,
+        top: this.top,
+        width: this.width,
+        height: this.height,
+      };
+    }
+
     const left = bounds ? bounds.left : this.left;
     const top = bounds ? bounds.top : this.top;
     const right = bounds ? bounds.left + bounds.width : this.left + this.width;
@@ -608,6 +855,9 @@ export class PostSelectionRendererElement extends
     // Only update properties defined absolutely, i.e. corner dimensions.
     // Properties that are defined relatively do not need to be updated.
     this.updateCornerDimensions();
+    this.style.setProperty(
+        '--post-selection-show-gradient',
+        this.multiRegionSelectionEnabled ? '1' : '0');
     if (this.newBoxAnimation) {
       (this.newBoxAnimation.effect as KeyframeEffect)
           .setKeyframes(this.getNewBoxAnimationKeyframes());
@@ -661,7 +911,8 @@ export class PostSelectionRendererElement extends
 
   private triggerNewBoxAnimation() {
     const parentBoundingRect = this.selectionOverlayRect;
-    if (parentBoundingRect.width === 0 || parentBoundingRect.height === 0) {
+    if (!parentBoundingRect || parentBoundingRect.width === 0 ||
+        parentBoundingRect.height === 0) {
       // Renderer has probably not been sized yet. Defer until resize.
       this.animateOnResize = true;
       return;
@@ -679,6 +930,9 @@ export class PostSelectionRendererElement extends
   private getNewBoxAnimationKeyframes() {
     const parentBoundingRect = this.selectionOverlayRect;
     const cornerDimensions = this.getCornerDimensions();
+    if (!parentBoundingRect) {
+      return [];
+    }
     return [
       {
         [`--post-selection-corner-horizontal-length`]:
@@ -697,7 +951,7 @@ export class PostSelectionRendererElement extends
 
   private getCornerDimensions(): CornerDimensions {
     const imageBounds = this.selectionOverlayRect;
-    if (imageBounds.width === 0 || imageBounds.height === 0) {
+    if (!imageBounds || imageBounds.width === 0 || imageBounds.height === 0) {
       // Renderer has probably not been sized yet. Return default values.
       return {
         length: MAX_CORNER_LENGTH_PX,

@@ -4,6 +4,7 @@
 
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 
+#include <map>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -12,6 +13,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
@@ -23,6 +25,7 @@
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
+#include "components/viz/common/hit_test/hit_test_region_list.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/quads/compositor_frame_transition_directive.h"
 #include "components/viz/common/quads/shared_element_draw_quad.h"
@@ -33,7 +36,10 @@
 #include "components/viz/common/surfaces/surface_id.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
+#include "components/viz/service/hit_test/hit_test_aggregator.h"
+#include "components/viz/service/surfaces/latest_local_surface_id_lookup_delegate.h"
 #include "components/viz/service/surfaces/surface.h"
+#include "components/viz/service/transitions/surface_animation_manager.h"
 #include "components/viz/test/begin_frame_args_test.h"
 #include "components/viz/test/compositor_frame_helpers.h"
 #include "components/viz/test/fake_compositor_frame_sink_client.h"
@@ -296,6 +302,12 @@ class CompositorFrameSinkSupportTestBase : public testing::Test {
   bool SupportHasSurfaceAnimationManager(
       CompositorFrameSinkSupport* support) const {
     return !support->view_transition_token_to_animation_manager_.empty();
+  }
+
+  void OnSaveTransitionDirectiveProcessed(
+      CompositorFrameSinkSupport* support,
+      const CompositorFrameTransitionDirective& directive) {
+    support->OnSaveTransitionDirectiveProcessed(directive);
   }
 
  protected:
@@ -1805,6 +1817,62 @@ TEST_P(CompositorFrameSinkSupportTest, HitTestRegionValidation) {
             2u);
 }
 
+namespace {
+class TestLookupDelegate : public LatestLocalSurfaceIdLookupDelegate {
+ public:
+  TestLookupDelegate() = default;
+  ~TestLookupDelegate() override = default;
+
+  void SetSurface(const FrameSinkId& id, const LocalSurfaceId& local_id) {
+    map_[id] = local_id;
+  }
+
+  LocalSurfaceId GetSurfaceAtAggregation(const FrameSinkId& id) const override {
+    auto it = map_.find(id);
+    if (it != map_.end()) {
+      return it->second;
+    }
+    return LocalSurfaceId();
+  }
+
+ private:
+  std::map<FrameSinkId, LocalSurfaceId> map_;
+};
+}  // namespace
+
+// Verifies that a renderer cannot submit hit test data with invalid flags.
+TEST_P(CompositorFrameSinkSupportTest, RedirectionToInvalidFlags) {
+  constexpr FrameSinkId frame_sink_id(10, 10);
+  manager_->RegisterFrameSinkId(frame_sink_id, true);
+  manager_->RegisterFrameSinkHierarchy(kArbitraryFrameSinkId, frame_sink_id);
+
+  LocalSurfaceId lsid(1, base::UnguessableToken::Create());
+
+  HitTestRegionList hit_test_region_list;
+  hit_test_region_list.flags =
+      HitTestRegionFlags::kHitTestMine | HitTestRegionFlags::kHitTestAsk;
+  hit_test_region_list.async_hit_test_reasons =
+      AsyncHitTestReasons::kNotAsyncHitTest;
+  hit_test_region_list.bounds.SetRect(0, 0, 100, 100);
+
+  // Use MaybeSubmitCompositorFrame to check the return value.
+  SubmitResult result = support_->MaybeSubmitCompositorFrame(
+      lsid, MakeDefaultInteractiveCompositorFrame(),
+      std::move(hit_test_region_list), 0);
+
+  EXPECT_EQ(result, SubmitResult::HIT_TEST_DATA_INVALID);
+
+  // Verify it's not in the manager.
+  TestLookupDelegate lookup_delegate;
+  lookup_delegate.SetSurface(frame_sink_id, lsid);
+  const HitTestRegionList* active_list =
+      manager_->hit_test_manager()->GetActiveHitTestRegionList(&lookup_delegate,
+                                                               frame_sink_id);
+  EXPECT_FALSE(active_list);
+
+  manager_->InvalidateFrameSinkId(frame_sink_id, {});
+}
+
 // Verifies that an unresponsive client has OnBeginFrame() messages throttled
 // and then stopped until it becomes responsive again.
 TEST_P(CompositorFrameSinkSupportTest, ThrottleUnresponsiveClient) {
@@ -1996,6 +2064,14 @@ TEST_P(CompositorFrameSinkSupportTest, BeginFrameInterval) {
   support->SetNeedsBeginFrame(false);
 }
 
+TEST_P(CompositorFrameSinkSupportTest, InteractionsThrottleToHalfFrameRate) {
+  constexpr base::TimeDelta kNativeInterval = BeginFrameArgs::DefaultInterval();
+  constexpr base::TimeDelta kThrottledInterval = kNativeInterval * 2;
+  support_->SetThrottledDueToInteraction(true);
+  EXPECT_EQ(support_->GetThrottlerForTesting().begin_frame_interval(),
+            kThrottledInterval);
+}
+
 TEST_P(CompositorFrameSinkSupportTest, HandlesSmallErrorInBeginFrameTimes) {
   FakeExternalBeginFrameSource begin_frame_source(0.f, false);
 
@@ -2008,7 +2084,7 @@ TEST_P(CompositorFrameSinkSupportTest, HandlesSmallErrorInBeginFrameTimes) {
   support->SetNeedsBeginFrame(true);
   constexpr base::TimeDelta kNativeInterval = BeginFrameArgs::DefaultInterval();
   constexpr base::TimeDelta kThrottledInterval = kNativeInterval * 2;
-  support->SetThrottleInterval(kThrottledInterval);
+  manager_->Throttle({support->frame_sink_id()}, kThrottledInterval);
   constexpr base::TimeDelta kEpsilon = base::Microseconds(2);
 
   base::TimeTicks frame_time;
@@ -2070,7 +2146,7 @@ TEST_P(CompositorFrameSinkSupportTest, BeginFrameIntervalAccess) {
   EXPECT_EQ(support_->GetThrottlerForTesting().begin_frame_interval(),
             base::TimeDelta());
 
-  support_->SetThrottleInterval(base::Milliseconds(32));
+  manager_->Throttle({support_->frame_sink_id()}, base::Milliseconds(32));
   EXPECT_EQ(support_->GetThrottlerForTesting().begin_frame_interval(),
             base::Milliseconds(32));
 }
@@ -2130,7 +2206,7 @@ TEST_P(CompositorFrameSinkSupportTest,
   static constexpr base::TimeDelta kThrottledFrameInterval = base::Hertz(5);
   // Request BeginFrames.
   support_->SetNeedsBeginFrame(true);
-  support_->SetThrottleInterval(kThrottledFrameInterval);
+  manager_->Throttle({support_->frame_sink_id()}, kThrottledFrameInterval);
   ASSERT_THAT(BeginFrameArgs::DefaultInterval(), Ne(kThrottledFrameInterval));
 
   base::TimeTicks frame_time = base::TimeTicks::Now();
@@ -2488,7 +2564,7 @@ TEST_P(CompositorFrameSinkSupportTest,
   static constexpr base::TimeDelta kThrottledFrameInterval = base::Hertz(5);
   // Request BeginFrames.
   support_->SetNeedsBeginFrame(true);
-  support_->SetThrottleInterval(kThrottledFrameInterval);
+  manager_->Throttle({support_->frame_sink_id()}, kThrottledFrameInterval);
   ASSERT_THAT(BeginFrameArgs::DefaultInterval(), Ne(kThrottledFrameInterval));
 
   base::TimeTicks frame_time = base::TimeTicks::Now();
@@ -2717,6 +2793,72 @@ TEST_F(VideoCadenceThrottlingTest, CaptureOverridesCadenceThrottling) {
   EXPECT_TRUE(support_->GetThrottlerForTesting().throttling_allowed());
   EXPECT_EQ(support_->GetThrottlerForTesting().begin_frame_interval(),
             kVideoInterval);
+}
+
+// Regression test for https://crbug.com/497047552.
+TEST_F(CompositorFrameSinkSupportTestBase,
+       OnSaveTransitionDirectiveProcessedReentryUAF) {
+  // This test ensures we don't crash when processing a transition completion
+  // that triggers a chain reaction of new transition requests.
+  //
+  // 1. We set up an initial transition.
+  blink::ViewTransitionToken token_x;
+
+  // Create Surface A by submitting a frame.
+  SubmitCompositorFrameWithResources({});
+  Surface* surface_a = support_->GetLastCreatedSurfaceForTesting();
+  ASSERT_TRUE(surface_a);
+
+  // 2. We submit a request to save the transition for our token.
+  auto save_directive = CompositorFrameTransitionDirective::CreateSave(
+      token_x, /*maybe_cross_frame_sink=*/true, 1, {}, {}, false);
+  ProcessCompositorFrameTransitionDirective(support_.get(), save_directive,
+                                            surface_a);
+  ASSERT_TRUE(SupportHasSurfaceAnimationManager(support_.get()));
+
+  // 3. We prepare a second frame that's waiting on this transition. This
+  // frame is special because it also asks for many more new transitions.
+  LocalSurfaceId local_surface_id_b(
+      local_surface_id_.parent_sequence_number() + 1,
+      local_surface_id_.embed_token());
+
+  CompositorFrame frame_2 =
+      MakeDefaultInteractiveCompositorFrame(kBeginFrameSourceId);
+  // Add the requirement that token_x must be finished before this frame can
+  // be displayed.
+  frame_2.metadata.transition_directives.push_back(
+      CompositorFrameTransitionDirective::CreateAnimate(token_x, true, 2,
+                                                        true));
+
+  // Add MANY more new transition requests. This will force the system to
+  // reorganize its internal storage when they are processed.
+  for (int i = 0; i < 100; ++i) {
+    frame_2.metadata.transition_directives.push_back(
+        CompositorFrameTransitionDirective::CreateSave(
+            blink::ViewTransitionToken(), true, 100 + i, {}, {}, false));
+  }
+
+  // Submit the second frame. It will stay "pending" because it is waiting
+  // for the first transition to complete.
+  support_->SubmitCompositorFrame(local_surface_id_b, std::move(frame_2));
+
+  SurfaceId surface_id_b(support_->frame_sink_id(), local_surface_id_b);
+  Surface* surface_b =
+      manager_->surface_manager()->GetSurfaceForId(surface_id_b);
+  ASSERT_TRUE(surface_b);
+  ASSERT_TRUE(surface_b->HasPendingFrame());
+
+  // 4. We now signal that the first transition is complete.
+  // This triggers a chain reaction:
+  // - The system marks the first transition as finished.
+  // - This allows the second frame to finally become active.
+  // - As the second frame becomes active, it registers all its many new
+  //   transition requests.
+  // - These new requests cause the internal storage to be reallocated,
+  //   invalidating current iterators.
+  // - Finally, we finish the cleanup for the original transition. If we were
+  //   still using an outdated reference to the storage, we would crash here.
+  OnSaveTransitionDirectiveProcessed(support_.get(), save_directive);
 }
 
 }  // namespace viz

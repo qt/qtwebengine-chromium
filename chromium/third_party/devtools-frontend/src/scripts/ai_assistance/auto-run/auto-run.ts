@@ -26,43 +26,43 @@ function formatElapsedTime() {
   return `${numberFormatter.format((performance.now() - startTime) / 1000)}s`;
 }
 
-const userArgsBuilder =
-    yargs(hideBin(process.argv))
-        .option('example-urls', {
-          string: true,
-          type: 'array',
-          demandOption: true,
-        })
-        .option('parallel', {
-          boolean: true,
-          default: true,
-        })
-        .option('times', {
-          describe: 'How many times do you want to run an example?',
-          number: true,
-          default: 1,
-        })
-        .option('label', {string: true, default: 'run'})
-        .option('include-follow-up', {
-          boolean: true,
-          default: false,
-        })
-        .option('randomize', {
-          boolean: true,
-          default: false,
-        })
-        .option('test-target', {
-          describe: 'Which panel do you want to run the examples against?',
-          choices: [
-            'elements', 'performance-main-thread', 'performance-insights', 'elements-multimodal', 'patching', 'network'
-          ] as const,
-          demandOption: true,
-        })
-        .option('eval', {
-          describe: 'Also output to the format required for the DevTools Eval framework',
-          boolean: true,
-          default: false,
-        });
+const userArgsBuilder = yargs(hideBin(process.argv))
+                            .option('example-urls', {
+                              string: true,
+                              type: 'array',
+                              demandOption: true,
+                            })
+                            .option('parallel', {
+                              boolean: true,
+                              default: true,
+                            })
+                            .option('times', {
+                              describe: 'How many times do you want to run an example?',
+                              number: true,
+                              default: 1,
+                            })
+                            .option('label', {string: true, default: 'run'})
+                            .option('include-follow-up', {
+                              boolean: true,
+                              default: false,
+                            })
+                            .option('randomize', {
+                              boolean: true,
+                              default: false,
+                            })
+                            .option('test-target', {
+                              describe: 'Which panel do you want to run the examples against?',
+                              choices: [
+                                'elements', 'performance-main-thread', 'performance', 'performance-insights',
+                                'elements-multimodal', 'patching', 'network'
+                              ] as const,
+                              demandOption: true,
+                            })
+                            .option('eval', {
+                              describe: 'Also output to the format required for the DevTools Eval framework',
+                              boolean: true,
+                              default: false,
+                            });
 type UserArgs = ReturnType<typeof userArgsBuilder.parseSync>;
 
 class Logger {
@@ -451,6 +451,6 @@ function writeOutput(
 }
 
 // If run directly, invoke the CLI
-if (import.meta.url.endsWith(process?.argv[1])) {
+if (import.meta.main) {
   void main();
 }

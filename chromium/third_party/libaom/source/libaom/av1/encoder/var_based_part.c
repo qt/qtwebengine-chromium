@@ -1027,6 +1027,10 @@ static inline void chroma_check(AV1_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
   const YV12_BUFFER_CONFIG *yv12_alt = get_ref_frame_yv12_buf(cm, ALTREF_FRAME);
   const struct scale_factors *const sf =
       get_ref_scale_factors_const(cm, LAST_FRAME);
+  const struct scale_factors *const sf_g =
+      get_ref_scale_factors_const(cm, GOLDEN_FRAME);
+  const struct scale_factors *const sf_alt =
+      get_ref_scale_factors_const(cm, ALTREF_FRAME);
   struct buf_2d dst;
   unsigned int uv_sad_g = 0;
   unsigned int uv_sad_alt = 0;
@@ -1063,7 +1067,7 @@ static inline void chroma_check(AV1_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
         uint8_t *src = (plane == 1) ? yv12_g->u_buffer : yv12_g->v_buffer;
         setup_pred_plane(&dst, xd->mi[0]->bsize, src, yv12_g->uv_crop_width,
                          yv12_g->uv_crop_height, yv12_g->uv_stride, xd->mi_row,
-                         xd->mi_col, sf, xd->plane[plane].subsampling_x,
+                         xd->mi_col, sf_g, xd->plane[plane].subsampling_x,
                          xd->plane[plane].subsampling_y);
         uv_sad_g = cpi->ppi->fn_ptr[bs].sdf(p->src.buf, p->src.stride, dst.buf,
                                             dst.stride);
@@ -1074,7 +1078,7 @@ static inline void chroma_check(AV1_COMP *cpi, MACROBLOCK *x, BLOCK_SIZE bsize,
         uint8_t *src = (plane == 1) ? yv12_alt->u_buffer : yv12_alt->v_buffer;
         setup_pred_plane(&dst, xd->mi[0]->bsize, src, yv12_alt->uv_crop_width,
                          yv12_alt->uv_crop_height, yv12_alt->uv_stride,
-                         xd->mi_row, xd->mi_col, sf,
+                         xd->mi_row, xd->mi_col, sf_alt,
                          xd->plane[plane].subsampling_x,
                          xd->plane[plane].subsampling_y);
         uv_sad_alt = cpi->ppi->fn_ptr[bs].sdf(p->src.buf, p->src.stride,

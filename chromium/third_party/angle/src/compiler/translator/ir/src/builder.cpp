@@ -59,7 +59,6 @@ ffi::ASTLayoutQualifier MakeASTLayoutQualifier(const TLayoutQualifier &qualifier
         qualifier.offset,
         static_cast<ffi::ASTLayoutDepth>(qualifier.depth),
         static_cast<ffi::ASTLayoutImageInternalFormat>(qualifier.imageInternalFormat),
-        qualifier.numViews,
         qualifier.yuv,
         qualifier.index,
         qualifier.noncoherent,
@@ -164,6 +163,11 @@ void Builder::setEarlyFragmentTests(bool value)
     mBuilder->set_early_fragment_tests(value);
 }
 
+void Builder::setNumViews(uint32_t value)
+{
+    mBuilder->set_num_views(value);
+}
+
 void Builder::setAdvancedBlendEquations(uint32_t value)
 {
     mBuilder->set_advanced_blend_equations(value);
@@ -238,6 +242,14 @@ VariableId Builder::declareTempVariable(const ImmutableString &name,
     }
 
     return mBuilder->declare_temp_variable(Str(name), MakeASTType(type, typeId));
+}
+
+void Builder::rescopeAsForLoopVariable(VariableId id)
+{
+    if (!mHasError)
+    {
+        mBuilder->rescope_as_for_loop_variable(id);
+    }
 }
 
 void Builder::markVariableInvariant(VariableId id)

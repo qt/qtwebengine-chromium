@@ -4,12 +4,25 @@
 # found in the LICENSE file.
 
 import eslint_ts
+import json
 import os
 import tempfile
 import shutil
 import unittest
 
+# Instructions on how to run these tests locally.
+#    1) Build target //ui/webui/resources/tools:webui_resources_tools_python_unittests
+#   2a) Run
+#       ./out/<out_folder>/bin/run_webui_resources_tools_python_unittests \
+#       -- eslint_ts_test.EslintTsTest
+#   2b) Alternatively, on Linux these tests can be run directly by manually
+#       setting the CHROMIUM_BUILD_DIRECTORY environment variable, for example
+#       as follows:
+#       CHROMIUM_BUILD_DIRECTORY=/absolute/path/to/output/folder/ \
+#       python3 -m unittest eslint_ts_test.EslintTsTest
+
 _HERE_DIR = os.path.dirname(__file__)
+_BUILD_DIR = os.environ['CHROMIUM_BUILD_DIRECTORY']
 
 
 class EslintTsTest(unittest.TestCase):
@@ -27,8 +40,39 @@ class EslintTsTest(unittest.TestCase):
       return file.read()
 
   def _run_test(self, in_files, enable_web_component_missing_deps=False):
-    config_base = os.path.join(_HERE_DIR, "eslint_ts.config_base.mjs")
-    tsconfig = os.path.join(self._in_folder, "tsconfig.json")
+    config_base = os.path.join(_BUILD_DIR, "gen", "ui", "webui", "resources",
+                               "tools", "eslint", "eslint_ts.config_base.js")
+    orig_tsconfig_path = os.path.join(self._in_folder, "tsconfig.json")
+
+    with open(orig_tsconfig_path, "r") as f:
+      config = json.load(f)
+
+    if "compilerOptions" not in config:
+      config["compilerOptions"] = {}
+    if "paths" not in config["compilerOptions"]:
+      config["compilerOptions"]["paths"] = {}
+
+    gen_lit_dir = os.path.join(
+        os.path.abspath(_BUILD_DIR), "gen", "third_party", "lit", "v3_0")
+    rel_lit_path = os.path.relpath(gen_lit_dir,
+                                   self._in_folder).replace(os.sep, "/")
+    config["compilerOptions"]["paths"]["/resources/lit/v3_0/lit.rollup.js"] = [
+        rel_lit_path + "/lit.d.ts"
+    ]
+
+    config["compilerOptions"]["rootDir"] = os.path.normpath(self._in_folder)
+    config["extends"] = os.path.normpath(
+        os.path.join(self._in_folder, config["extends"]))
+    config["files"] = [
+        os.path.join(self._in_folder, f) for f in config["files"]
+    ]
+    config["references"] = [{"path": rel_lit_path + "/tsconfig_build_ts.json"}]
+
+    tsconfig = os.path.join(self._out_dir, "tsconfig.json")
+    with open(tsconfig, "w") as f:
+      json.dump(config, f, indent=4)
+
+    custom_loader = os.path.join(_HERE_DIR, "eslint", "custom_loader.mjs")
 
     args = [
         "--in_folder",
@@ -36,9 +80,13 @@ class EslintTsTest(unittest.TestCase):
         "--out_folder",
         self._out_dir,
         "--config_base",
-        os.path.relpath(config_base, self._out_dir).replace(os.sep, '/'),
+        os.path.relpath(config_base, self._out_dir).replace(os.sep, "/"),
         "--tsconfig",
-        os.path.relpath(tsconfig, self._out_dir).replace(os.sep, '/'),
+        os.path.relpath(
+            os.path.join(self._in_folder, 'tsconfig.json'),
+            _HERE_DIR).replace(os.sep, "/"),
+        "--custom_loader_script",
+        custom_loader,
         "--in_files",
         *in_files,
     ]
@@ -52,9 +100,14 @@ class EslintTsTest(unittest.TestCase):
     self._run_test(["no_violations.ts"])
     actual_contents = self._read_file(
         os.path.join(self._out_dir, "eslint.config.mjs"))
+    path_to_build_dir = os.path.relpath(_BUILD_DIR,
+                                        self._out_dir).replace('\\', '/')
     expected_contents = self._read_file(
-        os.path.join(self._in_folder, "eslint_expected.config.mjs"))
-    self.assertMultiLineEqual(expected_contents, actual_contents)
+        os.path.join(self._in_folder, "eslint_expected.config.mjs")).replace(
+            './../tsconfig.json', './tsconfig.json')
+    self.assertMultiLineEqual(
+        expected_contents % {"path_to_build_dir": path_to_build_dir},
+        actual_contents)
 
   def testError(self):
     with self.assertRaises(RuntimeError) as context:
@@ -75,9 +128,19 @@ class EslintTsTest(unittest.TestCase):
         "Unnecessary 'accessor' keyword when declaring regular (non Lit reactive) property 'prop3' in class 'SomeElement'",
         "Missing 'accessor' keyword when declaring Lit reactive property 'prop1' in class 'SomeOtherElement'",
         "Unnecessary 'accessor' keyword when declaring regular (non Lit reactive) property 'prop4' in class 'SomeOtherElement'",
+        "Property type mismatch: propMismatchedString is declared as String reactive property but is typed as number",
+        "Property type mismatch: propMismatchedNumber is declared as Number reactive property but is typed as string",
+        "Missing class member declaration for Lit reactive property 'propMissingNumber'",
+    ]
+    non_errors = [
+        "Property type mismatch: propEnumString is declared as String reactive property",
+        "Property type mismatch: propEnumNumber is declared as Number reactive property",
+        "Property type mismatch: propObjectType is declared as Object reactive property",
     ]
     for e in errors:
       self.assertTrue(e in str(context.exception))
+    for e in non_errors:
+      self.assertFalse(e in str(context.exception))
 
   def testWebUiEslintPlugin_PolymerPropertyDeclare(self):
     with self.assertRaises(RuntimeError) as context:
@@ -240,10 +303,18 @@ class EslintTsTest(unittest.TestCase):
     _EXPECTED_STRING = "@webui-eslint/lit-element-structure"
     self.assertTrue(_EXPECTED_STRING in str(context.exception))
 
+    _EXPECTED_INCONSISTENT_METHOD_DEFINITION_ORDER_ERROR = "Inconsistent method definition order in class %(className)s. Expected %(expectedOrder)s, found %(actualOrder)s"
+    _EXPECTED_INCORRECT_CLASS_NAME_SUFFIX_ERROR = 'Class name \'%(className)s\' should end with the \'Element\' suffix'
+    _EXPECTED_INCONSISTENT_CLASS_NAME_ERROR = 'Naming of class/dom pair %(className)s ↔ %(domName)s is inconsistent'
+    _EXPECTED_INCORRECT_DOM_NAME_SUFFIX_ERROR = 'DOM name \'%(domName)s\' should not end with the \'-element\' suffix'
+    _EXPECTED_INCORRECT_DOLLAR_SIGN_NOTATION_ERROR = 'Use camelCase instead of dash-case for DOM ids, change this.$[\'%(dashCaseName)s\'] to this.$.%(camelCaseName)s'
     _EXPECTED_MISSING_CUSTOM_ELEMENTS_DEFINE_ERROR = "Missing customElements.define(%(className)s.is, %(className)s) call"
     _EXPECTED_MISSING_STATIC_GET_IS_ERROR = "Missing 'static get is() {...}' for web component class %(className)s"
     _EXPECTED_MISSING_SUPER_CALLS_ERROR = "Missing superclass calls for lifecycle method(s) %(lifecycleMethods)s in class %(className)s"
     _EXPECTED_MISSING_TAG_NAME_REGISTRATION_ERROR = "Tag/class name pair registration to HTMLElementTagNameMap interface missing for %(domName)s ↔ %(className)s"
+    _EXPECTED_USE_FIRE_HELPER_ERROR = "Use this.fire(...) instead of this.dispatchEvent(new CustomEvent(...))."
+    _EXPECTED_USE_FIRE_HELPER_WITH_EVENT_NAME_ERROR = "Use this.fire(...) instead of this.dispatchEvent(new CustomEvent(...)), for event \'%(eventName)s\'"
+    _EXPECTED_MISSING_CUSTOM_EVENT_TYPE_PARAMETER_ERROR = "Missing CustomEvent type parameter for %(type)s \'%(name)s\' (use CustomEvent<void> or CustomEvent<SomeType>)"
 
     super_call_required_methods = [
         'connectedCallback', 'disconnectedCallback', 'willUpdate', 'updated'
@@ -251,34 +322,86 @@ class EslintTsTest(unittest.TestCase):
 
     # The following strings *should* appear in the error output.
     errors = [
-        # Case1
+        # Case 1.1
         _EXPECTED_MISSING_STATIC_GET_IS_ERROR % {
-            'className': 'SomeElement1'
+            'className': 'TestError1Element',
         },
         _EXPECTED_MISSING_CUSTOM_ELEMENTS_DEFINE_ERROR % {
-            'className': 'SomeElement1'
+            'className': 'TestError1Element',
         },
-        # Case2
+        # Case 1.2
         _EXPECTED_MISSING_TAG_NAME_REGISTRATION_ERROR % {
-            'className': 'SomeElement2',
-            'domName': 'some-element2'
+            'className': 'TestError2Element',
+            'domName': 'test-error2'
         },
         _EXPECTED_MISSING_CUSTOM_ELEMENTS_DEFINE_ERROR % {
-            'className': 'SomeElement2'
+            'className': 'TestError2Element',
         },
-        # Case3
+        # Case 1.3
         _EXPECTED_MISSING_CUSTOM_ELEMENTS_DEFINE_ERROR % {
-            'className': 'SomeElement3'
+            'className': 'TestError3Element',
         },
-        # Case4
+        # Case 1.4
         _EXPECTED_MISSING_TAG_NAME_REGISTRATION_ERROR % {
-            'className': 'SomeElement4',
-            'domName': 'some-element4'
+            'className': 'TestError4Element',
+            'domName': 'test-error4',
         },
-        # Case5
+        # Case 1.5
         _EXPECTED_MISSING_SUPER_CALLS_ERROR % {
-            'className': 'SomeElement5',
-            'lifecycleMethods': ', '.join(super_call_required_methods)
+            'className': 'TestError5Element',
+            'lifecycleMethods': ', '.join(super_call_required_methods),
+        },
+        # Case 1.6
+        _EXPECTED_INCORRECT_DOM_NAME_SUFFIX_ERROR % {
+            'domName': 'test-error6-element',
+        },
+        _EXPECTED_INCONSISTENT_METHOD_DEFINITION_ORDER_ERROR % {
+            'className':
+                'TestError6Element',
+            'expectedOrder':
+                '[is, styles, render, properties, constructor, connectedCallback, disconnectedCallback, willUpdate, firstUpdated, updated]',
+            'actualOrder':
+                '[render, styles, is, properties, disconnectedCallback, connectedCallback, constructor, willUpdate, updated, firstUpdated]',
+        },
+        _EXPECTED_USE_FIRE_HELPER_WITH_EVENT_NAME_ERROR % {
+            'eventName': 'foo1-updated',
+        },
+        _EXPECTED_USE_FIRE_HELPER_WITH_EVENT_NAME_ERROR % {
+            'eventName': 'foo2-updated',
+        },
+        _EXPECTED_USE_FIRE_HELPER_ERROR,
+        _EXPECTED_INCORRECT_DOLLAR_SIGN_NOTATION_ERROR % {
+            'dashCaseName': 'hello-button',
+            'camelCaseName': 'helloButton',
+        },
+        _EXPECTED_MISSING_CUSTOM_EVENT_TYPE_PARAMETER_ERROR % {
+            'type': 'function parameter',
+            'name': 'someEvent',
+        },
+        _EXPECTED_MISSING_CUSTOM_EVENT_TYPE_PARAMETER_ERROR % {
+            'type': 'variable',
+            'name': '_otherEvent',
+        },
+        # Case 1.7
+        _EXPECTED_INCORRECT_CLASS_NAME_SUFFIX_ERROR % {
+            'className': 'TestError7ElementFoo',
+        },
+        # Case 1.8
+        _EXPECTED_INCORRECT_CLASS_NAME_SUFFIX_ERROR % {
+            'className': 'TestError8ElementFoo',
+        },
+        # Case 1.9
+        _EXPECTED_INCORRECT_CLASS_NAME_SUFFIX_ERROR % {
+            'className': 'TestError9ElementFoo',
+        },
+        # Case 1.10
+        _EXPECTED_INCORRECT_CLASS_NAME_SUFFIX_ERROR % {
+            'className': 'TestError10ElementFoo',
+        },
+        # Case 1.11
+        _EXPECTED_INCONSISTENT_CLASS_NAME_ERROR % {
+            'className': 'TestError11Element',
+            'domName': 'test-other-error11',
         },
     ]
     for e in errors:
@@ -287,55 +410,134 @@ class EslintTsTest(unittest.TestCase):
 
     # The following strings *should not* appear in the error output.
     non_errors = [
-        # Case6
+        # Case 2.1
         _EXPECTED_MISSING_STATIC_GET_IS_ERROR % {
-            'className': 'SomeElement6'
+            'className': 'TestNoError1Element'
         },
         _EXPECTED_MISSING_TAG_NAME_REGISTRATION_ERROR % {
-            'className': 'SomeElement6',
-            'domName': 'some-element6'
+            'className': 'TestNoError1Element',
+            'domName': 'test-no-error1',
         },
         _EXPECTED_MISSING_CUSTOM_ELEMENTS_DEFINE_ERROR % {
-            'className': 'SomeElement6'
+            'className': 'TestNoError1Element'
         },
         _EXPECTED_MISSING_SUPER_CALLS_ERROR % {
-            'className': 'SomeElement6',
+            'className': 'TestNoError1Element',
             'lifecycleMethods': ', '.join(super_call_required_methods)
         },
-        # Case7
+        _EXPECTED_INCORRECT_CLASS_NAME_SUFFIX_ERROR % {
+            'className': 'TestNoError1Element',
+        },
+        # Case 2.2
         _EXPECTED_MISSING_STATIC_GET_IS_ERROR % {
-            'className': 'SomeElement7'
+            'className': 'TestNoError2Element'
         },
         _EXPECTED_MISSING_TAG_NAME_REGISTRATION_ERROR % {
-            'className': 'SomeElement7',
-            'domName': 'some-element7'
+            'className': 'TestNoError2Element',
+            'domName': 'test-no-error2',
         },
         _EXPECTED_MISSING_CUSTOM_ELEMENTS_DEFINE_ERROR % {
-            'className': 'SomeElement7'
+            'className': 'TestNoError2Element'
         },
         _EXPECTED_MISSING_SUPER_CALLS_ERROR % {
-            'className': 'SomeElement7',
-            'lifecycleMethods': ', '.join(super_call_required_methods)
+            'className': 'TestNoError2Element',
+            'lifecycleMethods': ', '.join(super_call_required_methods),
         },
-        # Case8
+        _EXPECTED_INCORRECT_CLASS_NAME_SUFFIX_ERROR % {
+            'className': 'TestNoError2Element',
+        },
+        # Case 2.3
+        _EXPECTED_INCORRECT_DOM_NAME_SUFFIX_ERROR % {
+            'domName': 'test-no-error3',
+        },
         _EXPECTED_MISSING_STATIC_GET_IS_ERROR % {
-            'className': 'SomeElement8'
+            'className': 'TestNoError3Element',
         },
         _EXPECTED_MISSING_TAG_NAME_REGISTRATION_ERROR % {
-            'className': 'SomeElement8',
-            'domName': 'some-element8'
+            'className': 'TestNoError3Element',
+            'domName': 'test-no-error3',
         },
         _EXPECTED_MISSING_CUSTOM_ELEMENTS_DEFINE_ERROR % {
-            'className': 'SomeElement8'
+            'className': 'TestNoError3Element',
         },
         _EXPECTED_MISSING_SUPER_CALLS_ERROR % {
-            'className': 'SomeElement8',
+            'className': 'TestNoError3Element',
             'lifecycleMethods': ', '.join(super_call_required_methods)
+        },
+        _EXPECTED_INCONSISTENT_METHOD_DEFINITION_ORDER_ERROR % {
+            'className':
+                'TestNoError3Element',
+            'expectedOrder':
+                '[is, styles, render, properties, constructor, connectedCallback, disconnectedCallback, willUpdate, firstUpdated, updated]',
+            'actualOrder':
+                '',
+        },
+        _EXPECTED_INCORRECT_CLASS_NAME_SUFFIX_ERROR % {
+            'className': 'TestNoError3Element',
+        },
+        _EXPECTED_INCONSISTENT_CLASS_NAME_ERROR % {
+            'className': 'TestNoError3Element',
+            'domName': 'test-no-error3',
+        },
+        _EXPECTED_USE_FIRE_HELPER_WITH_EVENT_NAME_ERROR % {
+            'eventName': 'bar-updated',
+        },
+        _EXPECTED_INCORRECT_DOLLAR_SIGN_NOTATION_ERROR % {
+            'dashCaseName': 'hello-other-button',
+            'camelCaseName': 'helloOtherButton',
+        },
+        _EXPECTED_MISSING_CUSTOM_EVENT_TYPE_PARAMETER_ERROR % {
+            'type': 'function parameter',
+            'name': 'someEvent2',
+        },
+        _EXPECTED_MISSING_CUSTOM_EVENT_TYPE_PARAMETER_ERROR % {
+            'type': 'variable',
+            'name': '_otherEvent2',
+        },
+        # Case 2.4
+        _EXPECTED_INCORRECT_CLASS_NAME_SUFFIX_ERROR % {
+            'className': 'TestNoError4Element',
         },
     ]
     for e in non_errors:
       self.assertFalse(
           e in str(context.exception), f'Found unexpected error: {e}')
+
+  def testWebUiEslintPlugin_LitElementIncorrectFilenameSuffixCheck(self):
+    with self.assertRaises(RuntimeError) as context:
+      self._run_test(
+          ["with_webui_plugin_violations_incorrect_filename_suffix_element.ts"])
+
+    # Expected ESLint rule violation that should be part of the error output.
+    _EXPECTED_STRING = "@webui-eslint/lit-element-structure"
+    self.assertTrue(_EXPECTED_STRING in str(context.exception))
+
+    _EXPECTED_INCORRECT_FILE_NAME_SUFFIX_ERROR = "File name '%(filename)s' should not end with the '_element' suffix"
+    error = _EXPECTED_INCORRECT_FILE_NAME_SUFFIX_ERROR % {
+        'filename':
+            'with_webui_plugin_violations_incorrect_filename_suffix_element.ts',
+    }
+    self.assertTrue(
+        error in str(context.exception),
+        f'Didn\'t find expected error: {error}')
+
+  def testWebUiEslintPlugin_LitElementInconsistentFilenameCheck(self):
+    with self.assertRaises(RuntimeError) as context:
+      self._run_test(["with_webui_plugin_violations_inconsistent_file_name.ts"])
+
+    # Expected ESLint rule violation that should be part of the error output.
+    _EXPECTED_STRING = "@webui-eslint/lit-element-structure"
+    self.assertTrue(_EXPECTED_STRING in str(context.exception))
+
+    _EXPECTED_INCONSISTENT_FILE_NAME_ERROR = "Naming of file/%(referenceType)s pair %(filename)s ↔ %(referenceName)s is inconsistent"
+    error = _EXPECTED_INCONSISTENT_FILE_NAME_ERROR % {
+        'filename': 'with_webui_plugin_violations_inconsistent_file_name.ts',
+        'referenceType': 'DOM',
+        'referenceName': 'inconsistent-filename',
+    }
+    self.assertTrue(
+        error in str(context.exception),
+        f'Didn\'t find expected error: {error}')
 
   def testWebUiEslintPlugin_LitElementTemplateStructure(self):
     with self.assertRaises(RuntimeError) as context:
@@ -346,21 +548,45 @@ class EslintTsTest(unittest.TestCase):
     _EXPECTED_STRING = "@webui-eslint/lit-element-template-structure"
     self.assertTrue(_EXPECTED_STRING in str(context.exception))
 
-    _FOR_STATEMENT_ERROR = "For loop found in the HTML template file 'with_webui_plugin_lit_element_template_structure_violations.html.ts'. Use the map() directive to render the same HTML for an array of items, and delegate more complex logic to the class definition file"
+    _FOR_STATEMENT_ERROR = "For loop found in getHtml() method. Use Array#map() to render the same HTML for an array of items, and delegate more complex logic to the class definition file"
 
-    _FUNCTION_DEFINITION_ERROR = "Extra function definition '%(functionName)s' found in the HTML template file 'with_webui_plugin_lit_element_template_structure_violations.html.ts'. Complex logic should be delegated to the class definition file. Standalone/separate chunks of templates may need a dedicated custom element"
+    _IF_STATEMENT_ERROR = "If statement found in getHtml() method. Use ternary statements for conditional rendering, and delegate more complex logic to the class definition file"
+
+    _FUNCTION_DEFINITION_ERROR = "Extra function definition '%(functionName)s' found in the HTML template file. Complex logic should be delegated to the class definition file. Standalone/separate chunks of templates may need a dedicated custom element"
+
+    _VARIABLE_DECLARATION_ERROR = "Local (const/let) variable '%(variableName)s' found in the HTML template file. Logic should be delegated to the class definition file"
+
+    _INCORRECT_EVENT_LISTENER_NAME_ERROR = "Incorrect event listener naming found for event '%(eventName)s'. Rename '%(listenerName)s' to follow the '%(suggestedListenerName)s' pattern"
 
     # The following strings *should* appear in the error output.
     errors = [
         _FOR_STATEMENT_ERROR,
+        _IF_STATEMENT_ERROR,
         _FUNCTION_DEFINITION_ERROR % {
-            'functionName': 'computeFoo'
+            'functionName': 'computeProgress'
         },
         _FUNCTION_DEFINITION_ERROR % {
             'functionName': 'getButtonHtml'
         },
         _FUNCTION_DEFINITION_ERROR % {
             'functionName': 'getSpinnerDiv'
+        },
+        _VARIABLE_DECLARATION_ERROR % {
+            'variableName': 'INPUT_MAX_LENGTH'
+        },
+        _VARIABLE_DECLARATION_ERROR % {
+            'variableName': 'input'
+        },
+        _VARIABLE_DECLARATION_ERROR % {
+            'variableName': 'titleClass'
+        },
+        _VARIABLE_DECLARATION_ERROR % {
+            'variableName': 'messagesToRender'
+        },
+        _INCORRECT_EVENT_LISTENER_NAME_ERROR % {
+            'eventName': 'click',
+            'suggestedListenerName': 'on<OptionalContext>Click_',
+            'listenerName': 'click_',
         },
     ]
     for e in errors:
@@ -373,11 +599,272 @@ class EslintTsTest(unittest.TestCase):
         _FUNCTION_DEFINITION_ERROR % {
             'functionName': 'getHtml'
         },
+        _INCORRECT_EVENT_LISTENER_NAME_ERROR % {
+            'eventName': 'focus',
+            'suggestedListenerName': 'on<OptionalContext>Focus_',
+            'listenerName': 'onFocus_',
+        },
     ]
     for e in non_errors:
       self.assertFalse(
           e in str(context.exception), f'Found unexpected error: {e}')
 
+  def testWebUiEslintPlugin_LitElementInvalidInterface(self):
+    with self.assertRaises(RuntimeError) as context:
+      self._run_test([
+          "with_webui_plugin_lit_element_invalid_interface_violations.ts",
+          "with_webui_plugin_lit_element_invalid_interface_violations.html.ts",
+          "with_webui_plugin_lit_element_invalid_interface_violations_no_template_file.ts",
+      ])
+
+    _EXPECTED_STRING = "@webui-eslint/lit-element-invalid-interface"
+    self.assertTrue(_EXPECTED_STRING in str(context.exception))
+
+    _INCORRECT_NOTATION_ERROR = "Use camelCase identifiers, not dash-case literals, for DOM ids in the interface. Change %(incorrectIdentifier)s to %(suggestedName)s in the interface for %(className)s"
+
+    _MISSING_ID_ERROR = "Id '%(domId)s' is listed in the interface definition for %(className)s, but no element with that ID was found in the template file 'with_webui_plugin_lit_element_invalid_interface_violations.html.ts'"
+
+    _MISSING_ID_NO_TEMPLATE_ERROR = "Id '%(domId)s' is listed in the interface definition for %(className)s, but no element with that ID was found in the template"
+    # The following strings *should* appear in the error output.
+    errors = [
+        _INCORRECT_NOTATION_ERROR % {
+            'incorrectIdentifier': '\'three\'',
+            'suggestedName': 'three',
+            'className': 'MyDummyElement',
+        },
+        _INCORRECT_NOTATION_ERROR % {
+            'incorrectIdentifier': '\'four-four\'',
+            'suggestedName': 'fourFour',
+            'className': 'MyDummyElement',
+        },
+        _MISSING_ID_ERROR % {
+            'domId': 'doesNotExist',
+            'className': 'MyDummyElement',
+        },
+        _MISSING_ID_NO_TEMPLATE_ERROR % {
+            'domId': 'doesNotExistTest',
+            'className': 'MyDummyTestElement',
+        },
+    ]
+    for e in errors:
+      self.assertTrue(
+          e in str(context.exception), f'Didn\'t find expected error: {e}')
+
+    # The following strings *should not* appear in the error output.
+    non_errors = [
+        _INCORRECT_NOTATION_ERROR % {
+            'incorrectIdentifier': 'one',
+            'suggestedName': 'one',
+            'className': 'MyDummyElement',
+        },
+        _INCORRECT_NOTATION_ERROR % {
+            'incorrectIdentifier': 'two',
+            'suggestedName': 'two',
+            'className': 'MyDummyElement',
+        },
+        _INCORRECT_NOTATION_ERROR % {
+            'incorrectIdentifier': 'one',
+            'suggestedName': 'one',
+            'className': 'MyDummyTestElement',
+        },
+        _INCORRECT_NOTATION_ERROR % {
+            'incorrectIdentifier': 'two',
+            'suggestedName': 'two',
+            'className': 'MyDummyTestElement',
+        },
+        _MISSING_ID_ERROR % {
+            'domId': 'one',
+            'className': 'MyDummyElement',
+        },
+        _MISSING_ID_NO_TEMPLATE_ERROR % {
+            'domId': 'one',
+            'className': 'MyDummyTestElement',
+        },
+        _MISSING_ID_ERROR % {
+            'domId': 'two',
+            'className': 'MyDummyElement',
+        },
+        _MISSING_ID_NO_TEMPLATE_ERROR % {
+            'domId': 'two',
+            'className': 'MyDummyTestElement',
+        },
+    ]
+    for e in non_errors:
+      self.assertFalse(
+          e in str(context.exception), f'Found unexpected error: {e}')
+
+  def testWebUiEslintPlugin_LitElementBindings(self):
+    with self.assertRaises(RuntimeError) as context:
+      self._run_test([
+          "with_webui_plugin_lit_element_bindings_violations.ts",
+          "with_webui_plugin_lit_element_bindings_violations.html.ts",
+          "with_webui_plugin_lit_element_bindings_violations_child.ts",
+      ])
+
+    _EXPECTED_STRING = "@webui-eslint/lit-element-expressions"
+    self.assertTrue(_EXPECTED_STRING in str(context.exception))
+
+    _INCORRECT_ATTRIBUTE_ERROR = "Incorrect assignment to property '%(propertyName)s' using attribute expression '%(attributeName)s='. Object/Array Lit properties can only be initialized with property expressions. Change to '%(propertyExpression)s' instead, or update the property's type if Object/Array is not accurate"
+
+    _INCORRECT_BOOLEAN_ERROR = "Incorrect assignment to property '%(propertyName)s' using boolean attribute expression '?%(attributeName)s='. Boolean attribute expressions should only be assigned to boolean properties. To bind to the truthiness of '%(propertyName)s', convert it to a boolean using '!!'"
+
+    _NO_TRUE_BINDING_ERROR = "Boolean attribute '%(attributeName)s' does not need to be bound to '${true}'. Use either '%(attributeName)s' or '.%(propertyName)s=\"${true}\"' instead"
+
+    _NO_FALSE_BINDING_ERROR = "Incorrect assignment to boolean attribute expression '?%(attributeName)s=' using '${false}'. Use property binding '.%(propertyName)s=\"${false}\"' instead"
+
+    _PROPERTY_TYPE_MISMATCH_ERROR = "Property type mismatch: %(propertyName)s is declared as %(declaredType)s reactive property but is typed as %(tsType)s"
+
+    _BINDING_TYPE_MISMATCH_ERROR = "Type mismatch in property binding: Property '%(propertyName)s' on element '%(tagName)s' expects type '%(expectedType)s', but was provided '%(providedType)s'"
+
+    _PROPERTY_NOT_FOUND_ERROR = "Property '%(propertyName)s' was not found on element '%(tagName)s'"
+
+    _BINDING_TYPE_MISMATCH_PREFIX_ERROR = "Type mismatch in property binding: Property '%(propertyName)s' on element '%(tagName)s'"
+
+    # The following strings *should* appear in the error output.
+    errors = [
+        _BINDING_TYPE_MISMATCH_ERROR % {
+            'propertyName': 'fooString',
+            'tagName': 'hello-world-child',
+            'expectedType': 'string',
+            'providedType': 'number[]',
+        },
+        _BINDING_TYPE_MISMATCH_ERROR % {
+            'propertyName': 'fooNumber',
+            'tagName': 'hello-world-child',
+            'expectedType': 'number',
+            'providedType': 'string',
+        },
+        _BINDING_TYPE_MISMATCH_ERROR % {
+            'propertyName': 'fooArray',
+            'tagName': 'hello-world-child',
+            'expectedType': 'number[]',
+            'providedType': 'string',
+        },
+        _BINDING_TYPE_MISMATCH_ERROR % {
+            'propertyName': 'fooBoolean',
+            'tagName': 'hello-world-child',
+            'expectedType': 'boolean',
+            'providedType': 'string[]',
+        },
+        _BINDING_TYPE_MISMATCH_ERROR % {
+            'propertyName': 'fooObject',
+            'tagName': 'hello-world-child',
+            'expectedType': '{ bar: string; }',
+            'providedType': '"A" | "B"',
+        },
+        _INCORRECT_ATTRIBUTE_ERROR % {
+            'attributeName': 'value',
+            'propertyName': 'value',
+            'propertyExpression': '.value=',
+        },
+        _INCORRECT_ATTRIBUTE_ERROR % {
+            'attributeName': 'aria-description',
+            'propertyName': 'description',
+            'propertyExpression': '.ariaDescription=',
+        },
+        _INCORRECT_BOOLEAN_ERROR % {
+            'attributeName': 'invalid',
+            'propertyName': 'errorMessage',
+        },
+        _INCORRECT_BOOLEAN_ERROR % {
+            'attributeName': 'disabled',
+            'propertyName': 'buttonDisabled',
+        },
+        _NO_TRUE_BINDING_ERROR % {
+            'attributeName': 'readonly',
+            'propertyName': 'readonly',
+        },
+        _NO_FALSE_BINDING_ERROR % {
+            'attributeName': 'hidden',
+            'propertyName': 'hidden',
+        },
+        _NO_FALSE_BINDING_ERROR % {
+            'attributeName': 'some-multi-word-attr',
+            'propertyName': 'someMultiWordAttr',
+        },
+        _INCORRECT_BOOLEAN_ERROR % {
+            'attributeName': 'hidden',
+            'propertyName': 'this.getErrorMessage()',
+        },
+        _INCORRECT_ATTRIBUTE_ERROR % {
+            'attributeName': 'aria-label',
+            'propertyName': 'this.getLabels()',
+            'propertyExpression': '.ariaLabel=',
+        },
+        _PROPERTY_NOT_FOUND_ERROR % {
+            'propertyName': 'nonExistentProperty',
+            'tagName': 'hello-world-child',
+        },
+        _BINDING_TYPE_MISMATCH_ERROR % {
+            'propertyName': 'mixinString',
+            'tagName': 'hello-world-child',
+            'expectedType': 'string',
+            'providedType': 'boolean',
+        },
+        _BINDING_TYPE_MISMATCH_ERROR % {
+            'propertyName': 'mixinString',
+            'tagName': 'hello-world-child',
+            'expectedType': 'string',
+            'providedType': 'boolean',
+        },
+    ]
+    for e in errors:
+      self.assertTrue(
+          e in str(context.exception), f'Didn\'t find expected error: {e}')
+
+    # The following strings *should not* appear in the error output.
+    non_errors = [
+        _INCORRECT_ATTRIBUTE_ERROR % {
+            'attributeName': 'aria-label',
+            'propertyName': 'label',
+            'propertyExpression': '.ariaLabel=',
+        },
+        _INCORRECT_ATTRIBUTE_ERROR % {
+            'attributeName': 'error-message',
+            'propertyName': 'errorMessage',
+            'propertyExpression': '.errorMessage=',
+        },
+        _INCORRECT_BOOLEAN_ERROR % {
+            'attributeName': 'disabled',
+            'propertyName': 'disabled',
+        },
+        _INCORRECT_ATTRIBUTE_ERROR % {
+            'attributeName': 'min',
+            'propertyName': 'limits',
+            'propertyExpression': '.min=',
+        },
+        _INCORRECT_ATTRIBUTE_ERROR % {
+            'attributeName': 'max',
+            'propertyName': 'limits',
+            'propertyExpression': '.max=',
+        },
+        _BINDING_TYPE_MISMATCH_PREFIX_ERROR % {
+            'propertyName': 'innerHTML',
+            'tagName': 'div',
+        },
+        _BINDING_TYPE_MISMATCH_PREFIX_ERROR % {
+            'propertyName': 'style',
+            'tagName': 'div',
+        },
+        _PROPERTY_NOT_FOUND_ERROR % {
+            'propertyName': 'mixinString',
+            'tagName': 'hello-world-child',
+        },
+    ]
+    for e in non_errors:
+      self.assertFalse(
+          e in str(context.exception), f'Found unexpected error: {e}')
+
+  def testWebUiEslintPlugin_NoMixedTypeAndValueImports(self):
+    with self.assertRaises(RuntimeError) as context:
+      self._run_test(
+          ["with_webui_plugin_no_mixed_type_and_value_imports_violations.ts"])
+
+    _EXPECTED_STRING = "@webui-eslint/no-mixed-type-and-value-imports"
+    self.assertTrue(_EXPECTED_STRING in str(context.exception))
+
+    _EXPECTED_ERROR = "Do not mix type and value imports in the same statement. Split them into separate import statements instead"
+    self.assertTrue(_EXPECTED_ERROR in str(context.exception))
 
 if __name__ == "__main__":
   unittest.main()

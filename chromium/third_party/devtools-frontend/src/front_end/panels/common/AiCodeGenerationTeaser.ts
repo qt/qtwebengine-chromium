@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 import '../../ui/components/tooltips/tooltips.js';
 
+import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
@@ -18,11 +19,19 @@ const UIStringsNotTranslate = {
   /**
    * @description Text for teaser to generate code.
    */
+  toGenerateCode: 'to generate code',
+  /**
+   * @description Text for teaser to generate code.
+   */
   ctrlItoGenerateCode: 'ctrl+i to generate code',
   /**
    * @description Text for teaser to generate code in Mac.
    */
   cmdItoGenerateCode: 'cmd+i to generate code',
+  /**
+   * @description Text for teaser to learn how data is being used.
+   */
+  toLearnHowYourDataIsBeingUsed: 'to learn how your data is being used.',
   /**
    * @description Aria label for teaser to generate code.
    */
@@ -34,9 +43,13 @@ const UIStringsNotTranslate = {
   /**
    * @description Text for teaser when generating suggestion.
    */
-  generating: 'Generating... (esc to cancel)',
+  generating: 'Generating... (',
   /**
-   * @description Aria label for teaser when generating suggestion.
+   * @description Text for teaser when generating suggestion.
+   */
+  toCancel: ' to cancel)',
+  /**
+   * @description Text for teaser when generating suggestion.
    */
   generatingAriaLabel: 'Generating. Press escape to cancel.',
   /**
@@ -44,13 +57,46 @@ const UIStringsNotTranslate = {
    */
   writeACommentToGenerateCode: 'Write a comment to generate code',
   /**
+   * @description Text for teaser for discoverability.
+   */
+  writeACommentToGenerateCodeInConsole:
+      'Write a comment to generate code. Try typing: \'// add red borders to all the divs\'.',
+  /**
    * @description Text for teaser when suggestion has been generated.
    */
   tab: 'tab',
   /**
    * @description Text for teaser when suggestion has been generated.
    */
+  or: 'or',
+  /**
+   * @description Text for teaser when suggestion has been generated.
+   */
+  enter: 'enter',
+  /**
+   * @description Text for teaser when suggestion has been generated.
+   */
   toAccept: 'to accept',
+  /**
+   * @description Text for teaser keys.
+   */
+  ctrl: 'ctrl',
+  /**
+   * @description Text for teaser keys.
+   */
+  cmd: 'cmd',
+  /**
+   * @description Text for teaser keys.
+   */
+  i: 'i',
+  /**
+   * @description Text for teaser keys.
+   */
+  period: '.',
+  /**
+   * @description Text for teaser keys.
+   */
+  esc: 'esc',
   /**
    * @description Text for tooltip shown on hovering over "Relevant Data" in the disclaimer text for AI code generation in Console panel.
    */
@@ -101,6 +147,9 @@ function getTooltipDisclaimerText(noLogging: boolean, panel: AiCodeCompletion.Ai
       return noLogging ?
           lockedString(UIStringsNotTranslate.tooltipDisclaimerTextForAiCodeGenerationNoLoggingInSources) :
           lockedString(UIStringsNotTranslate.tooltipDisclaimerTextForAiCodeGenerationInSources);
+    case AiCodeCompletion.AiCodeCompletion.ContextFlavor.STYLES:
+      // TODO(476101019): update with string for styles pane
+      return '';
   }
 }
 
@@ -109,6 +158,8 @@ export interface ViewInput {
   disclaimerTooltipId?: string;
   noLogging: boolean;
   onManageInSettingsTooltipClick: (event: Event) => void;
+  showDataUsageTeaser: boolean;
+  showDiscoveryTeaser: boolean;
   // TODO(b/472268298): Remove ContextFlavor explicitly and pass required values
   panel?: AiCodeCompletion.AiCodeCompletion.ContextFlavor;
 }
@@ -134,20 +185,37 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
         render(nothing, target);
         return;
       }
-      const toGenerateCode = Host.Platform.isMac() ? lockedString(UIStringsNotTranslate.cmdItoGenerateCode) :
-                                                     lockedString(UIStringsNotTranslate.ctrlItoGenerateCode);
-      const toLearnHowYourDataIsBeingUsed = Host.Platform.isMac() ?
-          lockedString(UIStringsNotTranslate.pressCmdPeriodToLearnHowYourDataIsBeingUsed) :
-          lockedString(UIStringsNotTranslate.pressCtrlPeriodToLearnHowYourDataIsBeingUsed);
+
+      const toLearnHowYourDataIsBeingUsedScreenReaderOnly = Host.Platform.isMac() ?
+          UIStringsNotTranslate.pressCmdPeriodToLearnHowYourDataIsBeingUsed :
+          UIStringsNotTranslate.pressCtrlPeriodToLearnHowYourDataIsBeingUsed;
+      const screenReaderText = (Host.Platform.isMac() ? UIStringsNotTranslate.cmdItoGenerateCode :
+                                                        UIStringsNotTranslate.ctrlItoGenerateCode) +
+          ' ' + toLearnHowYourDataIsBeingUsedScreenReaderOnly;
+
+      const cmdOrCtrl =
+          Host.Platform.isMac() ? lockedString(UIStringsNotTranslate.cmd) : lockedString(UIStringsNotTranslate.ctrl);
+      const toGenerateCode = html`<span class="ai-code-generation-keyboard-action">
+          <span>${cmdOrCtrl}</span>
+          <span>${lockedString(UIStringsNotTranslate.i)}</span>
+        </span>&nbsp;${lockedString(UIStringsNotTranslate.toGenerateCode)}`;
+      const toLearnHowYourDataIsBeingUsedVisible = html`<span class="ai-code-generation-keyboard-action">
+          <span>${cmdOrCtrl}</span>
+          <span>${lockedString(UIStringsNotTranslate.period)}</span>
+        </span>&nbsp;${lockedString(UIStringsNotTranslate.toLearnHowYourDataIsBeingUsed)}`;
+      const teaserText = input.showDataUsageTeaser ?
+          html`${toGenerateCode}.&nbsp;${toLearnHowYourDataIsBeingUsedVisible}` :
+          toGenerateCode;
+
       const tooltipDisclaimerText = getTooltipDisclaimerText(input.noLogging, input.panel);
-      // TODO(b/472291834): Disclaimer icon should match the placeholder's color
+
       // clang-format off
       teaserLabel = html`<div class="ai-code-generation-teaser-trigger">
-        <span aria-atomic="true" aria-live="assertive">${toGenerateCode}&nbsp;</span>
-        <div class="ai-code-generation-teaser-screen-reader-only" aria-atomic="true" aria-live="assertive">
-          ${toLearnHowYourDataIsBeingUsed}
-        </div>
-        <devtools-button
+        <span aria-hidden="true">${teaserText}</span>
+        <span class="ai-code-generation-teaser-screen-reader-only" aria-atomic="true" aria-live="assertive">
+          ${lockedString(screenReaderText)}
+        </span>
+        &nbsp;<devtools-button
           .data=${{
               title: lockedString(UIStringsNotTranslate.learnMoreAboutHowYourDataIsBeingUsed),
               size: Buttons.Button.Size.MICRO,
@@ -192,10 +260,15 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
     }
 
     case AiCodeGenerationTeaserDisplayState.DISCOVERY: {
+      if (!input.showDiscoveryTeaser) {
+        teaserLabel = nothing;
+        break;
+      }
       const newBadge = UI.UIUtils.maybeCreateNewBadge(PROMOTION_ID);
-      teaserLabel = newBadge ?
-          html`${lockedString(UIStringsNotTranslate.writeACommentToGenerateCode)}&nbsp;${newBadge}` :
-          nothing;
+      const teaserText = input.panel === AiCodeCompletion.AiCodeCompletion.ContextFlavor.CONSOLE ?
+          lockedString(UIStringsNotTranslate.writeACommentToGenerateCodeInConsole) :
+          lockedString(UIStringsNotTranslate.writeACommentToGenerateCode);
+      teaserLabel = newBadge ? html`${teaserText}&nbsp;${newBadge}` : nothing;
       break;
     }
 
@@ -204,7 +277,11 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
       // clang-format off
       teaserLabel = html`
         <div class="ai-code-generation-teaser-screen-reader-only">${teaserAriaLabel}</div>
-        <span class="ai-code-generation-spinner" aria-hidden="true"></span>&nbsp;${lockedString(UIStringsNotTranslate.generating)}&nbsp;
+        <span class="ai-code-generation-spinner" aria-hidden="true">
+          &nbsp;${lockedString(UIStringsNotTranslate.generating)}
+          <span class="ai-code-generation-keyboard-action"><span>${lockedString(UIStringsNotTranslate.esc)}</span></span>
+          ${lockedString(UIStringsNotTranslate.toCancel)}&nbsp;
+        </span>
         <span class="ai-code-generation-timer" aria-hidden="true" ${Directives.ref(el => {
           if (el) {
             output.setTimerText = (text: string) => {
@@ -220,6 +297,8 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
       // clang-format off
       teaserLabel = html`<div class="ai-code-generation-teaser-generated">
           <span>${lockedString(UIStringsNotTranslate.tab)}</span>
+          &nbsp;${lockedString(UIStringsNotTranslate.or)}&nbsp;
+          <span>${lockedString(UIStringsNotTranslate.enter)}</span>
           &nbsp;${lockedString(UIStringsNotTranslate.toAccept)}
         </div>`;
       // clang-format on
@@ -240,17 +319,19 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
   // clang-format on
 };
 
-// TODO(b/448063927): Add "Dont show again" for discovery teaser.
 export class AiCodeGenerationTeaser extends UI.Widget.Widget {
   readonly #view: View;
   #viewOutput: ViewOutput = {};
 
-  #displayState = AiCodeGenerationTeaserDisplayState.TRIGGER;
+  #displayState = AiCodeGenerationTeaserDisplayState.DISCOVERY;
   #disclaimerTooltipId?: string;
   #noLogging: boolean;  // Whether the enterprise setting is `ALLOW_WITHOUT_LOGGING` or not.
   #panel?: AiCodeCompletion.AiCodeCompletion.ContextFlavor;
   #timerIntervalId?: number;
   #loadStartTime?: number;
+  #aiCodeGenerationUsedSetting = Common.Settings.Settings.instance().createSetting('ai-code-generation-used', false);
+  static #showDataUsageTeaser = true;
+  static #discoveryTeaserShownInSession = false;
 
   constructor(view?: View) {
     super();
@@ -268,6 +349,9 @@ export class AiCodeGenerationTeaser extends UI.Widget.Widget {
           onManageInSettingsTooltipClick: this.#onManageInSettingsTooltipClick.bind(this),
           disclaimerTooltipId: this.#disclaimerTooltipId,
           noLogging: this.#noLogging,
+          showDataUsageTeaser: AiCodeGenerationTeaser.#showDataUsageTeaser,
+          showDiscoveryTeaser:
+              !this.#aiCodeGenerationUsedSetting.get() && !AiCodeGenerationTeaser.#discoveryTeaserShownInSession,
           panel: this.#panel,
         },
         this.#viewOutput, this.contentElement);
@@ -285,6 +369,12 @@ export class AiCodeGenerationTeaser extends UI.Widget.Widget {
   set displayState(displayState: AiCodeGenerationTeaserDisplayState) {
     if (displayState === this.#displayState) {
       return;
+    }
+    if (this.#displayState === AiCodeGenerationTeaserDisplayState.TRIGGER) {
+      AiCodeGenerationTeaser.#showDataUsageTeaser = false;
+    }
+    if (this.#displayState === AiCodeGenerationTeaserDisplayState.DISCOVERY) {
+      AiCodeGenerationTeaser.#discoveryTeaserShownInSession = true;
     }
     this.#displayState = displayState;
     this.requestUpdate();
@@ -339,5 +429,9 @@ export class AiCodeGenerationTeaser extends UI.Widget.Widget {
 
   showTooltip(): void {
     this.#viewOutput.showTooltip?.();
+  }
+
+  static setDiscoveryTeaserShownInSessionForTest(value: boolean): void {
+    AiCodeGenerationTeaser.#discoveryTeaserShownInSession = value;
   }
 }

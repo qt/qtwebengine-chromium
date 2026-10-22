@@ -76,13 +76,17 @@ export const DEFAULT_SETTING_REGISTRATIONS_FOR_TEST = [
       Common.Settings.SettingCategory.DEBUGGER, 'skip-stack-frames-pattern',
       '/node_modules/|^node:', Common.Settings.SettingType.REGEX),
   createSettingValue(Common.Settings.SettingCategory.DEBUGGER, 'navigator-group-by-folder', true),
+  createSettingValue(Common.Settings.SettingCategory.DEBUGGER, 'navigator-group-by-authored', false),
+  createSettingValue(Common.Settings.SettingCategory.DEBUGGER, 'navigator-just-my-code', false),
   createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'dom-word-wrap', true),
   createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'show-detailed-inspect-tooltip', true),
   createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'show-html-comments', true),
   createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'show-ua-shadow-dom', false),
   createSettingValue(Common.Settings.SettingCategory.PERFORMANCE, 'annotations-hidden', false),
+  createSettingValue(Common.Settings.SettingCategory.PERFORMANCE, 'timeline-show-all-events', false),
   createSettingValue(Common.Settings.SettingCategory.NETWORK, 'cache-disabled', false),
   createSettingValue(Common.Settings.SettingCategory.RENDERING, 'avif-format-disabled', false),
+  createSettingValue(Common.Settings.SettingCategory.RENDERING, 'jpeg-xl-format-disabled', false),
   createSettingValue(
       Common.Settings.SettingCategory.RENDERING, 'emulated-css-media', '', Common.Settings.SettingType.ENUM),
   createSettingValue(
@@ -141,6 +145,8 @@ export const DEFAULT_SETTING_REGISTRATIONS_FOR_TEST = [
   createSettingValue(
       Common.Settings.SettingCategory.EMULATION, 'emulation.cpu-pressure', '', Common.Settings.SettingType.ENUM),
   createSettingValue(
+      Common.Settings.SettingCategory.EMULATION, 'emulation.locations', [], Common.Settings.SettingType.ARRAY),
+  createSettingValue(
       Common.Settings.SettingCategory.GRID, 'show-grid-line-labels', 'none', Common.Settings.SettingType.ENUM),
   createSettingValue(Common.Settings.SettingCategory.GRID, 'extend-grid-lines', true),
   createSettingValue(Common.Settings.SettingCategory.GRID, 'show-grid-areas', true),
@@ -170,7 +176,7 @@ export const DEFAULT_SETTING_REGISTRATIONS_FOR_TEST = [
       Common.Settings.SettingCategory.SOURCES, 'network.enable-remote-file-loading', false,
       Common.Settings.SettingType.BOOLEAN),
   createSettingValue(
-      Common.Settings.SettingCategory.CONSOLE, 'hide-network-messages', false, Common.Settings.SettingType.BOOLEAN),
+      Common.Settings.SettingCategory.CONSOLE, 'network-messages', true, Common.Settings.SettingType.BOOLEAN),
   createSettingValue(
       Common.Settings.SettingCategory.CONSOLE, 'selected-context-filter-enabled', false,
       Common.Settings.SettingType.BOOLEAN),

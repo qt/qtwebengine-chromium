@@ -2,15 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "public/fpdf_structtree.h"
+
 #include <limits.h>
 
 #include <algorithm>
 #include <iterator>
 #include <optional>
-
-#include "public/fpdf_structtree.h"
 #include "testing/embedder_test.h"
 #include "testing/fx_string_testhelpers.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 class FPDFStructTreeEmbedderTest : public EmbedderTest {};
 
@@ -115,6 +117,42 @@ TEST_F(FPDFStructTreeEmbedderTest, GetActualText) {
     ASSERT_EQ(24U, FPDF_StructElement_GetActualText(gchild_element, buffer,
                                                     sizeof(buffer)));
     EXPECT_EQ(L"Actual Text", GetPlatformWString(buffer));
+  }
+}
+
+TEST_F(FPDFStructTreeEmbedderTest, GetExpansion) {
+  ASSERT_TRUE(OpenDocument("tagged_expansion.pdf"));
+  ScopedPage page = LoadScopedPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFStructTree struct_tree(FPDF_StructTree_GetForPage(page.get()));
+    ASSERT_TRUE(struct_tree);
+    ASSERT_EQ(1, FPDF_StructTree_CountChildren(struct_tree.get()));
+
+    EXPECT_EQ(0U, FPDF_StructElement_GetExpansion(nullptr, nullptr, 0));
+
+    FPDF_STRUCTELEMENT element =
+        FPDF_StructTree_GetChildAtIndex(struct_tree.get(), 0);
+    ASSERT_TRUE(element);
+    // Document element has no /E attribute.
+    EXPECT_EQ(0U, FPDF_StructElement_GetExpansion(element, nullptr, 0));
+
+    ASSERT_EQ(1, FPDF_StructElement_CountChildren(element));
+    FPDF_STRUCTELEMENT child_element =
+        FPDF_StructElement_GetChildAtIndex(element, 0);
+    ASSERT_TRUE(child_element);
+    // Span element has /E set to "Expansion".
+    ASSERT_EQ(20U, FPDF_StructElement_GetExpansion(child_element, nullptr, 0));
+
+    unsigned short buffer[10] = {};
+    // Deliberately pass in a small buffer size to make sure `buffer` remains
+    // untouched.
+    ASSERT_EQ(20U, FPDF_StructElement_GetExpansion(child_element, buffer, 1));
+    EXPECT_THAT(buffer, testing::Each(0u));
+    ASSERT_EQ(20U, FPDF_StructElement_GetExpansion(child_element, buffer,
+                                                   sizeof(buffer)));
+    EXPECT_EQ(L"Expansion", GetPlatformWString(buffer));
   }
 }
 

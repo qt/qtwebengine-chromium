@@ -58,7 +58,7 @@ AutofillCountry::AutofillCountry(std::string_view country_code,
   // code.
   country_code_ = country_data_map->HasCountryCodeAlias(country_code)
                       ? country_data_map->GetCountryCodeForAlias(country_code)
-                      : std::string(country_code);
+                      : country_code;
 
   required_fields_for_address_import_ =
       country_data_map->GetRequiredFieldsForAddressImport(country_code_);
@@ -156,7 +156,8 @@ AutofillCountry::address_format_extensions() const {
       {{.type = FieldType::ADDRESS_HOME_STATE,
         .label_id = IDS_LIBADDRESSINPUT_STATE,
         .placed_after = FieldType::ADDRESS_HOME_CITY,
-        .separator_before_label = " "}}};
+        .separator_before_label = "\n",
+        .large_sized = true}}};
   static constexpr std::array<AddressFormatExtension, 1> jp_extensions{
       {{.type = FieldType::ALTERNATIVE_FULL_NAME,
         .label_id = IDS_AUTOFILL_ADDRESS_EDIT_DIALOG_JAPANESE_ALTERNATIVE_NAME,

@@ -166,6 +166,10 @@ class FakePlatformWindow : public ui::PlatformWindow, public ui::WmDragHandler {
     drop_handler->OnDragLeave();
   }
 
+  void set_callback_during_drag(base::RepeatingClosure callback) {
+    callback_during_drag_ = std::move(callback);
+  }
+
   void CloseDrag(DragOperation operation) {
     std::move(drag_finished_callback_).Run(operation);
     drag_loop_quit_closure_.Run();
@@ -174,6 +178,9 @@ class FakePlatformWindow : public ui::PlatformWindow, public ui::WmDragHandler {
   void ProcessDrag(std::unique_ptr<OSExchangeData> data, int operation) {
     std::move(drag_started_callback_).Run();
     OnDragEnter(kStartDragLocation, std::move(data), operation);
+    if (callback_during_drag_) {
+      callback_during_drag_.Run();
+    }
     int updated_operation = OnDragMotion(kStartDragLocation, operation);
     OnDragDrop();
     OnDragLeave();
@@ -185,6 +192,7 @@ class FakePlatformWindow : public ui::PlatformWindow, public ui::WmDragHandler {
   WmDragHandler::DragFinishedCallback drag_finished_callback_;
   std::unique_ptr<ui::OSExchangeData> source_data_;
   base::RepeatingClosure drag_loop_quit_closure_;
+  base::RepeatingClosure callback_during_drag_;
   int modifiers_ = 0;
 };
 
@@ -558,6 +566,39 @@ TEST_F(DesktopDragDropClientOzoneTest, DataLeakPreventionBlockDrop) {
   EXPECT_EQ(1, dragdrop_delegate_->num_updates());
   EXPECT_EQ(0, dragdrop_delegate_->num_drops());
   EXPECT_EQ(1, dragdrop_delegate_->num_exits());
+}
+
+TEST_F(DesktopDragDropClientOzoneTest, RejectReentrantDrag) {
+  // Set up a callback to be run while the drag is active.
+  platform_window_->set_callback_during_drag(base::BindRepeating(
+      [](DesktopDragDropClientOzoneTest* test) {
+        // Attempt to start a second drag operation while the first is active.
+        DragOperation reentrant_operation =
+            test->StartDragAndDrop(ui::DragDropTypes::DRAG_COPY);
+        // The reentrant drag should be rejected and return kNone.
+        EXPECT_EQ(DragOperation::kNone, reentrant_operation);
+      },
+      base::Unretained(this)));
+
+  // Set the operation which the destination can accept.
+  dragdrop_delegate_->SetOperation(DragOperation::kCopy);
+
+  // Start the first drag and drop.
+  DragOperation operation = StartDragAndDrop(ui::DragDropTypes::DRAG_COPY |
+                                             ui::DragDropTypes::DRAG_MOVE);
+
+  // The first drag should succeed and complete as expected.
+  EXPECT_EQ(DragOperation::kCopy, operation);
+}
+
+TEST_F(DesktopDragDropClientOzoneTest, RejectDragDuringWindowMove) {
+  // Simulate that a window-move loop is in progress.
+  auto suppress_drag =
+      DesktopDragDropClientOzone::ScopedSuppressForWindowMove();
+
+  // Attempt to start a drag operation. It should be rejected and return kNone.
+  DragOperation operation = StartDragAndDrop(ui::DragDropTypes::DRAG_COPY);
+  EXPECT_EQ(DragOperation::kNone, operation);
 }
 
 }  // namespace views

@@ -92,7 +92,6 @@ export class CrInputElement extends CrLitElement {
       },
 
       errorMessage: {type: String},
-      errorRole_: {type: String},
 
       /**
        * This is strictly used internally for styling, do not attempt to use
@@ -186,11 +185,6 @@ export class CrInputElement extends CrLitElement {
   protected accessor internalValue_: string = '';
   protected accessor focused_: boolean = false;
 
-  override firstUpdated() {
-    // Use inputTabindex instead.
-    assert(!this.hasAttribute('tabindex'));
-  }
-
   override willUpdate(changedProperties: PropertyValues<this>) {
     super.willUpdate(changedProperties);
 
@@ -213,6 +207,11 @@ export class CrInputElement extends CrLitElement {
       // Check that the 'type' is one of the supported types.
       assert(SUPPORTED_INPUT_TYPES.has(this.type));
     }
+  }
+
+  override firstUpdated() {
+    // Use inputTabindex instead.
+    assert(!this.hasAttribute('tabindex'));
   }
 
   override updated(changedProperties: PropertyValues<this>) {

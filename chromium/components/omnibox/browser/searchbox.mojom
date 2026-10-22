@@ -111,14 +111,7 @@ struct TabInfo {
   mojo_base.mojom.TimeTicks last_active;
 };
 
-// See also:
-// https://crsrc.org/c/third_party/omnibox_proto/aim_tools.proto
-enum ToolMode {
-  kDefault = 0,
-  kDeepSearch = 1,
-  kCanvas = 2,
-  kCreateImage = 4,
-};
+
 
 // Represents a file attachment who's upload was started browser-side (currently
 // an image or PDF only).
@@ -161,7 +154,7 @@ struct SearchContext {
   // A list of attachments to the search context.
   array<SearchContextAttachment> attachments;
   // The mode of the search query.
-  ToolMode tool_mode;
+  composebox_query.mojom.ToolMode tool_mode;
 };
 
 // Information about a contextual input.
@@ -200,6 +193,7 @@ struct SuggestionGroup {
 };
 
 struct AutocompleteResult {
+  uint32 sequence_id;
   mojo_base.mojom.String16 input;
   // Map of suggestion group IDs to their respective info.
   map<int32, SuggestionGroup> suggestion_groups_map;
@@ -245,13 +239,17 @@ struct PlaceholderConfig {
   mojo_base.mojom.TimeDelta fade_text_animation_duration;
 };
 
+// Used by the WebUI page to bootstrap bidirectional communication.
+interface PageHandlerFactory {
+  // The SearchboxBrowserProxy singleton calls this when it's first initialized.
+  CreatePageHandler(pending_remote<Page> page,
+                    pending_receiver<PageHandler> handler);
+};
+
 // Browser-side handler for requests from WebUI page. The web pages that embed
 // searchboxes which communicate with this interface are chrome://new-tab-page
 // and two chrome-untrusted://lens pages.
 interface PageHandler {
-  // The SearchboxBrowserProxy singleton calls this when it's first initialized.
-  SetPage(pending_remote<Page> page);
-
   // Informs the handler and model about focus state changes.
   OnFocusChanged(bool focused);
 
@@ -283,7 +281,8 @@ interface PageHandler {
   SetPopupSelection(OmniboxPopupSelection selection);
 
   // Opens a specified popup selection.
-  OpenPopupSelection(OmniboxPopupSelection selection,
+  OpenPopupSelection(uint32 result_sequence_id,
+                     OmniboxPopupSelection selection,
                      ui.mojom.WindowOpenDisposition disposition);
 
   // Informs the browser that the user has changed the selected suggestion. The
@@ -364,6 +363,13 @@ interface PageHandler {
       => result<mojo_base.mojom.UnguessableToken,
                 composebox_query.mojom.ContextUploadErrorType>;
 
+  // Attach a Drive file to the query context. If the file cannot be attached,
+  // the result will contain an error, otherwise it will contain the token
+  // identifying the file context.
+  AddDriveContext(string drive_id, string resource_key, string mime_type)
+      => result<mojo_base.mojom.UnguessableToken,
+                composebox_query.mojom.ContextUploadErrorType>;
+
   // Notify handler of context deletion. This removes the context data (e.g.
   // File, or tab page content) from the browser-side cache.
   // `from_automatic_chip` indicates whether the deleted context is auto
@@ -389,11 +395,27 @@ interface PageHandler {
 
   // Called when a user enables a tool.
   SetActiveToolMode(composebox_query.mojom.ToolMode tool);
+
   // Called when a user enables a model.
   SetActiveModelMode(composebox_query.mojom.ModelMode model);
 
   // Activates a metrics funnel for the session.
   ActivateMetricsFunnel(string funnel_name);
+
+  // Called when a user interacts with a tool selection button explicitly.
+  RecordToolSelectionAction(composebox_query.mojom.ToolMode tool);
+
+  // Called when a user interacts with a model selection button explicitly.
+  RecordModelSelectionAction(composebox_query.mojom.ModelMode model);
+
+  // Queries whether the AIM x Drive disclaimer should be shown.
+  ShouldShowDriveDisclaimer() => (bool should_show);
+
+  // Informs the browser that the user accepted the AIM x Drive disclaimer.
+  OnDriveDisclaimerAccepted();
+
+  // Gets the page classification for the current context.
+  GetPageClassification() => (string metricSource);
 };
 
 // WebUI-side handler for requests from the browser.

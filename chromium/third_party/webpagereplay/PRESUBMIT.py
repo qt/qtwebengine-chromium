@@ -46,20 +46,36 @@ def CheckGoTests(input_api, output_api):
     cmd_name = 'WebPageReplay go tests'
     if input_api.verbose:
         print(f'Running {cmd_name}')
-    test_cmd = input_api.Command(
-        name=cmd_name,
-        cmd=['go', 'test', './webpagereplay'],
-        kwargs={
-            'cwd': str(pathlib.Path(input_api.PresubmitLocalPath()) / 'src')
-        },
-        message=output_api.PresubmitError)
-    return input_api.RunTests([test_cmd])
+    results = []
+    results.extend(
+        input_api.RunTests([
+            input_api.Command(
+                name=cmd_name,
+                cmd=['go', 'test', './webpagereplay'],
+                kwargs={
+                    'cwd':
+                    str(pathlib.Path(input_api.PresubmitLocalPath()) / 'src')
+                },
+                message=output_api.PresubmitError)
+        ]))
+    results.extend(
+        input_api.RunTests([
+            input_api.Command(
+                name='wpr.go tests',
+                cmd=['go', 'test', 'wpr.go', 'wpr_test.go'],
+                kwargs={
+                    'cwd':
+                    str(pathlib.Path(input_api.PresubmitLocalPath()) / 'src')
+                },
+                message=output_api.PresubmitError)
+        ]))
+    return results
 
 
 def CheckPrebuiltBinaryUpdated(input_api, output_api):
     files = input_api.UnixLocalPaths()
-    if (not any(f.endswith('binary_dependencies.json') for f in files)
-            and any(f.endswith('.go') for f in files)):
+    if (not any(f.endswith('binary_dependencies.json') for f in files) and any(
+            f.endswith('.go') and not f.endswith('_test.go') for f in files)):
         return [
             output_api.PresubmitError(
                 'You changed go files, but didn\'t run scripts/'
@@ -78,12 +94,12 @@ def CheckPanProjectChecks(input_api, output_api):
                                                     owners_check=False)
 
 
-def CheckPythonFormat(input_api, output_api):
+def CheckPythonAndJavascriptFormat(input_api, output_api):
     return input_api.canned_checks.CheckPatchFormatted(
         input_api,
         output_api,
-        check_clang_format=False,
-        check_js=False,
+        check_clang_format=True,
+        check_js=True,
         check_python=True,
         result_factory=output_api.PresubmitError)
 

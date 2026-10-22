@@ -16,9 +16,9 @@
 #include "core/fpdfapi/parser/cpdf_linearized_header.h"
 #include "core/fpdfapi/parser/cpdf_object.h"
 #include "core/fpdfapi/parser/cpdf_syntax_parser.h"
+#include "core/fxcrt/cfx_fileaccess_stream.h"
 #include "core/fxcrt/cfx_read_only_span_stream.h"
 #include "core/fxcrt/fx_extension.h"
-#include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -106,8 +106,8 @@ class CPDF_TestParser final : public CPDF_Parser {
 
   // Setup reading from a file and initial states.
   bool InitTestFromFile(const char* path) {
-    RetainPtr<IFX_SeekableReadStream> pFileAccess =
-        IFX_SeekableReadStream::CreateFromFilename(path);
+    RetainPtr<CFX_FileAccessStream> pFileAccess =
+        CFX_FileAccessStream::CreateFromFilename(path);
     if (!pFileAccess) {
       return false;
     }
@@ -349,8 +349,8 @@ TEST(ParserTest, ParseStartXRefWithHeaderOffset) {
   std::string test_file =
       PathService::GetTestFilePath("annotation_stamp_with_ap.pdf");
   ASSERT_FALSE(test_file.empty());
-  RetainPtr<IFX_SeekableReadStream> pFileAccess =
-      IFX_SeekableReadStream::CreateFromFilename(test_file.c_str());
+  RetainPtr<CFX_FileAccessStream> pFileAccess =
+      CFX_FileAccessStream::CreateFromFilename(test_file.c_str());
   ASSERT_TRUE(pFileAccess);
 
   std::vector<unsigned char> data(pFileAccess->GetSize() + kTestHeaderOffset);
@@ -370,8 +370,8 @@ TEST(ParserTest, ParseLinearizedWithHeaderOffset) {
   static constexpr FX_FILESIZE kTestHeaderOffset = 765;
   std::string test_file = PathService::GetTestFilePath("linearized.pdf");
   ASSERT_FALSE(test_file.empty());
-  RetainPtr<IFX_SeekableReadStream> pFileAccess =
-      IFX_SeekableReadStream::CreateFromFilename(test_file.c_str());
+  RetainPtr<CFX_FileAccessStream> pFileAccess =
+      CFX_FileAccessStream::CreateFromFilename(test_file.c_str());
   ASSERT_TRUE(pFileAccess);
 
   std::vector<unsigned char> data(pFileAccess->GetSize() + kTestHeaderOffset);

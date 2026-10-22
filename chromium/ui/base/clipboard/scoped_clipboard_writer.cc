@@ -10,7 +10,6 @@
 #include <utility>
 #include <variant>
 
-#include "base/compiler_specific.h"
 #include "base/json/json_writer.h"
 #include "base/pickle.h"
 #include "base/strings/escape.h"
@@ -133,15 +132,14 @@ void ScopedClipboardWriter::WriteFilenames(std::string uri_list) {
   objects_[index] = Clipboard::ObjectMapParams(std::move(data));
 }
 
-void ScopedClipboardWriter::WriteBookmark(std::u16string_view bookmark_title,
-                                          std::string url) {
-  if (ui::clipboard_util::ShouldSkipBookmark(bookmark_title, url)) {
+void ScopedClipboardWriter::WriteURL(const ClipboardUrlInfo& url_info) {
+  const std::string url = url_info.url.spec();
+  if (ui::clipboard_util::ShouldSkipBookmark(url_info.title, url)) {
     return;
   }
-  RecordWrite(ClipboardFormatMetric::kBookmark);
+  RecordWrite(ClipboardFormatMetric::kUrl);
 
-  Clipboard::Data data = Clipboard::BookmarkData{
-      .title = base::UTF16ToUTF8(bookmark_title), .url = std::move(url)};
+  Clipboard::Data data = Clipboard::UrlData{.url_info = url_info};
   const size_t index = data.index();
   objects_[index] = Clipboard::ObjectMapParams(std::move(data));
 }
@@ -199,10 +197,7 @@ void ScopedClipboardWriter::WritePickledData(
   RecordWrite(ClipboardFormatMetric::kCustomData);
   Clipboard::RawData raw_data;
   raw_data.format = format;
-  raw_data.data = std::vector<uint8_t>(
-      reinterpret_cast<const uint8_t*>(pickle.data()),
-      UNSAFE_TODO(reinterpret_cast<const uint8_t*>(pickle.data()) +
-                  pickle.size()));
+  raw_data.data = std::vector<uint8_t>(std::from_range, pickle.AsBytes());
   raw_objects_.insert({format, std::move(raw_data)});
 }
 

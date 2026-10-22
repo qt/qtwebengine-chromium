@@ -45,11 +45,64 @@ if (build_with_chromium) {
   use_fuzzing_engine = false
 }
 
+# Helper template to define clang plugins.
+#
+# Params:
+#   plugin: The name of the clang plugin to load.
+#   plugin_arguments: List of arguments to pass to the plugin.
+template("clang_plugin") {
+  config(target_name) {
+    cflags = [
+      "-Xclang",
+      "-add-plugin",
+      "-Xclang",
+      invoker.plugin,
+    ]
+
+    foreach(flag, invoker.plugin_arguments) {
+      cflags += [
+        "-Xclang",
+        "-plugin-arg-${invoker.plugin}",
+        "-Xclang",
+        flag,
+      ]
+    }
+  }
+}
+
+# Check struct/class member pointers are using raw_ptr<> where appropriate.
+clang_plugin("raw_ptr_check") {
+  # Defined in <chromium>/tools/clang/raw_ptr_plugin/RawPtrPlugin.cpp
+  plugin = "raw-ptr-plugin"
+
+  plugin_arguments = [
+    "check-raw-ptr-fields",
+    "check-raw-ptr-to-stack-allocated",
+    "check-raw-ref-fields",
+    "check-span-fields",
+  ]
+
+  _exclusions = [
+    "/include/",
+    "/src/tint/",
+    "/src/dawn/replay/",
+
+    # TODO(479743213): Enforce raw_ptr usage in dawn/node as well.
+    "/src/dawn/node/",
+  ]
+
+  foreach(dir, _exclusions) {
+    plugin_arguments += [ "raw-ptr-exclude-path=" +
+                          rebase_path("${dawn_root}/${dir}", root_build_dir) ]
+  }
+}
+
 ###############################################################################
 # Common dawn configs
 ###############################################################################
 
 config("internal_config") {
+  configs = []
   include_dirs = [
     "${target_gen_dir}/../../../src",
     "${dawn_root}/src",
@@ -180,6 +233,10 @@ config("internal_config") {
       "-Wunused-macros",
     ]
 
+    if (!is_wasm) {
+      configs += [ ":raw_ptr_check" ]
+    }
+
     if (is_win) {
       cflags += [
         # clang-cl doesn't know -pedantic, pass it explicitly to the clang driver
@@ -262,6 +319,7 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android ||
     is_ios || is_wasm) {
   static_library("common") {
     sources = [
+      "Algebra.h",
       "AlignedAlloc.cpp",
       "AlignedAlloc.h",
       "Alloc.h",
@@ -269,6 +327,7 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android ||
       "Assert.h",
       "Atomic.h",
       "BitSetRangeIterator.h",
+      "ColorSpace.h",
       "Compiler.h",
       "Constants.h",
       "ContentLessObjectCache.h",
@@ -341,6 +400,15 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android ||
       "xlib_with_undefs.h",
     ]
     sources += get_target_outputs(":dawn_gpu_info_gen")
+
+    if (!is_wasm) {
+      sources += [
+        "ExternalTextureParams.cpp",
+        "ExternalTextureParams.h",
+        "WGPUDeviceCallbackInfos.cpp",
+        "WGPUDeviceCallbackInfos.h",
+      ]
+    }
 
     public_deps = [
       ":dawn_gpu_info_gen",

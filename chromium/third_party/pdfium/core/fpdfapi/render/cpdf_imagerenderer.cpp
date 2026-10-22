@@ -35,9 +35,9 @@
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxcrt/zip.h"
-#include "core/fxge/agg/cfx_agg_imagerenderer.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_path.h"
 #include "core/fxge/dib/cfx_dibbase.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
@@ -228,8 +228,7 @@ bool CPDF_ImageRenderer::IsPrinting() const {
   }
 
   // Make sure the assumption that no printer device supports blend mode holds.
-  CHECK(
-      !(render_status_->GetRenderDevice()->GetRenderCaps() & FXRC_BLEND_MODE));
+  CHECK(!render_status_->GetRenderDevice()->RenderCapBlendMode());
   return true;
 }
 
@@ -403,7 +402,7 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
   }
 
 #if defined(PDF_USE_SKIA)
-  if (CFX_DefaultRenderDevice::UseSkiaRenderer() &&
+  if (CFX_GEModule::Get()->UseSkiaRenderer() &&
       render_status_->GetRenderDevice()->SetBitsWithMask(
           bitmap_device.GetBitmap(), mask_bitmap, rect.left, rect.top, alpha_,
           blend_type_)) {
@@ -437,8 +436,8 @@ bool CPDF_ImageRenderer::StartDIBBase() {
           dibbase_, alpha_, fill_argb_, image_matrix_, resample_options_,
           blend_type_);
   if (result.result == RenderDeviceDriverIface::Result::kSuccess) {
-    device_handle_ = std::move(result.agg_image_renderer);
-    if (device_handle_) {
+    continuation_ = std::move(result.continuation);
+    if (continuation_) {
       mode_ = Mode::kBlend;
       return true;
     }
@@ -616,7 +615,7 @@ bool CPDF_ImageRenderer::ContinueDefault(PauseIndicatorIface* pPause) {
 }
 
 bool CPDF_ImageRenderer::ContinueBlend(PauseIndicatorIface* pPause) {
-  return render_status_->GetRenderDevice()->ContinueDIBits(device_handle_.get(),
+  return render_status_->GetRenderDevice()->ContinueDIBits(continuation_.get(),
                                                            pPause);
 }
 

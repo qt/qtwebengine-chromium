@@ -23,6 +23,9 @@
 #include "components/cbor/values.h"
 #include "components/cbor/writer.h"
 #include "crypto/random.h"
+#include "device/bluetooth/bluetooth_adapter_factory.h"
+#include "device/fido/cable/cable_mock_bluetooth_adapter.h"
+#include "device/fido/cable/fido_ble_uuids.h"
 #include "device/fido/cable/v2_authenticator.h"
 #include "device/fido/cable/v2_discovery.h"
 #include "device/fido/cable/v2_handshake.h"
@@ -38,9 +41,13 @@
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "services/network/public/mojom/client_security_state.mojom.h"
 #include "services/network/test/test_network_context.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/blink/public/mojom/webauthn/authenticator.mojom.h"
 #include "third_party/boringssl/src/include/openssl/ec_key.h"
 #include "url/gurl.h"
+
+using ::testing::_;
+using ::testing::Sequence;
 
 namespace device::cablev2 {
 namespace {
@@ -57,11 +64,10 @@ class TestNetworkContext : public network::TestNetworkContext {
   void CreateWebSocket(
       const GURL& url,
       const std::vector<std::string>& requested_protocols,
-      const net::SiteForCookies& site_for_cookies,
       net::StorageAccessApiStatus storage_access_api_status,
       const net::IsolationInfo& isolation_info,
       std::vector<network::mojom::HttpHeaderPtr> additional_headers,
-      const network::OriginatingProcess& process_id,
+      const network::OriginatingProcessId& process_id,
       const url::Origin& origin,
       network::mojom::ClientSecurityStatePtr client_security_state,
       uint32_t options,
@@ -73,7 +79,8 @@ class TestNetworkContext : public network::TestNetworkContext {
       mojo::PendingRemote<network::mojom::WebSocketAuthenticationHandler>
           auth_handler,
       mojo::PendingRemote<network::mojom::TrustedHeaderClient> header_client,
-      const std::optional<base::UnguessableToken>& throttling_profile_id)
+      const std::optional<base::UnguessableToken>& throttling_profile_id,
+      const std::optional<base::UnguessableToken>& network_restrictions_id)
       override {
     CHECK(url.has_path());
 
@@ -395,10 +402,10 @@ class DummyBLEAdvert
 // messages to the given |VirtualCtap2Device|.
 class TestPlatform : public authenticator::Platform {
  public:
-  TestPlatform(Discovery::AdvertEventStream::Callback ble_advert_callback,
-               device::VirtualCtap2Device* ctap2_device,
+  TestPlatform(device::VirtualCtap2Device* ctap2_device,
+               scoped_refptr<CableMockBluetoothAdapter> mock_adapter,
                authenticator::Observer* observer)
-      : ble_advert_callback_(ble_advert_callback),
+      : mock_adapter_(mock_adapter),
         ctap2_device_(ctap2_device),
         observer_(observer) {}
 
@@ -491,7 +498,7 @@ class TestPlatform : public authenticator::Platform {
 
  private:
   void DoSendBLEAdvert(base::span<const uint8_t, kAdvertSize> advert) {
-    ble_advert_callback_.Run(advert);
+    mock_adapter_->AddNewTestBluetoothDevice(advert);
   }
 
   std::vector<uint8_t> ToCTAP2Command(
@@ -627,7 +634,7 @@ class TestPlatform : public authenticator::Platform {
         std::move(response));
   }
 
-  Discovery::AdvertEventStream::Callback ble_advert_callback_;
+  scoped_refptr<CableMockBluetoothAdapter> mock_adapter_;
   const raw_ptr<device::VirtualCtap2Device> ctap2_device_;
   const raw_ptr<authenticator::Observer> observer_;
   base::WeakPtrFactory<TestPlatform> weak_factory_{this};
@@ -668,9 +675,9 @@ class LateLinkingDevice : public authenticator::Transaction {
         kTunnelServer, tunnel_id_);
 
     network_context_factory_.Run()->CreateWebSocket(
-        target, {device::kCableWebSocketProtocol}, net::SiteForCookies(),
+        target, {device::kCableWebSocketProtocol},
         net::StorageAccessApiStatus::kNone, net::IsolationInfo(),
-        /*additional_headers=*/{}, network::OriginatingProcess::browser(),
+        /*additional_headers=*/{}, network::OriginatingProcessId::browser(),
         url::Origin::Create(target), network::mojom::ClientSecurityState::New(),
         network::mojom::kWebSocketOptionBlockAllCookies,
         net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS),
@@ -678,7 +685,8 @@ class LateLinkingDevice : public authenticator::Transaction {
         /*url_loader_network_observer=*/mojo::NullRemote(),
         /*auth_handler=*/mojo::NullRemote(),
         /*header_client=*/mojo::NullRemote(),
-        /*throttling_profile_id=*/std::nullopt);
+        /*throttling_profile_id=*/std::nullopt,
+        /*network_restrictions_id=*/std::nullopt);
   }
 
  private:
@@ -888,9 +896,9 @@ class HandshakeErrorDevice : public authenticator::Transaction {
         kTunnelServer, tunnel_id_);
 
     network_context_factory_.Run()->CreateWebSocket(
-        target, {device::kCableWebSocketProtocol}, net::SiteForCookies(),
+        target, {device::kCableWebSocketProtocol},
         net::StorageAccessApiStatus::kNone, net::IsolationInfo(),
-        /*additional_headers=*/{}, network::OriginatingProcess::browser(),
+        /*additional_headers=*/{}, network::OriginatingProcessId::browser(),
         url::Origin::Create(target), network::mojom::ClientSecurityState::New(),
         network::mojom::kWebSocketOptionBlockAllCookies,
         net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS),
@@ -898,7 +906,8 @@ class HandshakeErrorDevice : public authenticator::Transaction {
         /*url_loader_network_observer=*/mojo::NullRemote(),
         /*auth_handler=*/mojo::NullRemote(),
         /*header_client=*/mojo::NullRemote(),
-        /*throttling_profile_id=*/std::nullopt);
+        /*throttling_profile_id=*/std::nullopt,
+        /*network_restrictions_id=*/std::nullopt);
   }
 
  private:
@@ -959,11 +968,10 @@ std::unique_ptr<network::mojom::NetworkContext> NewMockTunnelServer(
 namespace authenticator {
 
 std::unique_ptr<authenticator::Platform> NewMockPlatform(
-    Discovery::AdvertEventStream::Callback ble_advert_callback,
     device::VirtualCtap2Device* ctap2_device,
+    scoped_refptr<CableMockBluetoothAdapter> mock_adapter,
     authenticator::Observer* observer) {
-  return std::make_unique<TestPlatform>(ble_advert_callback, ctap2_device,
-                                        observer);
+  return std::make_unique<TestPlatform>(ctap2_device, mock_adapter, observer);
 }
 
 // NewLateLinkingDevice returns a caBLEv2 authenticator that sends linking

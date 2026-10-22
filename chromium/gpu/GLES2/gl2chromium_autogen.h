@@ -371,6 +371,8 @@
   GLES2_GET_FUN(FramebufferPixelLocalClearValueuivANGLE)
 #define glBeginPixelLocalStorageANGLE GLES2_GET_FUN(BeginPixelLocalStorageANGLE)
 #define glEndPixelLocalStorageANGLE GLES2_GET_FUN(EndPixelLocalStorageANGLE)
+#define glEndPixelLocalStorageImplicitANGLE \
+  GLES2_GET_FUN(EndPixelLocalStorageImplicitANGLE)
 #define glPixelLocalStorageBarrierANGLE \
   GLES2_GET_FUN(PixelLocalStorageBarrierANGLE)
 #define glFramebufferPixelLocalStorageInterruptANGLE \
@@ -381,6 +383,8 @@
   GLES2_GET_FUN(GetFramebufferPixelLocalStorageParameterfvANGLE)
 #define glGetFramebufferPixelLocalStorageParameterivANGLE \
   GLES2_GET_FUN(GetFramebufferPixelLocalStorageParameterivANGLE)
+#define glGetFramebufferPixelLocalStorageParameteruivANGLE \
+  GLES2_GET_FUN(GetFramebufferPixelLocalStorageParameteruivANGLE)
 #define glClipControlEXT GLES2_GET_FUN(ClipControlEXT)
 #define glPolygonModeANGLE GLES2_GET_FUN(PolygonModeANGLE)
 #define glPolygonOffsetClampEXT GLES2_GET_FUN(PolygonOffsetClampEXT)

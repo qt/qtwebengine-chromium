@@ -28,7 +28,6 @@
 #include "src/tint/api/helpers/generate_bindings.h"
 
 #include <algorithm>
-#include <iostream>
 
 #include "src/tint/api/common/binding_point.h"
 #include "src/tint/lang/core/ir/module.h"
@@ -44,7 +43,8 @@ namespace tint {
 Bindings GenerateBindings(const core::ir::Module& module,
                           const std::string& ep,
                           bool set_group_to_zero,
-                          bool flatten_bindings) {
+                          bool flatten_bindings,
+                          std::unordered_set<tint::BindingPoint> ycbcr_bindings) {
     Bindings bindings{};
 
     uint32_t next_buffer_idx = 0;
@@ -152,9 +152,17 @@ Bindings GenerateBindings(const core::ir::Module& module,
             uint32_t g = set_group_to_zero ? 0 : bp.group;
 
             tint::BindingPoint plane0{.group = g, .binding = next_texture_idx++};
-            tint::BindingPoint plane1{.group = g, .binding = next_texture_idx++};
             tint::BindingPoint metadata{.group = g, .binding = next_buffer_idx++};
-            bindings.external_texture.emplace(bp, ExternalTexture{metadata, plane0, plane1});
+
+            if (ycbcr_bindings.contains(bp)) {
+                tint::BindingPoint sampler{.group = g, .binding = next_sampler_idx++};
+                bindings.external_texture.emplace(bp,
+                                                  ExternalYCBCRTexture{metadata, plane0, sampler});
+            } else {
+                tint::BindingPoint plane1{.group = g, .binding = next_texture_idx++};
+                bindings.external_texture.emplace(
+                    bp, ExternalMultiplanarTexture{metadata, plane0, plane1});
+            }
         }
     } else {
         for (auto bp : ext_tex_bps) {
@@ -164,7 +172,14 @@ Bindings GenerateBindings(const core::ir::Module& module,
             tint::BindingPoint plane0{.group = g, .binding = bp.binding};
             tint::BindingPoint plane1{.group = g, .binding = next_num++};
             tint::BindingPoint metadata{.group = g, .binding = next_num++};
-            bindings.external_texture.emplace(bp, ExternalTexture{metadata, plane0, plane1});
+
+            if (ycbcr_bindings.contains(bp)) {
+                bindings.external_texture.emplace(bp,
+                                                  ExternalYCBCRTexture{metadata, plane0, plane1});
+            } else {
+                bindings.external_texture.emplace(
+                    bp, ExternalMultiplanarTexture{metadata, plane0, plane1});
+            }
         }
     }
 

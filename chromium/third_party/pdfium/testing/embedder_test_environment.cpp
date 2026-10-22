@@ -39,7 +39,7 @@ EmbedderTestEnvironment* EmbedderTestEnvironment::GetInstance() {
 
 void EmbedderTestEnvironment::SetUp() {
   FPDF_LIBRARY_CONFIG config = {
-      .version = 4,
+      .version = 5,
       .m_pUserFontPaths = test_fonts_.font_paths(),
 
 #ifdef PDF_ENABLE_V8
@@ -53,6 +53,8 @@ void EmbedderTestEnvironment::SetUp() {
 #endif  // PDF_ENABLE_V8
 
       .m_RendererType = renderer_type_,
+      .m_FontLibraryType = fontations_ ? FPDF_FONTBACKENDTYPE_FONTATIONS
+                                       : FPDF_FONTBACKENDTYPE_FREETYPE,
   };
 
   FPDF_InitLibraryWithConfig(&config);
@@ -68,6 +70,7 @@ void EmbedderTestEnvironment::AddFlags(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     AddFlag(argv[i]);
   }
+  CHECK(CheckFlags());
 }
 
 void EmbedderTestEnvironment::AddFlag(const std::string& flag) {
@@ -75,6 +78,7 @@ void EmbedderTestEnvironment::AddFlag(const std::string& flag) {
     write_pngs_ = true;
     return;
   }
+
 #if defined(PDF_USE_SKIA)
   std::string value;
   if (ParseSwitchKeyValue(flag, "--use-renderer=", &value)) {
@@ -88,7 +92,19 @@ void EmbedderTestEnvironment::AddFlag(const std::string& flag) {
     }
     return;
   }
+  if (flag == "--fontations") {
+    fontations_ = true;
+    return;
+  }
 #endif  // defined(PDF_USE_SKIA)
 
   std::cerr << "Unknown flag: " << flag << "\n";
+}
+
+bool EmbedderTestEnvironment::CheckFlags() {
+  if (fontations_ && renderer_type_ != FPDF_RENDERERTYPE_SKIA) {
+    std::cerr << "--fontations requires --use-renderer=skia as well.\n";
+    return false;
+  }
+  return true;
 }

@@ -200,8 +200,11 @@ enum class CastMessageType {
   kGetDeviceInfo = 26,
   kEurekaInfo = 27,
 
+  // Input event messages.
+  kInput = 28,
+
   // Max value should be updated to the highest value of the enum.
-  kMaxValue = kEurekaInfo,
+  kMaxValue = kInput,
 };
 
 enum class AppAvailabilityResult {

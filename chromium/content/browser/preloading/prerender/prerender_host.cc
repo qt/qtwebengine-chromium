@@ -41,9 +41,11 @@
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/preloading_trigger_type.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/referrer.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
@@ -51,6 +53,7 @@
 #include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 #include "third_party/blink/public/common/client_hints/enabled_client_hints.h"
 #include "third_party/blink/public/common/navigation/preloading_headers.h"
+#include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom.h"
 #include "url/origin.h"
 
 #if BUILDFLAG(IS_ANDROID)
@@ -387,6 +390,8 @@ bool PrerenderHost::AreHttpRequestHeadersCompatible(
   potential_activation_headers.RemoveHeader("RTT");
   prerender_headers.RemoveHeader("Downlink");
   potential_activation_headers.RemoveHeader("Downlink");
+  prerender_headers.RemoveHeader("ECT");
+  potential_activation_headers.RemoveHeader("ECT");
 
   // TODO(crbug.com/40244149): Instead of handling headers added by
   // embedders specifically, prerender should expose an interface to embedders
@@ -497,11 +502,11 @@ PrerenderHost::PrerenderHost(
     // Use the same SessionStorageNamespace as the primary page for the
     // prerendering page.
     GetFrameTree()->controller().SetSessionStorageNamespace(
-        site_instance->GetStoragePartitionConfig(),
+        site_instance->GetSecurityPrincipal().GetStoragePartitionConfig(),
         web_contents_->GetPrimaryFrameTree()
             .controller()
-            .GetSessionStorageNamespace(
-                site_instance->GetStoragePartitionConfig()));
+            .GetSessionStorageNamespace(site_instance->GetSecurityPrincipal()
+                                            .GetStoragePartitionConfig()));
 
     // TODO(crbug.com/40177940): This should be moved to FrameTree::Init
     web_contents_->NotifySwappedFromRenderManager(
@@ -751,6 +756,9 @@ void PrerenderHost::ReadyToCommitNavigation(
             parsed_headers->supports_loading_mode,
             network::mojom::LoadingMode::kPrerenderCrossOriginFrames)) {
       allow_cross_origin_subframe_navigation_ = true;
+      GetContentClient()->browser()->LogWebFeatureForCurrentPage(
+          navigation_request->GetRenderFrameHost(),
+          blink::mojom::WebFeature::kPrerender2CrossOriginIframes);
     }
   }
   if (!has_no_vary_search_with_parse_error_header) {
@@ -783,17 +791,15 @@ void PrerenderHost::DidFinishNavigation(NavigationHandle* navigation_handle) {
     return;
   }
 
-  if (PreloadServingMetricsCapsule::IsFeatureEnabled()) {
-    // If `DidFinishNavigation()` is called multiple times, ignore
-    // `PreloadServingMetrics` of that navigation and keep the first one.
-    if (!prerender_initial_preload_serving_metrics_) {
-      // Take `PreloadServingMetrics` of prerender initial navigation.
-      auto& initial_preload_serving_metrics_holder =
-          *PreloadServingMetricsHolder::GetOrCreateForNavigationHandle(
-              *navigation_handle);
-      prerender_initial_preload_serving_metrics_ =
-          initial_preload_serving_metrics_holder.Take();
-    }
+  // If `DidFinishNavigation()` is called multiple times, ignore
+  // `PreloadServingMetrics` of that navigation and keep the first one.
+  if (!prerender_initial_preload_serving_metrics_) {
+    // Take `PreloadServingMetrics` of prerender initial navigation.
+    auto& initial_preload_serving_metrics_holder =
+        *PreloadServingMetricsHolder::GetOrCreateForNavigationHandle(
+            *navigation_handle);
+    prerender_initial_preload_serving_metrics_ =
+        initial_preload_serving_metrics_holder.Take();
   }
 
   const bool is_prerender_main_frame =
@@ -965,14 +971,12 @@ std::unique_ptr<StoredPage> PrerenderHost::Activate(
 
   // Associate `PreloadServingMetrics` of prerender initial navigation to ones
   // of activation.
-  if (PreloadServingMetricsCapsule::IsFeatureEnabled()) {
-    auto& activation_preload_serving_metrics_holder =
-        *PreloadServingMetricsHolder::GetOrCreateForNavigationHandle(
-            navigation_request);
-    activation_preload_serving_metrics_holder
-        .SetPrerenderInitialPreloadServingMetrics(
-            std::move(prerender_initial_preload_serving_metrics_));
-  }
+  auto& activation_preload_serving_metrics_holder =
+      *PreloadServingMetricsHolder::GetOrCreateForNavigationHandle(
+          navigation_request);
+  activation_preload_serving_metrics_holder
+      .SetPrerenderInitialPreloadServingMetrics(
+          std::move(prerender_initial_preload_serving_metrics_));
 
   RecordActivation(navigation_request);
 
@@ -1158,14 +1162,22 @@ PrerenderHost::AreBeginNavigationParamsCompatibleWithNavigation(
     return ActivationNavigationParamsMatch::kIsFormSubmission;
   }
 
-  if (potential_activation.searchable_form_url !=
-      begin_params_->searchable_form_url) {
-    return ActivationNavigationParamsMatch::kSearchableFormUrl;
-  }
+  // `searchable_form_url` and `searchable_form_encoding` are generated by
+  // heuristic mechanism. Prerender form submission initial navigation code path
+  // will not reach the same part, so it will be not possible to pass the checks
+  // if the navigation happens to trigger the heuristic mechanism. These checks
+  // are dropped to allow prerender form submission when `form_submission` is
+  // true.
+  if (!form_submission()) {
+    if (potential_activation.searchable_form_url !=
+        begin_params_->searchable_form_url) {
+      return ActivationNavigationParamsMatch::kSearchableFormUrl;
+    }
 
-  if (potential_activation.searchable_form_encoding !=
-      begin_params_->searchable_form_encoding) {
-    return ActivationNavigationParamsMatch::kSearchableFormEncoding;
+    if (potential_activation.searchable_form_encoding !=
+        begin_params_->searchable_form_encoding) {
+      return ActivationNavigationParamsMatch::kSearchableFormEncoding;
+    }
   }
 
   // Trust token params can be set only on subframe navigations, so both values
@@ -1525,6 +1537,8 @@ void PrerenderHost::SetFailureReason(
     case PrerenderFinalStatus::kSlowNetwork:
     case PrerenderFinalStatus::kPrerenderFailedDuringPrefetch:
     case PrerenderFinalStatus::kBrowsingDataRemoved:
+    case PrerenderFinalStatus::kFormSubmitWhenPrerendering:
+    case PrerenderFinalStatus::kCrossDocumentRestart:
       if (attempt_) {
         attempt_->SetFailureReason(
             ToPreloadingFailureReason(reason.final_status()));
@@ -1746,51 +1760,6 @@ void PrerenderHost::OnWaitingForHeadersFinished(
 bool PrerenderHost::ShouldAbortNavigationBecausePrefetchUnavailable() const {
   CHECK(features::UsePrefetchPrerenderIntegration());
 
-  auto is_prefetch_used =
-      [](const std::optional<PrefetchStatus>& prefetch_status) -> bool {
-    if (!prefetch_status.has_value()) {
-      return false;
-    }
-
-    switch (prefetch_status.value()) {
-      case PrefetchStatus::kPrefetchResponseUsed:
-        return true;
-      case PrefetchStatus::kPrefetchNotUsedProbeFailed:
-      case PrefetchStatus::kPrefetchNotStarted:
-      case PrefetchStatus::kPrefetchIneligibleUserHasCookies:
-      case PrefetchStatus::kPrefetchIneligibleUserHasServiceWorker:
-      case PrefetchStatus::
-          kPrefetchIneligibleUserHasServiceWorkerNoFetchHandler:
-      case PrefetchStatus::kPrefetchIneligibleRedirectFromServiceWorker:
-      case PrefetchStatus::kPrefetchIneligibleRedirectToServiceWorker:
-      case PrefetchStatus::kPrefetchIneligibleSchemeIsNotHttps:
-      case PrefetchStatus::kPrefetchIneligibleNonDefaultStoragePartition:
-      case PrefetchStatus::kPrefetchNotFinishedInTime:
-      case PrefetchStatus::kPrefetchFailedNetError:
-      case PrefetchStatus::kPrefetchFailedNon2XX:
-      case PrefetchStatus::kPrefetchFailedMIMENotSupported:
-      case PrefetchStatus::kPrefetchSuccessful:
-      case PrefetchStatus::kPrefetchIneligibleRetryAfter:
-      case PrefetchStatus::kPrefetchIneligiblePrefetchProxyNotAvailable:
-      case PrefetchStatus::kPrefetchIsPrivacyDecoy:
-      case PrefetchStatus::kPrefetchIsStale:
-      case PrefetchStatus::kPrefetchNotUsedCookiesChanged:
-      case PrefetchStatus::kPrefetchIneligibleHostIsNonUnique:
-      case PrefetchStatus::kPrefetchIneligibleDataSaverEnabled:
-      case PrefetchStatus::kPrefetchIneligibleExistingProxy:
-      case PrefetchStatus::kPrefetchHeldback:
-      case PrefetchStatus::kPrefetchFailedInvalidRedirect:
-      case PrefetchStatus::kPrefetchFailedIneligibleRedirect:
-      case PrefetchStatus::
-          kPrefetchIneligibleSameSiteCrossOriginPrefetchRequiredProxy:
-      case PrefetchStatus::kPrefetchIneligibleBatterySaverEnabled:
-      case PrefetchStatus::kPrefetchIneligiblePreloadingDisabled:
-      case PrefetchStatus::kPrefetchEvictedAfterCandidateRemoved:
-      case PrefetchStatus::kPrefetchEvictedForNewerPrefetch:
-      case PrefetchStatus::kPrefetchEvictedAfterBrowsingDataRemoved:
-        return false;
-    }
-  };
   auto is_ineligibility_admissible =
       [](PreloadingEligibility prefetch_eligibility) -> bool {
     switch (prefetch_eligibility) {
@@ -1860,7 +1829,8 @@ bool PrerenderHost::ShouldAbortNavigationBecausePrefetchUnavailable() const {
 
   // Use a prefetch (in many cases, aheaf of prerender) if it is about to be
   // used.
-  if (is_prefetch_used(attributes_.preload_pipeline_info->prefetch_status())) {
+  if (attributes_.preload_pipeline_info->IsPrerenderMatchedWithPrefetch(
+          prerender_host_id())) {
     return false;
   }
 
@@ -1912,10 +1882,6 @@ void PrerenderHost::AddAdditionalRequestHeaders(
 
 void PrerenderHost::OnWillBeCancelled(
     const PrerenderCancellationReason& reason) {
-  if (!PreloadServingMetricsCapsule::IsFeatureEnabled()) {
-    return;
-  }
-
   [&]() {
     // There are two cases:
     //

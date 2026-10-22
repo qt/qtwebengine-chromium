@@ -17,7 +17,6 @@
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/notreached.h"
 #include "core/fxcrt/retain_ptr.h"
-#include "core/fxge/agg/cfx_agg_imagerenderer.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_path.h"
 #include "core/fxge/dib/cfx_dibbase.h"
@@ -99,23 +98,24 @@ DeviceType CPSPrinterDriver::GetDeviceType() const {
   return DeviceType::kPrinter;
 }
 
-int CPSPrinterDriver::GetDeviceCaps(int caps_id) const {
-  switch (caps_id) {
-    case FXDC_PIXEL_WIDTH:
-      return width_;
-    case FXDC_PIXEL_HEIGHT:
-      return height_;
-    case FXDC_BITS_PIXEL:
-      return bits_per_pixel_;
-    case FXDC_RENDER_CAPS:
-      return 0;
-    case FXDC_HORZ_SIZE:
-      return horz_size_;
-    case FXDC_VERT_SIZE:
-      return vert_size_;
-    default:
-      NOTREACHED();
-  }
+int CPSPrinterDriver::GetPixelWidth() const {
+  return width_;
+}
+
+int CPSPrinterDriver::GetPixelHeight() const {
+  return height_;
+}
+
+int CPSPrinterDriver::GetBitsPerPixel() const {
+  return bits_per_pixel_;
+}
+
+int CPSPrinterDriver::GetHorzSize() const {
+  return horz_size_;
+}
+
+int CPSPrinterDriver::GetVertSize() const {
+  return vert_size_;
 }
 
 void CPSPrinterDriver::SaveState() {

@@ -161,11 +161,10 @@ try_.orchestrator_builder(
     name = "mac-rel",
     branch_selector = branches.selector.MAC_BRANCHES,
     mirrors = [
-        "ci/Mac Builder",
-        "ci/mac15-x64-rel-tests",
-        "ci/GPU Mac Builder",
-        "ci/Mac Release (Intel)",
-        "ci/Mac Retina Release (AMD)",
+        "ci/mac-arm64-rel",
+        "ci/mac15-arm64-rel-tests",
+        "ci/GPU Mac arm64 Builder",
+        "ci/Mac Retina Release (Apple M2)",
     ],
     gn_args = gn_args.config(
         configs = [
@@ -177,8 +176,9 @@ try_.orchestrator_builder(
             "partial_code_coverage_instrumentation",
             "enable_dangling_raw_ptr_feature_flag",
             "enable_backup_ref_ptr_feature_flag",
+            "enable_rust_clippy",
             "mac",
-            "x64",
+            "arm64",
         ],
     ),
     compilator = "mac-rel-compilator",
@@ -340,12 +340,6 @@ try_.orchestrator_builder(
     compilator = "mac15-arm64-rel-compilator",
     contact_team_email = "bling-engprod@google.com",
     main_list_view = "try",
-    tryjob = try_.job(
-        # TODO (crbug.com/415099984): change to 100,
-        # then move out of experimental CQ after,
-        # mac15-arm64-rel replaces mac14-arm64-rel on CQ.
-        experiment_percentage = 100,
-    ),
 )
 
 try_.compilator_builder(

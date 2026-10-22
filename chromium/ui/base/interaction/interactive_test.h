@@ -70,6 +70,8 @@ class InteractiveTestApi {
       internal::InteractiveTestPrivate::OnIncompatibleAction;
   using AdditionalContext = internal::InteractiveTestPrivate::AdditionalContext;
   using ElementSpecifier = ::ui::ElementSpecifier;
+  template <typename T>
+  using TemporaryIdentifier = InteractiveTestTemporary<T>;
 
   // Construct a single MultiStep from one or more StepBuilders and/or
   // MultiSteps. This should only be necessary when packaging up steps in custom
@@ -669,6 +671,54 @@ class InteractiveTestApi {
   [[nodiscard]] StepBuilder SetOnIncompatibleAction(OnIncompatibleAction action,
                                                     const char* reason);
 
+  // Sets temporary value with `temporary_id` to `temporary_value`. Overwrites
+  // any existing value. Can be called any time after test startup and before
+  // teardown, and can be used inside step callbacks.
+  //
+  // Use this to share a value between steps in a custom verb; e.g.:
+  // ```
+  //  // Verifies that e1 contains e2.
+  //  auto CheckContains(ElementSpecifier e1, ElementSpecifier e2) {
+  //    INTERACTIVE_TEST_TEMPORARY_VALUE(gfx::Rect kEl1Bounds);
+  //    return Steps(
+  //        WithElement(e1, [this, kEl1Bounds](ui::TrackedElement* el) {
+  //          SetTemporaryValue(kEl1Bounds, el->GetScreenBounds());
+  //        }),
+  //        CheckElement(e2, [this, kEl1Bounds](ui::TrackedElement* el) {
+  //          return GetTemporaryValue(kEl1Bounds).Contains(
+  //              el->GetScreenBounds());
+  //        }));
+  //  }
+  // ```
+  template <typename V, typename U>
+  const V& SetTemporaryValue(TemporaryIdentifier<V> temporary_id,
+                             U&& temporary_value) {
+    return private_test_impl().temporary_storage().AddOrSet(
+        temporary_id, std::forward<U>(temporary_value));
+  }
+
+  // Gets the temporary value with `temporary_id`, which must have been set. Can
+  // be called any time after test startup and before teardown, and can be used
+  // inside step callbacks.
+  template <typename V>
+  [[nodiscard]] const V& GetTemporaryValue(TemporaryIdentifier<V> variable) {
+    return private_test_impl().temporary_storage().Get(variable);
+  }
+
+  // Frees temporary value with `temporary_id` if it has been set. Useful when
+  // the value holds a reference that you do not want to allow to dangle;
+  // otherwise all temporary data is freed on test teardown. Can be called
+  // inside step callbacks.
+  template <typename V>
+  void ClearTemporaryValue(TemporaryIdentifier<V> variable) {
+    private_test_impl().temporary_storage().Remove(variable);
+  }
+
+  // Frees all temporary values. See `ClearTemporaryValue()`.
+  void ClearAllTemporaryValues() {
+    return private_test_impl().temporary_storage().clear();
+  }
+
   // Used internally by methods in this class; do not call.
   internal::InteractiveTestPrivate& private_test_impl() {
     return *private_test_impl_;
@@ -1074,7 +1124,7 @@ InteractionSequence::StepBuilder InteractiveTestApi::ObserveState(
   auto step = CheckElement(
       internal::kInteractiveTestPivotElementId,
       base::BindOnce(
-          [](InteractiveTestApi* api, ElementIdentifier id,
+          [](InteractiveTestApi* api, UntypedStateIdentifier id,
              std::unique_ptr<Observer> observer, TrackedElement* el) {
             return api->private_test_impl().AddStateObserver(
                 id, el->context(), std::move(observer));
@@ -1092,7 +1142,7 @@ InteractionSequence::StepBuilder InteractiveTestApi::ObserveState(
   auto step = CheckElement(
       internal::kInteractiveTestPivotElementId,
       base::BindOnce(
-          [](InteractiveTestApi* api, ElementIdentifier id,
+          [](InteractiveTestApi* api, UntypedStateIdentifier id,
              std::remove_cvref_t<Args>... args, TrackedElement* el) {
             return api->private_test_impl().AddStateObserver(
                 id, el->context(),
@@ -1113,7 +1163,7 @@ InteractionSequence::StepBuilder InteractiveTestApi::PollState(
   auto step = CheckElement(
       internal::kInteractiveTestPivotElementId,
       base::BindOnce(
-          [](InteractiveTestApi* api, ElementIdentifier id, Cb callback,
+          [](InteractiveTestApi* api, UntypedStateIdentifier id, Cb callback,
              base::TimeDelta polling_interval, TrackedElement* el) {
             return api->private_test_impl().AddStateObserver(
                 id, el->context(),
@@ -1137,7 +1187,7 @@ InteractionSequence::StepBuilder InteractiveTestApi::PollElement(
   auto step = WithElement(
       internal::kInteractiveTestPivotElementId,
       base::BindOnce(
-          [](InteractiveTestApi* api, ElementIdentifier id,
+          [](InteractiveTestApi* api, UntypedStateIdentifier id,
              ElementIdentifier element_id, Cb callback,
              base::TimeDelta polling_interval, InteractionSequence* seq,
              TrackedElement* el) {
@@ -1168,6 +1218,8 @@ InteractiveTestApi::MultiStep InteractiveTestApi::WaitForState(
     V&& value) {
   using T = typename O::ValueType;
   using U = internal::MatcherTypeFor<V>;
+  const auto element_id =
+      internal::InteractiveTestPrivate::StateToElementId(id.identifier());
   auto wait_callback = base::BindOnce(
       [](ElementIdentifier id, U value, InteractionSequence* seq,
          TrackedElement* el) {
@@ -1182,10 +1234,10 @@ InteractiveTestApi::MultiStep InteractiveTestApi::WaitForState(
         }
         typed->SetTarget(internal::CreateMatcherFromValue<T>(value));
       },
-      id.identifier(), U(std::forward<V>(value)));
+      element_id, U(std::forward<V>(value)));
   auto result = Steps(WithElement(internal::kInteractiveTestPivotElementId,
                                   std::move(wait_callback)),
-                      WaitForShow(id.identifier()));
+                      WaitForShow(element_id));
   AddDescriptionPrefix(result, "WaitForState()");
   return result;
 }
@@ -1199,10 +1251,11 @@ InteractiveTestApi::StepBuilder InteractiveTestApi::CheckState(
   using T = typename O::ValueType;
   using U = internal::MatcherTypeFor<V>;
   auto check_callback = base::BindOnce(
-      [](ElementIdentifier id, U value, InteractionSequence* seq,
+      [](UntypedStateIdentifier id, U value, InteractionSequence* seq,
          TrackedElement* el) {
         auto* const typed = internal::StateObserverElementT<T>::LookupElement(
-            id, el->context(), seq->IsCurrentStepInAnyContextForTesting());
+            internal::InteractiveTestPrivate::StateToElementId(id),
+            el->context(), seq->IsCurrentStepInAnyContextForTesting());
         if (!typed) {
           LOG(ERROR) << "No state observer registered for identifier " << id
                      << " in the current context. You must observe a state in "
@@ -1233,7 +1286,7 @@ InteractiveTestApi::StepBuilder InteractiveTestApi::StopObservingState(
   auto step = WithElement(
       internal::kInteractiveTestPivotElementId,
       base::BindOnce(
-          [](InteractiveTestApi* api, ElementIdentifier id,
+          [](InteractiveTestApi* api, UntypedStateIdentifier id,
              InteractionSequence* seq, TrackedElement* el) {
             const auto context = seq->IsCurrentStepInAnyContextForTesting()
                                      ? ElementContext()

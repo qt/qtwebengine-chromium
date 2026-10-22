@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "base/lazy_instance.h"
+#include "base/memory/advanced_memory_safety_checks.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
@@ -40,7 +41,7 @@
 #include "ui/views/views_export.h"
 #include "ui/views/win/pen_event_processor.h"
 #include "ui/views/win/scoped_enable_unadjusted_mouse_events_win.h"
-#include "ui/views/win/user_resize_detector.h"
+#include "ui/views/win/user_resize_move_detector.h"
 
 namespace gfx {
 class ImageSkia;
@@ -90,6 +91,9 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
                                         public ui::InputMethodObserver,
                                         public ui::WindowEventTarget,
                                         public ui::AXFragmentRootDelegateWin {
+  // TODO(https://crbug.com/495981317): Remove this macro.
+  ADVANCED_MEMORY_SAFETY_CHECKS();
+
  public:
   // See WindowImpl for details on |debugging_id|.
   static std::unique_ptr<HWNDMessageHandler> Create(
@@ -162,6 +166,9 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
   virtual bool RunMoveLoop(const gfx::Vector2d& drag_offset,
                            bool hide_on_escape);
   virtual void EndMoveLoop();
+
+  // Returns true if any HWndMessageHandler is in a native move/resize loop.
+  static bool IsInNativeMoveResizeLoop();
 
   // Tells the HWND its client area has changed.
   virtual void SendFrameChanged();
@@ -267,6 +274,11 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
 
   // Returns true if IsFrameSystemDrawn() and there's actually a frame to draw.
   bool HasSystemFrame() const;
+
+  // Allow WeakPtr use in subclasses.
+  base::WeakPtr<HWNDMessageHandler> GetWeakPtr() {
+    return msg_handler_weak_factory_.GetWeakPtr();
+  }
 
  private:
   friend class ::views::test::DesktopWindowTreeHostWinTestApi;
@@ -750,7 +762,7 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
 
   PenEventProcessor pen_processor_;
 
-  UserResizeDetector user_resize_detector_;
+  UserResizeMoveDetector user_resize_move_detector_;
 
   // Stores a pointer to the WindowEventTarget interface implemented by this
   // class. Allows callers to retrieve the interface pointer.

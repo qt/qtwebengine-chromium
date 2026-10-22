@@ -31,6 +31,9 @@ export class LinkifierClick extends Event {
   }
 }
 
+/**
+ * @deprecated do not use
+ */
 export class Linkifier extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
   #url: Platform.DevToolsPath.UrlString = Platform.DevToolsPath.EmptyUrlString;

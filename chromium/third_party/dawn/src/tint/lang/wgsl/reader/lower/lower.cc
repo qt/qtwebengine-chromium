@@ -203,10 +203,14 @@ core::BuiltinFn Convert(wgsl::BuiltinFn fn) {
         CASE(kGetResource)
         CASE(kBufferView)
         CASE(kBufferLength)
+        CASE(kBufferArrayView)
         case tint::wgsl::BuiltinFn::kBitcast:               // should lower to ir::Bitcast
         case tint::wgsl::BuiltinFn::kWorkgroupUniformLoad:  // should be handled in Lower()
-        case tint::wgsl::BuiltinFn::kTintMaterialize:
         case tint::wgsl::BuiltinFn::kNone:
+        case tint::wgsl::BuiltinFn::kAtomicStoreMax:  // should have been lowered in
+                                                      // AtomicVec2UToU64
+        case tint::wgsl::BuiltinFn::kAtomicStoreMin:  // should have been lowered in
+                                                      // AtomicVec2UToU64
             break;
     }
     TINT_ICE() << "unhandled builtin function: " << fn;
@@ -215,13 +219,13 @@ core::BuiltinFn Convert(wgsl::BuiltinFn fn) {
 }  // namespace
 
 Result<SuccessType> Lower(core::ir::Module& mod) {
-    TINT_CHECK_RESULT(
-        core::ir::ValidateAndDumpIfNeeded(mod, "wgsl.Lower",
-                                          core::ir::Capabilities{
-                                              core::ir::Capability::kAllowMultipleEntryPoints,
-                                              core::ir::Capability::kAllowOverrides,
-                                              core::ir::Capability::kAllow8BitIntegers,
-                                          }));
+    core::ir::AssertValid(mod,
+                          core::ir::Capabilities{
+                              core::ir::Capability::kAllowMultipleEntryPoints,
+                              core::ir::Capability::kAllowOverrides,
+                              core::ir::Capability::kAllow8BitIntegers,
+                          },
+                          "before wgsl.Lower");
 
     core::ir::Builder b{mod};
     core::type::Manager& ty{mod.Types()};

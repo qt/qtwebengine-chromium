@@ -3917,7 +3917,14 @@ _FUNCTION_INFO = {
     'count': 1,
     'unit_test': False,
     'es3': True,
-    'decoder_func': 'DoBeginPixelLocalStorageANGLE',
+    'decoder_func': 'DoEndPixelLocalStorageANGLE',
+  },
+  'EndPixelLocalStorageImplicitANGLE': {
+    'extension': 'ANGLE_shader_pixel_local_storage',
+    'extension_flag': 'angle_shader_pixel_local_storage',
+    'unit_test': False,
+    'es3': True,
+    'decoder_func': 'DoEndPixelLocalStorageImplicitANGLE',
   },
   'PixelLocalStorageBarrierANGLE': {
     'extension': 'ANGLE_shader_pixel_local_storage',
@@ -3957,6 +3964,15 @@ _FUNCTION_INFO = {
     'es3': True,
     'result': ['SizedResult<GLint>'],
     'decoder_func': 'DoGetFramebufferPixelLocalStorageParameterivANGLE',
+  },
+  'GetFramebufferPixelLocalStorageParameteruivANGLE': {
+    'extension': 'ANGLE_shader_pixel_local_storage',
+    'extension_flag': 'angle_shader_pixel_local_storage',
+    'type': 'GETn',
+    'unit_test': False,
+    'es3': True,
+    'result': ['SizedResult<GLuint>'],
+    'decoder_func': 'DoGetFramebufferPixelLocalStorageParameteruivANGLE',
   },
 
 }

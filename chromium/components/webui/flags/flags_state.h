@@ -237,12 +237,6 @@ class FlagsState {
       bool feature_state,
       base::CommandLine* command_line);
 
-  // Updates |command_line| by merging the value of the --force-variation-ids
-  // list with corresponding entries in |variation_ids|.
-  void MergeVariationIdsCommandLineSwitch(
-      const std::vector<std::string>& variation_ids,
-      base::CommandLine* command_line);
-
   // Sanitizes |enabled_entries| to only contain entries that are defined in the
   // |feature_entries_| and whose |supported_platforms| matches |platform_mask|.
   // Pass -1 to |platform_mask| to not do platform filtering.
@@ -287,7 +281,9 @@ class FlagsState {
   const base::raw_span<const FeatureEntry> feature_entries_;
 
   bool needs_restart_;
-  std::map<std::string, std::string> flags_switches_;
+  // Switches that were set by flags state. Used to remove them from the command
+  // line when resetting it.
+  std::set<std::string, std::less<>> modified_flag_switches_;
 
   // Map from switch name to a set of string, that keeps track which strings
   // were appended to existing (list value) switches.

@@ -6,9 +6,11 @@
 
 #include <algorithm>
 #include <iterator>
+#include <string>
 
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/fixed_flat_set.h"
+#include "base/strings/stringprintf.h"
 
 namespace device {
 
@@ -648,6 +650,14 @@ GamepadIdList& GamepadIdList::Get() {
   return g_singleton.Get();
 }
 
+#if BUILDFLAG(IS_WIN)
+// static
+std::string GamepadIdList::GetProductIdentifier(uint16_t vendor_id,
+                                                uint16_t product_id) {
+  return base::StringPrintf("%04x:%04x", vendor_id, product_id);
+}
+#endif  // BUILDFLAG(IS_WIN)
+
 XInputType GamepadIdList::GetXInputType(uint16_t vendor_id,
                                         uint16_t product_id) const {
   const auto find_it = kGamepadInfo.find({vendor_id, product_id});
@@ -721,6 +731,12 @@ bool GamepadIdList::HasTriggerRumbleSupport(GamepadId gamepad_id) const {
       });
 
   return kTriggerRumbleGamepadIds.contains(gamepad_id);
+}
+
+// static
+bool GamepadIdList::IsPlayStation5Gamepad(GamepadId gamepad_id) {
+  return gamepad_id == GamepadId::kSonyProduct0ce6 ||
+         gamepad_id == GamepadId::kSonyProduct0df2;
 }
 
 std::vector<std::tuple<uint16_t, uint16_t, XInputType>>

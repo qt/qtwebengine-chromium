@@ -12,8 +12,8 @@
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
+#include "core/fxge/renderdevicedriver_iface.h"
 
-class CFX_AggImageRenderer;
 class CFX_DIBitmap;
 class CFX_RenderDevice;
 
@@ -35,7 +35,7 @@ class CXFA_ImageRenderer {
   const CFX_Matrix image_matrix_;
   UnownedPtr<CFX_RenderDevice> const device_;
   RetainPtr<CFX_DIBitmap> const bitmap_;
-  std::unique_ptr<CFX_AggImageRenderer> device_handle_;
+  std::unique_ptr<RenderDeviceDriverIface::Continuation> continuation_;
 };
 
 #endif  // XFA_FXFA_CXFA_IMAGERENDERER_H_

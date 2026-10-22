@@ -13,6 +13,7 @@
 #include "compiler/translator/ImmutableStringBuilder.h"
 #include "compiler/translator/IntermNode.h"
 #include "compiler/translator/Types.h"
+#include "compiler/translator/tree_util/BuiltIn.h"
 #include "compiler/translator/tree_util/IntermNode_util.h"
 #include "compiler/translator/util.h"
 
@@ -66,7 +67,6 @@ TType *Type(const TType *baseType, const ASTType &astType)
     layoutQualifier.depth        = static_cast<TLayoutDepth>(astLayoutQualifier.depth);
     layoutQualifier.imageInternalFormat =
         static_cast<TLayoutImageInternalFormat>(astLayoutQualifier.image_internal_format);
-    layoutQualifier.numViews             = astLayoutQualifier.num_views;
     layoutQualifier.yuv                  = astLayoutQualifier.yuv;
     layoutQualifier.index                = astLayoutQualifier.index;
     layoutQualifier.inputAttachmentIndex = astLayoutQualifier.input_attachment_index;
@@ -373,6 +373,16 @@ TIntermTyped *make_variable(TCompiler *compiler,
     return new TIntermSymbol(variable);
 }
 
+TIntermTyped *make_internal_variable_gl_layer_vs()
+{
+    return new TIntermSymbol(BuiltInVariable::gl_LayerVS());
+}
+
+TIntermTyped *make_internal_variable_gl_instance_es100()
+{
+    return new TIntermSymbol(BuiltInVariable::gl_InstanceID());
+}
+
 TIntermTyped *make_nameless_block_field_variable(TCompiler *compiler,
                                                  TIntermTyped *variable,
                                                  uint32_t fieldIndex,
@@ -461,6 +471,11 @@ TIntermNode *declare_function(const TFunction *function, TIntermBlock *body)
 TIntermBlock *make_interm_block()
 {
     return new TIntermBlock;
+}
+
+void append_typed_instruction_to_block(TIntermBlock *block, TIntermTyped *node)
+{
+    block->getSequence()->push_back(node);
 }
 
 void append_instructions_to_block(TIntermBlock *block, rust::Slice<TIntermNode *const> nodes)
@@ -1645,6 +1660,56 @@ void branch_loop(TIntermBlock *block, TIntermBlock *loopConditionBlock, TIntermB
 void branch_do_loop(TIntermBlock *block, TIntermBlock *bodyBlock)
 {
     block->appendStatement(new TIntermLoop(ELoopFor, nullptr, nullptr, nullptr, bodyBlock));
+}
+
+void branch_for_loop(TIntermBlock *block,
+                     TIntermNode *loopVariableDeclaration,
+                     TIntermTyped *loopVariable,
+                     ffi::ASTForLoopConditionOp conditionOp,
+                     TIntermTyped *conditionComparator,
+                     bool ascending,
+                     TIntermTyped *incrementStep,
+                     TIntermBlock *bodyBlock)
+{
+    TOperator op;
+    switch (conditionOp)
+    {
+        case ffi::ASTForLoopConditionOp::Equal:
+            op = EOpEqual;
+            break;
+        case ffi::ASTForLoopConditionOp::NotEqual:
+            op = EOpNotEqual;
+            break;
+        case ffi::ASTForLoopConditionOp::LessThan:
+            op = EOpLessThan;
+            break;
+        case ffi::ASTForLoopConditionOp::GreaterThan:
+            op = EOpGreaterThan;
+            break;
+        case ffi::ASTForLoopConditionOp::LessThanEqual:
+            op = EOpLessThanEqual;
+            break;
+        case ffi::ASTForLoopConditionOp::GreaterThanEqual:
+            op = EOpGreaterThanEqual;
+            break;
+    }
+
+    TIntermTyped *condition =
+        new TIntermBinary(op, loopVariable->deepCopy(), conditionComparator->deepCopy());
+    TIntermTyped *expr = nullptr;
+    if (incrementStep)
+    {
+        expr = new TIntermBinary(ascending ? EOpAddAssign : EOpSubAssign, loopVariable->deepCopy(),
+                                 incrementStep->deepCopy());
+    }
+    else
+    {
+        expr = new TIntermUnary(ascending ? EOpPostIncrement : EOpPostDecrement,
+                                loopVariable->deepCopy(), nullptr);
+    }
+
+    block->appendStatement(
+        new TIntermLoop(ELoopFor, loopVariableDeclaration, condition, expr, bodyBlock));
 }
 
 void branch_loop_if(TIntermBlock *block, const Expression &condition)

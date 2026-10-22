@@ -11,6 +11,8 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/notreached.h"
+#include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/uuid.h"
 #include "components/contextual_search/contextual_search_service.h"
@@ -21,13 +23,17 @@
 #include "components/contextual_tasks/public/contextual_task_context.h"
 #include "components/contextual_tasks/public/contextual_tasks_service.h"
 #include "components/contextual_tasks/public/features.h"
+#include "components/contextual_tasks/public/utils.h"
 #include "components/omnibox/browser/aim_eligibility_service.h"
+#include "components/omnibox/common/logger.h"
 #include "components/prefs/pref_service.h"
 #include "components/sessions/core/session_id.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/sync/base/data_type.h"
 #include "components/sync/base/report_unrecoverable_error.h"
 #include "components/sync/model/client_tag_based_data_type_processor.h"
+#include "components/sync/protocol/gemini_thread_specifics.pb.h"
+#include "net/base/url_util.h"
 #include "url/gurl.h"
 
 namespace contextual_tasks {
@@ -173,10 +179,12 @@ ContextualTasksServiceImpl::ContextualTasksServiceImpl(
     signin::IdentityManager* identity_manager,
     PrefService* pref_service,
     bool supports_ephemeral_only,
-    base::RepeatingCallback<size_t()> get_active_task_count_callback)
+    base::RepeatingCallback<size_t()> get_active_task_count_callback,
+    base::RepeatingCallback<bool()> is_gemini_threads_enabled)
     : composite_context_decorator_(std::move(composite_context_decorator)),
       get_active_task_count_callback_(
           std::move(get_active_task_count_callback)),
+      is_gemini_threads_enabled_callback_(is_gemini_threads_enabled),
       aim_eligibility_service_(aim_eligibility_service),
       identity_manager_(identity_manager),
       pref_service_(pref_service),
@@ -190,10 +198,17 @@ ContextualTasksServiceImpl::ContextualTasksServiceImpl(
       std::move(ai_thread_processor), data_type_store_factory);
   ai_thread_observation_.Observe(ai_thread_sync_bridge_.get());
 
-  // Wait for both AiThreadSyncBridge and ContextualTaskSyncBridge to finish
+  auto gemini_thread_processor =
+      std::make_unique<syncer::ClientTagBasedDataTypeProcessor>(
+          syncer::GEMINI_THREAD, dump_stack);
+  gemini_thread_sync_bridge_ = std::make_unique<GeminiThreadSyncBridge>(
+      std::move(gemini_thread_processor), data_type_store_factory);
+  gemini_thread_observation_.Observe(gemini_thread_sync_bridge_.get());
+
+  // Wait for both AiThreadSyncBridge and GeminiThreadSyncBridge to finish
   // loading their data store.
   on_data_loaded_barrier_ = base::BarrierClosure(
-      1, base::BindOnce(&ContextualTasksServiceImpl::OnDataStoresLoaded,
+      2, base::BindOnce(&ContextualTasksServiceImpl::OnDataStoresLoaded,
                         weak_ptr_factory_.GetWeakPtr()));
 }
 
@@ -206,6 +221,7 @@ ContextualTasksServiceImpl::~ContextualTasksServiceImpl() {
 FeatureEligibility ContextualTasksServiceImpl::GetFeatureEligibility() {
   return {base::FeatureList::IsEnabled(contextual_tasks::kContextualTasks),
           aim_eligibility_service_->IsAimEligible(),
+          aim_eligibility_service_->IsCobrowseEligible(),
           contextual_search::ContextualSearchService::IsContextSharingEnabled(
               pref_service_)};
 }
@@ -290,12 +306,17 @@ void ContextualTasksServiceImpl::UpdateThreadForTask(
   // otherwise, retain the existing values if a thread already exists.
   const std::string& new_title =
       title.value_or(thread.has_value() ? thread->title : "");
-  const std::string& new_conversation_turn_id = conversation_turn_id.value_or(
-      thread.has_value() ? thread->conversation_turn_id : "");
+  std::optional<std::string> new_conversation_turn_id = std::nullopt;
+  if (conversation_turn_id.has_value()) {
+    new_conversation_turn_id = conversation_turn_id;
+  } else if (thread.has_value()) {
+    new_conversation_turn_id = thread->conversation_turn_id;
+  }
 
   // Add or update the thread information within the task.
-  it->second.AddThread(
-      Thread(thread_type, server_id, new_title, new_conversation_turn_id));
+  it->second.AddThread(Thread(thread_type, server_id, new_title,
+                              base::Time::Now().InMillisecondsSinceUnixEpoch(),
+                              new_conversation_turn_id));
 
   if (is_new_task) {
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
@@ -317,6 +338,19 @@ void ContextualTasksServiceImpl::RemoveThreadFromTask(
     const std::string& server_id) {
   auto it = tasks_.find(task_id);
   if (it != tasks_.end()) {
+    DCHECK(it->second.GetThread().has_value());
+    switch (type) {
+      case ThreadType::kAiMode:
+        ai_thread_sync_bridge_->DeleteThread(it->second.GetThread().value());
+        break;
+      case ThreadType::kGemini:
+        gemini_thread_sync_bridge_->DeleteThread(
+            it->second.GetThread().value());
+        break;
+      case ThreadType::kUnknown:
+      default:
+        NOTREACHED();
+    }
     it->second.RemoveThread(type, server_id);
     // If the task no longer has any thread, remove it.
     if (!it->second.GetThread()) {
@@ -490,6 +524,86 @@ void ContextualTasksServiceImpl::GetContextForTask(
       std::move(params), std::move(context_callback));
 }
 
+void ContextualTasksServiceImpl::GetThreadUrlFromTaskId(
+    const base::Uuid& task_id,
+    const std::string& locale,
+    omnibox::ChromeAimEntryPoint entry_point,
+    base::OnceCallback<void(GURL)> callback) {
+  GetTaskById(
+      task_id,
+      base::BindOnce(
+          [](const base::Uuid& task_id, const std::string& locale,
+             omnibox::ChromeAimEntryPoint entry_point,
+             base::OnceCallback<void(GURL)> callback,
+             std::optional<ContextualTask> task) {
+            OMNIBOX_LOG("nav_trace")
+                << "ContextualTasks navigation trace: "
+                   "GetThreadUrlFromTaskId callback called";
+
+            // AIM is the default if no task or thread is found.
+            GURL url = GetDefaultAimUrl(locale, entry_point);
+
+            if (!task) {
+              OMNIBOX_LOG("nav_trace")
+                  << "ContextualTasks navigation trace: "
+                     "GetThreadUrlFromTaskId returning early, no task. "
+                     "Returning default: "
+                  << url;
+              std::move(callback).Run(url);
+              return;
+            }
+
+            std::optional<Thread> thread = task->GetThread();
+            if (!thread) {
+              OMNIBOX_LOG("nav_trace")
+                  << "ContextualTasks navigation trace: "
+                     "GetThreadUrlFromTaskId returning early, no thread or "
+                     "Gemini thread. Returning default: "
+                  << url;
+              std::move(callback).Run(url);
+              return;
+            }
+
+            if (thread->type == ThreadType::kAiMode) {
+              // Attach the thread ID and the most recent turn ID to the
+              // URL. A query parameter needs to be present, but its
+              // value is not used for continued threads.
+              url = net::AppendQueryParameter(url, "q", thread->title);
+
+              // There are rare cases where the mstk may not be present before
+              // this url is requested. If that is the case, do not attempt to
+              // include it in the url.
+              if (thread->conversation_turn_id) {
+                url = net::AppendQueryParameter(
+                    url, "mstk", thread->conversation_turn_id.value());
+              }
+              url = net::AppendQueryParameter(url, "mtid", thread->server_id);
+
+            } else if (thread->type == ThreadType::kGemini) {
+              url = GURL(GetContextualTasksGeminiBaseUrl());
+              GURL::Replacements replacements;
+              std::string path = url.GetPath();
+              if (path.back() != '/') {
+                path += '/';
+              }
+              std::string server_id = thread->server_id;
+              if (base::StartsWith(server_id, "c_")) {
+                server_id.erase(0, 2);
+              }
+              path += server_id;
+              replacements.SetPathStr(path);
+
+              url = url.ReplaceComponents(replacements);
+            }
+
+            OMNIBOX_LOG("nav_trace") << "ContextualTasks navigation trace: "
+                                        "GetThreadUrlFromTaskId returning URL: "
+                                     << url;
+            std::move(callback).Run(url);
+          },
+          task_id, locale, entry_point, std::move(callback)));
+}
+
 void ContextualTasksServiceImpl::AddObserver(
     ContextualTasksService::Observer* observer) {
   observers_.AddObserver(observer);
@@ -505,12 +619,29 @@ ContextualTasksServiceImpl::GetAiThreadControllerDelegate() {
   return ai_thread_sync_bridge_->change_processor()->GetControllerDelegate();
 }
 
+base::WeakPtr<syncer::DataTypeControllerDelegate>
+ContextualTasksServiceImpl::GetGeminiThreadControllerDelegate() {
+  return gemini_thread_sync_bridge_->change_processor()
+      ->GetControllerDelegate();
+}
+
+bool ContextualTasksServiceImpl::IsGeminiThreadsEligible() {
+  return is_gemini_threads_enabled_callback_ &&
+         is_gemini_threads_enabled_callback_.Run();
+}
+
 void ContextualTasksServiceImpl::SetAiThreadSyncBridgeForTesting(
     std::unique_ptr<AiThreadSyncBridge> bridge) {
   // When provided a new service for testing, ensure observation of the old
   // service is removed to avoid UAF when this service is destroyed.
   ai_thread_observation_.Reset();
   ai_thread_sync_bridge_ = std::move(bridge);
+}
+
+void ContextualTasksServiceImpl::SetGeminiThreadSyncBridgeForTesting(
+    std::unique_ptr<GeminiThreadSyncBridge> bridge) {
+  gemini_thread_observation_.Reset();
+  gemini_thread_sync_bridge_ = std::move(bridge);
 }
 
 void ContextualTasksServiceImpl::OnThreadDataStoreLoaded() {
@@ -542,10 +673,11 @@ void ContextualTasksServiceImpl::OnThreadAddedOrUpdatedRemotely(
     if (old_thread->conversation_turn_id !=
             new_thread_entity.specifics().conversation_turn_id() ||
         old_thread->title != new_thread_entity.specifics().title()) {
-      task.AddThread(
-          Thread(ThreadType::kAiMode, new_thread_entity.specifics().server_id(),
-                 new_thread_entity.specifics().title(),
-                 new_thread_entity.specifics().conversation_turn_id()));
+      task.AddThread(Thread(
+          ThreadType::kAiMode, new_thread_entity.specifics().server_id(),
+          new_thread_entity.specifics().title(),
+          new_thread_entity.specifics().last_turn_time_unix_epoch_millis(),
+          new_thread_entity.specifics().conversation_turn_id()));
       NotifyTaskUpdated(task, TriggerSource::kRemote);
     }
 
@@ -560,6 +692,7 @@ void ContextualTasksServiceImpl::OnThreadAddedOrUpdatedRemotely(
     Thread thread(ToThreadType(thread_entity.specifics().type()),
                   thread_entity.specifics().server_id(),
                   thread_entity.specifics().title(),
+                  thread_entity.specifics().last_turn_time_unix_epoch_millis(),
                   thread_entity.specifics().conversation_turn_id());
     ContextualTask new_task =
         CreateTaskForThread(thread, supports_ephemeral_only_);
@@ -574,24 +707,65 @@ void ContextualTasksServiceImpl::OnThreadAddedOrUpdatedRemotely(
 
 void ContextualTasksServiceImpl::OnThreadRemovedRemotely(
     const std::vector<base::Uuid>& thread_ids) {
-  std::set<std::string> removed_thread_server_ids;
-  for (const auto& id : thread_ids) {
-    removed_thread_server_ids.insert(id.AsLowercaseString());
+  OnThreadRemovedRemotelyInternal(ThreadType::kAiMode, thread_ids);
+}
+
+void ContextualTasksServiceImpl::OnGeminiThreadDataStoreLoaded() {
+  on_data_loaded_barrier_.Run();
+}
+
+void ContextualTasksServiceImpl::OnGeminiThreadAddedOrUpdatedRemotely(
+    const std::vector<sync_pb::GeminiThreadSpecifics>& thread_specifics) {
+  std::map<std::string, const sync_pb::GeminiThreadSpecifics&> thread_map;
+  for (const auto& specifics : thread_specifics) {
+    thread_map.emplace(specifics.conversation_id(), specifics);
   }
 
-  std::vector<base::Uuid> tasks_to_delete;
-  for (const auto& task_entry : tasks_) {
-    const ContextualTask& task = task_entry.second;
-    if (task.GetThread()) {
-      if (removed_thread_server_ids.count(task.GetThread()->server_id)) {
-        tasks_to_delete.push_back(task.GetTaskId());
-      }
+  // Update existing tasks
+  for (auto& task_entry : tasks_) {
+    ContextualTask& task = task_entry.second;
+    if (!task.GetThread() || task.GetThread()->type != ThreadType::kGemini) {
+      continue;
     }
+
+    auto it = thread_map.find(task.GetThread()->server_id);
+    if (it == thread_map.end()) {
+      continue;
+    }
+
+    // Check if the thread has changed for the task.
+    const sync_pb::GeminiThreadSpecifics& new_thread_entity = it->second;
+    const std::optional<Thread>& old_thread = task.GetThread();
+    if (old_thread->title != new_thread_entity.title()) {
+      task.AddThread(
+          Thread(ThreadType::kGemini, new_thread_entity.conversation_id(),
+                 new_thread_entity.title(),
+                 new_thread_entity.last_turn_time_unix_epoch_millis()));
+      NotifyTaskUpdated(task, TriggerSource::kRemote);
+    }
+
+    thread_map.erase(it->first);
   }
 
-  for (const auto& task_id : tasks_to_delete) {
-    RemoveTaskInternal(task_id, TriggerSource::kRemote);
+  // Create new task for specifics which didn't have an existing task.
+  for (const auto& [thread_id, specifics] : thread_map) {
+    Thread thread(ThreadType::kGemini, specifics.conversation_id(),
+                  specifics.title(),
+                  specifics.last_turn_time_unix_epoch_millis());
+    ContextualTask new_task =
+        CreateTaskForThread(thread, supports_ephemeral_only_);
+    const auto it =
+        tasks_.emplace(new_task.GetTaskId(), std::move(new_task)).first;
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&ContextualTasksServiceImpl::NotifyTaskAdded,
+                                  weak_ptr_factory_.GetWeakPtr(), it->second,
+                                  TriggerSource::kRemote));
   }
+}
+
+void ContextualTasksServiceImpl::OnGeminiThreadRemovedRemotely(
+    const std::vector<base::Uuid>& thread_ids) {
+  OnThreadRemovedRemotelyInternal(ThreadType::kGemini, thread_ids);
 }
 
 std::pair<std::map<base::Uuid, ContextualTask>::iterator, bool>
@@ -638,6 +812,29 @@ void ContextualTasksServiceImpl::RemoveTaskInternal(const base::Uuid& task_id,
       FROM_HERE,
       base::BindOnce(&ContextualTasksServiceImpl::NotifyTaskRemoved,
                      weak_ptr_factory_.GetWeakPtr(), task_id, source));
+}
+
+void ContextualTasksServiceImpl::OnThreadRemovedRemotelyInternal(
+    ThreadType thread_type_filter,
+    const std::vector<base::Uuid>& thread_ids) {
+  std::set<std::string> removed_thread_server_ids;
+  for (const auto& id : thread_ids) {
+    removed_thread_server_ids.insert(id.AsLowercaseString());
+  }
+
+  std::vector<base::Uuid> tasks_to_delete;
+  for (const auto& task_entry : tasks_) {
+    const ContextualTask& task = task_entry.second;
+    if (task.GetThread() && task.GetThread()->type == thread_type_filter) {
+      if (removed_thread_server_ids.count(task.GetThread()->server_id)) {
+        tasks_to_delete.push_back(task.GetTaskId());
+      }
+    }
+  }
+
+  for (const auto& task_id : tasks_to_delete) {
+    RemoveTaskInternal(task_id, TriggerSource::kRemote);
+  }
 }
 
 size_t ContextualTasksServiceImpl::GetTabIdMapSizeForTesting() const {
@@ -697,7 +894,7 @@ void ContextualTasksServiceImpl::OnDataStoresLoaded() {
     tasks_.emplace(task.GetTaskId(), task);
   }
   for (auto& observer : observers_) {
-    observer.OnInitialized();
+    observer.OnContextualTasksServiceInitialized();
   }
 }
 
@@ -716,6 +913,12 @@ std::vector<ContextualTask> ContextualTasksServiceImpl::BuildTasks() const {
     // ephemeral since they are built using a user's threads.
     // TODO(485520978): Use a UUIDv5 based on the thread ID here so the UUID
     //                  is deterministic between restarts.
+    tasks.push_back(CreateTaskForThread(thread, supports_ephemeral_only_));
+  }
+  for (const auto& thread : gemini_thread_sync_bridge_->GetThreads()) {
+    if (used_thread_ids.contains(thread.server_id)) {
+      continue;
+    }
     tasks.push_back(CreateTaskForThread(thread, supports_ephemeral_only_));
   }
 

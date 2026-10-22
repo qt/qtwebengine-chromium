@@ -16,6 +16,7 @@
 #include "components/user_education/common/tutorial/tutorial.h"
 #include "components/user_education/common/tutorial/tutorial_identifier.h"
 #include "components/user_education/common/tutorial/tutorial_registry.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace user_education {
 
@@ -130,6 +131,15 @@ void TutorialService::LogStartedFromWhatsNewPage(TutorialIdentifier id,
   }
 }
 
+void TutorialService::DismissBubbleInRegion(const gfx::Rect& screen_region) {
+  if (currently_displayed_bubble_ &&
+      currently_displayed_bubble_->GetBoundsInScreen().Intersects(
+          screen_region)) {
+    currently_displayed_bubble_->Close(
+        HelpBubble::CloseReason::kProgrammaticallyClosed);
+  }
+}
+
 bool TutorialService::RestartTutorial() {
   DCHECK(running_tutorial_ && running_tutorial_creation_params_);
   base::AutoReset<bool> resetter(&is_restarting_, true);
@@ -203,9 +213,9 @@ void TutorialService::AbortTutorial(std::optional<int> abort_step) {
   }
 }
 
-void TutorialService::OnNonFinalBubbleClosed(HelpBubble* bubble,
+void TutorialService::OnNonFinalBubbleClosed(base::WeakPtr<HelpBubble> bubble,
                                              HelpBubble::CloseReason) {
-  if (bubble != currently_displayed_bubble_.get()) {
+  if (!bubble || bubble.get() != currently_displayed_bubble_.get()) {
     return;
   }
 
@@ -241,16 +251,17 @@ void TutorialService::SetCurrentBubble(std::unique_ptr<HelpBubble> bubble,
   if (is_last_step) {
     is_final_bubble_ = true;
     bubble_closed_subscription_ =
-        currently_displayed_bubble_->AddOnCloseCallback(base::BindOnce(
-            [](TutorialService* service, HelpBubble*, HelpBubble::CloseReason) {
+        currently_displayed_bubble_->AddOnClosedCallback(base::BindOnce(
+            [](TutorialService* service, HelpBubble::CloseReason) {
               service->CompleteTutorial();
             },
             base::Unretained(this)));
   } else {
     is_final_bubble_ = false;
     bubble_closed_subscription_ =
-        currently_displayed_bubble_->AddOnCloseCallback(base::BindOnce(
-            &TutorialService::OnNonFinalBubbleClosed, base::Unretained(this)));
+        currently_displayed_bubble_->AddOnClosedCallback(base::BindOnce(
+            &TutorialService::OnNonFinalBubbleClosed, base::Unretained(this),
+            currently_displayed_bubble_->GetWeakPtr()));
   }
 }
 

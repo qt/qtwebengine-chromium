@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include "base/types/pass_key.h"
 #include "media/base/media_export.h"
 
 namespace media {
@@ -130,8 +131,16 @@ enum ChannelLayout {
   // Front L, Front R, LFE, Back C
   CHANNEL_LAYOUT_3_1_BACK = 35,
 
+  // Front L, Front R, Front C, LFE, Side L, Side R,
+  // Top Front L, Top Front R, Top Back L, Top Back R
+  CHANNEL_LAYOUT_5_1_4 = 36,
+
+  // Front L, Front R, Front C, LFE, Back L, Back R, Side L, Side R,
+  // Top Front L, Top Front R, Top Back L, Top Back R
+  CHANNEL_LAYOUT_7_1_4 = 37,
+
   // Max value, must always equal the largest entry ever logged.
-  CHANNEL_LAYOUT_MAX = CHANNEL_LAYOUT_3_1_BACK
+  CHANNEL_LAYOUT_MAX = CHANNEL_LAYOUT_7_1_4
 };
 
 // The channel order matches the order of the bitmask in the Windows
@@ -156,13 +165,17 @@ enum Channels {
   BACK_CENTER = 8,
   SIDE_LEFT = 9,
   SIDE_RIGHT = 10,
+  TOP_FRONT_LEFT = 11,
+  TOP_FRONT_RIGHT = 12,
+  TOP_BACK_LEFT = 13,
+  TOP_BACK_RIGHT = 14,
   CHANNELS_MAX =
-      SIDE_RIGHT,  // Must always equal the largest value ever logged.
+      TOP_BACK_RIGHT,  // Must always equal the largest value ever logged.
 };
 
 // The maximum number of concurrently active channels for all possible layouts.
 // ChannelLayoutToChannelCount() will never return a value higher than this.
-constexpr int kMaxConcurrentChannels = 8;
+MEDIA_EXPORT int GetConcurrentMaxChannels();
 
 // Returns the expected channel position in an interleaved stream.  Values of -1
 // mean the channel at that index is not used for that layout.  Values range
@@ -189,10 +202,78 @@ MEDIA_EXPORT ChannelLayout GuessChannelLayout(int channels);
 // channel layout.
 using ChannelMask = uint32_t;
 MEDIA_EXPORT ChannelLayout ChannelMaskToLayout(ChannelMask channel_mask);
+MEDIA_EXPORT ChannelMask ChannelLayoutToMask(ChannelLayout channel_layout);
 
 // Returns a string representation of the channel layout.
 MEDIA_EXPORT const char* ChannelLayoutToString(ChannelLayout layout);
 
+// Channel count and ChannelLayout pair, with helper methods to enforce safe
+// construction.
+class MEDIA_EXPORT ChannelLayoutConfig {
+ public:
+  using Passkey = base::PassKey<ChannelLayoutConfig>;
+
+  // Use `Passkey` here to limit cases when we bypass checks. This allows for
+  // `Mono()` and `Stereo()` to be constexpr, without forcing all helper methods
+  // above to also be constexpr.
+  constexpr ChannelLayoutConfig(Passkey passkey,
+                                ChannelLayout channel_layout,
+                                int channels)
+      : channel_layout_(channel_layout), channels_(channels) {}
+
+  constexpr ChannelLayoutConfig()
+      : ChannelLayoutConfig(Passkey(), CHANNEL_LAYOUT_NONE, 0u) {}
+
+  // Crashes if `channel_layout` and `channels` are incompatible.
+  ChannelLayoutConfig(ChannelLayout channel_layout, int channels);
+
+  ChannelLayoutConfig(const ChannelLayoutConfig& other);
+  ChannelLayoutConfig& operator=(const ChannelLayoutConfig& other);
+
+  constexpr ~ChannelLayoutConfig() = default;
+
+  template <ChannelLayout layout>
+  static constexpr ChannelLayoutConfig FromLayout() {
+    if constexpr (layout == CHANNEL_LAYOUT_MONO) {
+      return Mono();
+    } else if constexpr (layout == CHANNEL_LAYOUT_STEREO) {
+      return Stereo();
+    }
+
+    // Other layouts cannot be used in a constexpr context.
+    return ChannelLayoutConfig(layout, ChannelLayoutToChannelCount(layout));
+  }
+
+  static ChannelLayoutConfig FromLayout(ChannelLayout layout) {
+    return ChannelLayoutConfig(layout, ChannelLayoutToChannelCount(layout));
+  }
+
+  static constexpr ChannelLayoutConfig Mono() {
+    return ChannelLayoutConfig(Passkey(), CHANNEL_LAYOUT_MONO, 1u);
+  }
+
+  static constexpr ChannelLayoutConfig Stereo() {
+    return ChannelLayoutConfig(Passkey(), CHANNEL_LAYOUT_STEREO, 2u);
+  }
+
+  static ChannelLayoutConfig Guess(int channels);
+
+  constexpr ChannelLayout channel_layout() const { return channel_layout_; }
+
+  constexpr int channels() const { return channels_; }
+
+  bool operator==(const ChannelLayoutConfig& other) const = default;
+
+ private:
+  ChannelLayout channel_layout_;  // Order of surround sound channels.
+  int channels_;                  // Number of channels.
+};
+
+// For `CHANNEL_LAYOUT_DISCRETE`, we have to explicitly set the number of
+// channels, so we need to use the normal constructor.
+template <>
+constexpr ChannelLayoutConfig
+ChannelLayoutConfig::FromLayout<CHANNEL_LAYOUT_DISCRETE>() = delete;
 }  // namespace media
 
 #endif  // MEDIA_BASE_CHANNEL_LAYOUT_H_

@@ -49,6 +49,8 @@ libtint_source_set("type") {
     "explicit_layout_array.h",
     "image.cc",
     "image.h",
+    "literal.cc",
+    "literal.h",
     "sampled_image.cc",
     "sampled_image.h",
   ]
@@ -75,6 +77,7 @@ if (tint_build_unittests) {
     sources = [
       "explicit_layout_array_test.cc",
       "image_test.cc",
+      "literal_test.cc",
       "sampled_image_test.cc",
     ]
     deps = [

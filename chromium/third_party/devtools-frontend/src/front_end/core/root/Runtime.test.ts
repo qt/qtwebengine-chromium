@@ -90,6 +90,7 @@ describe('Runtime', () => {
         title: 'experiment title',
         aboutFlag: 'about:flag',
         isEnabled: false,
+        requiresChromeRestart: false,
       });
       assert.isFalse(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
     });
@@ -101,6 +102,7 @@ describe('Runtime', () => {
         title: 'experiment title',
         aboutFlag: 'about:flag',
         isEnabled: false,
+        requiresChromeRestart: false,
       });
       support.setEnabled('experiment' as Root.ExperimentNames.ExperimentName, true);
       assert.isTrue(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
@@ -113,6 +115,7 @@ describe('Runtime', () => {
         title: 'experiment title',
         aboutFlag: 'about:flag',
         isEnabled: true,
+        requiresChromeRestart: false,
       });
       assert.isTrue(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
     });
@@ -124,6 +127,7 @@ describe('Runtime', () => {
         title: 'experiment title',
         aboutFlag: 'about:flag',
         isEnabled: false,
+        requiresChromeRestart: false,
       });
       assert.isFalse(support.isEnabled('experiment' as Root.ExperimentNames.ExperimentName));
       support.enableForTest('experiment' as Root.ExperimentNames.ExperimentName);
@@ -140,6 +144,7 @@ describe('Runtime', () => {
           title: 'experiment title',
           aboutFlag: 'about:flag',
           isEnabled: false,
+          requiresChromeRestart: false,
         });
       });
     });
@@ -151,6 +156,7 @@ describe('Runtime', () => {
         title: 'experiment title',
         aboutFlag: 'about:flag',
         isEnabled: false,
+        requiresChromeRestart: false,
       });
       assert.throws(() => {
         support.registerHostExperiment({
@@ -158,6 +164,7 @@ describe('Runtime', () => {
           title: 'experiment title',
           aboutFlag: 'about:flag',
           isEnabled: false,
+          requiresChromeRestart: false,
         });
       });
     });

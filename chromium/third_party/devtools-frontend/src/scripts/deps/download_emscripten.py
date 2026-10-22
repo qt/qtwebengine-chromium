@@ -85,6 +85,14 @@ def script_main(args):
 
         unzip(os_name, filename, options.dest)
 
+        if os_name != 'win':
+            bin_dir = os.path.join(options.dest, 'install', 'bin')
+            if os.path.exists(os.path.join(bin_dir, 'lld')):
+                try:
+                    os.symlink('lld', os.path.join(bin_dir, 'ld.lld'))
+                except OSError:
+                    pass
+
         write_stamp_file(options, url)
     except Exception as e:
         sys.stderr.write('Error Downloading URL "{url}": {e}\n'.format(url=url,

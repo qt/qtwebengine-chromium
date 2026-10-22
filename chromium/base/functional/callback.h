@@ -165,6 +165,9 @@ class TRIVIAL_ABI OnceCallback<R(Args...)> {
   // Since this method generates a callback that is a replacement for `this`,
   // `this` will be consumed and reset to a null callback to ensure the
   // originally-bound functor can be run at most once.
+  //
+  // Note that the |then| callback is still invoked even if the original
+  // callback is cancelled by the time of invoking the chained callback.
   template <typename ThenR, typename... ThenArgs>
   OnceCallback<ThenR(Args...)> Then(OnceCallback<ThenR(ThenArgs...)> then) && {
     CHECK(then);
@@ -451,7 +454,7 @@ class TRIVIAL_ABI RepeatingCallback<R(Args...)> {
     requires(std::is_void_v<R>)
   {
     *this = internal::ToDoNothingCallback<false, R, Args...>(std::move(tag));
-    return this;
+    return *this;
   }
 
   // Internal constructor for `base::BindRepeating()`.

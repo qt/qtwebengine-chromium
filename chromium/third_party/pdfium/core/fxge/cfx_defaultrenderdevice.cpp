@@ -6,38 +6,15 @@
 
 #include <utility>
 
-#include "core/fxge/agg/cfx_agg_devicedriver.h"
+#include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
+
+#if defined(PDF_USE_AGG)
+#include "core/fxge/agg/cfx_agg_devicedriver.h"
+#endif
 
 #if defined(PDF_USE_SKIA)
 #include "core/fxge/skia/fx_skia_device.h"
-#endif
-
-namespace {
-
-// When build variant is Skia then it is assumed as the default, but might be
-// overridden at runtime.
-#if defined(PDF_USE_SKIA)
-CFX_DefaultRenderDevice::RendererType g_renderer_type =
-    CFX_DefaultRenderDevice::kDefaultRenderer;
-#endif
-
-}  // namespace
-
-// static
-bool CFX_DefaultRenderDevice::UseSkiaRenderer() {
-#if defined(PDF_USE_SKIA)
-  return g_renderer_type == RendererType::kSkia;
-#else
-  return false;
-#endif
-}
-
-#if defined(PDF_USE_SKIA)
-// static
-void CFX_DefaultRenderDevice::SetRendererType(RendererType renderer_type) {
-  g_renderer_type = renderer_type;
-}
 #endif
 
 CFX_DefaultRenderDevice::CFX_DefaultRenderDevice() = default;
@@ -68,13 +45,17 @@ bool CFX_DefaultRenderDevice::CFX_DefaultRenderDevice::AttachImpl(
     RetainPtr<CFX_DIBitmap> pBackdropBitmap,
     bool bGroupKnockout) {
 #if defined(PDF_USE_SKIA)
-  if (UseSkiaRenderer()) {
+  if (CFX_GEModule::Get()->UseSkiaRenderer()) {
     return AttachSkiaImpl(std::move(pBitmap), bRgbByteOrder,
                           std::move(pBackdropBitmap), bGroupKnockout);
   }
 #endif
+#if defined(PDF_USE_AGG)
   return AttachAggImpl(std::move(pBitmap), bRgbByteOrder,
                        std::move(pBackdropBitmap), bGroupKnockout);
+#else
+  return false;
+#endif
 }
 
 bool CFX_DefaultRenderDevice::Create(int width,
@@ -89,19 +70,25 @@ bool CFX_DefaultRenderDevice::CreateWithBackdrop(
     FXDIB_Format format,
     RetainPtr<CFX_DIBitmap> backdrop) {
 #if defined(PDF_USE_SKIA)
-  if (UseSkiaRenderer()) {
+  if (CFX_GEModule::Get()->UseSkiaRenderer()) {
     return CreateSkia(width, height, format, backdrop);
   }
 #endif
+#if defined(PDF_USE_AGG)
   return CreateAgg(width, height, format, backdrop);
+#else
+  return false;
+#endif
 }
 
 void CFX_DefaultRenderDevice::Clear(uint32_t color) {
 #if defined(PDF_USE_SKIA)
-  if (UseSkiaRenderer()) {
+  if (CFX_GEModule::Get()->UseSkiaRenderer()) {
     static_cast<CFX_SkiaDeviceDriver*>(GetDeviceDriver())->Clear(color);
     return;
   }
 #endif
+#if defined(PDF_USE_AGG)
   static_cast<pdfium::CFX_AggDeviceDriver*>(GetDeviceDriver())->Clear(color);
+#endif
 }

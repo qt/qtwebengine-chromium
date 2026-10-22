@@ -37,6 +37,13 @@ GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebViewThreadSafeMediaDefault);
 
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kDefaultEnableGpuRasterization);
 
+// Enables dynamic allocation of shared image backings at runtime.
+GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kUseDynamicBackingAllocations);
+
+GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kUseStrongRefToSharedImageInterface);
+
+GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kUseCompoundImageBackingAsDefault);
+
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kEnableMSAAOnNewIntelGPUs);
 
 #if BUILDFLAG(IS_WIN)
@@ -94,8 +101,6 @@ GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kGpuPersistentCache);
 
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kConditionallySkipGpuChannelFlush);
 
-GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kNoDiscardableMemoryForGpuDecodePath);
-
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kEnableDrDc);
 
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kPruneOldTransferCacheEntries);
@@ -106,6 +111,8 @@ GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kRemoveGPULegacyIPC);
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kSharedImageStubHighPriority);
 #endif
 
+GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(
+    kNvidiaWaylandYuvHardwareConversionWorkaround);
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUService);
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kAAPMBlocksWebGPU);
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUBlobCache);
@@ -151,7 +158,6 @@ GPU_CONFIG_EXPORT bool IsSkiaGraphiteEnabled(
     const base::CommandLine* command_line);
 GPU_CONFIG_EXPORT bool IsSkiaGraphitePrecompilationEnabled(
     const base::CommandLine* command_line);
-GPU_CONFIG_EXPORT bool EnablePurgeGpuImageDecodeCache();
 GPU_CONFIG_EXPORT bool EnablePruneOldTransferCacheEntries();
 GPU_CONFIG_EXPORT bool IsLegacyIpcDisabled();
 
@@ -179,6 +185,9 @@ GPU_CONFIG_EXPORT extern const base::FeatureParam<int>
 GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kWebGPUCompatibilityMode);
 
 GPU_CONFIG_EXPORT bool IsGraphiteContextThreadSafe();
+
+GPU_CONFIG_EXPORT BASE_DECLARE_FEATURE(kSendGPUChannelEarly);
+
 }  // namespace features
 
 #endif  // GPU_CONFIG_GPU_FINCH_FEATURES_H_

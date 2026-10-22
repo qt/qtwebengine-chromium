@@ -29,7 +29,6 @@
 #define SRC_DAWN_NATIVE_WEBGPU_COMMANDBUFFERWGPU_H_
 
 #include "dawn/native/CommandBuffer.h"
-
 #include "dawn/native/webgpu/Forward.h"
 #include "dawn/native/webgpu/RecordableObject.h"
 
@@ -41,7 +40,7 @@ class CommandBuffer final : public CommandBufferBase, public RecordableObject {
     static Ref<CommandBuffer> Create(CommandEncoder* encoder,
                                      const CommandBufferDescriptor* descriptor);
 
-    WGPUCommandBuffer Encode();
+    ResultOrError<WGPUCommandBuffer> Encode();
     MaybeError Capture(CaptureContext& captureContext);
 
     MaybeError AddReferenced(CaptureContext& captureContext) override;

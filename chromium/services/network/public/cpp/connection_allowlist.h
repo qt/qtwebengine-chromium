@@ -10,9 +10,9 @@
 #include <vector>
 
 #include "base/component_export.h"
+#include "base/unguessable_token.h"
 #include "services/network/public/mojom/connection_allowlist.mojom-shared.h"
-
-class GURL;
+#include "url/gurl.h"
 
 namespace network {
 
@@ -23,6 +23,16 @@ namespace network {
 // from the blink public API, given that we cannot include .mojo.h there due to
 // DEPS rules.
 struct COMPONENT_EXPORT(NETWORK_CPP_CONNECTION_ALLOWLIST) ConnectionAllowlist {
+  enum class RedirectBehavior {
+    kAllow,
+    kBlock,
+  };
+
+  enum class WebRtcBehavior {
+    kAllow,
+    kBlock,
+  };
+
   ConnectionAllowlist();
   ~ConnectionAllowlist();
 
@@ -37,6 +47,8 @@ struct COMPONENT_EXPORT(NETWORK_CPP_CONNECTION_ALLOWLIST) ConnectionAllowlist {
   std::vector<std::string> allowlist;
   std::optional<std::string> reporting_endpoint;
   std::vector<mojom::ConnectionAllowlistIssue> issues;
+  RedirectBehavior redirect_behavior = RedirectBehavior::kBlock;
+  WebRtcBehavior webrtc_behavior = WebRtcBehavior::kBlock;
 };
 
 COMPONENT_EXPORT(NETWORK_CPP_CONNECTION_ALLOWLIST)
@@ -58,8 +70,10 @@ struct COMPONENT_EXPORT(NETWORK_CPP_CONNECTION_ALLOWLIST) ConnectionAllowlists {
 
   bool operator==(const ConnectionAllowlists&) const;
 
+  GURL response_url;
   std::optional<ConnectionAllowlist> enforced;
   std::optional<ConnectionAllowlist> report_only;
+  std::optional<base::UnguessableToken> reporting_source;
 };
 
 }  // namespace network

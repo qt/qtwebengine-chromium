@@ -49,9 +49,11 @@ class ScreenCaptureNotificationUIViews;
 class SearchEngineChoiceDialog;
 class ShareThisTabDialogView;
 class SigninViewControllerDelegateViews;
+class SimpleWebViewDialog;
 class TabModalConfirmDialogViews;
 class TestBaseWidgetDelegate;
 class UpdateRecommendedMessageBox;
+class ViewTracker;
 class WebDialogBrowserTest;
 FORWARD_DECLARE_TEST(AcceleratorCommandsFullscreenBrowserTest,
                      ToggleFullscreen);
@@ -116,7 +118,6 @@ class RootWindowControllerTest;
 class ShelfNavigationWidgetDelegate;
 class ShelfWidgetDelegateView;
 class ShellTest;
-class SimpleWebViewDialog;
 class StatusAreaWidgetDelegate;
 class StuckWidgetDelegate;
 class SystemDialogDelegateView;
@@ -322,7 +323,7 @@ class VIEWS_EXPORT WidgetDelegate {
 
     // The widget's initially focused view, if any. This can only be set before
     // this WidgetDelegate is used to initialize a Widget.
-    std::optional<View*> initially_focused_view;
+    std::unique_ptr<ViewTracker> initially_focused_view;
 
     // This is used by modal dialogs to override and constrain desired bounds
     // calculations.
@@ -420,7 +421,7 @@ class VIEWS_EXPORT WidgetDelegate {
     friend class ::ash::ShelfNavigationWidgetDelegate;
     friend class ::ash::ShelfWidgetDelegateView;
     friend class ::ash::ShellTest;
-    friend class ::ash::SimpleWebViewDialog;
+    friend class ::SimpleWebViewDialog;
     friend class ::ash::StatusAreaWidgetDelegate;
     friend class ::ash::StuckWidgetDelegate;
     friend class ::ash::SystemUIComponentsStyleViewerView;

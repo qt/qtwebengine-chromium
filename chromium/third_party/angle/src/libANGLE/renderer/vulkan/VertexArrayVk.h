@@ -26,6 +26,8 @@ enum class BufferBindingDirty
 class VertexArrayVk : public VertexArrayImpl
 {
   public:
+    using VertexArrayGeneration = UniqueSerial;
+
     VertexArrayVk(ContextVk *contextVk,
                   const gl::VertexArrayState &state,
                   const gl::VertexArrayBuffers &vertexArrayBuffers);
@@ -47,6 +49,7 @@ class VertexArrayVk : public VertexArrayImpl
     angle::Result updateStreamedAttribs(const gl::Context *context,
                                         GLint firstVertex,
                                         GLsizei vertexOrIndexCount,
+                                        GLsizei baseInstance,
                                         GLsizei instanceCount,
                                         gl::DrawElementsType indexTypeOrInvalid,
                                         const void *indices,
@@ -153,12 +156,13 @@ class VertexArrayVk : public VertexArrayImpl
 
     gl::AttributesMask getStreamingVertexAttribsMask() const { return mStreamingVertexAttribsMask; }
 
-    gl::ComponentTypeMask getCurrentVertexAttributesTypeMask() const
-    {
-        return mCurrentVertexAttributesTypeMask;
-    }
-
     gl::AttributesMask getCurrentEnabledAttribsMask() const { return mCurrentEnabledAttribsMask; }
+
+    VertexArrayGeneration getDefaultAttribsGeneration() const { return mDefaultAttribsGeneration; }
+    void setDefaultAttribsGeneration(VertexArrayGeneration generation)
+    {
+        mDefaultAttribsGeneration = generation;
+    }
 
   private:
 
@@ -244,7 +248,8 @@ class VertexArrayVk : public VertexArrayImpl
     gl::AttributesMask mStreamingVertexAttribsMask;
     gl::AttributesMask mNeedsConversionAttribsMask;
 
-    gl::ComponentTypeMask mCurrentVertexAttributesTypeMask;
+    // Tracks if default vertex attribute buffers have been invalidated.
+    VertexArrayGeneration mDefaultAttribsGeneration;
 
     // Divisor value if vertex inputRate is VK_VERTEX_INPUT_RATE_VERTEX. This maybe 0 or 1 depends
     // on feature bit.

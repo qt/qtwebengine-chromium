@@ -377,6 +377,11 @@ class CdpPage extends Page_js_1.Page {
         const devtoolsPage = await browser._createDevToolsPage(pageTargetId);
         return devtoolsPage;
     }
+    async hasDevTools() {
+        const browser = this.browser();
+        const targetId = await browser._hasDevToolsTarget(this.target()._targetId);
+        return Boolean(targetId);
+    }
     async waitForFileChooser(options = {}) {
         const needsEnable = this.#fileChooserDeferreds.size === 0;
         const { timeout = this._timeoutSettings.timeout() } = options;
@@ -519,7 +524,7 @@ class CdpPage extends Page_js_1.Page {
                     ? cookie.partitionKey.topLevelSite
                     : undefined,
                 // TODO: remove sameParty as it is removed from Chrome.
-                sameParty: cookie.sameParty ?? false,
+                sameParty: false,
             };
         });
     }

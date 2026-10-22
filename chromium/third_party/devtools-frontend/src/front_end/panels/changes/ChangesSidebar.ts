@@ -24,7 +24,7 @@ const UIStrings = {
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/changes/ChangesSidebar.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-const {render, html, Directives: {ref}} = Lit;
+const {render, html} = Lit;
 interface ViewInput {
   selectedSourceCode: Workspace.UISourceCode.UISourceCode|null;
   onSelect: (uiSourceCode: Workspace.UISourceCode.UISourceCode|null) => void;
@@ -38,20 +38,16 @@ export const DEFAULT_VIEW: View = (input, output, target) => {
       uiSourceCode.url();
   const icon = (uiSourceCode: Workspace.UISourceCode.UISourceCode): string =>
       Snippets.ScriptSnippetFileSystem.isSnippetsUISourceCode(uiSourceCode) ? 'snippet' : 'document';
-  const configElements = new WeakMap<HTMLLIElement, Workspace.UISourceCode.UISourceCode>();
-  const onSelect = (e: UI.TreeOutline.TreeViewElement.SelectEvent): void =>
-      input.onSelect(configElements.get(e.detail) ?? null);
   render(
       // clang-format off
       html`<devtools-tree
-             @selected=${onSelect}
              navigation-variant
              hide-overflow .template=${html`
                <ul role="tree">
                  ${input.sourceCodes.values().map(uiSourceCode => html`
                    <li
                      role="treeitem"
-                     ${ref(e => e instanceof HTMLLIElement && configElements.set(e, uiSourceCode))}
+                     @select=${() => input.onSelect(uiSourceCode)}
                      ?selected=${uiSourceCode === input.selectedSourceCode}>
                        <style>${changesSidebarStyles}</style>
                        <div class=${'navigator-' + uiSourceCode.contentType().name() + '-tree-item'}>

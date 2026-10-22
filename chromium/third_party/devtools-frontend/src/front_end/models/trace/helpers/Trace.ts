@@ -615,10 +615,7 @@ function getRawLineAndColumnNumbersForEvent(event: Types.Events.Event): {
   columnNumber?: number,
 } {
   if (!event.args?.data) {
-    return {
-      lineNumber: undefined,
-      columnNumber: undefined,
-    };
+    return {};
   }
   let lineNumber: number|undefined = undefined;
   let columnNumber: number|undefined = undefined;

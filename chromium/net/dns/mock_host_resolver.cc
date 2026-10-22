@@ -386,6 +386,13 @@ class MockHostResolverBase::RequestImpl
   void ChangeRequestPriority(RequestPriority priority) override {
     priority_ = priority;
   }
+
+  std::optional<ResolutionDetails> GetResolutionDetails() const override {
+    if (resolver_) {
+      return resolver_->default_resolution_details_;
+    }
+    return std::nullopt;
+  }
 };
 
 class MockHostResolverBase::ServiceEndpointRequestImpl
@@ -454,6 +461,13 @@ class MockHostResolverBase::ServiceEndpointRequestImpl
 
   void ChangeRequestPriority(RequestPriority priority) override {
     priority_ = priority;
+  }
+
+  std::optional<ResolutionDetails> GetResolutionDetails() const override {
+    if (resolver_) {
+      return resolver_->default_resolution_details_;
+    }
+    return std::nullopt;
   }
 
  private:
@@ -836,6 +850,7 @@ MockHostResolverBase::CreateRequest(
     NetworkAnonymizationKey network_anonymization_key,
     NetLogWithSource net_log,
     std::optional<ResolveHostParameters> optional_parameters) {
+  last_observed_host_ = Host(host);
   return std::make_unique<RequestImpl>(
       Host(std::move(host)), network_anonymization_key, optional_parameters,
       weak_ptr_factory_.GetWeakPtr());
@@ -847,6 +862,7 @@ MockHostResolverBase::CreateRequest(
     const NetworkAnonymizationKey& network_anonymization_key,
     const NetLogWithSource& source_net_log,
     const std::optional<ResolveHostParameters>& optional_parameters) {
+  last_observed_host_ = Host(host);
   return std::make_unique<RequestImpl>(Host(host), network_anonymization_key,
                                        optional_parameters,
                                        weak_ptr_factory_.GetWeakPtr());
@@ -858,6 +874,7 @@ MockHostResolverBase::CreateServiceEndpointRequest(
     NetworkAnonymizationKey network_anonymization_key,
     NetLogWithSource net_log,
     ResolveHostParameters parameters) {
+  last_observed_host_ = host;
   return std::make_unique<ServiceEndpointRequestImpl>(
       std::move(host), network_anonymization_key, parameters,
       weak_ptr_factory_.GetWeakPtr());
@@ -879,8 +896,24 @@ HostCache* MockHostResolverBase::GetHostCache() {
   return cache_.get();
 }
 
+void MockHostResolverBase::SetDohFallbackUpgradeAllowed(bool allowed) {
+  if (resolve_context_) {
+    resolve_context_->set_doh_fallback_upgrade_allowed(allowed);
+  }
+}
+
 bool MockHostResolverBase::IsHappyEyeballsV3Enabled() const {
   return base::FeatureList::IsEnabled(features::kHappyEyeballsV3);
+}
+
+std::unique_ptr<CanaryDomainService>
+MockHostResolverBase::CreateCanaryDomainService() {
+  if (!resolve_context_) {
+    return nullptr;
+  }
+
+  return std::make_unique<CanaryDomainService>(resolve_context_->AsSafeRef(),
+                                               weak_ptr_factory_.GetSafeRef());
 }
 
 int MockHostResolverBase::LoadIntoCache(
@@ -1606,6 +1639,10 @@ class HangingHostResolver::RequestImpl
 
   void ChangeRequestPriority(RequestPriority priority) override {}
 
+  std::optional<ResolutionDetails> GetResolutionDetails() const override {
+    return std::nullopt;
+  }
+
  private:
   // Use a WeakPtr as the resolver may be destroyed while there are still
   // outstanding request objects.
@@ -1676,6 +1713,8 @@ HangingHostResolver::CreateDohProbeRequest() {
 
 void HangingHostResolver::SetRequestContext(
     URLRequestContext* url_request_context) {}
+
+void HangingHostResolver::SetDohFallbackUpgradeAllowed(bool allowed) {}
 
 bool HangingHostResolver::IsHappyEyeballsV3Enabled() const {
   return base::FeatureList::IsEnabled(features::kHappyEyeballsV3);

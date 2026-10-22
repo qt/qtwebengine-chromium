@@ -29,10 +29,13 @@ enum RequestDigitalIdentityStatus {
   kSuccess,
   kError,
   kErrorTooManyRequests,
+  // The request was programmatically canceled (e.g. via an AbortSignal).
   kErrorCanceled,
   kErrorNoRequests,
   kErrorNoTransientUserActivation,
   kErrorInvalidJson,
+  // The user explicitly declined the request in the UI.
+  kErrorUserDeclined,
 };
 
 // Create a digital identity request using the specified request data.
@@ -50,7 +53,7 @@ interface DigitalIdentityRequest {
   Get(array<DigitalCredentialGetRequest> digital_credential_requests) =>
       (RequestDigitalIdentityStatus status,
       string? protocol,
-      mojo_base.mojom.Value? token);
+      mojo_base.mojom.Value token);
 
   // Requests an issuance of digital credentials, given an array of DigitalCredentialCreateRequests.
   // Returns:
@@ -63,7 +66,7 @@ interface DigitalIdentityRequest {
   Create(array<DigitalCredentialCreateRequest> digital_credential_requests) =>
       (RequestDigitalIdentityStatus status,
       string? protocol,
-      mojo_base.mojom.Value? token);
+      mojo_base.mojom.Value token);
 
   // Aborts the pending request, if any.
   Abort();

@@ -29,29 +29,28 @@ struct GPU_IPC_COMMON_EXPORT EnumTraits<
         return gpu::mojom::GpuPeakMemoryAllocationSource::SHARED_IMAGE_STUB;
       case gpu::GpuPeakMemoryAllocationSource::SKIA:
         return gpu::mojom::GpuPeakMemoryAllocationSource::SKIA;
+      case gpu::GpuPeakMemoryAllocationSource::WEBNN:
+        return gpu::mojom::GpuPeakMemoryAllocationSource::WEBNN;
     }
     NOTREACHED() << "Invalid GpuPeakMemoryAllocationSource:"
                  << static_cast<int>(gpu_peak_memory_allocation_source);
   }
 
-  static bool FromMojom(gpu::mojom::GpuPeakMemoryAllocationSource input,
-                        gpu::GpuPeakMemoryAllocationSource* out) {
+  static gpu::GpuPeakMemoryAllocationSource FromMojom(
+      gpu::mojom::GpuPeakMemoryAllocationSource input) {
     switch (input) {
       case gpu::mojom::GpuPeakMemoryAllocationSource::UNKNOWN:
-        *out = gpu::GpuPeakMemoryAllocationSource::UNKNOWN;
-        return true;
+        return gpu::GpuPeakMemoryAllocationSource::UNKNOWN;
       case gpu::mojom::GpuPeakMemoryAllocationSource::COMMAND_BUFFER:
-        *out = gpu::GpuPeakMemoryAllocationSource::COMMAND_BUFFER;
-        return true;
+        return gpu::GpuPeakMemoryAllocationSource::COMMAND_BUFFER;
       case gpu::mojom::GpuPeakMemoryAllocationSource::SHARED_CONTEXT_STATE:
-        *out = gpu::GpuPeakMemoryAllocationSource::SHARED_CONTEXT_STATE;
-        return true;
+        return gpu::GpuPeakMemoryAllocationSource::SHARED_CONTEXT_STATE;
       case gpu::mojom::GpuPeakMemoryAllocationSource::SHARED_IMAGE_STUB:
-        *out = gpu::GpuPeakMemoryAllocationSource::SHARED_IMAGE_STUB;
-        return true;
+        return gpu::GpuPeakMemoryAllocationSource::SHARED_IMAGE_STUB;
       case gpu::mojom::GpuPeakMemoryAllocationSource::SKIA:
-        *out = gpu::GpuPeakMemoryAllocationSource::SKIA;
-        return true;
+        return gpu::GpuPeakMemoryAllocationSource::SKIA;
+      case gpu::mojom::GpuPeakMemoryAllocationSource::WEBNN:
+        return gpu::GpuPeakMemoryAllocationSource::WEBNN;
     }
     NOTREACHED() << "Invalid GpuPeakMemoryAllocationSource: " << input;
   }

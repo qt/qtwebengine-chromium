@@ -26,6 +26,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "dawn/wire/WireServer.h"
+
 #include "dawn/wire/server/Server.h"
 
 namespace dawn::wire {
@@ -70,6 +71,10 @@ WGPUDevice WireServer::GetDevice(uint32_t id, uint32_t generation) {
 
 bool WireServer::IsDeviceKnown(WGPUDevice device) const {
     return mImpl->IsDeviceKnown(device);
+}
+
+server::Server* WireServer::GetImplForTesting() {
+    return mImpl.get();
 }
 
 namespace server {

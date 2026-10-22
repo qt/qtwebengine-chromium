@@ -5,18 +5,13 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_AUTOFILL_TYPE_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_AUTOFILL_TYPE_H_
 
-#include <optional>
-#include <string_view>
-#include <variant>
-#include <vector>
+#include <string>
 
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_types.h"
 
 namespace autofill {
-
-class AutofillField;
 
 // Represents which types of data an AutofillField may accept. These types are
 // encoded either as a set of FieldTypes.
@@ -118,10 +113,10 @@ class AutofillType {
 
   // GetAutofillAiTypes() is the union of GetAutofillAiType() over all
   // EntityTypes. That is, it includes all FieldTypes supported by Autofill AI,
-  // including the dynamically assigned types (name types).
+  // including the dynamically assigned types (e.g., name types).
   //
   // GetStaticAutofillAiTypes() is like GetAutofillAiTypes() except that it
-  // excludes the dynamically assigned types (name types).
+  // excludes the dynamically assigned types (e.g., name types).
   FieldTypeSet GetAutofillAiTypes() const;
   FieldTypeSet GetStaticAutofillAiTypes() const;
 

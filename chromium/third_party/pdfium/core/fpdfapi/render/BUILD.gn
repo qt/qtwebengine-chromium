@@ -7,8 +7,6 @@ import("../../../testing/test.gni")
 
 source_set("render") {
   sources = [
-    "charposlist.cpp",
-    "charposlist.h",
     "cpdf_devicebuffer.cpp",
     "cpdf_devicebuffer.h",
     "cpdf_docrenderdata.cpp",

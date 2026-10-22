@@ -4,6 +4,7 @@
 
 #include "services/webnn/webnn_tensor_impl.h"
 
+#include "base/logging.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/bind_post_task.h"
 #include "base/threading/thread_restrictions.h"
@@ -12,36 +13,37 @@
 #include "services/webnn/public/cpp/operand_descriptor.h"
 #include "services/webnn/public/cpp/webnn_trace.h"
 #include "services/webnn/public/mojom/webnn_tensor.mojom.h"
+#include "services/webnn/scoped_gpu_sequence.h"
 #include "services/webnn/webnn_context_impl.h"
 
 namespace webnn {
 
 WebNNTensorImpl::WebNNTensorImpl(
     mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
-    base::WeakPtr<WebNNContextImpl> context,
+    WebNNContextImpl& context,
     mojom::TensorInfoPtr tensor_info)
     : WebNNObjectImpl<mojom::WebNNTensor,
                       blink::WebNNTensorToken,
                       mojo::AssociatedReceiver<mojom::WebNNTensor>>(
           std::move(receiver),
-          context->scheduler_task_runner(),
-          context->owning_task_runner()),
-      context_(std::move(context)),
+          context.scheduler_task_runner(),
+          context.owning_task_runner()),
+      context_(context),
       descriptor_(std::move(tensor_info->descriptor)),
       usage_(std::move(tensor_info->usage)) {}
 
 WebNNTensorImpl::WebNNTensorImpl(
     mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
-    base::WeakPtr<WebNNContextImpl> context,
+    WebNNContextImpl& context,
     mojom::TensorInfoPtr tensor_info,
     RepresentationPtr representation)
     : WebNNObjectImpl<mojom::WebNNTensor,
                       blink::WebNNTensorToken,
                       mojo::AssociatedReceiver<mojom::WebNNTensor>>(
           std::move(receiver),
-          context->scheduler_task_runner(),
-          context->owning_task_runner()),
-      context_(std::move(context)),
+          context.scheduler_task_runner(),
+          context.owning_task_runner()),
+      context_(context),
       representation_(std::move(representation)),
       descriptor_(std::move(tensor_info->descriptor)),
       usage_(std::move(tensor_info->usage)) {}
@@ -61,28 +63,26 @@ void WebNNTensorImpl::ReadTensor(ReadTensorCallback callback) {
     return;
   }
 
-  // Wrap the Mojo callback so it is always invoked on the GPU scheduler
-  // sequence. The DML backend may execute callbacks off-sequence, so binding
-  // through BindPostTask ensures sequence safety when the backend calls it.
+  // Ensure the Mojo callback is posted back to the task runner. Running
+  // it directly on the GPU sequence can violate Mojo's sequence checks,
+  // even if executing on the same thread.
   auto mojo_callback_wrapper = base::BindPostTask(
       context_->scheduler_task_runner(), std::move(callback));
 
   // Call ReadTensorImpl() implemented by a backend.
-  context_->scheduler_task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](WebNNTensorImpl* self, ReadTensorCallback callback,
-             ScopedTrace scoped_trace,
-             mojo::ReportBadMessageCallback bad_message_cb) {
-            if (self->is_exported()) {
-              LOG(ERROR) << "[WebNN] Invalid to read tensor when exported.";
-              std::move(bad_message_cb).Run(kBadMessageInvalidTensor);
-              return;
-            }
-            self->ReadTensorImpl(std::move(callback));
-          },
-          base::RetainedRef(this), std::move(mojo_callback_wrapper),
-          std::move(scoped_trace), GetMojoReceiver().GetBadMessageCallback()));
+  context_->gpu_sequence()->ScheduleGpuTask(base::BindOnce(
+      [](WebNNTensorImpl* self, ReadTensorCallback callback,
+         ScopedTrace scoped_trace,
+         mojo::ReportBadMessageCallback bad_message_cb) {
+        if (self->is_exported()) {
+          LOG(ERROR) << "[WebNN] Invalid to read tensor when exported.";
+          std::move(bad_message_cb).Run(kBadMessageInvalidTensor);
+          return;
+        }
+        self->ReadTensorImpl(std::move(callback));
+      },
+      base::RetainedRef(this), std::move(mojo_callback_wrapper),
+      std::move(scoped_trace), GetMojoReceiver().GetBadMessageCallback()));
 }
 
 void WebNNTensorImpl::WriteTensor(mojo_base::BigBuffer src_buffer) {
@@ -103,24 +103,23 @@ void WebNNTensorImpl::WriteTensor(mojo_base::BigBuffer src_buffer) {
   }
 
   // Call WriteTensorImpl() implemented by a backend.
-  context_->scheduler_task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](WebNNTensorImpl* self, mojo_base::BigBuffer src_buffer,
-             ScopedTrace scoped_trace,
-             mojo::ReportBadMessageCallback bad_message_cb) {
-            if (self->is_exported()) {
-              LOG(ERROR) << "[WebNN] Invalid to write tensor when exported.";
-              std::move(bad_message_cb).Run(kBadMessageInvalidTensor);
-              return;
-            }
-            self->WriteTensorImpl(std::move(src_buffer));
-          },
-          base::RetainedRef(this), std::move(src_buffer),
-          std::move(scoped_trace), GetMojoReceiver().GetBadMessageCallback()));
+  context_->gpu_sequence()->ScheduleGpuTask(base::BindOnce(
+      [](WebNNTensorImpl* self, mojo_base::BigBuffer src_buffer,
+         ScopedTrace scoped_trace,
+         mojo::ReportBadMessageCallback bad_message_cb) {
+        if (self->is_exported()) {
+          LOG(ERROR) << "[WebNN] Invalid to write tensor when exported.";
+          std::move(bad_message_cb).Run(kBadMessageInvalidTensor);
+          return;
+        }
+        self->WriteTensorImpl(std::move(src_buffer));
+      },
+      base::RetainedRef(this), std::move(src_buffer), std::move(scoped_trace),
+      GetMojoReceiver().GetBadMessageCallback()));
 }
 
-void WebNNTensorImpl::ImportTensor(const gpu::SyncToken& fence) {
+void WebNNTensorImpl::ImportTensor(uint64_t flow_id,
+                                   const gpu::SyncToken& fence) {
   ScopedTrace scoped_trace("WebNNTensorImpl::ImportTensor");
 
   if (!usage().Has(MLTensorUsageFlags::kWebGpuInterop)) {
@@ -130,12 +129,9 @@ void WebNNTensorImpl::ImportTensor(const gpu::SyncToken& fence) {
 
   // Defer the next task until the fence is released, after prior scheduled
   // tasks run.
-  context_->WaitSyncToken(fence);
-
-  context_->scheduler_task_runner()->PostTask(
-      FROM_HERE,
+  context_->gpu_sequence()->ScheduleGpuTask(
       base::BindOnce(
-          [](WebNNTensorImpl* self, ScopedTrace scoped_trace,
+          [](WebNNTensorImpl* self, ScopedTrace scoped_trace, uint64_t flow_id,
              mojo::ReportBadMessageCallback bad_message_cb) {
             if (!self->is_exported()) {
               LOG(ERROR)
@@ -145,6 +141,9 @@ void WebNNTensorImpl::ImportTensor(const gpu::SyncToken& fence) {
               return;
             }
 
+            TRACE_EVENT("webnn", "WebNNTensorImpl::ImportTensorImpl",
+                        perfetto::TerminatingFlow::Global(flow_id));
+
             if (!self->ImportTensorInternal()) {
               LOG(ERROR)
                   << "[WebNN] Failed to import tensor from shared image.";
@@ -152,11 +151,13 @@ void WebNNTensorImpl::ImportTensor(const gpu::SyncToken& fence) {
               return;
             }
           },
-          base::RetainedRef(this), std::move(scoped_trace),
-          GetMojoReceiver().GetBadMessageCallback()));
+          base::RetainedRef(this), std::move(scoped_trace), flow_id,
+          GetMojoReceiver().GetBadMessageCallback()),
+      {fence});
 }
 
-void WebNNTensorImpl::ExportTensor(ExportTensorCallback callback) {
+void WebNNTensorImpl::ExportTensor(uint64_t flow_id,
+                                   ExportTensorCallback callback) {
   ScopedTrace scoped_trace("WebNNTensorImpl::ExportTensor");
 
   if (!usage().Has(MLTensorUsageFlags::kWebGpuInterop)) {
@@ -164,11 +165,9 @@ void WebNNTensorImpl::ExportTensor(ExportTensorCallback callback) {
     return;
   }
 
-  context_->scheduler_task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          [](WebNNTensorImpl* self, ExportTensorCallback callback,
-             ScopedTrace scoped_trace,
+  gpu::SyncToken release =
+      context_->gpu_sequence()->ScheduleGpuTask(base::BindOnce(
+          [](WebNNTensorImpl* self, ScopedTrace scoped_trace, uint64_t flow_id,
              mojo::ReportBadMessageCallback bad_message_cb) {
             if (self->is_exported()) {
               LOG(ERROR)
@@ -177,12 +176,20 @@ void WebNNTensorImpl::ExportTensor(ExportTensorCallback callback) {
               return;
             }
 
+            TRACE_EVENT("webnn", "WebNNTensorImpl::ExportTensorImpl",
+                        perfetto::TerminatingFlow::Global(flow_id));
+
             // End WebNN access which makes the tensor be exported.
-            self->ExportTensorImpl(std::move(self->representation_access_),
-                                   std::move(callback));
+            self->ExportTensorImpl(std::move(self->representation_access_));
           },
-          base::RetainedRef(this), std::move(callback), std::move(scoped_trace),
+          base::RetainedRef(this), std::move(scoped_trace), flow_id,
           GetMojoReceiver().GetBadMessageCallback()));
+
+  // Verify the release since the sync token could be passed to another Mojo
+  // interface which requires verification.
+  release.SetVerifyFlush();
+
+  std::move(callback).Run(std::move(release));
 }
 
 void WebNNTensorImpl::OnDisconnect() {

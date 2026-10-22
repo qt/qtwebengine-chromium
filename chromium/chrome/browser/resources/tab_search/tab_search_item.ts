@@ -87,7 +87,6 @@ export class TabSearchItemElement extends TabSearchItemBase {
         faviconUrl: null,
         groupId: null,
         alertStates: [],
-        index: 0,
         isDefaultFavicon: false,
         lastActiveElapsedText: '',
         lastActiveTimeTicks: {internalValue: BigInt(0)},
@@ -158,7 +157,7 @@ export class TabSearchItemElement extends TabSearchItemBase {
     return this.role === 'option' ? 'option' : 'button';
   }
 
-  protected onItemClose_(e: Event) {
+  protected onCloseButtonClick_(e: Event) {
     this.dispatchEvent(new CustomEvent('close'));
     e.stopPropagation();
   }

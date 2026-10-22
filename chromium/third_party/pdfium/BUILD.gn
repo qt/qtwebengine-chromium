@@ -154,6 +154,9 @@ config("pdfium_public_config") {
     }
   }
 
+  if (pdf_use_agg) {
+    defines += [ "PDF_USE_AGG" ]
+  }
   if (pdf_use_skia) {
     defines += [ "PDF_USE_SKIA" ]
   }
@@ -387,6 +390,11 @@ test("pdfium_embeddertests") {
   if (is_android) {
     ignore_all_data_deps = true
     use_raw_android_executable = true
+  }
+
+  if (build_with_chromium && pdf_use_skia) {
+    deps += [ "testing:discardable_memory_allocator" ]
+    configs += [ "testing:pdfium_in_chromium_config" ]
   }
 
   if (pdf_enable_v8) {

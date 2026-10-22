@@ -5,7 +5,6 @@
 import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
-import("//components/optimization_guide/features.gni")
 import("//components/vector_icons/vector_icons.gni")
 import("//device/vr/buildflags/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
@@ -39,7 +38,6 @@ aggregate_vector_icons("omnibox_vector_icons") {
     "answer_sunrise_chrome_refresh.icon",
     "answer_translation.icon",
     "answer_translation_chrome_refresh.icon",
-    "answer_when_is.icon",
     "bookmark.icon",
     "bookmark_chrome_refresh.icon",
     "calculator.icon",
@@ -119,6 +117,8 @@ static_library("browser") {
     "actions/omnibox_action_concepts.h",
     "actions/omnibox_action_in_suggest.cc",
     "actions/omnibox_action_in_suggest.h",
+    "actions/omnibox_action_site_search.cc",
+    "actions/omnibox_action_site_search.h",
     "actions/omnibox_extension_action.cc",
     "actions/omnibox_extension_action.h",
     "actions/omnibox_pedal.cc",
@@ -162,6 +162,12 @@ static_library("browser") {
     "autocomplete_provider_listener.h",
     "autocomplete_result.cc",
     "autocomplete_result.h",
+    "autocomplete_scoring_model_executor.cc",
+    "autocomplete_scoring_model_executor.h",
+    "autocomplete_scoring_model_handler.cc",
+    "autocomplete_scoring_model_handler.h",
+    "autocomplete_scoring_model_service.cc",
+    "autocomplete_scoring_model_service.h",
     "autocomplete_scoring_signals_annotator.h",
     "base_search_provider.cc",
     "base_search_provider.h",
@@ -250,6 +256,10 @@ static_library("browser") {
     "on_device_head_provider.h",
     "on_device_model_update_listener.cc",
     "on_device_model_update_listener.h",
+    "on_device_tail_model_executor.cc",
+    "on_device_tail_model_executor.h",
+    "on_device_tail_model_service.cc",
+    "on_device_tail_model_service.h",
     "on_device_tail_tokenizer.cc",
     "on_device_tail_tokenizer.h",
     "open_tab_provider.cc",
@@ -333,6 +343,10 @@ static_library("browser") {
     "//services/data_decoder/public/cpp",
     "//third_party/metrics_proto",
     "//third_party/omnibox_proto",
+    "//third_party/tflite",
+    "//third_party/tflite:tflite_public_headers",
+    "//third_party/tflite_support",
+    "//third_party/tflite_support:tflite_support_proto",
     "//url",
   ]
 
@@ -345,12 +359,11 @@ static_library("browser") {
     "//components/favicon/core",
     "//components/favicon_base",
     "//components/history_clusters/core",
-    "//components/history_embeddings",
+    "//components/history_embeddings/core",
     "//components/keyed_service/core",
     "//components/metrics",
     "//components/navigation_metrics",
     "//components/open_from_clipboard",
-    "//components/optimization_guide:machine_learning_tflite_buildflags",
     "//components/optimization_guide/core",
     "//components/optimization_guide/proto:optimization_guide_proto",
     "//components/pref_registry",
@@ -366,6 +379,7 @@ static_library("browser") {
     "//components/url_formatter",
     "//components/variations",
     "//components/variations/net",
+    "//components/variations/service",
     "//components/vector_icons",
     "//extensions/buildflags",
     "//net",
@@ -406,27 +420,6 @@ static_library("browser") {
 
   if ((!is_android || enable_vr) && !is_ios) {
     deps += [ ":vector_icons" ]
-  }
-
-  if (build_with_tflite_lib) {
-    sources += [
-      "autocomplete_scoring_model_executor.cc",
-      "autocomplete_scoring_model_executor.h",
-      "autocomplete_scoring_model_handler.cc",
-      "autocomplete_scoring_model_handler.h",
-      "autocomplete_scoring_model_service.cc",
-      "autocomplete_scoring_model_service.h",
-      "on_device_tail_model_executor.cc",
-      "on_device_tail_model_executor.h",
-      "on_device_tail_model_service.cc",
-      "on_device_tail_model_service.h",
-    ]
-    public_deps += [
-      "//third_party/tflite",
-      "//third_party/tflite:tflite_public_headers",
-      "//third_party/tflite_support",
-      "//third_party/tflite_support:tflite_support_proto",
-    ]
   }
 
   if (enable_extensions_core) {
@@ -598,6 +591,7 @@ if (is_android) {
       "android/java/src/org/chromium/components/omnibox/AutocompleteRequestType.java",
       "android/java/src/org/chromium/components/omnibox/AutocompleteResult.java",
       "android/java/src/org/chromium/components/omnibox/OmniboxFocusReason.java",
+      "android/java/src/org/chromium/components/omnibox/ToolModeUtils.java",
       "android/java/src/org/chromium/components/omnibox/action/OmniboxAction.java",
       "android/java/src/org/chromium/components/omnibox/action/OmniboxActionDelegate.java",
       "android/java/src/org/chromium/components/omnibox/action/OmniboxActionFactory.java",
@@ -646,6 +640,7 @@ if (is_android) {
       "android/java/src/org/chromium/components/omnibox/AutocompleteInputUnitTest.java",
       "android/java/src/org/chromium/components/omnibox/AutocompleteResultUnitTest.java",
       "android/java/src/org/chromium/components/omnibox/SecurityStatusIconUnitTest.java",
+      "android/java/src/org/chromium/components/omnibox/ToolModeUtilsUnitTest.java",
     ]
     deps = [
       ":browser_java",
@@ -664,6 +659,7 @@ if (is_android) {
       "//third_party/junit",
       "//third_party/metrics_proto:metrics_proto_java",
       "//third_party/mockito:mockito_java",
+      "//url:url_java",
     ]
   }
 
@@ -686,6 +682,7 @@ if (is_android) {
 
   java_cpp_enum("browser_java_enums_srcjar") {
     sources = [
+      "actions/omnibox_action.h",
       "actions/omnibox_action_concepts.h",
       "actions/omnibox_action_in_suggest.cc",
       "actions/omnibox_pedal_concepts.h",
@@ -717,6 +714,10 @@ static_library("test_support") {
     "fake_autocomplete_provider.h",
     "fake_autocomplete_provider_client.cc",
     "fake_autocomplete_provider_client.h",
+    "fake_autocomplete_scoring_model_service.cc",
+    "fake_autocomplete_scoring_model_service.h",
+    "fake_on_device_tail_model_service.cc",
+    "fake_on_device_tail_model_service.h",
     "fake_tab_matcher.cc",
     "fake_tab_matcher.h",
     "history_test_util.cc",
@@ -750,7 +751,7 @@ static_library("test_support") {
     "//components/bookmarks/test",
     "//components/history/core/browser",
     "//components/history/core/test",
-    "//components/history_embeddings",
+    "//components/history_embeddings/core",
     "//components/optimization_guide/core",
     "//components/optimization_guide/proto:optimization_guide_proto",
     "//components/prefs:test_support",
@@ -767,15 +768,6 @@ static_library("test_support") {
     "//ui/base",
     "//ui/gfx",
   ]
-
-  if (build_with_tflite_lib) {
-    sources += [
-      "fake_autocomplete_scoring_model_service.cc",
-      "fake_autocomplete_scoring_model_service.h",
-      "fake_on_device_tail_model_service.cc",
-      "fake_on_device_tail_model_service.h",
-    ]
-  }
 
   if (toolkit_views) {
     # Needed to get the TOOLKIT_VIEWS define.
@@ -824,6 +816,8 @@ source_set("unit_tests") {
     "autocomplete_match_unittest.cc",
     "autocomplete_provider_unittest.cc",
     "autocomplete_result_unittest.cc",
+    "autocomplete_scoring_model_executor_unittest.cc",
+    "autocomplete_scoring_model_handler_unittest.cc",
     "base_search_provider_unittest.cc",
     "bookmark_provider_unittest.cc",
     "bookmark_scoring_signals_annotator_unittest.cc",
@@ -858,6 +852,8 @@ source_set("unit_tests") {
     "on_device_head_model_unittest.cc",
     "on_device_head_provider_unittest.cc",
     "on_device_model_update_listener_unittest.cc",
+    "on_device_tail_model_executor_unittest.cc",
+    "on_device_tail_model_service_unittest.cc",
     "on_device_tail_tokenizer_unittest.cc",
     "open_tab_provider_unittest.cc",
     "remote_suggestions_service_unittest.cc",
@@ -893,11 +889,10 @@ source_set("unit_tests") {
     "//components/dom_distiller/core",
     "//components/favicon/core/test:test_support",
     "//components/history/core/test",
-    "//components/history_embeddings",
-    "//components/history_embeddings:test_support",
-    "//components/memory_pressure:test_support",
+    "//components/history_embeddings/core",
     "//components/ntp_tiles",
     "//components/omnibox/common",
+    "//components/omnibox/composebox:unit_tests",
     "//components/open_from_clipboard:test_support",
     "//components/optimization_guide/core",
     "//components/optimization_guide/core:test_support",
@@ -950,15 +945,6 @@ source_set("unit_tests") {
 
   if (is_chromeos) {
     deps += [ "//chromeos/constants" ]
-  }
-
-  if (build_with_tflite_lib) {
-    sources += [
-      "autocomplete_scoring_model_executor_unittest.cc",
-      "autocomplete_scoring_model_handler_unittest.cc",
-      "on_device_tail_model_executor_unittest.cc",
-      "on_device_tail_model_service_unittest.cc",
-    ]
   }
 
   if (enable_extensions) {

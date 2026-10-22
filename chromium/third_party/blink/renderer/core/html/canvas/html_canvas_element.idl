@@ -37,7 +37,10 @@
     [RaisesException=Setter, CEReactions] attribute unsigned long height;
 
     [RuntimeEnabled=CanvasDrawElement] attribute boolean layoutSubtree;
-    [RuntimeEnabled=CanvasDrawElement, RaisesException] DOMMatrix getElementTransform(Element element, DOMMatrix draw_transform);
+    [RuntimeEnabled=CanvasDrawElement] attribute EventHandler onpaint;
+    [RuntimeEnabled=CanvasDrawElement] void requestPaint();
+    [RuntimeEnabled=CanvasDrawElement, RaisesException] DOMMatrix getElementTransform((Element or ElementImage) element, DOMMatrix draw_transform);
+    [RuntimeEnabled=CanvasDrawElement, RaisesException] ElementImage captureElementImage(Element element);
 
     [MeasureAs=CanvasToDataURL, RaisesException] DOMString toDataURL(optional DOMString type = "image/png", optional any quality);
 

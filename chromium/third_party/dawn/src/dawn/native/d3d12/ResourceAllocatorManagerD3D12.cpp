@@ -191,7 +191,7 @@ uint32_t GetColumnPitch(uint32_t baseHeight, uint32_t mipLevelCount) {
     return Align(columnPitch, 4);
 }
 
-uint32_t ComputeExtraArraySizeForIntelGen12(uint32_t width,
+uint64_t ComputeExtraArraySizeForIntelGen12(uint32_t width,
                                             uint32_t height,
                                             uint32_t arrayLayerCount,
                                             uint32_t mipLevelCount,
@@ -355,10 +355,18 @@ ResultOrError<ResourceHeapAllocation> ResourceAllocatorManager::AllocateMemory(
         // Multisample textures have one layer at most. Only non-multisample textures need the
         // workaround.
         DAWN_ASSERT(revisedDescriptor.SampleDesc.Count <= 1);
-        revisedDescriptor.DepthOrArraySize += ComputeExtraArraySizeForIntelGen12(
-            resourceDescriptor.Width, resourceDescriptor.Height,
-            resourceDescriptor.DepthOrArraySize, resourceDescriptor.MipLevels,
-            resourceDescriptor.SampleDesc.Count, colorFormatBytesPerBlock);
+        // Make sure the result fits in DepthOrArraySize which is a UINT16
+        uint64_t depthOrArraySize =
+            revisedDescriptor.DepthOrArraySize +
+            ComputeExtraArraySizeForIntelGen12(
+                resourceDescriptor.Width, resourceDescriptor.Height,
+                resourceDescriptor.DepthOrArraySize, resourceDescriptor.MipLevels,
+                resourceDescriptor.SampleDesc.Count, colorFormatBytesPerBlock);
+        if (depthOrArraySize >= std::numeric_limits<UINT16>::max()) {
+            return DAWN_OUT_OF_MEMORY_ERROR(
+                "Texture array size with Intel Gen12 workaround exceeds UINT16");
+        }
+        revisedDescriptor.DepthOrArraySize = depthOrArraySize;
     }
 
     // TODO(crbug.com/dawn/849): Conditionally disable sub-allocation.

@@ -156,6 +156,8 @@ source_set("gmock") {
     "src/googlemock/src/gmock.cc",
   ]
 
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
   public_deps = [ ":gtest" ]
 
   public_configs = [ ":gmock_config" ]

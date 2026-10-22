@@ -22,7 +22,7 @@
 #include "sync/sync_access_state.h"
 #include <optional>
 
-struct SubpassDependencyGraphNode;
+struct SubpassDependencyInfo;
 
 namespace vvl {
 class Bindable;
@@ -147,46 +147,38 @@ struct QueueTagOffsetBarrierAction {
     ResourceUsageTag tag_offset;
 };
 
-struct ApplyTrackbackStackAction {
-    explicit ApplyTrackbackStackAction(const std::vector<SyncBarrier> &barriers_,
-                                       const AccessStateFunction *previous_barrier_ = nullptr)
-        : barriers(barriers_), previous_barrier(previous_barrier_) {}
-    void operator()(AccessState *access) const {
-        assert(access);
-        ApplyBarriers(*access, barriers);
-        if (previous_barrier) {
-            assert(bool(*previous_barrier));
-            (*previous_barrier)(access);
-        }
-    }
-    const std::vector<SyncBarrier> &barriers;
-    const AccessStateFunction *previous_barrier;
-};
+struct SubpassBarrier {
+    const AccessContext *src_subpass_context = nullptr;
 
-struct ApplySubpassTransitionBarriersAction {
-    explicit ApplySubpassTransitionBarriersAction(const std::vector<SyncBarrier> &barriers, ResourceUsageTag layout_transition_tag)
-        : barriers(barriers), layout_transition_tag(layout_transition_tag) {}
-    void operator()(AccessState *access) const {
-        assert(access);
-        ApplyBarriers(*access, barriers, true, layout_transition_tag);
-    }
-    const std::vector<SyncBarrier> &barriers;
-    const ResourceUsageTag layout_transition_tag;
-};
-
-struct SubpassBarrierTrackback {
+    // Multiple subpass dependencies may be defined for the same (src_subpass, dst_subpass) pair.
+    // Each subpass dependency adds a separate barrier.
     std::vector<SyncBarrier> barriers;
-    const AccessContext *source_subpass = nullptr;
-    SubpassBarrierTrackback() = default;
-    SubpassBarrierTrackback(const AccessContext *source_subpass, VkQueueFlags queue_flags,
-                            const std::vector<const VkSubpassDependency2 *> &subpass_dependencies)
-        : source_subpass(source_subpass) {
-        barriers.reserve(subpass_dependencies.size());
-        for (const VkSubpassDependency2 *dependency : subpass_dependencies) {
-            assert(dependency);
-            barriers.emplace_back(queue_flags, *dependency);
+
+    SubpassBarrier() = default;
+    SubpassBarrier(const AccessContext &src_subpass_context, VkQueueFlags queue_flags,
+                   const std::vector<const VkSubpassDependency2 *> &subpass_dependencies);
+};
+
+struct ApplySubpassBarrierAction {
+    explicit ApplySubpassBarrierAction(const SubpassBarrier &subpass_barrier,
+                                       const AccessStateFunction *previous_barrier_action = nullptr)
+        : subpass_barrier(subpass_barrier), previous_barrier_action(previous_barrier_action) {}
+    void operator()(AccessState *access) const {
+        ApplyBarriers(*access, subpass_barrier.barriers);
+        if (previous_barrier_action) {
+            (*previous_barrier_action)(access);
         }
     }
+    const SubpassBarrier &subpass_barrier;
+    const AccessStateFunction *previous_barrier_action;
+};
+
+struct ApplySubpassTransitionBarrierAction {
+    ApplySubpassTransitionBarrierAction(const SubpassBarrier &subpass_barrier, ResourceUsageTag layout_transition_tag)
+        : subpass_barrier(subpass_barrier), layout_transition_tag(layout_transition_tag) {}
+    void operator()(AccessState *access) const { ApplyBarriers(*access, subpass_barrier.barriers, true, layout_transition_tag); }
+    const SubpassBarrier &subpass_barrier;
+    const ResourceUsageTag layout_transition_tag;
 };
 
 class AttachmentViewGen {
@@ -200,7 +192,7 @@ class AttachmentViewGen {
     };
     AttachmentViewGen(const vvl::ImageView *image_view, const VkOffset3D &offset, const VkExtent3D &extent);
     const vvl::ImageView *GetViewState() const { return view_; }
-    const std::optional<ImageRangeGen> &GetRangeGen(Gen type) const;
+    ImageRangeGen GetRangeGen(Gen type, uint32_t view_index = vvl::kNoIndex32) const;
     Gen GetDepthStencilRenderAreaGenType(bool depth_op, bool stencil_op) const;
 
   private:
@@ -260,17 +252,15 @@ class AccessContext {
         kDetectAll = (kDetectPrevious | kDetectAsync)
     };
 
-    const SubpassBarrierTrackback &GetDstExternalTrackBack() const { return dst_external_; }
-
     void ResolveFromContext(const AccessContext &from);
 
-    // Non-lazy import of all accesses. WaitEvents needs this.
-    void ResolvePreviousAccesses();
-
     // Resolves this subpass context from the subpass context defined by the layout transition dependency
-    void ResolveFromSubpassContext(const ApplySubpassTransitionBarriersAction &subpass_transition_action,
+    void ResolveFromSubpassContext(const ApplySubpassTransitionBarrierAction &subpass_transition_action,
                                    const AccessContext &from_context,
                                    subresource_adapter::ImageRangeGenerator attachment_range_gen);
+
+    // Import accesses from all subpass dependencies (including src external dependency)
+    void ResolveAllSubpassDependencies();
 
     template <typename ResolveOp>
     void ResolveFromContext(ResolveOp &&resolve_op, const AccessContext &from_context);
@@ -281,8 +271,12 @@ class AccessContext {
 
     void UpdateAccessState(const vvl::Buffer &buffer, SyncAccessIndex current_usage, const AccessRange &range,
                            ResourceUsageTagEx tag_ex, SyncFlags flags = 0);
-    void UpdateAccessState(ImageRangeGen &range_gen, SyncAccessIndex current_usage, SyncOrdering ordering_rule,
-                           ResourceUsageTagEx tag_ex, SyncFlags flags = 0);
+    void UpdateAccessState(ImageRangeGen &range_gen, SyncAccessIndex current_usage, ResourceUsageTagEx tag_ex, SyncFlags flags = 0);
+    void UpdateAttachmentAccessState(ImageRangeGen &range_gen, SyncAccessIndex current_usage,
+                                     const AttachmentAccess &attachment_access, ResourceUsageTagEx tag_ex);
+    void UpdateAttachmentAccessState(const AttachmentViewGen &view_gen, AttachmentViewGen::Gen gen_type,
+                                     SyncAccessIndex current_usage, const AttachmentAccess &attachment_access,
+                                     ResourceUsageTagEx tag_ex, uint32_t view_mask = 0);
 
     void ResolveChildContexts(vvl::span<AccessContext> subpass_contexts);
 
@@ -298,8 +292,8 @@ class AccessContext {
     AccessContext(const AccessContext &other) = delete;
     AccessContext &operator=(const AccessContext &) = delete;
 
-    void InitFrom(uint32_t subpass, VkQueueFlags queue_flags, const std::vector<SubpassDependencyGraphNode> &dependencies,
-                  const AccessContext *contexts, const AccessContext *external_context);
+    void InitFrom(uint32_t subpass, VkQueueFlags queue_flags, const std::vector<SubpassDependencyInfo> &subpass_dependency_infos,
+                  const AccessContext *contexts, const AccessContext &external_context);
     void InitFrom(const AccessContext &other);
     void Reset();
 
@@ -307,14 +301,8 @@ class AccessContext {
     void AddReferencedTags(ResourceUsageTagSet &referenced) const;
 
     const AccessMap &GetAccessMap() const { return access_state_map_; }
-    const SubpassBarrierTrackback *GetTrackBackFromSubpass(uint32_t subpass) const {
-        if (subpass == VK_SUBPASS_EXTERNAL) {
-            return src_external_;
-        } else {
-            assert(subpass < prev_by_subpass_.size());
-            return prev_by_subpass_[subpass];
-        }
-    }
+    const SubpassBarrier &GetSubpassBarrier(uint32_t src_subpass) const;
+    const SubpassBarrier &GetDstExternalSubpassBarrier() const { return dst_external_; }
 
     void SetStartTag(ResourceUsageTag tag) { start_tag_ = tag; }
     ResourceUsageTag StartTag() const { return start_tag_; }
@@ -361,22 +349,27 @@ class AccessContext {
     //
     HazardResult DetectHazard(const vvl::Buffer &buffer, SyncAccessIndex access_index, const AccessRange &range) const;
 
-    HazardResult DetectHazard(const vvl::Image &image, const VkImageSubresourceRange &subresource_range, bool is_depth_sliced,
-                              SyncAccessIndex current_usage, SyncOrdering ordering_rule) const;
+    HazardResult DetectHazard(ImageRangeGen &range_gen, SyncAccessIndex current_usage) const;
+
+    HazardResult DetectHazard(const vvl::Image &image, const VkImageSubresourceRange &subresource_range,
+                              SyncAccessIndex current_usage) const;
     HazardResult DetectHazard(const vvl::Image &image, const VkImageSubresourceRange &subresource_range, const VkOffset3D &offset,
-                              const VkExtent3D &extent, bool is_depth_sliced, SyncAccessIndex current_usage,
-                              SyncOrdering ordering_rule = SyncOrdering::kOrderingNone) const;
+                              const VkExtent3D &extent, SyncAccessIndex current_usage) const;
 
     HazardResult DetectHazard(const vvl::ImageView &image_view, SyncAccessIndex current_usage) const;
     HazardResult DetectHazard(const vvl::ImageView &image_view, const VkOffset3D &offset, const VkExtent3D &extent,
-                              SyncAccessIndex current_usage, SyncOrdering ordering_rule) const;
-
-    HazardResult DetectHazard(const ImageRangeGen &const_range_gen, SyncAccessIndex current_usage,
-                              SyncOrdering ordering_rule = SyncOrdering::kOrderingNone, SyncFlags flags = 0) const;
-    HazardResult DetectHazard(const AttachmentViewGen &view_gen, AttachmentViewGen::Gen gen_type, SyncAccessIndex current_usage,
-                              SyncOrdering ordering_rule, SyncFlags flags = 0) const;
-    HazardResult DetectHazard(const vvl::VideoSession &vs_state, const vvl::VideoPictureResource &resource,
                               SyncAccessIndex current_usage) const;
+
+    HazardResult DetectAttachmentHazard(ImageRangeGen &range_gen, SyncAccessIndex current_usage,
+                                        const AttachmentAccess &attachment_access) const;
+    HazardResult DetectAttachmentHazard(const AttachmentViewGen &view_gen, AttachmentViewGen::Gen gen_type,
+                                        SyncAccessIndex current_usage, const AttachmentAccess &attachment_access,
+                                        uint32_t view_mask) const;
+    HazardResult DetectAttachmentHazard(const vvl::Image &image, const VkImageSubresourceRange &subresource_range,
+                                        bool is_depth_sliced, SyncAccessIndex current_usage,
+                                        const AttachmentAccess &attachment_access) const;
+    HazardResult DetectAttachmentHazard(const vvl::ImageView &image_view, const VkOffset3D &offset, const VkExtent3D &extent,
+                                        SyncAccessIndex current_usage, const AttachmentAccess &attachment_access) const;
 
     HazardResult DetectImageBarrierHazard(const vvl::Image &image, const VkImageSubresourceRange &subresource_range,
                                           VkPipelineStageFlags2 src_exec_scope, const SyncAccessFlags &src_access_scope,
@@ -388,15 +381,21 @@ class AccessContext {
     HazardResult DetectImageBarrierHazard(const AttachmentViewGen &attachment_view, const SyncBarrier &barrier,
                                           DetectOptions options) const;
 
-    HazardResult DetectSubpassTransitionHazard(const SubpassBarrierTrackback &track_back,
-                                               const AttachmentViewGen &attach_view) const;
+    HazardResult DetectSubpassTransitionHazard(const SubpassBarrier &subpass_barrier, const AttachmentViewGen &attach_view) const;
 
     HazardResult DetectFirstUseHazard(QueueId queue_id, const ResourceUsageRange &tag_range,
                                       const AccessContext &access_context) const;
+
+    HazardResult DetectVideoHazard(const vvl::VideoSession &vs_state, const vvl::VideoPictureResource &resource,
+                                   SyncAccessIndex current_usage) const;
     HazardResult DetectMarkerHazard(const vvl::Buffer &buffer, const AccessRange &range) const;
 
   private:
     void ResetGlobalBarriers();
+
+    // Resolve accesses from src contexts from all subpass dependencies including src external dependency
+    void ResolveSubpassDependencies(const AccessRange &range, AccessContext &resolve_context, bool infill,
+                                    const AccessStateFunction *previous_barrier_action = nullptr) const;
 
     // Resolve resolve_context from the current context.
     // Do not infill gaps that are also empty in the current context
@@ -421,7 +420,7 @@ class AccessContext {
     AccessMap::iterator ResolveGapRecursePrev(const AccessRange &gap_range, AccessMap::iterator pos_hint);
 
     AccessMap::iterator DoUpdateAccessState(AccessMap::iterator pos, const AccessRange &range, SyncAccessIndex access_index,
-                                            SyncOrdering ordering_rule, ResourceUsageTagEx tag_ex, SyncFlags flags);
+                                            const AttachmentAccess &attachment_access, ResourceUsageTagEx tag_ex, SyncFlags flags);
 
     // A recursive range walkers for hazard detection, first for the current context
     // and then walks the DAG of the contexts for subpasses
@@ -450,14 +449,9 @@ class AccessContext {
   private:
     AccessMap access_state_map_;
 
-    std::vector<SubpassBarrierTrackback> prev_;
-    std::vector<SubpassBarrierTrackback *> prev_by_subpass_;
-
     // These contexts *must* have the same lifespan as this context, or be cleared, before the referenced contexts can expire
     std::vector<AsyncReference> async_;
 
-    SubpassBarrierTrackback *src_external_ = nullptr;
-    SubpassBarrierTrackback dst_external_;
     ResourceUsageTag start_tag_ = 0;
 
     // Global barriers are registered at the AccessContext level and applied to access states
@@ -477,13 +471,26 @@ class AccessContext {
     std::vector<uint32_t> global_barriers_;
 
     // True if access map won't be modified anymore.
-    // NOTE: In the current implementation we mark only command buffer contexts as finalized.
-    // TODO: mark other contexts as finalized too if needed.
+    // NOTE: In the current implementation we mark only command buffer contexts as finalized,
+    // but if necessary this can be done for other contexts too.
     bool finalized_ = false;
 
     // Provides ordering of the context's first accesses based on tag values.
     // Only available for finalized contexts.
     SortedFirstAccesses sorted_first_accesses_;
+
+    // Barriers between preceding subpasses and the current subpass
+    // (only for subpass contexts).
+    //
+    // SubpassBarrier::src_subpass_context is null if no dependency exists between
+    // that preceding subpass and the current subpass.
+    //
+    // The dependency from VK_SUBPASS_EXTERNAL (src) to the current subpass is stored
+    // as the last element.
+    std::vector<SubpassBarrier> subpass_barriers_;  // [currentSubpassIndex + 1]
+
+    // The dependency from the current subpass to VK_SUBPASS_EXTERNAL (dst)
+    SubpassBarrier dst_external_;
 };
 
 // The semantics of the InfillUpdateOps of InfillUpdateRange are slightly different than for the

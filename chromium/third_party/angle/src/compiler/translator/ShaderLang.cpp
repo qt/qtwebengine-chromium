@@ -278,7 +278,8 @@ void InitBuiltInResources(ShBuiltInResources *resources)
     resources->MaxExpressionComplexity = 256;
     resources->MaxStatementDepth       = 256;
     resources->MaxCallStackDepth       = 256;
-    resources->MaxFunctionParameters   = 1024;
+    // Note: SPIR-V and MSL don't allow more than 255 parameters to a function.
+    resources->MaxFunctionParameters = 255;
 
     // ES 3.1 Revision 4, 7.2 Built-in Constants
 
@@ -638,12 +639,12 @@ int GetVertexShaderNumViews(const ShHandle handle)
     return compiler->getNumViews();
 }
 
-const std::vector<ShPixelLocalStorageFormat> *GetPixelLocalStorageFormats(const ShHandle handle)
+const std::vector<ShPixelLocalStorageLayout> *GetPixelLocalStorageLayouts(const ShHandle handle)
 {
     TCompiler *compiler = GetCompilerFromHandle(handle);
     ASSERT(compiler);
 
-    return &compiler->getPixelLocalStorageFormats();
+    return &compiler->getPixelLocalStorageLayouts();
 }
 
 uint32_t GetShaderSpecConstUsageBits(const ShHandle handle)

@@ -3951,15 +3951,17 @@ This muxer supports the following options:
 Set the timeout in milliseconds for ICE and DTLS handshake.
 Default value is 5000.
 
+@item timeout @var{integer}
+Set timeout in seconds for socket I/O operations. Applicable only for HTTP output.
+Default value is -1.
+
 @item pkt_size @var{integer}
 Set the maximum size, in bytes, of RTP packets that send out.
 Default value is 1200.
 
-@item buffer_size, ts_buffer_size @var{integer}
+@item ts_buffer_size @var{integer}
 Set the buffer size, in bytes, of underlying protocol.
 Default value is -1(auto). The UDP auto selects a reasonable value.
-
-Using the buffer_size option name is deprecated and should not be used.
 
 @item whip_flags @var{flags}
 Possible values:
@@ -3968,6 +3970,10 @@ Possible values:
 @item dtls_active
 The muxer will try to set dtls active role and send the first client hello.
 @end table
+
+@item rtp_history @var{integer}
+Set the number of RTP history items to store.
+Default value is 512.
 
 @item authorization @var{string}
 The optional Bearer token for WHIP Authorization.

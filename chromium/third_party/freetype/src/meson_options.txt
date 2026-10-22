@@ -2,7 +2,7 @@
 # meson_options.txt
 #
 
-# Copyright (C) 2020-2025 by
+# Copyright (C) 2020-2026 by
 # David Turner, Robert Wilhelm, and Werner Lemberg.
 #
 # This file is part of the FreeType project, and may only be used, modified,
@@ -52,6 +52,12 @@ option('zlib',
              'internal', 'external', 'system',
              'disabled', 'enabled' ],
   description: 'Support reading gzip-compressed font files')
+
+option('hvf',
+  type: 'feature',
+  value: 'auto',
+  description: 'Support Apple Hierarchical Variable Font (HVF) format'
+               + ' on Apple platforms')
 
 option('error_strings',
   type: 'boolean',

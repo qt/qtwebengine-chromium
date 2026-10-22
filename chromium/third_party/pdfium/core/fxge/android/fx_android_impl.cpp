@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "core/fxcrt/check.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/android/cfpf_skiadevicemodule.h"
 #include "core/fxge/android/cfx_androidfontinfo.h"
@@ -16,13 +17,18 @@
 class CAndroidPlatform : public CFX_GEModule::PlatformIface {
  public:
   CAndroidPlatform() = default;
-  ~CAndroidPlatform() override {
-    if (device_module_) {
-      device_module_->Destroy();
-    }
+  ~CAndroidPlatform() override = default;
+
+  void Init() override {
+    CHECK(!device_module_);
+    device_module_ = CFPF_SkiaDeviceModule::GetOrCreate();
   }
 
-  void Init() override { device_module_ = CFPF_GetSkiaDeviceModule(); }
+  void Terminate() override {
+    CHECK(device_module_);
+    device_module_->Destroy();
+    device_module_ = nullptr;
+  }
 
   std::unique_ptr<SystemFontInfoIface> CreateDefaultSystemFontInfo() override {
     CFPF_SkiaFontMgr* font_mgr = device_module_->GetFontMgr();

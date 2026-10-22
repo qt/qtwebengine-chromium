@@ -11,6 +11,7 @@
 #include <mfapi.h>
 #include <mferror.h>
 #include <mftransform.h>
+#include <wrl/implements.h>
 
 #include <algorithm>
 #include <iterator>
@@ -212,6 +213,67 @@ bool IsOdd(int value) {
 
 }  // namespace
 
+// A proxy class that implements IMFAsyncCallback and routes the events back to
+// the MediaFoundationVideoEncodeAccelerator safely via a WeakPtr. This
+// decouples the encoder's lifetime from the OS callback's lifetime. If the
+// encoder is destroyed while a callback is pending, the WeakPtr will be
+// invalidated, and the posted task will be safely dropped, preventing a
+// use-after-free.
+class MFAsyncCallbackProxy
+    : public Microsoft::WRL::RuntimeClass<
+          Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
+          IMFAsyncCallback> {
+ public:
+  MFAsyncCallbackProxy(
+      scoped_refptr<base::SequencedTaskRunner> task_runner,
+      base::WeakPtr<MediaFoundationVideoEncodeAccelerator> parent)
+      : task_runner_(std::move(task_runner)),
+        parent_weak_ptr_(std::move(parent)) {}
+
+  ~MFAsyncCallbackProxy() override = default;
+
+  IFACEMETHODIMP GetParameters(DWORD* pdwFlags, DWORD* pdwQueue) override {
+    *pdwFlags = MFASYNC_FAST_IO_PROCESSING_CALLBACK;
+    *pdwQueue = MFASYNC_CALLBACK_QUEUE_TIMER;
+    return S_OK;
+  }
+
+  IFACEMETHODIMP Invoke(IMFAsyncResult* pAsyncResult) override {
+    MediaEventType event_type = MEUnknown;
+    HRESULT status = GetEvent(pAsyncResult, &event_type);
+
+    // Invoke() is called on some random OS thread, so we must post to our event
+    // handler since MediaFoundationVideoEncodeAccelerator is single threaded.
+    task_runner_->PostTask(
+        FROM_HERE,
+        base::BindOnce(
+            &MediaFoundationVideoEncodeAccelerator::MediaEventHandler,
+            parent_weak_ptr_, event_type, status));
+    return S_OK;
+  }
+
+ private:
+  HRESULT GetEvent(IMFAsyncResult* pAsyncResult, MediaEventType* event_type) {
+    Microsoft::WRL::ComPtr<IUnknown> state;
+    RETURN_IF_FAILED(pAsyncResult->GetState(&state));
+
+    Microsoft::WRL::ComPtr<IMFMediaEventGenerator> event_generator;
+    RETURN_IF_FAILED(state.As(&event_generator));
+
+    Microsoft::WRL::ComPtr<IMFMediaEvent> media_event;
+    RETURN_IF_FAILED(event_generator->EndGetEvent(pAsyncResult, &media_event));
+
+    RETURN_IF_FAILED(media_event->GetType(event_type));
+
+    HRESULT status = S_OK;
+    RETURN_IF_FAILED(media_event->GetStatus(&status));
+    return status;
+  }
+
+  scoped_refptr<base::SequencedTaskRunner> task_runner_;
+  base::WeakPtr<MediaFoundationVideoEncodeAccelerator> parent_weak_ptr_;
+};
+
 struct MediaFoundationVideoEncodeAccelerator::PendingInput {
   PendingInput() = default;
   ~PendingInput() = default;
@@ -280,7 +342,6 @@ MediaFoundationVideoEncodeAccelerator::
     ~MediaFoundationVideoEncodeAccelerator() {
   DVLOG(3) << __func__;
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK(async_callback_ref_.IsOne());
 }
 
 VideoEncodeAccelerator::SupportedProfiles
@@ -617,7 +678,16 @@ bool MediaFoundationVideoEncodeAccelerator::InitializeMFT(
     return false;
   }
 
-  event_generator_->BeginGetEvent(this, nullptr);
+  proxy_callback_ = Microsoft::WRL::Make<MFAsyncCallbackProxy>(
+      task_runner_, weak_factory_.GetWeakPtr());
+
+  hr = event_generator_->BeginGetEvent(proxy_callback_.Get(),
+                                       event_generator_.Get());
+  if (FAILED(hr)) {
+    NotifyErrorStatus({EncoderStatus::Codes::kEncoderInitializationError,
+                       "Couldn't begin get event: " + PrintHr(hr)});
+    return false;
+  }
 
   // Start the asynchronous processing model
   hr = encoder_->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
@@ -1030,7 +1100,15 @@ void MediaFoundationVideoEncodeAccelerator::UpdateFrameSize(
   DCHECK(activate_);
   DCHECK(encoder_);
   DCHECK_NE(input_visible_size_, frame_size);
-  DCHECK(pending_input_queue_.empty());
+
+  // This is not normally possible, but a compromised renderer could cause it
+  // to be reached.
+  if (!pending_input_queue_.empty()) {
+    NotifyErrorStatus({EncoderStatus::Codes::kEncoderIllegalState,
+                       "Can't change frame size when there are pending input "
+                       "frames"});
+    return;
+  }
 
   if (!IsFrameSizeAllowed(frame_size)) {
     NotifyErrorStatus({EncoderStatus::Codes::kEncoderUnsupportedConfig,
@@ -1794,9 +1872,6 @@ HRESULT MediaFoundationVideoEncodeAccelerator::ProcessInput(
     int temporal_id = 0;
     if (input.options.quantizer.has_value()) {
       int q_val = input.options.quantizer.value();
-      if (!base::FeatureList::IsEnabled(kStandardizeVP9AndAV1Quantizer)) {
-        q_val = QuantizerToQIndex(codec_, q_val);
-      }
       quantizer = std::clamp(q_val, 1, max_quantizer);
     } else if (rate_ctrl_ && !input.discard_output) {
       VideoRateControlWrapper::FrameParams frame_params{};
@@ -1887,7 +1962,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PopulateInputSampleBuffer(
     scoped_refptr<VideoFrame> frame) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto input_sample = input.input_sample;
-  if (!frame->HasMappableSharedImage() && !frame->IsMappable() &&
+  if (!frame->HasMappableSharedImage() && !frame->HasDirectCpuAccess() &&
       !input.generate_sample_on_wait_sync_token) {
     LOG(ERROR) << "Unsupported video frame storage type";
     return MF_E_INVALID_STREAM_DATA;
@@ -1953,11 +2028,11 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PopulateInputSampleBuffer(
     }
 
     // ConvertToMemoryMappedFrame() doesn't copy pixel data,
-    // it just maps GPU buffer owned by |frame| and presents it as mapped
+    // it just maps the mappable SI owned by |frame| and presents it as mapped
     // view in CPU memory. |frame| will unmap the buffer when destructed.
     frame = ConvertToMemoryMappedFrame(std::move(frame));
     if (!frame) {
-      LOG(ERROR) << "Failed to map shared memory GMB";
+      LOG(ERROR) << "Failed to map shared memory SI";
       return E_FAIL;
     }
   }
@@ -2107,7 +2182,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::CopyInputSampleBufferFromGpu(
     hr = device1->OpenSharedResource1(
         buffer_handle.dxgi_handle().buffer_handle(),
         IID_PPV_ARGS(&input_texture));
-    RETURN_ON_HR_FAILURE(hr, "Failed to open shared GMB D3D texture", hr);
+    RETURN_ON_HR_FAILURE(hr, "Failed to open SharedImage's D3D texture", hr);
   } else if (input.generate_sample_on_wait_sync_token) {
     DCHECK(input_sample);
     ComMFMediaBuffer texture_buffer;
@@ -2243,7 +2318,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PopulateInputSampleBufferGpu(
     hr = device1->OpenSharedResource1(
         buffer_handle.dxgi_handle().buffer_handle(),
         IID_PPV_ARGS(&input_texture));
-    RETURN_ON_HR_FAILURE(hr, "Failed to open shared GMB D3D texture", hr);
+    RETURN_ON_HR_FAILURE(hr, "Failed to open SharedImage's D3D texture", hr);
   } else if (input.generate_sample_on_wait_sync_token) {
     ComMFMediaBuffer texture_buffer;
     hr = input_sample->GetBufferByIndex(0, &texture_buffer);
@@ -2615,7 +2690,12 @@ void MediaFoundationVideoEncodeAccelerator::MediaEventHandler(
     default:
       break;
   }
-  event_generator_->BeginGetEvent(this, nullptr);
+  HRESULT hr = event_generator_->BeginGetEvent(proxy_callback_.Get(),
+                                               event_generator_.Get());
+  if (FAILED(hr)) {
+    NotifyErrorStatus({EncoderStatus::Codes::kSystemAPICallError,
+                       "Failed to begin get event: " + PrintHr(hr)});
+  }
 }
 
 void MediaFoundationVideoEncodeAccelerator::SetState(State state) {
@@ -2803,23 +2883,21 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PerformD3DScaling(
 HRESULT MediaFoundationVideoEncodeAccelerator::InitializeD3DCopying(
     ID3D11Texture2D* input_texture) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  D3D11_TEXTURE2D_DESC input_desc = {};
-  input_texture->GetDesc(&input_desc);
   // Return early if `copied_d3d11_texture_` is already the correct size,
   // avoiding the overhead of creating a new destination texture.
   if (copied_d3d11_texture_) {
     D3D11_TEXTURE2D_DESC copy_desc = {};
     copied_d3d11_texture_->GetDesc(&copy_desc);
-    if (input_desc.Width == copy_desc.Width &&
-        input_desc.Height == copy_desc.Height) {
+    if (static_cast<UINT>(input_visible_size_.width()) == copy_desc.Width &&
+        static_cast<UINT>(input_visible_size_.height()) == copy_desc.Height) {
       return S_OK;
     }
   }
   ComD3D11Device texture_device;
   input_texture->GetDevice(&texture_device);
   D3D11_TEXTURE2D_DESC copy_desc = {
-      .Width = input_desc.Width,
-      .Height = input_desc.Height,
+      .Width = static_cast<UINT>(input_visible_size_.width()),
+      .Height = static_cast<UINT>(input_visible_size_.height()),
       .MipLevels = 1,
       .ArraySize = 1,
       .Format = DXGI_FORMAT_NV12,
@@ -3002,49 +3080,6 @@ bool MediaFoundationVideoEncodeAccelerator::InitMFVideoProcessor() {
         vp_config, dxgi_device_manager_, media_log_->Clone());
   }
   return initialized;
-}
-
-HRESULT MediaFoundationVideoEncodeAccelerator::GetParameters(DWORD* pdwFlags,
-                                                             DWORD* pdwQueue) {
-  *pdwFlags = MFASYNC_FAST_IO_PROCESSING_CALLBACK;
-  *pdwQueue = MFASYNC_CALLBACK_QUEUE_TIMER;
-  return S_OK;
-}
-
-HRESULT MediaFoundationVideoEncodeAccelerator::Invoke(
-    IMFAsyncResult* pAsyncResult) {
-  ComMFMediaEvent media_event;
-  RETURN_IF_FAILED(event_generator_->EndGetEvent(pAsyncResult, &media_event));
-
-  MediaEventType event_type = MEUnknown;
-  RETURN_IF_FAILED(media_event->GetType(&event_type));
-
-  HRESULT status = S_OK;
-  media_event->GetStatus(&status);
-
-  // Invoke() is called on some random OS thread, so we must post to our event
-  // handler since MediaFoundationVideoEncodeAccelerator is single threaded.
-  task_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&MediaFoundationVideoEncodeAccelerator::MediaEventHandler,
-                     weak_ptr_, event_type, status));
-  return status;
-}
-
-ULONG MediaFoundationVideoEncodeAccelerator::AddRef() {
-  return async_callback_ref_.Increment();
-}
-
-ULONG MediaFoundationVideoEncodeAccelerator::Release() {
-  DCHECK(!async_callback_ref_.IsOne());
-  return async_callback_ref_.Decrement() ? 1 : 0;
-}
-
-HRESULT MediaFoundationVideoEncodeAccelerator::QueryInterface(REFIID riid,
-                                                              void** ppv) {
-  static const QITAB kQI[] = {
-      QITABENT(MediaFoundationVideoEncodeAccelerator, IMFAsyncCallback), {0}};
-  return QISearch(this, kQI, riid, ppv);
 }
 
 }  // namespace media

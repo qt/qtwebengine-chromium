@@ -41,7 +41,7 @@
 #include "utils/spirv_tools_utils.h"
 #include "containers/container_utils.h"
 
-bool CoreChecks::ValidateDeviceQueueFamily(uint32_t queue_family, const Location &loc, const char *vuid,
+bool CoreChecks::ValidateDeviceQueueFamily(uint32_t queue_family, const Location& loc, const char* vuid,
                                            bool optional = false) const {
     bool skip = false;
     if (!optional && queue_family == VK_QUEUE_FAMILY_IGNORED) {
@@ -59,8 +59,8 @@ bool CoreChecks::ValidateDeviceQueueFamily(uint32_t queue_family, const Location
 }
 
 // Validate the specified queue families against the families supported by the physical device that owns this device
-bool CoreChecks::ValidatePhysicalDeviceQueueFamilies(uint32_t queue_family_count, const uint32_t *queue_families,
-                                                     const Location &loc, const char *vuid) const {
+bool CoreChecks::ValidatePhysicalDeviceQueueFamilies(uint32_t queue_family_count, const uint32_t* queue_families,
+                                                     const Location& loc, const char* vuid) const {
     bool skip = false;
     if (queue_families) {
         vvl::unordered_set<uint32_t> set;
@@ -87,8 +87,8 @@ bool CoreChecks::ValidatePhysicalDeviceQueueFamilies(uint32_t queue_family_count
     return skip;
 }
 
-bool CoreChecks::GetPhysicalDeviceImageFormatProperties(vvl::Image &image_state, const char *vuid_string,
-                                                        const Location &loc) const {
+bool CoreChecks::GetPhysicalDeviceImageFormatProperties(vvl::Image& image_state, const char* vuid_string,
+                                                        const Location& loc) const {
     bool skip = false;
     const auto image_create_info = image_state.create_info;
     VkResult image_properties_result = VK_SUCCESS;
@@ -121,8 +121,8 @@ bool CoreChecks::GetPhysicalDeviceImageFormatProperties(vvl::Image &image_state,
     return skip;
 }
 
-bool CoreChecks::ValidateDeviceMaskToPhysicalDeviceCount(uint32_t deviceMask, const LogObjectList &objlist, const Location &loc,
-                                                         const char *vuid) const {
+bool CoreChecks::ValidateDeviceMaskToPhysicalDeviceCount(uint32_t deviceMask, const LogObjectList& objlist, const Location& loc,
+                                                         const char* vuid) const {
     bool skip = false;
     uint32_t count = 1 << device_state->physical_device_count;
     if (count <= deviceMask) {
@@ -132,8 +132,8 @@ bool CoreChecks::ValidateDeviceMaskToPhysicalDeviceCount(uint32_t deviceMask, co
     return skip;
 }
 
-bool CoreChecks::ValidateDeviceMaskToZero(uint32_t deviceMask, const LogObjectList &objlist, const Location &loc,
-                                          const char *vuid) const {
+bool CoreChecks::ValidateDeviceMaskToZero(uint32_t deviceMask, const LogObjectList& objlist, const Location& loc,
+                                          const char* vuid) const {
     bool skip = false;
     if (deviceMask == 0) {
         skip |= LogError(vuid, objlist, loc, "is zero.");
@@ -141,8 +141,8 @@ bool CoreChecks::ValidateDeviceMaskToZero(uint32_t deviceMask, const LogObjectLi
     return skip;
 }
 
-bool CoreChecks::ValidateDeviceMaskToCommandBuffer(const vvl::CommandBuffer &cb_state, uint32_t deviceMask,
-                                                   const LogObjectList &objlist, const Location &loc, const char *vuid) const {
+bool CoreChecks::ValidateDeviceMaskToCommandBuffer(const vvl::CommandBuffer& cb_state, uint32_t deviceMask,
+                                                   const LogObjectList& objlist, const Location& loc, const char* vuid) const {
     bool skip = false;
     if ((deviceMask & cb_state.initial_device_mask) != deviceMask) {
         skip |= LogError(vuid, objlist, loc, "(0x%" PRIx32 ") is not a subset of %s initial device mask (0x%" PRIx32 ").",
@@ -151,8 +151,8 @@ bool CoreChecks::ValidateDeviceMaskToCommandBuffer(const vvl::CommandBuffer &cb_
     return skip;
 }
 
-bool CoreChecks::ValidateDeviceMaskToRenderPass(const vvl::CommandBuffer &cb_state, uint32_t deviceMask, const Location &loc,
-                                                const char *vuid) const {
+bool CoreChecks::ValidateDeviceMaskToRenderPass(const vvl::CommandBuffer& cb_state, uint32_t deviceMask, const Location& loc,
+                                                const char* vuid) const {
     bool skip = false;
     if (cb_state.active_render_pass && ((deviceMask & cb_state.render_pass_device_mask) != deviceMask)) {
         skip |= LogError(vuid, cb_state.Handle(), loc, "(0x%" PRIx32 ") is not a subset of %s device mask (0x%" PRIx32 ").",
@@ -161,12 +161,12 @@ bool CoreChecks::ValidateDeviceMaskToRenderPass(const vvl::CommandBuffer &cb_sta
     return skip;
 }
 
-bool core::Instance::ValidateQueueFamilyIndex(const vvl::PhysicalDevice &pd_state, uint32_t requested_queue_family,
-                                              const char *vuid, const Location &loc) const {
+bool core::Instance::ValidateQueueFamilyIndex(const vvl::PhysicalDevice& pd_state, uint32_t requested_queue_family,
+                                              const char* vuid, const Location& loc) const {
     bool skip = false;
 
     if (requested_queue_family >= pd_state.queue_family_known_count) {
-        const char *conditional_ext_cmd =
+        const char* conditional_ext_cmd =
             extensions.vk_khr_get_physical_device_properties2 ? " or vkGetPhysicalDeviceQueueFamilyProperties2[KHR]" : "";
 
         skip |= LogError(vuid, pd_state.Handle(), loc,
@@ -178,8 +178,9 @@ bool core::Instance::ValidateQueueFamilyIndex(const vvl::PhysicalDevice &pd_stat
     return skip;
 }
 
-bool core::Instance::ValidateDeviceQueueCreateInfos(const vvl::PhysicalDevice &pd_state, uint32_t info_count,
-                                                    const VkDeviceQueueCreateInfo *infos, const Location &loc) const {
+bool core::Instance::ValidateDeviceQueueCreateInfos(const vvl::PhysicalDevice& pd_state, uint32_t info_count,
+                                                    const VkDeviceQueueCreateInfo* infos, const void* pNext,
+                                                    const Location& loc) const {
     bool skip = false;
 
     vvl::unordered_map<uint32_t, std::pair<uint32_t, VkDeviceQueueCreateFlags>> queue_family_map;
@@ -212,7 +213,7 @@ bool core::Instance::ValidateDeviceQueueCreateInfos(const vvl::PhysicalDevice &p
         }
 
         VkQueueGlobalPriority global_priority = VK_QUEUE_GLOBAL_PRIORITY_MEDIUM;  // Implicit default value
-        const auto *global_priority_ci = vku::FindStructInPNextChain<VkDeviceQueueGlobalPriorityCreateInfo>(infos[i].pNext);
+        const auto* global_priority_ci = vku::FindStructInPNextChain<VkDeviceQueueGlobalPriorityCreateInfo>(infos[i].pNext);
         if (global_priority_ci) {
             global_priority = global_priority_ci->globalPriority;
         }
@@ -232,11 +233,23 @@ bool core::Instance::ValidateDeviceQueueCreateInfos(const vvl::PhysicalDevice &p
         const VkQueueFamilyProperties requested_queue_family_props = pd_state.queue_family_properties[requested_queue_family];
 
         // if using protected flag, make sure queue supports it
-        if ((flags & VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT) && ((requested_queue_family_props.queueFlags & VK_QUEUE_PROTECTED_BIT) == 0)) {
+        if ((flags & VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT) &&
+            ((requested_queue_family_props.queueFlags & VK_QUEUE_PROTECTED_BIT) == 0)) {
             skip |= LogError("VUID-VkDeviceQueueCreateInfo-flags-06449", pd_state.Handle(), info_loc.dot(Field::queueFamilyIndex),
                              "(%" PRIu32 ") does not have VK_QUEUE_PROTECTED_BIT supported, but pQueueCreateInfos[%" PRIu32
                              "].flags has VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT.",
                              requested_queue_family, i);
+        }
+
+        if (flags & VK_DEVICE_QUEUE_CREATE_INTERNALLY_SYNCHRONIZED_BIT_KHR) {
+            const auto* isq_features = vku::FindStructInPNextChain<VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR>(pNext);
+            if (!isq_features || !isq_features->internallySynchronizedQueues) {
+                skip |= LogError(
+                    "VUID-VkDeviceQueueCreateInfo-internallySynchronizedQueues-12348", pd_state.Handle(),
+                    info_loc.dot(Field::flags),
+                    "has VK_DEVICE_QUEUE_CREATE_INTERNALLY_SYNCHRONIZED_BIT_KHR bit set, but "
+                    "VkPhysicalDeviceInternallySynchronizedQueuesFeaturesKHR::internallySynchronizedQueues is not enabled.");
+            }
         }
 
         // Verify that requested queue count of queue family is known to be valid at this point in time
@@ -247,7 +260,7 @@ bool core::Instance::ValidateDeviceQueueCreateInfos(const vvl::PhysicalDevice &p
             const uint32_t available_queue_count = queue_family_has_props ? requested_queue_family_props.queueCount : 1;
 
             if (requested_queue_count > available_queue_count) {
-                const char *conditional_ext_cmd =
+                const char* conditional_ext_cmd =
                     extensions.vk_khr_get_physical_device_properties2 ? " or vkGetPhysicalDeviceQueueFamilyProperties2[KHR]" : "";
                 const std::string count_note =
                     queue_family_has_props
@@ -280,9 +293,9 @@ bool core::Instance::ValidateDeviceQueueCreateInfos(const vvl::PhysicalDevice &p
     return skip;
 }
 
-bool core::Instance::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkDeviceCreateInfo *pCreateInfo,
-                                                 const VkAllocationCallbacks *pAllocator, VkDevice *pDevice,
-                                                 const ErrorObject &error_obj) const {
+bool core::Instance::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkDeviceCreateInfo* pCreateInfo,
+                                                 const VkAllocationCallbacks* pAllocator, VkDevice* pDevice,
+                                                 const ErrorObject& error_obj) const {
     bool skip = false;
     // TODO: object_tracker should perhaps do this instead
     //       and it does not seem to currently work anyway -- the loader just crashes before this point
@@ -301,12 +314,12 @@ bool core::Instance::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkD
     }
 
     skip |= ValidateDeviceQueueCreateInfos(*pd_state, pCreateInfo->queueCreateInfoCount, pCreateInfo->pQueueCreateInfos,
-                                           error_obj.location.dot(Field::pCreateInfo));
+                                           pCreateInfo->pNext, error_obj.location.dot(Field::pCreateInfo));
     return skip;
 }
 
-void CoreChecks::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) {
-    BaseClass::FinishDeviceSetup(pCreateInfo, loc);
+void CoreChecks::FinishDeviceSetup(const VkDeviceCreateInfo* pCreateInfo, const Location& loc) {
+    vvl::DeviceProxy::FinishDeviceSetup(pCreateInfo, loc);
 
     spirv_environment = PickSpirvEnv(api_version, IsExtEnabled(extensions.vk_khr_spirv_1_4));
     AdjustValidatorOptions(extensions, enabled_features, spirv_environment, spirv_val_options, &spirv_val_option_hash,
@@ -340,20 +353,20 @@ void CoreChecks::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const 
     }
 }
 
-void CoreChecks::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationCallbacks *pAllocator,
-                                            const RecordObject &record_obj) {
+void CoreChecks::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationCallbacks* pAllocator,
+                                            const RecordObject& record_obj) {
     if (!device) return;
 
-    BaseClass::PreCallRecordDestroyDevice(device, pAllocator, record_obj);
+    vvl::DeviceProxy::PreCallRecordDestroyDevice(device, pAllocator, record_obj);
 
     if (core_validation_cache) {
         Location loc(Func::vkDestroyDevice);
         size_t validation_cache_size = 0;
-        void *validation_cache_data = nullptr;
+        void* validation_cache_data = nullptr;
 
         CoreLayerGetValidationCacheDataEXT(device, core_validation_cache, &validation_cache_size, nullptr);
 
-        validation_cache_data = (char *)malloc(sizeof(char) * validation_cache_size);
+        validation_cache_data = (char*)malloc(sizeof(char) * validation_cache_size);
         if (!validation_cache_data) {
             LogInfo("WARNING-cache-memory-error", device, loc, "Validation Cache Memory Error");
             return;
@@ -371,7 +384,7 @@ void CoreChecks::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationC
         if (validation_cache_path.size() > 0) {
             std::ofstream write_file(validation_cache_path.c_str(), std::ios::out | std::ios::binary);
             if (write_file) {
-                write_file.write(static_cast<char *>(validation_cache_data), validation_cache_size);
+                write_file.write(static_cast<char*>(validation_cache_data), validation_cache_size);
                 write_file.close();
             } else {
                 LogInfo("WARNING-cache-write-error", device, loc, "Cannot open shader validation cache at %s for writing",
@@ -383,8 +396,8 @@ void CoreChecks::PreCallRecordDestroyDevice(VkDevice device, const VkAllocationC
     }
 }
 
-bool CoreChecks::PreCallValidateGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue *pQueue,
-                                               const ErrorObject &error_obj) const {
+bool CoreChecks::PreCallValidateGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue,
+                                               const ErrorObject& error_obj) const {
     bool skip = false;
 
     skip |= ValidateDeviceQueueFamily(queueFamilyIndex, error_obj.location.dot(Field::queueFamilyIndex),
@@ -416,8 +429,8 @@ bool CoreChecks::PreCallValidateGetDeviceQueue(VkDevice device, uint32_t queueFa
     return skip;
 }
 
-bool CoreChecks::PreCallValidateGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2 *pQueueInfo, VkQueue *pQueue,
-                                                const ErrorObject &error_obj) const {
+bool CoreChecks::PreCallValidateGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo, VkQueue* pQueue,
+                                                const ErrorObject& error_obj) const {
     bool skip = false;
 
     if (pQueueInfo) {
@@ -465,11 +478,11 @@ bool CoreChecks::PreCallValidateGetDeviceQueue2(VkDevice device, const VkDeviceQ
 }
 
 bool core::Instance::ValidateGetPhysicalDeviceImageFormatProperties2(VkPhysicalDevice gpu,
-                                                                     const VkPhysicalDeviceImageFormatInfo2 *pImageFormatInfo,
-                                                                     VkImageFormatProperties2 *pImageFormatProperties,
-                                                                     const ErrorObject &error_obj) const {
+                                                                     const VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo,
+                                                                     VkImageFormatProperties2* pImageFormatProperties,
+                                                                     const ErrorObject& error_obj) const {
     bool skip = false;
-    const auto *copy_perf_query = vku::FindStructInPNextChain<VkHostImageCopyDevicePerformanceQuery>(pImageFormatProperties->pNext);
+    const auto* copy_perf_query = vku::FindStructInPNextChain<VkHostImageCopyDevicePerformanceQuery>(pImageFormatProperties->pNext);
     if (copy_perf_query) {
         if ((pImageFormatInfo->usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT) == 0) {
             skip |= LogError("VUID-vkGetPhysicalDeviceImageFormatProperties2-pNext-09004", gpu, error_obj.location,
@@ -483,8 +496,8 @@ bool core::Instance::ValidateGetPhysicalDeviceImageFormatProperties2(VkPhysicalD
 }
 
 bool core::Instance::PreCallValidateGetPhysicalDeviceImageFormatProperties2(
-    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceImageFormatInfo2 *pImageFormatInfo,
-    VkImageFormatProperties2 *pImageFormatProperties, const ErrorObject &error_obj) const {
+    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo,
+    VkImageFormatProperties2* pImageFormatProperties, const ErrorObject& error_obj) const {
     // Can't wrap AHB-specific validation in a device extension check here, but no harm
     bool skip = false;
     skip |=
@@ -494,8 +507,8 @@ bool core::Instance::PreCallValidateGetPhysicalDeviceImageFormatProperties2(
 }
 
 bool core::Instance::PreCallValidateGetPhysicalDeviceImageFormatProperties2KHR(
-    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceImageFormatInfo2 *pImageFormatInfo,
-    VkImageFormatProperties2 *pImageFormatProperties, const ErrorObject &error_obj) const {
+    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceImageFormatInfo2* pImageFormatInfo,
+    VkImageFormatProperties2* pImageFormatProperties, const ErrorObject& error_obj) const {
     return PreCallValidateGetPhysicalDeviceImageFormatProperties2(physicalDevice, pImageFormatInfo, pImageFormatProperties,
                                                                   error_obj);
 }
@@ -520,32 +533,32 @@ VkFormatProperties3 CoreChecks::GetPDFormatProperties(const VkFormat format) con
     return fmt_props_3;
 }
 
-VkResult CoreChecks::CoreLayerCreateValidationCacheEXT(VkDevice device, const VkValidationCacheCreateInfoEXT *pCreateInfo,
-                                                       const VkAllocationCallbacks *pAllocator,
-                                                       VkValidationCacheEXT *pValidationCache) {
+VkResult CoreChecks::CoreLayerCreateValidationCacheEXT(VkDevice device, const VkValidationCacheCreateInfoEXT* pCreateInfo,
+                                                       const VkAllocationCallbacks* pAllocator,
+                                                       VkValidationCacheEXT* pValidationCache) {
     *pValidationCache = ValidationCache::Create(pCreateInfo, spirv_val_option_hash);
     return *pValidationCache ? VK_SUCCESS : VK_ERROR_INITIALIZATION_FAILED;
 }
 
 void CoreChecks::CoreLayerDestroyValidationCacheEXT(VkDevice device, VkValidationCacheEXT validationCache,
-                                                    const VkAllocationCallbacks *pAllocator) {
-    delete CastFromHandle<ValidationCache *>(validationCache);
+                                                    const VkAllocationCallbacks* pAllocator) {
+    delete CastFromHandle<ValidationCache*>(validationCache);
 }
 
-VkResult CoreChecks::CoreLayerGetValidationCacheDataEXT(VkDevice device, VkValidationCacheEXT validationCache, size_t *pDataSize,
-                                                        void *pData) {
+VkResult CoreChecks::CoreLayerGetValidationCacheDataEXT(VkDevice device, VkValidationCacheEXT validationCache, size_t* pDataSize,
+                                                        void* pData) {
     size_t in_size = *pDataSize;
-    CastFromHandle<ValidationCache *>(validationCache)->Write(pDataSize, pData);
+    CastFromHandle<ValidationCache*>(validationCache)->Write(pDataSize, pData);
     return (pData && *pDataSize != in_size) ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
 VkResult CoreChecks::CoreLayerMergeValidationCachesEXT(VkDevice device, VkValidationCacheEXT dstCache, uint32_t srcCacheCount,
-                                                       const VkValidationCacheEXT *pSrcCaches) {
+                                                       const VkValidationCacheEXT* pSrcCaches) {
     bool skip = false;
-    auto dst = CastFromHandle<ValidationCache *>(dstCache);
+    auto dst = CastFromHandle<ValidationCache*>(dstCache);
     VkResult result = VK_SUCCESS;
     for (uint32_t i = 0; i < srcCacheCount; i++) {
-        auto src = CastFromHandle<const ValidationCache *>(pSrcCaches[i]);
+        auto src = CastFromHandle<const ValidationCache*>(pSrcCaches[i]);
         if (src == dst) {
             const Location loc(Func::vkMergePipelineCaches, Field::dstCache);
             skip |= LogError("VUID-vkMergeValidationCachesEXT-dstCache-01536", device, loc,
@@ -561,13 +574,11 @@ VkResult CoreChecks::CoreLayerMergeValidationCachesEXT(VkDevice device, VkValida
 }
 
 bool CoreChecks::PreCallValidateCmdSetDeviceMask(VkCommandBuffer commandBuffer, uint32_t deviceMask,
-                                                 const ErrorObject &error_obj) const {
+                                                 const ErrorObject& error_obj) const {
     bool skip = false;
     auto cb_state_ptr = GetRead<vvl::CommandBuffer>(commandBuffer);
-    if (!cb_state_ptr) {
-        return skip;
-    }
-    const vvl::CommandBuffer &cb_state = *cb_state_ptr;
+
+    const vvl::CommandBuffer& cb_state = *cb_state_ptr;
     const LogObjectList objlist(commandBuffer);
     skip |= ValidateCmd(cb_state, error_obj.location);
     const Location loc = error_obj.location.dot(Field::deviceMask);
@@ -579,20 +590,20 @@ bool CoreChecks::PreCallValidateCmdSetDeviceMask(VkCommandBuffer commandBuffer, 
 }
 
 bool CoreChecks::PreCallValidateCmdSetDeviceMaskKHR(VkCommandBuffer commandBuffer, uint32_t deviceMask,
-                                                    const ErrorObject &error_obj) const {
+                                                    const ErrorObject& error_obj) const {
     return PreCallValidateCmdSetDeviceMask(commandBuffer, deviceMask, error_obj);
 }
 
-bool CoreChecks::PreCallValidateCreatePrivateDataSlotEXT(VkDevice device, const VkPrivateDataSlotCreateInfoEXT *pCreateInfo,
-                                                         const VkAllocationCallbacks *pAllocator,
-                                                         VkPrivateDataSlotEXT *pPrivateDataSlot,
-                                                         const ErrorObject &error_obj) const {
+bool CoreChecks::PreCallValidateCreatePrivateDataSlotEXT(VkDevice device, const VkPrivateDataSlotCreateInfoEXT* pCreateInfo,
+                                                         const VkAllocationCallbacks* pAllocator,
+                                                         VkPrivateDataSlotEXT* pPrivateDataSlot,
+                                                         const ErrorObject& error_obj) const {
     return PreCallValidateCreatePrivateDataSlot(device, pCreateInfo, pAllocator, pPrivateDataSlot, error_obj);
 }
 
-bool CoreChecks::PreCallValidateCreatePrivateDataSlot(VkDevice device, const VkPrivateDataSlotCreateInfo *pCreateInfo,
-                                                      const VkAllocationCallbacks *pAllocator, VkPrivateDataSlot *pPrivateDataSlot,
-                                                      const ErrorObject &error_obj) const {
+bool CoreChecks::PreCallValidateCreatePrivateDataSlot(VkDevice device, const VkPrivateDataSlotCreateInfo* pCreateInfo,
+                                                      const VkAllocationCallbacks* pAllocator, VkPrivateDataSlot* pPrivateDataSlot,
+                                                      const ErrorObject& error_obj) const {
     bool skip = false;
     if (!enabled_features.privateData) {
         skip |= LogError("VUID-vkCreatePrivateDataSlot-privateData-04564", device, error_obj.location,
@@ -601,9 +612,9 @@ bool CoreChecks::PreCallValidateCreatePrivateDataSlot(VkDevice device, const VkP
     return skip;
 }
 
-bool CoreChecks::PreCallValidateCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo *pCreateInfo,
-                                                  const VkAllocationCallbacks *pAllocator, VkCommandPool *pCommandPool,
-                                                  const ErrorObject &error_obj) const {
+bool CoreChecks::PreCallValidateCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo* pCreateInfo,
+                                                  const VkAllocationCallbacks* pAllocator, VkCommandPool* pCommandPool,
+                                                  const ErrorObject& error_obj) const {
     bool skip = false;
     const Location create_info_loc = error_obj.location.dot(Field::pCreateInfo);
     skip |= ValidateDeviceQueueFamily(pCreateInfo->queueFamilyIndex, create_info_loc.dot(Field::queueFamilyIndex),
@@ -617,7 +628,7 @@ bool CoreChecks::PreCallValidateCreateCommandPool(VkDevice device, const VkComma
 }
 
 bool CoreChecks::PreCallValidateDestroyCommandPool(VkDevice device, VkCommandPool commandPool,
-                                                   const VkAllocationCallbacks *pAllocator, const ErrorObject &error_obj) const {
+                                                   const VkAllocationCallbacks* pAllocator, const ErrorObject& error_obj) const {
     bool skip = false;
     if (is_device_lost) {
         return skip;  // In case of DEVICE_LOST, all execution is considered over
@@ -629,7 +640,7 @@ bool CoreChecks::PreCallValidateDestroyCommandPool(VkDevice device, VkCommandPoo
     }
 
     // Verify that command buffers in pool are complete (not in-flight)
-    for (auto &entry : cp_state->commandBuffers) {
+    for (auto& entry : cp_state->commandBuffers) {
         auto cb_state = entry.second;
         if (cb_state->InUse()) {
             const LogObjectList objlist(cb_state->Handle(), commandPool);
@@ -641,12 +652,12 @@ bool CoreChecks::PreCallValidateDestroyCommandPool(VkDevice device, VkCommandPoo
 }
 
 bool CoreChecks::PreCallValidateResetCommandPool(VkDevice device, VkCommandPool commandPool, VkCommandPoolResetFlags flags,
-                                                 const ErrorObject &error_obj) const {
+                                                 const ErrorObject& error_obj) const {
     bool skip = false;
     auto cp_state = Get<vvl::CommandPool>(commandPool);
     ASSERT_AND_RETURN_SKIP(cp_state);
     // Verify that command buffers in pool are complete (not in-flight)
-    for (auto &entry : cp_state->commandBuffers) {
+    for (auto& entry : cp_state->commandBuffers) {
         auto cb_state = entry.second;
         if (cb_state->InUse()) {
             const LogObjectList objlist(cb_state->Handle(), commandPool);
@@ -657,36 +668,52 @@ bool CoreChecks::PreCallValidateResetCommandPool(VkDevice device, VkCommandPool 
     return skip;
 }
 
-// For given obj node, if it is use, flag a validation error and return callback result, else return false
-bool CoreChecks::ValidateObjectNotInUse(const vvl::StateObject *obj_node, const Location &loc, const char *error_code) const {
-    if (disabled[object_in_use]) {
-        return false;
-    } else if (is_device_lost) {
-        return false;  // In case of DEVICE_LOST, all execution is considered over
-    }
+bool CoreChecks::ValidateObjectNotInUse(const vvl::StateObject* obj_node, const Location& loc, const char* error_code) const {
     bool skip = false;
-
-    const VulkanTypedHandle &obj_struct = obj_node->Handle();
-    const VulkanTypedHandle *used_handle = obj_node->InUse();
-    if (used_handle) {
-        skip |= LogError(error_code, device, loc, "can't be called on %s that is currently in use by %s.",
-                         FormatHandle(obj_struct).c_str(), FormatHandle(*used_handle).c_str());
+    if (disabled[object_in_use]) {
+        return skip;
     }
+    if (is_device_lost) {
+        return skip;  // In case of DEVICE_LOST, all execution is considered over
+    }
+    const VulkanTypedHandle* user_handle = obj_node->InUse();
+    if (!user_handle) {
+        return skip;
+    }
+
+    const VulkanTypedHandle& obj_handle = obj_node->Handle();
+
+    // Special case for a swapchain when there are no pending present queue operations,
+    // but a swapchain image is still in use by a submitted command buffer.
+    // NOTE: the common scenario where a swapchain is used by queue present operations
+    // is handled by the general error message below (the user handle has type Queue then).
+    if (obj_handle.type == kVulkanObjectTypeSwapchainKHR && user_handle->type == kVulkanObjectTypeImage) {
+        if (auto swapchain_image = Get<vvl::Image>(user_handle->Cast<VkImage>())) {
+            const VulkanTypedHandle* image_user_handle = swapchain_image->InUse();
+            skip |= LogError(error_code, device, loc, "can't be called on %s that has its %s in use by %s.",
+                             FormatHandle(obj_handle).c_str(), FormatHandle(*user_handle).c_str(),
+                             FormatHandle(*image_user_handle).c_str());
+            return skip;
+        }
+    }
+
+    skip |= LogError(error_code, device, loc, "can't be called on %s that is currently in use by %s.",
+                     FormatHandle(obj_handle).c_str(), FormatHandle(*user_handle).c_str());
     return skip;
 }
 
 bool CoreChecks::PreCallValidateGetCalibratedTimestampsEXT(VkDevice device, uint32_t timestampCount,
-                                                           const VkCalibratedTimestampInfoEXT *pTimestampInfos,
-                                                           uint64_t *pTimestamps, uint64_t *pMaxDeviation,
-                                                           const ErrorObject &error_obj) const {
+                                                           const VkCalibratedTimestampInfoEXT* pTimestampInfos,
+                                                           uint64_t* pTimestamps, uint64_t* pMaxDeviation,
+                                                           const ErrorObject& error_obj) const {
     return PreCallValidateGetCalibratedTimestampsKHR(device, timestampCount, pTimestampInfos, pTimestamps, pMaxDeviation,
                                                      error_obj);
 }
 
 bool CoreChecks::PreCallValidateGetCalibratedTimestampsKHR(VkDevice device, uint32_t timestampCount,
-                                                           const VkCalibratedTimestampInfoKHR *pTimestampInfos,
-                                                           uint64_t *pTimestamps, uint64_t *pMaxDeviation,
-                                                           const ErrorObject &error_obj) const {
+                                                           const VkCalibratedTimestampInfoKHR* pTimestampInfos,
+                                                           uint64_t* pTimestamps, uint64_t* pMaxDeviation,
+                                                           const ErrorObject& error_obj) const {
     bool skip = false;
 
     auto query_function = (error_obj.location.function == Func::vkGetCalibratedTimestampsKHR)
@@ -697,11 +724,19 @@ bool CoreChecks::PreCallValidateGetCalibratedTimestampsKHR(VkDevice device, uint
     std::vector<VkTimeDomainKHR> valid_time_domains(count);
     query_function(physical_device, &count, valid_time_domains.data());
 
-    vvl::unordered_map<VkTimeDomainKHR, uint32_t> time_domain_map;
+    vvl::unordered_map<VkTimeDomainKHR, VkPresentStageFlagsEXT> time_domain_map;
     for (uint32_t i = 0; i < timestampCount; i++) {
         const VkTimeDomainKHR time_domain = pTimestampInfos[i].timeDomain;
+
+        // The VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT domain can be duplicated if the present stage is different
+        const auto* present_stage_info =
+            vku::FindStructInPNextChain<VkSwapchainCalibratedTimestampInfoEXT>(pTimestampInfos[i].pNext);
+        const VkPresentStageFlagsEXT present_stage = (time_domain == VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT && present_stage_info)
+                                                         ? present_stage_info->presentStage
+                                                         : vvl::kU32Max;
+
         auto it = time_domain_map.find(time_domain);
-        if (it != time_domain_map.end()) {
+        if (it != time_domain_map.end() && (it->second & present_stage) != 0) {
             skip |= LogError("VUID-vkGetCalibratedTimestampsKHR-timeDomain-09246", device,
                              error_obj.location.dot(Field::pTimestampInfos, i).dot(Field::timeDomain),
                              "and pTimestampInfos[%" PRIu32 "].timeDomain are both %s.", it->second,
@@ -712,15 +747,15 @@ bool CoreChecks::PreCallValidateGetCalibratedTimestampsKHR(VkDevice device, uint
                              error_obj.location.dot(Field::pTimestampInfos, i).dot(Field::timeDomain), "is %s.",
                              string_VkTimeDomainKHR(time_domain));
         }
-        time_domain_map[time_domain] = i;
+        time_domain_map[time_domain] |= present_stage;
     }
     return skip;
 }
 
 // These were all added from https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/6672
-bool CoreChecks::ValidateDeviceQueueSupport(const Location &loc) const {
+bool CoreChecks::ValidateDeviceQueueSupport(const Location& loc) const {
     bool skip = false;
-    const char *vuid = kVUIDUndefined;
+    const char* vuid = kVUIDUndefined;
     VkQueueFlags flags = 0;
 
     switch (loc.function) {
@@ -800,8 +835,8 @@ bool CoreChecks::ValidateDeviceQueueSupport(const Location &loc) const {
     return skip;
 }
 
-bool CoreChecks::PreCallValidateGetDeviceFaultInfoEXT(VkDevice device, VkDeviceFaultCountsEXT *pFaultCounts,
-                                                      VkDeviceFaultInfoEXT *pFaultInfo, const ErrorObject &error_obj) const {
+bool CoreChecks::PreCallValidateGetDeviceFaultInfoEXT(VkDevice device, VkDeviceFaultCountsEXT* pFaultCounts,
+                                                      VkDeviceFaultInfoEXT* pFaultInfo, const ErrorObject& error_obj) const {
     bool skip = false;
     if (!is_device_lost) {
         skip |= LogError("VUID-vkGetDeviceFaultInfoEXT-device-07336", device, error_obj.location,
@@ -810,11 +845,20 @@ bool CoreChecks::PreCallValidateGetDeviceFaultInfoEXT(VkDevice device, VkDeviceF
     return skip;
 }
 
-bool CoreChecks::PreCallValidateCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR *pCreateInfo,
-                                                          const VkAllocationCallbacks *pAllocator,
-                                                          VkPipelineBinaryHandlesInfoKHR *pBinaries,
-                                                          const ErrorObject &error_obj) const {
+bool CoreChecks::PreCallValidateGetDeviceFaultDebugInfoKHR(VkDevice device, VkDeviceFaultDebugInfoKHR* pDebugInfo,
+                                                           const ErrorObject& error_obj) const {
+    bool skip = false;
+    if (!is_device_lost) {
+        skip |= LogError("VUID-vkGetDeviceFaultDebugInfoKHR-device-12383", device, error_obj.location,
+                         "device has not been found to be in a lost state.");
+    }
+    return skip;
+}
 
+bool CoreChecks::PreCallValidateCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo,
+                                                          const VkAllocationCallbacks* pAllocator,
+                                                          VkPipelineBinaryHandlesInfoKHR* pBinaries,
+                                                          const ErrorObject& error_obj) const {
     bool skip = false;
 
     uint32_t pointerCount = 0;
@@ -842,7 +886,7 @@ bool CoreChecks::PreCallValidateCreatePipelineBinariesKHR(VkDevice device, const
     }
 
     if (pCreateInfo->pPipelineCreateInfo != nullptr) {
-        auto *props = &phys_dev_ext_props.pipeline_binary_props;
+        auto* props = &phys_dev_ext_props.pipeline_binary_props;
 
         if (!props->pipelineBinaryInternalCache) {
             skip |=
@@ -855,7 +899,7 @@ bool CoreChecks::PreCallValidateCreatePipelineBinariesKHR(VkDevice device, const
                              create_info_loc.dot(Field::pPipelineCreateInfo), "is not NULL, but disableInternalCache is true.");
         }
 
-        const auto *binary_info = vku::FindStructInPNextChain<VkPipelineBinaryInfoKHR>(pCreateInfo->pPipelineCreateInfo);
+        const auto* binary_info = vku::FindStructInPNextChain<VkPipelineBinaryInfoKHR>(pCreateInfo->pPipelineCreateInfo);
         if (binary_info && (binary_info->binaryCount > 0)) {
             skip |= LogError("VUID-VkPipelineBinaryCreateInfoKHR-pPipelineCreateInfo-09606", device,
                              create_info_loc.dot(Field::pPipelineCreateInfo).dot(Field::binaryCount), "(%" PRIu32 ") is not zero",

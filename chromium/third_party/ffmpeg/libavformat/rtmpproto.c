@@ -362,7 +362,7 @@ static int gen_connect(URLContext *s, RTMPContext *rt)
         // check the string, fourcc + ',' + ...  + end fourcc correct length should be (4+1)*n+4
         if ((fourcc_str_len + 1) % 5 != 0) {
             av_log(s, AV_LOG_ERROR, "Malformed rtmp_enhanched_codecs, "
-                   "should be of the form hvc1[,av01][,vp09][,...]\n");
+                   "should be of the form hvc1[,av01][,vp09][,vvc1][,...]\n");
             ff_rtmp_packet_destroy(&pkt);
             return AVERROR(EINVAL);
         }
@@ -379,6 +379,7 @@ static int gen_connect(URLContext *s, RTMPContext *rt)
                 !strncmp(fourcc_data, "ec-3", 4) ||
                 !strncmp(fourcc_data, "fLaC", 4) ||
                 !strncmp(fourcc_data, "hvc1", 4) ||
+                !strncmp(fourcc_data, "vvc1", 4) ||
                 !strncmp(fourcc_data, ".mp3", 4) ||
                 !strncmp(fourcc_data, "mp4a", 4) ||
                 !strncmp(fourcc_data, "Opus", 4) ||
@@ -2735,7 +2736,8 @@ static int rtmp_open(URLContext *s, const char *uri, int flags, AVDictionary **o
         if (rt->listen)
             ff_url_join(buf, sizeof(buf), "tcp", NULL, hostname, port,
                         "?listen&listen_timeout=%d&tcp_nodelay=%d",
-                        rt->listen_timeout * 1000, rt->tcp_nodelay);
+                        rt->listen_timeout < 0 ? -1 : rt->listen_timeout * 1000,
+                        rt->tcp_nodelay);
         else
             ff_url_join(buf, sizeof(buf), "tcp", NULL, hostname, port, "?tcp_nodelay=%d", rt->tcp_nodelay);
     }

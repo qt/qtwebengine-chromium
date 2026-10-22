@@ -107,7 +107,7 @@ export class NodeChildTargetManager extends SDK.SDKModel.SDKModel<void> implemen
   targetDestroyed(_event: Protocol.Target.TargetDestroyedEvent): void {
   }
 
-  attachedToTarget({sessionId, targetInfo}: Protocol.Target.AttachedToTargetEvent): void {
+  async attachedToTarget({sessionId, targetInfo}: Protocol.Target.AttachedToTargetEvent): Promise<void> {
     let target: SDK.Target.Target;
     if (targetInfo.type === 'node_worker') {
       target = this.#targetManager.createTarget(
@@ -124,6 +124,24 @@ export class NodeChildTargetManager extends SDK.SDKModel.SDKModel<void> implemen
     }
     this.#childTargets.set(sessionId, target);
     void target.runtimeAgent().invoke_runIfWaitingForDebugger();
+    await this.#initializeStorage(target);
+  }
+
+  async #initializeStorage(target: SDK.Target.Target): Promise<void> {
+    const storageAgent = target.storageAgent();
+    const response = await storageAgent.invoke_getStorageKey({});
+
+    const storageKey = response.storageKey;
+    if (response.getError() || !storageKey) {
+      console.error(`Failed to get storage key for target ${target.id()}: ${response.getError()}`);
+      return;
+    }
+
+    const storageKeyManager = target.model(SDK.StorageKeyManager.StorageKeyManager);
+    if (storageKeyManager) {
+      storageKeyManager.setMainStorageKey(storageKey);
+      storageKeyManager.updateStorageKeys(new Set([storageKey]));
+    }
   }
 
   detachedFromTarget({sessionId}: Protocol.Target.DetachedFromTargetEvent): void {

@@ -201,6 +201,12 @@ class Module {
     /// The map of core::constant::Value to their ir::Constant.
     Hashmap<const core::constant::Value*, ir::Constant*, 16> constants;
 
+    /// If true, the AssertValid*() methods will perform validation.
+    bool enable_validation_asserts = false;
+
+    /// If true, dump the IR whenever validation is performed.
+    bool dump_ir_when_validating = false;
+
     /// An optional callback to receive an ICE generated while processing this module.
     InternalCompilerErrorCallback ice_callback;
 

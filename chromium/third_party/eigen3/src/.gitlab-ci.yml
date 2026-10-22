@@ -15,6 +15,7 @@ stages:
   - checkformat
   - build
   - test
+  - benchmark
   - deploy
 
 variables:
@@ -35,4 +36,5 @@ include:
   - "/ci/build.windows.gitlab-ci.yml"
   - "/ci/test.linux.gitlab-ci.yml"
   - "/ci/test.windows.gitlab-ci.yml"
+  - "/ci/benchmark.gitlab-ci.yml"
   - "/ci/deploy.gitlab-ci.yml"

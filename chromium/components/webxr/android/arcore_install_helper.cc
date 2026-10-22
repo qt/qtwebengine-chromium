@@ -7,7 +7,11 @@
 #include <memory>
 #include <utility>
 
+#include "base/check.h"
+#include "base/check_op.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
+#include "base/notreached.h"
 #include "base/time/time.h"
 #include "components/messages/android/message_dispatcher_bridge.h"
 #include "components/resources/android/theme_resources.h"
@@ -54,8 +58,7 @@ ArCoreInstallHelper::~ArCoreInstallHelper() {
 }
 
 void ArCoreInstallHelper::EnsureInstalled(
-    int render_process_id,
-    int render_frame_id,
+    const content::GlobalRenderFrameHostId& frame_id,
     base::OnceCallback<void(bool)> install_callback) {
   DVLOG(1) << __func__ << ": java_install_utils_.is_null()="
            << java_install_utils_.is_null();
@@ -71,7 +74,7 @@ void ArCoreInstallHelper::EnsureInstalled(
   // ARCore is not installed or requires an update.
   if (Java_ArCoreInstallUtils_shouldRequestInstallSupportedArCore(
           AttachCurrentThread())) {
-    ShowMessage(render_process_id, render_frame_id);
+    ShowMessage(frame_id);
     return;
   }
 
@@ -80,8 +83,8 @@ void ArCoreInstallHelper::EnsureInstalled(
   OnRequestInstallSupportedArCoreResult(nullptr, true);
 }
 
-void ArCoreInstallHelper::ShowMessage(int render_process_id,
-                                      int render_frame_id) {
+void ArCoreInstallHelper::ShowMessage(
+    const content::GlobalRenderFrameHostId& frame_id) {
   DVLOG(1) << __func__;
 
   ArCoreAvailability availability = static_cast<ArCoreAvailability>(
@@ -116,8 +119,7 @@ void ArCoreInstallHelper::ShowMessage(int render_process_id,
   message_ = std::make_unique<messages::MessageWrapper>(
       messages::MessageIdentifier::AR_CORE_UPGRADE,
       base::BindOnce(&ArCoreInstallHelper::HandleMessagePrimaryAction,
-                     base::Unretained(this), render_process_id,
-                     render_frame_id),
+                     base::Unretained(this), frame_id),
       base::BindOnce(&ArCoreInstallHelper::HandleMessageDismissed,
                      base::Unretained(this)));
 
@@ -132,7 +134,7 @@ void ArCoreInstallHelper::ShowMessage(int render_process_id,
   message_->SetDuration(kMessageTimeout.InMilliseconds());
 
   message_dispatcher_bridge->EnqueueMessage(
-      message_.get(), GetWebContents(render_process_id, render_frame_id),
+      message_.get(), GetWebContents(frame_id),
       messages::MessageScopeType::NAVIGATION,
       messages::MessagePriority::kNormal);
 }
@@ -149,12 +151,11 @@ void ArCoreInstallHelper::HandleMessageDismissed(
   message_.reset();
 }
 
-void ArCoreInstallHelper::HandleMessagePrimaryAction(int render_process_id,
-                                                     int render_frame_id) {
+void ArCoreInstallHelper::HandleMessagePrimaryAction(
+    const content::GlobalRenderFrameHostId& frame_id) {
   // When completed, java will call: OnRequestInstallSupportedArCoreResult
   Java_ArCoreInstallUtils_requestInstallSupportedArCore(
-      AttachCurrentThread(), java_install_utils_,
-      GetJavaWebContents(render_process_id, render_frame_id));
+      AttachCurrentThread(), java_install_utils_, GetJavaWebContents(frame_id));
 }
 
 void ArCoreInstallHelper::OnRequestInstallSupportedArCoreResult(JNIEnv* env,

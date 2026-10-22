@@ -165,7 +165,8 @@ class TaskEnvironment::TestTaskTracker
   // internal::ThreadPoolImpl::TaskTrackerImpl:
   void RunTask(internal::Task task,
                internal::TaskSource* sequence,
-               const TaskTraits& traits) override;
+               const TaskTraits& traits,
+               ThreadType thread_type) override;
   void BeginCompleteShutdown(base::WaitableEvent& shutdown_event) override;
   void AssertFlushForTestingAllowed() override;
 
@@ -479,9 +480,6 @@ TaskEnvironment::TaskEnvironment(
             sequence_manager::QueueName::TASK_ENVIRONMENT_DEFAULT_TQ));
     task_runner_ = task_queue_->task_runner();
     sequence_manager_->SetDefaultTaskRunner(task_runner_);
-    if (mock_time_domain_) {
-      sequence_manager_->SetTimeDomain(mock_time_domain_.get());
-    }
     CHECK(base::SingleThreadTaskRunner::HasCurrentDefault())
         << "SingleThreadTaskRunner::CurrentDefaultHandle should've been set "
            "now.";
@@ -548,6 +546,10 @@ void TaskEnvironment::InitializeThreadPool() {
 
 void TaskEnvironment::CompleteInitialization() {
   DCHECK_CALLED_ON_VALID_THREAD(main_thread_checker_);
+
+  if (mock_time_domain_) {
+    sequence_manager_->SetTimeDomain(mock_time_domain_.get());
+  }
 
 #if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   if (main_thread_type() == MainThreadType::IO) {
@@ -685,14 +687,16 @@ void TaskEnvironment::RunUntilQuit() {
   DCHECK(run_until_quit_loop_)
       << "QuitClosure() not called before RunUntilQuit()";
 
-  const bool could_run_tasks = task_tracker_->AllowRunTasks();
+  // `task_tracker_` is only set if a ThreadPool exists.
+  const bool could_run_thread_pool_tasks =
+      task_tracker_ && task_tracker_->AllowRunTasks();
 
   run_until_quit_loop_->Run();
   // Make the next call to RunUntilQuit() use a new RunLoop. This also
   // invalidates all existing quit closures.
   run_until_quit_loop_.reset();
 
-  if (!could_run_tasks) {
+  if (task_tracker_ && !could_run_thread_pool_tasks) {
     EXPECT_TRUE(
         task_tracker_->DisallowRunTasks(TestTimeouts::action_max_timeout()))
         << "Could not bring ThreadPool back to ThreadPoolExecutionMode::QUEUED "
@@ -898,7 +902,9 @@ bool TaskEnvironment::NextTaskIsDelayed() const {
 
 void TaskEnvironment::DescribeCurrentTasks() const {
   DCHECK_CALLED_ON_VALID_THREAD(main_thread_checker_);
-  LOG(INFO) << task_tracker_->DescribeRunningTasks();
+  if (task_tracker_) {
+    LOG(INFO) << task_tracker_->DescribeRunningTasks();
+  }
   LOG(INFO) << sequence_manager_->DescribeAllPendingTasks();
 }
 
@@ -1016,7 +1022,8 @@ bool TaskEnvironment::TestTaskTracker::DisallowRunTasks(TimeDelta timeout) {
 
 void TaskEnvironment::TestTaskTracker::RunTask(internal::Task task,
                                                internal::TaskSource* sequence,
-                                               const TaskTraits& traits) {
+                                               const TaskTraits& traits,
+                                               ThreadType thread_type) {
   const Location posted_from = task.posted_from;
   int task_number;
   {
@@ -1037,7 +1044,7 @@ void TaskEnvironment::TestTaskTracker::RunTask(internal::Task task,
   // test suites to run slowly.
   base::TimeTicks before = base::subtle::TimeTicksNowIgnoringOverride();
   internal::ThreadPoolImpl::TaskTrackerImpl::RunTask(std::move(task), sequence,
-                                                     traits);
+                                                     traits, thread_type);
   base::TimeTicks after = base::subtle::TimeTicksNowIgnoringOverride();
 
   const TimeDelta kTimeout = TestTimeouts::action_max_timeout();
@@ -1139,10 +1146,6 @@ TaskEnvironmentWithMainThreadPriorities::BaseTaskPriorityToQueuePriority(
 }
 
 void TaskEnvironmentWithMainThreadPriorities::InitTaskQueues() {
-  if (GetMockTimeDomain()) {
-    sequence_manager()->SetTimeDomain(GetMockTimeDomain());
-  }
-
   static_assert(BaseTaskPriorityToQueuePriority(TaskPriority::HIGHEST) == 0u,
                 "TaskPriority::HIGHEST should map to smallest QueuePriority.");
   static_assert(

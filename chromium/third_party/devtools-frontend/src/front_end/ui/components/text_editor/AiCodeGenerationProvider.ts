@@ -19,6 +19,7 @@ import {
   acceptAiAutoCompleteSuggestion,
   aiAutoCompleteSuggestion,
   aiAutoCompleteSuggestionState,
+  AiSuggestionSource,
   hasActiveAiSuggestion,
   setAiAutoCompleteSuggestion,
 } from './config.js';
@@ -40,6 +41,7 @@ const aiCodeGenerationTeaserModeState = CodeMirror.StateField.define<AiCodeGener
 
 export interface AiCodeGenerationConfig {
   generationContext: {
+    additionalPreambleContext?: string,
     inferenceLanguage?: Host.AidaClient.AidaInferenceLanguage,
   };
   onSuggestionAccepted: (citations: Host.AidaClient.Citation[]) => void;
@@ -57,6 +59,7 @@ export class AiCodeGenerationProvider {
   #aiCodeGenerationSettingEnabled = this.#aiCodeGenerationEnabledSetting.get();
   #aiCodeGenerationOnboardingCompletedSetting =
       Common.Settings.Settings.instance().createSetting('ai-code-generation-onboarding-completed', false);
+  #aiCodeGenerationUsedSetting = Common.Settings.Settings.instance().createSetting('ai-code-generation-used', false);
   #generationTeaserCompartment = new CodeMirror.Compartment();
   #generationTeaser: PanelCommon.AiCodeGenerationTeaser.AiCodeGenerationTeaser;
   #editor?: TextEditor;
@@ -159,6 +162,12 @@ export class AiCodeGenerationProvider {
             return false;
           }
           if (hasActiveAiSuggestion(this.#editor.state)) {
+            if (this.#editor.state.field(aiAutoCompleteSuggestionState)?.source === AiSuggestionSource.COMPLETION) {
+              // If the suggestion is from code completion, we don't want to
+              // dismiss it here. The user should use the code completion
+              // provider's keymap to dismiss the suggestion.
+              return false;
+            }
             this.#dismissTeaserAndSuggestion();
             return true;
           }
@@ -175,20 +184,11 @@ export class AiCodeGenerationProvider {
       },
       {
         key: 'Tab',
-        run: (): boolean => {
-          if (!this.#aiCodeGeneration || !this.#editor || !hasActiveAiSuggestion(this.#editor.state)) {
-            return false;
-          }
-          const {accepted, suggestion} = acceptAiAutoCompleteSuggestion(this.#editor.editor);
-          if (!accepted) {
-            return false;
-          }
-          if (suggestion?.rpcGlobalId) {
-            this.#aiCodeGeneration.registerUserAcceptance(suggestion.rpcGlobalId, suggestion.sampleId);
-          }
-          this.#aiCodeGenerationConfig?.onSuggestionAccepted(this.#aiCodeGenerationCitations);
-          return true;
-        },
+        run: this.#acceptAiSuggestion.bind(this),
+      },
+      {
+        key: 'Enter',
+        run: this.#acceptAiSuggestion.bind(this),
       },
       {
         any: (_view: unknown, event: KeyboardEvent) => {
@@ -241,6 +241,21 @@ export class AiCodeGenerationProvider {
     });
   }
 
+  #acceptAiSuggestion(): boolean {
+    if (!this.#aiCodeGeneration || !this.#editor || !hasActiveAiSuggestion(this.#editor.state)) {
+      return false;
+    }
+    const {accepted, suggestion} = acceptAiAutoCompleteSuggestion(this.#editor.editor);
+    if (!accepted) {
+      return false;
+    }
+    if (suggestion?.rpcGlobalId) {
+      this.#aiCodeGeneration.registerUserAcceptance(suggestion.rpcGlobalId, suggestion.sampleId);
+    }
+    this.#aiCodeGenerationConfig?.onSuggestionAccepted(this.#aiCodeGenerationCitations);
+    return true;
+  }
+
   #activateTeaser(update: CodeMirror.ViewUpdate): void {
     const currentTeaserMode = update.state.field(aiCodeGenerationTeaserModeState);
     if (currentTeaserMode === AiCodeGenerationTeaserMode.ACTIVE) {
@@ -279,7 +294,7 @@ export class AiCodeGenerationProvider {
         PanelCommon.AiCodeGenerationTeaser.AiCodeGenerationTeaserDisplayState.GENERATED) {
       update.view.dispatch({effects: setAiAutoCompleteSuggestion.of(null)});
       this.#generationTeaser.displayState =
-          PanelCommon.AiCodeGenerationTeaser.AiCodeGenerationTeaserDisplayState.TRIGGER;
+          PanelCommon.AiCodeGenerationTeaser.AiCodeGenerationTeaserDisplayState.DISCOVERY;
       return;
     }
   }
@@ -288,6 +303,8 @@ export class AiCodeGenerationProvider {
     if (!this.#editor || !this.#aiCodeGeneration) {
       return;
     }
+
+    this.#aiCodeGenerationUsedSetting.set(true);
 
     this.#aiCodeGenerationCitations = [];
     const cursor = this.#editor.state.selection.main.head;
@@ -306,19 +323,20 @@ export class AiCodeGenerationProvider {
     this.#generationTeaser.displayState = PanelCommon.AiCodeGenerationTeaser.AiCodeGenerationTeaserDisplayState.LOADING;
     try {
       const startTime = performance.now();
-      this.#aiCodeGenerationConfig?.onRequestTriggered();
+      this.#aiCodeGenerationConfig.onRequestTriggered();
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiCodeGenerationRequestTriggered);
 
+      const preamble = AiCodeGeneration.AiCodeGeneration.basePreamble +
+          this.#aiCodeGenerationConfig.generationContext.additionalPreambleContext;
       const generationResponse = await this.#aiCodeGeneration.generateCode(
-          query, AiCodeGeneration.AiCodeGeneration.basePreamble,
-          this.#aiCodeGenerationConfig?.generationContext.inferenceLanguage, options);
+          query, preamble, this.#aiCodeGenerationConfig.generationContext.inferenceLanguage, options);
 
       if (this.#generationTeaser) {
         this.#dismissTeaserAndSuggestion();
       }
 
       if (!generationResponse || generationResponse.samples.length === 0) {
-        this.#aiCodeGenerationConfig?.onResponseReceived();
+        this.#aiCodeGenerationConfig.onResponseReceived();
         return;
       }
       const topSample = generationResponse.samples[0];
@@ -335,12 +353,13 @@ export class AiCodeGenerationProvider {
       this.#editor.dispatch({
         effects: [
           setAiAutoCompleteSuggestion.of({
-            text: '\n' + suggestionText,
+            text: '\n' + suggestionText + '\n',
             from: commentNodeInfo.to,
             rpcGlobalId: generationResponse.metadata.rpcGlobalId,
             sampleId: topSample.sampleId,
             startTime,
             onImpression: this.#aiCodeGeneration?.registerUserImpression.bind(this.#aiCodeGeneration),
+            source: AiSuggestionSource.GENERATION,
           }),
           setAiCodeGenerationTeaserMode.of(AiCodeGenerationTeaserMode.ACTIVE)
         ]
@@ -351,7 +370,7 @@ export class AiCodeGenerationProvider {
       AiCodeGeneration.debugLog('Suggestion dispatched to the editor', suggestionText);
       const citations = topSample.attributionMetadata?.citations ?? [];
       this.#aiCodeGenerationCitations = citations;
-      this.#aiCodeGenerationConfig?.onResponseReceived();
+      this.#aiCodeGenerationConfig.onResponseReceived();
       return;
     } catch (e) {
       if (e instanceof Host.DispatchHttpRequestClient.DispatchHttpRequestError &&
@@ -359,7 +378,7 @@ export class AiCodeGenerationProvider {
         return;
       }
       AiCodeGeneration.debugLog('Error while fetching code generation suggestions from AIDA', e);
-      this.#aiCodeGenerationConfig?.onResponseReceived();
+      this.#aiCodeGenerationConfig.onResponseReceived();
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.AiCodeGenerationError);
     }
 
@@ -441,9 +460,19 @@ function aiCodeGenerationTeaserExtension(teaser: PanelCommon.AiCodeGenerationTea
         // Required for mouse hover to propagate to the info button in teaser.
         return (event.target instanceof Node && teaser.contentElement.contains(event.target));
       },
-      mousedown(event: MouseEvent): boolean {
-        // Required for mouse click to propagate to the info tooltip in teaser.
-        return (event.target instanceof Node && teaser.contentElement.contains(event.target));
+      mousedown(event: MouseEvent, view: CodeMirror.EditorView): boolean {
+        if (!(event.target instanceof Node) || !teaser.contentElement.contains(event.target)) {
+          return false;
+        }
+        // On mouse click, move the cursor position to the end of the line.
+        const cursorPosition = view.state.selection.main.head;
+        const line = view.state.doc.lineAt(cursorPosition);
+        if (cursorPosition !== line.to) {
+          view.dispatch({selection: {anchor: line.to, head: line.to}});
+        }
+        // Explicitly focus the editor.
+        view.focus();
+        return true;
       },
       keydown(event: KeyboardEvent): boolean {
         if (!UI.KeyboardShortcut.KeyboardShortcut.eventHasCtrlEquivalentKey(event) ||

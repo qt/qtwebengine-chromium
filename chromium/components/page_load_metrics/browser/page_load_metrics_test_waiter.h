@@ -66,6 +66,15 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
   // Add a subframe-level expectation.
   void AddSubFrameExpectation(TimingField field);
 
+  // Add a page-level expectation on the k-th back-forward cache restoration.
+  // Note:
+  // * |back_forward_timings_index| is 0-based.
+  // * Only k[x]AfterBackForwardCacheRestore are valid arguments for |field|,
+  //   with [x] one of {FirstPaint, FirstInput, RequestAnimationFrame}.
+  void AddPageBackForwardCacheRestoreExpectation(
+      size_t back_forward_timings_index,
+      TimingField field);
+
   // Add a frame size expectation. Expects that at least one frame receives a
   // size update of |size|.
   void AddFrameSizeExpectation(const gfx::Size& size);
@@ -128,11 +137,7 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
 
   void AddSoftNavigationCountExpectation(int expected_count);
 
-  void AddSoftNavigationImageLCPExpectation(
-      int expected_soft_nav_image_lcp_update);
-
-  void AddSoftNavigationTextLCPExpectation(
-      int expected_soft_nav_text_lcp_update);
+  void AddSoftNavigationLargestContentfulPaintExpectation(int expected_count);
 
   // Add a main/sub frame layout shift expectation.
   void AddPageLayoutShiftExpectation(
@@ -246,9 +251,13 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
   void OnTimingUpdated(content::RenderFrameHost* subframe_rfh,
                        const page_load_metrics::mojom::PageLoadTiming& timing);
 
-  void OnSoftNavigationMetricsUpdated(
-      const page_load_metrics::mojom::SoftNavigationMetrics&
-          soft_navigation_metrics);
+  // Invoked when a soft navigation is detected by the
+  // PageLoadMetricsUpdateDispatcher.
+  void OnSoftNavigation();
+
+  // Invoked when one or more soft LCPs are detected by the
+  // PageLoadMetricsUpdateDispatcher.
+  void OnSoftNavigationLargestContentfulPaint(uint64_t num_soft_lcps);
 
   // Updates observed page fields when a input timing update is received by the
   // MetricsWebContentsObserver. Stops waiting if expectations are satsfied
@@ -331,8 +340,7 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
   bool NumLargestContentfulPaintTextSatisfied() const;
   bool LargestContentfulPaintGreaterThanExpectationSatisfied() const;
   bool SoftNavigationCountExpectationSatisfied() const;
-  bool SoftNavigationImageLCPExpectationSatisfied() const;
-  bool SoftNavigationTextLCPExpectationSatisfied() const;
+  bool SoftNavigationLargestContentfulPaintExpectationSatisfied() const;
 
   void AddObserver(page_load_metrics::PageLoadTracker* tracker);
 
@@ -346,6 +354,7 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
 
     TimingFieldBitSet page_fields_;
     TimingFieldBitSet subframe_fields_;
+    base::flat_map<size_t, TimingFieldBitSet> page_bfcache_restore_fields_;
     blink::UseCounterFeatureTracker feature_tracker_;
     int loading_behavior_flags_ = 0;
     bool subframe_navigation_ = false;
@@ -393,13 +402,8 @@ class PageLoadMetricsTestWaiter : public MetricsLifecycleObserver {
   uint64_t expected_soft_navigation_count_ = 0;
   uint64_t current_soft_navigation_count_ = 0;
 
-  uint64_t expected_soft_navigation_image_lcp_update_ = 0;
-  uint64_t observed_soft_navigation_image_lcp_update_ = 0;
-  uint64_t observed_soft_navigation_image_lcp_ = 0;
-
-  uint64_t expected_soft_navigation_text_lcp_update_ = 0;
-  uint64_t observed_soft_navigation_text_lcp_update_ = 0;
-  uint64_t observed_soft_navigation_text_lcp_ = 0;
+  uint64_t expected_num_soft_navigation_largest_contentful_paint_ = 0;
+  uint64_t current_num_soft_navigation_largest_contentful_paint_ = 0;
 
   double expected_min_largest_contentful_paint_ = -1.0;
   double observed_largest_contentful_paint_ = 0.0;

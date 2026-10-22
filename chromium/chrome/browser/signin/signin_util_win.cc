@@ -4,6 +4,10 @@
 
 #include "chrome/browser/signin/signin_util_win.h"
 
+#include <windows.h>
+
+#include <wincrypt.h>
+
 #include <memory>
 #include <string>
 #include <utility>
@@ -17,7 +21,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "base/win/win_util.h"
-#include "base/win/wincrypt_shim.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/profiles/profile.h"
@@ -55,8 +58,7 @@ constexpr signin_metrics::AccessPoint kCredentialsProviderAccessPointWin =
     signin_metrics::AccessPoint::kMachineLogon;
 
 signin::ConsentLevel GetConsentLevel() {
-  return base::FeatureList::IsEnabled(
-             syncer::kReplaceSyncPromosWithSignInPromos)
+  return syncer::IsReplaceSyncPromosWithSignInPromosEnabled()
              ? signin::ConsentLevel::kSignin
              : signin::ConsentLevel::kSync;
 }
@@ -187,8 +189,8 @@ void ImportCredentialsFromProvider(Profile* profile,
         account_id, signin::ConsentLevel::kSignin,
         kCredentialsProviderAccessPointWin);
 
-    const bool kReplaceSyncPromos = base::FeatureList::IsEnabled(
-        syncer::kReplaceSyncPromosWithSignInPromos);
+    const bool kReplaceSyncPromos =
+        syncer::IsReplaceSyncPromosWithSignInPromosEnabled();
     const bool kUnoPhase2FollowUp =
         base::FeatureList::IsEnabled(syncer::kUnoPhase2FollowUp);
 

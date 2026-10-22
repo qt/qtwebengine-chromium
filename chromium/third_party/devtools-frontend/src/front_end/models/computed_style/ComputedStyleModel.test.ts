@@ -6,6 +6,7 @@ import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import {createTarget, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
+import {getMatchedStyles, ruleMatch} from '../../testing/StyleHelpers.js';
 
 import * as ComputedStyle from './computed_style.js';
 
@@ -38,8 +39,6 @@ describeWithMockConnection('ComputedStyleModel', () => {
     sinon.stub(ComputedStyle.ComputedStyleModel.ComputedStyleModel.prototype, 'cssModel').returns(cssModel);
     computedStyleModel = new ComputedStyle.ComputedStyleModel.ComputedStyleModel();
   });
-
-  afterEach(() => {});
 
   it('listens to events on the CSS Model when there is a node given', async () => {
     const cssModel = domNode1.domModel().cssModel();
@@ -100,5 +99,84 @@ describeWithMockConnection('ComputedStyleModel', () => {
     cssModel.dispatchEventToListeners(
         SDK.CSSModel.Events.ComputedStyleUpdated, {nodeId: (domNode1.id + 1) as Protocol.DOM.NodeId});
     sinon.assert.callCount(computedStyleListener, 0);
+  });
+
+  it('fetchMatchedCascade returns null for matchedStyles if the node does not match', async () => {
+    const cssModel = domNode1.domModel().cssModel();
+    assert.isOk(cssModel);
+    computedStyleModel.node = domNode1;
+
+    const domNode2 = createNode(target, {nodeId: 2 as Protocol.DOM.NodeId});
+    const mockMatchedStylesForNode2 = await getMatchedStyles({
+      node: domNode2,
+    });
+    const cachedMatchedCascadeForNodeStub =
+        sinon.stub(cssModel, 'cachedMatchedCascadeForNode').resolves(mockMatchedStylesForNode2);
+
+    const matchedStyles = await computedStyleModel.fetchMatchedCascade();
+    sinon.assert.calledOnce(cachedMatchedCascadeForNodeStub);
+    assert.isNull(matchedStyles);
+  });
+
+  it('fetchComputedStyle returns null if the node has become outdated', async () => {
+    const cssModel = domNode1.domModel().cssModel();
+    assert.isOk(cssModel);
+    computedStyleModel.node = domNode1;
+
+    const domNode2 = createNode(target, {nodeId: 2 as Protocol.DOM.NodeId});
+    // We need to control when this promise resolves, hence using callsFake and
+    // providing the promise manually.
+    const computedStylePromise = Promise.withResolvers<Map<string, string>>();
+    const getComputedStyleStub = sinon.stub(cssModel, 'getComputedStyle').callsFake(() => {
+      return computedStylePromise.promise;
+    });
+
+    // To emulate this scenario we need to:
+    // 1. Set the node to ID=1, and make the fetchComputedStyle() call.
+    const stylesPromise = computedStyleModel.fetchComputedStyle();
+    // 2. Before that resolves, set the node to ID = 2
+    computedStyleModel.node = domNode2;
+    // 3. Resolve the getComputedStyle promise, at which point the node check
+    //    will see that the nodes are different.
+    const mockComputedStyle = new Map([['color', 'red']]);
+    computedStylePromise.resolve(mockComputedStyle);
+    const styles = await stylesPromise;
+    sinon.assert.calledOnce(getComputedStyleStub);
+    assert.isNull(styles);
+  });
+
+  describe('computePropertyTraces', () => {
+    it('should return a map of property traces from the matched styles', async () => {
+      const mockMatchedStyles = await getMatchedStyles({
+        matchedPayload: [ruleMatch('div', [{name: 'color', value: 'red'}, {name: 'font-size', value: '12px'}])],
+      });
+      const traces = computedStyleModel.computePropertyTraces(mockMatchedStyles);
+      assert.sameMembers(Array.from(traces.keys()), ['color', 'font-size']);
+      assert.strictEqual(traces.get('color')?.length, 1);
+      assert.strictEqual(traces.get('font-size')?.length, 1);
+      assert.strictEqual(traces.get('color')?.[0].value, 'red');
+      assert.strictEqual(traces.get('font-size')?.[0].value, '12px');
+    });
+
+    it('should not include properties that are not active in the style', async () => {
+      const mockMatchedStyles = await getMatchedStyles({
+        matchedPayload: [ruleMatch('div', [{name: 'color', value: 'red'}])],
+      });
+      const colorProperty = mockMatchedStyles.nodeStyles()[0].allProperties()[0];
+      sinon.stub(colorProperty, 'activeInStyle').returns(false);
+
+      const traces = computedStyleModel.computePropertyTraces(mockMatchedStyles);
+      assert.isFalse(traces.has('color'));
+    });
+
+    it('should not include properties whose state is not determined', async () => {
+      const mockMatchedStyles = await getMatchedStyles({
+        matchedPayload: [ruleMatch('div', [{name: 'color', value: 'red'}])],
+      });
+      sinon.stub(mockMatchedStyles, 'propertyState').returns(null);
+
+      const traces = computedStyleModel.computePropertyTraces(mockMatchedStyles);
+      assert.isFalse(traces.has('color'));
+    });
   });
 });

@@ -6,8 +6,12 @@
 
 #include <stdint.h>
 
+#include <iterator>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "base/containers/flat_set.h"
 #include "base/feature_list.h"
 #include "base/hash/hash.h"
 #include "base/no_destructor.h"
@@ -17,13 +21,13 @@
 
 namespace network {
 
-using HostSet = std::unordered_set<std::string>;
+using HostSet = base::flat_set<std::string>;
 
 const HostSet UnloadDeprecationAllowedHosts() {
-  auto hosts =
+  std::vector<std::string> hosts =
       base::SplitString(network::features::kDeprecateUnloadAllowlist.Get(), ",",
                         base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-  return HostSet(hosts.begin(), hosts.end());
+  return HostSet(std::move(hosts));
 }
 
 // Return true if we should use EnabledForNone as the default for "unload"
@@ -58,6 +62,14 @@ bool UnloadDeprecationAllowedForHost(const std::string& host,
 }
 
 bool UnloadDeprecationAllowedForOrigin(const url::Origin& origin) {
+  // With no allowlist and no by-bucket, all hosts are included.
+  if (!base::FeatureList::IsEnabled(
+          network::features::kDeprecateUnloadByAllowList) &&
+      !base::FeatureList::IsEnabled(
+          network::features::kDeprecateUnloadByBucket)) {
+    return true;
+  }
+
   // For opaque origins we want their behaviour to be consistent with their
   // precursor. If the origin is opaque and has no precursor, we will use "",
   // there's not much else we can do in this case.
@@ -87,8 +99,7 @@ bool UnloadDeprecationAllowedForOrigin(const url::Origin& origin) {
         network::features::kDeprecateUnloadBucket.Get());
   }
 
-  // With no allowlist and no by-bucket, all hosts are included.
-  return true;
+  return false;
 }
 
 }  // namespace network

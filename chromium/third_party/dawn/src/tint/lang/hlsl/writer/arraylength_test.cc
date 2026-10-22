@@ -25,12 +25,11 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "gtest/gtest.h"
 #include "src/tint/lang/core/fluent_types.h"
 #include "src/tint/lang/core/ir/function.h"
 #include "src/tint/lang/core/number.h"
 #include "src/tint/lang/hlsl/writer/helper_test.h"
-
-#include "gtest/gtest.h"
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -49,7 +48,8 @@ TEST_F(HlslWriterTest, ArrayLengthDirect) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer sb : register(u0);
 void main() {
@@ -79,7 +79,8 @@ TEST_F(HlslWriterTest, ArrayLengthInStruct) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer sb : register(u0);
 void main() {
@@ -106,7 +107,8 @@ TEST_F(HlslWriterTest, ArrayLengthOfStruct) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 ByteAddressBuffer sb : register(t0);
 void main() {
@@ -132,7 +134,8 @@ TEST_F(HlslWriterTest, ArrayLengthArrayOfArrayOfStruct) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer sb : register(u0);
 void main() {
@@ -157,7 +160,8 @@ TEST_F(HlslWriterTest, ArrayLengthMultiple) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer sb : register(u0);
 void main() {
@@ -208,7 +212,8 @@ TEST_F(HlslWriterTest, ArrayLengthMultipleStorageBuffers) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer sb1 : register(u0);
 RWByteAddressBuffer sb2 : register(u1);
@@ -242,7 +247,8 @@ TEST_F(HlslWriterTest, ArrayLength_Robustness) {
     Options options;
     options.entry_point_name = "main";
     options.disable_robustness = false;
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 RWByteAddressBuffer dest : register(u1);
 void main() {
@@ -270,7 +276,8 @@ TEST_F(HlslWriterTest, ArrayLength_RobustnessAndArrayLengthFromUniform) {
     options.disable_robustness = false;
     options.array_length_from_uniform.ubo_binding = {30, 0};
     options.array_length_from_uniform.bindpoint_to_size_index[{0, 1}] = 0;
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct tint_array_lengths_struct {
   uint tint_array_length_0_1;
 };
@@ -305,7 +312,8 @@ TEST_F(HlslWriterTest, ArrayLength_RobustnessAndArrayLengthFromImmediates) {
     options.immediate_binding_point = BindingPoint{0, 30};
     options.array_length_from_uniform.buffer_sizes_offset = 16;  // Non-zero offset
     options.array_length_from_uniform.bindpoint_to_size_index[{0, 1}] = 0;
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct tint_array_lengths_struct {
   uint tint_array_length_0_1;
 };
@@ -351,7 +359,8 @@ TEST_F(HlslWriterTest, ArrayLengthAndOffset_BothFromImmediates) {
     options.array_offset_from_uniform.buffer_offsets_offset = 16;
     options.array_offset_from_uniform.bindpoint_to_offset_index[{0, 0}] = 0;
 
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct tint_array_lengths_struct {
   uint tint_array_length_0_0;
 };
@@ -397,7 +406,8 @@ TEST_F(HlslWriterTest, ArrayLengthFromImmediates_ArrayOffsetFromUBO) {
     options.array_offset_from_uniform.ubo_binding = {30, 1};
     options.array_offset_from_uniform.bindpoint_to_offset_index[{0, 0}] = 0;
 
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct tint_array_lengths_struct {
   uint tint_array_length_0_0;
 };
@@ -446,7 +456,8 @@ TEST_F(HlslWriterTest, ArrayLengthFromUBO_ArrayOffsetFromImmediates) {
     options.array_offset_from_uniform.buffer_offsets_offset = 0;
     options.array_offset_from_uniform.bindpoint_to_offset_index[{0, 0}] = 0;
 
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct tint_array_lengths_struct {
   uint tint_array_length_0_0;
 };
@@ -494,7 +505,8 @@ TEST_F(HlslWriterTest, ArrayLengthAndOffset_BothFromUBO) {
     options.array_offset_from_uniform.ubo_binding = {30, 1};
     options.array_offset_from_uniform.bindpoint_to_offset_index[{0, 0}] = 0;
 
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct tint_array_lengths_struct {
   uint tint_array_length_0_0;
 };

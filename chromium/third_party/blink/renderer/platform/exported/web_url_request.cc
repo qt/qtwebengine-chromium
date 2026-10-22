@@ -199,7 +199,7 @@ WebString WebURLRequest::HttpHeaderField(const WebString& name) const {
 
 void WebURLRequest::SetHttpHeaderField(const WebString& name,
                                        const WebString& value) {
-  CHECK(!EqualIgnoringASCIICase(name, "referer"));
+  CHECK(!EqualIgnoringAsciiCase(name, "referer"));
   resource_request_->SetHttpHeaderField(name, value);
 }
 
@@ -258,10 +258,6 @@ WebString WebURLRequest::ReferrerString() const {
 
 network::mojom::ReferrerPolicy WebURLRequest::GetReferrerPolicy() const {
   return resource_request_->GetReferrerPolicy();
-}
-
-void WebURLRequest::SetHttpOriginIfNeeded(const WebSecurityOrigin& origin) {
-  resource_request_->SetHttpOriginIfNeeded(origin.Get());
 }
 
 bool WebURLRequest::HasUserGesture() const {
@@ -434,7 +430,7 @@ int WebURLRequest::GetLoadFlagsForWebUrlRequest() const {
 
   switch (resource_request_->GetCacheMode()) {
     case FetchCacheMode::kNoStore:
-      load_flags |= net::LOAD_DISABLE_CACHE;
+      load_flags |= net::LOAD_DISABLE_CACHE | net::LOAD_BYPASS_CACHE;
       break;
     case FetchCacheMode::kValidateCache:
       load_flags |= net::LOAD_VALIDATE_CACHE;

@@ -44,6 +44,7 @@ class ComputedStyleBuilder;
 class DragData;
 class ExceptionState;
 class FileList;
+class OpaqueRange;
 class HTMLDataListElement;
 class HTMLImageLoader;
 class InputType;
@@ -64,6 +65,10 @@ class CORE_EXPORT HTMLInputElement
                             const CreateElementFlags = CreateElementFlags());
   ~HTMLInputElement() override;
   void Trace(Visitor*) const override;
+
+  ElementType GetElementType() const final {
+    return ElementType::kHTMLInputElement;
+  }
 
   bool HasPendingActivity() const final;
 
@@ -288,6 +293,9 @@ class CORE_EXPORT HTMLInputElement
   // Associated <datalist> options which match to the current INPUT value.
   HeapVector<Member<HTMLOptionElement>> FilteredDataListOptions() const;
 
+  // Returns the select element associated via the filter attribute, if any.
+  HTMLSelectElement* FilterTarget() const;
+
   // Functions for InputType classes.
   void SetNonAttributeValue(const String&);
   void SetNonAttributeValueByUserEdit(const String&);
@@ -335,6 +343,10 @@ class CORE_EXPORT HTMLInputElement
                     const V8SelectionMode& selection_mode,
                     ExceptionState&) final;
 
+  OpaqueRange* createValueRange(unsigned start_offset,
+                                unsigned end_offset,
+                                ExceptionState&) final;
+
   HTMLImageLoader* ImageLoader() const { return image_loader_.Get(); }
   HTMLImageLoader& EnsureImageLoader();
 
@@ -346,7 +358,6 @@ class CORE_EXPORT HTMLInputElement
   bool ShouldDrawCapsLockIndicator() const;
   void SetShouldRevealPassword(bool value);
   bool ShouldRevealPassword() const { return should_reveal_password_; }
-  bool IsLastInputElementInForm();
   void DispatchSimulatedEnter();
   AXObject* PopupRootAXObject();
   void DidNotifySubtreeInsertionsToDocument() override;
@@ -371,6 +382,7 @@ class CORE_EXPORT HTMLInputElement
 
   mojom::blink::FormControlType FormControlType() const final;
 
+  bool SupportsReadOnly() const override;
   bool isMutable();
   void showPicker(ExceptionState&);
   bool IsPickerVisible() const;

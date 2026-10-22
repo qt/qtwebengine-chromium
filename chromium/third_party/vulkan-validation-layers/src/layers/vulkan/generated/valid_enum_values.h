@@ -22,8 +22,6 @@
 
 // NOLINTBEGIN
 template <>
-ValidValue stateless::Context::IsValidEnumValue(VkImageLayout value) const;
-template <>
 ValidValue stateless::Context::IsValidEnumValue(VkObjectType value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkFormat value) const;
@@ -35,6 +33,8 @@ template <>
 ValidValue stateless::Context::IsValidEnumValue(VkQueryType value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkSharingMode value) const;
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkImageLayout value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkComponentSwizzle value) const;
 template <>
@@ -52,9 +52,9 @@ ValidValue stateless::Context::IsValidEnumValue(VkFilter value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkSamplerAddressMode value) const;
 template <>
-ValidValue stateless::Context::IsValidEnumValue(VkSamplerMipmapMode value) const;
-template <>
 ValidValue stateless::Context::IsValidEnumValue(VkCompareOp value) const;
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkSamplerMipmapMode value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkDescriptorType value) const;
 template <>
@@ -68,15 +68,15 @@ ValidValue stateless::Context::IsValidEnumValue(VkDynamicState value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkFrontFace value) const;
 template <>
+ValidValue stateless::Context::IsValidEnumValue(VkLogicOp value) const;
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkStencilOp value) const;
+template <>
 ValidValue stateless::Context::IsValidEnumValue(VkVertexInputRate value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkPrimitiveTopology value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkPolygonMode value) const;
-template <>
-ValidValue stateless::Context::IsValidEnumValue(VkStencilOp value) const;
-template <>
-ValidValue stateless::Context::IsValidEnumValue(VkLogicOp value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkAttachmentLoadOp value) const;
 template <>
@@ -114,6 +114,8 @@ ValidValue stateless::Context::IsValidEnumValue(VkFragmentShadingRateCombinerOpK
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkVideoEncodeTuningModeKHR value) const;
 template <>
+ValidValue stateless::Context::IsValidEnumValue(VkAccelerationStructureTypeKHR value) const;
+template <>
 ValidValue stateless::Context::IsValidEnumValue(VkComponentTypeKHR value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkVideoEncodeAV1PredictionModeKHR value) const;
@@ -121,6 +123,8 @@ template <>
 ValidValue stateless::Context::IsValidEnumValue(VkVideoEncodeAV1RateControlGroupKHR value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkTimeDomainKHR value) const;
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDeviceFaultVendorBinaryHeaderVersionKHR value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkDebugReportObjectTypeEXT value) const;
 template <>
@@ -155,8 +159,6 @@ template <>
 ValidValue stateless::Context::IsValidEnumValue(VkRayTracingShaderGroupTypeKHR value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkGeometryTypeKHR value) const;
-template <>
-ValidValue stateless::Context::IsValidEnumValue(VkAccelerationStructureTypeKHR value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkCopyAccelerationStructureModeKHR value) const;
 template <>
@@ -193,10 +195,6 @@ template <>
 ValidValue stateless::Context::IsValidEnumValue(VkFragmentShadingRateNV value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkAccelerationStructureMotionInstanceTypeNV value) const;
-template <>
-ValidValue stateless::Context::IsValidEnumValue(VkDeviceFaultAddressTypeEXT value) const;
-template <>
-ValidValue stateless::Context::IsValidEnumValue(VkDeviceFaultVendorBinaryHeaderVersionEXT value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkDeviceAddressBindingTypeEXT value) const;
 template <>

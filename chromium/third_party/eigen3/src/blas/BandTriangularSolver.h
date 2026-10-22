@@ -15,7 +15,7 @@ namespace internal {
 
 /* \internal
  * Solve Ax=b with A a band triangular matrix
- * TODO: extend it to matrices for x abd b */
+ * TODO: extend it to matrices for x and b */
 template <typename Index, int Mode, typename LhsScalar, bool ConjLhs, typename RhsScalar, int StorageOrder>
 struct band_solve_triangular_selector;
 

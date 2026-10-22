@@ -367,7 +367,7 @@ void Spline<Scalar_, Dim_, Degree_>::BasisFunctionDerivativesImpl(
 
   Matrix<Scalar, Order, Order> ndu(p + 1, p + 1);
 
-  Scalar saved, temp;  // FIXME These were double instead of Scalar. Was there a reason for that?
+  Scalar saved, temp;  // FIXME: These were double instead of Scalar. Was there a reason for that?
 
   ndu(0, 0) = 1.0;
 

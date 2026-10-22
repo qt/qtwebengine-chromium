@@ -87,24 +87,25 @@ OakRustAttestationVerifier::Verify(
     const absl::Cord& access_policy,
     const confidentialcompute::SignedEndorsements& signed_endorsements,
     const ConfidentialEncryptionConfig& encryption_config) {
-  absl::StatusOr<AttestationResults> attestation_results =
-      VerifyPublicKeyAttestation(encryption_config,
-                                 public_key_reference_values_);
-  if (!attestation_results.ok()) {
-    absl::StatusOr<AttestationResults> attestation_results_secondary =
-        public_key_reference_values_secondary_.type_case() ==
-                oak::attestation::v1::ReferenceValues::TYPE_NOT_SET
-            ? absl::NotFoundError("No secondary reference values provided.")
-            : VerifyPublicKeyAttestation(
-                  encryption_config, public_key_reference_values_secondary_);
-    if (!attestation_results_secondary.ok()) {
+  absl::StatusOr<AttestationResults> attestation_results;
+  if (public_key_reference_values_.type_case() ==
+          oak::attestation::v1::ReferenceValues::TYPE_NOT_SET) {
+    attestation_results = VerifyPublicKeyAttestation(
+        encryption_config,
+        access_policy_endorsement_options_.public_key_reference_values());
+    if (!attestation_results.ok()) {
       return absl::FailedPreconditionError(absl::Substitute(
-          "Attestation verification failed for both primary and secondary "
-          "reference values: $0, $1",
-          attestation_results.status(),
-          attestation_results_secondary.status()));
+          "Attestation verification failed for reference values from the "
+          "AccessPolicyEndorsementOptions: $0",
+          attestation_results.status()));
     }
-    attestation_results = attestation_results_secondary;
+  } else {
+    attestation_results = VerifyPublicKeyAttestation(
+        encryption_config, public_key_reference_values_);
+    if (!attestation_results.ok()) {
+      return absl::FailedPreconditionError(absl::Substitute(
+          "Attestation verification failed: $0", attestation_results.status()));
+    }
   }
 
   // Ensure that the provided data access policy parses correctly.
@@ -261,7 +262,7 @@ OakRustAttestationVerifier::Verify(
   // decryption key, and the it will only allow the decryption key to be
   // used by binaries/applications allowed by the data access policy.
   return VerificationResult{
-      .serialized_public_key = encryption_config.public_key(),
+      .public_key = encryption_config.public_key(),
       .key_id = std::move(cwt->public_key->key_id),
       .access_policy_sha256 = std::move(raw_access_policy_hash),
   };

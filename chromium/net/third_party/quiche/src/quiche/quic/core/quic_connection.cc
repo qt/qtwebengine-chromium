@@ -120,6 +120,12 @@ const size_t kMaxReceivedClientAddressSize = 20;
 // but doesn't allow multiple RTTs of user delay in the hope of using ECN.
 const uint8_t kEcnPtoLimit = 2;
 
+// Constant representing a 7/8 probability of enabling the spin bit for each
+// direction of communication. Since the spin bit only works when both sides
+// choose to enable it, this results in a 3/4 probability that any given
+// connection will have the spin bit enabled, per guidance in RFC 9000.
+const uint8_t kSpinDefaultProbability = 223;
+
 // When the clearer goes out of scope, the coalesced packet gets cleared.
 class ScopedCoalescedPacketClearer {
  public:
@@ -229,7 +235,8 @@ QuicConnection::QuicConnection(
       perspective_(perspective),
       owns_writer_(owns_writer),
       can_truncate_connection_ids_(perspective == Perspective::IS_SERVER),
-      store_one_dcid_(GetQuicReloadableFlag(quic_one_dcid)) {
+      store_one_dcid_(GetQuicReloadableFlag(quic_one_dcid)),
+      spin_bit_enabled_(false) {
   QUICHE_DCHECK(perspective_ == Perspective::IS_CLIENT ||
                 default_path_.self_address.IsInitialized());
 
@@ -529,9 +536,7 @@ void QuicConnection::SetFromConfig(const QuicConfig& config) {
   if (config.HasClientRequestedIndependentOption(k3AFF, perspective_)) {
     anti_amplification_factor_ = 3;
   }
-  if (GetQuicReloadableFlag(quic_enable_5aff_connection_option) &&
-      config.HasClientRequestedIndependentOption(k5AFF, perspective_)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_enable_5aff_connection_option);
+  if (config.HasClientRequestedIndependentOption(k5AFF, perspective_)) {
     anti_amplification_factor_ = 5;
   }
   if (config.HasClientRequestedIndependentOption(k10AF, perspective_)) {
@@ -1229,6 +1234,39 @@ QuicSocketAddress QuicConnection::GetEffectivePeerAddressFromCurrentPacket()
 }
 
 bool QuicConnection::OnPacketHeader(const QuicPacketHeader& header) {
+  if (spin_bit_enabled_ && header.form == IETF_QUIC_SHORT_HEADER_PACKET) {
+    QUIC_CODE_COUNT(quic_enable_spin_bit);
+    QuicPacketNumber largest_observed =
+        uber_received_packet_manager_.GetLargestObserved(
+            ENCRYPTION_FORWARD_SECURE);
+    if (!largest_observed.IsInitialized() ||
+        header.packet_number > largest_observed) {
+      PathState* absl_nonnull path = &default_path_;
+
+      if (perspective_ == Perspective::IS_CLIENT) {
+        if ((header.destination_connection_id ==
+             alternative_path_.client_connection_id) &&
+            (alternative_path_.client_connection_id !=
+             default_path_.client_connection_id)) {
+          path = &alternative_path_;
+        }
+      } else {
+        if ((header.destination_connection_id ==
+             alternative_path_.server_connection_id) &&
+            (alternative_path_.server_connection_id !=
+             default_path_.server_connection_id)) {
+          path = &alternative_path_;
+        }
+      }
+
+      if (perspective_ == Perspective::IS_SERVER) {
+        path->next_spin_bit = header.spin_bit;
+      } else {
+        path->next_spin_bit = !header.spin_bit;
+      }
+    }
+  }
+
   if (debug_visitor_ != nullptr) {
     debug_visitor_->OnPacketHeader(header, clock_->ApproximateNow(),
                                    last_received_packet_info_.decrypted_level);
@@ -2198,6 +2236,7 @@ bool QuicConnection::OnAckFrequencyFrame(const QuicAckFrequencyFrame& frame) {
                     ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
     return false;
   }
+  QUIC_RELOADABLE_FLAG_COUNT_N(quic_receive_ack_frequency, 3, 7);
   if (auto packet_number_space =
           QuicUtils::GetPacketNumberSpace(
               last_received_packet_info_.decrypted_level) == APPLICATION_DATA) {
@@ -2226,7 +2265,7 @@ bool QuicConnection::OnImmediateAckFrame(const QuicImmediateAckFrame& frame) {
     QUIC_LOG_EVERY_N_SEC(ERROR, 120) << "Got unexpected ImmediateAck Frame.";
     return false;
   }
-  QUIC_RELOADABLE_FLAG_COUNT_N(quic_receive_ack_frequency, 1, 2);
+  QUIC_RELOADABLE_FLAG_COUNT_N(quic_receive_ack_frequency, 1, 7);
   if (last_received_packet_info_.decrypted_level == ENCRYPTION_FORWARD_SECURE) {
     uber_received_packet_manager_.OnImmediateAckFrame();
   } else {
@@ -5864,23 +5903,17 @@ QuicPacketLength QuicConnection::GetGuaranteedLargestDatagramPayload() const {
 
 uint32_t QuicConnection::cipher_id() const {
   if (version().IsIetfQuic()) {
-    if (quic_limit_new_streams_per_loop_2_) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_limit_new_streams_per_loop_2, 4, 4);
-      for (auto decryption_level :
-           {ENCRYPTION_FORWARD_SECURE, ENCRYPTION_HANDSHAKE,
-            ENCRYPTION_ZERO_RTT, ENCRYPTION_INITIAL}) {
-        const QuicDecrypter* decrypter = framer_.GetDecrypter(decryption_level);
-        if (decrypter != nullptr) {
-          return decrypter->cipher_id();
-        }
+    for (auto decryption_level :
+         {ENCRYPTION_FORWARD_SECURE, ENCRYPTION_HANDSHAKE, ENCRYPTION_ZERO_RTT,
+          ENCRYPTION_INITIAL}) {
+      const QuicDecrypter* decrypter = framer_.GetDecrypter(decryption_level);
+      if (decrypter != nullptr) {
+        return decrypter->cipher_id();
       }
-      QUICHE_BUG(no_decrypter_found)
-          << ENDPOINT << "No decrypter found at all encryption levels";
-      return 0;
-    } else {
-      return framer_.GetDecrypter(last_received_packet_info_.decrypted_level)
-          ->cipher_id();
     }
+    QUICHE_BUG(no_decrypter_found)
+        << ENDPOINT << "No decrypter found at all encryption levels";
+    return 0;
   }
   return framer_.decrypter()->cipher_id();
 }
@@ -6501,6 +6534,12 @@ void QuicConnection::OnIdleNetworkDetected() {
   }
   CloseConnection(error_code, error_details,
                   idle_timeout_connection_close_behavior_);
+}
+
+void QuicConnection::OnMemoryReductionTimeout() {
+  // TODO(haoyuewang): Remove this counter after testing.
+  QUICHE_CODE_COUNT(quic_connection_on_memory_reduction_timeout);
+  sent_packet_manager_.ReduceMemoryUsage();
 }
 
 void QuicConnection::OnKeepAliveTimeout() {
@@ -7249,6 +7288,7 @@ void QuicConnection::PathState::Clear() {
   stateless_reset_token.reset();
   ecn_marked_packet_acked = false;
   ecn_pto_count = 0;
+  next_spin_bit = false;
 }
 
 QuicConnection::PathState::PathState(PathState&& other) {
@@ -7604,5 +7644,19 @@ QuicConnection::SerializeLargePacketNumberConnectionClosePacket(
 }
 
 #undef ENDPOINT  // undef for jumbo builds
+
+bool QuicConnection::ShouldEnableSpinBit() const {
+  // Whether this connection will use the spin bit depends on (1) the flag
+  // being enabled and, if so, (2) a coin flip to generate probabilistic
+  // participation.
+  if (!GetQuicReloadableFlag(quic_enable_spin_bit)) {
+    return false;
+  }
+
+  QUIC_RELOADABLE_FLAG_COUNT(quic_enable_spin_bit);
+  uint8_t r;
+  random_generator_->RandBytes(&r, 1);
+  return (r < kSpinDefaultProbability);
+}
 
 }  // namespace quic

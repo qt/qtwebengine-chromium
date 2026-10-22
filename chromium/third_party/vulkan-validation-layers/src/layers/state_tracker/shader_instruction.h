@@ -72,6 +72,7 @@ class Instruction {
     uint32_t GetConstantValue() const;
     uint32_t GetBitWidth() const;
     uint32_t GetByteWidth() const { return (GetBitWidth() + 31) / 32; }
+    spv::FPEncoding GetFPEncoding() const;
     spv::BuiltIn GetBuiltIn() const;
     uint32_t GetPositionOffset() const { return position_offset_; }
     bool IsArray() const;
@@ -85,6 +86,8 @@ class Instruction {
     bool IsTensor() const;
     bool IsConstant() const;
     bool IsSpecConstant() const;
+    // Returns the function ID referenced by this instruction (OpFunctionCall, or coopmat2 callback operands), or 0 if none.
+    uint32_t GetCalledFunctionId() const;
 
     // Auto-generated helper functions
     spv::StorageClass StorageClass() const;
@@ -108,6 +111,10 @@ class Instruction {
     void ReplaceOperandId(uint32_t old_word, uint32_t new_word);
     void ReplaceLinkedId(vvl::unordered_map<uint32_t, uint32_t>& id_swap_map);
 
+    // Used to freeze OpSpecConstant into a OpConstant
+    void FreezeSpecConstant();
+    void SetNewOpcode(uint32_t opcode);
+
     // This is only used for very specific spots that explain why where used.
     // There really should be no need to access the raw bytes
     const uint32_t* GetRawBytes() const { return words_.data(); }
@@ -130,6 +137,7 @@ class Instruction {
     uint32_t operand_index_ = 1;
 
     // used to find original position of instruction in shader, pre-instrumented
+    // Even if we constant fold, this will be preserved when compared to the original SPIR-V
     const uint32_t position_offset_;
     const OperandInfo& operand_info_;
 

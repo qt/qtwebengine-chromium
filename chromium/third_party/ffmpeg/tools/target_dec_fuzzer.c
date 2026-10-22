@@ -20,22 +20,17 @@
    compile-time flags.
   INSTRUCTIONS:
 
-  * Get the very fresh clang, e.g. see http://libfuzzer.info#versions
-  * Get and build libFuzzer:
-     svn co http://llvm.org/svn/llvm-project/llvm/trunk/lib/Fuzzer
-     ./Fuzzer/build.sh
-  * build ffmpeg for fuzzing:
-    FLAGS="-fsanitize=address -fsanitize-coverage=trace-pc-guard,trace-cmp -g" CC="clang $FLAGS" CXX="clang++ $FLAGS" ./configure  --disable-x86asm
+  * Get clang > 6.0 (https://llvm.org/docs/LibFuzzer.html)
+  * Build ffmpeg for fuzzing:
+    ./configure --enable-debug --toolchain=clang-asan-ubsan-fuzz --enable-ossfuzz
     make clean && make -j
   * build the fuzz target.
-    Choose the value of FFMPEG_CODEC (e.g. AV_CODEC_ID_DVD_SUBTITLE) and
-    choose one of FUZZ_FFMPEG_VIDEO, FUZZ_FFMPEG_AUDIO, FUZZ_FFMPEG_SUBTITLE.
-    clang -fsanitize=address -fsanitize-coverage=trace-pc-guard,trace-cmp tools/target_dec_fuzzer.c -o target_dec_fuzzer -I.   -DFFMPEG_CODEC=AV_CODEC_ID_MPEG1VIDEO -DFUZZ_FFMPEG_VIDEO ../../libfuzzer/libFuzzer.a   -Llibavcodec -Llibavdevice -Llibavfilter -Llibavformat -Llibavutil -Llibpostproc -Llibswscale -Llibswresample -Wl,--as-needed -Wl,-z,noexecstack -Wl,--warn-common -Wl,-rpath-link=:libpostproc:libswresample:libswscale:libavfilter:libavdevice:libavformat:libavcodec:libavutil -lavdevice -lavfilter -lavformat -lavcodec -lswresample -lswscale -lavutil -ldl -lxcb -lxcb-shm -lxcb -lxcb-xfixes  -lxcb -lxcb-shape -lxcb -lX11 -lasound -lm -lbz2 -lz -pthread
-  * create a corpus directory and put some samples there (empty dir is ok too):
-    mkdir CORPUS && cp some-files CORPUS
-
-  * Run fuzzing:
-    ./target_dec_fuzzer -max_len=100000 CORPUS
+    make tools/target_dec_<codec>_fuzzer # e.g. tools/target_dec_jpeg2000_fuzzer
+  * Run fuzzing with a corpus directory:
+    mkdir CORPUS && cp some-files CORPUS # (empty corpus dir is ok too)
+    ./tools/target_dec_<codec>_fuzzer -max_len=100000 CORPUS
+  * Run a test case:
+    ./tools/target_dec_<codec>_fuzzer <testcase>
 
    More info:
    http://libfuzzer.info
@@ -223,6 +218,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_ARBC:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_ARGO:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_BETHSOFTVID: maxpixels  /= 8192;  break;
+    case AV_CODEC_ID_BFI:         maxpixels  /= 8192;  break;
     case AV_CODEC_ID_BINKVIDEO:   maxpixels  /= 32;    break;
     case AV_CODEC_ID_BONK:        maxsamples /= 1<<20; break;
     case AV_CODEC_ID_CAVS:        maxpixels  /= 1024;  break;
@@ -230,6 +226,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_CFHD:        maxpixels  /= 16384; break;
     case AV_CODEC_ID_CINEPAK:     maxpixels  /= 128;   break;
     case AV_CODEC_ID_COOK:        maxsamples /= 1<<20; break;
+    case AV_CODEC_ID_CPIA:        maxpixels  /= 256;   break;
     case AV_CODEC_ID_CRI:         maxpixels  /= 1024;  break;
     case AV_CODEC_ID_CSCD:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_DFA:         maxpixels  /= 1024;  break;
@@ -247,7 +244,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_FLIC:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_FLV1:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_FMVC:        maxpixels  /= 1024;  break;
-    case AV_CODEC_ID_G2M:         maxpixels  /= 1024;  break;
+    case AV_CODEC_ID_G2M:         maxpixels  /= 16384; break;
     case AV_CODEC_ID_GEM:         maxpixels  /= 512;   break;
     case AV_CODEC_ID_GDV:         maxpixels  /= 512;   break;
     case AV_CODEC_ID_GIF:         maxpixels  /= 16;    break;
@@ -262,15 +259,18 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_INTERPLAY_ACM: maxsamples /= 16384;  break;
     case AV_CODEC_ID_INTERPLAY_VIDEO: maxpixels /= 256;  break;
     case AV_CODEC_ID_JPEG2000:    maxpixels  /= 16384; break;
+    case AV_CODEC_ID_JV:          maxpixels  /= 16384; break;
     case AV_CODEC_ID_LAGARITH:    maxpixels  /= 1024;  break;
     case AV_CODEC_ID_LOCO:        maxpixels  /= 1024;  break;
     case AV_CODEC_ID_VORBIS:      maxsamples /= 1024;  break;
     case AV_CODEC_ID_LSCR:        maxpixels  /= 16;    break;
+    case AV_CODEC_ID_MAGICYUV:    maxpixels  /= 256;   break;
     case AV_CODEC_ID_MMVIDEO:     maxpixels  /= 256;   break;
     case AV_CODEC_ID_MOTIONPIXELS:maxpixels  /= 256;   break;
     case AV_CODEC_ID_MP4ALS:      maxsamples /= 65536;
                                   av_dict_set_int(&opts, "max_order", 15, 0);
                                   break;
+    case AV_CODEC_ID_MUSEPACK8:   maxsamples /= 16384; break;
     case AV_CODEC_ID_MSA1:        maxpixels  /= 16384; break;
     case AV_CODEC_ID_MSCC:        maxpixels  /= 4096;  break;
     case AV_CODEC_ID_MSRLE:       maxpixels  /= 16;    break;
@@ -293,6 +293,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_PAF_VIDEO:   maxpixels  /= 16;    break;
     case AV_CODEC_ID_PRORES:      maxpixels  /= 256;   break;
     case AV_CODEC_ID_QDRAW:       maxpixels  /= 256;   break;
+    case AV_CODEC_ID_QOI:         maxpixels  /= 256;   break;
     case AV_CODEC_ID_QPEG:        maxpixels  /= 256;   break;
     case AV_CODEC_ID_RKA:         maxsamples /= 1<<20; break;
     case AV_CODEC_ID_RSCC:        maxpixels  /= 256;   break;
@@ -343,6 +344,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     case AV_CODEC_ID_WS_VQA:      maxpixels  /= 16384; break;
     case AV_CODEC_ID_WMALOSSLESS: maxsamples /= 1024;  break;
     case AV_CODEC_ID_WMAPRO:      maxsamples /= 16384; break;
+    case AV_CODEC_ID_XAN_WC3:     maxpixels  /= 1024;  break;
     case AV_CODEC_ID_YLC:         maxpixels  /= 1024;  break;
     case AV_CODEC_ID_ZEROCODEC:   maxpixels  /= 128;   break;
     case AV_CODEC_ID_ZLIB:        maxpixels  /= 4096;  break;

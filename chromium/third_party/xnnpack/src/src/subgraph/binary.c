@@ -83,7 +83,7 @@ static enum xnn_status reshape_binary_operator(
     }
     shape2.dim[0] = values[input2_id].shape.dim[0];
     shape2.dim[1] = values[input2_id].shape.dim[values[input2_id].shape.num_dims - 1];
-    if (values[input1_id].shape.num_dims > 2) {
+    if (values[input2_id].shape.num_dims > 2) {
       memcpy(&shape2.dim[2], &values[input2_id].shape.dim[1], (values[input2_id].shape.num_dims - 2) * sizeof(size_t));
     }
   } else {
@@ -226,7 +226,7 @@ enum xnn_status xnn_define_binary(
 
   if (params) {
     if (params->output_min != -INFINITY || params->output_max != INFINITY) {
-      xnn_insert_clamp_node(subgraph, params->output_min, params->output_max, node);
+      xnn_insert_clamp_node(subgraph, params->output_min, params->output_max, node->id);
     }
   }
 

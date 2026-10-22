@@ -146,8 +146,8 @@ LibYUVImageProcessorBackend::CreateWithTaskRunner(
         /*force_linear_buffer_mapper=*/true);
   }
 
-  if (!input_frame_mapper &&
-      !VideoFrame::IsStorageTypeMappable(input_config.storage_type)) {
+  if (!input_frame_mapper && !VideoFrame::StorageTypeAllowsDirectCpuAccess(
+                                 input_config.storage_type)) {
     VLOGF(2) << "Unsupported input storage type";
     return nullptr;
   }
@@ -160,8 +160,8 @@ LibYUVImageProcessorBackend::CreateWithTaskRunner(
         /*force_linear_buffer_mapper=*/true);
   }
 
-  if (!output_frame_mapper &&
-      !VideoFrame::IsStorageTypeMappable(output_config.storage_type)) {
+  if (!output_frame_mapper && !VideoFrame::StorageTypeAllowsDirectCpuAccess(
+                                  output_config.storage_type)) {
     VLOGF(2) << "Unsupported output storage type";
     return nullptr;
   }
@@ -357,6 +357,19 @@ void LibYUVImageProcessorBackend::ProcessFrame(
 int LibYUVImageProcessorBackend::DoConversion(const FrameResource* const input,
                                               FrameResource* const output) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(backend_sequence_checker_);
+
+  for (size_t i = 0; i < input->layout().num_planes(); ++i) {
+    if (!base::IsValueInRangeForNumericType<int>(input->stride(i))) {
+      VLOGF(1) << "Input stride does not fit in int: " << input->stride(i);
+      return -1;
+    }
+  }
+  for (size_t i = 0; i < output->layout().num_planes(); ++i) {
+    if (!base::IsValueInRangeForNumericType<int>(output->stride(i))) {
+      VLOGF(1) << "Output stride does not fit in int: " << output->stride(i);
+      return -1;
+    }
+  }
 
 #define Y_U_V_DATA(fr)                                                        \
   fr->visible_data(VideoFrame::Plane::kY), fr->stride(VideoFrame::Plane::kY), \

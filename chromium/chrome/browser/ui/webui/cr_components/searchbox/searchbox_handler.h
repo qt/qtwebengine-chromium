@@ -7,12 +7,16 @@
 
 #include <optional>
 
+#include "base/feature_list.h"
 #include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
+#include "base/values.h"
 #include "components/contextual_search/contextual_search_types.h"
+#include "components/contextual_search/pref_names.h"
 #include "components/omnibox/browser/autocomplete_controller.h"
 #include "components/omnibox/browser/searchbox.mojom.h"
 #include "components/omnibox/common/input_state.h"
@@ -31,7 +35,6 @@ class OmniboxEditModel;
 
 namespace content {
 class WebContents;
-class WebUIDataSource;
 }  // namespace content
 
 namespace searchbox_internal {
@@ -42,16 +45,25 @@ extern const char* kSearchSparkIconResourceName;
 
 // Base class for browser-side handlers that handle bi-directional communication
 // with WebUI search boxes.
+
+// This just allows declaration in class to avoid cluttering global namespace.
+#define DECLARE_FEATURE(feature) static constinit const base::Feature feature
+
 class SearchboxHandler : public searchbox::mojom::PageHandler,
                          public AutocompleteController::Observer {
  public:
   SearchboxHandler(const SearchboxHandler&) = delete;
   SearchboxHandler& operator=(const SearchboxHandler&) = delete;
 
-  static void SetupWebUIDataSource(content::WebUIDataSource* source,
-                                   Profile* profile,
-                                   bool enable_voice_search = false,
-                                   bool enable_lens_search = false);
+  struct WebUIDataSourceOptions {
+    bool enable_voice_search = false;
+    bool enable_lens_search = false;
+    bool session_allows_drag_and_drop = false;
+  };
+
+  static base::DictValue GetWebUIDataSourceDict(Profile* profile);
+  static base::DictValue GetWebUIDataSourceDict(Profile* profile,
+                                                WebUIDataSourceOptions options);
 
   // Maps all icons returned from either `AutocompleteMatch::GetVectorIcon()` or
   // `OmniboxAction::GetIconImage()` to svg resource strings.
@@ -69,16 +81,14 @@ class SearchboxHandler : public searchbox::mojom::PageHandler,
   // Notifies the WebUI that the contextual input status has changed.
   void OnContextualInputStatusChanged(
       base::UnguessableToken token,
-      contextual_search::FileUploadStatus status,
-      std::optional<contextual_search::FileUploadErrorType> error_type);
+      contextual_search::ContextUploadStatus status,
+      std::optional<contextual_search::ContextUploadErrorType> error_type);
 
   // AutocompleteController::Observer:
   void OnResultChanged(AutocompleteController* controller,
                        bool default_match_changed) override;
 
   // searchbox::mojom::PageHandler:
-  void SetPage(
-      mojo::PendingRemote<searchbox::mojom::Page> pending_page) override;
   void OnFocusChanged(bool focused) override;
   void QueryAutocomplete(const std::u16string& input,
                          bool prevent_inline_autocomplete) override;
@@ -93,7 +103,8 @@ class SearchboxHandler : public searchbox::mojom::PageHandler,
                              bool shift_key) override;
   void SetPopupSelection(
       searchbox::mojom::OmniboxPopupSelectionPtr selection) override;
-  void OpenPopupSelection(searchbox::mojom::OmniboxPopupSelectionPtr selection,
+  void OpenPopupSelection(uint32_t result_sequence_id,
+                          searchbox::mojom::OmniboxPopupSelectionPtr selection,
                           WindowOpenDisposition disposition) override;
   void OnNavigationLikely(
       uint8_t line,
@@ -125,6 +136,10 @@ class SearchboxHandler : public searchbox::mojom::PageHandler,
   void AddTabContext(int32_t tab_id,
                      bool delay_upload,
                      AddTabContextCallback) override {}
+  void AddDriveContext(const std::string& drive_id,
+                       const std::string& resource_key,
+                       const std::string& mime_type_string,
+                       AddDriveContextCallback callback) override {}
   void DeleteContext(const base::UnguessableToken& file_token,
                      bool from_automatic_chip) override {}
   void ClearFiles(bool should_block_auto_suggested_tabs) override {}
@@ -136,12 +151,21 @@ class SearchboxHandler : public searchbox::mojom::PageHandler,
                    bool shift_key) override {}
   void OpenLensSearch() override {}
   void SetActiveToolMode(omnibox::ToolMode tool) override {}
+  void RecordToolSelectionAction(omnibox::ToolMode tool) override {}
   void SetActiveModelMode(omnibox::ModelMode model) override {}
+  void RecordModelSelectionAction(omnibox::ModelMode model) override {}
   void ActivateMetricsFunnel(const std::string& funnel_name) override {}
+  void ShouldShowDriveDisclaimer(
+      ShouldShowDriveDisclaimerCallback callback) override;
+  void OnDriveDisclaimerAccepted() override;
+  void GetPageClassification(GetPageClassificationCallback callback) override;
 
   // Stores `callback` to be run when the page remote is bound and ready to
   // receive calls. Runs `callback` immediately if the remote is already bound.
   void set_page_is_bound_callback_for_testing(base::OnceClosure callback);
+
+  DECLARE_FEATURE(kVoiceSearchCoherence);
+  static const base::FeatureParam<bool> kVoiceSearchRecordingAnimation;
 
  protected:
   FRIEND_TEST_ALL_PREFIXES(RealboxHandlerTest, AutocompleteController_Start);
@@ -154,6 +178,7 @@ class SearchboxHandler : public searchbox::mojom::PageHandler,
                            QueryAutocomplete_SkipsLensInputs_InToolModes);
   SearchboxHandler(
       mojo::PendingReceiver<searchbox::mojom::PageHandler> pending_page_handler,
+      mojo::PendingRemote<searchbox::mojom::Page> pending_page,
       Profile* profile,
       content::WebContents* web_contents,
       std::unique_ptr<OmniboxController> controller);

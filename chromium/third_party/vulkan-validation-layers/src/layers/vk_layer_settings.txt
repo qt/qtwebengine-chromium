@@ -55,6 +55,16 @@ khronos_validation.enable_message_limit = true
 # Enable fine grained locking for Core Validation, which should improve performance in multithreaded applications. This setting allows the optimization to be disabled for debugging.
 khronos_validation.fine_grained_locking = true
 
+# Dump Descriptors
+# =====================
+# Dump VK_EXT_descriptor_buffer/VK_EXT_descriptor_heap descriptor information for draw/dispatch/traceRays
+khronos_validation.gpu_dump_descriptors = false
+
+# Redirect all GPU Dump to stdout
+# =====================
+# Instead of using the debug callback with information severity, redirect to stdout instead.
+khronos_validation.gpu_dump_to_stdout = false
+
 # Acceleration structures builds
 # =====================
 # Validate acceleration structures references in TLAS build commands.
@@ -130,6 +140,11 @@ khronos_validation.gpuav_mesh_shading = true
 # Track which descriptor indexes were used in shader to run normal validation afterwards
 khronos_validation.gpuav_post_process_descriptor_indexing = true
 
+# Ray tracing buffers consistency
+# =====================
+# Validate that between a BLAS build and its update, triangle geometries using index buffer keep its content identical (VUID 03768), and that active/inactive primitives do not change this status (VUIDs 03663 and 03664). Warning: a record of vertex/index buffers will be maintained in device local memory, so validation can be GPU memory heavy.
+khronos_validation.gpuav_ray_tracing_buffers_consistency = false
+
 # Safe Mode
 # =====================
 # Will have GPU-AV try and prevent crashes, but will be much slower to validate. If using Safe Mode, consider using selective shader instrumentation, to only instrument the shaders/pipelines causing issues.
@@ -155,10 +170,20 @@ khronos_validation.gpuav_shader_sanitizer = true
 # Any shader or pipeline library debug name (set with vkSetDebugUtilsObjectNameEXT) fully matching any listed regular expression will be instrumented when creating pipelines with those shaders or libraries. Regex grammar: Modified ECMAScript. No support for shader objects yet. Warning: instrumentation being performed at final pipeline creation time, if shaders modules have already been destroyed at this step (possible when using pipeline libraries), they won't be found by this regex selection system. In this case, consider naming pipeline libraries instead.
 khronos_validation.gpuav_shaders_to_instrument =
 
+# Shared Memory Data Race Detection
+# =====================
+# Detects data races on shared memory (Compute shaders only). Limitations: This does not handle mixing atomics and non-atomics on the same locations without a barrier in between, this could lead to false positives. This assumes barrier() is used for all shared memory synchronization.
+khronos_validation.gpuav_shared_memory_data_race = true
+
 # RayQuery SPIR-V instructions
 # =====================
 # Enable shader instrumentation on OpRayQueryInitializeKHR
 khronos_validation.gpuav_validate_ray_query = true
+
+# TraceRay SPIR-V instructions
+# =====================
+# Enable shader instrumentation on OpTraceRayKHR, OpHitObject*
+khronos_validation.gpuav_validate_trace_ray = true
 
 # Out of bounds vertex attribute fetching
 # =====================

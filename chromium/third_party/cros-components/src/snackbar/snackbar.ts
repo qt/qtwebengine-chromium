@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import './snackbar-item';
+import './snackbar-item.js';
 
 import {css, CSSResultGroup, html, LitElement} from 'lit';
 

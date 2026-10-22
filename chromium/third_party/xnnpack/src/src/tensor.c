@@ -52,14 +52,6 @@ static enum xnn_status check_zero_point(
   int32_t zero_point)
 {
   switch (datatype) {
-    case xnn_datatype_qcint2:
-      if (zero_point != 0) {
-        xnn_log_error(
-          "failed to create Quantized Dense Tensor value: invalid zero point %" PRId32" outside the [0, 0] range",
-          zero_point);
-        return xnn_status_invalid_parameter;
-      }
-      break;
     case xnn_datatype_qcint4:
     case xnn_datatype_qbint4:
       if (zero_point < 0 || zero_point > 15) {
@@ -69,7 +61,6 @@ static enum xnn_status check_zero_point(
         return xnn_status_invalid_parameter;
       }
       break;
-    case xnn_datatype_qcint8:
     case xnn_datatype_qint8:
       if ((int32_t) (int8_t) zero_point != zero_point) {
         xnn_log_error(
@@ -86,6 +77,8 @@ static enum xnn_status check_zero_point(
         return xnn_status_invalid_parameter;
       }
       break;
+    case xnn_datatype_qcint2:
+    case xnn_datatype_qcint8:
     case xnn_datatype_qcint32:
     case xnn_datatype_qint32:
       if (zero_point != 0) {
@@ -158,7 +151,7 @@ enum xnn_status xnn_define_tensor_value(
   value->type = xnn_value_type_dense_tensor;
   value->datatype = datatype;
   set_shape(value, num_dims, dims);
-  value->size = xnn_tensor_get_size_by_id(subgraph, value->id);
+  value->size = xnn_tensor_get_size(value);
   value->flags = flags;
   value->data = (void*) (uintptr_t) data;
   set_allocation_type(value);
@@ -214,7 +207,7 @@ enum xnn_status xnn_define_quantized_tensor_value(
   value->quantization.zero_point = zero_point;
   value->quantization.scale = scale;
   set_shape(value, num_dims, dims);
-  value->size = xnn_tensor_get_size_by_id(subgraph, value->id);
+  value->size = xnn_tensor_get_size(value);
   value->flags = flags;
   value->data = (void*) (uintptr_t) data;
   set_allocation_type(value);
@@ -291,7 +284,7 @@ enum xnn_status xnn_define_dynamically_quantized_tensor_value(
   value->datatype = datatype;
   value->quantization.num_nonbatch_dims = num_nonbatch_dims;
   set_shape(value, num_dims, dims);
-  value->size = xnn_tensor_get_size_by_id(subgraph, value->id);
+  value->size = xnn_tensor_get_size(value);
   value->quantization.dynamic_params_size = xnn_tensor_get_dynamic_quant_param_size(value->datatype, &value->shape, value->quantization.num_nonbatch_dims);
   value->quantization.row_sum_size = xnn_tensor_get_row_sum_size(value->datatype, &value->shape, value->quantization.num_nonbatch_dims);
   value->flags = flags;
@@ -459,7 +452,7 @@ enum xnn_status xnn_define_channelwise_quantized_tensor_value_v3(
   }
   value->quantization.channel_dimension = channel_dim;
   set_shape(value, num_dims, dims);
-  value->size = xnn_tensor_get_size_by_id(subgraph, value->id);
+  value->size = xnn_tensor_get_size(value);
   value->flags = flags;
   value->data = (void*) (uintptr_t) data;
   set_allocation_type(value);
@@ -516,9 +509,11 @@ enum xnn_status xnn_define_blockwise_quantized_tensor_value_v2(
     return xnn_status_invalid_parameter;
   }
 
-  if (num_dims == 0) {
+  if (num_dims < 2) {
     xnn_log_error(
-      "failed to create Blockwise Quantized Dense Tensor value: no channel dimension exists");
+      "failed to create Blockwise Quantized Dense Tensor value: num of "
+      "dimensions %zu must be at least 2",
+      num_dims);
     return xnn_status_invalid_parameter;
   }
 
@@ -542,6 +537,7 @@ enum xnn_status xnn_define_blockwise_quantized_tensor_value_v2(
         "failed to create Blockwise Quantized Dense Tensor value: block size "
         "is invalid. Got %zu\n",
         block_size);
+    return xnn_status_invalid_parameter;
   }
 
   enum xnn_status status = check_zero_point(datatype, zero_point);
@@ -614,7 +610,7 @@ enum xnn_status xnn_define_blockwise_quantized_tensor_value_v2(
   value->quantization.channel_dimension_blockwise = channel_dim;
   value->quantization.block_size = block_size;
   set_shape(value, num_dims, dims);
-  value->size = xnn_tensor_get_size_by_id(subgraph, value->id);
+  value->size = xnn_tensor_get_size(value);
   value->flags = flags;
   value->data = (void*) (uintptr_t) data;
   set_allocation_type(value);
@@ -839,10 +835,3 @@ size_t xnn_tensor_get_row_sum_size(enum xnn_datatype datatype,
   return 0;
 }
 
-size_t xnn_tensor_get_size_by_id(xnn_subgraph_t subgraph, uint32_t value_id)
-{
-  assert(value_id < subgraph->num_values);
-
-  const struct xnn_value* value = subgraph->values + value_id;
-  return xnn_tensor_get_size(value);
-}

@@ -13,7 +13,6 @@
 #include "base/containers/flat_tree.h"
 #include "base/notreached.h"
 #include "device/fido/public/authenticator_selection_criteria.h"
-#include "device/fido/public/cable_discovery_data.h"
 #include "device/fido/public/fido_constants.h"
 #include "device/fido/public/fido_transport_protocol.h"
 #include "device/fido/public/public_key_credential_descriptor.h"
@@ -34,8 +33,8 @@ struct COMPONENT_EXPORT(AUTHENTICATOR_MOJOM)
                device::FidoTransportProtocol> {
   static blink::mojom::AuthenticatorTransport ToMojom(
       device::FidoTransportProtocol input);
-  static bool FromMojom(blink::mojom::AuthenticatorTransport input,
-                        device::FidoTransportProtocol* output);
+  static device::FidoTransportProtocol FromMojom(
+      blink::mojom::AuthenticatorTransport input);
 };
 
 template <>
@@ -43,8 +42,8 @@ struct COMPONENT_EXPORT(AUTHENTICATOR_MOJOM)
     EnumTraits<blink::mojom::PublicKeyCredentialType, device::CredentialType> {
   static blink::mojom::PublicKeyCredentialType ToMojom(
       device::CredentialType input);
-  static bool FromMojom(blink::mojom::PublicKeyCredentialType input,
-                        device::CredentialType* output);
+  static device::CredentialType FromMojom(
+      blink::mojom::PublicKeyCredentialType input);
 };
 
 template <>
@@ -98,8 +97,8 @@ struct COMPONENT_EXPORT(AUTHENTICATOR_MOJOM)
                device::AuthenticatorAttachment> {
   static blink::mojom::AuthenticatorAttachment ToMojom(
       device::AuthenticatorAttachment input);
-  static bool FromMojom(blink::mojom::AuthenticatorAttachment input,
-                        device::AuthenticatorAttachment* output);
+  static device::AuthenticatorAttachment FromMojom(
+      blink::mojom::AuthenticatorAttachment input);
 };
 
 template <>
@@ -108,8 +107,8 @@ struct COMPONENT_EXPORT(AUTHENTICATOR_MOJOM)
                device::ResidentKeyRequirement> {
   static blink::mojom::ResidentKeyRequirement ToMojom(
       device::ResidentKeyRequirement input);
-  static bool FromMojom(blink::mojom::ResidentKeyRequirement input,
-                        device::ResidentKeyRequirement* output);
+  static device::ResidentKeyRequirement FromMojom(
+      blink::mojom::ResidentKeyRequirement input);
 };
 
 template <>
@@ -118,16 +117,16 @@ struct COMPONENT_EXPORT(AUTHENTICATOR_MOJOM)
                device::UserVerificationRequirement> {
   static blink::mojom::UserVerificationRequirement ToMojom(
       device::UserVerificationRequirement input);
-  static bool FromMojom(blink::mojom::UserVerificationRequirement input,
-                        device::UserVerificationRequirement* output);
+  static device::UserVerificationRequirement FromMojom(
+      blink::mojom::UserVerificationRequirement input);
 };
 
 template <>
 struct COMPONENT_EXPORT(AUTHENTICATOR_MOJOM)
     EnumTraits<blink::mojom::LargeBlobSupport, device::LargeBlobSupport> {
   static blink::mojom::LargeBlobSupport ToMojom(device::LargeBlobSupport input);
-  static bool FromMojom(blink::mojom::LargeBlobSupport input,
-                        device::LargeBlobSupport* output);
+  static device::LargeBlobSupport FromMojom(
+      blink::mojom::LargeBlobSupport input);
 };
 
 template <>
@@ -195,71 +194,12 @@ struct COMPONENT_EXPORT(AUTHENTICATOR_MOJOM)
 
 template <>
 struct COMPONENT_EXPORT(AUTHENTICATOR_MOJOM)
-    StructTraits<blink::mojom::CableAuthenticationDataView,
-                 device::CableDiscoveryData> {
-  static uint8_t version(const device::CableDiscoveryData& in) {
-    switch (in.version) {
-      case device::CableDiscoveryData::Version::V1:
-        return 1;
-      case device::CableDiscoveryData::Version::V2:
-        return 2;
-      case device::CableDiscoveryData::Version::INVALID:
-        NOTREACHED();
-    }
-  }
-
-  static std::optional<device::CableEidArray> client_eid(
-      const device::CableDiscoveryData& in) {
-    if (in.version == device::CableDiscoveryData::Version::V1) {
-      return in.v1->client_eid;
-    }
-    return std::nullopt;
-  }
-
-  static const std::optional<device::CableEidArray> authenticator_eid(
-      const device::CableDiscoveryData& in) {
-    if (in.version == device::CableDiscoveryData::Version::V1) {
-      return in.v1->authenticator_eid;
-    }
-    return std::nullopt;
-  }
-
-  static const std::optional<device::CableSessionPreKeyArray> session_pre_key(
-      const device::CableDiscoveryData& in) {
-    if (in.version == device::CableDiscoveryData::Version::V1) {
-      return in.v1->session_pre_key;
-    }
-    return std::nullopt;
-  }
-
-  static const std::optional<std::vector<uint8_t>> server_link_data(
-      const device::CableDiscoveryData& in) {
-    if (in.version == device::CableDiscoveryData::Version::V2) {
-      return in.v2->server_link_data;
-    }
-    return std::nullopt;
-  }
-
-  static const std::optional<std::vector<uint8_t>> experiments(
-      const device::CableDiscoveryData& in) {
-    if (in.version == device::CableDiscoveryData::Version::V2) {
-      return in.v2->experiments;
-    }
-    return std::nullopt;
-  }
-
-  static bool Read(blink::mojom::CableAuthenticationDataView data,
-                   device::CableDiscoveryData* out);
-};
-
-template <>
-struct COMPONENT_EXPORT(AUTHENTICATOR_MOJOM)
     EnumTraits<blink::mojom::AttestationConveyancePreference,
                device::AttestationConveyancePreference> {
   static blink::mojom::AttestationConveyancePreference ToMojom(
       device::AttestationConveyancePreference input);
-  static bool FromMojom(blink::mojom::AttestationConveyancePreference input,
-                        device::AttestationConveyancePreference* output);
+  static device::AttestationConveyancePreference FromMojom(
+      blink::mojom::AttestationConveyancePreference input);
 };
 
 }  // namespace mojo

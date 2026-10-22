@@ -4,8 +4,6 @@
 
 webui_sources = set([
     'bundle_js.py',
-    'eslint_ts.py',
-    'generate_code_cache.py',
     'generate_grd.py',
     'minify_js.py',
     'rollup_plugin.mjs',
@@ -14,7 +12,6 @@ webui_sources = set([
 
 webui_tests = set([
     'bundle_js_test.py',
-    'eslint_ts_test.py',
     'generate_grd_test.py',
     'minify_js_test.py',
     'stylelint_test.py',

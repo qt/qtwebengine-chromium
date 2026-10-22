@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
+#include "base/strings/utf_ostream_operators.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/public/browser/gpu_data_manager.h"
@@ -124,7 +125,7 @@ TEST_F(RequirementsCheckerTest, RequirementsFailWebGL) {
   StartChecker();
 
   // TODO(michaelpg): Check that the runner actually finishes, which requires
-  // waiting for the GPU check to succeed: crbug.com/706204.
+  // waiting for the GPU check to succeed: crbug.com/40512985.
   if (runner_.errors().size()) {
     EXPECT_THAT(runner_.errors(), testing::UnorderedElementsAre(
                                       PreloadCheck::Error::kWebglNotSupported));

@@ -44,6 +44,7 @@ const Capabilities kConversionPolyfillCapabilities{
     Capability::kAllowDuplicateBindings,
     Capability::kAllowNonCoreTypes,
     Capability::kAllow8BitIntegers,
+    Capability::kAllow16BitIntegers,
 };
 
 /// The set of polyfills that should be applied.

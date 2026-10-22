@@ -83,18 +83,14 @@ SVGUseElement::SVGUseElement(Document& document)
           this,
           svg_names::kWidthAttr,
           SVGLengthMode::kWidth,
-          SVGLength::Initial::kUnitlessZero,
-          CSSPropertyID::kWidth)),
+          SVGLength::Initial::kUnitlessZero)),
       height_(MakeGarbageCollected<SVGAnimatedLength>(
           this,
           svg_names::kHeightAttr,
           SVGLengthMode::kHeight,
-          SVGLength::Initial::kUnitlessZero,
-          CSSPropertyID::kHeight)),
+          SVGLength::Initial::kUnitlessZero)),
       element_url_is_local_(true),
       needs_shadow_tree_recreation_(false) {
-  DCHECK(HasCustomStyleCallbacks() ||
-         RuntimeEnabledFeatures::Svg2CascadeEnabled());
   CreateUserAgentShadowRoot();
 }
 
@@ -214,7 +210,7 @@ void SVGUseElement::UpdateDocumentContent(
 void SVGUseElement::UpdateTargetReference() {
   const String& url_string = HrefString();
   element_url_ = GetDocument().CompleteURL(url_string);
-  element_url_is_local_ = url_string.StartsWith('#');
+  element_url_is_local_ = url_string.starts_with('#');
   if (!IsStructurallyExternal() || !GetDocument().IsActive() ||
       !element_url_.IsValid()) {
     UpdateDocumentContent(nullptr);
@@ -258,9 +254,7 @@ void SVGUseElement::SvgAttributeChanged(
   if (attr_name == svg_names::kXAttr || attr_name == svg_names::kYAttr ||
       attr_name == svg_names::kWidthAttr ||
       attr_name == svg_names::kHeightAttr) {
-    if (attr_name == svg_names::kXAttr || attr_name == svg_names::kYAttr ||
-        RuntimeEnabledFeatures::
-            CollectWidthAndHeightAsPresentationAttributesForUseEnabled()) {
+    if (attr_name == svg_names::kXAttr || attr_name == svg_names::kYAttr) {
       UpdatePresentationAttributeStyle(params.property);
     }
 
@@ -329,8 +323,8 @@ void SVGUseElement::ClearResourceReference() {
 }
 
 Element* SVGUseElement::ResolveTargetElement() {
-  AtomicString element_identifier(DecodeURLEscapeSequences(
-      element_url_.FragmentIdentifier(), DecodeURLMode::kUTF8OrIsomorphic));
+  AtomicString element_identifier(DecodeUrlEscapeSequences(
+      element_url_.FragmentIdentifier(), DecodeUrlMode::kUtf8OrIsomorphic));
 
   if (!IsStructurallyExternal()) {
     if (!element_url_.HasFragmentIdentifier()) {
@@ -460,39 +454,11 @@ static void PostProcessInstanceTree(SVGElement& target_root,
   DCHECK(!instance_element);
 }
 
-static void MoveChildrenToReplacementElement(ContainerNode& source_root,
-                                             ContainerNode& destination_root) {
-  for (Node* child = source_root.firstChild(); child;) {
-    Node* next_child = child->nextSibling();
-    destination_root.AppendChild(child);
-    child = next_child;
-  }
-}
-
 SVGElement* SVGUseElement::CreateInstanceTree(SVGElement& target_root) const {
   NodeCloningData data{CloneOption::kIncludeDescendants};
   SVGElement* instance_root = &To<SVGElement>(target_root.CloneWithChildren(
       data, /*document*/ nullptr, /*append_to*/ nullptr,
       /*fallback_registry*/ nullptr));
-  if (!RuntimeEnabledFeatures::Svg2CascadeEnabled() &&
-      IsA<SVGSymbolElement>(target_root)) {
-    // Spec: The referenced 'symbol' and its contents are deep-cloned into
-    // the generated tree, with the exception that the 'symbol' is replaced
-    // by an 'svg'. This generated 'svg' will always have explicit values
-    // for attributes width and height. If attributes width and/or height
-    // are provided on the 'use' element, then these attributes will be
-    // transferred to the generated 'svg'. If attributes width and/or
-    // height are not specified, the generated 'svg' element will use
-    // values of 100% for these attributes.
-    auto* svg_element =
-        MakeGarbageCollected<SVGSVGElement>(target_root.GetDocument());
-    // Transfer all attributes from the <symbol> to the new <svg>
-    // element.
-    svg_element->CloneAttributesFrom(*instance_root);
-    // Move already cloned elements to the new <svg> element.
-    MoveChildrenToReplacementElement(*instance_root, *svg_element);
-    instance_root = svg_element;
-  }
   TransferUseWidthAndHeightIfNeeded(*this, *instance_root, target_root);
   PostProcessInstanceTree(target_root, *instance_root);
   return instance_root;
@@ -709,8 +675,8 @@ void SVGUseElement::SynchronizeAllSVGAttributes() const {
 
 void SVGUseElement::CollectExtraStyleForPresentationAttribute(
     HeapVector<CSSPropertyValue, 8>& style) {
-  auto pres_attrs = std::to_array<const SVGAnimatedPropertyBase*>(
-      {x_.Get(), y_.Get(), width_.Get(), height_.Get()});
+  auto pres_attrs =
+      std::to_array<const SVGAnimatedPropertyBase*>({x_.Get(), y_.Get()});
   AddAnimatedPropertiesToPresentationAttributeStyle(pres_attrs, style);
   SVGGraphicsElement::CollectExtraStyleForPresentationAttribute(style);
 }

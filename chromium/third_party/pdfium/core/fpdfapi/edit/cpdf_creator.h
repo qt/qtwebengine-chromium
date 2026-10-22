@@ -7,11 +7,14 @@
 #ifndef CORE_FPDFAPI_EDIT_CPDF_CREATOR_H_
 #define CORE_FPDFAPI_EDIT_CPDF_CREATOR_H_
 
+#include <stdint.h>
+
 #include <map>
 #include <memory>
 #include <vector>
 
 #include "core/fxcrt/fx_stream.h"
+#include "core/fxcrt/mask.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 
@@ -23,18 +26,22 @@ class CPDF_Document;
 class CPDF_Object;
 class CPDF_Parser;
 
-#define FPDFCREATE_INCREMENTAL 1
-#define FPDFCREATE_NO_ORIGINAL 2
-
 class CPDF_Creator {
  public:
+  enum CreateFlags : uint32_t {
+    kNone = 0,
+    kIncremental = (1 << 0),
+    kNoOriginal = (1 << 1),
+    kRemoveSecurityDeprecated = 3,
+    kRemoveSecurity = (1 << 2),
+    kSubsetNewFonts = (1 << 3),
+  };
+
   CPDF_Creator(CPDF_Document* doc,
                RetainPtr<IFX_RetainableWriteStream> archive);
   ~CPDF_Creator();
 
-  void RemoveSecurity();
-  bool Create(uint32_t flags);
-  bool SetFileVersion(int32_t fileVersion);
+  bool Create(Mask<CreateFlags> flags, int32_t file_version);
 
  private:
   enum class Stage {
@@ -70,6 +77,8 @@ class CPDF_Creator {
   bool WriteNewObjs();
   bool WriteIndirectObj(uint32_t objnum, const CPDF_Object* pObj);
 
+  void RemoveSecurity();
+
   CPDF_CryptoHandler* GetCryptoHandler();
 
   UnownedPtr<CPDF_Document> const document_;
@@ -90,6 +99,7 @@ class CPDF_Creator {
   bool security_changed_ = false;
   bool is_incremental_ = false;
   bool is_original_ = false;
+  bool subset_new_fonts_ = false;
 };
 
 #endif  // CORE_FPDFAPI_EDIT_CPDF_CREATOR_H_

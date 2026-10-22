@@ -141,7 +141,7 @@ ImagePaintTimingDetector::TakePaintTimingCallback() {
   SendRectsToHud();
 
   added_entry_in_latest_frame_ = false;
-  auto callback = BindOnce(
+  return BindOnce(
       [](ImagePaintTimingDetector* self, uint32_t frame_index,
          LargestContentfulPaintCalculator* lcp_calculator,
          const base::TimeTicks& presentation_timestamp,
@@ -154,15 +154,6 @@ ImagePaintTimingDetector::TakePaintTimingCallback() {
       },
       WrapWeakPersistent(this), frame_index_++,
       WrapWeakPersistent(GetLargestContentfulPaintCalculator()));
-
-  // This is for unit-testing purposes only. Some of these tests check for UKMs
-  // and things that are not covered by WPT.
-  // TODO(crbug.com/382396711) convert tests to WPT and remove this.
-  if (callback_manager_) {
-    callback_manager_->RegisterCallback(std::move(callback));
-    return std::nullopt;
-  }
-  return std::move(callback);
 }
 
 void ImagePaintTimingDetector::NotifyImageRemoved(
@@ -228,12 +219,8 @@ void ImageRecordsManager::AssignPaintTimeToRegisteredQueuedRecords(
     // from that collection if the image was removed between painting it and
     // running this callback, in which case we still want to set its paint time.
     auto it = pending_images_.find(record->Hash());
-    if (it == pending_images_.end()) {
-      if (!RuntimeEnabledFeatures::
-              PaintTimingRecordTimingForDetachedPaintedElementsEnabled() ||
-          !record->WasImageOrTextRemovedWhilePending()) {
-        continue;
-      }
+    if (it == pending_images_.end() && !record->WasNodeRemoved()) {
+      continue;
     }
 
     // Set paint time if it hasn't been set. Note for first video frame with
@@ -631,7 +618,6 @@ void ImageRecordsManager::Trace(Visitor* visitor) const {
 void ImagePaintTimingDetector::Trace(Visitor* visitor) const {
   visitor->Trace(records_manager_);
   visitor->Trace(frame_view_);
-  visitor->Trace(callback_manager_);
 }
 
 LargestContentfulPaintCalculator*

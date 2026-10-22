@@ -1166,14 +1166,15 @@ GLboolean IsEnablediOES(GLenum target, GLuint index) override;
 
 void ProvokingVertexANGLE(GLenum provokeMode) override;
 
-void FramebufferMemorylessPixelLocalStorageANGLE(
-    GLint plane,
-    GLenum internalformat) override;
+void FramebufferMemorylessPixelLocalStorageANGLE(GLint plane,
+                                                 GLenum internalformat,
+                                                 GLbitfield usage) override;
 
 void FramebufferTexturePixelLocalStorageANGLE(GLint plane,
                                               GLuint backingtexture,
                                               GLint level,
-                                              GLint layer) override;
+                                              GLint layer,
+                                              GLbitfield usage) override;
 
 void FramebufferPixelLocalClearValuefvANGLE(GLint plane,
                                             const GLfloat* value) override;
@@ -1188,6 +1189,8 @@ void BeginPixelLocalStorageANGLE(GLsizei count, const GLenum* loadops) override;
 
 void EndPixelLocalStorageANGLE(GLsizei count, const GLenum* storeops) override;
 
+void EndPixelLocalStorageImplicitANGLE() override;
+
 void PixelLocalStorageBarrierANGLE() override;
 
 void FramebufferPixelLocalStorageInterruptANGLE() override;
@@ -1201,6 +1204,10 @@ void GetFramebufferPixelLocalStorageParameterfvANGLE(GLint plane,
 void GetFramebufferPixelLocalStorageParameterivANGLE(GLint plane,
                                                      GLenum pname,
                                                      GLint* params) override;
+
+void GetFramebufferPixelLocalStorageParameteruivANGLE(GLint plane,
+                                                      GLenum pname,
+                                                      GLuint* params) override;
 
 void ClipControlEXT(GLenum origin, GLenum depth) override;
 

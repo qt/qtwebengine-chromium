@@ -171,12 +171,18 @@ typename std::bitset<kKnownFormatCount>::reference FormatSet::operator[](const F
 FormatIndex ComputeFormatIndex(wgpu::TextureFormat format) {
     uint32_t formatValue = static_cast<uint32_t>(format);
     switch (formatValue & kEnumPrefixMask) {
-        case 0:
+        case 0: {
             // This takes advantage of overflows to make the index of TextureFormat::Undefined
             // outside of the range of the FormatTable.
             static_assert(static_cast<uint32_t>(wgpu::TextureFormat::Undefined) - 1 >
                           kKnownFormatCount);
-            return static_cast<FormatIndex>(formatValue - 1);
+
+            uint32_t index = formatValue - 1;
+            if (index < kWebGPUFormatCount) {
+                return static_cast<FormatIndex>(index);
+            }
+            break;
+        }
         case kDawnEnumPrefix: {
             uint32_t dawnIndex = formatValue & ~kEnumPrefixMask;
             if (dawnIndex < kDawnFormatCount) {
@@ -193,6 +199,10 @@ FormatIndex ComputeFormatIndex(wgpu::TextureFormat format) {
 
 // Adds capabilities to color formats.
 void ComputeFormatCapabilities(const DeviceBase* device, FormatTable& table) {
+    // Track the set of supported formats independently of Format::unsupportedReason because that
+    // std::variant does not allow discriminating between "uninitialized" and "supported".
+    ityp::bitset<FormatIndex, kKnownFormatCount> formatSupported;
+
     // Add initial capabilities to formats.
     auto InitialCapsAddedBy = [&](std::optional<Feature> feature,
                                   std::initializer_list<wgpu::TextureFormat> formats, Cap caps) {
@@ -204,15 +214,16 @@ void ComputeFormatCapabilities(const DeviceBase* device, FormatTable& table) {
             Format& format = table[index];
 
             if (supported) {
-                format.caps = caps;  // set the initial capabilities
+                format.caps |= caps;  // set the initial capabilities
                 format.unsupportedReason = Format::supported;
-            } else if (format.caps == Cap::None) {
+                formatSupported[index] = true;
+            } else if (!formatSupported[index] &&
+                       std::holds_alternative<std::monostate>(format.unsupportedReason)) {
                 auto requestedFeature = *feature;
                 format.unsupportedReason =
                     requestedFeature == Feature::CoreFeaturesAndLimits
                         ? UnsupportedReason{CompatibilityMode{}}
-                        : UnsupportedReason{
-                              RequiresFeature{static_cast<wgpu::FeatureName>(requestedFeature)}};
+                        : UnsupportedReason{RequiresFeature{ToAPI(requestedFeature)}};
             }
         }
     };
@@ -290,12 +301,12 @@ void ComputeFormatCapabilities(const DeviceBase* device, FormatTable& table) {
 
     // Initialize the format capabilities and add the pre-initialized format capabilities when
     // relevant features are enabled
-    InitialCapsAddedBy(Feature::YCbCrVulkanSamplers, {wgpu::TextureFormat::External}, Cap::None);
 
-    InitialCapsAddedBy(Feature::Unorm16TextureFormats,
-                       {wgpu::TextureFormat::R16Unorm, wgpu::TextureFormat::RG16Unorm,
-                        wgpu::TextureFormat::RGBA16Unorm},
-                       Cap::Renderable | Cap::Multisample | Cap::Resolve);
+    // The two YCbCr extensions each add support for OpaqueYCbCrAndroid.
+    InitialCapsAddedBy(Feature::YCbCrVulkanSamplers, {wgpu::TextureFormat::OpaqueYCbCrAndroid},
+                       Cap::None);
+    InitialCapsAddedBy(Feature::OpaqueYCbCrAndroidForExternalTexture,
+                       {wgpu::TextureFormat::OpaqueYCbCrAndroid}, Cap::None);
 
     InitialCapsAddedBy(Feature::CoreFeaturesAndLimits, {wgpu::TextureFormat::BGRA8UnormSrgb},
                        Cap::Renderable | Cap::Multisample | Cap::Resolve | Cap::Blendable);
@@ -383,6 +394,11 @@ void ComputeFormatCapabilities(const DeviceBase* device, FormatTable& table) {
         AddCaps({wgpu::TextureFormat::RG11B10Ufloat},
                 Cap::Renderable | Cap::Multisample | Cap::Resolve | Cap::Blendable);
     }
+
+    InitialCapsAddedBy(Feature::Unorm16TextureFormats,
+                       {wgpu::TextureFormat::R16Unorm, wgpu::TextureFormat::RG16Unorm,
+                        wgpu::TextureFormat::RGBA16Unorm},
+                       Cap::Renderable | Cap::Multisample | Cap::Resolve);
 }
 
 FormatTable BuildFormatTable(const DeviceBase* device) {
@@ -450,7 +466,6 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
                 switch (sampleTypes) {
                     case SampleTypeBit::Float:
                     case SampleTypeBit::UnfilterableFloat:
-                    case SampleTypeBit::External:
                         aspect->baseType = TextureComponentType::Float;
                         break;
                     case SampleTypeBit::Sint:
@@ -472,6 +487,12 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
     SampleTypeBit sampleTypeFor32BitFloatFormats = device->HasFeature(Feature::Float32Filterable)
                                                        ? kAnyFloat
                                                        : SampleTypeBit::UnfilterableFloat;
+    SampleTypeBit sampleTypeForNorm16Formats =
+        (device->HasFeature(Feature::Unorm16TextureFormats) ||
+         device->HasFeature(Feature::Unorm16Filterable))
+            ? kAnyFloat
+            : SampleTypeBit::UnfilterableFloat;
+
     // 1 byte
     DefineColorFormat(wgpu::TextureFormat::R8Unorm, ByteSize(1), kAnyFloat, ComponentCount(1),
                       RenderTargetPixelByteCost(1), RenderTargetComponentAlignment(1));
@@ -548,7 +569,11 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
     DefineColorFormat(wgpu::TextureFormat::RG11B10Ufloat, ByteSize(4), kAnyFloat, ComponentCount(3),
                       RenderTargetPixelByteCost(8), RenderTargetComponentAlignment(4));
     DefineColorFormat(wgpu::TextureFormat::RGB9E5Ufloat, ByteSize(4), kAnyFloat, ComponentCount(3));
-    DefineColorFormat(wgpu::TextureFormat::External, ByteSize(1), SampleTypeBit::External,
+
+    // The OpaqueYCbCrAndroid format acts as if it is a float format, but we later validate when it
+    // is used with a static sampler that the sampler's filteringness matches what the YCbCr info
+    // allows.
+    DefineColorFormat(wgpu::TextureFormat::OpaqueYCbCrAndroid, ByteSize(1), kAnyFloat,
                       ComponentCount(0));
 
     // 8 bytes
@@ -582,18 +607,24 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
                       RenderTargetPixelByteCost(16), RenderTargetComponentAlignment(4));
 
     // Norm16
-    DefineColorFormat(wgpu::TextureFormat::R16Unorm, ByteSize(2), kAnyFloat, ComponentCount(1),
-                      RenderTargetPixelByteCost(2), RenderTargetComponentAlignment(2));
-    DefineColorFormat(wgpu::TextureFormat::RG16Unorm, ByteSize(4), kAnyFloat, ComponentCount(2),
-                      RenderTargetPixelByteCost(4), RenderTargetComponentAlignment(2));
-    DefineColorFormat(wgpu::TextureFormat::RGBA16Unorm, ByteSize(8), kAnyFloat, ComponentCount(4),
-                      RenderTargetPixelByteCost(8), RenderTargetComponentAlignment(2));
-    DefineColorFormat(wgpu::TextureFormat::R16Snorm, ByteSize(2), kAnyFloat, ComponentCount(1),
-                      RenderTargetPixelByteCost(2), RenderTargetComponentAlignment(2));
-    DefineColorFormat(wgpu::TextureFormat::RG16Snorm, ByteSize(4), kAnyFloat, ComponentCount(2),
-                      RenderTargetPixelByteCost(4), RenderTargetComponentAlignment(2));
-    DefineColorFormat(wgpu::TextureFormat::RGBA16Snorm, ByteSize(8), kAnyFloat, ComponentCount(4),
-                      RenderTargetPixelByteCost(8), RenderTargetComponentAlignment(2));
+    DefineColorFormat(wgpu::TextureFormat::R16Unorm, ByteSize(2), sampleTypeForNorm16Formats,
+                      ComponentCount(1), RenderTargetPixelByteCost(2),
+                      RenderTargetComponentAlignment(2));
+    DefineColorFormat(wgpu::TextureFormat::RG16Unorm, ByteSize(4), sampleTypeForNorm16Formats,
+                      ComponentCount(2), RenderTargetPixelByteCost(4),
+                      RenderTargetComponentAlignment(2));
+    DefineColorFormat(wgpu::TextureFormat::RGBA16Unorm, ByteSize(8), sampleTypeForNorm16Formats,
+                      ComponentCount(4), RenderTargetPixelByteCost(8),
+                      RenderTargetComponentAlignment(2));
+    DefineColorFormat(wgpu::TextureFormat::R16Snorm, ByteSize(2), sampleTypeForNorm16Formats,
+                      ComponentCount(1), RenderTargetPixelByteCost(2),
+                      RenderTargetComponentAlignment(2));
+    DefineColorFormat(wgpu::TextureFormat::RG16Snorm, ByteSize(4), sampleTypeForNorm16Formats,
+                      ComponentCount(2), RenderTargetPixelByteCost(4),
+                      RenderTargetComponentAlignment(2));
+    DefineColorFormat(wgpu::TextureFormat::RGBA16Snorm, ByteSize(8), sampleTypeForNorm16Formats,
+                      ComponentCount(4), RenderTargetPixelByteCost(8),
+                      RenderTargetComponentAlignment(2));
 
     ComputeFormatCapabilities(device, table);
 
@@ -743,6 +774,8 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
             AddFormat(internalFormat);
         };
 
+    // clang-format off
+
     // Depth-stencil formats
     AddStencilFormat(wgpu::TextureFormat::Stencil8, Format::supported);
     AddDepthFormat(wgpu::TextureFormat::Depth16Unorm, 2, Format::supported);
@@ -841,6 +874,7 @@ FormatTable BuildFormatTable(const DeviceBase* device) {
     const UnsupportedReason multiPlanarFormatNv12aUnsupportedReason = device->HasFeature(Feature::MultiPlanarFormatNv12a) ?  Format::supported : RequiresFeature{wgpu::FeatureName::MultiPlanarFormatNv12a};
     AddMultiAspectFormat(wgpu::TextureFormat::R8BG8A8Triplanar420Unorm, TextureSubsampling::e420, Aspect::Plane0 | Aspect::Plane1 | Aspect::Plane2,
         multiPlanarCapabilities, multiPlanarFormatNv12aUnsupportedReason, ComponentCount(4), wgpu::TextureFormat::R8Unorm, wgpu::TextureFormat::RG8Unorm, wgpu::TextureFormat::R8Unorm);
+
     // clang-format on
 
     // This checks that each format is set at least once, the second part of checking that all

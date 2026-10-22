@@ -34,10 +34,11 @@ class StreamingPlaybackController final : public ReceiverSession::Client {
 
 #if defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
   StreamingPlaybackController(TaskRunner& task_runner,
-                              StreamingPlaybackController::Client* client);
+                              StreamingPlaybackController::Client* client,
+                              bool enable_input_events);
 #else
-  explicit StreamingPlaybackController(
-      StreamingPlaybackController::Client* client);
+  StreamingPlaybackController(StreamingPlaybackController::Client* client,
+                              bool enable_input_events);
 #endif  // defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
 
   // ReceiverSession::Client overrides.
@@ -57,8 +58,10 @@ class StreamingPlaybackController final : public ReceiverSession::Client {
 
 #if defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
   void HandleKeyboardEvent(const SDL_KeyboardEvent& event);
+  void HandleMouseButtonEvent(const SDL_MouseButtonEvent& event);
 
   TaskRunner& task_runner_;
+  const bool enable_input_events_;
 
   // NOTE: member ordering is important, since the sub systems must be
   // first-constructed, last-destroyed. Make sure any new SDL related
@@ -77,6 +80,7 @@ class StreamingPlaybackController final : public ReceiverSession::Client {
   std::unique_ptr<DummyPlayer> video_player_;
 #endif  // defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
 
+  const ReceiverSession* session_ = nullptr;
   std::unique_ptr<SimpleRemotingReceiver> remoting_receiver_;
 };
 

@@ -38,7 +38,7 @@ class KahanSum {
   Scalar _correction{};
 
  public:
-  Scalar value() { return _sum; }
+  Scalar value() const { return _sum; }
 
   void operator+=(Scalar increment) {
     const Scalar correctedIncrement = increment + _correction;
@@ -59,7 +59,7 @@ class FABSum {
   Index _blockUsed{};
 
  public:
-  Scalar value() { return _block.topRows(_blockUsed).sum() + _totalSum.value(); }
+  Scalar value() const { return _block.topRows(_blockUsed).sum() + _totalSum.value(); }
 
   void operator+=(Scalar increment) {
     _block(_blockUsed++, 0) = increment;

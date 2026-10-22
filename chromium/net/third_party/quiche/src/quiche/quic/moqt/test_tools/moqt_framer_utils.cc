@@ -17,8 +17,8 @@
 #include "quiche/quic/moqt/moqt_parser.h"
 #include "quiche/common/platform/api/quiche_test.h"
 #include "quiche/common/quiche_buffer_allocator.h"
-#include "quiche/common/quiche_stream.h"
 #include "quiche/web_transport/test_tools/in_memory_stream.h"
+#include "quiche/web_transport/web_transport.h"
 
 namespace moqt::test {
 
@@ -49,8 +49,8 @@ struct FramingVisitor {
   quiche::QuicheBuffer operator()(const MoqtPublishDone& message) {
     return framer.SerializePublishDone(message);
   }
-  quiche::QuicheBuffer operator()(const MoqtSubscribeUpdate& message) {
-    return framer.SerializeSubscribeUpdate(message);
+  quiche::QuicheBuffer operator()(const MoqtRequestUpdate& message) {
+    return framer.SerializeRequestUpdate(message);
   }
   quiche::QuicheBuffer operator()(const MoqtPublishNamespace& message) {
     return framer.SerializePublishNamespace(message);
@@ -75,9 +75,6 @@ struct FramingVisitor {
   }
   quiche::QuicheBuffer operator()(const MoqtSubscribeNamespace& message) {
     return framer.SerializeSubscribeNamespace(message);
-  }
-  quiche::QuicheBuffer operator()(const MoqtUnsubscribeNamespace& message) {
-    return framer.SerializeUnsubscribeNamespace(message);
   }
   quiche::QuicheBuffer operator()(const MoqtMaxRequestId& message) {
     return framer.SerializeMaxRequestId(message);
@@ -137,7 +134,7 @@ class GenericMessageParseVisitor : public MoqtControlParserVisitor {
   void OnPublishDoneMessage(const MoqtPublishDone& message) {
     frames_.push_back(message);
   }
-  void OnSubscribeUpdateMessage(const MoqtSubscribeUpdate& message) {
+  void OnRequestUpdateMessage(const MoqtRequestUpdate& message) {
     frames_.push_back(message);
   }
   void OnPublishNamespaceMessage(const MoqtPublishNamespace& message) {
@@ -163,9 +160,6 @@ class GenericMessageParseVisitor : public MoqtControlParserVisitor {
     frames_.push_back(message);
   }
   void OnSubscribeNamespaceMessage(const MoqtSubscribeNamespace& message) {
-    frames_.push_back(message);
-  }
-  void OnUnsubscribeNamespaceMessage(const MoqtUnsubscribeNamespace& message) {
     frames_.push_back(message);
   }
   void OnMaxRequestIdMessage(const MoqtMaxRequestId& message) {
@@ -219,7 +213,7 @@ std::vector<MoqtGenericFrame> ParseGenericMessage(absl::string_view body) {
 
 absl::Status StoreSubscribe::operator()(
     absl::Span<const absl::string_view> data,
-    const quiche::StreamWriteOptions& options) const {
+    const webtransport::StreamWriteOptions& options) const {
   std::string merged_message = absl::StrJoin(data, "");
   std::vector<MoqtGenericFrame> frames = ParseGenericMessage(merged_message);
   if (frames.size() != 1 || !std::holds_alternative<MoqtSubscribe>(frames[0])) {

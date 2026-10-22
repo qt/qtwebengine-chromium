@@ -28,10 +28,11 @@
 #ifndef SRC_DAWN_NATIVE_OPENGL_BUFFERGL_H_
 #define SRC_DAWN_NATIVE_OPENGL_BUFFERGL_H_
 
-#include "dawn/native/Buffer.h"
-#include "partition_alloc/pointers/raw_ptr.h"
+#include <vector>
 
+#include "dawn/native/Buffer.h"
 #include "dawn/native/opengl/opengl_platform.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native::opengl {
 
@@ -57,7 +58,7 @@ class Buffer final : public BufferBase {
     void TrackUsage() { MarkUsedInPendingCommands(); }
 
   private:
-    Buffer(Device* device, const UnpackedPtr<BufferDescriptor>& descriptor, GLuint handle);
+    Buffer(Device* device, const UnpackedPtr<BufferDescriptor>& descriptor);
     ~Buffer() override;
     MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) override;
     MaybeError FinalizeMapImpl(BufferState newState) override;
@@ -71,6 +72,7 @@ class Buffer final : public BufferBase {
 
     GLuint mBuffer = 0;
     raw_ptr<void> mMappedData = nullptr;
+    std::vector<char> mCPUStaging;  // used for GLDefer
 };
 
 }  // namespace dawn::native::opengl

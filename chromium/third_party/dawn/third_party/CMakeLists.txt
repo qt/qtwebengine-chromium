@@ -166,7 +166,7 @@ if (NOT TARGET glfw AND DAWN_USE_GLFW)
     set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
 
     message(STATUS "Dawn: using GLFW at ${DAWN_GLFW_DIR}")
-    add_subdirectory(${DAWN_GLFW_DIR} "${CMAKE_CURRENT_BINARY_DIR}/glfw")
+    add_subdirectory(${DAWN_GLFW_DIR} "${CMAKE_CURRENT_BINARY_DIR}/glfw3/src")
 endif()
 
 if (DAWN_BUILD_PROTOBUF AND NOT TARGET libprotobuf-mutator)
@@ -368,3 +368,8 @@ if (TINT_BUILD_TINTD)
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/jsoncpp" EXCLUDE_FROM_ALL)
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/langsvr" EXCLUDE_FROM_ALL)
 endif()
+
+if (TINT_BUILD_MESA)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/mesa" "${CMAKE_CURRENT_BINARY_DIR}/mesa")
+endif()
+

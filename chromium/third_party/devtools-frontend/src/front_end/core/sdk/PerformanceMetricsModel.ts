@@ -19,8 +19,8 @@ export class PerformanceMetricsModel extends SDKModel<void> {
     ['RecalcStyleCount', MetricMode.CUMULATIVE_COUNT],
   ]);
   readonly #metricData = new Map<string, {
-    lastValue: (number | undefined),
-    lastTimestamp: (number|undefined),
+    lastValue?: number,
+    lastTimestamp?: number,
   }>();
 
   constructor(target: Target) {

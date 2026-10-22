@@ -32,7 +32,6 @@ devtools_ui_module("console") {
     "ConsoleView.ts",
     "ConsoleViewMessage.ts",
     "ConsoleViewport.ts",
-    "ErrorStackParser.ts",
     "PromptBuilder.ts",
   ]
 
@@ -49,6 +48,7 @@ devtools_ui_module("console") {
     "../../models/ai_code_completion:bundle",
     "../../models/badges:bundle",
     "../../models/bindings:bundle",
+    "../../models/breakpoints:bundle",
     "../../models/formatter:bundle",
     "../../models/issues_manager:bundle",
     "../../models/logs:bundle",
@@ -56,6 +56,7 @@ devtools_ui_module("console") {
     "../../models/stack_trace:bundle",
     "../../models/text_utils:bundle",
     "../../models/workspace:bundle",
+    "../../panels/ai_assistance:bundle",
     "../../third_party/codemirror.next:bundle",
     "../../ui/components/buttons:bundle",
     "../../ui/components/code_highlighter:bundle",
@@ -123,7 +124,6 @@ devtools_ui_module("unittests") {
     "ConsoleView.test.ts",
     "ConsoleViewMessage.test.ts",
     "ConsoleViewport.test.ts",
-    "ErrorStackParser.test.ts",
     "PromptBuilder.test.ts",
   ]
 
@@ -136,7 +136,10 @@ devtools_ui_module("unittests") {
     "../../models/issues_manager:bundle",
     "../../models/logs:bundle",
     "../../models/text_utils:bundle",
+    "../../models/workspace:bundle",
     "../../testing",
+    "../../ui/legacy:bundle",
+    "../../ui/legacy/components/object_ui:bundle",
     "../../ui/legacy/components/utils:bundle",
   ]
 }

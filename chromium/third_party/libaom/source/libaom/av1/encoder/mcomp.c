@@ -1366,6 +1366,22 @@ static int fast_bigdia_search(const FULLPEL_MV start_mv,
                        do_init_search, cost_list, best_mv, best_mv_stats);
 }
 
+static inline void update_best_site(unsigned int sad, const FULLPEL_MV *best_mv,
+                                    const search_site *site, int idx,
+                                    const MV_COST_PARAMS *mv_cost_params,
+                                    unsigned int *bestsad, int *best_site) {
+  if (sad < *bestsad) {
+    const FULLPEL_MV this_mv = { best_mv->row + site[idx].mv.row,
+                                 best_mv->col + site[idx].mv.col };
+    const unsigned int thissad =
+        sad + mvsad_err_cost_(&this_mv, mv_cost_params);
+    if (thissad < *bestsad) {
+      *bestsad = thissad;
+      *best_site = idx;
+    }
+  }
+}
+
 static int diamond_search_sad(FULLPEL_MV start_mv, unsigned int start_mv_sad,
                               const FULLPEL_MOTION_SEARCH_PARAMS *ms_params,
                               const int search_step, int *num00,
@@ -1467,24 +1483,22 @@ static int diamond_search_sad(FULLPEL_MV start_mv, unsigned int start_mv_sad,
           unsigned char const *block_offset[4];
           unsigned int sads[4];
 
-          for (int j = 0; j < 4; j++)
-            block_offset[j] = site[idx + j].offset + best_address;
+          block_offset[0] = site[idx + 0].offset + best_address;
+          block_offset[1] = site[idx + 1].offset + best_address;
+          block_offset[2] = site[idx + 2].offset + best_address;
+          block_offset[3] = site[idx + 3].offset + best_address;
 
           ms_params->sdx4df(src_buf, src_stride, block_offset, ref_stride,
                             sads);
-          for (int j = 0; j < 4; j++) {
-            if (sads[j] < bestsad) {
-              const FULLPEL_MV this_mv = { best_mv->row + site[idx + j].mv.row,
-                                           best_mv->col +
-                                               site[idx + j].mv.col };
-              unsigned int thissad =
-                  sads[j] + mvsad_err_cost_(&this_mv, mv_cost_params);
-              if (thissad < bestsad) {
-                bestsad = thissad;
-                best_site = idx + j;
-              }
-            }
-          }
+
+          update_best_site(sads[0], best_mv, site, idx + 0, mv_cost_params,
+                           &bestsad, &best_site);
+          update_best_site(sads[1], best_mv, site, idx + 1, mv_cost_params,
+                           &bestsad, &best_site);
+          update_best_site(sads[2], best_mv, site, idx + 2, mv_cost_params,
+                           &bestsad, &best_site);
+          update_best_site(sads[3], best_mv, site, idx + 3, mv_cost_params,
+                           &bestsad, &best_site);
         }
       } else {
         for (int idx = 1; idx <= num_searches; idx++) {
@@ -2572,7 +2586,7 @@ static int upsampled_pref_error(MACROBLOCKD *xd, const AV1_COMMON *cm,
   unsigned int besterr;
 #if CONFIG_AV1_HIGHBITDEPTH
   if (is_cur_buf_hbd(xd)) {
-    DECLARE_ALIGNED(16, uint16_t, pred16[MAX_SB_SQUARE]);
+    uint16_t *pred16 = (uint16_t *)(xd->tmp_upsample_pred);
     uint8_t *pred8 = CONVERT_TO_BYTEPTR(pred16);
     if (second_pred != NULL) {
       if (mask) {
@@ -2593,7 +2607,7 @@ static int upsampled_pref_error(MACROBLOCKD *xd, const AV1_COMMON *cm,
     }
     besterr = vfp->vf(pred8, w, src, src_stride, sse);
   } else {
-    DECLARE_ALIGNED(16, uint8_t, pred[MAX_SB_SQUARE]);
+    uint8_t *pred = xd->tmp_upsample_pred;
     if (second_pred != NULL) {
       if (mask) {
         aom_comp_mask_upsampled_pred(
@@ -2614,7 +2628,7 @@ static int upsampled_pref_error(MACROBLOCKD *xd, const AV1_COMMON *cm,
     besterr = vfp->vf(pred, w, src, src_stride, sse);
   }
 #else
-  DECLARE_ALIGNED(16, uint8_t, pred[MAX_SB_SQUARE]);
+  uint8_t *pred = xd->tmp_upsample_pred;
   if (second_pred != NULL) {
     if (mask) {
       aom_comp_mask_upsampled_pred(xd, cm, mi_row, mi_col, this_mv, pred,
@@ -2895,7 +2909,7 @@ static AOM_FORCE_INLINE void second_level_check_v2(
                             best_mv->col + diag_step.col };
   int has_better_mv = 0;
 
-  if (var_params->subpel_search_type != USE_2_TAPS_ORIG) {
+  if (var_params->subpel_search_type > USE_2_TAPS) {
     check_better(xd, cm, &row_bias_mv, best_mv, mv_limits, var_params,
                  mv_cost_params, besterr, sse1, distortion, &has_better_mv);
     check_better(xd, cm, &col_bias_mv, best_mv, mv_limits, var_params,
@@ -3326,7 +3340,7 @@ int av1_find_best_sub_pixel_tree(MACROBLOCKD *xd, const AV1_COMMON *const cm,
     *distortion = start_mv_stats->distortion;
     *sse1 = start_mv_stats->sse;
   } else {
-    if (subpel_search_type != USE_2_TAPS_ORIG) {
+    if (subpel_search_type > USE_2_TAPS) {
       besterr = upsampled_setup_center_error(xd, cm, bestmv, var_params,
                                              mv_cost_params, sse1, distortion);
     } else {
@@ -3346,7 +3360,7 @@ int av1_find_best_sub_pixel_tree(MACROBLOCKD *xd, const AV1_COMMON *const cm,
     }
 
     MV diag_step;
-    if (subpel_search_type != USE_2_TAPS_ORIG) {
+    if (subpel_search_type > USE_2_TAPS) {
       diag_step = first_level_check(xd, cm, iter_center_mv, bestmv, hstep,
                                     mv_limits, var_params, mv_cost_params,
                                     &besterr, sse1, distortion);
@@ -3682,21 +3696,23 @@ static int upsampled_obmc_pref_error(MACROBLOCKD *xd, const AV1_COMMON *cm,
   const int mi_col = xd->mi_col;
 
   unsigned int besterr;
-  DECLARE_ALIGNED(16, uint8_t, pred[2 * MAX_SB_SQUARE]);
 #if CONFIG_AV1_HIGHBITDEPTH
   if (is_cur_buf_hbd(xd)) {
-    uint8_t *pred8 = CONVERT_TO_BYTEPTR(pred);
+    uint16_t *pred16 = (uint16_t *)(xd->tmp_upsample_pred);
+    uint8_t *pred8 = CONVERT_TO_BYTEPTR(pred16);
     aom_highbd_upsampled_pred(xd, cm, mi_row, mi_col, this_mv, pred8, w, h,
                               subpel_x_q3, subpel_y_q3, ref, ref_stride, xd->bd,
                               subpel_search_type);
     besterr = vfp->ovf(pred8, w, wsrc, mask, sse);
   } else {
+    uint8_t *pred = xd->tmp_upsample_pred;
     aom_upsampled_pred(xd, cm, mi_row, mi_col, this_mv, pred, w, h, subpel_x_q3,
                        subpel_y_q3, ref, ref_stride, subpel_search_type);
 
     besterr = vfp->ovf(pred, w, wsrc, mask, sse);
   }
 #else
+  uint8_t *pred = xd->tmp_upsample_pred;
   aom_upsampled_pred(xd, cm, mi_row, mi_col, this_mv, pred, w, h, subpel_x_q3,
                      subpel_y_q3, ref, ref_stride, subpel_search_type);
 

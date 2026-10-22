@@ -26,6 +26,7 @@
 #include "extensions/browser/guest_view/mime_handler_view/mime_handler_view_attach_helper.h"
 #include "extensions/browser/guest_view/mime_handler_view/mime_handler_view_constants.h"
 #include "extensions/browser/guest_view/mime_handler_view/mime_handler_view_guest_delegate.h"
+#include "extensions/browser/mime_handler/stream_container.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/api/mime_handler_private.h"
 #include "extensions/common/constants.h"
@@ -44,34 +45,6 @@ using content::WebContents;
 using guest_view::GuestViewBase;
 
 namespace extensions {
-
-StreamContainer::StreamContainer(
-    int tab_id,
-    bool embedded,
-    const GURL& handler_url,
-    const ExtensionId& extension_id,
-    blink::mojom::TransferrableURLLoaderPtr transferrable_loader,
-    const GURL& original_url)
-    : embedded_(embedded),
-      tab_id_(tab_id),
-      handler_url_(handler_url),
-      extension_id_(extension_id),
-      transferrable_loader_(std::move(transferrable_loader)),
-      mime_type_(transferrable_loader_->head->mime_type),
-      original_url_(original_url),
-      stream_url_(transferrable_loader_->url),
-      response_headers_(transferrable_loader_->head->headers) {}
-
-StreamContainer::~StreamContainer() = default;
-
-base::WeakPtr<StreamContainer> StreamContainer::GetWeakPtr() {
-  return weak_factory_.GetWeakPtr();
-}
-
-blink::mojom::TransferrableURLLoaderPtr
-StreamContainer::TakeTransferrableURLLoader() {
-  return std::move(transferrable_loader_);
-}
 
 // static
 const char MimeHandlerViewGuest::Type[] = "mimehandler";
@@ -105,7 +78,7 @@ MimeHandlerViewGuest::~MimeHandlerViewGuest() {
     // If we are awaiting attaching to outer WebContents
     if (GetEmbedderFrame() && GetEmbedderFrame()->GetParent()) {
       // TODO(ekaramad): This should only be needed if the embedder frame is in
-      // a plugin element (https://crbug.com/957373).
+      // a plugin element (https://crbug.com/40624996).
       mojo::AssociatedRemote<mojom::MimeHandlerViewContainerManager>
           container_manager;
       GetEmbedderFrame()
@@ -212,6 +185,7 @@ void MimeHandlerViewGuest::DidAttachToEmbedder() {
   if (!base::FeatureList::IsEnabled(features::kGuestViewMPArch)) {
     web_contents()->GetMutableRendererPrefs()->can_accept_load_drops = true;
     web_contents()->SyncRendererPrefs();
+    web_contents()->SetIgnoreZoomGestures(!is_full_page_plugin());
   }
 }
 
@@ -301,19 +275,6 @@ bool MimeHandlerViewGuest::HandleContextMenu(
             content::WebContents::FromRenderFrameHost(&render_frame_host));
 
   return delegate_ && delegate_->HandleContextMenu(render_frame_host, params);
-}
-
-bool MimeHandlerViewGuest::PreHandleGestureEvent(
-    WebContents* source,
-    const blink::WebGestureEvent& event) {
-  CHECK(!base::FeatureList::IsEnabled(features::kGuestViewMPArch));
-
-  if (blink::WebInputEvent::IsPinchGestureEventType(event.GetType())) {
-    // If we're an embedded plugin we drop pinch-gestures to avoid zooming the
-    // guest.
-    return !is_full_page_plugin();
-  }
-  return false;
 }
 
 content::JavaScriptDialogManager*
@@ -437,6 +398,8 @@ content::WebContents* MimeHandlerViewGuest::CreateCustomWebContents(
     const GURL& opener_url,
     const std::string& frame_name,
     const GURL& target_url,
+    WindowOpenDisposition disposition,
+    const blink::mojom::WindowFeatures& window_features,
     const content::StoragePartitionConfig& partition_config,
     content::SessionStorageNamespace* session_storage_namespace) {
   CHECK(!base::FeatureList::IsEnabled(features::kGuestViewMPArch));

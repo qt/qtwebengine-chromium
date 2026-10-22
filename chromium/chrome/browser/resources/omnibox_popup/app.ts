@@ -299,16 +299,6 @@ export class OmniboxPopupAppElement extends I18nMixinLit
     return this.searchboxLayoutMode_ === 'Compact';
   }
 
-  protected hasAllowedInputs_(): boolean {
-    if (!this.usePecApi_) {
-      return true;
-    }
-    return !!this.inputState_ &&
-        (this.inputState_.allowedModels.length > 0 ||
-         this.inputState_.allowedTools.length > 0 ||
-         this.inputState_.allowedInputTypes.length > 0);
-  }
-
   private computeShowContextEntrypoint_(): boolean {
     if (this.hideContextButton_ || !this.isAimPopupEligible_ ||
         this.isInKeywordMode_) {
@@ -379,7 +369,7 @@ export class OmniboxPopupAppElement extends I18nMixinLit
     this.refreshRecentTabForChip_();
   }
 
-  protected onResultRepaint_() {
+  protected onDropdownDomChange_() {
     const metricsReporter = MetricsReporterImpl.getInstance();
     metricsReporter.measure('ResultChanged')
         .then(
@@ -560,7 +550,8 @@ export class OmniboxPopupAppElement extends I18nMixinLit
         SelectionLineState.kFocusedButtonContextEntrypoint) {
       this.popupPageHandler_.showContextMenu({x: 0, y: 0});
     } else if (selectionIsNativelySupported(this.selection_)) {
-      this.pageHandler_.openPopupSelection(this.selection_, disposition);
+      this.pageHandler_.openPopupSelection(
+          this.result_?.sequenceId || 0, this.selection_, disposition);
     } else {
       assertNotReached(
           `openCurrentSelection_ called for unsupported selection: ${
@@ -572,7 +563,7 @@ export class OmniboxPopupAppElement extends I18nMixinLit
     this.hasSecondarySide = e.detail.value;
   }
 
-  protected onContextualEntryPointClicked_(
+  protected onContextMenuEntrypointClick_(
       e: CustomEvent<{x: number, y: number}>) {
     e.preventDefault();
     const point = {
@@ -591,11 +582,11 @@ export class OmniboxPopupAppElement extends I18nMixinLit
     }
   }
 
-  protected onLensSearchChipClicked_() {
+  protected onLensSearchClick_() {
     this.pageHandler_.openLensSearch();
   }
 
-  protected addTabContext_(e: CustomEvent<{
+  protected onAddTabContext_(e: CustomEvent<{
     id: number,
     title: string,
     url: Url,

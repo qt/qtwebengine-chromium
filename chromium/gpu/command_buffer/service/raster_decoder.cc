@@ -36,6 +36,7 @@
 #include "cc/paint/paint_cache.h"
 #include "cc/paint/paint_op.h"
 #include "cc/paint/paint_op_buffer.h"
+#include "cc/paint/paint_op_writer.h"
 #include "cc/paint/transfer_cache_deserialize_helper.h"
 #include "cc/paint/transfer_cache_entry.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
@@ -67,7 +68,6 @@
 #include "gpu/command_buffer/service/shared_image/shared_image_factory.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
-#include "gpu/command_buffer/service/shared_image/wrapped_sk_image_backing_factory.h"
 #include "gpu/command_buffer/service/skia_utils.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/vulkan/buildflags.h"
@@ -105,10 +105,6 @@
 #include "gpu/vulkan/vulkan_device_queue.h"
 #include "gpu/vulkan/vulkan_util.h"
 #endif  // BUILDFLAG(ENABLE_VULKAN)
-
-#if BUILDFLAG(IS_WIN)
-#include "gpu/command_buffer/service/shared_image/d3d_image_backing_factory.h"
-#endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(SKIA_USE_DAWN)
 #include <dawn/webgpu_cpp.h>
@@ -347,31 +343,25 @@ class RasterCommandsCompletedQuery : public QueryManager::Query {
       gr_context->submit();
     } else {
       CHECK(shared_context_state_->graphite_shared_context());
-      auto recording =
-          shared_context_state_->gpu_main_graphite_recorder()->snap();
-      if (recording) {
-        skgpu::graphite::InsertRecordingInfo info = {};
-        info.fRecording = recording.get();
-        info.fFinishedProc = [](void* context, skgpu::CallbackResult result) {
-          RasterCommandsCompletedQuery::FinishedProc(context);
-        };
-        info.fFinishedContext = new base::WeakPtr<RasterCommandsCompletedQuery>(
-            weak_ptr_factory_.GetWeakPtr());
-        shared_context_state_->graphite_shared_context()->insertRecording(info);
+      skgpu::graphite::SubmitInfo submit_info;
+      submit_info.fFinishedProc = [](void* context,
+                                     skgpu::CallbackResult result) {
+        RasterCommandsCompletedQuery::FinishedProc(context);
+      };
+      submit_info.fFinishedContext =
+          new base::WeakPtr<RasterCommandsCompletedQuery>(
+              weak_ptr_factory_.GetWeakPtr());
 
-        // Canvas typically uses Commands Completed query to implement
-        // backpressures. We need to flush any delayed commands to make sure the
-        // query can be completed in finite time.
-        // Furthermore, some websites use setTimeout() to implement canvas'
-        // rendering loop. Hence within a vsync interval, a canvas could be
-        // redrawn multiple times. Flushing here ensures that we send the draw
-        // commands to GPU earlier, reducing the chance the canvas' rate limiter
-        // kicks in.
-        shared_context_state_->graphite_shared_context()
-            ->submitAndFlushBackend();
-      } else {
-        finished_ = true;
-      }
+      // Canvas typically uses Commands Completed query to implement
+      // backpressures. We need to flush any delayed commands to make sure the
+      // query can be completed in finite time.
+      // Furthermore, some websites use setTimeout() to implement canvas'
+      // rendering loop. Hence within a vsync interval, a canvas could be
+      // redrawn multiple times. Flushing here ensures that we send the draw
+      // commands to GPU earlier, reducing the chance the canvas' rate limiter
+      // kicks in.
+      shared_context_state_->graphite_shared_context()->submitAndFlushBackend(
+          submit_info);
     }
   }
 
@@ -747,7 +737,11 @@ class RasterDecoderImpl final : public RasterDecoder,
                                          GLuint color_space_offset,
                                          GLuint pixels_offset,
                                          const volatile GLbyte* mailbox);
-  void DoReadbackYUVImagePixelsINTERNAL(GLuint dst_width,
+  void DoReadbackYUVImagePixelsINTERNAL(GLuint src_x,
+                                        GLuint src_y,
+                                        GLuint src_width,
+                                        GLuint src_height,
+                                        GLuint dst_width,
                                         GLuint dst_height,
                                         GLint shm_id,
                                         GLuint shm_offset,
@@ -778,6 +772,7 @@ class RasterDecoderImpl final : public RasterDecoder,
                                 GLuint font_shm_offset,
                                 GLuint font_shm_size);
   void DoEndRasterCHROMIUM();
+  void DoFlushTileRasterGraphiteCommandsCHROMIUM();
   void DoCreateTransferCacheEntryINTERNAL(GLuint entry_type,
                                           GLuint entry_id,
                                           GLuint handle_shm_id,
@@ -1145,7 +1140,6 @@ gl::GLSurface* RasterDecoderImpl::GetGLSurface() {
 Capabilities RasterDecoderImpl::GetCapabilities() {
   // TODO(enne): reconcile this with gles2_cmd_decoder's capability settings.
   Capabilities caps;
-  caps.mappable_formats = feature_info()->feature_flags().mappable_formats;
   caps.texture_format_bgra8888 =
       feature_info()->feature_flags().ext_texture_format_bgra8888;
   caps.disable_mac_swangle_rgbx =
@@ -1158,16 +1152,11 @@ Capabilities RasterDecoderImpl::GetCapabilities() {
   caps.texture_format_etc1_npot =
       feature_info()->feature_flags().oes_compressed_etc1_rgb8_texture &&
       !feature_info()->workarounds().etc1_power_of_two_only;
-  caps.image_ycbcr_420v =
-      feature_info()->feature_flags().chromium_image_ycbcr_420v;
   caps.image_ar30 = feature_info()->feature_flags().chromium_image_ar30;
   caps.image_ab30 = feature_info()->feature_flags().chromium_image_ab30;
-  caps.image_ycbcr_p010 =
-      feature_info()->feature_flags().chromium_image_ycbcr_p010;
   caps.render_buffer_format_bgra8888 =
       feature_info()->feature_flags().ext_render_buffer_format_bgra8888;
 
-  caps.chromium_gpu_fence = feature_info()->feature_flags().chromium_gpu_fence;
   caps.mesa_framebuffer_flip_y =
       feature_info()->feature_flags().mesa_framebuffer_flip_y;
 
@@ -1191,16 +1180,13 @@ Capabilities RasterDecoderImpl::GetCapabilities() {
   } else if (graphite_shared_context()) {
     caps.context_supports_distance_field_text = true;
     caps.texture_half_float_linear = true;
+    caps.use_deferred_graphite_submit =
+        features::kSkiaGraphiteEnableDeferredSubmit.Get();
 #if BUILDFLAG(SKIA_USE_DAWN)
     if (shared_context_state_->IsGraphiteDawn()) {
       caps.texture_norm16 =
           shared_context_state_->dawn_context_provider()->SupportsFeature(
               wgpu::FeatureName::Unorm16TextureFormats);
-    }
-#endif
-#if BUILDFLAG(SKIA_USE_METAL)
-    if (shared_context_state_->IsGraphiteMetal()) {
-      caps.texture_norm16 = true;
     }
 #endif
   } else {
@@ -1223,6 +1209,12 @@ Capabilities RasterDecoderImpl::GetCapabilities() {
   } else {
     caps.supports_rgb_to_yuv_conversion = true;
     caps.supports_yuv_readback = true;
+  }
+
+  if (base::FeatureList::IsEnabled(
+          features::kNvidiaWaylandYuvHardwareConversionWorkaround) &&
+      feature_info()->workarounds().disable_rgb_to_yuv_conversion) {
+    caps.supports_rgb_to_yuv_conversion = false;
   }
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -1253,16 +1245,8 @@ Capabilities RasterDecoderImpl::GetCapabilities() {
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_CHROMEOS)
-  base::EraseIf(caps.drm_formats_and_modifiers, [&](const auto& format) {
-    auto drm_format = format.first;
-    return !ui::IsValidDrmFormat(drm_format) ||
-           !caps.mappable_formats.contains(
-               ui::GetSharedImageFormatFromFourCCFormat(drm_format));
-  });
-  if (caps.drm_formats_and_modifiers.empty()) {
-    gles2::PopulateEmptyDRMCaps(caps.mappable_formats,
-                                caps.drm_formats_and_modifiers);
-  }
+  gles2::PopulateMappableDrmFormatsForExo(caps.drm_formats_and_modifiers,
+                                          feature_info());
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
   return caps;
@@ -1670,7 +1654,7 @@ ServiceTransferCache* RasterDecoderImpl::GetTransferCacheForTest() {
 
 void RasterDecoderImpl::SetUpForRasterCHROMIUMForTest() {
   // Some tests use mock GL which doesn't work with skia. Just use a bitmap
-  // backed surface for OOP raster commands.
+  // backed surface for raster commands.
   auto info = SkImageInfo::MakeN32(10, 10, kPremul_SkAlphaType,
                                    SkColorSpace::MakeSRGB());
   SkSurfaceProps props = skia::LegacyDisplayGlobals::GetSkSurfaceProps();
@@ -2055,6 +2039,7 @@ void RasterDecoderImpl::DoWritePixelsINTERNAL(GLint x_offset,
   if (!written) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glWritePixels",
                        "Failed to write pixels to SkCanvas");
+    return;
   }
 
   shared_context_state_->FlushWriteAccess(dest_scoped_access.get());
@@ -2467,6 +2452,10 @@ void OnReadYUVImagePixelsDone(
 }  // namespace
 
 void RasterDecoderImpl::DoReadbackYUVImagePixelsINTERNAL(
+    GLuint src_x,
+    GLuint src_y,
+    GLuint src_width,
+    GLuint src_height,
     GLuint dst_width,
     GLuint dst_height,
     GLint shm_id,
@@ -2627,7 +2616,19 @@ void RasterDecoderImpl::DoReadbackYUVImagePixelsINTERNAL(
     return;
   }
 
-  const SkIRect src_rect = SkIRect::MakeSize(sk_image->dimensions());
+  const SkIRect src_rect =
+      SkIRect::MakeXYWH(src_x, src_y, src_width, src_height);
+
+  if (!SkIRect::MakeSize(sk_image->dimensions()).contains(src_rect)) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glReadbackYUVImagePixels",
+                       "SRC rect is outside of source image dimensions");
+    source_scoped_access->ApplyBackendSurfaceEndState();
+    shared_context_state_->SubmitIfNecessary(
+        std::move(end_semaphores),
+        source_scoped_access->NeedGraphiteContextSubmit());
+    return;
+  }
+
   const SkISize dst_size = SkISize::Make(dst_width, dst_height);
 
   // Readback is potentially slow, so report progress here.
@@ -2997,6 +2998,7 @@ error::Error RasterDecoderImpl::DoRasterCHROMIUM(GLuint raster_shm_id,
   }
 
   if (deferred_raster_paint_buffer_offset_.has_value()) {
+    CHECK(*deferred_raster_paint_buffer_offset_ <= paint_buffer_size);
     paint_buffer_size -= *deferred_raster_paint_buffer_offset_;
     UNSAFE_TODO(paint_buffer_memory += *deferred_raster_paint_buffer_offset_);
     deferred_raster_paint_buffer_offset_.reset();
@@ -3148,6 +3150,26 @@ void RasterDecoderImpl::DoEndRasterCHROMIUM() {
   ExitCommandProcessingEarly();
 }
 
+void RasterDecoderImpl::DoFlushTileRasterGraphiteCommandsCHROMIUM() {
+  if (!features::kSkiaGraphiteEnableDeferredSubmit.Get()) {
+    // Skip if we are not using Graphite's deferred submit feature.
+    return;
+  }
+
+  TRACE_EVENT0("gpu",
+               "RasterDecoderImpl::DoFlushTileRasterGraphiteCommandsCHROMIUM");
+
+  if (auto* graphite_context = graphite_shared_context()) {
+    // A SyncToken is not strictly required to order this flush before the
+    // compositor's Context::submit(). If this happens before the compositor's
+    // Context::submit(), it's ideal for maximizing parallelism. Otherwise,
+    // the tile raster commands will naturally be submitted together with the
+    // compositor's commands in the latter's Context::submit(), so GPU
+    // execution order is still guaranteed.
+    graphite_context->submit();
+  }
+}
+
 void RasterDecoderImpl::DoCreateTransferCacheEntryINTERNAL(
     GLuint raw_entry_type,
     GLuint entry_id,
@@ -3172,6 +3194,12 @@ void RasterDecoderImpl::DoCreateTransferCacheEntryINTERNAL(
   if (entry_type == cc::TransferCacheEntryType::kSkottie && !is_privileged_) {
     LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCreateTransferCacheEntryINTERNAL",
                        "Attempt to use skottie on a non privileged channel");
+    return;
+  }
+
+  if (data_shm_offset % cc::PaintOpWriter::kMaxAlignment != 0) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCreateTransferCacheEntryINTERNAL",
+                       "Transfer cache entry offset not aligned.");
     return;
   }
 

@@ -6,6 +6,8 @@
 
 #include "public/fpdf_save.h"
 
+#include <stdint.h>
+
 #include <optional>
 #include <utility>
 #include <vector>
@@ -19,6 +21,7 @@
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fxcrt/fx_extension.h"
+#include "core/fxcrt/mask.h"
 #include "core/fxcrt/stl_util.h"
 #include "fpdfsdk/cpdfsdk_filewriteadapter.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
@@ -30,6 +33,15 @@
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "public/fpdf_formfill.h"
 #endif
+
+static_assert(FPDF_INCREMENTAL == CPDF_Creator::CreateFlags::kIncremental);
+static_assert(FPDF_NO_INCREMENTAL == CPDF_Creator::CreateFlags::kNoOriginal);
+static_assert(FPDF_REMOVE_SECURITY_DEPRECATED ==
+              CPDF_Creator::CreateFlags::kRemoveSecurityDeprecated);
+static_assert(FPDF_REMOVE_SECURITY ==
+              CPDF_Creator::CreateFlags::kRemoveSecurity);
+static_assert(FPDF_SUBSET_NEW_FONTS ==
+              CPDF_Creator::CreateFlags::kSubsetNewFonts);
 
 namespace {
 
@@ -177,21 +189,12 @@ bool DoDocSave(FPDF_DOCUMENT document,
   }
 #endif  // PDF_ENABLE_XFA
 
-  if (flags < FPDF_INCREMENTAL || flags > FPDF_REMOVE_SECURITY) {
-    flags = 0;
-  }
-
   CPDF_Creator file_maker(
       doc, pdfium::MakeRetain<CPDFSDK_FileWriteAdapter>(file_write));
-  if (version.has_value()) {
-    file_maker.SetFileVersion(version.value());
-  }
-  if (flags == FPDF_REMOVE_SECURITY) {
-    flags = 0;
-    file_maker.RemoveSecurity();
-  }
-
-  bool create_result = file_maker.Create(static_cast<uint32_t>(flags));
+  bool create_result = file_maker.Create(
+      Mask<CPDF_Creator::CreateFlags>::FromUnderlyingUnchecked(
+          static_cast<uint32_t>(flags)),
+      version.value_or(0));
 
 #ifdef PDF_ENABLE_XFA
   if (context) {

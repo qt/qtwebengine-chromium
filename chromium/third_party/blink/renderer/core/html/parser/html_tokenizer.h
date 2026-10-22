@@ -61,8 +61,6 @@ class CORE_EXPORT HTMLTokenizer {
     kRCDATAState,
     kCharacterReferenceInRCDATAState,
     kRAWTEXTState,
-    kChildNodePartStartState,
-    kChildNodePartEndState,
     kScriptDataState,
     kPLAINTEXTState,
     kTagOpenState,
@@ -101,6 +99,11 @@ class CORE_EXPORT HTMLTokenizer {
     kCharacterReferenceInAttributeValueState,
     kAfterAttributeValueQuotedState,
     kSelfClosingStartTagState,
+    kProcessingInstructionOpenState,
+    kProcessingInstructionTargetState,
+    kAfterProcessingInstructionTargetState,
+    kProcessingInstructionDataState,
+    kProcessingInstructionQuestionableState,
     kBogusCommentState,
     // The ContinueBogusCommentState is not in the HTML5 spec, but we use
     // it internally to keep track of whether we've started the bogus
@@ -184,16 +187,6 @@ class CORE_EXPORT HTMLTokenizer {
   bool ShouldAllowCDATA() const { return should_allow_cdata_; }
   void SetShouldAllowCDATA(bool value) { should_allow_cdata_ = value; }
 
-  bool ShouldAllowDOMParts() const {
-    DCHECK(RuntimeEnabledFeatures::DOMPartsAPIEnabled() ||
-           !should_allow_dom_parts_);
-    return should_allow_dom_parts_;
-  }
-  void SetShouldAllowDOMParts(bool value) {
-    DCHECK(RuntimeEnabledFeatures::DOMPartsAPIEnabled());
-    should_allow_dom_parts_ = value;
-  }
-
   ALWAYS_INLINE State GetState() const { return state_; }
   void SetState(State state) { state_ = state; }
 
@@ -250,6 +243,13 @@ class CORE_EXPORT HTMLTokenizer {
 
   inline bool EmitAndResumeInDataState(SegmentedString& source) {
     SaveEndTagNameIfNeeded();
+    state_ = kDataState;
+    source.AdvancePastNonNewline();
+    return true;
+  }
+
+  inline bool EmitProcessingInstruction(SegmentedString& source) {
+    temporary_buffer_.clear();
     state_ = kDataState;
     source.AdvancePastNonNewline();
     return true;

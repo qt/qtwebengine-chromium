@@ -216,8 +216,8 @@ struct scalar_inner_product_op {
 template <typename Scalar, bool Conj>
 struct scalar_inner_product_op<
     Scalar,
-    typename std::enable_if<internal::is_same<typename ScalarBinaryOpTraits<Scalar, Scalar>::ReturnType, Scalar>::value,
-                            Scalar>::type,
+    std::enable_if_t<internal::is_same<typename ScalarBinaryOpTraits<Scalar, Scalar>::ReturnType, Scalar>::value,
+                     Scalar>,
     Conj> {
   using result_type = Scalar;
   using conj_helper = conditional_conj<Scalar, Conj>;

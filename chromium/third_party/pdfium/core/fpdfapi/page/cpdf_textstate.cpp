@@ -43,11 +43,11 @@ void CPDF_TextState::SetFontSize(float size) {
   }
 }
 
-pdfium::span<const float> CPDF_TextState::GetMatrix() const {
+pdfium::span<const float, 4> CPDF_TextState::GetMatrix() const {
   return ref_.GetObject()->matrix_;
 }
 
-pdfium::span<float> CPDF_TextState::GetMutableMatrix() {
+pdfium::span<float, 4> CPDF_TextState::GetMutableMatrix() {
   return ref_.GetPrivateCopy()->matrix_;
 }
 
@@ -85,11 +85,11 @@ void CPDF_TextState::SetTextMode(TextRenderingMode mode) {
   }
 }
 
-pdfium::span<const float> CPDF_TextState::GetCTM() const {
+pdfium::span<const float, 4> CPDF_TextState::GetCTM() const {
   return ref_.GetObject()->ctm_;
 }
 
-pdfium::span<float> CPDF_TextState::GetMutableCTM() {
+pdfium::span<float, 4> CPDF_TextState::GetMutableCTM() {
   return ref_.GetPrivateCopy()->ctm_;
 }
 

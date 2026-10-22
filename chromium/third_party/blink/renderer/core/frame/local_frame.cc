@@ -95,6 +95,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_local_compile_hints_producer.h"
 #include "third_party/blink/renderer/bindings/core/v8/window_proxy_manager.h"
+#include "third_party/blink/renderer/core/ad_tracker/ad_tracker.h"
 #include "third_party/blink/renderer/core/clipboard/system_clipboard.h"
 #include "third_party/blink/renderer/core/content_capture/content_capture_manager.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -126,6 +127,7 @@
 #include "third_party/blink/renderer/core/editing/serializers/create_markup_options.h"
 #include "third_party/blink/renderer/core/editing/serializers/serialization.h"
 #include "third_party/blink/renderer/core/editing/spellcheck/spell_check_requester.h"
+#include "third_party/blink/renderer/core/editing/spellcheck/spell_check_requester_helper.h"
 #include "third_party/blink/renderer/core/editing/spellcheck/spell_checker.h"
 #include "third_party/blink/renderer/core/editing/suggestion/text_suggestion_controller.h"
 #include "third_party/blink/renderer/core/editing/surrounding_text.h"
@@ -139,7 +141,6 @@
 #include "third_party/blink/renderer/core/exported/web_plugin_container_impl.h"
 #include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
 #include "third_party/blink/renderer/core/fragment_directive/text_fragment_handler.h"
-#include "third_party/blink/renderer/core/frame/ad_tracker.h"
 #include "third_party/blink/renderer/core/frame/attribution_src_loader.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/event_handler_registry.h"
@@ -267,28 +268,6 @@ namespace blink {
 
 namespace {
 
-#if BUILDFLAG(IS_ANDROID)
-blink::DocumentMarkerVector ExtractSpellingMarkersFromDocumentMarkerVector(
-    const blink::DocumentMarkerVector& markers) {
-  blink::DocumentMarkerVector spelling_markers;
-  for (auto& marker : markers) {
-    if (marker->GetType() == DocumentMarker::MarkerType::kSpelling ||
-        marker->GetType() == DocumentMarker::MarkerType::kGrammar) {
-      spelling_markers.push_back(marker);
-    }
-
-    if (const auto* suggestion_marker =
-            DynamicTo<SuggestionMarker>(marker.Get())) {
-      if (suggestion_marker->IsMisspelling() ||
-          suggestion_marker->IsGrammarError()) {
-        spelling_markers.push_back(marker);
-      }
-    }
-  }
-  return spelling_markers;
-}
-#endif  // BUILDFLAG(IS_ANDROID)
-
 // Max size in bytes of the Vector used in ForceSynchronousDocumentInstall to
 // buffer data before sending it to the HTML parser.
 constexpr unsigned kMaxDocumentChunkSize = 1000000;
@@ -379,7 +358,7 @@ mojom::blink::BlockingDetailsPtr CreateBlockingDetailsMojom(
       blocking_details.ColumnNumber() > 0) {
     // `Url()` and `Function()` may return nullptr.
     auto source_location = mojom::blink::ScriptSourceLocation::New(
-        blocking_details.Url() ? KURL(blocking_details.Url()) : KURL(),
+        blocking_details.Url() ? KURL(blocking_details.Url()) : NullUrl(),
         blocking_details.Function() ? blocking_details.Function() : "",
         blocking_details.LineNumber(), blocking_details.ColumnNumber());
     feature_location_to_report->source = std::move(source_location);
@@ -408,9 +387,7 @@ mojom::blink::StorageTypeAccessed ToMojoStorageType(
 
 HeapVector<Member<PostLayoutSnapshotClient>> CopyClients(
     const HeapHashSet<WeakMember<PostLayoutSnapshotClient>>& clients) {
-  HeapVector<Member<PostLayoutSnapshotClient>> copy;
-  copy.ReserveInitialCapacity(clients.size());
-  copy.AppendRange(clients.begin(), clients.end());
+  HeapVector<Member<PostLayoutSnapshotClient>> copy(clients);
   return copy;
 }
 
@@ -438,12 +415,14 @@ LocalFrame* LocalFrame::FromFrameToken(const LocalFrameToken& frame_token) {
   return it == local_frames_map.end() ? nullptr : it->value.Get();
 }
 
-void LocalFrame::Init(Frame* opener,
-                      const DocumentToken& document_token,
-                      std::unique_ptr<PolicyContainer> policy_container,
-                      const StorageKey& storage_key,
-                      ukm::SourceId document_ukm_source_id,
-                      const KURL& creator_base_url) {
+void LocalFrame::Init(
+    Frame* opener,
+    const DocumentToken& document_token,
+    std::unique_ptr<PolicyContainer> policy_container,
+    const StorageKey& storage_key,
+    ukm::SourceId document_ukm_source_id,
+    const KURL& creator_base_url,
+    std::unique_ptr<base::UnguessableToken> sandbox_origin_token) {
   if (!policy_container)
     policy_container = PolicyContainer::CreateEmpty();
 
@@ -456,7 +435,8 @@ void LocalFrame::Init(Frame* opener,
 
   SetOpenerDoNotNotify(opener);
   loader_.Init(document_token, std::move(policy_container), storage_key,
-               document_ukm_source_id, creator_base_url);
+               document_ukm_source_id, creator_base_url,
+               std::move(sandbox_origin_token));
 }
 
 void LocalFrame::SetView(LocalFrameView* view) {
@@ -831,7 +811,6 @@ bool LocalFrame::DetachImpl(FrameDetachType type) {
   frame_visibility_observers_.clear();
 
   not_restored_reasons_.reset();
-  microtasks_pauser_.reset();
   prescient_networking_.reset();
   link_preview_triggerer_.reset();
 
@@ -982,7 +961,7 @@ bool LocalFrame::ShouldClose() {
   // events to both local and remote frames.
   base::TimeTicks before_unload_dialog_opened_time;
   base::TimeTicks before_unload_dialog_closed_time;
-  return loader_.ShouldClose(/*is_reload=*/false,
+  return loader_.ShouldClose(/*is_reload=*/false, /*force_to_proceed=*/false,
                              before_unload_dialog_opened_time,
                              before_unload_dialog_closed_time);
 }
@@ -1495,14 +1474,14 @@ void LocalFrame::DidChangeThemeColor(bool update_theme_color_cache) {
   if (color)
     sk_color = color->Rgb();
 
-  GetLocalFrameHostRemote().DidChangeThemeColor(sk_color);
+  GetPage()->GetChromeClient().DidChangeThemeColor(sk_color);
 }
 
 void LocalFrame::DidChangeBackgroundColor(SkColor4f background_color,
                                           bool color_adjust) {
   DCHECK(!Tree().Parent());
-  GetLocalFrameHostRemote().DidChangeBackgroundColor(background_color,
-                                                     color_adjust);
+  GetPage()->GetChromeClient().DidChangeBackgroundColor(background_color,
+                                                        color_adjust);
 }
 
 LocalFrame& LocalFrame::LocalFrameRoot() const {
@@ -1741,11 +1720,11 @@ void LocalFrame::SetZoomFactors(float layout_zoom_factor,
     // propagated here.
     for (Frame* child = Tree().FirstChild(); child;
          child = child->Tree().NextSibling()) {
-      if (auto* child_local_frame = DynamicTo<LocalFrame>(child)) {
+      if (auto* child_local_frame = DynamicTo<LocalFrame>(*child)) {
         child_local_frame->SetZoomFactors(layout_zoom_factor_,
                                           text_zoom_factor_, css_zoom_factor_);
       } else {
-        DynamicTo<RemoteFrame>(child)->ZoomFactorChanged(layout_zoom_factor);
+        To<RemoteFrame>(*child).ZoomFactorChanged(layout_zoom_factor);
       }
     }
   }
@@ -2685,7 +2664,7 @@ void LocalFrame::ForceSynchronousDocumentInstall(const AtomicString& mime_type,
   // around this problem.
   Vector<char> current_chunk;
   for (const auto& segment : data) {
-    current_chunk.AppendSpan(base::span(segment));
+    current_chunk.append_range(segment);
     if (current_chunk.size() > kMaxDocumentChunkSize) {
       parser->AppendBytes(base::as_byte_span(current_chunk));
       current_chunk.clear();
@@ -2771,7 +2750,18 @@ void LocalFrame::SetAdEvidence(const FrameAdEvidence& ad_evidence) {
 
   // TODO(yaoxia): Determine whether we can DCHECK(owner).
   if (HTMLFrameOwnerElement* owner = DeprecatedLocalOwner()) {
-    owner->DidSetAdStatus();
+    if (is_ad_frame) {
+      AdProvenance ad_provenance = NoProvenance{};
+
+      // Try to extract ad provenance from CreationAdScript, keeping the default
+      // `NoProvenance` if unavailable (crbug.com/421202278).
+      if (std::optional<AdScriptIdentifier> creation_ad_script =
+              CreationAdScript()) {
+        ad_provenance = creation_ad_script->id;
+      }
+
+      owner->SetIsAdRelated(std::move(ad_provenance));
+    }
   }
 
   if (is_ad_frame) {
@@ -2963,10 +2953,6 @@ void LocalFrame::SetHadUserInteraction(bool had_user_interaction) {
   GetFrameScheduler()->SetHadUserActivation(had_user_interaction);
 }
 
-void LocalFrame::SetStorageAccessApiStatus(net::StorageAccessApiStatus status) {
-  GetLocalFrameHostRemote().SetStorageAccessApiStatus(status);
-}
-
 namespace {
 
 class FrameColorOverlay final : public FrameOverlay::Delegate {
@@ -3142,8 +3128,8 @@ bool LocalFrame::SwapIn() {
     CHECK(previous_local_main_frame->IsLocalFrame());
     CHECK_NE(previous_local_main_frame->GetPage(), GetPage());
     CHECK(provisional_owner_frame->IsRemoteFrame());
-    CHECK(!DynamicTo<RemoteFrame>(provisional_owner_frame)
-               ->IsRemoteFrameHostRemoteBound());
+    CHECK(!To<RemoteFrame>(*provisional_owner_frame)
+               .IsRemoteFrameHostRemoteBound());
     GetPage()->SetPreviousMainFrameForLocalSwap(nullptr);
     return client->SwapIn(WebFrame::FromCoreFrame(previous_local_main_frame));
   }
@@ -3245,7 +3231,7 @@ void LocalFrame::RequestExecuteScript(
   }
 
   Vector<WebScriptSource> script_sources;
-  script_sources.AppendSpan(sources);
+  script_sources.append_range(sources);
 
   ScriptState* script_state = ToScriptState(this, *world);
   // TODO(https://crbug.com/435149285): Remove this block and revert back to
@@ -3462,7 +3448,7 @@ void LocalFrame::EvictFromBackForwardCache(
   mojom::blink::ScriptSourceLocationPtr source = nullptr;
   if (source_location) {
     source = mojom::blink::ScriptSourceLocation::New(
-        source_location->Url() ? KURL(source_location->Url()) : KURL(),
+        source_location->Url() ? KURL(source_location->Url()) : NullUrl(),
         source_location->Function() ? source_location->Function() : "",
         source_location->LineNumber(), source_location->ColumnNumber());
   }
@@ -3673,8 +3659,9 @@ void LocalFrame::SaveImageAt(const gfx::Point& window_point) {
     return;
 
   String url = To<Element>(*node).ImageSourceURL();
-  if (!KURL(NullURL(), url).ProtocolIsData())
+  if (!ProtocolIs(url, "data")) {
     return;
+  }
 
   auto params = mojom::blink::DownloadURLParams::New();
   params->is_context_menu_save = true;
@@ -3777,8 +3764,7 @@ void LocalFrame::RequestVideoFrameAtWithBoundsHint(
     size = gfx::Size(width, height);
   }
 
-  auto image =
-      video->CreateStaticBitmapImage(/*allow_accelerated_images=*/true, size);
+  auto image = video->CreateStaticBitmapImage(size);
   if (!image) {
     std::move(callback).Run(SkBitmap(), gfx::Rect());
     return;
@@ -3860,8 +3846,8 @@ void LocalFrame::AdvanceFocusForIME(mojom::blink::FocusType focus_type) {
     return;
 
   Element* next_element =
-      GetPage()->GetFocusController().NextFocusableElementForImeAndAutofill(
-          element, focus_type);
+      GetPage()->GetFocusController().NextFocusableElementForIme(element,
+                                                                 focus_type);
   if (!next_element)
     return;
 
@@ -4136,8 +4122,8 @@ void LocalFrame::ScheduleNextServiceForPostLayoutSnapshotClients() {
 
 void LocalFrame::CheckPositionAnchorsForCssVisibilityChanges() {
   for (auto& client : post_layout_snapshot_clients_) {
-    if (AnchorPositionScrollData* scroll_data =
-            DynamicTo<AnchorPositionScrollData>(client.Get())) {
+    auto* scroll_data = DynamicTo<AnchorPositionScrollData>(client.Get());
+    if (scroll_data && scroll_data->IsActive()) {
       if (auto* observer = scroll_data->GetAnchorPositionVisibilityObserver()) {
         observer->UpdateForCssAnchorVisibility();
       }
@@ -4295,11 +4281,13 @@ void LocalFrame::PerformFullContentSpellCheck() {
   const EphemeralRange range(Position(container_node, 0),
                              Position::LastPositionInNode(*container_node));
 
+  // Some IMEs' functionalities (e.g. Gboard's Add to Personal Dictionary) rely
+  // on PerformFullContentSpellCheck to perform a full-content spell check. In
+  // such case, the spell check request cache could have become stale by the
+  // time this method is called. Therefore, we want to force a fresh request to
+  // spell check service.
   GetSpellChecker().GetSpellCheckRequester().RequestCheckingFor(
-      range,
-      ExtractSpellingMarkersFromDocumentMarkerVector(
-          GetDocument()->Markers().Markers()),
-      /*request_num=*/0, /*should_force_refresh=*/false);
+      range, /*request_num=*/0, /*should_force_refresh=*/true);
 }
 #endif  // BUILDFLAG(IS_ANDROID)
 

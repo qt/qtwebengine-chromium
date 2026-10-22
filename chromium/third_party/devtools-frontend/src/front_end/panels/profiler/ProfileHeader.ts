@@ -11,17 +11,14 @@ export class ProfileHeader extends Common.ObjectWrapper.ObjectWrapper<EventTypes
   readonly #profileType: ProfileType;
   title: string;
   uid: number;
-  #fromFile: boolean;
-  tempFile: Bindings.TempFile.TempFile|null;
+  #fromFile = false;
+  tempFile: Bindings.TempFile.TempFile|null = null;
 
   constructor(profileType: ProfileType, title: string) {
     super();
     this.#profileType = profileType;
     this.title = title;
     this.uid = profileType.incrementProfileUid();
-    this.#fromFile = false;
-
-    this.tempFile = null;
   }
 
   setTitle(title: string): void {
@@ -35,17 +32,6 @@ export class ProfileHeader extends Common.ObjectWrapper.ObjectWrapper<EventTypes
 
   updateStatus(subtitle: string|null, wait?: boolean): void {
     this.dispatchEventToListeners(Events.UPDATE_STATUS, new StatusUpdate(subtitle, wait));
-  }
-
-  /**
-   * Must be implemented by subclasses.
-   */
-  createSidebarTreeElement(_dataDisplayDelegate: DataDisplayDelegate): UI.TreeOutline.TreeElement {
-    throw new Error('Not implemented.');
-  }
-
-  createView(_dataDisplayDelegate: DataDisplayDelegate): UI.Widget.Widget {
-    throw new Error('Not implemented.');
   }
 
   removeTempFile(): void {
@@ -103,17 +89,14 @@ export interface EventTypes {
 export class ProfileType extends Common.ObjectWrapper.ObjectWrapper<ProfileEventTypes> {
   readonly #id: string;
   readonly #name: string;
-  profiles: ProfileHeader[];
-  #profileBeingRecorded: ProfileHeader|null;
-  #nextProfileUid: number;
+  profiles: ProfileHeader[] = [];
+  #profileBeingRecorded: ProfileHeader|null = null;
+  #nextProfileUid = 1;
 
   constructor(id: string, name: string) {
     super();
     this.#id = id;
     this.#name = name;
-    this.profiles = [];
-    this.#profileBeingRecorded = null;
-    this.#nextProfileUid = 1;
 
     if (!window.opener) {
       window.addEventListener('pagehide', this.clearTempStorage.bind(this), false);
@@ -173,10 +156,7 @@ export class ProfileType extends Common.ObjectWrapper.ObjectWrapper<ProfileEvent
   }
 
   getProfiles(): ProfileHeader[] {
-    function isFinished(this: ProfileType, profile: ProfileHeader): boolean {
-      return this.#profileBeingRecorded !== profile;
-    }
-    return this.profiles.filter(isFinished.bind(this));
+    return this.profiles.filter(profile => this.#profileBeingRecorded !== profile);
   }
 
   customContent(): Element|null {

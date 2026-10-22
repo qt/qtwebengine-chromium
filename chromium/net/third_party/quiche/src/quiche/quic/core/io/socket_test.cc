@@ -340,7 +340,7 @@ TEST(SocketTest, SendToForRaw) {
   QuicSocketAddress server_address(localhost_address, /*port=*/56362);
   std::string packet = CreateUdpPacket(client_address, server_address, "foo");
   absl::StatusOr<absl::string_view> result = socket_api::SendTo(
-      socket, QuicSocketAddress(localhost_address, /*port=*/56362), packet);
+      socket, QuicSocketAddress(localhost_address, /*port=*/0), packet);
 
   // Expect at least some data to be sent successfully.
   QUICHE_ASSERT_OK(result.status());
@@ -366,7 +366,7 @@ TEST(SocketTest, SendToForRawWithIpHeader) {
       CreateIpPacket(client_address.host(), server_address.host(),
                      CreateUdpPacket(client_address, server_address, "foo"));
   absl::StatusOr<absl::string_view> result = socket_api::SendTo(
-      socket, QuicSocketAddress(localhost_address, /*port=*/56362), packet);
+      socket, QuicSocketAddress(localhost_address, /*port=*/0), packet);
 
   // Expect at least some data to be sent successfully.
   QUICHE_ASSERT_OK(result.status());

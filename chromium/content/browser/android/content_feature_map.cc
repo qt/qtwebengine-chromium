@@ -8,6 +8,7 @@
 #include "components/input/features.h"
 #include "content/common/features.h"
 #include "content/public/common/content_features.h"
+#include "media/base/media_switches.h"
 #include "third_party/blink/public/common/features.h"
 #include "ui/accessibility/accessibility_features.h"
 
@@ -26,16 +27,19 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &blink::features::kAndroidSpellcheckFullApiBlink,
     &blink::features::kDevicePosture,
     &blink::features::kSecurePaymentConfirmationBrowserBoundKeys,
-    &blink::features::kSecurePaymentConfirmationUxRefresh,
     &blink::features::kViewportSegments,
+    &media::kAllowDelayedAudioFocusGainAndroid,
     &input::features::kInputOnViz,
     &features::kAndroidCaptureKeyEvents,
     &features::kAndroidCaretBrowsing,
     &features::kAndroidDevToolsFrontend,
+    &features::kAndroidEnableBackgroundMediaCapturing,
     &features::kAccessibilityCheckJavaNodeCacheFreshness,
     &features::kAccessibilityAtomicLiveRegions,
     &features::kAccessibilityDeprecateJavaNodeCache,
     &features::kAccessibilityDeprecateTypeAnnounce,
+    &features::kAccessibilityExposeNonAtomicTextFieldChildren,
+    &features::kAccessibilityExpandEventMetadata,
     &features::kAccessibilityExtendedSelection,
     &features::kAccessibilityImeGetFormattedText,
     &features::kAccessibilityImproveLiveRegionAnnounce,
@@ -52,11 +56,13 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &features::kAndroidFallbackToNextSlot,
     &features::kAndroidMediaInsertion,
     &features::kAndroidPkAutocorrectUnderline,
-    &features::kAndroidSpellingUnderlineInCompositionMode,
+    &features::kAndroidBlockMisspellingSuggestionSpanInCompositionMode,
     &features::kStrictHighRankProcessLRU,
     &features::kFedCm,
     &features::kHidePastePopupOnGSB,
     &features::kNoSelectionMenuCaching,
+    &features::kPrefetchOffTheMainThread,
+    &features::kPreviewHandwritingGesture,
     &features::kReduceGpuPriorityOnBackground,
     &features::kRemoveCachedProcessFromBindingManager,
     &features::kContinueGestureOnLosingFocus,
@@ -66,8 +72,8 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &features::kWebBluetoothNewPermissionsBackend,
     &features::kWebContentsDiscard,
     &features::kWebIdentityDigitalCredentials,
+    &features::kJavalessRendererExperimentOn,
     &features::kBtmTtl,
-    &features::kEnableJavalessRenderers,
     &features::kSpareRendererProcessPriority,
 };
 

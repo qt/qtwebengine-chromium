@@ -110,36 +110,6 @@ const issueDescriptions = new Map<Protocol.Audits.FederatedAuthRequestIssueReaso
     },
   ],
   [
-    Protocol.Audits.FederatedAuthRequestIssueReason.ClientMetadataHttpNotFound,
-    {
-      file: 'federatedAuthRequestClientMetadataHttpNotFound.md',
-      links: [{
-        link: 'https://fedidcg.github.io/FedCM/',
-        linkTitle: i18nLazyString(UIStrings.fedCm),
-      }],
-    },
-  ],
-  [
-    Protocol.Audits.FederatedAuthRequestIssueReason.ClientMetadataNoResponse,
-    {
-      file: 'federatedAuthRequestClientMetadataNoResponse.md',
-      links: [{
-        link: 'https://fedidcg.github.io/FedCM/',
-        linkTitle: i18nLazyString(UIStrings.fedCm),
-      }],
-    },
-  ],
-  [
-    Protocol.Audits.FederatedAuthRequestIssueReason.ClientMetadataInvalidResponse,
-    {
-      file: 'federatedAuthRequestClientMetadataInvalidResponse.md',
-      links: [{
-        link: 'https://fedidcg.github.io/FedCM/',
-        linkTitle: i18nLazyString(UIStrings.fedCm),
-      }],
-    },
-  ],
-  [
     Protocol.Audits.FederatedAuthRequestIssueReason.ErrorFetchingSignin,
     {
       file: 'federatedAuthRequestErrorFetchingSignin.md',

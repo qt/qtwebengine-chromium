@@ -30,8 +30,8 @@ class CPDF_IccProfile final : public Retainable {
   uint32_t GetComponents() const { return src_components_; }
 
   bool IsNormal() const;
-  void Translate(pdfium::span<const float> pSrcValues,
-                 pdfium::span<float> pDestValues);
+  void Translate(pdfium::span<const float> src_values,
+                 pdfium::span<float, 3> dest_values);
   void TranslateScanline(pdfium::span<uint8_t> pDest,
                          pdfium::span<const uint8_t> pSrc,
                          int pixels);

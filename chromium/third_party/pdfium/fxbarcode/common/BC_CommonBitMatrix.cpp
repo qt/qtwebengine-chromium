@@ -36,10 +36,13 @@ CBC_CommonBitMatrix::~CBC_CommonBitMatrix() = default;
 
 bool CBC_CommonBitMatrix::Get(size_t x, size_t y) const {
   size_t offset = y * row_size_ + (x >> 5);
-  return ((bits_.span()[offset] >> (x & 0x1f)) & 1) != 0;
+  return offset < bits_.span().size() &&
+         ((bits_.span()[offset] >> (x & 0x1f)) & 1) != 0;
 }
 
 void CBC_CommonBitMatrix::Set(size_t x, size_t y) {
   size_t offset = y * row_size_ + (x >> 5);
-  bits_.span()[offset] |= 1u << (x & 0x1f);
+  if (offset < bits_.span().size()) {
+    bits_.span()[offset] |= 1u << (x & 0x1f);
+  }
 }

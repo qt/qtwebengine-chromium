@@ -78,10 +78,20 @@ if (dry) {
 }
 
 await new Promise((resolve, reject) => {
-  const createProcess = spawn(pythonExecutable, args, {
-    shell: true,
-    stdio: 'inherit',
-  });
+  let createProcess;
+  if (os.platform() === 'win32') {
+    createProcess = spawn(
+      process.env.ComSpec ?? 'cmd.exe',
+      ['/c', pythonExecutable, ...args],
+      {
+        stdio: 'inherit',
+      },
+    );
+  } else {
+    createProcess = spawn(pythonExecutable, args, {
+      stdio: 'inherit',
+    });
+  }
 
   createProcess.on('error', message => {
     reject(message);

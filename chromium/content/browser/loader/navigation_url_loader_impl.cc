@@ -58,6 +58,7 @@
 #include "content/browser/web_package/signed_exchange_request_handler.h"
 #include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/browser/webui/url_data_manager_backend.h"
+#include "content/common/navigation_params_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -319,6 +320,8 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
   new_request->upgrade_if_insecure = request_info.upgrade_if_insecure;
   new_request->throttling_profile_id = request_info.devtools_frame_token;
   new_request->transition_type = request_info.common_params->transition;
+  new_request->is_reload_navigation = NavigationTypeUtils::IsReload(
+      request_info.common_params->navigation_type);
   devtools_instrumentation::MaybeAssignResourceRequestId(
       frame_tree_node, request_info.devtools_navigation_token.ToString(),
       *new_request);
@@ -1366,8 +1369,7 @@ void NavigationURLLoaderImpl::CreateThrottlingLoaderAndStart(
       std::move(factory), global_request_id_.request_id, options,
       resource_request_.get(),
       GetUIThreadTaskRunner({BrowserTaskType::kNavigationNetworkResponse}),
-      /*cors_exempt_header_list=*/std::nullopt,
-      &request_info_->common_params->initiator_origin_trial_features);
+      /*cors_exempt_header_list=*/std::nullopt);
 }
 
 const network::ResourceRequest&
@@ -2463,7 +2465,7 @@ NavigationURLLoaderImpl::CreateURLLoaderFactoryWithHeaderClient(
   network::mojom::URLLoaderFactoryParamsPtr params =
       network::mojom::URLLoaderFactoryParams::New();
   params->header_client = std::move(header_client);
-  params->process_id = network::OriginatingProcess::browser();
+  params->process_id = network::OriginatingProcessId::browser();
   params->is_trusted = true;
   params->is_orb_enabled = false;
   params->disable_web_security =

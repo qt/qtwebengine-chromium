@@ -50,7 +50,8 @@ import objectPropertiesSectionStyles from './objectPropertiesSection.css.js';
 import objectValueStyles from './objectValue.css.js';
 import {RemoteObjectPreviewFormatter, renderNodeTitle} from './RemoteObjectPreviewFormatter.js';
 
-const {widgetConfig} = UI.Widget;
+export {objectPropertiesSectionStyles, objectValueStyles};
+const {widget} = UI.Widget;
 const {ref, repeat, ifDefined, classMap} = Directives;
 const UIStrings = {
   /**
@@ -148,14 +149,36 @@ interface NodeChildren {
   accessors?: ObjectTreeNode[];
 }
 
-abstract class ObjectTreeNodeBase extends Common.ObjectWrapper.ObjectWrapper<ObjectTreeNodeBase.EventTypes> {
+export interface ObjectTreeOptions {
+  readonly propertiesMode: ObjectPropertiesMode;
+  readonly readOnly: boolean;
+}
+
+export abstract class ObjectTreeNodeBase extends Common.ObjectWrapper.ObjectWrapper<ObjectTreeNodeBase.EventTypes> {
   #children?: NodeChildren;
+  protected filter: {includeNullOrUndefinedValues: boolean, regex: RegExp|null}|null = null;
   protected extraProperties: ObjectTreeNode[] = [];
   expanded = false;
-  constructor(
-      readonly parent?: ObjectTreeNodeBase,
-      readonly propertiesMode: ObjectPropertiesMode = ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED) {
+
+  constructor(readonly parent: ObjectTreeNodeBase|undefined, protected readonly options: ObjectTreeOptions) {
     super();
+    this.filter = parent?.filter ?? null;
+  }
+
+  get readOnly(): boolean {
+    return this.options.readOnly;
+  }
+
+  get propertiesMode(): ObjectPropertiesMode {
+    return this.options.propertiesMode;
+  }
+
+  get includeNullOrUndefinedValues(): boolean {
+    return this.filter?.includeNullOrUndefinedValues ?? true;
+  }
+
+  set includeNullOrUndefinedValues(value: boolean) {
+    this.setFilter({includeNullOrUndefinedValues: value, regex: this.filter?.regex ?? null});
   }
 
   // Performs a pre-order tree traversal over the populated children. If any children need to be populated, callers must
@@ -187,6 +210,15 @@ abstract class ObjectTreeNodeBase extends Common.ObjectWrapper.ObjectWrapper<Obj
     for (const node of this.#walk()) {
       node.expanded = false;
     }
+  }
+
+  setFilter(filter: {includeNullOrUndefinedValues: boolean, regex: RegExp|null}|null): void {
+    this.filter = filter;
+    this.dispatchEventToListeners(ObjectTreeNodeBase.Events.FILTER_CHANGED);
+    this.#walk().forEach(c => {
+      c.filter = filter;
+      c.dispatchEventToListeners(ObjectTreeNodeBase.Events.FILTER_CHANGED);
+    });
   }
 
   abstract get object(): SDK.RemoteObject.RemoteObject|undefined;
@@ -222,9 +254,13 @@ abstract class ObjectTreeNodeBase extends Common.ObjectWrapper.ObjectWrapper<Obj
   }
 
   async populateChildrenIfNeeded(): Promise<NodeChildren> {
-    if (this.#children) {
-      return this.#children;
+    if (!this.#children) {
+      this.#children = await this.populateChildrenIfNeededImpl();
     }
+    return this.#children;
+  }
+
+  protected async populateChildrenIfNeededImpl(): Promise<NodeChildren> {
     const object = this.object;
     if (!object) {
       return {};
@@ -235,7 +271,9 @@ abstract class ObjectTreeNodeBase extends Common.ObjectWrapper.ObjectWrapper<Obj
     if (this.arrayLength > ARRAY_LOAD_THRESHOLD) {
       const ranges = await arrayRangeGroups(object, 0, this.arrayLength - 1);
       const arrayRanges = ranges?.ranges.map(
-          ([fromIndex, toIndex, count]) => new ArrayGroupTreeNode(object, {fromIndex, toIndex, count}));
+          ([fromIndex, toIndex, count]) => new ArrayGroupTreeNode(
+              object, {fromIndex, toIndex, count}, effectiveParent,
+              {readOnly: this.readOnly, propertiesMode: this.propertiesMode}));
       if (!arrayRanges) {
         return {};
       }
@@ -244,10 +282,15 @@ abstract class ObjectTreeNodeBase extends Common.ObjectWrapper.ObjectWrapper<Obj
           await SDK.RemoteObject.RemoteObject.loadFromObjectPerProto(
               this.object, true /* generatePreview */, true /* nonIndexedPropertiesOnly */);
 
-      const properties = objectProperties?.map(p => new ObjectTreeNode(p, undefined, effectiveParent, undefined));
+      const properties = objectProperties?.map(
+          p => new ObjectTreeNode(
+              p, effectiveParent,
+              {readOnly: this.readOnly, propertiesMode: ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED}));
 
-      const internalProperties =
-          objectInternalProperties?.map(p => new ObjectTreeNode(p, undefined, effectiveParent, undefined));
+      const internalProperties = objectInternalProperties?.map(
+          p => new ObjectTreeNode(
+              p, effectiveParent,
+              {readOnly: this.readOnly, propertiesMode: ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED}));
       return {arrayRanges, properties, internalProperties};
     }
 
@@ -264,13 +307,18 @@ abstract class ObjectTreeNodeBase extends Common.ObjectWrapper.ObjectWrapper<Obj
         break;
     }
 
-    const properties = objectProperties?.map(p => new ObjectTreeNode(p, undefined, effectiveParent, undefined));
+    const properties = objectProperties?.map(
+        p => new ObjectTreeNode(
+            p, effectiveParent,
+            {readOnly: this.readOnly, propertiesMode: ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED}));
     properties?.push(...this.extraProperties);
     properties?.sort(ObjectPropertiesSection.compareProperties);
     const accessors = properties && ObjectTreeNodeBase.getGettersAndSetters(properties);
 
-    const internalProperties =
-        objectInternalProperties?.map(p => new ObjectTreeNode(p, undefined, effectiveParent, undefined));
+    const internalProperties = objectInternalProperties?.map(
+        p => new ObjectTreeNode(
+            p, effectiveParent,
+            {readOnly: this.readOnly, propertiesMode: ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED}));
     return {properties, internalProperties, accessors};
   }
 
@@ -288,7 +336,9 @@ abstract class ObjectTreeNodeBase extends Common.ObjectWrapper.ObjectWrapper<Obj
   }
 
   addExtraProperties(...properties: SDK.RemoteObject.RemoteObjectProperty[]): void {
-    this.extraProperties.push(...properties.map(p => new ObjectTreeNode(p, undefined, this, undefined)));
+    this.extraProperties.push(...properties.map(
+        p => new ObjectTreeNode(
+            p, this, {readOnly: this.readOnly, propertiesMode: ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED})));
   }
 
   static getGettersAndSetters(properties: ObjectTreeNode[]): ObjectTreeNode[] {
@@ -298,12 +348,14 @@ abstract class ObjectTreeNodeBase extends Common.ObjectWrapper.ObjectWrapper<Obj
         if (property.property.getter) {
           const getterProperty = new SDK.RemoteObject.RemoteObjectProperty(
               'get ' + property.property.name, property.property.getter, false);
-          gettersAndSetters.push(new ObjectTreeNode(getterProperty, property.propertiesMode, property.parent));
+          gettersAndSetters.push(new ObjectTreeNode(
+              getterProperty, property.parent, {propertiesMode: property.propertiesMode, readOnly: property.readOnly}));
         }
         if (property.property.setter) {
           const setterProperty = new SDK.RemoteObject.RemoteObjectProperty(
               'set ' + property.property.name, property.property.setter, false);
-          gettersAndSetters.push(new ObjectTreeNode(setterProperty, property.propertiesMode, property.parent));
+          gettersAndSetters.push(new ObjectTreeNode(
+              setterProperty, property.parent, {propertiesMode: property.propertiesMode, readOnly: property.readOnly}));
         }
       }
     }
@@ -311,24 +363,24 @@ abstract class ObjectTreeNodeBase extends Common.ObjectWrapper.ObjectWrapper<Obj
   }
 }
 
-namespace ObjectTreeNodeBase {
+export namespace ObjectTreeNodeBase {
   export const enum Events {
     VALUE_CHANGED = 'value-changed',
     CHILDREN_CHANGED = 'children-changed',
+    FILTER_CHANGED = 'filter-changed',
   }
   export interface EventTypes {
     [Events.VALUE_CHANGED]: void;
     [Events.CHILDREN_CHANGED]: void;
+    [Events.FILTER_CHANGED]: void;
   }
 }
 
 export class ObjectTree extends ObjectTreeNodeBase {
   readonly #object: SDK.RemoteObject.RemoteObject;
 
-  constructor(
-      object: SDK.RemoteObject.RemoteObject,
-      propertiesMode: ObjectPropertiesMode = ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED) {
-    super(undefined, propertiesMode);
+  constructor(object: SDK.RemoteObject.RemoteObject, options: ObjectTreeOptions) {
+    super(undefined, options);
     this.#object = object;
   }
   override get object(): SDK.RemoteObject.RemoteObject {
@@ -341,21 +393,19 @@ class ArrayGroupTreeNode extends ObjectTreeNodeBase {
   readonly #range: {fromIndex: number, toIndex: number, count: number};
   constructor(
       object: SDK.RemoteObject.RemoteObject, range: {fromIndex: number, toIndex: number, count: number},
-      parent?: ObjectTreeNodeBase,
-      propertiesMode: ObjectPropertiesMode = ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED) {
-    super(parent, propertiesMode);
+      parent: ObjectTreeNodeBase, options: ObjectTreeOptions) {
+    super(parent, options);
     this.#object = object;
     this.#range = range;
   }
 
-  override async populateChildrenIfNeeded(): Promise<NodeChildren> {
-    if (this.children) {
-      return this.children;
-    }
+  override async populateChildrenIfNeededImpl(): Promise<NodeChildren> {
     if (this.#range.count > ArrayGroupingTreeElement.bucketThreshold) {
       const ranges = await arrayRangeGroups(this.object, this.#range.fromIndex, this.#range.toIndex);
       const arrayRanges = ranges?.ranges.map(
-          ([fromIndex, toIndex, count]) => new ArrayGroupTreeNode(this.object, {fromIndex, toIndex, count}));
+          ([fromIndex, toIndex, count]) => new ArrayGroupTreeNode(
+              this.object, {fromIndex, toIndex, count}, this,
+              {readOnly: this.readOnly, propertiesMode: this.propertiesMode}));
       return {arrayRanges};
     }
 
@@ -371,7 +421,8 @@ class ArrayGroupTreeNode extends ObjectTreeNodeBase {
     const allProperties =
         await arrayFragment.getAllProperties(false /* accessorPropertiesOnly */, true /* generatePreview */);
     arrayFragment.release();
-    const properties = allProperties.properties?.map(p => new ObjectTreeNode(p, this.propertiesMode, this, undefined));
+    const properties = allProperties.properties?.map(
+        p => new ObjectTreeNode(p, this, {propertiesMode: this.propertiesMode, readOnly: this.readOnly}));
     properties?.push(...this.extraProperties);
     properties?.sort(ObjectPropertiesSection.compareProperties);
     const accessors = properties && ObjectTreeNodeBase.getGettersAndSetters(properties);
@@ -395,14 +446,18 @@ export class ObjectTreeNode extends ObjectTreeNodeBase {
   #path?: string;
   constructor(
       readonly property: SDK.RemoteObject.RemoteObjectProperty,
-      propertiesMode: ObjectPropertiesMode = ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED,
-      parent?: ObjectTreeNodeBase,
+      parent: ObjectTreeNodeBase|undefined,
+      options: ObjectTreeOptions,
       readonly nonSyntheticParent?: SDK.RemoteObject.RemoteObject,
   ) {
-    super(parent, propertiesMode);
+    super(parent, options);
   }
   override get object(): SDK.RemoteObject.RemoteObject|undefined {
     return this.property.value;
+  }
+
+  get isFiltered(): boolean {
+    return Boolean(this.filter && !this.property.match(this.filter));
   }
 
   get name(): string {
@@ -495,17 +550,17 @@ export const getObjectPropertiesSectionFrom = (element: Element): ObjectProperti
 };
 
 export class ObjectPropertiesSection extends UI.TreeOutline.TreeOutlineInShadow {
-  private readonly root: ObjectTree;
-  readonly editable: boolean;
+  readonly root: ObjectTree;
   readonly #objectTreeElement: RootElement;
   titleElement: Element;
   skipProtoInternal?: boolean;
+
   constructor(
       object: SDK.RemoteObject.RemoteObject, title?: string|Element|null, linkifier?: Components.Linkifier.Linkifier,
       showOverflow?: boolean, editable = true) {
     super();
-    this.root = new ObjectTree(object);
-    this.editable = editable;
+    this.root = new ObjectTree(
+        object, {readOnly: !editable, propertiesMode: ObjectPropertiesMode.OWN_AND_INTERNAL_AND_INHERITED});
     if (!showOverflow) {
       this.setHideOverflow(true);
     }
@@ -609,18 +664,25 @@ export class ObjectPropertiesSection extends UI.TreeOutline.TreeOutlineInShadow 
   }
 
   static createNameElement(name: string|null, isPrivate?: boolean): Element {
+    const element = document.createElement('span');
+    element.classList.add('name');
     if (name === null) {
-      return UI.Fragment.html`<span class="name"></span>`;
+      return element;
     }
     if (/^\s|\s$|^$|\n/.test(name)) {
-      return UI.Fragment.html`<span class="name">"${name.replace(/\n/g, '\u21B5')}"</span>`;
+      element.textContent = `"${name.replace(/\n/g, '\u21B5')}"`;
+      return element;
     }
     if (isPrivate) {
-      return UI.Fragment.html`<span class="name">
-  <span class="private-property-hash">${name[0]}</span>${name.substring(1)}
-  </span>`;
+      const privatePropertyHash = document.createElement('span');
+      privatePropertyHash.classList.add('private-property-hash');
+      privatePropertyHash.textContent = name[0];
+      element.appendChild(privatePropertyHash);
+      element.appendChild(document.createTextNode(name.substring(1)));
+      return element;
     }
-    return UI.Fragment.html`<span class="name">${name}</span>`;
+    element.textContent = name;
+    return element;
   }
 
   static valueElementForFunctionDescription(
@@ -703,14 +765,15 @@ export class ObjectPropertiesSection extends UI.TreeOutline.TreeOutlineInShadow 
 
   static createPropertyValueWithCustomSupport(
       value: SDK.RemoteObject.RemoteObject, wasThrown: boolean, showPreview: boolean,
-      linkifier?: Components.Linkifier.Linkifier, isSyntheticProperty?: boolean, variableName?: string): HTMLElement {
+      linkifier?: Components.Linkifier.Linkifier, isSyntheticProperty?: boolean, variableName?: string,
+      includeNullOrUndefined?: boolean): HTMLElement {
     if (value.customPreview()) {
       const result = (new CustomPreviewComponent(value)).element;
       result.classList.add('object-properties-section-custom-section');
       return result;
     }
     return ObjectPropertiesSection.createPropertyValue(
-        value, wasThrown, showPreview, linkifier, isSyntheticProperty, variableName);
+        value, wasThrown, showPreview, linkifier, isSyntheticProperty, variableName, includeNullOrUndefined);
   }
 
   static getMemoryIcon(object: SDK.RemoteObject.RemoteObject, expression?: string): LitTemplate {
@@ -739,7 +802,8 @@ export class ObjectPropertiesSection extends UI.TreeOutline.TreeOutlineInShadow 
 
   static createPropertyValue(
       value: SDK.RemoteObject.RemoteObject, wasThrown: boolean, showPreview: boolean,
-      linkifier?: Components.Linkifier.Linkifier, isSyntheticProperty = false, variableName?: string): HTMLElement {
+      linkifier?: Components.Linkifier.Linkifier, isSyntheticProperty = false, variableName?: string,
+      includeNullOrUndefined?: boolean): HTMLElement {
     const propertyValue = document.createDocumentFragment();
     const type = value.type;
     const subtype = value.subtype;
@@ -759,16 +823,13 @@ export class ObjectPropertiesSection extends UI.TreeOutline.TreeOutlineInShadow 
         const text = JSON.stringify(description);
         const tooLong = description.length > maxRenderableStringLength;
         return html`<span class="value object-value-string" title=${ifDefined(tooLong ? undefined : description)}>${
-            tooLong ? html`<devtools-widget .widgetConfig=${
-                          widgetConfig(ExpandableTextPropertyValue, {text})}></devtools-widget>` :
-                      text}</span>`;
+            tooLong ? widget(ExpandableTextPropertyValue, {text}) : text}</span>`;
       }
       if (type === 'object' && subtype === 'trustedtype') {
         const text = `${className} '${description}'`;
         const tooLong = text.length > maxRenderableStringLength;
         return html`<span class="value object-value-trustedtype" title=${ifDefined(tooLong ? undefined : text)}>${
-            tooLong ? html`<devtools-widget .widgetConfig=${
-                          widgetConfig(ExpandableTextPropertyValue, {text})}></devtools-widget>` :
+            tooLong ? widget(ExpandableTextPropertyValue, {text}) :
                       html`${className} <span class=object-value-string title=${description}>${
                           JSON.stringify(description)}</span>`}</span>`;
       }
@@ -786,12 +847,15 @@ export class ObjectPropertiesSection extends UI.TreeOutline.TreeOutlineInShadow 
           >${renderNodeTitle(description)}</span>`;
       }
       if (description.length > maxRenderableStringLength) {
-        return html`<span class="value object-value-${subtype || type}" title=${description}><devtools-widget
-          .widgetConfig=${widgetConfig(ExpandableTextPropertyValue, {text: description})}></devtools-widget></span>`;
+        // clang-format off
+        return html`<span class="value object-value-${subtype || type}" title=${description}>
+          ${widget(ExpandableTextPropertyValue, {text: description})}
+        </span>`;
+        // clang-format on
       }
       const hasPreview = value.preview && showPreview;
       return html`<span class="value object-value-${subtype || type}" title=${description}>${
-          hasPreview ? new RemoteObjectPreviewFormatter().renderObjectPreview(value.preview) :
+          hasPreview ? new RemoteObjectPreviewFormatter().renderObjectPreview(value.preview, includeNullOrUndefined) :
                        description}${isSyntheticProperty ? nothing : this.getMemoryIcon(value, variableName)}</span>`;
     };
 
@@ -899,11 +963,9 @@ export interface TreeOutlineOptions {
 }
 
 export class ObjectPropertiesSectionsTreeOutline extends UI.TreeOutline.TreeOutlineInShadow {
-  readonly editable: boolean;
-  constructor(options?: TreeOutlineOptions|null) {
+  constructor() {
     super();
     this.registerRequiredCSS(objectValueStyles, objectPropertiesSectionStyles);
-    this.editable = !(options?.readOnly);
     this.contentElement.classList.add('source-code');
     this.contentElement.classList.add('object-properties-section');
   }
@@ -971,6 +1033,9 @@ export class RootElement extends UI.TreeOutline.TreeElement {
         {jslogContext: 'expand-recursively'});
     contextMenu.viewSection().appendItem(
         i18nString(UIStrings.collapseChildren), this.collapseChildren.bind(this), {jslogContext: 'collapse-children'});
+    contextMenu.viewSection().appendCheckboxItem(i18n.i18n.lockedString('Show all'), () => {
+      this.object.includeNullOrUndefinedValues = !this.object.includeNullOrUndefinedValues;
+    }, {checked: this.object.includeNullOrUndefinedValues, jslogContext: 'show-all'});
     void contextMenu.show();
   }
 
@@ -1041,7 +1106,7 @@ export const OBJECT_PROPERTY_DEFAULT_VIEW: ObjectPropertyView = (input, output, 
       const showPreview = property.name !== '[[Prototype]]';
       const value = ObjectPropertiesSection.createPropertyValueWithCustomSupport(
           property.value, property.wasThrown, showPreview, input.linkifier, property.synthetic,
-          input.node.path /* variableName */);
+          input.node.path /* variableName */, input.node.includeNullOrUndefinedValues);
       output.valueElement = value;
       return value;
     }
@@ -1132,10 +1197,12 @@ export class ObjectPropertyWidget extends UI.Widget.Widget {
     if (this.#property) {
       this.#property.removeEventListener(ObjectTreeNodeBase.Events.VALUE_CHANGED, this.requestUpdate, this);
       this.#property.removeEventListener(ObjectTreeNodeBase.Events.CHILDREN_CHANGED, this.requestUpdate, this);
+      this.#property.removeEventListener(ObjectTreeNodeBase.Events.FILTER_CHANGED, this.requestUpdate, this);
     }
     this.#property = property;
     this.#property.addEventListener(ObjectTreeNodeBase.Events.VALUE_CHANGED, this.requestUpdate, this);
     this.#property.addEventListener(ObjectTreeNodeBase.Events.CHILDREN_CHANGED, this.requestUpdate, this);
+    this.#property.addEventListener(ObjectTreeNodeBase.Events.FILTER_CHANGED, this.requestUpdate, this);
     this.requestUpdate();
   }
 
@@ -1274,8 +1341,10 @@ export class ObjectPropertyTreeElement extends UI.TreeOutline.TreeElement {
 
     this.#widget = new ObjectPropertyWidget();
     this.property = property;
+    this.hidden = property.isFiltered;
     this.property.addEventListener(ObjectTreeNodeBase.Events.VALUE_CHANGED, this.#updateValue, this);
     this.property.addEventListener(ObjectTreeNodeBase.Events.CHILDREN_CHANGED, this.#updateChildren, this);
+    this.property.addEventListener(ObjectTreeNodeBase.Events.FILTER_CHANGED, this.#updateFilter, this);
     this.toggleOnClick = true;
     this.linkifier = linkifier;
     this.maxNumPropertiesToShow = InitialVisibleChildrenLimit;
@@ -1301,10 +1370,18 @@ export class ObjectPropertyTreeElement extends UI.TreeOutline.TreeElement {
     }
   }
 
-  static populateWithProperties(
-      treeNode: UI.TreeOutline.TreeElement, {properties, internalProperties, accessors}: NodeChildren,
-      skipProto: boolean, skipGettersAndSetters: boolean, linkifier?: Components.Linkifier.Linkifier,
-      emptyPlaceholder?: string|null): void {
+  static *
+      createPropertyNodes(
+          {properties, internalProperties, accessors, arrayRanges}: NodeChildren, skipProto: boolean,
+          skipGettersAndSetters: boolean, linkifier?: Components.Linkifier.Linkifier, emptyPlaceholder?: string|null,
+          isNotDisplayablePropertyCallback?: (property: SDK.RemoteObject.RemoteObjectProperty) => boolean):
+          Generator<UI.TreeOutline.TreeElement> {
+    let empty = true;
+    // Arrays with large numbers of elements are paginated into arrayRanges.
+    // If we have array ranges, the object is not empty.
+    if (arrayRanges && arrayRanges.length > 0) {
+      empty = false;
+    }
     properties?.sort(ObjectPropertiesSection.compareProperties);
 
     const entriesProperty = internalProperties?.find(({property}) => property.name === '[[Entries]]');
@@ -1312,12 +1389,12 @@ export class ObjectPropertyTreeElement extends UI.TreeOutline.TreeElement {
       const treeElement = new ObjectPropertyTreeElement(entriesProperty, linkifier);
       treeElement.setExpandable(true);
       treeElement.expand();
-      treeNode.appendChild(treeElement);
+      empty = false;
+      yield treeElement;
     }
 
     for (const property of properties ?? []) {
-      if (treeNode instanceof ObjectPropertyTreeElement &&
-          !ObjectPropertiesSection.isDisplayableProperty(property.property, treeNode.property?.property)) {
+      if (isNotDisplayablePropertyCallback?.(property.property)) {
         continue;
       }
 
@@ -1330,12 +1407,13 @@ export class ObjectPropertyTreeElement extends UI.TreeOutline.TreeElement {
             element.expand();
           }
         }
-        treeNode.appendChild(element);
+        empty = false;
+        yield element;
       }
     }
 
     for (const accessor of accessors ?? []) {
-      treeNode.appendChild(new ObjectPropertyTreeElement(accessor, linkifier));
+      yield new ObjectPropertyTreeElement(accessor, linkifier);
     }
 
     for (const property of internalProperties ?? []) {
@@ -1346,15 +1424,34 @@ export class ObjectPropertyTreeElement extends UI.TreeOutline.TreeElement {
       if (property.property.name === '[[Prototype]]' && skipProto) {
         continue;
       }
-      treeNode.appendChild(treeElement);
+      empty = false;
+      yield treeElement;
     }
 
-    ObjectPropertyTreeElement.appendEmptyPlaceholderIfNeeded(treeNode, emptyPlaceholder);
+    if (empty) {
+      const title = document.createElement('div');
+      title.classList.add('gray-info-message');
+      title.textContent = emptyPlaceholder || i18nString(UIStrings.noProperties);
+      const infoElement = new UI.TreeOutline.TreeElement(title);
+      yield infoElement;
+    }
+  }
+
+  static populateWithProperties(
+      treeNode: UI.TreeOutline.TreeElement, children: NodeChildren, skipProto: boolean, skipGettersAndSetters: boolean,
+      linkifier?: Components.Linkifier.Linkifier, emptyPlaceholder?: string|null): void {
+    for (const childNode of this.createPropertyNodes(
+             children, skipProto, skipGettersAndSetters, linkifier, emptyPlaceholder,
+             property => treeNode instanceof ObjectPropertyTreeElement &&
+                 !ObjectPropertiesSection.isDisplayableProperty(property, treeNode.property?.property))) {
+      treeNode.appendChild(childNode);
+    }
   }
 
   revertHighlightChanges(): void {
     this.#widget.revertHighlightChanges();
   }
+
   setSearchRegex(regex: RegExp, additionalCssClassName?: string): boolean {
     return this.#widget.setSearchRegex(regex, additionalCssClassName);
   }
@@ -1379,18 +1476,6 @@ export class ObjectPropertyTreeElement extends UI.TreeOutline.TreeElement {
   // This is called by layout tests
   async applyExpression(expression: string): Promise<void> {
     await this.property.setValue(expression);
-  }
-
-  private static appendEmptyPlaceholderIfNeeded(treeNode: UI.TreeOutline.TreeElement, emptyPlaceholder?: string|null):
-      void {
-    if (treeNode.childCount()) {
-      return;
-    }
-    const title = document.createElement('div');
-    title.classList.add('gray-info-message');
-    title.textContent = emptyPlaceholder || i18nString(UIStrings.noProperties);
-    const infoElement = new UI.TreeOutline.TreeElement(title);
-    treeNode.appendChild(infoElement);
   }
 
   private showAllPropertiesElementSelected(element: UI.TreeOutline.TreeElement): boolean {
@@ -1434,10 +1519,7 @@ export class ObjectPropertyTreeElement extends UI.TreeOutline.TreeElement {
     this.#widget.show(this.listItemElement);
     this.#widget.property = this.property;
     this.#widget.linkifier = this.linkifier;
-    this.#widget.editable = this.treeOutline instanceof ObjectPropertiesSectionsTreeOutline ||
-            this.treeOutline instanceof ObjectPropertiesSection ?
-        this.treeOutline.editable :
-        false;
+    this.#widget.editable = !this.property.readOnly;
   }
 
   override onexpand(): void {
@@ -1455,6 +1537,10 @@ export class ObjectPropertyTreeElement extends UI.TreeOutline.TreeElement {
   #updateChildren(): void {
     this.removeChildren();
     void this.onpopulate();
+  }
+
+  #updateFilter(): void {
+    this.hidden = this.property.isFiltered;
   }
 
   getContextMenu(event: Event): UI.ContextMenu.ContextMenu {
@@ -1490,6 +1576,13 @@ export class ObjectPropertyTreeElement extends UI.TreeOutline.TreeElement {
           i18nString(UIStrings.collapseChildren), this.collapseChildren.bind(this),
           {jslogContext: 'collapse-children'});
     }
+    let root: ObjectTreeNodeBase = this.property;
+    while (root.parent) {
+      root = root.parent;
+    }
+    contextMenu.viewSection().appendCheckboxItem(i18n.i18n.lockedString('Show all'), () => {
+      root.includeNullOrUndefinedValues = !root.includeNullOrUndefinedValues;
+    }, {checked: root.includeNullOrUndefinedValues, jslogContext: 'show-all'});
     return contextMenu;
   }
 

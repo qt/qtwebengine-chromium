@@ -120,8 +120,7 @@ enum EulerAxis {
 template <int _AlphaAxis, int _BetaAxis, int _GammaAxis>
 class EulerSystem {
  public:
-  // It's defined this way and not as enum, because I think
-  //  that enum is not guerantee to support negative numbers
+  // Defined as static constexpr rather than enum to ensure support for negative values.
 
   /** The first rotation axis */
   static constexpr int AlphaAxis = _AlphaAxis;

@@ -306,36 +306,6 @@ try_.builder(
     tryjob = try_.job(),
 )
 
-try_.builder(
-    name = "chromeos-jacuzzi-rel",
-    branch_selector = branches.selector.CROS_LTS_BRANCHES,
-    mirrors = [
-        "ci/chromeos-jacuzzi-rel",
-    ],
-    builder_config_settings = builder_config.try_settings(
-        retry_failed_shards = False,
-    ),
-    gn_args = "ci/chromeos-jacuzzi-rel",
-    contact_team_email = "chromeos-chrome-build@google.com",
-    execution_timeout = 8 * time.hour,
-    main_list_view = "try",
-)
-
-try_.builder(
-    name = "chromeos-octopus-rel",
-    branch_selector = branches.selector.CROS_LTS_BRANCHES,
-    mirrors = [
-        "ci/chromeos-octopus-rel",
-    ],
-    builder_config_settings = builder_config.try_settings(
-        retry_failed_shards = False,
-    ),
-    gn_args = "ci/chromeos-octopus-rel",
-    contact_team_email = "chromeos-chrome-build@google.com",
-    execution_timeout = 8 * time.hour,
-    main_list_view = "try",
-)
-
 try_.orchestrator_builder(
     name = "linux-chromeos-rel",
     branch_selector = branches.selector.CROS_LTS_BRANCHES,
@@ -351,6 +321,7 @@ try_.orchestrator_builder(
             "partial_code_coverage_instrumentation",
             "enable_dangling_raw_ptr_feature_flag",
             "enable_backup_ref_ptr_feature_flag",
+            "enable_rust_clippy",
         ],
     ),
     compilator = "linux-chromeos-rel-compilator",

@@ -78,6 +78,13 @@ class ExternalVkImageBacking final : public ClearTrackingSharedImageBacking {
       std::string debug_label,
       gfx::BufferUsage buffer_usage);
 
+  static bool UseSeparateGLTexture(SharedContextState* context_state,
+                                   viz::SharedImageFormat format);
+
+  static bool CheckSupportForAccessStream(SharedImageAccessStream stream,
+                                          viz::SharedImageFormat format,
+                                          const AccessParams& params);
+
   ExternalVkImageBacking(
       base::PassKey<ExternalVkImageBacking>,
       const Mailbox& mailbox,
@@ -167,6 +174,8 @@ class ExternalVkImageBacking final : public ClearTrackingSharedImageBacking {
 
   // SharedImageBacking implementation.
   SharedImageBackingType GetType() const override;
+  bool SupportsAccess(SharedImageAccessStream stream,
+                      const AccessParams& params) const override;
   void Update(std::unique_ptr<gfx::GpuFence> in_fence) override;
   bool UploadFromMemory(const std::vector<SkPixmap>& pixmaps) override;
   bool ReadbackToMemory(const std::vector<SkPixmap>& pixmaps) override;
@@ -236,9 +245,6 @@ class ExternalVkImageBacking final : public ClearTrackingSharedImageBacking {
 
   void CopyPixelsFromGLTextureToVkImage();
   void CopyPixelsFromVkImageToGLTexture();
-
-  void CopyPixelsFromGLTextureToVkImageUsingStagingBuffer();
-  void CopyPixelsFromVKImageToGLTextureUsingStagingBuffer();
 
   scoped_refptr<SharedContextState> context_state_;
   std::vector<TextureHolderVk> vk_textures_;

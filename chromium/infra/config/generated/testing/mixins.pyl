@@ -9,6 +9,7 @@
 
 {
   '11-x86-emulator': {
+    'description': 'Run with android_30_google_apis_x86',
     'args': [
       '--avd-config=../../tools/android/avd/proto/android_30_google_apis_x86.textpb',
     ],
@@ -24,6 +25,11 @@
           'path': '.android_emulator/android_30_google_apis_x86',
         },
       ],
+    },
+    'resultdb': {
+      'base_variant': {
+        'device_os': 'RSR1.210722.013.A2',
+      },
     },
   },
   'amd_radeon_rx_5500_xt': {
@@ -150,6 +156,9 @@
       },
     },
   },
+  'ci_only': {
+    'ci_only': True,
+  },
   'crosier-no-arc': {
     'args': [
       '--test-launcher-filter-file=../../testing/buildbot/filters/chromeos.reven.chromeos_integration_tests.filter',
@@ -169,6 +178,39 @@
     'fail_if_unused': False,
     'swarming': {
       'dimensions': {
+        'pool': 'chromium.tests.gpu',
+      },
+    },
+  },
+  'gpu_amd_9900x_linux_experimental': {
+    'fail_if_unused': False,
+    'swarming': {
+      'dimensions': {
+        'display_attached': '1',
+        'gpu': '1002:13c0',
+        'os': 'Ubuntu',
+        'pool': 'chromium.tests.gpu.experimental',
+      },
+    },
+  },
+  'gpu_amd_9900x_win_experimental': {
+    'fail_if_unused': False,
+    'swarming': {
+      'dimensions': {
+        'display_attached': '1',
+        'gpu': '1002:13c0',
+        'os': 'Windows-11',
+        'pool': 'chromium.tests.gpu.experimental',
+      },
+    },
+  },
+  'gpu_amd_rx_5500_xt_linux_experimental': {
+    'fail_if_unused': False,
+    'swarming': {
+      'dimensions': {
+        'display_attached': '1',
+        'gpu': '1002:7340-25.0.7',
+        'os': 'Ubuntu-24.04',
         'pool': 'chromium.tests.gpu',
       },
     },
@@ -235,12 +277,12 @@
   },
   'gpu_force_skia_ganesh': {
     'args': [
-      '--extra-browser-args=--disable-features=SkiaGraphite',
+      '--extra-browser-args=--disable-skia-graphite',
     ],
   },
   'gpu_force_skia_graphite': {
     'args': [
-      '--extra-browser-args=--enable-features=SkiaGraphite',
+      '--extra-browser-args=--enable-skia-graphite',
     ],
   },
   'gpu_gtest_common_args': {
@@ -687,7 +729,7 @@
     'swarming': {
       'dimensions': {
         'cpu': 'arm64',
-        'os': 'Mac-15',
+        'os': 'Mac-15|Mac-26',
       },
     },
   },
@@ -695,7 +737,7 @@
     'swarming': {
       'dimensions': {
         'cpu': 'x86-64',
-        'os': 'Mac-15',
+        'os': 'Mac-15|Mac-26',
       },
     },
   },
@@ -863,6 +905,14 @@
       'containment_type': 'AUTO',
     },
   },
+  'tfc-cq-tast': {
+    'skylab': {
+      'cros_test_names_from_file': [
+        'chromeos/tast_control_cq_tests.txt',
+      ],
+      'cros_test_max_in_shard': 20
+    },
+  },
   'timeout_15m': {
     'fail_if_unused': False,
     'swarming': {
@@ -903,17 +953,6 @@
     'swarming': {
       'dimensions': {
         'os': 'Windows-10',
-      },
-    },
-  },
-  'win10_amd_rx_5500_xt_stable': {
-    'fail_if_unused': False,
-    'swarming': {
-      'dimensions': {
-        'display_attached': '1',
-        'gpu': '1002:7340-31.0.24002.92',
-        'os': 'Windows-10-19045',
-        'pool': 'chromium.tests.gpu',
       },
     },
   },
@@ -1006,6 +1045,17 @@
     },
   },
   'win11_amd_rx_5500_xt_experimental': {
+    'fail_if_unused': False,
+    'swarming': {
+      'dimensions': {
+        'display_attached': '1',
+        'gpu': '1002:7340-32.0.21037.1004',
+        'os': 'Windows-11-26100',
+        'pool': 'chromium.tests.gpu',
+      },
+    },
+  },
+  'win11_amd_rx_5500_xt_stable': {
     'fail_if_unused': False,
     'swarming': {
       'dimensions': {

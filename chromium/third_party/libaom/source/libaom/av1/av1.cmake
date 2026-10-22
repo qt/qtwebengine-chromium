@@ -479,7 +479,9 @@ list(APPEND AOM_AV1_COMMON_INTRIN_VSX "${AOM_ROOT}/av1/common/ppc/cfl_ppc.c")
 
 list(APPEND AOM_AV1_COMMON_INTRIN_RVV
             "${AOM_ROOT}/av1/common/riscv/cdef_block_rvv.c"
+            "${AOM_ROOT}/av1/common/riscv/compound_convolve_rvv.c"
             "${AOM_ROOT}/av1/common/riscv/convolve_rvv.c"
+            "${AOM_ROOT}/av1/common/riscv/highbd_compound_convolve_rvv.c"
             "${AOM_ROOT}/av1/common/riscv/highbd_convolve_rvv.c")
 
 if(CONFIG_THREE_PASS)

@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Google Inc.
+ * Copyright 2022 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -23,6 +23,7 @@
 #include "tools/graphite/TestOptions.h"
 #include "tools/graphite/dawn/GraphiteDawnToggles.h"
 #include "tools/window/GraphiteDisplayParams.h"
+#include "include/private/base/SkLog.h"
 
 #include "dawn/dawn_proc.h"
 
@@ -61,15 +62,15 @@ void GraphiteDawnWindowContext::initializeContext(int width, int height) {
     backendContext.fQueue = fDevice.GetQueue();
 
     SkASSERT(fDisplayParams->graphiteTestOptions());
-    skwindow::GraphiteTestOptions opts = *fDisplayParams->graphiteTestOptions();
+    skiatest::graphite::TestOptions opts = *fDisplayParams->graphiteTestOptions();
 
     // Needed to make synchronous readPixels work:
-    opts.fPriv.fStoreContextRefInRecorder = true;
+    opts.fOptionsPriv.fStoreContextRefInRecorder = true;
     fDisplayParams =
             GraphiteDisplayParamsBuilder(fDisplayParams.get()).graphiteTestOptions(opts).detach();
 
     fGraphiteContext = skgpu::graphite::ContextFactory::MakeDawn(backendContext,
-                                                                 opts.fTestOptions.fContextOptions);
+                                                                 opts.fContextOptions);
     if (!fGraphiteContext) {
         SkASSERT(false);
         return;
@@ -142,6 +143,7 @@ wgpu::Device GraphiteDawnWindowContext::createDevice(wgpu::BackendType type) {
 
     std::vector<dawn::native::Adapter> adapters = fInstance->EnumerateAdapters(&adapterOptions);
     if (adapters.empty()) {
+        SKIA_LOG_E("No dawn adapters available");
         return nullptr;
     }
 
@@ -164,18 +166,17 @@ wgpu::Device GraphiteDawnWindowContext::createDevice(wgpu::BackendType type) {
             [](const wgpu::Device&, wgpu::DeviceLostReason reason, wgpu::StringView message) {
                 if (reason == wgpu::DeviceLostReason::Unknown ||
                     reason == wgpu::DeviceLostReason::FailedCreation) {
-                    SK_ABORT("Device lost: %.*s\n", static_cast<int>(message.length), message.data);
+                    SKIA_LOG_F("Device lost: %.*s\n", static_cast<int>(message.length), message.data);
                 }
             });
     deviceDescriptor.SetUncapturedErrorCallback(
             [](const wgpu::Device&, wgpu::ErrorType, wgpu::StringView message) {
-                SkDebugf("Device error: %.*s\n", static_cast<int>(message.length), message.data);
-                SkASSERT(false);
+                SKIA_LOG_F("Device error: %.*s\n", static_cast<int>(message.length), message.data);
             });
 
     wgpu::DawnTogglesDescriptor deviceTogglesDesc;
 
-    if (fDisplayParams->graphiteTestOptions()->fTestOptions.fDisableTintSymbolRenaming) {
+    if (fDisplayParams->graphiteTestOptions()->fDisableTintSymbolRenaming) {
         static constexpr const char* kOptionalDeviceToggles[] = {
             "disable_symbol_renaming",
         };
@@ -190,6 +191,7 @@ wgpu::Device GraphiteDawnWindowContext::createDevice(wgpu::BackendType type) {
 
     auto device = adapter.CreateDevice(&deviceDescriptor);
     if (!device) {
+        SKIA_LOG_E("Could not create device from adapter");
         return nullptr;
     }
 

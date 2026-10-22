@@ -123,7 +123,7 @@
       <structure type="chrome_scaled_image" name="IDR_INCOGNITO_WHITE_CIRCLE" file="common/incognito_white_circle.png" />
       <structure type="chrome_scaled_image" name="IDR_INPUT_ALERT" file="common/input_alert.png" />
       <structure type="chrome_scaled_image" name="IDR_INPUT_ALERT_MENU" file="common/input_alert_menu.png" />
-      <if expr="not is_android">
+      <if expr="not is_android or enable_extensions_core">
         <structure type="chrome_scaled_image" name="IDR_IWA_INSTALL_SUCCESS" file="common/iwa_install_success.png" />
         <structure type="chrome_scaled_image" name="IDR_MANAGEMENT_FAVICON" file="common/favicon_management.png" />
         <structure type="chrome_scaled_image" name="IDR_MAXIMIZE_BUTTON_MASK" file="common/maximize_button_mask.png" />
@@ -333,6 +333,8 @@
       </if>
       <structure type="chrome_scaled_image" name="IDR_TAB_DROP_DOWN" file="tab_drop_down.png" />
       <structure type="chrome_scaled_image" name="IDR_TAB_DROP_UP" file="tab_drop_up.png" />
+      <structure type="chrome_scaled_image" name="IDR_TAB_DROP_LEFT" file="tab_drop_left.png" />
+      <structure type="chrome_scaled_image" name="IDR_TAB_DROP_RIGHT" file="tab_drop_right.png" />
       <if expr="not is_android">
           <structure type="chrome_scaled_image" name="IDR_TAB_GROUPS_ON_IOS_ICON" file="common/tab_groups_on_ios.png" />
       </if>

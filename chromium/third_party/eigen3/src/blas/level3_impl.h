@@ -486,7 +486,7 @@ EIGEN_BLAS_FUNC(trmm)
 
   if (*m == 0 || *n == 0) return;
 
-  // FIXME find a way to avoid this copy
+  // FIXME: find a way to avoid this copy
   Eigen::Matrix<Scalar, Dynamic, Dynamic, ColMajor> tmp = matrix(b, *m, *n, *ldb);
   matrix(b, *m, *n, *ldb).setZero();
 

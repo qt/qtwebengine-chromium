@@ -23,6 +23,12 @@ pub mod jpeg;
 pub mod png;
 pub mod y4m;
 
+#[cfg(feature = "png")]
+mod icc;
+#[cfg(feature = "jpeg")]
+mod xmp;
+
+use crate::gainmap::GainMap;
 use crate::image::Image;
 use crate::AvifResult;
 use crate::MatrixCoefficients;
@@ -33,9 +39,14 @@ pub struct Config {
     pub yuv_format: Option<PixelFormat>,
     pub depth: Option<u8>,
     pub matrix_coefficients: Option<MatrixCoefficients>,
+    pub ignore_icc: bool,
+    pub ignore_exif: bool,
+    pub ignore_xmp: bool,
+    pub image_size_limit: u32,
+    pub allow_sample_transform: bool,
 }
 
 pub trait Reader {
-    fn read_frame(&mut self, config: &Config) -> AvifResult<(Image, u64)>;
+    fn read_frame(&mut self, config: &Config) -> AvifResult<(Image, u64, Option<GainMap>)>;
     fn has_more_frames(&mut self) -> bool;
 }

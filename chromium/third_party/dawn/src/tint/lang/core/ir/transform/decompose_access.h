@@ -28,6 +28,8 @@
 #ifndef SRC_TINT_LANG_CORE_IR_TRANSFORM_DECOMPOSE_ACCESS_H_
 #define SRC_TINT_LANG_CORE_IR_TRANSFORM_DECOMPOSE_ACCESS_H_
 
+#include <cstdint>
+
 #include "src/tint/utils/result.h"
 
 // Forward declarations.
@@ -42,6 +44,10 @@ struct DecomposeAccessOptions {
     bool storage = false;
     bool uniform = false;
     bool workgroup = false;
+    bool immediate = false;
+
+    // The minimum size of the resulting array, in bytes.
+    uint32_t minimum_array_size = 0;
 
     // TODO(b/477295042): should there be a uniform standard layout option? When enabled uniform
     // could be treated like every other storage class.

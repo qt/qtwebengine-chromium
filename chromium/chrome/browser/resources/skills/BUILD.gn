@@ -4,16 +4,10 @@
 
 import("//ui/webui/resources/tools/build_webui.gni")
 
-assert(is_win || is_mac || is_linux || is_chromeos,
-       "This target is only supported on Windows, Mac, Linux, or ChromeOS.")
-
 build_webui("build") {
   grd_prefix = "skills"
 
   static_files = [
-    "images/skills_undo.svg",
-    "images/skills_redo.svg",
-    "images/skills_pen_spark.svg",
     "skills.html",
     "skills_dialog.html",
   ]
@@ -26,6 +20,7 @@ build_webui("build") {
     "card.ts",
     "discover_skills_page.html.ts",
     "discover_skills_page.ts",
+    "emoji_data.ts",
     "error_page.html.ts",
     "error_page.ts",
     "icons.html.ts",
@@ -34,6 +29,8 @@ build_webui("build") {
     "skills_dialog_app.html.ts",
     "skills_dialog_app.ts",
     "skills_dialog_browser_proxy.ts",
+    "skills_emoji_picker.html.ts",
+    "skills_emoji_picker.ts",
     "skills_empty.html.ts",
     "skills_empty.ts",
     "skills_page_browser_proxy.ts",
@@ -50,6 +47,7 @@ build_webui("build") {
     "shared_vars.css",
     "sidebar.css",
     "skills_dialog.css",
+    "skills_emoji_picker.css",
     "user_skills_page.css",
   ]
 
@@ -62,6 +60,7 @@ build_webui("build") {
   mojo_files = [
     "$root_gen_dir/chrome/browser/ui/webui/skills/skills.mojom-webui.ts",
     "$root_gen_dir/components/skills/public/skill.mojom-webui.ts",
+    "$root_gen_dir/components/skills/public/skill_metrics.mojom-webui.ts",
   ]
 
   ts_deps = [

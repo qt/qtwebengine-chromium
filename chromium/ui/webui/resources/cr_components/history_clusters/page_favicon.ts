@@ -50,7 +50,7 @@ export class PageFaviconElement extends CrLitElement {
       /**
        * The URL for which the favicon is shown.
        */
-      url: {type: Object},
+      url: {type: String},
 
       /**
        * Whether this visit is known to sync already. Used for the purpose of
@@ -61,8 +61,9 @@ export class PageFaviconElement extends CrLitElement {
       /**
        * The URL of the representative image for the page. Not every page has
        * this defined, in which case we fallback to the favicon.
+       * Mojo Url type is type mapped to a TS string.
        */
-      imageUrl_: {type: Object},
+      imageUrl_: {type: String},
 
       isImageCover_: {
         type: Boolean,

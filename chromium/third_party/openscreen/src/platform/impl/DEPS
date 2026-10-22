@@ -5,6 +5,7 @@
 include_rules = [
     '+platform',
     '+json',
+    '+perfetto/tracing',
 
     # BoringSSL includes
     '+openssl',

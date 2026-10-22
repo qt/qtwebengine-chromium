@@ -81,6 +81,9 @@ COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kOmitCorsClientCert);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kIgnoreCorsPreflightPolicy);
+
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kReduceAcceptLanguage);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kReduceAcceptLanguageHTTP);
@@ -142,17 +145,6 @@ COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE_PARAM(
     bool,
     kRendererSideContentDecodingForceMojoFailureForTesting);
-
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kSkipTpcdMitigationsForAds);
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE_PARAM(bool, kSkipTpcdMitigationsForAdsHeuristics);
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE_PARAM(bool, kSkipTpcdMitigationsForAdsMetadata);
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE_PARAM(bool, kSkipTpcdMitigationsForAdsTrial);
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE_PARAM(bool, kSkipTpcdMitigationsForAdsTopLevelTrial);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kDocumentIsolationPolicy);
@@ -312,11 +304,6 @@ BASE_DECLARE_FEATURE_PARAM(int, kCookieAccessCacheSize);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kPopulatePermissionsPolicyOnRequest);
 
-// Enables CORS safelisting the Protected Audience Trusted Key-Value
-// Content-Type.
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kProtectedAudienceCorsSafelistKVv2Signals);
-
 // If enabled and `kPopulatePermissionsPolicyOnRequest` is also enabled, storage
 // access headers will respect the "storage-access" permissions policy when
 // calculating storage access status.
@@ -353,6 +340,14 @@ BASE_DECLARE_FEATURE_PARAM(size_t, kSharedDictionaryCacheSize);
 // Maximum size of dictionaries that are allowed to be stored in the cache.
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE_PARAM(size_t, kSharedDictionaryCacheMaxSizeBytes);
+
+// When enabled, the network service will restrict the early matching and
+// loading of compression dictionaries. By default, it will start an async
+// task to find a matching compression dictionary and start to load it even
+// before checking if the resource is in the cache (in which case a dictionary
+// is not needed and the extra work is wasteful).
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kCompressionDictionaryLimitEarlyMatching);
 
 // When enabled, Network Service Task Scheduler is enabled on the Network
 // Service's IO Thread.
@@ -394,6 +389,54 @@ BASE_DECLARE_FEATURE_PARAM(
 // than what the network process has.
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kUseUnexportableKeyServiceInBrowserProcess);
+
+// When enabled, allows redirects to unsafe schemes (like data:) for fetch()
+// requests with redirect mode "manual". The redirect URL is censored to
+// "data:," for security.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kAllowUnsafeRedirectSchemesForManualMode);
+
+// A base feature to hold parameters for Durable Messages infrastructure.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kDurableMessages);
+
+// Global limit for all durable messages
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE_PARAM(int, kDurableMessagesGlobalBufferSize);
+
+// If enabled, the forbidden header checks for requests can be bypassed. This is
+// the network service side of the feature. The renderer side uses this same
+// feature via the cors::IsBypassRequestForbiddenHeadersCheckEnabled() function.
+//
+// This feature allows specific contexts to bypass the standard forbidden header
+// restrictions (currently only for the 'Origin' header) if they have explicit
+// permission to access the target URL. The bypass occurs only if the request's
+// initiator origin is allowed to access the target URL via the security
+// policy's origin access lists.
+//
+// For example, this enables chromium extensions with appropriate host
+// permissions to override this header in fetch requests initiated from
+// background pages or extension service workers. It does not apply to requests
+// initiated from content scripts or user scripts.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kBypassRequestForbiddenHeadersCheck);
+
+// When enabled, NetworkContext, and all mojoms passed through it, will receive
+// IPCs directly without the intermediate I/O thread hop. This is relevant when
+// the NetworkService is run in the browser process (i.e. on Android).
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kNetworkContextDirectReceiver);
+
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+bool ShouldBindNetworkContextDirectReceiver();
+
+// Delays the initial DoH probe. When enabled, the delay is determined by
+// kDelayInitialDohProbeTimeoutParam. When disabled, the probe is activated
+// immediately.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kDelayInitialDohProbeTimeout);
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE_PARAM(base::TimeDelta, kDelayInitialDohProbeTimeoutParam);
 
 }  // namespace network::features
 

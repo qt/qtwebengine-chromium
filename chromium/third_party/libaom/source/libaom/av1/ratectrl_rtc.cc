@@ -16,6 +16,7 @@
 
 #include "aom/aom_encoder.h"
 #include "aom/aomcx.h"
+#include "aom/internal/aom_codec_internal.h"
 #include "aom_dsp/aom_dsp_common.h"
 #include "aom_mem/aom_mem.h"
 #include "av1/common/common.h"
@@ -72,6 +73,29 @@ AomAV1RateControlRtcConfig::AomAV1RateControlRtcConfig() {
 
 namespace aom {
 
+// Creates a setjmp target using `CPI->common.error->jmp` and sets
+// `CPI->common.error->setjmp = 1`. Returns false on longjmp. This should be
+// accompanied by a call to DISABLE_SETJMP using the same CPI before going out
+// of scope.
+#define ENABLE_SETJMP(CPI)                                      \
+  do {                                                          \
+    struct aom_internal_error_info *const enable_setjmp_error = \
+        (CPI)->common.error;                                    \
+    if (setjmp(enable_setjmp_error->jmp)) {                     \
+      enable_setjmp_error->setjmp = 0;                          \
+      return false;                                             \
+    }                                                           \
+    enable_setjmp_error->setjmp = 1;                            \
+  } while (0)
+
+// Sets CPI->common.error->setjmp = 0.
+#define DISABLE_SETJMP(CPI)                                     \
+  do {                                                          \
+    struct aom_internal_error_info *const enable_setjmp_error = \
+        (CPI)->common.error;                                    \
+    enable_setjmp_error->setjmp = 0;                            \
+  } while (0)
+
 std::unique_ptr<AV1RateControlRTC> AV1RateControlRTC::Create(
     const AV1RateControlRtcConfig &cfg) {
   std::unique_ptr<AV1RateControlRTC> rc_api(new (std::nothrow)
@@ -84,6 +108,7 @@ std::unique_ptr<AV1RateControlRTC> AV1RateControlRTC::Create(
       static_cast<AV1_PRIMARY *>(aom_memalign(32, sizeof(AV1_PRIMARY)));
   if (!rc_api->cpi_->ppi) return nullptr;
   av1_zero(*rc_api->cpi_->ppi);
+  rc_api->cpi_->common.error = &rc_api->cpi_->ppi->error;
   rc_api->cpi_->common.seq_params = &rc_api->cpi_->ppi->seq_params;
   av1_zero(*rc_api->cpi_->common.seq_params);
   if (!rc_api->InitRateControl(cfg)) return nullptr;
@@ -224,7 +249,7 @@ bool AV1RateControlRTC::UpdateRateControl(
   av1_new_framerate(cpi_, cpi_->framerate);
   if (cpi_->svc.number_temporal_layers > 1 ||
       cpi_->svc.number_spatial_layers > 1) {
-    int64_t target_bandwidth_svc = 0;
+    volatile int64_t target_bandwidth_svc = 0;
     for (int sl = 0; sl < cpi_->svc.number_spatial_layers; ++sl) {
       for (int tl = 0; tl < cpi_->svc.number_temporal_layers; ++tl) {
         const int layer =
@@ -246,10 +271,14 @@ bool AV1RateControlRTC::UpdateRateControl(
       }
     }
 
-    if (cm->current_frame.frame_number == 0) av1_init_layer_context(cpi_);
+    ENABLE_SETJMP(cpi_);
+    if (cm->current_frame.frame_number == 0) {
+      av1_init_layer_context(cpi_);
+    }
     // This is needed to initialize external RC flag in layer context structure.
     cpi_->rc.rtc_external_ratectrl = 1;
     av1_update_layer_context_change_config(cpi_, target_bandwidth_svc);
+    DISABLE_SETJMP(cpi_);
   }
   check_reset_rc_flag(cpi_);
   return true;

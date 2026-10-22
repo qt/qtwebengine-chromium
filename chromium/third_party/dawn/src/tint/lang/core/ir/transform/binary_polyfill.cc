@@ -199,8 +199,7 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BinaryPolyfill(Module& ir, const BinaryPolyfillConfig& config) {
-    TINT_CHECK_RESULT(
-        ValidateAndDumpIfNeeded(ir, "core.BinaryPolyfill", kBinaryPolyfillCapabilities));
+    core::ir::AssertValid(ir, kBinaryPolyfillCapabilities, "before core.BinaryPolyfill");
 
     State{config, ir}.Process();
 

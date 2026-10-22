@@ -17,6 +17,18 @@
 // a single instance of this wrapper.
 class TemplateUrlServiceAndroid : public TemplateURLServiceObserver {
  public:
+  // Defines the category of template URLs to be displayed in different UI
+  // sections. The values are shared with
+  // org.chromium.components.search_engines.TemplateUrlService.
+  //
+  // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.components.search_engines
+  enum class TemplateUrlCategory {
+    kDefault = 0,
+    kActiveSiteSearch = 1,
+    kInactiveSiteSearch = 2,
+    kExtension = 3,
+  };
+
   explicit TemplateUrlServiceAndroid(TemplateURLService* template_url_service);
 
   TemplateUrlServiceAndroid(const TemplateUrlServiceAndroid&) = delete;
@@ -58,6 +70,9 @@ class TemplateUrlServiceAndroid : public TemplateURLServiceObserver {
       const base::android::JavaRef<jstring>& jalternate_term,
       bool jshould_prefetch,
       const base::android::JavaRef<jstring>& jprotocol_version);
+  base::android::ScopedJavaLocalRef<jobject> GetTemplateUrlForKeyword(
+      JNIEnv* env,
+      const std::u16string& keyword);
   base::android::ScopedJavaLocalRef<jstring> GetSearchEngineUrlFromTemplateUrl(
       JNIEnv* env,
       const base::android::JavaRef<jstring>& jkeyword);
@@ -87,6 +102,54 @@ class TemplateUrlServiceAndroid : public TemplateURLServiceObserver {
       const base::android::JavaRef<jstring>&
           jimage_translate_target_language_param_key);
 
+  // Removes the search engine with the given keyword. Returns true if the
+  // search engine was successfully removed, false if the search engine was not
+  // found or if it is the default search engine.
+  bool RemoveSearchEngine(JNIEnv* env, const std::u16string& keyword);
+
+  // Edits the search engine with the given keyword. Returns true if the search
+  // engine was successfully edited, false if the search engine was not found or
+  // try to edit the url of prepopulated search engines.
+  bool EditSearchEngine(JNIEnv* env,
+                        const std::u16string& keyword,
+                        const std::u16string& short_name,
+                        const std::u16string& new_keyword,
+                        const std::string& display_url);
+
+  // Adds a search engine with the given attributes. The new search engine is
+  // active by default. Returns true if the search engine was successfully
+  // added, false if the search engine with the given keyword already exists or
+  // failed to add internally.
+  bool AddSearchEngine(JNIEnv* env,
+                       const std::u16string& short_name,
+                       const std::u16string& keyword,
+                       const std::string& display_url);
+
+  // Returns true if the value of |new_name| is a valid search engine name to
+  // use.
+  bool IsSearchEngineNameValid(JNIEnv* env, const std::u16string& new_name);
+
+  // Returns true if the value of |new_keyword| is a valid keyword for a new
+  // search engine.
+  bool IsSearchEngineKeywordValidToAdd(JNIEnv* env,
+                                       const std::u16string& new_keyword);
+
+  // Returns true if the value of |new_keyword| is a valid keyword for an
+  // existing search engine.
+  bool IsSearchEngineKeywordValidToEdit(JNIEnv* env,
+                                        const std::u16string& new_keyword,
+                                        const std::u16string& current_keyword);
+
+  // Returns true if the value of |new_url| is a valid search engine URL for
+  // adding a new search engine.
+  bool IsSearchEngineUrlValidToAdd(JNIEnv* env, const std::string& new_url);
+
+  // Returns true if the value of |new_url| is a valid search engine URL for
+  // editing an existing search engine.
+  bool IsSearchEngineUrlValidToEdit(JNIEnv* env,
+                                    const std::string& new_url,
+                                    const std::u16string& current_keyword);
+
   // Adds a custom search engine, sets |jkeyword| as its short_name and keyword,
   // and sets its date_created as |age_in_days| days before the current time.
   base::android::ScopedJavaLocalRef<jstring> AddSearchEngineForTesting(
@@ -106,17 +169,32 @@ class TemplateUrlServiceAndroid : public TemplateURLServiceObserver {
       JNIEnv* env,
       const base::android::JavaRef<jobject>& template_url_list_obj);
 
+  // Get the available search engines filtered by |category|.
+  std::vector<const TemplateURL*> GetTemplateUrlsByCategory(
+      JNIEnv* env,
+      TemplateUrlCategory category);
+
   // Get current default search engine.
   base::android::ScopedJavaLocalRef<jobject> GetDefaultSearchEngine(
       JNIEnv* env);
+
+  std::u16string GetDisplayUrl(JNIEnv* env, int64_t template_url_ptr);
 
   // Get the image search url and the post content.
   base::android::ScopedJavaLocalRef<jobjectArray> GetImageUrlAndPostContent(
       JNIEnv* env);
 
+  // Activates the search engine with the given keyword.
+  void ActivateSearchEngine(JNIEnv* env, const std::u16string& keyword);
+
+  // Deactivates the search engine with the given keyword.
+  void DeactivateSearchEngine(JNIEnv* env, const std::u16string& keyword);
+
  private:
   FRIEND_TEST_ALL_PREFIXES(TemplateUrlServiceAndroidUnitTest,
                            FilterUserSelectableTemplateUrls);
+  FRIEND_TEST_ALL_PREFIXES(TemplateUrlServiceAndroidUnitTest,
+                           FilterTemplateUrlsByCategory);
 
   bool IsDefaultSearchEngineGoogle();
 
@@ -129,6 +207,11 @@ class TemplateUrlServiceAndroid : public TemplateURLServiceObserver {
   // that should be selectable by the user as their primary Search Engine.
   static std::vector<raw_ptr<TemplateURL>> FilterUserSelectableTemplateUrls(
       std::vector<raw_ptr<TemplateURL, VectorExperimental>> template_urls);
+
+  std::vector<const TemplateURL*> FilterTemplateUrlsByCategory(
+      const std::vector<raw_ptr<TemplateURL, VectorExperimental>>&
+          template_urls,
+      TemplateUrlCategory category);
 
   base::android::ScopedJavaGlobalRef<jobject> java_ref_;
 

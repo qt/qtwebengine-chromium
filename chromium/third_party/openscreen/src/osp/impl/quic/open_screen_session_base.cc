@@ -57,9 +57,8 @@ std::vector<std::string> OpenScreenSessionBase::GetAlpnsToOffer() const {
   return std::vector<std::string>({kOpenScreenProtocolALPN});
 }
 
-std::vector<absl::string_view>::const_iterator
-OpenScreenSessionBase::SelectAlpn(
-    const std::vector<absl::string_view>& alpns) const {
+std::vector<std::string_view>::const_iterator OpenScreenSessionBase::SelectAlpn(
+    const std::vector<std::string_view>& alpns) const {
   return std::find(alpns.cbegin(), alpns.cend(), kOpenScreenProtocolALPN);
 }
 

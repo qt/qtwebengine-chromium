@@ -26,6 +26,14 @@ extern const char kDisableSearchEngineChoiceScreen[];
 COMPONENT_EXPORT(SEARCH_ENGINES_SWITCHES)
 extern const char kForceSearchEngineChoiceScreen[];
 
+// When enabled, prefs-based search provider overrides are ignored and
+// prepopulated engines will always be the regional built-in ones. If a user
+// previously had an overridden search engine as DSE, this flag will cause that
+// engine to be ignored, and the default search engine will be picked from the
+// regional set instead.
+COMPONENT_EXPORT(SEARCH_ENGINES_SWITCHES)
+BASE_DECLARE_FEATURE(kIgnoreSearchProviderOverrides);
+
 COMPONENT_EXPORT(SEARCH_ENGINES_SWITCHES)
 BASE_DECLARE_FEATURE(kInvalidateSearchEngineChoiceOnDeviceRestoreDetection);
 
@@ -86,6 +94,12 @@ BASE_DECLARE_FEATURE(kResetTamperedDefaultSearchEngine);
 // Switch guarding a 1p API to retrieve the default search provider from chrome.
 COMPONENT_EXPORT(SEARCH_ENGINES_SWITCHES)
 BASE_DECLARE_FEATURE(kClankDefaultSearchApi);
+
+#if !BUILDFLAG(IS_ANDROID)
+// Restructuring of the search settings pages.
+COMPONENT_EXPORT(SEARCH_ENGINES_SWITCHES)
+BASE_DECLARE_FEATURE(kSearchSettingsUpdate);
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 }  // namespace switches
 

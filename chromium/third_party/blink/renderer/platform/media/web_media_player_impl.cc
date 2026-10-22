@@ -8,6 +8,7 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -46,6 +47,7 @@
 #include "media/base/media_content_type.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
+#include "media/base/media_util.h"
 #include "media/base/memory_dump_provider_proxy.h"
 #include "media/base/output_device_info.h"
 #include "media/base/remoting_constants.h"
@@ -113,7 +115,6 @@
 
 #if BUILDFLAG(ENABLE_HLS_DEMUXER)
 #include "media/filters/hls_data_source_provider_impl.h"
-#include "third_party/blink/renderer/platform/media/multi_buffer_data_source_factory.h"
 #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
 
 #if BUILDFLAG(IS_ANDROID)
@@ -405,6 +406,31 @@ WebMediaPlayer::NetworkState PipelineErrorToNetworkState(
   return WebMediaPlayer::kNetworkStateFormatError;
 }
 
+#if BUILDFLAG(IS_WIN)
+bool HasMediaTimeSufficentlyElapsed(base::TimeDelta previous_media_time,
+                                    base::TimeDelta current_media_time) {
+  const auto kTimeDifferenceTolerance = base::Milliseconds(100);
+  const auto time_difference = current_media_time - previous_media_time;
+  return time_difference > kTimeDifferenceTolerance;
+}
+
+void ReportLastPipelineStatusForHardwareContextResetRecoveryUMAs(
+    media::PipelineStatus last_status,
+    std::optional<base::TimeDelta> media_time_diff) {
+  DVLOG(1) << __func__ << ":status=" << last_status << ", media_time_diff="
+           << media_time_diff.value_or(base::TimeDelta());
+  base::UmaHistogramExactLinear(
+      "Media.PipelineStatus.HardwareContextResetRecovery.LastPipelineStatus",
+      last_status.code(), media::PIPELINE_STATUS_MAX + 1);
+  if (media_time_diff.has_value()) {
+    base::UmaHistogramTimes(
+        "Media.PipelineStatus.HardwareContextResetRecovery."
+        "TimeDeltaSinceLastHardwareContextReset",
+        media_time_diff.value());
+  }
+}
+#endif  // BUILDFLAG(IS_WIN)
+
 }  // namespace
 
 STATIC_ASSERT_ENUM(WebMediaPlayer::kCorsModeUnspecified,
@@ -607,6 +633,11 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
 }
 
 WebMediaPlayerImpl::~WebMediaPlayerImpl() {
+  // Ensure Shutdown() has been called.
+  CHECK(!client_);
+}
+
+void WebMediaPlayerImpl::Shutdown() {
   DVLOG(1) << __func__;
   DCHECK(main_task_runner_->BelongsToCurrentThread());
 
@@ -655,11 +686,16 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
   if (!surface_layer_for_video_enabled_ && video_layer_)
     video_layer_->StopUsingProvider();
 
+  // These hold Unretained(this), so must be destructed here.
+  watch_time_reporter_.reset();
+  video_decode_stats_reporter_.reset();
   simple_watch_timer_.Stop();
+  memory_usage_reporting_timer_.Stop();
+  background_pause_timer_.Stop();
+  update_background_status_cb_.Cancel();
   media_log_->OnWebMediaPlayerDestroyed();
 
   demuxer_manager_->StopAndResetClient();
-  demuxer_manager_->InvalidateWeakPtrs();
 
   // Disconnect from the surface layer. We still preserve the `bridge_` until
   // after pipeline shutdown to ensure any pending frames are painted for tests.
@@ -683,8 +719,16 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
   // in MediaFoundationRendererClient.
   pipeline_controller_.reset();
 
+  client_ = nullptr;
+  encrypted_client_ = nullptr;
+  frame_ = nullptr;
+  url_index_ = nullptr;
+
+  weak_factory_.InvalidateWeakPtrsAndDoom();
+
   // Handle destruction of things that need to be destructed after the pipeline
   // completes stopping on the media thread.
+  // TODO(crbug.com/482958590): This may not be necessary anymore.
   PostCrossThreadTask(
       *media_task_runner_, FROM_HERE,
       CrossThreadBindOnce(
@@ -899,7 +943,7 @@ void WebMediaPlayerImpl::DoLoad(LoadType load_type,
 
   // Do a truncation to kMaxUrlLength+1 at most; we can add ellipsis later.
   media_log_->AddEvent<MediaLogEvent::kLoad>(
-      String(url).Substring(0, media::kMaxUrlLength + 1).Utf8());
+      url.GetString().GetString().subview(0, media::kMaxUrlLength + 1).Utf8());
   load_start_time_ = base::TimeTicks::Now();
 
   media_metrics_provider_->Initialize(
@@ -954,12 +998,20 @@ void WebMediaPlayerImpl::DoLoad(LoadType load_type,
   auto* mb_data_source = data_source.get();
   demuxer_manager_->SetDataSource(std::move(data_source));
 
-  mb_data_source->OnRedirect(blink::BindRepeating(
-      &WebMediaPlayerImpl::OnDataSourceRedirected, weak_this_));
+  mb_data_source->SetTaintedCallback(blink::BindRepeating(
+      &WebMediaPlayerImpl::OnDataSourceTainted, weak_this_));
   mb_data_source->SetPreload(preload_);
   mb_data_source->SetIsClientAudioElement(client_->IsAudioElement());
   mb_data_source->Initialize(blink::BindOnce(
       &WebMediaPlayerImpl::MultiBufferDataSourceInitialized, weak_this_));
+}
+
+void WebMediaPlayerImpl::UnlockBackgroundPlayback() {
+  DVLOG(1) << __func__;
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+
+  // Authorized system resume unlocks background video playback.
+  allow_background_video_playback_ = true;
 }
 
 void WebMediaPlayerImpl::Play() {
@@ -968,7 +1020,7 @@ void WebMediaPlayerImpl::Play() {
 
   // User initiated play unlocks background video playback.
   if (frame_->HasTransientUserActivation())
-    video_locked_when_paused_when_hidden_ = false;
+    allow_background_video_playback_ = true;
 
   // TODO(sandersd): Do we want to reset the idle timer here?
   delegate_->SetIdle(delegate_id_, false);
@@ -1019,7 +1071,7 @@ void WebMediaPlayerImpl::Pause(PauseReason pause_reason) {
 
   // User initiated pause locks background videos.
   if (frame_->HasTransientUserActivation())
-    video_locked_when_paused_when_hidden_ = true;
+    allow_background_video_playback_ = false;
 
   pipeline_controller_->SetPlaybackRate(0.0);
 
@@ -1559,7 +1611,7 @@ WebMediaPlayerImpl::GetPaintCanvasVideoRenderer() {
 }
 
 bool WebMediaPlayerImpl::WouldTaintOrigin() const {
-  return demuxer_manager_->WouldTaintOrigin();
+  return is_origin_tainted_ || demuxer_manager_->WouldTaintOrigin();
 }
 
 double WebMediaPlayerImpl::MediaTimeForTimeValue(double timeValue) const {
@@ -1680,13 +1732,22 @@ void WebMediaPlayerImpl::GetUrlData(
 base::SequenceBound<media::HlsDataSourceProvider>
 WebMediaPlayerImpl::GetHlsDataSourceProvider() {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
+  // Every single HLS fetch (segment or manifest) will create a new DataSource,
+  // which will log it's size, CORS status, and a "started" notice, which can
+  // end up spamming the media log quite heavily. ManifestDemuxer already logs
+  // these things when they change, for example when CORS mode changes from
+  // untainted to tainted. Using a NullMediaLog here prevents the unnecessary
+  // spamming.
   return base::SequenceBound<media::HlsDataSourceProviderImpl>(
       main_task_runner_,
-      std::make_unique<MultiBufferDataSourceFactory>(
-          media_log_.get(),
+      std::make_unique<MultiBufferDataSource::Factory>(
+          std::make_unique<media::NullMediaLog>(),
           blink::BindRepeating(&WebMediaPlayerImpl::GetUrlData,
                                weak_factory_.GetWeakPtr()),
-          main_task_runner_, tick_clock_));
+          client_->IsAudioElement(), preload_,
+          blink::BindRepeating(&WebMediaPlayerImpl::OnDataSourceTainted,
+                               weak_this_),
+          tick_clock_, main_task_runner_));
 }
 #endif
 
@@ -1948,12 +2009,40 @@ void WebMediaPlayerImpl::OnError(media::PipelineStatus status) {
     return;
 
 #if BUILDFLAG(IS_WIN)
-  // Hardware context reset is not an error. Restart to recover.
-  // TODO(crbug.com/40181810): Find a way to break the potential infinite loop
-  // of restart -> PIPELINE_ERROR_HARDWARE_CONTEXT_RESET -> restart.
-  if (status == media::PIPELINE_ERROR_HARDWARE_CONTEXT_RESET) {
+  // An error or another hardware context reset (HCR) occurred within a very
+  // short media time window from the previous HCR and the video is not paused
+  // (playing). In this case we consider the recovery attempt from the previous
+  // HCR failed. To avoid infinite loop of retrying, we will trigger an error
+  // and will not ScheduleRestart(). We gate the logic on short elapsed media
+  // time to have more confidence that the error (or another HCR) are related to
+  // the previous HCR. We check the paused state because if the video is paused,
+  // the media time can't advance.
+  if (media_time_on_last_hardware_context_reset_.has_value() && !paused_ &&
+      !HasMediaTimeSufficentlyElapsed(
+          media_time_on_last_hardware_context_reset_.value(),
+          pipeline_controller_->GetMediaTime())) {
+    DVLOG(1) << __func__
+             << ": Consider this error as an unrecoverable hardware context "
+                "reset error, so giving up!";
+    status = media::PIPELINE_ERROR_HARDWARE_CONTEXT_RESET;
+  } else if (status == media::PIPELINE_ERROR_HARDWARE_CONTEXT_RESET) {
+    media_time_on_last_hardware_context_reset_ =
+        pipeline_controller_->GetMediaTime();
+
+    // Hardware context reset is not an error. Restart to recover.
     ScheduleRestart();
     return;
+  }
+
+  // If there was a hardware context reset but we haven't reported the last
+  // pipeline status, we consider this as the unsuccessful recovery from the
+  // hardware context reset.
+  if (media_time_on_last_hardware_context_reset_.has_value() &&
+      !has_reported_hardware_context_reset_recovery_umas_) {
+    ReportLastPipelineStatusForHardwareContextResetRecoveryUMAs(
+        status, pipeline_controller_->GetMediaTime() -
+                    media_time_on_last_hardware_context_reset_.value());
+    has_reported_hardware_context_reset_recovery_umas_ = true;
   }
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -2217,17 +2306,25 @@ void WebMediaPlayerImpl::OnProgress() {
 }
 
 bool WebMediaPlayerImpl::CanPlayThrough() {
-  if (!base::FeatureList::IsEnabled(media::kSpecCompliantCanPlayThrough))
+  if (!base::FeatureList::IsEnabled(media::kSpecCompliantCanPlayThrough)) {
     return true;
-  if (GetDemuxerType() == media::DemuxerType::kChunkDemuxer)
-    return true;
+  }
+  switch (GetDemuxerType().value_or(media::DemuxerType::kUnknownDemuxer)) {
+    case media::DemuxerType::kChunkDemuxer:
+    case media::DemuxerType::kManifestDemuxer:
+      return true;
+    default:
+      break;
+  }
   if (demuxer_manager_->DataSourceFullyBuffered()) {
     return true;
   }
   // If we're not currently downloading, we have as much buffer as
   // we're ever going to get, which means we say we can play through.
-  if (network_state_ == WebMediaPlayer::kNetworkStateIdle)
+  if (network_state_ == WebMediaPlayer::kNetworkStateIdle) {
     return true;
+  }
+
   return buffered_data_source_host_->CanPlayThrough(
       base::Seconds(CurrentTime()), base::Seconds(Duration()),
       playback_rate_ == 0.0 ? 1.0 : playback_rate_);
@@ -2537,7 +2634,7 @@ void WebMediaPlayerImpl::OnPageHidden() {
 
   // Backgrounding a video requires a user gesture to resume playback.
   if (IsPageHidden()) {
-    video_locked_when_paused_when_hidden_ = true;
+    allow_background_video_playback_ = false;
   }
 
   if (watch_time_reporter_)
@@ -2574,7 +2671,7 @@ void WebMediaPlayerImpl::OnPageShown() {
   background_pause_timer_.Stop();
 
   // Foreground videos don't require user gesture to continue playback.
-  video_locked_when_paused_when_hidden_ = false;
+  allow_background_video_playback_ = true;
 
   was_suspended_for_frame_closed_or_frozen_ = false;
 
@@ -2634,7 +2731,7 @@ void WebMediaPlayerImpl::OnFrameShown() {
   background_pause_timer_.Stop();
 
   // Foreground videos don't require user gesture to continue playback.
-  video_locked_when_paused_when_hidden_ = false;
+  allow_background_video_playback_ = true;
 
   was_suspended_for_frame_closed_or_frozen_ = false;
 
@@ -2656,7 +2753,7 @@ void WebMediaPlayerImpl::OnFrameHidden() {
 
   // Backgrounding a video requires a user gesture to resume playback.
   if (IsFrameHidden()) {
-    video_locked_when_paused_when_hidden_ = true;
+    allow_background_video_playback_ = false;
   }
 
   if (watch_time_reporter_) {
@@ -2692,6 +2789,7 @@ void WebMediaPlayerImpl::SetPowerExperimentState(bool state) {
 }
 
 void WebMediaPlayerImpl::ScheduleRestart() {
+  DVLOG(1) << __func__;
   // TODO(watk): All restart logic should be moved into PipelineController.
   if (pipeline_controller_->IsPipelineRunning() &&
       !pipeline_controller_->IsPipelineSuspended()) {
@@ -2806,13 +2904,11 @@ void WebMediaPlayerImpl::MultiBufferDataSourceInitialized(bool success) {
   DataSourceInitialized(success);
 }
 
-void WebMediaPlayerImpl::OnDataSourceRedirected() {
+void WebMediaPlayerImpl::OnDataSourceTainted(const media::DataSource*) {
   DVLOG(1) << __func__;
   DCHECK(main_task_runner_->BelongsToCurrentThread());
-
-  if (WouldTaintOrigin()) {
-    audio_source_provider_->TaintOrigin();
-  }
+  audio_source_provider_->TaintOrigin();
+  is_origin_tainted_ = true;
 }
 
 void WebMediaPlayerImpl::NotifyDownloading(bool is_downloading) {
@@ -2973,21 +3069,12 @@ void WebMediaPlayerImpl::StartPipeline() {
           CrossThreadBindOnce(base::BindPostTaskToCurrentDefault(
               ConvertToBaseOnceCallback(CrossThreadBindOnce(
                   &WebMediaPlayerImpl::OnFirstFrame, weak_this_))))));
-  base::flat_map<std::string, std::string> headers;
-  // Referer is the right spelling of the HTTP header, not Referrer.
-  headers[net::HttpRequestHeaders::kReferer] =
-      net::URLRequestJob::ComputeReferrerForPolicy(
-          frame_->GetDocument().GetReferrerPolicy(),
-          GURL(frame_->GetDocument().OutgoingReferrer().Utf8()),
-          demuxer_manager_->LoadedUrl())
-          .spec();
 
   // Unretained(this) is safe here, since `CreateDemuxer` calls the bound
   // method directly and immediately.
   auto create_demuxer_error = demuxer_manager_->CreateDemuxer(
       load_type_ == kLoadTypeMediaSource, preload_, needs_first_frame_,
-      BindOnce(&WebMediaPlayerImpl::OnDemuxerCreated, Unretained(this)),
-      std::move(headers));
+      BindOnce(&WebMediaPlayerImpl::OnDemuxerCreated, Unretained(this)));
 
   if (!create_demuxer_error.is_ok()) {
     return OnError(std::move(create_demuxer_error));
@@ -3677,7 +3764,7 @@ bool WebMediaPlayerImpl::ShouldPausePlaybackWhenHidden() const {
   // in the background.
   if (IsBackgroundSuspendEnabled(this)) {
     return !preserve_audio || (IsResumeBackgroundVideosEnabled() &&
-                               video_locked_when_paused_when_hidden_);
+                               !allow_background_video_playback_);
   }
 
   if (HasVideo() && IsVideoBeingCaptured())
@@ -4057,6 +4144,13 @@ void WebMediaPlayerImpl::UnregisterFrameSinkHierarchy() {
     bridge_->UnregisterFrameSinkHierarchy();
 }
 
+void WebMediaPlayerImpl::ReparentFrameSinkHierarchy(
+    const viz::FrameSinkId& new_parent_frame_sink_id) {
+  if (bridge_) {
+    bridge_->ReparentFrameSinkHierarchy(new_parent_frame_sink_id);
+  }
+}
+
 void WebMediaPlayerImpl::RecordVideoOcclusionState(
     std::string_view occlusion_state) {
   media_log_->AddEvent<MediaLogEvent::kVideoOcclusionState>(
@@ -4107,6 +4201,17 @@ void WebMediaPlayerImpl::ReportSessionUMAs() const {
     uma_name = "Media.EME." + key_system_name_for_uma + ".WaitingForKey";
     base::UmaHistogramBoolean(uma_name, has_waiting_for_key_);
   }
+
+#if BUILDFLAG(IS_WIN)
+  // If there was a hardware context reset but we haven't reported the last
+  // pipeline status, we consider this as the successful recovery from the
+  // hardware context reset.
+  if (media_time_on_last_hardware_context_reset_.has_value() &&
+      !has_reported_hardware_context_reset_recovery_umas_) {
+    ReportLastPipelineStatusForHardwareContextResetRecoveryUMAs(
+        media::PIPELINE_OK, std::nullopt);
+  }
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 void WebMediaPlayerImpl::DidMediaMetadataChange() {

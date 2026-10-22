@@ -31,6 +31,10 @@ class GoogleGroupsManager;
 class GURL;
 class PrefService;
 
+namespace consent_auditor {
+class ConsentAuditor;
+}
+
 namespace device_reauth {
 class DeviceAuthenticator;
 }
@@ -85,8 +89,13 @@ namespace version_info {
 enum class Channel;
 }
 
+namespace accessibility_annotator {
+class AccessibilityQueryService;
+}
+
 namespace autofill {
 
+class ActorKeyMetricsRecorder;
 class AutofillManager;
 class AddressNormalizer;
 class AutocompleteHistoryManager;
@@ -114,6 +123,7 @@ class FormFieldData;
 class LogManager;
 class OtpFieldDetector;
 class OtpPhishGuardDelegate;
+class FormPredictionsTracker;
 struct PasswordFormClassification;
 class PasswordManagerDelegate;
 class PersonalDataManager;
@@ -214,7 +224,9 @@ class AutofillClient {
                   std::vector<Suggestion> suggestions,
                   AutofillSuggestionTriggerSource trigger_source,
                   int32_t form_control_ax_id,
-                  PopupAnchorType anchor_type);
+                  PopupAnchorType anchor_type,
+                  bool show_tabbed_popup = false,
+                  bool prefer_prev_arrow_side_on_suggestions_update = false);
     PopupOpenArgs(const PopupOpenArgs&);
     PopupOpenArgs(PopupOpenArgs&&);
     PopupOpenArgs& operator=(const PopupOpenArgs&);
@@ -231,10 +243,24 @@ class AutofillClient {
         AutofillSuggestionTriggerSource::kUnspecified;
     int32_t form_control_ax_id = 0;
     PopupAnchorType anchor_type = PopupAnchorType::kField;
+    bool show_tabbed_popup = false;
+    // True if the popup should prefer the previous arrow side when suggestions
+    // are updated. This avoids unnecessary jumping when the popup is updated,
+    // unless the popup would otherwise go out of bounds.
+    bool prefer_prev_arrow_side_on_suggestions_update = false;
   };
 
+  // Details about the UI that was shown to the user in an entity import bubble.
+  struct EntityImportUIContext {
+    // String ID of the consent displayed in the import bubble, if any.
+    std::optional<int> consent_string_id;
+    // The string ID of the button that the user clicked, in case the user
+    // accepted or declined the bubble.
+    std::optional<int> clicked_button_string_id;
+  };
   using EntityImportPromptResultCallback =
-      base::OnceCallback<void(AutofillAiBubbleResult result)>;
+      base::OnceCallback<void(AutofillAiBubbleResult result,
+                              const EntityImportUIContext& ui_context)>;
 
   // The types of prompts that AutofillAi can show to the user after a form
   // submission. The values are ordered by decreasing priority of being shown
@@ -381,6 +407,9 @@ class AutofillClient {
   // `kAutofillAiServerModel` is not enabled or the profile is OTR.
   virtual AutofillAiModelExecutor* GetAutofillAiModelExecutor();
 
+  // Returns the per-profile ConsentAuditor.
+  virtual consent_auditor::ConsentAuditor* GetConsentAuditor();
+
   // Returns the per-profile `RemoteModelExecutor`.
   virtual optimization_guide::RemoteModelExecutor* GetRemoteModelExecutor();
 
@@ -396,6 +425,11 @@ class AutofillClient {
   // Returns the `AutofillPlusAddressDelegate` associated with the profile of
   // the window of this tab.
   virtual AutofillPlusAddressDelegate* GetPlusAddressDelegate();
+
+  // Returns the `AccessibilityQueryService` associated with the profile of
+  // the window of this tab.
+  virtual accessibility_annotator::AccessibilityQueryService*
+  GetAccessibilityQueryService();
 
   // Returns the `PasswordManagerDelegate` responsible to provide
   // password suggestions for the given `field_id`.
@@ -574,6 +608,9 @@ class AutofillClient {
   // one exists).
   virtual bool IsTabInActorMode() const;
 
+  // Returns the `ActorKeyMetricsRecorder` for the current tab (if one exists).
+  virtual ActorKeyMetricsRecorder* GetActorKeyMetricsRecorder();
+
   // Returns true if either Profile or CreditCard Autofill is enabled.
   virtual bool IsAutofillEnabled() const = 0;
 
@@ -590,8 +627,8 @@ class AutofillClient {
   // If the context is secure.
   virtual bool IsContextSecure() const = 0;
 
-  // Returns whether Google Wallet storage is supported.
-  virtual bool IsWalletStorageEnabled() const = 0;
+  // Returns whether Google Wallet public pass storage is supported.
+  virtual bool IsWalletPublicPassStorageEnabled() const = 0;
 
   // Returns true if the client supports saving CVCs. This allows specific
   // clients (IosWebView) to opt out of the CVC saving feature.
@@ -634,12 +671,16 @@ class AutofillClient {
   // Returns a pointer to a DeviceAuthenticator. Might be nullptr if the given
   // platform is not supported.
   virtual std::unique_ptr<device_reauth::DeviceAuthenticator>
-  GetDeviceAuthenticator();
+  GetDeviceAuthenticator() const;
 
   // Same as `GetDeviceAuthenticator()` but also logs authentication results to
   // `histogram`.
   virtual std::unique_ptr<device_reauth::DeviceAuthenticator>
-  GetDeviceAuthenticator(std::string histogram);
+  GetDeviceAuthenticator(std::string histogram) const;
+
+  // Returns true if the device supports any kind of re-auth through the
+  // `GetDeviceAuthenticator()`.
+  bool SupportsDeviceReauth() const;
 
   // Attaches the IPH for `feature` to the `field`, on
   // platforms that it. If another IPH has been shown for the tab, the IPH is
@@ -703,8 +744,11 @@ class AutofillClient {
   // an upload request to the Wallet server was unsuccessful.
   virtual void ShowAutofillAiLocalSaveNotification();
 
-  // Notifies the user that an Autofill AI operation failed.
-  virtual void ShowAutofillAiFailureNotification(std::u16string message);
+  // Notifies the user that an Autofill AI operation save to Wallet failed.
+  virtual void ShowAutofillAiSaveToWalletFailureNotification();
+
+  // Notifies the user that operation to fetch data from Wallet failed.
+  virtual void ShowAutofillAiFetchFromWalletFailureNotification();
 
   virtual void ShowEmailVerifiedToast();
 
@@ -714,6 +758,10 @@ class AutofillClient {
   // Returns the delegate for OTP phish guard, which can be used to perform
   // security checks before offering an OTP. May return nullptr.
   virtual OtpPhishGuardDelegate* GetOtpPhishGuardDelegate();
+
+  // Returns the `FormPredictionsTracker` for the current tab. May return null
+  // on platforms where it is not supported.
+  virtual FormPredictionsTracker* GetFormPredictionsTracker();
 
   // May return null on platforms where no OneTimeTokenService is supported.
   virtual one_time_tokens::OneTimeTokenService* GetOneTimeTokenService() const;

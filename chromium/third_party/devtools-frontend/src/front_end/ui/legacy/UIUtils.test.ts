@@ -5,6 +5,8 @@
 import * as i18n from '../../core/i18n/i18n.js';
 import {raf, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createFakeSetting} from '../../testing/EnvironmentHelpers.js';
+import {setupLocaleHooks} from '../../testing/LocaleHelpers.js';
+import {StubStackTrace} from '../../testing/StackTraceHelpers.js';
 import type * as Buttons from '../components/buttons/buttons.js';
 import * as Lit from '../lit/lit.js';
 
@@ -277,79 +279,282 @@ describe('UIUtils', () => {
       sinon.assert.calledOnceWithExactly(interception, onClick);
     });
 
-    describe('InterceptBindingDirective', () => {
-      const interceptBinding = Lit.Directive.directive(UI.UIUtils.InterceptBindingDirective);
-      it('attaches event handlers to clones', () => {
-        const container = document.createElement('div');
-        const clickHandler = sinon.spy();
-        Lit.render(html`<button @click=${interceptBinding(clickHandler)}></button>`, container);
-        const templateButton = container.firstElementChild;
-        assert.instanceOf(templateButton, HTMLButtonElement);
-        templateButton.click();
-        sinon.assert.notCalled(clickHandler);
+    class TestLightDOMTemplate extends UI.UIUtils.HTMLElementWithLightDOMTemplate {}
+    customElements.define('test-light-dom-template', TestLightDOMTemplate);
 
-        const clonedButton = UI.UIUtils.HTMLElementWithLightDOMTemplate.cloneNode(templateButton);
-        assert.instanceOf(clonedButton, HTMLButtonElement);
+    it('correctly patches callables inside directives and iterables', async () => {
+      const el = new TestLightDOMTemplate();
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+      container.appendChild(el);
 
-        clonedButton.click();
-        sinon.assert.calledOnce(clickHandler);
+      const items = ['a', 'b'];
+      const clickHandler1 = sinon.spy();
+      const clickHandler2 = sinon.spy();
+      const handlers = [clickHandler1, clickHandler2];
+
+      const renderFunction = (item: string, index: number) => {
+        return html`<button @click=${handlers[index]}>${item}</button>`;
+      };
+
+      el.template = html`<div>
+        ${Lit.Directives.repeat(items, item => item, renderFunction)}
+      </div>`;
+
+      await raf();
+
+      const template = el.querySelector('template');
+      assert.exists(template);
+      const buttons = template.content.querySelectorAll('button');
+      assert.lengthOf(buttons, 2);
+
+      const clonedButton1 = UI.UIUtils.HTMLElementWithLightDOMTemplate.cloneNode(buttons[0]) as HTMLButtonElement;
+      clonedButton1.click();
+      sinon.assert.calledOnce(clickHandler1);
+
+      const clonedButton2 = UI.UIUtils.HTMLElementWithLightDOMTemplate.cloneNode(buttons[1]) as HTMLButtonElement;
+      clonedButton2.click();
+      sinon.assert.calledOnce(clickHandler2);
+    });
+
+    it('correctly patches callables inside a directive returned by a callback', async () => {
+      const el = new TestLightDOMTemplate();
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+      container.appendChild(el);
+
+      const items = ['a'];
+      const clickHandler = sinon.spy();
+
+      class InnerDirective extends Lit.Directive.Directive {
+        render(renderItem: () => Lit.LitTemplate) {
+          return html`<div>${renderItem()}</div>`;
+        }
+      }
+      const innerDirective = Lit.Directive.directive(InnerDirective);
+
+      const renderFunction = () => {
+        return innerDirective(() => html`<button @click=${clickHandler}></button>`);
+      };
+
+      el.template = html`<div>
+        ${Lit.Directives.repeat(items, item => item, renderFunction)}
+      </div>`;
+
+      await raf();
+
+      const template = el.querySelector('template');
+      assert.exists(template);
+      const button = template.content.querySelector('button');
+      assert.exists(button);
+
+      const clonedButton = UI.UIUtils.HTMLElementWithLightDOMTemplate.cloneNode(button) as HTMLButtonElement;
+      clonedButton.click();
+      sinon.assert.calledOnce(clickHandler);
+    });
+
+    it('does not patch native class constructors', async () => {
+      const el = new TestLightDOMTemplate();
+      const container = document.createElement('div');
+      renderElementIntoDOM(container);
+      container.appendChild(el);
+
+      class MockWidget {}
+
+      let instantiatedWidget: MockWidget|null = null;
+      class WidgetDirective extends Lit.Directive.Directive {
+        render(ctor: typeof MockWidget) {
+          instantiatedWidget = new ctor();
+          return Lit.nothing;
+        }
+      }
+      const widget = Lit.Directive.directive(WidgetDirective);
+
+      // If MockWidget was wrongly wrapped by patchingWrapper, ctor would be a regular function.
+      // Calling `new ctor()` would invoke the wrapper, which calls `fn.apply(this, args)`.
+      // Since fn is a native class constructor, fn.apply throws a TypeError.
+      assert.doesNotThrow(() => {
+        el.template = html`${widget(MockWidget)}`;
       });
 
-      it('attaches multiple event handlers to the same element', () => {
-        const container = document.createElement('div');
-        const clickHandler = sinon.spy();
-        const mousedownHandler = sinon.spy();
-        Lit.render(
-            html`<button @click=${interceptBinding(clickHandler)} @mousedown=${
-                interceptBinding(mousedownHandler)}></button>`,
-            container);
-        const templateButton = container.firstElementChild;
-        assert.instanceOf(templateButton, HTMLButtonElement);
+      await raf();
 
-        const clonedButton = UI.UIUtils.HTMLElementWithLightDOMTemplate.cloneNode(templateButton);
-        assert.instanceOf(clonedButton, HTMLButtonElement);
+      assert.instanceOf(instantiatedWidget, MockWidget);
+    });
+  });
 
-        clonedButton.dispatchEvent(new MouseEvent('mousedown'));
-        sinon.assert.notCalled(clickHandler);
-        sinon.assert.calledOnce(mousedownHandler);
-        clonedButton.click();
-        sinon.assert.calledOnce(clickHandler);
-        sinon.assert.calledOnce(mousedownHandler);
-      });
+  describe('InterceptBindingDirective', () => {
+    const interceptBinding = Lit.Directive.directive(UI.UIUtils.InterceptBindingDirective);
+    it('attaches event handlers to clones', () => {
+      const container = document.createElement('div');
+      const clickHandler = sinon.spy();
+      Lit.render(html`<button @click=${interceptBinding(clickHandler)}></button>`, container);
+      const templateButton = container.firstElementChild;
+      assert.instanceOf(templateButton, HTMLButtonElement);
+      templateButton.click();
+      sinon.assert.calledOnce(clickHandler);
 
-      it('attaches event handlers to nested elements', () => {
-        const container = document.createElement('div');
-        const buttonClickHandler = sinon.spy();
-        const divClickHandler = sinon.spy();
-        Lit.render(
-            html`<div @click=${interceptBinding(divClickHandler)}><button @click=${
-                interceptBinding(buttonClickHandler)}></button></div>`,
-            container);
-        const templateDiv = container.firstElementChild;
-        assert.instanceOf(templateDiv, HTMLDivElement);
+      const clonedButton = UI.UIUtils.HTMLElementWithLightDOMTemplate.cloneNode(templateButton);
+      assert.instanceOf(clonedButton, HTMLButtonElement);
 
-        const clonedDiv = UI.UIUtils.HTMLElementWithLightDOMTemplate.cloneNode(templateDiv);
-        assert.instanceOf(clonedDiv, HTMLDivElement);
+      clonedButton.click();
+      sinon.assert.calledTwice(clickHandler);
+    });
 
-        const clonedButton = clonedDiv.querySelector('button');
-        assert.instanceOf(clonedButton, HTMLButtonElement);
+    it('attaches multiple event handlers to the same element', () => {
+      const container = document.createElement('div');
+      const clickHandler = sinon.spy();
+      const mousedownHandler = sinon.spy();
+      Lit.render(
+          html`<button @click=${interceptBinding(clickHandler)} @mousedown=${
+              interceptBinding(mousedownHandler)}></button>`,
+          container);
+      const templateButton = container.firstElementChild;
+      assert.instanceOf(templateButton, HTMLButtonElement);
 
-        clonedButton.click();
-        sinon.assert.calledOnce(buttonClickHandler);
-        sinon.assert.calledOnce(divClickHandler);
-      });
+      const clonedButton = UI.UIUtils.HTMLElementWithLightDOMTemplate.cloneNode(templateButton);
+      assert.instanceOf(clonedButton, HTMLButtonElement);
+
+      clonedButton.dispatchEvent(new MouseEvent('mousedown'));
+      sinon.assert.notCalled(clickHandler);
+      sinon.assert.calledOnce(mousedownHandler);
+      clonedButton.click();
+      sinon.assert.calledOnce(clickHandler);
+      sinon.assert.calledOnce(mousedownHandler);
+    });
+
+    it('attaches event handlers to nested elements', () => {
+      const container = document.createElement('div');
+      const buttonClickHandler = sinon.spy();
+      const divClickHandler = sinon.spy();
+      Lit.render(
+          html`<div @click=${interceptBinding(divClickHandler)}><button @click=${
+              interceptBinding(buttonClickHandler)}></button></div>`,
+          container);
+      const templateDiv = container.firstElementChild;
+      assert.instanceOf(templateDiv, HTMLDivElement);
+
+      const clonedDiv = UI.UIUtils.HTMLElementWithLightDOMTemplate.cloneNode(templateDiv);
+      assert.instanceOf(clonedDiv, HTMLDivElement);
+
+      const clonedButton = clonedDiv.querySelector('button');
+      assert.instanceOf(clonedButton, HTMLButtonElement);
+
+      clonedButton.click();
+      sinon.assert.calledOnce(buttonClickHandler);
+      sinon.assert.calledOnce(divClickHandler);
+    });
+  });
+
+  describe('animateOn', () => {
+    it('triggers an animation when the condition transitions from false to true', () => {
+      const {animateOn} = UI.UIUtils;
+      const container = document.createElement('div');
+      const className = 'animate-me';
+
+      function render(condition: boolean) {
+        Lit.render(html`<div ${animateOn(condition, className)}></div>`, container);
+      }
+
+      render(false);
+      const div = container.firstElementChild as HTMLElement;
+      assert.isFalse(div.classList.contains(className));
+
+      render(true);
+      assert.isTrue(div.classList.contains(className));
+    });
+
+    it('does not trigger an animation when the condition remains true', () => {
+      const {animateOn} = UI.UIUtils;
+      const container = document.createElement('div');
+      const className = 'animate-me';
+
+      function render(condition: boolean) {
+        Lit.render(html`<div ${animateOn(condition, className)}></div>`, container);
+      }
+
+      render(true);
+      const div = container.firstElementChild as HTMLElement;
+      assert.isTrue(div.classList.contains(className));
+
+      // Manually remove the class to see if it gets re-added
+      div.classList.remove(className);
+
+      render(true);
+      assert.isFalse(div.classList.contains(className));
+    });
+
+    it('does not trigger an animation when the condition remains false', () => {
+      const {animateOn} = UI.UIUtils;
+      const container = document.createElement('div');
+      const className = 'animate-me';
+
+      function render(condition: boolean) {
+        Lit.render(html`<div ${animateOn(condition, className)}></div>`, container);
+      }
+
+      render(false);
+      const div = container.firstElementChild as HTMLElement;
+      assert.isFalse(div.classList.contains(className));
+
+      render(false);
+      assert.isFalse(div.classList.contains(className));
+    });
+
+    it('does not trigger an animation when the condition transitions from true to false', () => {
+      const {animateOn} = UI.UIUtils;
+      const container = document.createElement('div');
+      const className = 'animate-me';
+
+      function render(condition: boolean) {
+        Lit.render(html`<div ${animateOn(condition, className)}></div>`, container);
+      }
+
+      render(true);
+      const div = container.firstElementChild as HTMLElement;
+      assert.isTrue(div.classList.contains(className));
+
+      // Manually remove the class
+      div.classList.remove(className);
+
+      render(false);
+      assert.isFalse(div.classList.contains(className));
+    });
+
+    it('triggers an animation when it transitions from false to true, then false, then true again', () => {
+      const {animateOn} = UI.UIUtils;
+      const container = document.createElement('div');
+      const className = 'animate-me';
+
+      function render(condition: boolean) {
+        Lit.render(html`<div ${animateOn(condition, className)}></div>`, container);
+      }
+
+      render(false);
+      const div = container.firstElementChild as HTMLElement;
+      assert.isFalse(div.classList.contains(className));
+
+      render(true);
+      assert.isTrue(div.classList.contains(className));
+
+      div.classList.remove(className);
+      render(false);
+      assert.isFalse(div.classList.contains(className));
+
+      render(true);
+      assert.isTrue(div.classList.contains(className));
     });
   });
 });
 
 describe('bindToSetting (string)', () => {
-  function setup(validate?: (arg: string) => boolean) {
+  function setup(opts: UI.UIUtils.BindToSettingOpts = {}) {
     const {bindToSetting} = UI.UIUtils;
     const setting = createFakeSetting<string>('fake-setting', 'defaultValue');
     const container = document.createElement('div');
     renderElementIntoDOM(container);
     const inputRef = Lit.Directives.createRef<HTMLInputElement>();
-    Lit.render(html`<input ${Lit.Directives.ref(inputRef)} ${bindToSetting(setting, validate)}></input>`, container);
+    Lit.render(html`<input ${Lit.Directives.ref(inputRef)} ${bindToSetting(setting, opts)}>`, container);
 
     const input = inputRef.value;
     assert.exists(input);
@@ -361,6 +566,18 @@ describe('bindToSetting (string)', () => {
     const {input} = setup();
 
     assert.strictEqual(input.value, 'defaultValue');
+  });
+
+  it('adds jslog for tracking changes', async () => {
+    const {input} = setup();
+
+    assert.strictEqual(input.getAttribute('jslog'), 'Toggle; context: fake-setting; track: change');
+  });
+
+  it('does not add jslog if disabled via options', async () => {
+    const {input} = setup({jslog: false});
+
+    assert.isNull(input.getAttribute('jslog'));
   });
 
   it('changes the setting when the input changes', () => {
@@ -381,7 +598,7 @@ describe('bindToSetting (string)', () => {
   });
 
   it('does not change the setting when validation fails', () => {
-    const {setting, input} = setup(arg => /[0-9]+/.test(arg));
+    const {setting, input} = setup({validator: arg => /[0-9]+/.test(arg)});
 
     input.value = 'text must not update the setting';
     input.dispatchEvent(new Event('change'));
@@ -406,14 +623,14 @@ describe('bindToSetting (string)', () => {
 });
 
 describe('bindToSetting (boolean)', () => {
-  function setup() {
+  function setup(opts: UI.UIUtils.BindToSettingOpts = {}) {
     const {bindToSetting} = UI.UIUtils;
     const setting = createFakeSetting<boolean>('fake-setting', true);
     const container = document.createElement('div');
     renderElementIntoDOM(container);
     const inputRef = Lit.Directives.createRef<UI.UIUtils.CheckboxLabel>();
     Lit.render(
-        html`<devtools-checkbox ${Lit.Directives.ref(inputRef)} ${bindToSetting(setting)}></devtools-checkbox>`,
+        html`<devtools-checkbox ${Lit.Directives.ref(inputRef)} ${bindToSetting(setting, opts)}></devtools-checkbox>`,
         container);
 
     const input = inputRef.value;
@@ -426,6 +643,18 @@ describe('bindToSetting (boolean)', () => {
     const {input} = setup();
 
     assert.isTrue(input.checked);
+  });
+
+  it('adds jslog for tracking changes', async () => {
+    const {input} = setup();
+
+    assert.strictEqual(input.getAttribute('jslog'), 'Toggle; context: fake-setting; track: change');
+  });
+
+  it('does not add jslog if disabled via options', async () => {
+    const {input} = setup({jslog: false});
+
+    assert.isNull(input.getAttribute('jslog'));
   });
 
   it('changes the setting when the checkbox changes', () => {
@@ -486,5 +715,51 @@ describe('bindCheckbox', () => {
     setting.set(false);
 
     assert.isFalse(input.checked);
+  });
+
+  describe('asyncFragmentLabel', () => {
+    setupLocaleHooks();
+
+    it('returns "Async Call" if description is missing', () => {
+      const stackTrace = StubStackTrace.create([], [{description: '', frames: []}]);
+      assert.strictEqual(UI.UIUtils.asyncFragmentLabel(stackTrace, stackTrace.asyncFragments[0]), 'Async Call');
+    });
+
+    it('returns the description as is for other descriptions', () => {
+      const stackTrace = StubStackTrace.create([], [{description: 'Other description', frames: []}]);
+      assert.strictEqual(UI.UIUtils.asyncFragmentLabel(stackTrace, stackTrace.asyncFragments[0]), 'Other description');
+    });
+
+    it('returns "Promise resolved (async)" if description is "Promise.resolve"', () => {
+      const stackTrace = StubStackTrace.create([], [{description: 'Promise.resolve', frames: []}]);
+      assert.strictEqual(
+          UI.UIUtils.asyncFragmentLabel(stackTrace, stackTrace.asyncFragments[0]), 'Promise resolved (async)');
+    });
+
+    it('returns "Promise rejected (async)" if description is "Promise.reject"', () => {
+      const stackTrace = StubStackTrace.create([], [{description: 'Promise.reject', frames: []}]);
+      assert.strictEqual(
+          UI.UIUtils.asyncFragmentLabel(stackTrace, stackTrace.asyncFragments[0]), 'Promise rejected (async)');
+    });
+
+    it('returns "await in <functionName>" if description is "await" and there is a previous frame', () => {
+      const stackTrace = StubStackTrace.create(['url:1:functionName:10:1'], [{description: 'await', frames: []}]);
+      assert.strictEqual(
+          UI.UIUtils.asyncFragmentLabel(stackTrace, stackTrace.asyncFragments[0]), 'await in functionName');
+    });
+
+    it('returns "await" if description is "await" and there is no previous frame', () => {
+      const stackTrace = StubStackTrace.create([], [{description: 'await', frames: []}]);
+      assert.strictEqual(UI.UIUtils.asyncFragmentLabel(stackTrace, stackTrace.asyncFragments[0]), 'await');
+    });
+
+    it('returns "await in <functionName>" if description is "await" and the previous frame is another async fragment',
+       () => {
+         const stackTrace = StubStackTrace.create([], [
+           {description: 'someAsyncCall', frames: ['url:1:asyncFunction:10:1']}, {description: 'await', frames: []}
+         ]);
+         assert.strictEqual(
+             UI.UIUtils.asyncFragmentLabel(stackTrace, stackTrace.asyncFragments[1]), 'await in asyncFunction');
+       });
   });
 });

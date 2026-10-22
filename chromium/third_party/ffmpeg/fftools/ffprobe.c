@@ -144,6 +144,7 @@ static int show_optional_fields = SHOW_OPTIONAL_FIELDS_AUTO;
 static char *output_format;
 static char *stream_specifier;
 static char *show_data_hash;
+static char *data_dump_format;
 
 typedef struct ReadInterval {
     int id;             ///< identifier
@@ -1104,6 +1105,10 @@ static void print_pkt_side_data(AVTextFormatContext *tfc,
         print_int("active_format", *sd->data);
     } else if (sd->type == AV_PKT_DATA_EXIF) {
         print_int("size", sd->size);
+    } else if (sd->type == AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL && sd->size >= 8) {
+        print_int("block_additional_id", AV_RB64(sd->data));
+        if (do_show_data)
+            avtext_print_data(tfc, "block_additional_data", sd->data + 8, sd->size - 8);
     }
 }
 
@@ -1695,8 +1700,6 @@ static int read_interval_packets(AVTextFormatContext *tfc, InputFile *ifile,
         pkt->stream_index = i;
         if (do_read_frames) {
             while (process_frame(tfc, ifile, frame, pkt, &(int){1}) > 0);
-            if (ifile->streams[i].dec_ctx)
-                avcodec_flush_buffers(ifile->streams[i].dec_ctx);
         }
     }
 
@@ -1710,6 +1713,18 @@ end:
     return ret;
 }
 
+static void flush_buffers(InputFile *ifile)
+{
+    int i;
+
+    if (!do_read_frames)
+        return;
+    for (i = 0; i < ifile->nb_streams; i++) {
+        if (ifile->streams[i].dec_ctx)
+            avcodec_flush_buffers(ifile->streams[i].dec_ctx);
+    }
+}
+
 static int read_packets(AVTextFormatContext *tfc, InputFile *ifile)
 {
     AVFormatContext *fmt_ctx = ifile->fmt_ctx;
@@ -1721,6 +1736,10 @@ static int read_packets(AVTextFormatContext *tfc, InputFile *ifile)
         ret = read_interval_packets(tfc, ifile, &interval, &cur_ts);
     } else {
         for (i = 0; i < read_intervals_nb; i++) {
+            /* flushing buffers can reset parts of the private context which may be
+             * read by show_streams(), so only flush between each read_interval */
+            if (i)
+                flush_buffers(ifile);
             ret = read_interval_packets(tfc, ifile, &read_intervals[i], &cur_ts);
             if (ret < 0)
                 break;
@@ -1867,7 +1886,7 @@ static int show_stream(AVTextFormatContext *tfc, AVFormatContext *fmt_ctx, int s
         else
             print_str_opt("field_order", "unknown");
 
-        if (dec_ctx)
+        if (dec_ctx && do_read_frames)
             print_int("refs", dec_ctx->refs);
         break;
 
@@ -3168,6 +3187,7 @@ static const OptionDef real_options[] = {
     { "of",                    OPT_TYPE_STRING,      0, { &output_format }, "alias for -output_format", "format" },
     { "select_streams",        OPT_TYPE_STRING,      0, { &stream_specifier }, "select the specified streams", "stream_specifier" },
     { "sections",              OPT_TYPE_FUNC, OPT_EXIT, {.func_arg = opt_sections}, "print sections structure and section information, and exit" },
+    { "data_dump_format",      OPT_TYPE_STRING,      0, { &data_dump_format }, "set data dump format (available formats are: xxd, base64)" },
     { "show_data",             OPT_TYPE_BOOL,        0, { &do_show_data }, "show packets data" },
     { "show_data_hash",        OPT_TYPE_STRING,      0, { &show_data_hash }, "show packets data hash" },
     { "show_error",            OPT_TYPE_FUNC,        0, { .func_arg = &opt_show_error },  "show probing error" },
@@ -3232,6 +3252,7 @@ int main(int argc, char **argv)
     char *buf;
     char *f_name = NULL, *f_args = NULL;
     int ret, input_ret;
+    AVTextFormatDataDump data_dump_format_id = AV_TEXTFORMAT_DATADUMP_XXD;
 
     init_dynload();
 
@@ -3316,6 +3337,18 @@ int main(int argc, char **argv)
         goto end;
     }
 
+    if (data_dump_format) {
+        if (!strcmp(data_dump_format, "xxd")) {
+            data_dump_format_id = AV_TEXTFORMAT_DATADUMP_XXD;
+        } else if (!strcmp(data_dump_format, "base64")) {
+            data_dump_format_id = AV_TEXTFORMAT_DATADUMP_BASE64;
+        } else {
+            av_log(NULL, AV_LOG_ERROR, "Unknown data dump format with name '%s'\n", data_dump_format);
+            ret = AVERROR(EINVAL);
+            goto end;
+        }
+    }
+
     if (output_filename) {
         ret = avtextwriter_create_file(&wctx, output_filename);
     } else
@@ -3331,6 +3364,7 @@ int main(int argc, char **argv)
         .use_value_prefix = use_value_prefix,
         .use_byte_value_binary_prefix = use_byte_value_binary_prefix,
         .use_value_sexagesimal_format = use_value_sexagesimal_format,
+        .data_dump_format             = data_dump_format_id,
     };
 
     if ((ret = avtext_context_open(&tctx, f, wctx, f_args, sections, FF_ARRAY_ELEMS(sections), tf_options, show_data_hash)) >= 0) {

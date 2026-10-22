@@ -41,6 +41,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
+#include "content/public/browser/security_principal.h"
 #include "content/public/browser/trust_token_access_details.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -80,6 +81,8 @@ constexpr auto kBlockedMediaIndicatorDismissDelayPhase2 = base::Seconds(4);
 // disappears.
 constexpr auto kDeviceInUseIndicatorHideDelay = base::Seconds(15);
 #endif
+
+bool ignore_blocked_media_indicator_timer_for_testing_ = false;
 
 // Determines which taxonomy is used to generate sample topics for the Topics
 // API.
@@ -743,8 +746,9 @@ void PageSpecificContentSettings::StorageAccessed(
       auto* web_contents = content::WebContents::FromRenderFrameHost(rfh);
       const auto& session_storage_namespace_map =
           web_contents->GetController().GetSessionStorageNamespaceMap();
-      const auto& storage_partition_config =
-          web_contents->GetSiteInstance()->GetStoragePartitionConfig();
+      const auto& storage_partition_config = web_contents->GetSiteInstance()
+                                                 ->GetSecurityPrincipal()
+                                                 .GetStoragePartitionConfig();
       const auto& namespace_id =
           session_storage_namespace_map.at(storage_partition_config);
 
@@ -1493,6 +1497,12 @@ void PageSpecificContentSettings::BlockAllContentForTesting() {
                              media_blocked);
 }
 
+// static
+void PageSpecificContentSettings::SetIgnoreBlockedMediaIndicatorTimerForTesting(
+    bool ignore) {
+  ignore_blocked_media_indicator_timer_for_testing_ = ignore;
+}
+
 void PageSpecificContentSettings::ContentSettingChangedViaPageInfo(
     ContentSettingsType type) {
   content_settings_changed_via_page_info_.insert(type);
@@ -1767,6 +1777,9 @@ void PageSpecificContentSettings::OnPermissionIndicatorHidden(
 
 void PageSpecificContentSettings::StartBlockedIndicatorTimer(
     ContentSettingsType type) {
+  if (ignore_blocked_media_indicator_timer_for_testing_) {
+    return;
+  }
   base::TimeDelta blocked_indicator_delay;
   if (base::FeatureList::IsEnabled(
           content_settings::features::kLeftHandSideActivityIndicators)) {

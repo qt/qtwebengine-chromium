@@ -13,6 +13,7 @@ import {AiCodeCompletionProvider, Config, TextEditor} from './text_editor.js';
 
 function createEditorWithProvider(doc: string, config: AiCodeCompletionProvider.AiCodeCompletionConfig = {
   completionContext: {},
+  generationContext: {},
   onFeatureEnabled: () => {},
   onFeatureDisabled: () => {},
   onSuggestionAccepted: () => {},
@@ -442,6 +443,7 @@ describeWithEnvironment('AiCodeCompletionProvider', () => {
           startTime: performance.now(),
           clearCachedRequest: () => {},
           onImpression: () => {},
+          source: Config.AiSuggestionSource.COMPLETION,
         }),
       });
       editor.editor.contentDOM.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab'}));
@@ -464,6 +466,7 @@ describeWithEnvironment('AiCodeCompletionProvider', () => {
           startTime: performance.now(),
           clearCachedRequest: () => {},
           onImpression: () => {},
+          source: Config.AiSuggestionSource.COMPLETION,
         }),
       });
 

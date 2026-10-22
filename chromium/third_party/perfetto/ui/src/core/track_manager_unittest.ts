@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {assertExists} from '../base/logging';
+import {assertExists} from '../base/assert';
 import {Duration} from '../base/time';
 import {TimeScale} from '../base/time_scale';
 import {Track, TrackRenderContext} from '../public/track';
@@ -53,7 +53,7 @@ function makeMockRenderer(): Renderer {
       dispose: jest.fn(),
     }),
     drawMarkers: jest.fn(),
-    drawRects: jest.fn(),
+    drawSlices: jest.fn(),
     drawStepArea: jest.fn(),
     resetTransform: jest.fn(),
     clear: jest.fn(),

@@ -111,6 +111,7 @@ class WidgetBaseClient {
       base::TimeTicks first_scroll_timestamp) {}
 
   virtual void WillBeginMainFrame() {}
+  // Called immediately before the commit task is posted to the impl thread.
   virtual void DidCompletePageScaleAnimation() {}
 
   // Allocates a LayerTreeFrameSink to submit CompositorFrames to. Only

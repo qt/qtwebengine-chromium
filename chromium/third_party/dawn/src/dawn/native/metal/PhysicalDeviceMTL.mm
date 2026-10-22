@@ -43,6 +43,7 @@
 
 #if DAWN_PLATFORM_IS(MACOS)
 #import <IOKit/IOKitLib.h>
+
 #include "dawn/common/IOKitRef.h"
 #endif
 
@@ -467,10 +468,13 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::MetalPolyfillUnpack2x16snorm, true);
         deviceToggles->Default(Toggle::MetalPolyfillUnpack2x16unorm, true);
     }
-
-    // chromium:407109056: Floating point clamp is slightly inaccurate for subnormal values.
     if (gpu_info::IsAMD(vendorId)) {
+        // chromium:42251267 tanh with f16 is incorrect on AMD.
+        deviceToggles->Default(Toggle::MetalPolyfillTanhF16, true);
+        // chromium:407109056: Floating point clamp is slightly inaccurate for subnormal values.
         deviceToggles->Default(Toggle::MetalPolyfillClampFloat, true);
+        // crbug.com/508265321: Nested subgroupMin/Max operations cause a crash in the AMD driver.
+        deviceToggles->Default(Toggle::CollapseSubgroupMinMax, true);
     }
 
     // On some Intel GPUs vertex only render pipeline get wrong depth result if no fragment
@@ -564,6 +568,11 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
             Toggle::MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats, true);
     }
 #endif
+
+    // https://crbug.com/42241269: Bool in workgroup storage causes problems on Mac AMD and Intel.
+    if (gpu_info::IsAMD(vendorId) || gpu_info::IsIntel(vendorId)) {
+        deviceToggles->Default(Toggle::MetalReplaceWorkgroupBoolWithU32, true);
+    }
 
     // Enable the integer range analysis for shader robustness by default if the corresponding
     // platform feature is enabled.
@@ -659,6 +668,7 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 #endif
 
     EnableFeature(Feature::DawnMultiPlanarFormats);
+    EnableFeature(Feature::DawnNativeSpontaneousQueueEvents);
     EnableFeature(Feature::MultiPlanarFormatP010);
     EnableFeature(Feature::MultiPlanarRenderTargets);
     EnableFeature(Feature::MultiPlanarFormatExtendedUsages);
@@ -731,6 +741,8 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
     EnableFeature(Feature::SharedFenceMTLSharedEvent);
 
     EnableFeature(Feature::Unorm16TextureFormats);
+    EnableFeature(Feature::Unorm16Filterable);
+    EnableFeature(Feature::Unorm16FormatsForExternalTexture);
 
     EnableFeature(Feature::HostMappedPointer);
 
@@ -744,6 +756,17 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
 
     if (SupportTextureComponentSwizzle(*mDevice)) {
         EnableFeature(Feature::TextureComponentSwizzle);
+    }
+
+    if ([*mDevice supportsFamily:MTLGPUFamilyApple9]) {
+        EnableFeature(Feature::AtomicVec2uMinMax);
+    }
+
+    // Early 64-bit (ulong) support when both mac2 and apple8. (This means the M2)
+    // See footnote 11 of https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
+    if ([*mDevice supportsFamily:MTLGPUFamilyMac2] &&
+        [*mDevice supportsFamily:MTLGPUFamilyApple8]) {
+        EnableFeature(Feature::AtomicVec2uMinMax);
     }
 
     if ([*mDevice readWriteTextureSupport] == MTLReadWriteTextureTier2) {

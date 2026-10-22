@@ -30,8 +30,10 @@ class EmbedderTestEnvironment : public testing::Environment {
 
  private:
   void AddFlag(const std::string& flag);
+  bool CheckFlags();
 
   FPDF_RENDERER_TYPE renderer_type_;
+  bool fontations_ = false;
   bool write_pngs_ = false;
   TestFonts test_fonts_;
 };

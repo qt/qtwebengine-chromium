@@ -20,6 +20,9 @@ class CORE_EXPORT HTMLMenuItemElement final : public HTMLElement {
  public:
   explicit HTMLMenuItemElement(Document&);
   ~HTMLMenuItemElement() override;
+  ElementType GetElementType() const final {
+    return ElementType::kHTMLMenuItemElement;
+  }
   void Trace(Visitor* visitor) const override;
 
   int index() const;
@@ -33,10 +36,14 @@ class CORE_EXPORT HTMLMenuItemElement final : public HTMLElement {
   bool ShouldAppearChecked() const;
 
   HTMLMenuOwnerElement* OwningMenuElement() const;
+  HTMLFieldSetElement* NearestAncestorFieldSet() const {
+    return nearest_ancestor_field_set_.Get();
+  }
 
   bool CanBeCommandInvoker() const override;
   bool IsValidInterestInvoker(Element& target) const override;
   HTMLMenuListElement* GetInvokedSubmenu() const;
+  bool ShouldHaveExpandIcon() const;
 
   Node::InsertionNotificationRequest InsertedInto(ContainerNode&) override;
   void RemovedFrom(ContainerNode&) override;

@@ -192,7 +192,7 @@ static int combined_motion_search(AV1_COMP *cpi, MACROBLOCK *x,
                                   int *rate_mv, int64_t best_rd_sofar,
                                   int use_base_mv) {
   MACROBLOCKD *xd = &x->e_mbd;
-  AV1_COMMON *cm = &cpi->common;
+  const AV1_COMMON *cm = &cpi->common;
   const SPEED_FEATURES *sf = &cpi->sf;
   MB_MODE_INFO *mi = xd->mi[0];
   int step_param = (sf->rt_sf.fullpel_search_step_param)
@@ -207,7 +207,7 @@ static int combined_motion_search(AV1_COMP *cpi, MACROBLOCK *x,
   int cost_list[5];
   int search_subpel = 1;
 
-  if (av1_is_scaled(get_ref_scale_factors(cm, ref))) {
+  if (av1_is_scaled(get_ref_scale_factors_const(cm, ref))) {
     const YV12_BUFFER_CONFIG *scaled_ref = av1_get_scaled_ref_frame(cpi, ref);
     (void)scaled_ref;
     assert(scaled_ref != NULL);
@@ -2498,6 +2498,9 @@ static AOM_FORCE_INLINE bool skip_inter_mode_nonrd(
       (*this_mode != GLOBALMV || *ref_frame != LAST_FRAME))
     return true;
 
+  // Skip the mode if use reference frame mask flag is not set.
+  if (!search_state->use_ref_frame_mask[*ref_frame]) return true;
+
   *force_mv_inter_layer = 0;
   if (cpi->ppi->use_svc && svc->spatial_layer_id > 0 &&
       ((*ref_frame == LAST_FRAME && svc->skip_mvsearch_last) ||
@@ -2522,9 +2525,6 @@ static AOM_FORCE_INLINE bool skip_inter_mode_nonrd(
       return true;
     return false;
   }
-
-  // Skip the mode if use reference frame mask flag is not set.
-  if (!search_state->use_ref_frame_mask[*ref_frame]) return true;
 
   // Don't skip non_last references if LAST is not used a reference.
   if (!(cpi->ref_frame_flags & AOM_LAST_FLAG) &&
@@ -3448,7 +3448,7 @@ void av1_nonrd_pick_inter_mode_sb(AV1_COMP *cpi, TileDataEnc *tile_data,
       !x->force_zeromv_skip_for_blk &&
       x->content_state_sb.source_sad_nonrd != kZeroSad &&
       x->source_variance == 0 && bsize < cm->seq_params->sb_size &&
-      (cpi->ref_frame_flags & AOM_LAST_FLAG) &&
+      search_state.use_ref_frame_mask[LAST_FRAME] &&
       search_state.yv12_mb[LAST_FRAME][0].width == cm->width &&
       search_state.yv12_mb[LAST_FRAME][0].height == cm->height) {
     set_block_source_sad(cpi, x, bsize, &search_state.yv12_mb[LAST_FRAME][0]);

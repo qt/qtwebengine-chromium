@@ -27,6 +27,8 @@
 
 #include "dawn/native/webgpu/ExternalTextureWGPU.h"
 
+#include <string>
+
 #include "dawn/common/StringViewUtils.h"
 #include "dawn/native/webgpu/BufferWGPU.h"
 #include "dawn/native/webgpu/DeviceWGPU.h"
@@ -64,11 +66,12 @@ ResultOrError<Ref<ExternalTextureBase>> ExternalTexture::Create(
 ExternalTexture::ExternalTexture(Device* device, const ExternalTextureDescriptor* descriptor)
     : ExternalTextureBase(device, descriptor),
       RecordableObject(schema::ObjectType::ExternalTexture),
-      ObjectWGPU(device->wgpu.externalTextureRelease),
+      ObjectWGPU(device->wgpu->externalTextureRelease),
       mCreationParams(descriptor) {
+    std::string label = GetLabel();
     WGPUExternalTextureDescriptor desc = {
         .nextInChain = nullptr,
-        .label = ToOutputStringView(GetLabel()),
+        .label = ToOutputStringView(label),
         .plane0 = ToBackend(descriptor->plane0)->GetInnerHandle(),
         .plane1 = descriptor->plane1 ? ToBackend(descriptor->plane1)->GetInnerHandle() : nullptr,
         .cropOrigin = ToWGPU(descriptor->cropOrigin),
@@ -83,7 +86,7 @@ ExternalTexture::ExternalTexture(Device* device, const ExternalTextureDescriptor
         .rotation = ToAPI(descriptor->rotation),
     };
 
-    mInnerHandle = device->wgpu.deviceCreateExternalTexture(device->GetInnerHandle(), &desc);
+    mInnerHandle = device->wgpu->deviceCreateExternalTexture(device->GetInnerHandle(), &desc);
     DAWN_ASSERT(mInnerHandle);
 }
 
@@ -91,7 +94,7 @@ ExternalTexture::~ExternalTexture() = default;
 
 void ExternalTexture::DestroyImpl(DestroyReason reason) {
     ExternalTextureBase::DestroyImpl(reason);
-    auto& wgpu = ToBackend(GetDevice())->wgpu;
+    auto& wgpu = ToBackend(GetDevice())->wgpu.get();
     wgpu.externalTextureDestroy(mInnerHandle);
 }
 

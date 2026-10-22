@@ -11,21 +11,18 @@ import type {RemoteObject} from './RemoteObject.js';
 import {RuntimeModel} from './RuntimeModel.js';
 import {SDKModel} from './SDKModel.js';
 import {Capability, type Target} from './Target.js';
-import {TargetManager} from './TargetManager.js';
 
 export class HeapProfilerModel extends SDKModel<EventTypes> {
-  #enabled: boolean;
+  #enabled = false;
   readonly #heapProfilerAgent: ProtocolProxyApi.HeapProfilerApi;
   readonly #runtimeModel: RuntimeModel;
-  #samplingProfilerDepth: number;
+  #samplingProfilerDepth = 0;
 
   constructor(target: Target) {
     super(target);
     target.registerHeapProfilerDispatcher(new HeapProfilerDispatcher(this));
-    this.#enabled = false;
     this.#heapProfilerAgent = target.heapProfilerAgent();
     this.#runtimeModel = (target.model(RuntimeModel) as RuntimeModel);
-    this.#samplingProfilerDepth = 0;
   }
 
   debuggerModel(): DebuggerModel {
@@ -107,11 +104,11 @@ export class HeapProfilerModel extends SDKModel<EventTypes> {
   }
 
   async takeHeapSnapshot(heapSnapshotOptions: Protocol.HeapProfiler.TakeHeapSnapshotRequest): Promise<void> {
-    await TargetManager.instance().suspendAllTargets('heap-snapshot');
+    await this.target().targetManager().suspendAllTargets('heap-snapshot');
     try {
       await this.#heapProfilerAgent.invoke_takeHeapSnapshot(heapSnapshotOptions);
     } finally {
-      await TargetManager.instance().resumeAllTargets();
+      await this.target().targetManager().resumeAllTargets();
     }
   }
 

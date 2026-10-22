@@ -49,7 +49,8 @@ TEST_F(SpirvWriterTest, Access_Array_Value_ConstantIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpCompositeExtract %int %arr 1");
 }
 
@@ -74,7 +75,8 @@ TEST_F(SpirvWriterTest, Access_Array_Value_Index_Negative) {
         .entry_point_name = "main",
         .disable_robustness = true,
     };
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(
         R"(%14 = OpBitcast %uint %l
          %12 = OpAccessChain %_ptr_Function_int %9 %14)");
@@ -95,7 +97,8 @@ TEST_F(SpirvWriterTest, Access_Array_Pointer_ConstantIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpAccessChain %_ptr_Function_int %arr %uint_1");
 }
 
@@ -116,7 +119,8 @@ TEST_F(SpirvWriterTest, Access_Array_Pointer_DynamicIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %12 = OpBitcast %uint %idx
          %13 = OpExtInst %uint %14 UMin %12 %uint_3
@@ -142,7 +146,8 @@ TEST_F(SpirvWriterTest, Access_Matrix_Value_ConstantIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result_vector = OpCompositeExtract %v2float %mat 1");
     EXPECT_INST("%result_scalar = OpCompositeExtract %float %mat 1 0");
 }
@@ -158,7 +163,8 @@ TEST_F(SpirvWriterTest, Access_Matrix_Pointer_ConstantIndex) {
         mod.SetName(result_scalar, "result_scalar");
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result_vector = OpAccessChain %_ptr_Function_v2float %mat %uint_1");
     EXPECT_INST("%15 = OpAccessChain %_ptr_Function_float %result_vector %uint_0");
     EXPECT_INST("%result_scalar = OpLoad %float %15");
@@ -183,7 +189,8 @@ TEST_F(SpirvWriterTest, Access_Matrix_Pointer_DynamicIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %14 = OpBitcast %uint %idx
          %15 = OpExtInst %uint %16 UMin %14 %uint_1
@@ -211,7 +218,8 @@ TEST_F(SpirvWriterTest, Access_Vector_Value_ConstantIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result = OpCompositeExtract %int %vec 1");
 }
 
@@ -232,7 +240,8 @@ TEST_F(SpirvWriterTest, Access_Vector_Value_DynamicIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
           %9 = OpBitcast %uint %idx
          %10 = OpExtInst %uint %11 UMin %9 %uint_3
@@ -259,7 +268,8 @@ TEST_F(SpirvWriterTest, Access_NestedVector_Value_DynamicIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %12 = OpBitcast %uint %idx
          %13 = OpExtInst %uint %14 UMin %12 %uint_3
@@ -290,7 +300,8 @@ TEST_F(SpirvWriterTest, Access_Struct_Value_ConstantIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result_a = OpCompositeExtract %int %str 0");
     EXPECT_INST("%result_b = OpCompositeExtract %int %str 1 2");
 }
@@ -317,7 +328,8 @@ TEST_F(SpirvWriterTest, Access_Struct_Value_ConstantIndex_Signed) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result_a = OpCompositeExtract %int %str 0");
     EXPECT_INST("%result_b = OpCompositeExtract %int %str 1 2");
 }
@@ -345,7 +357,8 @@ TEST_F(SpirvWriterTest, Access_Struct_Pointer_ConstantIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result_a = OpAccessChain %_ptr_Function_int %str %uint_0");
     EXPECT_INST("%result_b = OpAccessChain %_ptr_Function_v4int %str %uint_1");
 }
@@ -373,7 +386,8 @@ TEST_F(SpirvWriterTest, Access_Struct_Pointer_ConstantIndex_Signed) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%result_a = OpAccessChain %_ptr_Function_int %str %uint_0");
     EXPECT_INST("%result_b = OpAccessChain %_ptr_Function_v4int %str %uint_1");
 }
@@ -387,7 +401,8 @@ TEST_F(SpirvWriterTest, LoadVectorElement_ConstantIndex) {
         mod.SetName(result, "result");
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%10 = OpAccessChain %_ptr_Function_int %vec %uint_1");
     EXPECT_INST("%result = OpLoad %int %10");
 }
@@ -406,7 +421,8 @@ TEST_F(SpirvWriterTest, LoadVectorElement_NegativeIndex) {
         .entry_point_name = "main",
         .disable_robustness = true,
     };
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(%13 = OpBitcast %uint %l
          %11 = OpAccessChain %_ptr_Function_int %vec %13
      %result = OpLoad %int %11 None)");
@@ -429,7 +445,8 @@ TEST_F(SpirvWriterTest, LoadVectorElement_DynamicIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %12 = OpBitcast %uint %idx
          %13 = OpExtInst %uint %14 UMin %12 %uint_3
@@ -446,7 +463,8 @@ TEST_F(SpirvWriterTest, StoreVectorElement_ConstantIndex) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST("%10 = OpAccessChain %_ptr_Function_int %vec %uint_1");
     EXPECT_INST("OpStore %10 %int_42");
 }
@@ -464,7 +482,8 @@ TEST_F(SpirvWriterTest, StoreVectorElement_NegativeIndex) {
         .entry_point_name = "main",
         .disable_robustness = true,
     };
-    ASSERT_TRUE(Generate(options)) << Error() << output_;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(
         R"(%13 = OpBitcast %uint %l
          %11 = OpAccessChain %_ptr_Function_int %vec %13
@@ -487,7 +506,8 @@ TEST_F(SpirvWriterTest, StoreVectorElement_DynamicIndex) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << Error() << output_;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure() << output_;
     EXPECT_INST(R"(
          %12 = OpBitcast %uint %idx
          %13 = OpExtInst %uint %14 UMin %12 %uint_3

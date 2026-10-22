@@ -19,6 +19,10 @@ assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
 
 group("resources") {
   public_deps = [
+    "contextual_tasks:resources",
+    "glic:resources",
+    "glic/fre:resources",
+    "glic/shared:resources",
     "saved_tab_groups_unsupported:resources",
     "segmentation_internals:resources",
     "//components/enterprise/connectors/resources",
@@ -39,18 +43,17 @@ group("resources") {
       "autofill_ml_internals:resources",
       "bookmarks:resources",
       "certificate_manager:resources",
-      "contextual_tasks:resources",
+      "content_annotator_internals:resources",
       "data_sharing:resources",
       "downloads:resources",
       "feedback:resources",
       "gaia_auth_host:resources",
+      "glic/selection_overlay:resources",
       "history:resources",
       "inspect:resources",
       "key_value_pair_viewer_shared:resources",
-      "legion_internals:resources",
       "lens/overlay:resources",
       "lens/shared:resources",
-      "management:resources",
       "new_tab_footer:resources",
       "new_tab_page:resources",
       "new_tab_page/untrusted:resources",
@@ -59,8 +62,8 @@ group("resources") {
       "new_tab_shared:resources",
       "omnibox_popup:resources",
       "password_manager:resources",
-      "privacy_sandbox:resources",
       "privacy_sandbox/internals:resources",
+      "private_ai_internals:resources",
       "profile_internals:resources",
       "search_engine_choice:resources",
       "settings:resources",
@@ -74,6 +77,7 @@ group("resources") {
       "side_panel/read_anything:resources",
       "side_panel/reading_list:resources",
       "side_panel/shared:resources",
+      "side_panel/tabs_from_other_devices:resources",
       "signin:resources",
       "suggest_internals:resources",
       "support_tool:resources",
@@ -117,11 +121,17 @@ group("resources") {
   }
 
   if (is_win || is_mac || is_linux || is_chromeos || is_desktop_android) {
-    public_deps += [ "discards:resources" ]
+    public_deps += [
+      "discards:resources",
+      "management:resources",
+    ]
   }
 
   if (is_win || is_mac || is_linux || is_chromeos) {
-    public_deps += [ "skills:resources" ]
+    public_deps += [
+      "ai_overlay_dialog:resources",
+      "skills:resources",
+    ]
   }
 
   if (is_win || is_mac || is_linux) {
@@ -182,14 +192,6 @@ group("resources") {
     public_deps += [ "compose:resources" ]
   }
 
-  if (enable_glic) {
-    public_deps += [
-      "glic:resources",
-      "glic/fre:resources",
-      "glic/shared:resources",
-    ]
-  }
-
   if (enterprise_watermark) {
     public_deps += [ "watermark:resources" ]
   }
@@ -202,6 +204,8 @@ if (enable_webui_generate_code_cache) {
       "side_panel/customize_chrome:code_cache_resources",
       "side_panel/reading_list:code_cache_resources",
       "side_panel/shared:code_cache_resources",
+      "side_panel/tabs_from_other_devices:code_cache_resources",
+      "webui_toolbar:code_cache_resources",
     ]
   }
 }
@@ -294,6 +298,7 @@ group("dev_ui_resources") {
     "actor_internals:resources",
     "bluetooth_internals:resources",
     "browsing_topics:resources",
+    "chrome_finds_internals:resources",
     "components:resources",
     "device_log:resources",
     "engagement:resources",
@@ -343,6 +348,7 @@ group("dev_ui_resources") {
       "media_router/internals:resources",
       "on_device_internals:resources",
       "user_education_internals:resources",
+      "webnn_internals:resources",
       "webui_js_error:resources",
     ]
   }
@@ -368,6 +374,7 @@ repack("dev_ui_paks") {
     "$root_gen_dir/chrome/actor_internals_resources.pak",
     "$root_gen_dir/chrome/bluetooth_internals_resources.pak",
     "$root_gen_dir/chrome/browsing_topics_internals_resources.pak",
+    "$root_gen_dir/chrome/chrome_finds_internals_resources.pak",
     "$root_gen_dir/chrome/components_resources.pak",
     "$root_gen_dir/chrome/device_log_resources.pak",
     "$root_gen_dir/chrome/engagement_resources.pak",

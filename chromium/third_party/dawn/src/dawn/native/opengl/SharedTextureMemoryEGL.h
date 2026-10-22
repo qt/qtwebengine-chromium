@@ -34,6 +34,7 @@
 namespace dawn::native::opengl {
 
 class Device;
+struct OpenGLFunctions;
 
 class SharedTextureMemoryEGL final : public SharedTextureMemory {
   public:
@@ -42,7 +43,7 @@ class SharedTextureMemoryEGL final : public SharedTextureMemory {
         StringView label,
         const SharedTextureMemoryAHardwareBufferDescriptor* descriptor);
 
-    ResultOrError<GLuint> GenerateGLTexture() override;
+    ResultOrError<GLuint> GenerateGLTexture(const OpenGLFunctions& gl) override;
 
   private:
     SharedTextureMemoryEGL(Device* device,

@@ -7,7 +7,6 @@
 #include <memory>
 #include <utility>
 
-#include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_stats.h"
@@ -75,11 +74,13 @@ void RealboxOmniboxClient::OnBookmarkLaunched() {
 
 RealboxHandler::RealboxHandler(
     mojo::PendingReceiver<searchbox::mojom::PageHandler> pending_page_handler,
+    mojo::PendingRemote<searchbox::mojom::Page> pending_page,
     Profile* profile,
     content::WebContents* web_contents,
     GetSessionHandleCallback get_session_callback)
     : ContextualSearchboxHandler(
           std::move(pending_page_handler),
+          std::move(pending_page),
           profile,
           web_contents,
           std::make_unique<OmniboxController>(

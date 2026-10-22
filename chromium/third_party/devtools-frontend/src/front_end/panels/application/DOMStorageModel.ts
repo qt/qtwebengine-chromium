@@ -250,7 +250,7 @@ export class DOMStorageModel extends SDK.SDKModel.SDKModel<EventTypes> {
   }
 }
 
-SDK.SDKModel.SDKModel.register(DOMStorageModel, {capabilities: SDK.Target.Capability.DOM, autostart: false});
+SDK.SDKModel.SDKModel.register(DOMStorageModel, {capabilities: SDK.Target.Capability.DOM_STORAGE, autostart: false});
 
 export const enum Events {
   DOM_STORAGE_ADDED = 'DOMStorageAdded',

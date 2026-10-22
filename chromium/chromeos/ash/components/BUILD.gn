@@ -79,10 +79,6 @@ group("unit_tests") {
     "//chromeos/ash/components/trial_group:unit_tests",
     "//chromeos/ash/components/wifi_p2p:unit_tests",
   ]
-
-  if (target_cpu == "x64") {
-    deps += [ "//chromeos/ash/components/memory/userspace_swap:unit_tests" ]
-  }
 }
 
 static_library("test_support") {
@@ -96,6 +92,7 @@ static_library("test_support") {
     "//base",
     "//base:i18n",
     "//base/test:test_support",
+    "//services/network:test_support",
     "//testing/gtest",
     "//ui/accessibility:test_support",
     "//ui/aura",

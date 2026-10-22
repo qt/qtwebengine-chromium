@@ -17,12 +17,6 @@ build_with_chromium = false
 # `use_custom_libcxx = true`.
 enable_safe_libcxx = true
 
-declare_args() {
-  # Allows googletest to pretty-print various absl types.  Disabled for nacl due
-  # to lack of toolchain support.
-  gtest_enable_absl_printers = true
-}
-
 if (host_os == "mac" || is_apple) {
   # Needed for is_apple when targeting macOS or iOS, independent of host.
   # Needed for host_os=="mac" for running host tool such as gperf in blink
@@ -39,3 +33,5 @@ if (host_os == "mac" || is_apple) {
   assert(current_os != "ios" || use_system_xcode)
   assert(host_os == "mac" || !use_system_xcode)
 }
+
+import("//build_overrides/perfetto.gni")

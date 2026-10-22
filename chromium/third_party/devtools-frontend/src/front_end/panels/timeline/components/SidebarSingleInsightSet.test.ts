@@ -69,9 +69,10 @@ describeWithEnvironment('SidebarSingleInsightSet', () => {
     assert.deepEqual(userVisibleTitles, [
       'LCP breakdown',
       'LCP request discovery',
-      'Render blocking requests',
+      'Render-blocking requests',
       'Document request latency',
       '3rd parties',
+      'Declare a character encoding',
     ]);
 
     const passedInsightTitles = getPassedInsights(component);
@@ -116,13 +117,14 @@ describeWithEnvironment('SidebarSingleInsightSet', () => {
       'Font display',
       '3rd parties',
       'Use efficient cache lifetimes',
+      'Declare a character encoding',
     ]);
 
     const passedInsightTitles = getPassedInsights(component);
     assert.deepEqual(passedInsightTitles, [
       'INP breakdown',
       'LCP request discovery',
-      'Render blocking requests',
+      'Render-blocking requests',
       'Document request latency',
       'Optimize viewport for mobile',
       'Optimize DOM size',

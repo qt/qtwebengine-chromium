@@ -42,9 +42,22 @@ Document* DOMParser::ParseFromStringWithoutTrustedTypes(
                       .WithAgent(*window_->GetAgent())
                       .CreateDocument();
   doc->setAllowDeclarativeShadowRoots(false);
-  doc->CountUse(mojom::blink::WebFeature::kParseFromString);
+  doc->SetIsDOMParserDocument(true);
   doc->SetContentFromDOMParser(str);
   doc->SetMimeType(type.AsAtomicString());
+
+  doc->CountUse(mojom::blink::WebFeature::kParseFromString);
+  switch (type.AsEnum()) {
+    case V8SupportedType::Enum::kApplicationXhtmlXml:
+    case V8SupportedType::Enum::kImageSvgXml:
+    case V8SupportedType::Enum::kTextXml:
+    case V8SupportedType::Enum::kApplicationXml:
+      doc->CountUse(mojom::blink::WebFeature::kParseFromStringXML);
+      break;
+    case V8SupportedType::Enum::kTextHtml:
+      break;
+  }
+
   return doc;
 }
 

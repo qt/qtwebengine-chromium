@@ -1127,7 +1127,7 @@ TEST_F(IR_IntegerRangeAnalysisTest, AnalyzeLoopContinuing_Failure_SecondInstruct
       }
       $B4: {  # continuing
         %3:u32 = load %idx
-        %4:u32 = bitcast %3
+        %4:u32 = bitcast<u32> %3
         store %idx, %4
         next_iteration  # -> $B3
       }
@@ -3094,7 +3094,7 @@ TEST_F(IR_IntegerRangeAnalysisTest, AnalyzeLoopBody_Failure_SecondInstructionNot
       }
       $B3: {  # body
         %3:i32 = load %idx
-        %4:i32 = bitcast %3
+        %4:i32 = bitcast<i32> %3
         %5:bool = lt %4, 10i
         if %5 [t: $B5, f: $B6] {  # if_1
           $B5: {  # true
@@ -9229,7 +9229,6 @@ TEST_F(IR_IntegerRangeAnalysisTest, ValueAsVar) {
 }
 )";
     EXPECT_EQ(src, str());
-
     EXPECT_EQ(Validate(mod), Success);
 
     IntegerRangeAnalysis analysis(&mod);
@@ -9524,7 +9523,6 @@ TEST_F(IR_IntegerRangeAnalysisTest, MultipleBinaryAdds) {
 }
 )";
     EXPECT_EQ(src, str());
-
     EXPECT_EQ(Validate(mod), Success);
 
     IntegerRangeAnalysis analysis(&mod);
@@ -9801,7 +9799,6 @@ TEST_F(IR_IntegerRangeAnalysisTest, BinarySubtract_Success_U32) {
 }
 )";
     EXPECT_EQ(src, str());
-
     EXPECT_EQ(Validate(mod), Success);
 
     IntegerRangeAnalysis analysis(&mod);

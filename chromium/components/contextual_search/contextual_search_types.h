@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 
+#include "base/memory/advanced_memory_safety_checks.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "components/lens/contextual_input.h"
@@ -42,9 +43,14 @@ enum class ContextUploadStatus {
   kProcessingSuggestSignalsReady = 7,
   // File is being replaced.
   kUploadReplaced = 8,
+
+  // Add new enumerators above this line.
+  // This must always be the last valid enum.
+  kMaxValue = kUploadReplaced,
 };
 
-using FileUploadStatus = ContextUploadStatus;
+// Returns true if the upload status is considered terminal.
+bool IsTerminalContextStatus(ContextUploadStatus status);
 
 // For upload error notifications and metrics.
 enum class ContextUploadErrorType {
@@ -62,12 +68,17 @@ enum class ContextUploadErrorType {
   kAborted = 5,
   // Image processing error.
   kImageProcessingError = 6,
-};
 
-using FileUploadErrorType = ContextUploadErrorType;
+  // Add new enumerators above this line.
+  // This must always be the last valid enum.
+  kMaxValue = kImageProcessingError,
+};
 
 // Struct containing file information for a file upload.
 struct FileInfo {
+  // TODO(crbug.com/497396516): after fixing the issue, remove this macro.
+  ADVANCED_MEMORY_SAFETY_CHECKS();
+
  public:
   FileInfo();
   FileInfo(const FileInfo& other);

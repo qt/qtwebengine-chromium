@@ -153,7 +153,7 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
     document.title = i18nString(UIStrings.devtoolsS, {PH1: url.replace(/^https?:\/\//, '')});
   }
 
-  copyText(text: string|null|undefined): void {
+  copyText(text?: string|null): void {
     if (text === undefined || text === null) {
       return;
     }
@@ -333,21 +333,11 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
           resourceLoaderStreamWrite(streamId, text);
           callback({
             statusCode: 200,
-            headers: undefined,
-            messageOverride: undefined,
-            netError: undefined,
-            netErrorName: undefined,
-            urlValid: undefined,
           });
         })
         .catch(function() {
           callback({
             statusCode: 404,
-            headers: undefined,
-            messageOverride: undefined,
-            netError: undefined,
-            netErrorName: undefined,
-            urlValid: undefined,
           });
         });
   }
@@ -398,11 +388,6 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
     const hostConfigForHostedMode: Root.Runtime.HostConfig = {
       devToolsVeLogging: {
         enabled: true,
-      },
-      thirdPartyCookieControls: {
-        thirdPartyCookieMetadataEnabled: true,
-        thirdPartyCookieHeuristicsEnabled: true,
-        managedBlockThirdPartyCookies: 'Unset',
       },
       devToolsFlexibleLayout: {
         verticalDrawerEnabled: true,
@@ -564,5 +549,7 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
   }
 
   setChromeFlag(_flagName: string, _value: boolean): void {
+  }
+  requestRestart(): void {
   }
 }

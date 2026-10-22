@@ -5,7 +5,6 @@
 import {EventTracker} from '//resources/js/event_tracker.js';
 import {loadTimeData} from '//resources/js/load_time_data.js';
 import {GlicRequestHeaderInjector} from '/shared/glic_request_headers.js';
-import {createWebView, isFullWebView} from '/shared/web_view_type.js';
 import type {WebViewType} from '/shared/web_view_type.js';
 import {assert} from 'chrome://resources/js/assert.js';
 import {getRequiredElement} from 'chrome://resources/js/util.js';
@@ -27,8 +26,6 @@ const MAX_WAIT_TIME_MS = loadTimeData.getInteger('maxLoadingTimeMs');
 const RELOAD_MAX_WAIT_TIME_RELOAD_MS =
     loadTimeData.getInteger('reloadMaxLoadingTimeMs');
 
-// If unified FRE is enabled to change formatting for sidepanel ui.
-const IS_UNIFIED_FRE = loadTimeData.getBoolean('isUnifiedFre');
 
 // Minimum height for FRE.
 const MIN_HEIGHT = 200;
@@ -64,7 +61,7 @@ export class FreAppController {
 
   // Created from constructor and never null since the destructor replaces it
   // with an empty <webview>.
-  private webview: WebViewType;
+  private webview?: WebViewType;
   private webviewEventTracker = new EventTracker();
   private glicRequestHeaderInjector?: GlicRequestHeaderInjector;
   private freHandler: FrePageHandlerRemote;
@@ -107,15 +104,6 @@ export class FreAppController {
     this.shouldSizeForDialog = options.shouldSizeForDialog ?? true;
     this.onCloseCallback = options.onClose;
 
-
-    this.webview = this.createWebview();
-
-    // TODO(b/459795708): Remove when FRE is deduplicated and unified fre is
-    // launched.
-    const frePanelStateKindSection = getRequiredElement('fre-local-panels');
-    frePanelStateKindSection.classList.toggle('side-panel', IS_UNIFIED_FRE);
-    frePanelStateKindSection.classList.toggle('floating', !IS_UNIFIED_FRE);
-
     window.addEventListener('online', () => {
       this.online();
     });
@@ -130,7 +118,7 @@ export class FreAppController {
         const parentPanel = button.closest('.panel');
         if (parentPanel) {
           button.addEventListener('click', () => {
-            chrome.metricsPrivate.recordUserAction('Glic.Fre.CloseWithX');
+            chrome.histograms.recordUserAction('Glic.Fre.CloseWithX');
             this.dismissFre(this.panelIdToEnum(parentPanel.id));
           });
         }
@@ -144,7 +132,7 @@ export class FreAppController {
       assert(parentPanel);
 
       disabledByAdminButton.addEventListener('click', () => {
-        chrome.metricsPrivate.recordUserAction(
+        chrome.histograms.recordUserAction(
             'Glic.Fre.DisabledByAdminPanelCloseButton');
         this.dismissFre(this.panelIdToEnum(parentPanel.id));
       });
@@ -153,15 +141,14 @@ export class FreAppController {
           this.freContainer.querySelector<HTMLAnchorElement>(
               '#freDisabledByAdminPanel a');
       assert(disabledByAdminLink);
-      disabledByAdminLink.addEventListener(
-          'click', (e) => {
-            e.preventDefault();
-            chrome.metricsPrivate.recordUserAction(
-                'Glic.Fre.DisabledByAdminPanelLinkClicked');
-            this.freHandler.validateAndOpenLinkInNewTab(
-                (e.target as HTMLAnchorElement).href);
-            e.stopPropagation();
-          });
+      disabledByAdminLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        chrome.histograms.recordUserAction(
+            'Glic.Fre.DisabledByAdminPanelLinkClicked');
+        this.freHandler.validateAndOpenLinkInNewTab(
+            (e.target as HTMLAnchorElement).href);
+        e.stopPropagation();
+      });
 
       getRequiredElement('fre-reload')?.addEventListener('click', () => {
         this.reload();
@@ -198,7 +185,7 @@ export class FreAppController {
     } else if (urlHash.startsWith('#noThanks')) {
       const source = url.searchParams.get('source');
       if (source === 'x_button') {
-        chrome.metricsPrivate.recordUserAction(`Glic.Fre.CloseWithX`);
+        chrome.histograms.recordUserAction(`Glic.Fre.CloseWithX`);
         this.dismissFre(FreWebUiState.kReady);
       } else {
         this.rejectFre();
@@ -260,7 +247,7 @@ export class FreAppController {
     // to the content inside the webview. This ensures that screen readers
     // announce the new content.
     if (id === 'freGuestPanel') {
-      this.webview.focus();
+      this.webview?.focus();
     }
   }
 
@@ -353,7 +340,7 @@ export class FreAppController {
     }
 
     // Load the web client now that cookie sync is complete.
-    this.destroyWebview();
+    this.createWebview();
 
     // Signal to the fre controller that the web ui framework has completed
     // loading and the remote web content is about to start loading in the
@@ -366,6 +353,7 @@ export class FreAppController {
     if (!this.shouldSizeForDialog) {
       glicFreURL.searchParams.append('sidepanelFre', 'true');
     }
+    assert(this.webview);
     this.webview.src = glicFreURL.toString();
 
     this.loadingTimer = setTimeout(() => {
@@ -404,8 +392,8 @@ export class FreAppController {
         MAX_WAIT_TIME_MS;
     this.loadingTimer = setTimeout(() => {
       console.warn('Exceeded timeout in finishLoading');
-      chrome.metricsPrivate.recordUserAction('Glic.Fre.WebviewLoadTimedOut');
-      chrome.metricsPrivate.recordEnumerationValue(
+      chrome.histograms.recordUserAction('Glic.Fre.WebviewLoadTimedOut');
+      chrome.histograms.recordEnumerationValue(
           'Glic.Fre.WebviewLoadAbortReason',
           GlicFreWebviewLoadAbortReason.ERR_TIMED_OUT,
           GlicFreWebviewLoadAbortReason.MAX_VALUE + 1);
@@ -418,8 +406,9 @@ export class FreAppController {
     window.resizeTo(e.newWidth, e.newHeight);
   }
 
-  private createWebview(): WebViewType {
-    const webview = createWebView();
+  private newWebview(): WebViewType {
+    assert(!this.webview);
+    const webview = document.createElement('webview');
     webview.id = 'freGuestFrame';
     // TODO(crbug.com/408475473): Update the webviewTag definition to be able to
     // define properties rather than using setAttribute.
@@ -440,12 +429,10 @@ export class FreAppController {
       webview.setAttribute('maxheight', window.screen.availHeight.toString());
     }
 
-    if (isFullWebView(webview)) {
-      this.glicRequestHeaderInjector = new GlicRequestHeaderInjector(
-          webview, loadTimeData.getString('chromeVersion'),
-          loadTimeData.getString('chromeChannel'),
-          loadTimeData.getString('glicHeaderRequestTypes'));
-    }
+    this.glicRequestHeaderInjector = new GlicRequestHeaderInjector(
+        webview, loadTimeData.getString('chromeVersion'),
+        loadTimeData.getString('chromeChannel'),
+        loadTimeData.getString('glicHeaderRequestTypes'));
 
     this.webviewContainer.appendChild(webview);
 
@@ -493,8 +480,8 @@ export class FreAppController {
 
   private onLoadAbort(e: chrome.webviewTag.LoadAbortEvent) {
     const reasonEnum = this.reasonStringToEnum(e.reason);
-    chrome.metricsPrivate.recordUserAction('Glic.Fre.WebviewLoadAborted');
-    chrome.metricsPrivate.recordEnumerationValue(
+    chrome.histograms.recordUserAction('Glic.Fre.WebviewLoadAborted');
+    chrome.histograms.recordEnumerationValue(
         'Glic.Fre.WebviewLoadAbortReason', reasonEnum,
         GlicFreWebviewLoadAbortReason.MAX_VALUE + 1);
 
@@ -521,16 +508,23 @@ export class FreAppController {
   // Destroy the current webview and create a new one. This is necessary because
   // webview does not support unloading content by setting src=""
   destroyWebview(): void {
+    if (!this.webview) {
+      return;
+    }
+
     this.webviewEventTracker.removeAll();
 
     if (this.glicRequestHeaderInjector !== undefined) {
       this.glicRequestHeaderInjector.destroy();
       this.glicRequestHeaderInjector = undefined;
     }
-
     this.webviewContainer.removeChild(this.webview);
+    this.webview = undefined;
+  }
 
-    this.webview = this.createWebview();
+  createWebview(): void {
+    this.destroyWebview();
+    this.webview = this.newWebview();
   }
 
   private dismissFre(state: FreWebUiState): void {

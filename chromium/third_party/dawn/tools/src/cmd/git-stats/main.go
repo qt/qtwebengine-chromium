@@ -81,7 +81,8 @@ func shouldConsiderLinesOfFile(path string) bool {
 		"src/tint/lang/core/*.h",
 		"test/tint/",
 		"third_party/gn/webgpu-cts/test_list.txt",
-		"third_party/khronos/",
+		"third_party/OpenGL-Registry/",
+		"third_party/EGL-Registry/",
 		"webgpu-cts/",
 		"src/external/petamoriken",
 	} {

@@ -164,6 +164,12 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo dontInvalidateIncompleteFBOs = {
+        "dontInvalidateIncompleteFBOs",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
     FeatureInfo dontUseLoopsToInitializeVariables = {
         "dontUseLoopsToInitializeVariables",
         FeatureCategory::OpenGLWorkarounds,
@@ -352,6 +358,12 @@ struct FeaturesGL : FeatureSetBase
 
     FeatureInfo emulateCopyTexImage2DFromRenderbuffers = {
         "emulateCopyTexImage2DFromRenderbuffers",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
+    FeatureInfo forceLumaWorkaroundForSameTextureCopyTexImage2D = {
+        "forceLumaWorkaroundForSameTextureCopyTexImage2D",
         FeatureCategory::OpenGLWorkarounds,
         &members,
     };
@@ -670,6 +682,18 @@ struct FeaturesGL : FeatureSetBase
 
     FeatureInfo recreateMipmapLevelsBeforeGenerate = {
         "recreateMipmapLevelsBeforeGenerate",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
+    FeatureInfo limitMaxBufferSizeTo1gb = {
+        "limitMaxBufferSizeTo1gb",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
+    FeatureInfo recreateFboUponFlush = {
+        "recreateFboUponFlush",
         FeatureCategory::OpenGLWorkarounds,
         &members,
     };

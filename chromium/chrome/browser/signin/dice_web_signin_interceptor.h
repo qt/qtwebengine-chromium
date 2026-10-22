@@ -38,6 +38,11 @@ class WebContents;
 namespace policy {
 class UserCloudSigninRestrictionPolicyFetcher;
 }
+
+namespace metrics {
+class ProfileMetricsService;
+}  // namespace metrics
+
 namespace user_prefs {
 class PrefRegistrySyncable;
 }
@@ -85,7 +90,8 @@ class DiceWebSigninInterceptor : public KeyedService,
  public:
   DiceWebSigninInterceptor(
       Profile* profile,
-      std::unique_ptr<WebSigninInterceptor::Delegate> delegate);
+      std::unique_ptr<WebSigninInterceptor::Delegate> delegate,
+      metrics::ProfileMetricsService* profile_metrics_service);
   ~DiceWebSigninInterceptor() override;
 
   DiceWebSigninInterceptor(const DiceWebSigninInterceptor&) = delete;
@@ -384,8 +390,7 @@ class DiceWebSigninInterceptor : public KeyedService,
     bool intercepted_account_management_accepted_ = false;
     std::optional<WebSigninInterceptor::SigninInterceptionType>
         interception_type_;
-    signin_metrics::AccessPoint access_point_ =
-        signin_metrics::AccessPoint::kUnknown;
+    std::optional<signin_metrics::AccessPoint> access_point_;
 
     // Timeout for waiting for full information to be available (see
     // `ProcessInterceptionOrWait()`).
@@ -416,6 +421,7 @@ class DiceWebSigninInterceptor : public KeyedService,
   const raw_ptr<Profile> profile_;
   const raw_ptr<signin::IdentityManager> identity_manager_;
   std::unique_ptr<WebSigninInterceptor::Delegate> delegate_;
+  const raw_ref<metrics::ProfileMetricsService> profile_metrics_service_;
   base::ScopedObservation<signin::IdentityManager,
                           signin::IdentityManager::Observer>
       account_info_update_observation_{this};

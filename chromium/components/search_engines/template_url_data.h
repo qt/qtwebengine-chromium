@@ -104,8 +104,9 @@ struct TemplateURLData {
   // Returns whether this search engine was created by the Default Search
   // Provider Enterprise policy.
   bool CreatedByDefaultSearchProviderPolicy() const;
-  // Returns whether this search engine was created by an Enterprise policy that
-  // doesn't define the Default Search Provider.
+  // Returns whether this search engine was created by an Enterprise policy,
+  // but not by the Default Search Provider policy (e.g., created by the
+  // SiteSearchSettings or EnterpriseSearchAggregatorSettings policies).
   bool CreatedByNonDefaultSearchProviderPolicy() const;
   // Returns whether this search engine was created by the
   // EnterpriseSearchAggregatorSettings policy.
@@ -113,6 +114,8 @@ struct TemplateURLData {
   // Returns whether this search engine was created by the SiteSearchSettings
   // policy.
   bool CreatedBySiteSearchPolicy() const;
+  // Returns whether this search engine was created by a regulatory program.
+  bool CreatedByRegulatoryProgram() const;
 
   // Optional additional raw URLs.
   std::string suggestions_url;
@@ -225,6 +228,11 @@ struct TemplateURLData {
 
   // If this TemplateURL comes from prepopulated data the prepopulate_id is > 0.
   int prepopulate_id;
+
+  // If this TemplateURL is subject to some migration to another prepopulated
+  // engine, this ID refers to the post-migration engine's prepopulate_id. See
+  // `TryGetMigratedEngine()` for the migration matching logic.
+  int migrate_to_id = 0;
 
   // The primary unique identifier for Sync. This set on all TemplateURLs
   // regardless of whether they have been associated with Sync.

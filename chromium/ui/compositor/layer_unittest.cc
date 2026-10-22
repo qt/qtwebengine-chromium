@@ -852,6 +852,7 @@ TEST_P(LayerWithDelegateTest, Cloning) {
   layer->SetTransform(transform);
   layer->SetColor(SK_ColorRED);
   layer->SetLayerInverted(true);
+  layer->SetBackgroundInverted(true);
   layer->SetLayerSepia(initial_sepia_amount);
   layer->SetLayerHueRotation(initial_hue_amount);
   layer->SetLayerCustomColorMatrix(color_matrix);
@@ -870,6 +871,7 @@ TEST_P(LayerWithDelegateTest, Cloning) {
   EXPECT_EQ(SK_ColorRED, clone->background_color());
   EXPECT_EQ(SK_ColorRED, clone->GetTargetColor());
   EXPECT_TRUE(clone->layer_inverted());
+  EXPECT_TRUE(clone->background_inverted());
   EXPECT_FLOAT_EQ(initial_sepia_amount, clone->layer_sepia());
   EXPECT_FLOAT_EQ(initial_hue_amount, clone->layer_hue_rotation());
   EXPECT_TRUE(clone->LayerHasCustomColorMatrix());
@@ -895,6 +897,7 @@ TEST_P(LayerWithDelegateTest, Cloning) {
   layer->SetTransform(gfx::Transform());
   layer->SetColor(SK_ColorGREEN);
   layer->SetLayerInverted(false);
+  layer->SetBackgroundInverted(false);
   layer->SetLayerSepia(new_layer_sepia);
   layer->SetLayerHueRotation(new_layer_hue_rotation);
   layer->ClearLayerCustomColorMatrix();
@@ -911,6 +914,7 @@ TEST_P(LayerWithDelegateTest, Cloning) {
   EXPECT_EQ(SK_ColorRED, clone->background_color());
   EXPECT_EQ(SK_ColorRED, clone->GetTargetColor());
   EXPECT_TRUE(clone->layer_inverted());
+  EXPECT_TRUE(clone->background_inverted());
   EXPECT_FLOAT_EQ(initial_sepia_amount, clone->layer_sepia());
   EXPECT_FLOAT_EQ(initial_hue_amount, clone->layer_hue_rotation());
   EXPECT_TRUE(clone->LayerHasCustomColorMatrix());
@@ -2132,6 +2136,45 @@ TEST_P(LayerWithRealCompositorTest, ModifyHierarchy) {
                              cc::AlphaDiscardingExactPixelComparator()));
 }
 
+#if BUILDFLAG(IS_FUCHSIA) && defined(ARCH_CPU_ARM64) && !defined(NDEBUG)
+// This test triggers LLVM 10.0 crashes in swiftshader on arm64 debug builds.
+#define MAYBE_BackgroundInvert DISABLED_BackgroundInvert
+#else
+#define MAYBE_BackgroundInvert BackgroundInvert
+#endif
+TEST_P(LayerWithRealCompositorTest, MAYBE_BackgroundInvert) {
+  viz::ParentLocalSurfaceIdAllocator allocator;
+  allocator.GenerateId();
+  GetCompositor()->SetScaleAndSize(1.0f, gfx::Size(100, 100),
+                                   allocator.GetCurrentLocalSurfaceId());
+
+  const SkColor kBackgroundColor = SK_ColorWHITE;
+  const SkColor kInvertedBackgroundColor = SK_ColorBLACK;
+
+  std::unique_ptr<Layer> l0 =
+      CreateColorLayer(kBackgroundColor, gfx::Rect(0, 0, 100, 100));
+  std::unique_ptr<Layer> l1 =
+      CreateColorLayer(SK_ColorTRANSPARENT, gfx::Rect(25, 25, 50, 50));
+  l1->SetFillsBoundsOpaquely(false);
+  l1->SetBackgroundInverted(true);
+  EXPECT_TRUE(l1->background_inverted());
+
+  l0->Add(l1.get());
+  DrawTree(l0.get());
+
+  SkBitmap bitmap;
+  ReadPixels(&bitmap);
+  ASSERT_FALSE(bitmap.empty());
+
+  const gfx::PointF kPixelLocationInL1(50, 50);
+  const gfx::PointF kPixelLocationNotInL1(10, 10);
+
+  EXPECT_EQ(kInvertedBackgroundColor,
+            bitmap.getColor(kPixelLocationInL1.x(), kPixelLocationInL1.y()));
+  EXPECT_EQ(kBackgroundColor, bitmap.getColor(kPixelLocationNotInL1.x(),
+                                              kPixelLocationNotInL1.y()));
+}
+
 // TODO(crbug.com/40280155): Flaky on fuchsia-arm64 builds. Re-enable this test.
 #if BUILDFLAG(IS_FUCHSIA) && defined(ARCH_CPU_ARM64)
 #define MAYBE_BackgroundBlur DISABLED_BackgroundBlur
@@ -2244,6 +2287,138 @@ TEST_P(LayerWithRealCompositorTest, MAYBE_BackgroundBlurChangeDeviceScale) {
   ASSERT_FALSE(bitmap.empty());
   // WritePNGFile(bitmap, ref_img2, false);
   EXPECT_TRUE(MatchesPNGFile(bitmap, ref_img2, fuzzy_comparator));
+}
+
+// Tests that backdrop filter bounds are automatically set when background blur
+// is applied to a layer.
+TEST_P(LayerWithNullDelegateTest, BackdropFilterBoundsSetOnBlur) {
+  std::unique_ptr<Layer> layer = CreateLayer(LAYER_TEXTURED);
+  layer->SetBounds(gfx::Rect(0, 0, 100, 50));
+
+  // Initially, no backdrop filter bounds should be set.
+  EXPECT_FALSE(layer->cc_layer_for_testing()->backdrop_filter_bounds());
+
+  // Setting background blur should auto-set backdrop filter bounds.
+  layer->SetBackgroundBlur(10.0f);
+  auto bounds = layer->cc_layer_for_testing()->backdrop_filter_bounds();
+  ASSERT_TRUE(bounds.has_value());
+
+  SkRect rect;
+  ASSERT_TRUE(bounds->isRect(&rect));
+  EXPECT_EQ(SkRect::MakeWH(100, 50), rect);
+}
+
+// Tests that backdrop filter bounds are automatically set when background zoom
+// is applied to a layer.
+TEST_P(LayerWithNullDelegateTest, BackdropFilterBoundsSetOnZoom) {
+  std::unique_ptr<Layer> layer = CreateLayer(LAYER_TEXTURED);
+  layer->SetBounds(gfx::Rect(0, 0, 80, 60));
+
+  // Setting background zoom should auto-set backdrop filter bounds.
+  layer->SetBackgroundZoom(2.0f, 0);
+  auto bounds = layer->cc_layer_for_testing()->backdrop_filter_bounds();
+  ASSERT_TRUE(bounds.has_value());
+
+  SkRect rect;
+  ASSERT_TRUE(bounds->isRect(&rect));
+  EXPECT_EQ(SkRect::MakeWH(80, 60), rect);
+}
+
+// Tests that backdrop filter bounds are updated when the layer's bounds change.
+TEST_P(LayerWithNullDelegateTest, BackdropFilterBoundsUpdateOnResize) {
+  std::unique_ptr<Layer> layer = CreateLayer(LAYER_TEXTURED);
+  layer->SetBounds(gfx::Rect(0, 0, 100, 50));
+  layer->SetBackgroundBlur(10.0f);
+
+  // Resize the layer.
+  layer->SetBounds(gfx::Rect(0, 0, 200, 150));
+  auto bounds = layer->cc_layer_for_testing()->backdrop_filter_bounds();
+  ASSERT_TRUE(bounds.has_value());
+
+  SkRect rect;
+  ASSERT_TRUE(bounds->isRect(&rect));
+  EXPECT_EQ(SkRect::MakeWH(200, 150), rect);
+}
+
+// Tests that backdrop filter bounds are rectangular even with rounded corners.
+// Rounded corners are handled separately by SetRoundedCornerRadius() which
+// clips the final output. The backdrop_filter_bounds should remain a simple
+// rect so that the blur's input sampling is not affected.
+TEST_P(LayerWithNullDelegateTest, BackdropFilterBoundsWithRoundedCorners) {
+  std::unique_ptr<Layer> layer = CreateLayer(LAYER_TEXTURED);
+  layer->SetBounds(gfx::Rect(0, 0, 100, 50));
+  layer->SetBackgroundBlur(10.0f);
+
+  // Set rounded corners.
+  layer->SetRoundedCornerRadius(gfx::RoundedCornersF(10.0f));
+  auto bounds = layer->cc_layer_for_testing()->backdrop_filter_bounds();
+  ASSERT_TRUE(bounds.has_value());
+
+  // The backdrop filter bounds should still be a simple rect (not rrect).
+  // Rounded corners clip the output, not the backdrop sampling area.
+  SkRect rect;
+  ASSERT_TRUE(bounds->isRect(&rect));
+  EXPECT_EQ(SkRect::MakeWH(100, 50), rect);
+}
+
+// Tests that explicit SetBackdropFilterBounds is not overridden by auto
+// computation.
+TEST_P(LayerWithNullDelegateTest, ExplicitBackdropFilterBoundsNotOverridden) {
+  std::unique_ptr<Layer> layer = CreateLayer(LAYER_TEXTURED);
+  layer->SetBounds(gfx::Rect(0, 0, 100, 50));
+  layer->SetBackgroundBlur(10.0f);
+
+  // Explicitly set different bounds.
+  gfx::RRectF explicit_bounds(gfx::RectF(20, 20, 60, 30), 5);
+  layer->SetBackdropFilterBounds(explicit_bounds);
+
+  auto bounds = layer->cc_layer_for_testing()->backdrop_filter_bounds();
+  ASSERT_TRUE(bounds.has_value());
+
+  // The explicit bounds should be preserved, not the auto-computed ones.
+  SkRRect rrect;
+  ASSERT_TRUE(bounds->isRRect(&rrect));
+  EXPECT_EQ(SkRect::MakeXYWH(20, 20, 60, 30), rrect.rect());
+  EXPECT_EQ(5.0f, rrect.radii(SkRRect::kUpperLeft_Corner).fX);
+
+  // Resizing the layer should not override explicit bounds.
+  layer->SetBounds(gfx::Rect(0, 0, 200, 150));
+  bounds = layer->cc_layer_for_testing()->backdrop_filter_bounds();
+  ASSERT_TRUE(bounds.has_value());
+  ASSERT_TRUE(bounds->isRRect(&rrect));
+  EXPECT_EQ(SkRect::MakeXYWH(20, 20, 60, 30), rrect.rect());
+}
+
+// Tests that ClearBackdropFilterBounds resets to auto-computed bounds.
+TEST_P(LayerWithNullDelegateTest, ClearBackdropFilterBoundsResetsToAuto) {
+  std::unique_ptr<Layer> layer = CreateLayer(LAYER_TEXTURED);
+  layer->SetBounds(gfx::Rect(0, 0, 100, 50));
+  layer->SetBackgroundBlur(10.0f);
+
+  // Set explicit bounds.
+  layer->SetBackdropFilterBounds(gfx::RRectF(gfx::RectF(20, 20, 60, 30), 5));
+
+  // Clear explicit bounds -- should revert to auto-computed bounds.
+  layer->ClearBackdropFilterBounds();
+  auto bounds = layer->cc_layer_for_testing()->backdrop_filter_bounds();
+  ASSERT_TRUE(bounds.has_value());
+
+  // Should be auto-computed from layer size.
+  SkRect rect;
+  ASSERT_TRUE(bounds->isRect(&rect));
+  EXPECT_EQ(SkRect::MakeWH(100, 50), rect);
+}
+
+// Tests that backdrop filter bounds are cleared when blur is removed.
+TEST_P(LayerWithNullDelegateTest, BackdropFilterBoundsClearedOnBlurRemoval) {
+  std::unique_ptr<Layer> layer = CreateLayer(LAYER_TEXTURED);
+  layer->SetBounds(gfx::Rect(0, 0, 100, 50));
+  layer->SetBackgroundBlur(10.0f);
+  ASSERT_TRUE(layer->cc_layer_for_testing()->backdrop_filter_bounds());
+
+  // Remove the blur.
+  layer->SetBackgroundBlur(0.0f);
+  EXPECT_FALSE(layer->cc_layer_for_testing()->backdrop_filter_bounds());
 }
 
 // Opacity is rendered correctly.

@@ -76,6 +76,14 @@ ResultOrError<wgpu::TextureFormat> GetFormatEquivalentToIOSurfaceFormat(uint32_t
             return wgpu::TextureFormat::R10X6BG10X6Biplanar444Unorm;
         case kCVPixelFormatType_420YpCbCr8VideoRange_8A_TriPlanar:
             return wgpu::TextureFormat::R8BG8A8Triplanar420Unorm;
+        case kCVPixelFormatType_DepthFloat16:
+            return wgpu::TextureFormat::R16Float;
+        case kCVPixelFormatType_DepthFloat32:
+            return wgpu::TextureFormat::R32Float;
+        case kCVPixelFormatType_DisparityFloat16:
+            return wgpu::TextureFormat::R16Float;
+        case kCVPixelFormatType_DisparityFloat32:
+            return wgpu::TextureFormat::R32Float;
         default:
             return DAWN_VALIDATION_ERROR("Unsupported IOSurface format (%x).", format);
     }

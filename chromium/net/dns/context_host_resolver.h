@@ -26,6 +26,7 @@ class TickClock;
 
 namespace net {
 
+class CanaryDomainService;
 class HostCache;
 class HostResolverManager;
 class ResolveContext;
@@ -79,12 +80,15 @@ class NET_EXPORT ContextHostResolver : public HostResolver {
   HostResolverManager* GetManagerForTesting() override;
   const URLRequestContext* GetContextForTesting() const override;
   handles::NetworkHandle GetTargetNetworkForTesting() const override;
+  std::unique_ptr<CanaryDomainService> CreateCanaryDomainService() override;
 
   // Returns the number of host cache entries that were restored, or 0 if there
   // is no cache.
   size_t LastRestoredCacheSize() const;
   // Returns the number of entries in the host cache, or 0 if there is no cache.
   size_t CacheSize() const;
+
+  void SetDohFallbackUpgradeAllowed(bool allowed) override;
 
   void SetHostResolverSystemParamsForTest(
       const HostResolverSystemTask::Params& host_resolver_system_params);
@@ -111,6 +115,8 @@ class NET_EXPORT ContextHostResolver : public HostResolver {
   bool shutting_down_ = false;
 
   SEQUENCE_CHECKER(sequence_checker_);
+
+  base::WeakPtrFactory<ContextHostResolver> weak_ptr_factory_{this};
 };
 
 }  // namespace net

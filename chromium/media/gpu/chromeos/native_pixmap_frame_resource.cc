@@ -125,7 +125,9 @@ scoped_refptr<NativePixmapFrameResource> NativePixmapFrameResource::Create(
   handle.planes.reserve(num_planes);
   for (size_t i = 0; i < num_planes; ++i) {
     const auto& plane = layout.planes()[i];
-    handle.planes.emplace_back(plane.stride, plane.offset, plane.size,
+    handle.planes.emplace_back(base::checked_cast<int>(plane.stride),
+                               base::checked_cast<int>(plane.offset),
+                               base::strict_cast<uint64_t>(plane.size),
                                std::move(dmabuf_fds[i]));
   }
   handle.modifier = layout.modifier();
@@ -253,7 +255,7 @@ NativePixmapFrameResource::AsNativePixmapFrameResource() const {
   return this;
 }
 
-bool NativePixmapFrameResource::IsMappable() const {
+bool NativePixmapFrameResource::HasDirectCpuAccess() const {
   return false;
 }
 
@@ -316,7 +318,7 @@ VideoPixelFormat NativePixmapFrameResource::format() const {
   return layout_.format();
 }
 
-int NativePixmapFrameResource::stride(size_t plane) const {
+size_t NativePixmapFrameResource::stride(size_t plane) const {
   CHECK_LT(plane, layout().num_planes());
   return layout().planes()[plane].stride;
 }

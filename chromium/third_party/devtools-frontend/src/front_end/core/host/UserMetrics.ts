@@ -101,7 +101,7 @@ export class UserMetrics {
         EnumeratedHistogram.IssuesPanelOpenedFrom, issueOpener, IssueOpener.MAX_VALUE);
   }
 
-  issuesPanelIssueExpanded(issueExpandedCategory: string|undefined): void {
+  issuesPanelIssueExpanded(issueExpandedCategory?: string): void {
     if (issueExpandedCategory === undefined) {
       return;
     }
@@ -321,6 +321,11 @@ export class UserMetrics {
   consoleInsightShortTeaserGenerated(timeInMilliseconds: number): void {
     InspectorFrontendHostInstance.recordPerformanceHistogram(
         'DevTools.Insights.ShortTeaserGenerationTime', timeInMilliseconds);
+  }
+
+  extensionEvalTarget(target: ExtensionEvalTarget): void {
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.ExtensionEvalTarget, target, ExtensionEvalTarget.MAX_VALUE);
   }
 }
 
@@ -810,25 +815,18 @@ export enum DevtoolsExperiments {
   'live-heap-profile' = 11,
   'protocol-monitor' = 13,
   'sampling-heap-profiler-timeline' = 17,
-  'show-option-to-expose-internals-in-heap-snapshot' = 18,
   'timeline-invalidation-tracking' = 26,
-  'timeline-show-all-events' = 27,
-  'timeline-v8-runtime-call-stats' = 28,
   apca = 39,
   'font-editor' = 41,
-  'full-accessibility-tree' = 42,
-  'contrast-issues' = 44,
-  'experimental-cookie-features' = 45,
   'instrumentation-breakpoints' = 61,
-  'authored-deployed-grouping' = 63,
-  'just-my-code' = 65,
   'use-source-map-scopes' = 76,
-  'timeline-show-postmessage-events' = 86,
   'timeline-debug-mode' = 93,
+  'durable-messages' = 110,
+  'jpeg-xl' = 111,
   /* eslint-enable @typescript-eslint/naming-convention */
 
   // Increment this when new experiments are added.
-  MAX_VALUE = 110,
+  MAX_VALUE = 112,
 }
 
 /** Update DevToolsIssuesPanelIssueExpanded from tools/metrics/histograms/enums.xml if new enum is added. **/
@@ -905,7 +903,7 @@ export enum IssueCreated {
   'CookieIssue::WarnSameSiteUnspecifiedCrossSiteContext::SetCookie' = 35,
   'SharedArrayBufferIssue::TransferIssue' = 36,
   'SharedArrayBufferIssue::CreationIssue' = 37,
-  LowTextContrastIssue = 41,
+
   'CorsIssue::InsecureLocalNetwork' = 42,
   'CorsIssue::InvalidHeaders' = 44,
   'CorsIssue::WildcardOriginWithCredentials' = 45,
@@ -1263,4 +1261,11 @@ export const enum BuiltInAiAvailability {
   AVAILABLE_NO_GPU = 8,
   DISABLED_NO_GPU = 9,
   MAX_VALUE = 10,
+}
+
+export const enum ExtensionEvalTarget {
+  WEB_PAGE = 0,
+  SAME_EXTENSION = 1,
+  OTHER_EXTENSION = 2,
+  MAX_VALUE = 3,
 }

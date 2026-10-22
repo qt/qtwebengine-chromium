@@ -93,6 +93,7 @@ class PageTimingMetricsSender {
 
   void DidObserveUserInteraction(base::TimeTicks max_event_start,
                                  base::TimeTicks max_event_queued_main_thread,
+                                 base::TimeTicks max_event_processing_start,
                                  base::TimeTicks max_event_commit_finish,
                                  base::TimeTicks max_event_end,
                                  uint64_t interaction_offset);
@@ -110,18 +111,7 @@ class PageTimingMetricsSender {
 
   void UpdateResourceMetadata(int resource_id, bool is_main_frame_resource);
 
-  void SetUpDroppedFramesReporting(
-      base::ReadOnlySharedMemoryRegion shared_memory_dropped_frames);
-
-  mojom::SoftNavigationMetricsPtr GetSoftNavigationMetrics() {
-    return soft_navigation_metrics_->Clone();
-  }
-
-  // Returns the start time of the current soft navigation, relative to
-  // (hard) navigation start.
-  base::TimeDelta GetSoftNavigationStartTime() {
-    return soft_navigation_metrics_->start_time;
-  }
+  void UpdateCustomUserTimings(mojom::CustomUserTimingMarkPtr);
 
   void DidObserveSoftLargestContentfulPaint(
       mojom::LargestContentfulPaintTimingPtr lcp);
@@ -155,9 +145,13 @@ class PageTimingMetricsSender {
   std::vector<blink::UseCounterFeature> new_features_;
   mojom::FrameRenderDataUpdate render_data_;
 
+  std::vector<mojom::CustomUserTimingMarkPtr> custom_user_timings_;
+
   blink::UseCounterFeatureTracker feature_tracker_;
 
-  mojom::SoftNavigationMetricsPtr soft_navigation_metrics_;
+  std::vector<mojom::SoftNavigationMetricsPtr> soft_navigation_metrics_;
+  std::vector<mojom::LargestContentfulPaintTimingPtr>
+      soft_largest_contentful_paint_;
 
   bool have_sent_ipc_ = false;
 

@@ -621,6 +621,23 @@ message VmGuestUserlandReadySignal {
   GuestUserlandReady ready = 3;
 }
 
+// Request to set VmType for a guest.
+message SetCrostiniVmTypeRequest {
+  // The cryptohome id for the user's encrypted storage.
+  string cryptohome_id = 1;
+
+  // Desired type
+  VmInfo.VmType vm_type = 2;
+}
+
+message SetCrostiniVmTypeResponse {
+  // Success or not.
+  bool success = 1;
+
+  // Failure reason
+  string reason = 2;
+}
+
 // Information that must be included with every StopVm dbus message.
 message StopVmRequest {
   // The name of the VM to be stopped.

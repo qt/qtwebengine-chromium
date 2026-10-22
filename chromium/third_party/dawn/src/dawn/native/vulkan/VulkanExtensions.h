@@ -82,6 +82,7 @@ enum class DeviceExt {
     ImageFormatList,
     ShaderFloat16Int8,
     ShaderSubgroupExtendedTypes,
+    ShaderBufferInt64Atomics,
     DrawIndirectCount,
     VulkanMemoryModel,
     ShaderFloatControls,
@@ -97,6 +98,7 @@ enum class DeviceExt {
     Maintenance4,
     SubgroupSizeControl,
     DynamicRendering,
+    ExtendedDynamicState,
 
     // Promoted to 1.4
     PipelineRobustness,
@@ -111,6 +113,7 @@ enum class DeviceExt {
     DisplayTiming,
     CooperativeMatrix,
     MultisampledRenderToSingleSampled,
+    PhysicalDeviceDrm,
 
     // External* extensions
     ExternalMemoryAndroidHardwareBuffer,

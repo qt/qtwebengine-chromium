@@ -366,13 +366,14 @@ RenderWidgetHostImpl* RenderWidgetHostImpl::CreateSelfOwned(
     RenderWidgetHostDelegate* delegate,
     base::SafeRef<SiteInstanceGroup> site_instance_group,
     int32_t routing_id,
-    bool hidden) {
+    bool hidden,
+    GlobalRenderFrameHostId popup_creator_frame_id) {
   viz::FrameSinkId frame_sink_id =
       DefaultFrameSinkId(*site_instance_group, routing_id);
-  return new RenderWidgetHostImpl(frame_tree, /*self_owned=*/true,
-                                  frame_sink_id, delegate,
-                                  std::move(site_instance_group), routing_id,
-                                  hidden, /*renderer_initiated_creation=*/true);
+  return new RenderWidgetHostImpl(
+      frame_tree, /*self_owned=*/true, frame_sink_id, delegate,
+      std::move(site_instance_group), routing_id, hidden,
+      /*renderer_initiated_creation=*/true, popup_creator_frame_id);
 }
 
 RenderWidgetHostImpl::RenderWidgetHostImpl(
@@ -383,7 +384,8 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(
     base::SafeRef<SiteInstanceGroup> site_instance_group,
     int32_t routing_id,
     bool hidden,
-    bool renderer_initiated_creation)
+    bool renderer_initiated_creation,
+    std::optional<GlobalRenderFrameHostId> popup_creator_frame_id)
     : frame_tree_(frame_tree),
       self_owned_(self_owned),
       waiting_for_init_(renderer_initiated_creation),
@@ -392,7 +394,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(
       site_instance_group_(site_instance_group->GetWeakPtrToAllowDangling()),
       routing_id_(routing_id),
       is_hidden_(hidden),
-      was_ever_shown_(!hidden),
       last_view_screen_rect_(kInvalidScreenRect),
       last_window_screen_rect_(kInvalidScreenRect),
       new_content_rendering_delay_(blink::kNewContentRenderingDelay),
@@ -409,7 +410,8 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(
       compositor_metric_recorder_(
           (frame_tree && frame_tree->is_primary())
               ? std::make_unique<CompositorMetricRecorder>(this)
-              : nullptr) {
+              : nullptr),
+      popup_creator_frame_id_(popup_creator_frame_id) {
   base::ScopedUmaHistogramTimer histogram_timer(
       "Navigation.RenderWidgetHostConstructor");
 
@@ -468,7 +470,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(
 
   if (!hidden) {
     latest_shown_time_ = base::TimeTicks::Now();
-    first_shown_time_ = latest_shown_time_;
     NotifyVizOfPageVisibilityUpdates();
   }
 }
@@ -478,42 +479,6 @@ RenderWidgetHostImpl::~RenderWidgetHostImpl() {
       "Navigation.RenderWidgetHostDestructor");
   CHECK(!self_owned_);
   render_frame_metadata_provider_.RemoveObserver(this);
-
-  if (was_ever_shown_ && is_topmost_frame_widget_with_view_ &&
-      compositor_metric_recorder_) {
-    // Log UMA related to possible suppression of input events until the
-    // renderer has pushed content to viz (https://crbug.com/40057499).
-    base::UmaHistogramBoolean("Renderer.ContentProduction.SignalReceived",
-                              first_content_metadata_received_);
-    if (first_content_metadata_received_) {
-      base::TimeDelta delay_from_unhide;
-      if (first_content_metadata_time_ > first_shown_time_) {
-        delay_from_unhide = first_content_metadata_time_ - first_shown_time_;
-      }
-      base::UmaHistogramTimes("Renderer.ContentProduction.DelayFromUnhide",
-                              delay_from_unhide);
-    } else if (!paint_holding_activated_) {
-      base::TimeTicks now = base::TimeTicks::Now();
-
-      base::TimeDelta commit_to_unhide_delay;
-      base::TimeDelta lifespan_from_commit;
-      base::TimeDelta lifespan_from_unhide = now - first_shown_time_;
-
-      base::TimeTicks commit_nav_time =
-          compositor_metric_recorder_->CommitNavigationTime();
-      if (commit_nav_time != base::TimeTicks()) {
-        commit_to_unhide_delay = first_shown_time_ - commit_nav_time;
-        lifespan_from_commit = now - commit_nav_time;
-      }
-
-      base::UmaHistogramTimes("Renderer.ContentProduction.CommitToUnhideDelay",
-                              commit_to_unhide_delay);
-      base::UmaHistogramTimes("Renderer.ContentProduction.LifespanFromCommit",
-                              lifespan_from_commit);
-      base::UmaHistogramTimes("Renderer.ContentProduction.LifespanFromUnhide",
-                              lifespan_from_unhide);
-    }
-  }
 
   if (!destroyed_) {
     Destroy(false);
@@ -647,6 +612,11 @@ const viz::FrameSinkId& RenderWidgetHostImpl::GetFrameSinkId() {
   return frame_sink_id_;
 }
 
+std::optional<GlobalRenderFrameHostId>
+RenderWidgetHostImpl::GetPopupCreatorFrameId() const {
+  return popup_creator_frame_id_;
+}
+
 void RenderWidgetHostImpl::SendScreenRects() {
   // Sending screen rects are deferred until we have a connection to a
   // renderer-side Widget to send them to. Further, if we're waiting for the
@@ -761,6 +731,14 @@ void RenderWidgetHostImpl::BindFrameWidgetInterfaces(
       GetUIThreadTaskRunner({BrowserTaskType::kUserInput}));
   blink_frame_widget_.Bind(
       std::move(frame_widget),
+      GetUIThreadTaskRunner({BrowserTaskType::kUserInput}));
+}
+
+void RenderWidgetHostImpl::BindFrameWidgetHostReceiver(
+    mojo::PendingReceiver<blink::mojom::FrameWidgetHost> receiver) {
+  frame_widget_host_receiver_.reset();
+  frame_widget_host_receiver_.Bind(
+      std::move(receiver),
       GetUIThreadTaskRunner({BrowserTaskType::kUserInput}));
 }
 
@@ -888,7 +866,7 @@ void RenderWidgetHostImpl::WasHidden() {
 }
 
 void RenderWidgetHostImpl::WasShown(
-    blink::mojom::RecordContentToVisibleTimeRequestPtr
+    std::optional<blink::RecordContentToVisibleTimeRequest>
         record_tab_switch_time_request) {
   // The page should never be visible during prerendering.
   CHECK(!frame_tree_ || !frame_tree_->is_prerendering());
@@ -900,10 +878,6 @@ void RenderWidgetHostImpl::WasShown(
   TRACE_EVENT("renderer_host", "RenderWidgetHostImpl::WasShown");
   is_hidden_ = false;
   latest_shown_time_ = base::TimeTicks::Now();
-  if (!was_ever_shown_) {
-    was_ever_shown_ = true;
-    first_shown_time_ = latest_shown_time_;
-  }
 
   // If we navigated in background, clear the displayed graphics of the
   // previous page before going visible.
@@ -974,9 +948,8 @@ void RenderWidgetHostImpl::WasShown(
 }
 
 void RenderWidgetHostImpl::RequestSuccessfulPresentationTimeForNextFrame(
-    blink::mojom::RecordContentToVisibleTimeRequestPtr visible_time_request) {
+    blink::RecordContentToVisibleTimeRequest visible_time_request) {
   CHECK(!is_hidden_);
-  CHECK(visible_time_request);
   if (waiting_for_init_) {
     // This method should only be called if the RWHI is already visible, meaning
     // there will be a WasShown call that's queued until init. Update that with
@@ -998,7 +971,7 @@ void RenderWidgetHostImpl::CancelSuccessfulPresentationTimeRequest() {
     // there will be a WasShown call that's queued until init. Update that to
     // clear any request that was set.
     CHECK(pending_show_params_);
-    pending_show_params_->visible_time_request = nullptr;
+    pending_show_params_->visible_time_request.reset();
     return;
   }
   CHECK(!pending_show_params_);
@@ -1550,8 +1523,6 @@ void RenderWidgetHostImpl::DidNavigate() {
 }
 
 void RenderWidgetHostImpl::InitializePaintHolding(bool active) {
-  paint_holding_activated_ = active;
-
   if (!active) {
     // Input router remains inactive in the post-navigation page while
     // paint-holding shows the user a snapshot of previous page.  If
@@ -2888,8 +2859,8 @@ void RenderWidgetHostImpl::UpdateBrowserControlsState(
 }
 
 void RenderWidgetHostImpl::StartDragging(
+    RenderFrameHost& source_rfh,
     blink::mojom::DragDataPtr drag_data,
-    const url::Origin& source_origin,
     DragOperationsMask drag_operations_mask,
     const SkBitmap& bitmap,
     const gfx::Vector2d& cursor_offset_in_dip,
@@ -2909,6 +2880,43 @@ void RenderWidgetHostImpl::StartDragging(
     process->FilterURL(true, &url_info.url);
   }
   process->FilterURL(false, &filtered_data.html_base_url);
+
+  if (filtered_data.download_metadata) {
+    // If download metadata is populated, the url should be valid and non-empty.
+    if (RenderProcessHost::FilterURLResult::kAllowed !=
+        process->FilterURL(/*empty_allowed=*/false,
+                           &filtered_data.download_metadata->url)) {
+      filtered_data.download_metadata.reset();
+    }
+  }
+
+  // Propagate the FilterURL results back into `drag_data` so that the DevTools
+  // intercept path (Input.dragIntercepted) sees the same filtered values as the
+  // OS-drag path. Without this, a CDP client following the documented
+  // dragIntercepted -> dispatchDragEvent round-trip would replay the
+  // pre-filter renderer-supplied URLs into DragTargetDrop.
+  for (auto& item : drag_data->items) {
+    if (!item->is_string()) {
+      continue;
+    }
+    auto& s = item->get_string();
+    if (s->string_type == ui::kMimeTypeUriList) {
+      std::u16string rebuilt;
+      for (const auto& url_info : filtered_data.url_infos) {
+        if (!rebuilt.empty()) {
+          rebuilt.append(u"\r\n");
+        }
+        rebuilt.append(base::UTF8ToUTF16(url_info.url.spec()));
+      }
+      s->string_data = std::move(rebuilt);
+    } else if (s->string_type == ui::kMimeTypeHtml) {
+      s->base_url = filtered_data.html_base_url;
+    } else if (s->string_type == ui::kMimeTypeDownloadUrl &&
+               !filtered_data.download_metadata) {
+      s->string_data.clear();
+    }
+  }
+
   // Filter out any paths that the renderer didn't have access to. This prevents
   // the following attack on a malicious renderer:
   // 1. StartDragging IPC sent with renderer-specified filesystem paths that it
@@ -2978,9 +2986,32 @@ void RenderWidgetHostImpl::StartDragging(
   scaled_rect.Scale(scale);
   rect = gfx::ToRoundedRect(scaled_rect);
 #endif
-  view->StartDragging(filtered_data, source_origin, drag_operations_mask, image,
-                      offset, rect, *event_info, this);
+  view->StartDragging(source_rfh, filtered_data, drag_operations_mask, image,
+                      offset, rect, *event_info);
 }
+
+#if BUILDFLAG(IS_ANDROID)
+void RenderWidgetHostImpl::AsyncStartDragging(
+    WeakDocumentPtr source_document,
+    blink::mojom::DragDataPtr drag_data,
+    blink::DragOperationsMask drag_operations_mask,
+    const SkBitmap& unsafe_bitmap,
+    const gfx::Vector2d& cursor_offset_in_dip,
+    const gfx::Rect& drag_obj_rect_in_dip,
+    blink::mojom::DragEventSourceInfoPtr event_info) {
+  RenderFrameHost* source_rfh = source_document.AsRenderFrameHostIfValid();
+  if (!source_rfh) {
+    // This should be relatively rare: if the drag can't start because the
+    // source document is already gone, the input sequence is consumed and
+    // nothing will happen.
+    return;
+  }
+
+  StartDragging(*source_rfh, std::move(drag_data), drag_operations_mask,
+                unsafe_bitmap, cursor_offset_in_dip, drag_obj_rect_in_dip,
+                std::move(event_info));
+}
+#endif
 
 // static
 bool RenderWidgetHostImpl::DidVisualPropertiesSizeChange(
@@ -3086,15 +3117,31 @@ bool RenderWidgetHostImpl::StoredVisualPropertiesNeedsUpdate(
 }
 
 void RenderWidgetHostImpl::AutoscrollStart(const gfx::PointF& position) {
+  input::RenderWidgetTargeter::AutoscrollStatus status =
+      delegate()->GetInputEventRouter()->SetAutoScrollInProgress(GetView(),
+                                                                 true);
+  if (status == input::RenderWidgetTargeter::AutoscrollStatus::kFailed) {
+    return;
+  }
+
+  if (status == input::RenderWidgetTargeter::AutoscrollStatus::kDeferred) {
+    autoscroll_targeting_pending_ = true;
+    autoscroll_start_position_ = position;
+    return;
+  }
+
   GetView()->OnAutoscrollStart();
   sent_autoscroll_scroll_begin_ = false;
   autoscroll_in_progress_ = true;
-  delegate()->GetInputEventRouter()->SetAutoScrollInProgress(
-      autoscroll_in_progress_);
   autoscroll_start_position_ = position;
 }
 
 void RenderWidgetHostImpl::AutoscrollFling(const gfx::Vector2dF& velocity) {
+  if (autoscroll_targeting_pending_) {
+    pending_autoscroll_fling_velocity_ = velocity;
+    return;
+  }
+
   CHECK(autoscroll_in_progress_);
   if (!sent_autoscroll_scroll_begin_ && velocity != gfx::Vector2dF()) {
     // Send a GSB event with valid delta hints.
@@ -3126,7 +3173,7 @@ void RenderWidgetHostImpl::AutoscrollEnd() {
   autoscroll_in_progress_ = false;
 
   delegate()->GetInputEventRouter()->SetAutoScrollInProgress(
-      autoscroll_in_progress_);
+      GetView(), autoscroll_in_progress_);
   // Don't send a GFC if no GSB is sent.
   if (!sent_autoscroll_scroll_begin_) {
     return;
@@ -3141,6 +3188,27 @@ void RenderWidgetHostImpl::AutoscrollEnd() {
 
   GetRenderInputRouter()->ForwardGestureEventWithLatencyInfo(cancel_event,
                                                              ui::LatencyInfo());
+}
+
+void RenderWidgetHostImpl::OnAutoscrollTargetResolved(bool success) {
+  if (!autoscroll_targeting_pending_) {
+    return;
+  }
+
+  autoscroll_targeting_pending_ = false;
+
+  if (!success) {
+    pending_autoscroll_fling_velocity_.reset();
+    return;
+  }
+
+  AutoscrollStart(autoscroll_start_position_);
+
+  if (pending_autoscroll_fling_velocity_) {
+    gfx::Vector2dF velocity = *pending_autoscroll_fling_velocity_;
+    pending_autoscroll_fling_velocity_.reset();
+    AutoscrollFling(velocity);
+  }
 }
 
 bool RenderWidgetHostImpl::IsAutoscrollInProgress() {
@@ -3890,7 +3958,6 @@ void RenderWidgetHostImpl::OnRenderFrameMetadataChangedAfterActivation(
     base::TimeTicks activation_time) {
   if (!first_content_metadata_received_) {
     first_content_metadata_received_ = true;
-    first_content_metadata_time_ = base::TimeTicks::Now();
     input_router()->MakeActive();
   }
 
@@ -3898,8 +3965,8 @@ void RenderWidgetHostImpl::OnRenderFrameMetadataChangedAfterActivation(
       render_frame_metadata_provider_.LastRenderFrameMetadata();
 
   for (TrackedElementObserver& observer : tracked_element_observers_) {
-    observer.OnTrackedElementBoundsChanged(metadata.tracked_element_bounds,
-                                           metadata.device_scale_factor);
+    observer.OnTrackedElementRectsChanged(metadata.tracked_element_rects,
+                                          metadata.device_scale_factor);
   }
 
   const bool mobile_optimized_state_changed =
@@ -4058,7 +4125,8 @@ RenderWidgetHostImpl::MainFramePropagationProperties::
 
 RenderWidgetHostImpl::PendingShowParams::PendingShowParams(
     bool is_evicted,
-    blink::mojom::RecordContentToVisibleTimeRequestPtr visible_time_request)
+    std::optional<blink::RecordContentToVisibleTimeRequest>
+        visible_time_request)
     : is_evicted(is_evicted),
       visible_time_request(std::move(visible_time_request)) {}
 

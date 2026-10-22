@@ -256,7 +256,7 @@ WebInputEventResult KeyboardEventManager::KeyEvent(
         display_mode == blink::mojom::DisplayMode::kMinimalUi ||
         display_mode == blink::mojom::DisplayMode::kStandalone ||
         display_mode == blink::mojom::DisplayMode::kFullscreen ||
-        display_mode == blink::mojom::DisplayMode::kBorderless ||
+        display_mode == blink::mojom::DisplayMode::kUnframed ||
         display_mode == blink::mojom::DisplayMode::kWindowControlsOverlay;
   }
 
@@ -282,7 +282,7 @@ WebInputEventResult KeyboardEventManager::KeyEvent(
           IsEditable(*node) ||
           (text_control && !text_control->IsDisabledOrReadOnly()) ||
           (element &&
-           EqualIgnoringASCIICase(
+           EqualIgnoringAsciiCase(
                element->FastGetAttribute(html_names::kRoleAttr), "textbox"));
       if (initial_key_event.dom_key == dom_key && !is_editable)
         event_cancellable = false;
@@ -438,9 +438,7 @@ void KeyboardEventManager::DefaultKeyboardEventHandler(
       // TODO(bokan): Cleanup magic numbers once https://crbug.com/949766 lands.
       DefaultImeSubmitHandler(event);
     } else {
-      // TODO(bokan): Seems odd to call the default _arrow_ event handler on
-      // events that aren't necessarily arrow keys.
-      DefaultArrowEventHandler(event, possible_focused_node);
+      DefaultNavigationKeyEventHandler(event, possible_focused_node);
     }
   } else if (event->type() == event_type_names::kKeypress) {
     frame_->GetEditor().HandleKeyboardEvent(event);
@@ -459,7 +457,7 @@ void KeyboardEventManager::DefaultKeyboardEventHandler(
     }
     if (event->keyCode() == last_scrolling_keycode_) {
       if (scrollend_event_target_ && has_pending_scrollend_on_key_up_) {
-        scrollend_event_target_->OnScrollFinished(true);
+        scrollend_event_target_->OnScrollFinished(/*enqueue_scrollend=*/true);
       }
       scrollend_event_target_.Clear();
       last_scrolling_keycode_ = VKEY_UNKNOWN;
@@ -502,7 +500,7 @@ void KeyboardEventManager::DefaultSpaceEventHandler(
   }
 }
 
-void KeyboardEventManager::DefaultArrowEventHandler(
+void KeyboardEventManager::DefaultNavigationKeyEventHandler(
     KeyboardEvent* event,
     Node* possible_focused_node) {
   DCHECK_EQ(event->type(), event_type_names::kKeydown);
@@ -511,9 +509,7 @@ void KeyboardEventManager::DefaultArrowEventHandler(
   if (!page)
     return;
 
-  ExecutionContext* context = frame_->GetDocument()->GetExecutionContext();
-  if (RuntimeEnabledFeatures::FocusgroupEnabled(context) &&
-      FocusgroupController::HandleArrowKeyboardEvent(event, frame_)) {
+  if (FocusgroupController::HandleKeyboardEvent(event, frame_)) {
     event->SetDefaultHandled();
     return;
   }

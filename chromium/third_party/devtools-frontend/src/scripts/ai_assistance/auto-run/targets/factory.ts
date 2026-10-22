@@ -10,6 +10,7 @@ import {ElementsMultimodalExecutor} from './elements-multimodal-executor.ts';
 import type {TargetExecutor} from './interface.js';
 import {NetworkExecutor} from './network-executor.ts';
 import {PatchingExecutor} from './patching-executor.ts';
+import {PerformanceExecutor} from './performance-executor.ts';
 import {PerformanceInsightsExecutor} from './performance-insights-executor.ts';
 import {PerformanceMainThreadExecutor} from './performance-main-thread-executor.ts';
 
@@ -17,6 +18,8 @@ export function createTargetExecutor(target: TestTarget, traceDownloader: TraceD
   switch (target) {
     case 'elements':
       return new ElementsExecutor();
+    case 'performance':
+      return new PerformanceExecutor();
     case 'performance-main-thread':
       return new PerformanceMainThreadExecutor(traceDownloader);
     case 'performance-insights':

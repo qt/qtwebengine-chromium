@@ -140,6 +140,15 @@ class BridgedNativeWidgetTestApi {
     return bridge_->HasWindowRestorationData();
   }
 
+  void CheckAndNotifyAllWorkspacesStateChanged() {
+    bridge_->CheckAndNotifyAllWorkspacesStateChanged();
+  }
+
+  remote_cocoa::NativeWidgetNSWindowBridge* bridge() { return &*bridge_; }
+  void set_wants_to_be_visible(bool visible) {
+    bridge_->wants_to_be_visible_ = visible;
+  }
+
  private:
   const raw_ref<remote_cocoa::NativeWidgetNSWindowBridge> bridge_;
 };
@@ -276,6 +285,26 @@ class WidgetChangeObserver : public TestWidgetObserver {
   int target_gained_visible_count_ = 0;
   int target_lost_visible_count_ = 0;
   raw_ptr<base::RunLoop> run_loop_ = nullptr;
+};
+
+class WorkspaceChangeTestWidget : public Widget {
+ public:
+  WorkspaceChangeTestWidget() = default;
+
+  WorkspaceChangeTestWidget(const WorkspaceChangeTestWidget&) = delete;
+  WorkspaceChangeTestWidget& operator=(const WorkspaceChangeTestWidget&) =
+      delete;
+
+  // Widget:
+  void OnNativeWidgetWorkspaceChanged() override {
+    Widget::OnNativeWidgetWorkspaceChanged();
+    workspace_changed_count_++;
+  }
+
+  int workspace_changed_count() const { return workspace_changed_count_; }
+
+ private:
+  int workspace_changed_count_ = 0;
 };
 
 // This class gives public access to the protected ctor of
@@ -463,6 +492,35 @@ TEST_F(NativeWidgetMacTest, WindowFrameTitlebarHeight) {
   EXPECT_EQ(0.0, titlebar_height);
 
   [native_parent close];
+}
+
+// Tests for IsVisibleOnAllWorkspaces notification.
+TEST_F(NativeWidgetMacTest, VisibleOnAllWorkspacesNotify) {
+  auto* widget = new WorkspaceChangeTestWidget;
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
+  params.native_widget =
+      CreatePlatformNativeWidgetImpl(widget, kStubCapture, nullptr);
+  widget->Init(std::move(params));
+  widget->Show();
+
+  EXPECT_EQ(0, widget->workspace_changed_count());
+
+  // Set true.
+  widget->SetVisibleOnAllWorkspaces(true);
+  EXPECT_EQ(1, widget->workspace_changed_count());
+
+  // Set false.
+  widget->SetVisibleOnAllWorkspaces(false);
+  EXPECT_EQ(2, widget->workspace_changed_count());
+
+  // Simulating an external change.
+  NSWindow* ns_window = widget->GetNativeWindow().GetNativeNSWindow();
+  [ns_window setCollectionBehavior:[ns_window collectionBehavior] |
+                                   NSWindowCollectionBehaviorCanJoinAllSpaces];
+  BridgedNativeWidgetTestApi(widget).CheckAndNotifyAllWorkspacesStateChanged();
+  EXPECT_EQ(3, widget->workspace_changed_count());
+
+  widget->CloseNow();
 }
 
 // A view that counts calls to OnPaint().
@@ -1690,6 +1748,45 @@ TEST_F(NativeWidgetMacTest, CloseWithWindowModalSheet) {
 
     [native_parent close];
     EXPECT_TRUE(widget_observer.widget_closed());
+  }
+}
+
+// Test that if the bridge is destroyed synchronously during a modal sheet
+// animation inside FullscreenControllerTransitionComplete(), the weak pointer
+// check correctly prevents a Use-After-Free (UAF) upon return
+// (https://crbug.com/517040438).
+TEST_F(NativeWidgetMacTest, FullscreenTransitionCompleteBridgeDestruction) {
+  NSWindow* native_parent = MakeClosableTitledNativeParent();
+  @autoreleasepool {
+    Widget* parent_widget =
+        Widget::GetWidgetForNativeWindow(gfx::NativeWindow(native_parent));
+    ASSERT_TRUE(parent_widget);
+
+    Widget* sheet_widget = views::DialogDelegate::CreateDialogWidget(
+        NativeWidgetMacTest::MakeModalDialog(ui::mojom::ModalType::kWindow),
+        gfx::NativeWindow(), parent_widget->GetNativeView());
+
+    BridgedNativeWidgetTestApi(sheet_widget).set_wants_to_be_visible(true);
+
+    remote_cocoa::NativeWidgetNSWindowBridge* parent_bridge =
+        NativeWidgetMacNSWindowHost::GetFromNativeWindow(
+            gfx::NativeWindow(native_parent))
+            ->GetInProcessNSWindowBridge();
+
+    // Register an observer to close the parent widget synchronously when the
+    // child modal sheet starts its presentation animation. This simulates the
+    // synchronous bridge destruction during the on-stack beginSheet: call.
+    id observer = [[NSNotificationCenter defaultCenter]
+        addObserverForName:NSWindowWillBeginSheetNotification
+                    object:native_parent
+                     queue:nil
+                usingBlock:^(NSNotification* note) {
+                  parent_widget->CloseNow();
+                }];
+
+    parent_bridge->FullscreenControllerTransitionComplete(true);
+
+    [[NSNotificationCenter defaultCenter] removeObserver:observer];
   }
 }
 

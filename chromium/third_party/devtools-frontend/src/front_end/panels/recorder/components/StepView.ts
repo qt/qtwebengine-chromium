@@ -19,6 +19,7 @@ import stepViewStyles from './stepView.css.js';
 import {TimelineSection} from './TimelineSection.js';
 
 const {html} = Lit;
+const {widget} = UI.Widget;
 
 const UIStrings = {
   /**
@@ -362,7 +363,6 @@ function renderStepActions(input: ViewInput): Lit.TemplateResult|null {
       }}
       jslog=${VisualLogging.dropDown('step-actions').track({click: true})}
       .iconName=${'dots-vertical'}
-      }
     ></devtools-menu-button>
   `;
   // clang-format on
@@ -397,7 +397,7 @@ export const DEFAULT_VIEW = (input: ViewInput, _output: ViewOutput, target: HTML
     html`
     <style>${stepViewStyles}</style>
     <div>
-      <devtools-widget .widgetConfig=${UI.Widget.widgetConfig(TimelineSection, {
+      <devtools-widget ${widget(TimelineSection, {
           isFirstSection: input.isFirstSection,
           isLastSection: input.isLastSection,
           isStartOfGroup: input.isStartOfGroup,
@@ -459,7 +459,6 @@ export const DEFAULT_VIEW = (input: ViewInput, _output: ViewOutput, target: HTML
               <div class="subtitle" title=${subtitle}>${subtitle}</div>
             </div>
           </div>
-          <div class="filler"></div>
           ${renderStepActions(input)}
         </div>
         <div class="details">
@@ -519,7 +518,6 @@ export class StepView extends UI.Widget.Widget {
     builtInConverters: [],
     extensionConverters: [],
     isSelected: false,
-    recorderSettings: undefined,
     actions: [],
 
     stepEdited: this.#stepEdited.bind(this),

@@ -1,7 +1,6 @@
 // Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-/* eslint-disable @devtools/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2011 Google Inc.  All rights reserved.
@@ -34,17 +33,19 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-import * as Common from '../../../../core/common/common.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
+import * as Root from '../../../../core/root/root.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
-import type * as Protocol from '../../../../generated/protocol.js';
 import * as StackTrace from '../../../../models/stack_trace/stack_trace.js';
 import * as Workspace from '../../../../models/workspace/workspace.js';
+import {Directives, html, nothing, render, type TemplateResult} from '../../../lit/lit.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
 
 import jsUtilsStyles from './jsUtils.css.js';
-import {Events as LinkifierEvents, Linkifier} from './Linkifier.js';
+import {Linkifier} from './Linkifier.js';
+
+const {classMap} = Directives;
 
 const UIStrings = {
   /**
@@ -63,10 +64,6 @@ const UIStrings = {
    * @description A link to rehide frames that are by default hidden.
    */
   showLess: 'Show less',
-  /**
-   * @description Text indicating that source url of a link is currently unknown
-   */
-  unknownSource: 'unknown',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/utils/JSPresentationUtils.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -95,208 +92,112 @@ function populateContextMenu(link: Element, event: Event): void {
   void contextMenu.show();
 }
 
-// TODO(crbug.com/456517732): remove when all usages of runtimeStackTrace are migrated.
-export function buildStackTraceRowsForLegacyRuntimeStackTrace(
-    stackTrace: Protocol.Runtime.StackTrace,
-    target: SDK.Target.Target|null,
-    linkifier: Linkifier,
-    tabStops: boolean|undefined,
-    updateCallback?: (arg0: Array<StackTraceRegularRow|StackTraceAsyncRow>) => void,
-    showColumnNumber?: boolean,
-    ): Array<StackTraceRegularRow|StackTraceAsyncRow> {
-  const stackTraceRows: Array<StackTraceRegularRow|StackTraceAsyncRow> = [];
-
-  if (updateCallback) {
-    const throttler = new Common.Throttler.Throttler(100);
-    linkifier.addEventListener(LinkifierEvents.LIVE_LOCATION_UPDATED, () => {
-      void throttler.schedule(async () => updateCallback(stackTraceRows));
-    });
-  }
-
-  function buildStackTraceRowsHelper(
-      stackTrace: Protocol.Runtime.StackTrace,
-      previousCallFrames: Protocol.Runtime.CallFrame[]|undefined = undefined): void {
-    let asyncRow: StackTraceAsyncRow|null = null;
-    if (previousCallFrames) {
-      asyncRow = {
-        asyncDescription: UI.UIUtils.asyncStackTraceLabel(stackTrace.description, previousCallFrames),
-      };
-      stackTraceRows.push(asyncRow);
-    }
-    let previousStackFrameWasBreakpointCondition = false;
-    for (const stackFrame of stackTrace.callFrames) {
-      const functionName = UI.UIUtils.beautifyFunctionName(stackFrame.functionName);
-      const link = linkifier.maybeLinkifyConsoleCallFrame(target, stackFrame, {
-        showColumnNumber,
-        tabStop: Boolean(tabStops),
-        inlineFrameIndex: 0,
-        revealBreakpoint: previousStackFrameWasBreakpointCondition,
-      });
-      if (link) {
-        link.setAttribute('jslog', `${VisualLogging.link('stack-trace').track({click: true})}`);
-        link.addEventListener('contextmenu', populateContextMenu.bind(null, link));
-
-        if (!link.textContent) {
-          link.textContent = i18nString(UIStrings.unknownSource);
-        }
-      }
-      stackTraceRows.push({functionName, link});
-      previousStackFrameWasBreakpointCondition = [
-        SDK.DebuggerModel.COND_BREAKPOINT_SOURCE_URL,
-        SDK.DebuggerModel.LOGPOINT_SOURCE_URL,
-      ].includes(stackFrame.url);
-    }
-  }
-
-  buildStackTraceRowsHelper(stackTrace);
-  let previousCallFrames = stackTrace.callFrames;
-  for (let asyncStackTrace = stackTrace.parent; asyncStackTrace; asyncStackTrace = asyncStackTrace.parent) {
-    if (asyncStackTrace.callFrames.length) {
-      buildStackTraceRowsHelper(asyncStackTrace, previousCallFrames);
-    }
-    previousCallFrames = asyncStackTrace.callFrames;
-  }
-  return stackTraceRows;
+export interface ViewInput {
+  stackTrace?: StackTrace.StackTrace.StackTrace;
+  tabStops?: boolean;
+  widthConstrained?: boolean;
+  showColumnNumber?: boolean;
+  expandable?: boolean;
+  expanded?: boolean;
+  showIgnoreListed?: boolean;
+  onExpand: () => void;
+  onShowMore: () => void;
+  onShowLess: () => void;
 }
 
-export function buildStackTraceRows(
-    stackTrace: StackTrace.StackTrace.StackTrace,
-    target: SDK.Target.Target|null,
-    linkifier: Linkifier,
-    tabStops: boolean|undefined,
-    showColumnNumber?: boolean,
-    ): Array<StackTraceRegularRow|StackTraceAsyncRow> {
-  const stackTraceRows: Array<StackTraceRegularRow|StackTraceAsyncRow> = [];
+export type View = (input: ViewInput, output: object, target: HTMLElement) => void;
 
-  function buildStackTraceRowsHelper(
-      fragment: StackTrace.StackTrace.Fragment|StackTrace.StackTrace.AsyncFragment,
-      previousFragment: StackTrace.StackTrace.Fragment|undefined = undefined): void {
-    let asyncRow: StackTraceAsyncRow|null = null;
-    const isAsync = 'description' in fragment;
-    if (previousFragment && isAsync) {
-      asyncRow = {
-        asyncDescription: UI.UIUtils.asyncStackTraceLabel(
-            fragment.description, previousFragment.frames.map(f => ({functionName: f.name ?? ''}))),
-      };
-      stackTraceRows.push(asyncRow);
-    }
-    let previousStackFrameWasBreakpointCondition = false;
-    for (const frame of fragment.frames) {
-      const functionName = UI.UIUtils.beautifyFunctionName(frame.name ?? '');
-      const link = linkifier.maybeLinkifyStackTraceFrame(target, frame, {
-        showColumnNumber,
-        tabStop: Boolean(tabStops),
-        inlineFrameIndex: 0,
-        revealBreakpoint: previousStackFrameWasBreakpointCondition,
-      });
-      if (link) {
-        link.setAttribute('jslog', `${VisualLogging.link('stack-trace').track({click: true})}`);
-        link.addEventListener('contextmenu', populateContextMenu.bind(null, link));
+export const DEFAULT_VIEW: View = (input, output, target) => {
+  let renderExpandButton = Boolean(input.expandable);
+  const maybeRenderExpandButton = (): TemplateResult => {
+    // clang-format off
+    const result = html`
+      ${renderExpandButton ? html`
+        <button class="arrow-icon-button" jslog=${VisualLogging.expand().track({click: true})} @click=${input.onExpand}>
+          <span class="arrow-icon"></span>
+        </button>
+      ` : '\n'}`;
+    // clang-format on
+    renderExpandButton = false;
+    return result;
+  };
 
-        if (!link.textContent) {
-          link.textContent = i18nString(UIStrings.unknownSource);
-        }
-      }
-      stackTraceRows.push({functionName, link});
-      previousStackFrameWasBreakpointCondition = [
-        SDK.DebuggerModel.COND_BREAKPOINT_SOURCE_URL,
-        SDK.DebuggerModel.LOGPOINT_SOURCE_URL,
-      ].includes(frame.url ?? '');
-    }
-  }
-
-  buildStackTraceRowsHelper(stackTrace.syncFragment);
-  let previousFragment = stackTrace.syncFragment;
-  for (const asyncFragment of stackTrace.asyncFragments) {
-    if (asyncFragment.frames.length) {
-      buildStackTraceRowsHelper(asyncFragment, previousFragment);
-    }
-    previousFragment = asyncFragment;
-  }
-  return stackTraceRows;
-}
-
-function renderStackTraceTable(
-    container: Element, parent: Element, expandable: boolean,
-    stackTraceRows: Array<StackTraceRegularRow|StackTraceAsyncRow>): HTMLElement[] {
-  container.removeChildren();
-  const links: HTMLElement[] = [];
-
-  // The tableSection groups one or more synchronous call frames together.
-  // Wherever there is an asynchronous call, a new section is created.
-  let tableSection: Element|null = null;
-  let firstRow = true;
-  for (const item of stackTraceRows) {
-    if (!tableSection || 'asyncDescription' in item) {
-      tableSection = container.createChild('tbody');
-    }
-
-    const row = tableSection.createChild('tr');
-    if (firstRow && expandable) {
-      const button = row.createChild('td').createChild('button', 'arrow-icon-button');
-      button.createChild('span', 'arrow-icon');
-      parent.classList.add('expandable');
-      container.classList.add('expandable');
-      button.addEventListener('click', () => {
-        button.setAttribute('jslog', `${VisualLogging.expand().track({click: true})}`);
-        parent.classList.toggle('expanded');
-        container.classList.toggle('expanded');
-      });
-      firstRow = false;
-    } else {
-      row.createChild('td').textContent = '\n';
-    }
-    if ('asyncDescription' in item) {
-      row.createChild('td', 'stack-preview-async-description').textContent = item.asyncDescription;
-      row.createChild('td');
-      row.createChild('td');
-      row.classList.add('stack-preview-async-row');
-    } else {
-      row.createChild('td', 'function-name').textContent = item.functionName;
-      row.createChild('td').textContent = ' @ ';
-      if (item.link) {
-        row.createChild('td', 'link').appendChild(item.link);
-        links.push(item.link);
-      }
-    }
-  }
-
-  tableSection = container.createChild('tfoot');
-  const showAllRow = tableSection.createChild('tr', 'show-all-link');
-  showAllRow.createChild('td');
-  const cell = showAllRow.createChild('td');
-  cell.colSpan = 4;
-  const showAllLink = cell.createChild('span', 'link');
-  // Don't directly put the text of the link in the DOM, as it will likely be
-  // invisible and it may be confusing if it is copied to the clipboard.
-  showAllLink.createChild('span', 'css-inserted-text')
-      .setAttribute('data-inserted-text', i18nString(UIStrings.showMoreFrames));
-  showAllLink.addEventListener('click', () => {
-    container.classList.add('show-hidden-rows');
-    parent.classList.add('show-hidden-rows');
-    // If we are in a popup, this will trigger a re-layout
-    UI.GlassPane.GlassPane.containerMoved(container);
-  }, false);
-  const showLessRow = tableSection.createChild('tr', 'show-less-link');
-  showLessRow.createChild('td');
-  const showLesscell = showLessRow.createChild('td');
-  showLesscell.colSpan = 4;
-  const showLessLink = showLesscell.createChild('span', 'link');
-  showLessLink.createChild('span', 'css-inserted-text')
-      .setAttribute('data-inserted-text', i18nString(UIStrings.showLess));
-  showLessLink.addEventListener('click', () => {
-    container.classList.remove('show-hidden-rows');
-    parent.classList.remove('show-hidden-rows');
-    // If we are in a popup, this will trigger a re-layout
-    UI.GlassPane.GlassPane.containerMoved(container);
-  }, false);
-
-  return links;
-}
+  const classes = {
+    'stack-preview-container': true,
+    'width-constrained': Boolean(input.widthConstrained),
+    expandable: Boolean(input.expandable),
+    expanded: Boolean(input.expanded),
+    'show-hidden-rows': Boolean(input.showIgnoreListed),
+  };
+  const {stackTrace} = input;
+  // clang-format off
+  render(html`
+    <style>${jsUtilsStyles}</style>
+    <table class=${classMap(classes)}>
+      ${stackTrace ? html`
+        ${[stackTrace.syncFragment, ...stackTrace.asyncFragments].map(fragment => html`
+          <tbody>
+            ${'description' in fragment ? html`
+              <tr class="stack-preview-async-row">
+                <td>${maybeRenderExpandButton()}</td>
+                <td class="stack-preview-async-description">
+                  ${UI.UIUtils.asyncFragmentLabel(stackTrace, fragment as StackTrace.StackTrace.AsyncFragment)}
+                </td>
+                <td></td>
+                <td></td>
+              </tr>
+            ` : nothing}
+            ${fragment.frames.map((frame, i) => {
+              const previousStackFrameWasBreakpointCondition = i > 0 && [
+                SDK.DebuggerModel.COND_BREAKPOINT_SOURCE_URL,
+                SDK.DebuggerModel.LOGPOINT_SOURCE_URL,
+              ].includes(fragment.frames[i - 1].url ?? '');
+              const link = Linkifier.linkifyStackTraceFrame(frame, {
+                showColumnNumber: Boolean(input.showColumnNumber),
+                tabStop: Boolean(input.tabStops),
+                inlineFrameIndex: 0,
+                revealBreakpoint: previousStackFrameWasBreakpointCondition,
+                maxLength: UI.UIUtils.MaxLengthForDisplayedURLsInConsole,
+              });
+              link.setAttribute('jslog', `${VisualLogging.link('stack-trace').track({click: true})}`);
+              link.addEventListener('contextmenu', populateContextMenu.bind(null, link));
+              return html`
+                <tr>
+                  <td>${maybeRenderExpandButton()}</td>
+                  <td class="function-name">
+                    ${UI.UIUtils.beautifyFunctionName(frame.name ?? '')}
+                  </td>
+                  <td> @ </td>
+                  <td class="link">${link}</td>
+                </tr>
+            `;})}
+          </tbody>
+        `)}
+        <tfoot>
+          <tr class="show-all-link">
+            <td></td>
+            <td colspan="3">
+              <span class="link" @click=${input.onShowMore}>
+                <span class="css-inserted-text" data-inserted-text=${i18nString(UIStrings.showMoreFrames)}></span>
+              </span>
+            </td>
+          </tr>
+          <tr class="show-less-link">
+            <td></td>
+            <td colspan="3">
+              <span class="link" @click=${input.onShowLess}>
+                <span class="css-inserted-text" data-inserted-text=${i18nString(UIStrings.showLess)}></span>
+              </span>
+            </td>
+          </tr>
+        </tfoot>
+      ` : nothing}
+    </table>
+  `, target);
+  // clang-format on
+};
 
 export interface Options {
-  // TODO(crbug.com/456517732): remove when all usages of runtimeStackTrace are migrated.
-  runtimeStackTrace?: Protocol.Runtime.StackTrace;
   tabStops?: boolean;
   // Whether the width of stack trace preview
   // is constrained to its container or whether
@@ -306,99 +207,76 @@ export interface Options {
   expandable?: boolean;
 }
 
-export interface StackTraceRegularRow {
-  functionName: string;
-  link: HTMLElement|null;
-}
-
-export interface StackTraceAsyncRow {
-  asyncDescription: string;
-}
-
 export class StackTracePreviewContent extends UI.Widget.Widget {
+  readonly #view: View;
+
   #stackTrace?: StackTrace.StackTrace.StackTrace;
-  #target?: SDK.Target.Target;
-  #linkifier?: Linkifier;
-  #ownedLinkifier?: Linkifier;
-  #options: Options;
-  #links: HTMLElement[] = [];
+  #options: Options = {};
+  #expanded = false;
+  #showIgnoreListed = false;
 
-  readonly #table: HTMLElement;
-  /**
-   * Updated when we update to define if we have any rows for the StackTrace;
-   * allowing the caller to know if this element is empty or not.
-   */
-  #hasRows = false;
-
-  constructor(element?: HTMLElement, target?: SDK.Target.Target, linkifier?: Linkifier, options?: Options) {
-    super(element, {useShadowDom: true});
-
-    this.#target = target;
-    this.#linkifier = linkifier;
-    if (!this.#linkifier) {
-      this.#ownedLinkifier = new Linkifier();
-      this.#linkifier = this.#ownedLinkifier;
-    }
-    this.#options = options || {
-      widthConstrained: false,
-    };
-
-    this.element.classList.add('monospace');
-    this.element.classList.add('stack-preview-container');
-    this.element.classList.toggle('width-constrained', this.#options.widthConstrained ?? false);
-    this.element.style.display = 'inline-block';
-
-    UI.DOMUtilities.appendStyle(this.element.shadowRoot as ShadowRoot, jsUtilsStyles);
-
-    this.#table = this.contentElement.createChild('table', 'stack-preview-container');
-    this.#table.classList.toggle('width-constrained', this.#options.widthConstrained ?? false);
-
-    this.#stackTrace?.addEventListener(StackTrace.StackTrace.Events.UPDATED, this.performUpdate.bind(this));
-
-    this.performUpdate();
+  constructor(element?: HTMLElement, view = DEFAULT_VIEW) {
+    super(element, {useShadowDom: true, classes: ['monospace', 'stack-preview-container']});
+    this.#view = view;
   }
 
   hasContent(): boolean {
-    return this.#hasRows;
+    if (!this.#stackTrace) {
+      return false;
+    }
+    const {syncFragment, asyncFragments} = this.#stackTrace;
+    return syncFragment.frames.length > 0 || asyncFragments.some(f => f.frames.length > 0);
   }
 
   override performUpdate(): void {
-    if (!this.#linkifier) {
-      return;
+    this.element.classList.toggle('expandable', this.#options.expandable);
+    this.element.classList.toggle('expanded', this.#expanded);
+    this.element.classList.toggle('show-hidden-rows', this.#showIgnoreListed);
+
+    const input: ViewInput = {
+      stackTrace: this.#stackTrace,
+      ...this.#options,
+      expanded: this.#expanded,
+      showIgnoreListed: this.#showIgnoreListed,
+      onExpand: this.#onExpand.bind(this),
+      onShowMore: this.#onShowMoreLess.bind(this, true),
+      onShowLess: this.#onShowMoreLess.bind(this, false),
+    };
+    this.#view(input, {}, this.contentElement);
+    this.#updateHasNonIgnoredLinks();
+  }
+
+  // Propagate ignore-list state to the host element so that CSS outside the
+  // shadow DOM can coordinate ignore-list toggling across multiple stack
+  // traces (e.g. Error inline stack + console.error call stack).
+  // See crbug.com/379788109.
+  #updateHasNonIgnoredLinks = (): void => {
+    const hasNonIgnoredLinks = this.linkElements.some(link => {
+      const uiLocation = Linkifier.uiLocation(link);
+      if (uiLocation) {
+        return !uiLocation.isIgnoreListed();
+      }
+      return !link.classList.contains('ignore-list-link');
+    });
+    this.element.classList.toggle('has-non-ignored-links', hasNonIgnoredLinks);
+  };
+
+  override wasShown(): void {
+    super.wasShown();
+    if (Root.DevToolsContext.globalInstance().has(Workspace.IgnoreListManager.IgnoreListManager)) {
+      Workspace.IgnoreListManager.IgnoreListManager.instance().addChangeListener(this.#updateHasNonIgnoredLinks);
     }
+  }
 
-    const {runtimeStackTrace, tabStops} = this.#options;
-
-    if (this.#stackTrace) {
-      const stackTraceRows = buildStackTraceRows(
-          this.#stackTrace, this.#target ?? null, this.#linkifier, tabStops, this.#options.showColumnNumber);
-      this.#hasRows = stackTraceRows.length > 0;
-      this.#links = renderStackTraceTable(this.#table, this.element, this.#options.expandable ?? false, stackTraceRows);
-      return;
+  override willHide(): void {
+    if (Root.DevToolsContext.globalInstance().has(Workspace.IgnoreListManager.IgnoreListManager)) {
+      Workspace.IgnoreListManager.IgnoreListManager.instance().removeChangeListener(this.#updateHasNonIgnoredLinks);
     }
-
-    // TODO(crbug.com/456517732): remove when all usages of runtimeStackTrace are migrated.
-    const updateCallback =
-        renderStackTraceTable.bind(null, this.#table, this.element, this.#options.expandable ?? false);
-    const stackTraceRows = buildStackTraceRowsForLegacyRuntimeStackTrace(
-        runtimeStackTrace ?? {callFrames: []}, this.#target ?? null, this.#linkifier, tabStops, updateCallback,
-        this.#options.showColumnNumber);
-    this.#hasRows = stackTraceRows.length > 0;
-    this.#links = renderStackTraceTable(this.#table, this.element, this.#options.expandable ?? false, stackTraceRows);
+    super.willHide();
   }
 
   get linkElements(): readonly HTMLElement[] {
-    return this.#links;
-  }
-
-  set target(target: SDK.Target.Target|undefined) {
-    this.#target = target;
-    this.requestUpdate();
-  }
-
-  set linkifier(linkifier: Linkifier) {
-    this.#linkifier = linkifier;
-    this.requestUpdate();
+    return [...this.contentElement.querySelectorAll<HTMLElement>('td.link > .devtools-link')];
   }
 
   set options(options: Options) {
@@ -407,11 +285,24 @@ export class StackTracePreviewContent extends UI.Widget.Widget {
   }
 
   set stackTrace(stackTrace: StackTrace.StackTrace.StackTrace) {
+    if (this.#stackTrace) {
+      this.#stackTrace.removeEventListener(StackTrace.StackTrace.Events.UPDATED, this.requestUpdate, this);
+    }
     this.#stackTrace = stackTrace;
+    this.#stackTrace.addEventListener(StackTrace.StackTrace.Events.UPDATED, this.requestUpdate, this);
     this.requestUpdate();
   }
 
-  override onDetach(): void {
-    this.#ownedLinkifier?.dispose();
+  #onShowMoreLess(more: boolean): void {
+    this.#showIgnoreListed = more;
+    this.requestUpdate();
+
+    // If we are in a popup, this will trigger a re-layout
+    void this.updateComplete.then(() => UI.GlassPane.GlassPane.containerMoved(this.contentElement));
+  }
+
+  #onExpand(): void {
+    this.#expanded = !this.#expanded;
+    this.requestUpdate();
   }
 }

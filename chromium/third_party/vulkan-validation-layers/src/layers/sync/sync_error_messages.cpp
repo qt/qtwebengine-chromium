@@ -16,7 +16,7 @@
  */
 
 #include "sync/sync_error_messages.h"
-#include "sync/sync_commandbuffer.h"
+#include "sync/sync_command_buffer.h"
 #include "sync/sync_validation.h"
 #include "error_message/error_strings.h"
 #include "state_tracker/descriptor_sets.h"
@@ -128,9 +128,9 @@ std::string ErrorMessages::ImageCopyResolveBlitError(const HazardResult& hazard,
 }
 
 std::string ErrorMessages::ImageClearError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context,
-                                                      vvl::Func command, const std::string& resource_description,
-                                                      uint32_t subresource_range_index,
-                                                      const VkImageSubresourceRange& subresource_range) const {
+                                           vvl::Func command, const std::string& resource_description,
+                                           uint32_t subresource_range_index,
+                                           const VkImageSubresourceRange& subresource_range) const {
     std::ostringstream ss;
     ss << "\nImage clear subresource range " << subresource_range_index << ": {\n";
     ss << "  " << string_VkImageSubresourceRange(subresource_range) << "\n";
@@ -236,7 +236,6 @@ std::string ErrorMessages::ClearAttachmentError(const HazardResult& hazard, cons
 
 std::string ErrorMessages::RenderPassAttachmentError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context,
                                                      vvl::Func command, const std::string& resource_description) const {
-    // TODO: revisit error message when this function is covered by the tests.
     return Error(hazard, cb_context, command, resource_description, "RenderPassAttachmentError");
 }
 
@@ -255,7 +254,7 @@ static const char* GetLoadOpActionName(VkAttachmentLoadOp load_op) {
 static void CheckForLoadOpDontCareInsight(VkAttachmentLoadOp load_op, bool is_color, std::string& message_end_text) {
     if (load_op == VK_ATTACHMENT_LOAD_OP_DONT_CARE) {
         std::ostringstream ss;
-        ss << "\nVulkan insight: according to the specification VK_ATTACHMENT_LOAD_OP_DONT_CARE is a write access (";
+        ss << "\nHint: According to the specification VK_ATTACHMENT_LOAD_OP_DONT_CARE is a write access (";
         if (is_color) {
             ss << "VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT for color attachment";
         } else {
@@ -321,11 +320,9 @@ std::string ErrorMessages::RenderPassLoadOpVsLayoutTransitionError(const HazardR
 
 std::string ErrorMessages::RenderPassResolveError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context,
                                                   vvl::Func command, const std::string& resource_description) const {
-    // TODO: rework error message and maybe refactor ValidateResolveAction helper when this function is covered by the tests.
     return Error(hazard, cb_context, command, resource_description, "RenderPassResolveError");
 }
 
-// TODO: this one also does not have tests!
 std::string ErrorMessages::RenderPassStoreOpError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context,
                                                   vvl::Func command, const std::string& resource_description,
                                                   VkAttachmentStoreOp store_op) const {
@@ -348,12 +345,11 @@ std::string ErrorMessages::RenderPassLayoutTransitionError(const HazardResult& h
     return Error(hazard, cb_context, command, resource_description, "RenderPassLayoutTransitionError", additional_info);
 }
 
-std::string ErrorMessages::RenderPassLayoutTransitionVsStoreOrResolveError(const HazardResult& hazard,
-                                                                           const CommandBufferAccessContext& cb_context,
-                                                                           vvl::Func command,
-                                                                           const std::string& resource_description,
-                                                                           VkImageLayout old_layout, VkImageLayout new_layout,
-                                                                           uint32_t store_resolve_subpass) const {
+std::string ErrorMessages::RenderPassLayoutTransitionVsResolveError(const HazardResult& hazard,
+                                                                    const CommandBufferAccessContext& cb_context, vvl::Func command,
+                                                                    const std::string& resource_description,
+                                                                    VkImageLayout old_layout, VkImageLayout new_layout,
+                                                                    uint32_t resolve_subpass) const {
     const char* old_layout_str = string_VkImageLayout(old_layout);
     const char* new_layout_str = string_VkImageLayout(new_layout);
 
@@ -363,11 +359,9 @@ std::string ErrorMessages::RenderPassLayoutTransitionVsStoreOrResolveError(const
     additional_info.access_action =
         "performs image layout transition during " +
         validator_.FormatHandle(cb_context.GetCurrentRenderPassContext()->GetRenderPassState()->Handle());
-    additional_info.brief_description_end_text = "during store/resolve operation in subpass ";
-    additional_info.brief_description_end_text += std::to_string(store_resolve_subpass);
-
-    return Error(hazard, cb_context, command, resource_description, "RenderPassLayoutTransitionVsStoreOrResolveError",
-                 additional_info);
+    additional_info.brief_description_end_text = "during resolve operation in subpass ";
+    additional_info.brief_description_end_text += std::to_string(resolve_subpass);
+    return Error(hazard, cb_context, command, resource_description, "RenderPassLayoutTransitionVsResolveError", additional_info);
 }
 
 std::string ErrorMessages::RenderPassFinalLayoutTransitionError(const HazardResult& hazard,

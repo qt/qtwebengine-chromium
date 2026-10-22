@@ -1,7 +1,7 @@
-/* Copyright (c) 2019-2025 The Khronos Group Inc.
- * Copyright (c) 2019-2025 Valve Corporation
- * Copyright (c) 2019-2025 LunarG, Inc.
- * Copyright (C) 2019-2025 Google Inc.
+/* Copyright (c) 2019-2026 The Khronos Group Inc.
+ * Copyright (c) 2019-2026 Valve Corporation
+ * Copyright (c) 2019-2026 LunarG, Inc.
+ * Copyright (C) 2019-2026 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,8 +24,6 @@
 #include <variant>
 #include <vector>
 #include "containers/range.h"
-#include "containers/range_map.h"
-#include "containers/small_range_map.h"
 #include "containers/small_vector.h"
 #include "vulkan/vulkan.h"
 
@@ -138,11 +136,11 @@ class RangeEncoder {
     inline IndexType SubresourceCount() const { return AspectSize() * Limits().aspect_index; }
     inline VkImageAspectFlags AspectMask() const { return limits_.aspectMask; }
     inline VkImageAspectFlagBits AspectBit(uint32_t aspect_index) const {
-        RANGE_ASSERT(aspect_index < limits_.aspect_index);
+        assert(aspect_index < limits_.aspect_index);
         return aspect_bits_[aspect_index];
     }
     inline IndexType AspectBase(uint32_t aspect_index) const {
-        RANGE_ASSERT(aspect_index < limits_.aspect_index);
+        assert(aspect_index < limits_.aspect_index);
         return aspect_base_[aspect_index];
     }
 
@@ -396,19 +394,13 @@ class ImageRangeGenerator {
     ImageRangeGenerator() : encoder_(nullptr), subres_range_(), offset_(), extent_(), base_address_(), pos_() {}
     ImageRangeGenerator(const ImageRangeEncoder& encoder, const VkImageSubresourceRange& subres_range, const VkOffset3D& offset,
                         const VkExtent3D& extent, VkDeviceSize base_address, bool is_depth_sliced);
-    void SetInitialPosFullOffset(uint32_t layer, uint32_t aspect_index);
-    void SetInitialPosFullWidth(uint32_t layer, uint32_t aspect_index);
-    void SetInitialPosFullHeight(uint32_t layer, uint32_t aspect_index);
-    void SetInitialPosSomeDepth(uint32_t layer, uint32_t aspect_index);
-    void SetInitialPosFullDepth(uint32_t layer, uint32_t aspect_index);
-    void SetInitialPosAllLayers(uint32_t layer, uint32_t aspect_index);
-    void SetInitialPosOneAspect(uint32_t layer, uint32_t aspect_index);
-    void SetInitialPosAllSubres(uint32_t layer, uint32_t aspect_index);
-    void SetInitialPosSomeLayers(uint32_t layer, uint32_t aspect_index);
     ImageRangeGenerator(const ImageRangeEncoder& encoder, const VkImageSubresourceRange& subres_range, VkDeviceSize base_address,
                         bool is_depth_sliced);
-    inline const IndexRange& operator*() const { return pos_; }
-    inline const IndexRange* operator->() const { return &pos_; }
+    ImageRangeGenerator(const ImageRangeEncoder& encoder, const VkImageSubresourceRange& subres_range, VkDeviceSize base_address,
+                        bool is_depth_sliced, uint32_t view_mask);
+
+    const IndexRange& operator*() const { return pos_; }
+    const IndexRange* operator->() const { return &pos_; }
     ImageRangeGenerator& operator++();
     ImageRangeGenerator& operator=(const ImageRangeGenerator&) = default;
 
@@ -418,17 +410,31 @@ class ImageRangeGenerator {
     void SetUpIncrementerDefaults();
     void SetUpSubresIncrementer();
     void SetUpIncrementer(bool all_width, bool all_height, bool all_depth);
-    typedef void (ImageRangeGenerator::*SetInitialPosFn)(uint32_t, uint32_t);
-    inline void SetInitialPos(uint32_t layer, uint32_t aspect_index) { (this->*(set_initial_pos_fn_))(layer, aspect_index); }
+
+    using SetInitialPosFn = void (ImageRangeGenerator::*)(uint32_t, uint32_t);
+    void SetInitialPos(uint32_t layer, uint32_t aspect_index) { (this->*(set_initial_pos_fn_))(layer, aspect_index); }
+
+    void SetInitialPosFullOffset(uint32_t layer, uint32_t aspect_index);
+    void SetInitialPosFullWidth(uint32_t layer, uint32_t aspect_index);
+    void SetInitialPosFullHeight(uint32_t layer, uint32_t aspect_index);
+    void SetInitialPosSomeDepth(uint32_t layer, uint32_t aspect_index);
+    void SetInitialPosFullDepth(uint32_t layer, uint32_t aspect_index);
+    void SetInitialPosAllLayers(uint32_t layer, uint32_t aspect_index);
+    void SetInitialPosOneAspect(uint32_t layer, uint32_t aspect_index);
+    void SetInitialPosAllSubres(uint32_t layer, uint32_t aspect_index);
+    void SetInitialPosSomeLayers(uint32_t layer, uint32_t aspect_index);
+    void SetInitialPosMultiviewLayers(uint32_t layer, uint32_t aspect_index);
 
     VkOffset3D GetOffset(uint32_t aspect_index) const;
     VkExtent3D GetExtent(uint32_t aspect_index) const;
 
+  private:
     const ImageRangeEncoder* encoder_;
     VkImageSubresourceRange subres_range_;
     VkOffset3D offset_;
     VkExtent3D extent_;
     VkDeviceSize base_address_;
+    uint32_t view_mask_ = 0;
 
     uint32_t mip_index_ = 0U;
     uint32_t incr_mip_ = 0U;
@@ -437,6 +443,7 @@ class ImageRangeGenerator {
     const ImageRangeEncoder::SubresInfo* subres_info_ = nullptr;
 
     SetInitialPosFn set_initial_pos_fn_ = nullptr;
+
     IndexRange pos_;
 
     struct IncrementerState {
@@ -453,245 +460,21 @@ class ImageRangeGenerator {
         IndexRange layer_z_base = {0U, 0U};
         IndexType incr_y = 0U;
         IndexType incr_layer_z = 0U;
+
+        uint32_t view_mask_ = 0;
+
         void Set(uint32_t y_count_, uint32_t layer_z_count_, IndexType base, IndexType span, IndexType y_step, IndexType z_step);
+
+        // When multiview is disabled returns:
+        //      layer_z_index + incr_state_.layer_z_step
+        // When multiview is enabled returns:
+        //      the next value after layer_z_index that corresponds to the next set bit in view mask.
+        //      When all view bits are iterated or layer_z_count is reach then returns layer_z_count.
+        uint32_t GetNextLayerZIndex() const;
     };
     IncrementerState incr_state_;
     bool single_full_size_range_ = true;
     bool is_depth_sliced_ = false;
-};
-
-// double wrapped map variants.. to avoid needing to templatize on the range map type.  The underlying maps are available for
-// use in performance sensitive places that are *already* templatized (for example update_range_value).
-// In STL style.  Note that N must be < uint8_t max
-template <typename T, size_t N>
-class BothRangeMap {
-    using SmallMap = sparse_container::small_range_map<IndexType, T, vvl::range<IndexType>, N>;
-    using SmallMapIterator = typename SmallMap::iterator;
-    using SmallMapConstIterator = typename SmallMap::const_iterator;
-
-    using BigMap = sparse_container::range_map<IndexType, T>;
-    using BigMapIterator = typename BigMap::iterator;
-    using BigMapConstIterator = typename BigMap::const_iterator;
-
-  public:
-    using index_type = IndexType;
-    using key_type = vvl::range<IndexType>;
-    using mapped_type = T;
-    using value_type = std::pair<const key_type, mapped_type>;
-
-    template <typename Value, typename SmallIt, typename BigIt>
-    class IteratorImpl {
-      public:
-        Value* operator->() const {
-            if (is_small_it_) {
-                return small_it_.operator->();
-            } else {
-                return big_it_.operator->();
-            }
-        }
-        Value& operator*() const {
-            if (is_small_it_) {
-                return small_it_.operator*();
-            } else {
-                return big_it_.operator*();
-            }
-        }
-        IteratorImpl& operator++() {
-            if (is_small_it_) {
-                small_it_.operator++();
-            } else {
-                big_it_.operator++();
-            }
-            return *this;
-        }
-        IteratorImpl& operator--() {
-            if (is_small_it_) {
-                small_it_.operator--();
-            } else {
-                big_it_.operator--();
-            }
-            return *this;
-        }
-        IteratorImpl& operator=(const IteratorImpl& other) {
-            is_small_it_ = other.is_small_it_;
-            small_it_ = other.small_it_;
-            big_it_ = other.big_it_;
-            return *this;
-        }
-        bool operator==(const IteratorImpl& other) const {
-            // It's enough just to compare both iterators.
-            return small_it_ == other.small_it_ && big_it_ == other.big_it_;
-        }
-        bool operator!=(const IteratorImpl& other) const { return !(*this == other); }
-
-        IteratorImpl() = default;
-        IteratorImpl(const IteratorImpl& other) = default;
-        IteratorImpl(const SmallIt& it) : is_small_it_(true), small_it_(it) {}
-        IteratorImpl(const BigIt& it) : is_small_it_(false), big_it_(it) {}
-
-      private:
-        friend BothRangeMap;
-
-        bool is_small_it_ = false;
-        SmallIt small_it_;
-        BigIt big_it_;
-    };
-
-    using iterator = IteratorImpl<value_type, SmallMapIterator, BigMapIterator>;
-    // TODO change const iterator to derived class if iterator -> const_iterator constructor is needed
-    using const_iterator = IteratorImpl<const value_type, SmallMapConstIterator, BigMapConstIterator>;
-
-    iterator begin() {
-        if (UsesSmallMap()) {
-            return iterator(GetSmallMap().begin());
-        } else {
-            return iterator(GetBigMap().begin());
-        }
-    }
-    const_iterator cbegin() const {
-        if (UsesSmallMap()) {
-            return const_iterator(GetSmallMap().begin());
-        } else {
-            return const_iterator(GetBigMap().begin());
-        }
-    }
-    const_iterator begin() const { return cbegin(); }
-
-    iterator end() {
-        if (UsesSmallMap()) {
-            return iterator(GetSmallMap().end());
-        } else {
-            return iterator(GetBigMap().end());
-        }
-    }
-    const_iterator cend() const {
-        if (UsesSmallMap()) {
-            return const_iterator(GetSmallMap().end());
-        } else {
-            return const_iterator(GetBigMap().end());
-        }
-    }
-    const_iterator end() const { return cend(); }
-
-    iterator find(const key_type& key) {
-        if (UsesSmallMap()) {
-            return iterator(GetSmallMap().find(key));
-        } else {
-            return iterator(GetBigMap().find(key));
-        }
-    }
-
-    const_iterator find(const key_type& key) const {
-        if (UsesSmallMap()) {
-            return const_iterator(GetSmallMap().find(key));
-        } else {
-            return const_iterator(GetBigMap().find(key));
-        }
-    }
-
-    iterator find(const index_type& index) {
-        if (UsesSmallMap()) {
-            return iterator(GetSmallMap().find(index));
-        } else {
-            return iterator(GetBigMap().find(index));
-        }
-    }
-
-    const_iterator find(const index_type& index) const {
-        if (UsesSmallMap()) {
-            return const_iterator(GetSmallMap().find(index));
-        } else {
-            return const_iterator(GetBigMap().find(index));
-        }
-    }
-
-    // TODO -- this is supposed to be a const_iterator, which is constructable from an iterator
-    void insert(const iterator& hint, const value_type& value) {
-        if (UsesSmallMap()) {
-            assert(hint.is_small_it_);
-            GetSmallMap().insert(hint.small_it_, value);
-        } else {
-            assert(!hint.is_small_it_);
-            GetBigMap().insert(hint.big_it_, value);
-        }
-    }
-
-    iterator lower_bound(const key_type& key) {
-        if (UsesSmallMap()) {
-            return iterator(GetSmallMap().lower_bound(key));
-        } else {
-            return iterator(GetBigMap().lower_bound(key));
-        }
-    }
-
-    const_iterator lower_bound(const key_type& key) const {
-        if (UsesSmallMap()) {
-            return const_iterator(GetSmallMap().lower_bound(key));
-        } else {
-            return const_iterator(GetBigMap().lower_bound(key));
-        }
-    }
-
-    template <typename Value>
-    iterator overwrite_range(const iterator& lower, Value&& value) {
-        if (UsesSmallMap()) {
-            assert(lower.is_small_it_);
-            return GetSmallMap().overwrite_range(lower.small_it_, std::forward<Value>(value));
-        } else {
-            assert(!lower.is_small_it_);
-            return GetBigMap().overwrite_range(lower.big_it_, std::forward<Value>(value));
-        }
-    }
-
-    // With power comes responsibility (🕷).  You can get to the underlying maps, s.t. in inner loops, the "SmallMode" checks can be
-    // avoided per call, just be sure and Get the correct one.
-    const SmallMap& GetSmallMap() const {
-        assert(UsesSmallMap());
-        return std::get<SmallMap>(map_);
-    }
-    SmallMap& GetSmallMap() {
-        assert(UsesSmallMap());
-        return std::get<SmallMap>(map_);
-    }
-    const BigMap& GetBigMap() const {
-        assert(!UsesSmallMap());
-        return std::get<BigMap>(map_);
-    }
-    BigMap& GetBigMap() {
-        assert(!UsesSmallMap());
-        return std::get<BigMap>(map_);
-    }
-
-    BothRangeMap() = delete;
-
-    BothRangeMap(index_type limit) {
-        if (limit <= N) {
-            map_ = SmallMap(limit);
-        } else {
-            map_ = BigMap();
-        }
-    }
-
-    bool empty() const {
-        if (UsesSmallMap()) {
-            return GetSmallMap().empty();
-        } else {
-            return GetBigMap().empty();
-        }
-    }
-
-    size_t size() const {
-        if (UsesSmallMap()) {
-            return GetSmallMap().size();
-        } else {
-            return GetBigMap().size();
-        }
-    }
-
-    bool UsesSmallMap() const { return std::holds_alternative<SmallMap>(map_); }
-
-  private:
-    std::variant<SmallMap, BigMap> map_;
 };
 
 }  // namespace subresource_adapter

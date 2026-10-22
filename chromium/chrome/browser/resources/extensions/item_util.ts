@@ -10,7 +10,7 @@ import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {Mv2ExperimentStage} from './mv2_deprecation_util.js';
 
 // This `SafetyCheckWarningReason` enum should match the enum of the same
-// name defined in the developer_private.idl and enums.xml files.
+// name defined in the developer_private.webidl and enums.xml files.
 export enum SafetyCheckWarningReason {
   UNPUBLISHED = 1,
   POLICY = 2,
@@ -35,35 +35,8 @@ export enum EnableControl {
   ENABLE_TOGGLE = 'ENABLE_TOGGLE',
 }
 
-// TODO(tjudkins): This should be extracted to a shared metrics module.
-export enum UserAction {
-  ALL_TOGGLED_ON = 'Extensions.Settings.HostList.AllHostsToggledOn',
-  ALL_TOGGLED_OFF = 'Extensions.Settings.HostList.AllHostsToggledOff',
-  SPECIFIC_TOGGLED_ON = 'Extensions.Settings.HostList.SpecificHostToggledOn',
-  SPECIFIC_TOGGLED_OFF = 'Extensions.Settings.HostList.SpecificHostToggledOff',
-  LEARN_MORE = 'Extensions.Settings.HostList.LearnMoreActivated',
-}
-
 // Duration of the toast shown.
 export const TOAST_DURATION_MS = 3000;
-
-// Values for logging Extension Safety Hub metrics.
-export const SAFETY_HUB_EXTENSION_KEPT_HISTOGRAM_NAME =
-    'SafeBrowsing.ExtensionSafetyHub.Trigger.Kept';
-export const SAFETY_HUB_EXTENSION_REMOVED_HISTOGRAM_NAME =
-    'SafeBrowsing.ExtensionSafetyHub.Trigger.Removed';
-export const SAFETY_HUB_EXTENSION_SHOWN_HISTOGRAM_NAME =
-    `SafeBrowsing.ExtensionSafetyHub.Trigger.Shown`;
-// This number should match however many entries are defined in the
-// `SafetyCheckWarningReason` defined in the `enums.xml` file.
-export const SAFETY_HUB_WARNING_REASON_MAX_SIZE = 7;
-
-// Histogram names for logging when an extension is uploaded to the user's
-// account.
-export const UPLOAD_EXTENSION_TO_ACCOUNT_ITEMS_LIST_PAGE_HISTOGRAM_NAME =
-    `Extensions.UploadExtensionToAccount.ItemsListPage`;
-export const UPLOAD_EXTENSION_TO_ACCOUNT_DETAILS_VIEW_PAGE_HISTOGRAM_NAME =
-    `Extensions.UploadExtensionToAccount.DetailsViewPage`;
 
 /**
  * Returns true if the extension is enabled, including terminated
@@ -166,9 +139,9 @@ export function getItemSourceString(source: SourceType): string {
 }
 
 // This converter is used to convert the `SafetyCheckWarningReason` enum
-// defined in the developer_private.idl file for metrics logging
+// defined in the developer_private.webidl file for metrics logging
 // reasons. It needs to be kept in sync with the corresponding enum in
-// the developer_private.idl and enums.xml files.
+// the developer_private.webidl and enums.xml files.
 export function convertSafetyCheckReason(
     reason: chrome.developerPrivate.SafetyCheckWarningReason):
     SafetyCheckWarningReason {

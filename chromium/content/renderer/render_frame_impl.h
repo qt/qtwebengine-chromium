@@ -588,6 +588,7 @@ class CONTENT_EXPORT RenderFrameImpl
   void DidChangePerformanceTiming() override;
   void DidObserveUserInteraction(base::TimeTicks max_event_start,
                                  base::TimeTicks max_event_queued_main_thread,
+                                 base::TimeTicks max_event_processing_start,
                                  base::TimeTicks max_event_commit_finish,
                                  base::TimeTicks max_event_end,
                                  uint64_t interaction_offset) override;
@@ -672,9 +673,6 @@ class CONTENT_EXPORT RenderFrameImpl
   void WasShown() override;
   void OnFrameVisibilityChanged(
       blink::mojom::FrameVisibility render_status) override;
-
-  void SetUpSharedMemoryForDroppedFrames(
-      base::ReadOnlySharedMemoryRegion dropped_frames_memory) override;
 
   blink::WebURL LastCommittedUrlForUKM() override;
   void ScriptedPrint() override;
@@ -889,13 +887,6 @@ class CONTENT_EXPORT RenderFrameImpl
       const std::optional<base::UnguessableToken>& devtools_frame_token)
       override;
   void Delete(mojom::FrameDeleteIntention intent) override;
-  void UndoCommitNavigation(
-      bool is_loading,
-      blink::mojom::FrameReplicationStatePtr replicated_frame_state,
-      const blink::RemoteFrameToken& frame_token,
-      blink::mojom::RemoteFrameInterfacesFromBrowserPtr remote_frame_interfaces,
-      blink::mojom::RemoteMainFrameInterfacesPtr remote_main_frame_interfaces)
-      override;
   void GetInterfaceProvider(
       mojo::PendingReceiver<service_manager::mojom::InterfaceProvider> receiver)
       override;
@@ -1260,7 +1251,13 @@ class CONTENT_EXPORT RenderFrameImpl
   base::flat_map<std::string, bool> history_subframe_unique_names_;
 
   // All the registered observers.
-  base::ObserverList<RenderFrameObserver>::Unchecked observers_;
+  // TODO(crbug.com/484371187): Investigate if reentrancy can be removed.
+  base::ObserverList<
+      RenderFrameObserver,
+      /*check_empty=*/false,
+      /*reentrancy=*/
+      base::ObserverListReentrancyPolicy::kAllowReentrancyUntriaged>::Unchecked
+      observers_;
 
   // The callback to send the feature usage to the browser process through
   // PageLoadMetrics.

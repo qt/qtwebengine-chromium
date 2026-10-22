@@ -43,6 +43,7 @@ class QuerySet final : public QuerySetBase {
                                                const QuerySetDescriptor* descriptor);
 
     GLuint Get(uint32_t index) const;
+    std::vector<GLuint> GetQueries() const;
 
   private:
     QuerySet(Device* device, const QuerySetDescriptor* descriptor);

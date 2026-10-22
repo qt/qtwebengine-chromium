@@ -165,6 +165,10 @@ export namespace ProtocolMapping {
      */
     'DOM.scrollableFlagUpdated': [Protocol.DOM.ScrollableFlagUpdatedEvent];
     /**
+     * Fired when a node's ad related state changes.
+     */
+    'DOM.adRelatedStateUpdated': [Protocol.DOM.AdRelatedStateUpdatedEvent];
+    /**
      * Fired when a node's starting styles changes.
      */
     'DOM.affectedByStartingStylesFlagUpdated': [Protocol.DOM.AffectedByStartingStylesFlagUpdatedEvent];
@@ -198,6 +202,12 @@ export namespace ProtocolMapping {
      * Notification sent after the virtual time budget for the current VirtualTimePolicy has run out.
      */
     'Emulation.virtualTimeBudgetExpired': [];
+    /**
+     * Fired when a page calls screen.orientation.lock() or screen.orientation.unlock()
+     * while device emulation is enabled. This allows the DevTools frontend to update the
+     * emulated device orientation accordingly.
+     */
+    'Emulation.screenOrientationLockChanged': [Protocol.Emulation.ScreenOrientationLockChangedEvent];
     'FedCm.dialogShown': [Protocol.FedCm.DialogShownEvent];
     /**
      * Triggered when a dialog is closed, either by user action, JS abort,
@@ -800,10 +810,6 @@ export namespace ProtocolMapping {
     'Storage.sharedStorageWorkletOperationExecutionFinished': [Protocol.Storage.SharedStorageWorkletOperationExecutionFinishedEvent];
     'Storage.storageBucketCreatedOrUpdated': [Protocol.Storage.StorageBucketCreatedOrUpdatedEvent];
     'Storage.storageBucketDeleted': [Protocol.Storage.StorageBucketDeletedEvent];
-    'Storage.attributionReportingSourceRegistered': [Protocol.Storage.AttributionReportingSourceRegisteredEvent];
-    'Storage.attributionReportingTriggerRegistered': [Protocol.Storage.AttributionReportingTriggerRegisteredEvent];
-    'Storage.attributionReportingReportSent': [Protocol.Storage.AttributionReportingReportSentEvent];
-    'Storage.attributionReportingVerboseDebugReportSent': [Protocol.Storage.AttributionReportingVerboseDebugReportSentEvent];
     /**
      * Issued when attached to target because of auto-attach or `attachToTarget` command.
      */
@@ -920,6 +926,22 @@ export namespace ProtocolMapping {
      * Triggered when a credential is used in a webauthn assertion.
      */
     'WebAuthn.credentialAsserted': [Protocol.WebAuthn.CredentialAssertedEvent];
+    /**
+     * Event fired when new tools are added.
+     */
+    'WebMCP.toolsAdded': [Protocol.WebMCP.ToolsAddedEvent];
+    /**
+     * Event fired when tools are removed.
+     */
+    'WebMCP.toolsRemoved': [Protocol.WebMCP.ToolsRemovedEvent];
+    /**
+     * Event fired when a tool invocation starts.
+     */
+    'WebMCP.toolInvoked': [Protocol.WebMCP.ToolInvokedEvent];
+    /**
+     * Event fired when a tool invocation completes or fails.
+     */
+    'WebMCP.toolResponded': [Protocol.WebMCP.ToolRespondedEvent];
     /**
      * Fired when breakpoint is resolved to an actual script and location.
      * Deprecated in favor of `resolvedBreakpoints` in the `scriptParsed` event.
@@ -1158,14 +1180,6 @@ export namespace ProtocolMapping {
      */
     'Audits.enable': {
       paramsType: [];
-      returnType: void;
-    };
-    /**
-     * Runs the contrast check for the target page. Found issues are reported
-     * using Audits.issueAdded event.
-     */
-    'Audits.checkContrast': {
-      paramsType: [Protocol.Audits.CheckContrastRequest?];
       returnType: void;
     };
     /**
@@ -1728,6 +1742,13 @@ export namespace ProtocolMapping {
       returnType: Protocol.CSS.SetSupportsTextResponse;
     };
     /**
+     * Modifies the expression of a navigation at-rule.
+     */
+    'CSS.setNavigationText': {
+      paramsType: [Protocol.CSS.SetNavigationTextRequest];
+      returnType: Protocol.CSS.SetNavigationTextResponse;
+    };
+    /**
      * Modifies the expression of a scope at-rule.
      */
     'CSS.setScopeText': {
@@ -1866,6 +1887,13 @@ export namespace ProtocolMapping {
     'Cast.stopCasting': {
       paramsType: [Protocol.Cast.StopCastingRequest];
       returnType: void;
+    };
+    /**
+     * Returns all entries in the CrashReportContext across all frames in the page.
+     */
+    'CrashReportContext.getEntries': {
+      paramsType: [];
+      returnType: Protocol.CrashReportContext.GetEntriesResponse;
     };
     /**
      * Collects class names for the node with given id and all of it's child nodes.
@@ -2757,7 +2785,8 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
-     * Returns device's screen configuration.
+     * Returns device's screen configuration. In headful mode, the physical screens configuration is returned,
+     * whereas in headless mode, a virtual headless screen configuration is provided instead.
      */
     'Emulation.getScreenInfos': {
       paramsType: [];
@@ -2771,10 +2800,27 @@ export namespace ProtocolMapping {
       returnType: Protocol.Emulation.AddScreenResponse;
     };
     /**
+     * Updates specified screen parameters. Only supported in headless mode.
+     */
+    'Emulation.updateScreen': {
+      paramsType: [Protocol.Emulation.UpdateScreenRequest];
+      returnType: Protocol.Emulation.UpdateScreenResponse;
+    };
+    /**
      * Remove screen from the device. Only supported in headless mode.
      */
     'Emulation.removeScreen': {
       paramsType: [Protocol.Emulation.RemoveScreenRequest];
+      returnType: void;
+    };
+    /**
+     * Set primary screen. Only supported in headless mode.
+     * Note that this changes the coordinate system origin to the top-left
+     * of the new primary screen, updating the bounds and work areas
+     * of all existing screens accordingly.
+     */
+    'Emulation.setPrimaryScreen': {
+      paramsType: [Protocol.Emulation.SetPrimaryScreenRequest];
       returnType: void;
     };
     /**
@@ -2817,6 +2863,15 @@ export namespace ProtocolMapping {
     'Extensions.loadUnpacked': {
       paramsType: [Protocol.Extensions.LoadUnpackedRequest];
       returnType: Protocol.Extensions.LoadUnpackedResponse;
+    };
+    /**
+     * Gets a list of all unpacked extensions.
+     * Available if the client is connected using the --remote-debugging-pipe flag
+     * and the --enable-unsafe-extension-debugging flag is set.
+     */
+    'Extensions.getExtensions': {
+      paramsType: [];
+      returnType: Protocol.Extensions.GetExtensionsResponse;
     };
     /**
      * Uninstalls an unpacked extension (others not supported) from the profile.
@@ -4942,28 +4997,6 @@ export namespace ProtocolMapping {
       returnType: Protocol.Storage.RunBounceTrackingMitigationsResponse;
     };
     /**
-     * https://wicg.github.io/attribution-reporting-api/
-     */
-    'Storage.setAttributionReportingLocalTestingMode': {
-      paramsType: [Protocol.Storage.SetAttributionReportingLocalTestingModeRequest];
-      returnType: void;
-    };
-    /**
-     * Enables/disables issuing of Attribution Reporting events.
-     */
-    'Storage.setAttributionReportingTracking': {
-      paramsType: [Protocol.Storage.SetAttributionReportingTrackingRequest];
-      returnType: void;
-    };
-    /**
-     * Sends all pending Attribution Reports immediately, regardless of their
-     * scheduled report time.
-     */
-    'Storage.sendPendingAttributionReports': {
-      paramsType: [];
-      returnType: Protocol.Storage.SendPendingAttributionReportsResponse;
-    };
-    /**
      * Returns the effective Related Website Sets in use by this profile for the browser
      * session. The effective Related Website Sets will not change during a browser session.
      */
@@ -5334,6 +5367,21 @@ export namespace ProtocolMapping {
      */
     'WebAuthn.setCredentialProperties': {
       paramsType: [Protocol.WebAuthn.SetCredentialPropertiesRequest];
+      returnType: void;
+    };
+    /**
+     * Enables the WebMCP domain, allowing events to be sent. Enabling the domain will trigger a toolsAdded event for
+     * all currently registered tools.
+     */
+    'WebMCP.enable': {
+      paramsType: [];
+      returnType: void;
+    };
+    /**
+     * Disables the WebMCP domain.
+     */
+    'WebMCP.disable': {
+      paramsType: [];
       returnType: void;
     };
     /**

@@ -7,7 +7,7 @@
 
 import("//build/config/features.gni")
 import("//build/config/sanitizers/sanitizers.gni")
-if (current_cpu == "arm" || current_cpu == "arm64") {
+if (current_cpu == "arm" || current_cpu == "arm64" || current_cpu == "arm64e") {
   import("//build/config/arm.gni")
 }
 
@@ -174,7 +174,8 @@ config("libjpeg_simd_config") {
     # and x64 MSan builds for now.
   } else if (current_cpu == "x86" || current_cpu == "x64") {
     defines = [ "WITH_SIMD" ]
-  } else if (current_cpu == "arm" || current_cpu == "arm64") {
+  } else if (current_cpu == "arm" || current_cpu == "arm64" ||
+             current_cpu == "arm64e") {
     defines = [
       "NEON_INTRINSICS",
       "WITH_SIMD",
@@ -197,7 +198,8 @@ static_library("simd") {
   } else if (current_cpu == "x64") {
     deps += [ ":simd_asm" ]
     sources = [ "simd/x86_64/jsimd.c" ]
-  } else if (current_cpu == "arm" || current_cpu == "arm64") {
+  } else if (current_cpu == "arm" || current_cpu == "arm64" ||
+             current_cpu == "arm64e") {
     include_dirs += [ "simd/arm/" ]
 
     sources = [
@@ -220,7 +222,7 @@ static_library("simd") {
         "simd/arm/aarch32/jchuff-neon.c",
         "simd/arm/aarch32/jsimd.c",
       ]
-    } else if (current_cpu == "arm64") {
+    } else if (current_cpu == "arm64" || current_cpu == "arm64e") {
       sources += [
         "simd/arm/aarch64/jchuff-neon.c",
         "simd/arm/aarch64/jsimd.c",

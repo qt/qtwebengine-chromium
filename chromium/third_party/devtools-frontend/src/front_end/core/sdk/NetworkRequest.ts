@@ -1471,6 +1471,10 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     return this.requestHeaderValue('Content-Type');
   }
 
+  requestContentEncoding(): string|undefined {
+    return this.requestHeaderValue('Content-Encoding');
+  }
+
   hasErrorStatusCode(): boolean {
     return this.statusCode >= 400;
   }
@@ -2137,7 +2141,7 @@ export interface BlockedCookieWithReason {
 
 export interface IncludedCookieWithReason {
   cookie: Cookie;
-  exemptionReason: Protocol.Network.CookieExemptionReason|undefined;
+  exemptionReason?: Protocol.Network.CookieExemptionReason;
 }
 
 export interface ExemptedSetCookieWithReason {

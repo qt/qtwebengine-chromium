@@ -61,7 +61,7 @@ export class TraceReportListElement extends CrLitElement {
     return {
       traces_: {type: Array},
       isLoading_: {type: Boolean},
-      notification: {type: Object},
+      notification_: {type: Object},
     };
   }
 
@@ -69,7 +69,8 @@ export class TraceReportListElement extends CrLitElement {
       TracesBrowserProxy.getInstance();
   protected accessor traces_: ClientTraceReport[] = [];
   protected accessor isLoading_: boolean = false;
-  protected notification_?: Readonly<Notification>;
+  protected accessor notification_: Readonly<Notification>|undefined =
+      undefined;
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -95,7 +96,7 @@ export class TraceReportListElement extends CrLitElement {
     return this.traces_.length > 0;
   }
 
-  protected showToastHandler_(e: CustomEvent<Notification>): void {
+  protected onShowToast_(e: CustomEvent<Notification>): void {
     assert(e.detail);
     this.notification_ = e.detail;
     this.$.toast.show();
@@ -135,8 +136,12 @@ export class TraceReportListElement extends CrLitElement {
     return this.notification_?.type || '';
   }
 
-  protected onRefreshTracesClick_(): Promise<void> {
-    return this.initializeList();
+  protected onRefreshTracesClick_(): void {
+    this.initializeList();
+  }
+
+  protected onRefreshTracesRequest_(): void {
+    this.onRefreshTracesClick_();
   }
 
   protected async onDeleteAllTracesClick_(): Promise<void> {
@@ -148,11 +153,7 @@ export class TraceReportListElement extends CrLitElement {
   }
 
   private dispatchToast_(message: string): void {
-    this.dispatchEvent(new CustomEvent('show-toast', {
-      bubbles: true,
-      composed: true,
-      detail: new Notification(NotificationType.ERROR, message),
-    }));
+    this.fire('show-toast', new Notification(NotificationType.ERROR, message));
   }
 }
 

@@ -24,6 +24,7 @@ tests_sources = [
   "$_tests/BitmapTest.cpp",
   "$_tests/BlitMaskClip.cpp",
   "$_tests/BlurTest.cpp",
+  "$_tests/CPUBackendTest.cpp",
   "$_tests/CPUContextRecorderTest.cpp",
   "$_tests/CachedDataTest.cpp",
   "$_tests/CachedDecodingPixelRefTest.cpp",
@@ -166,6 +167,7 @@ tests_sources = [
   "$_tests/PictureShaderTest.cpp",
   "$_tests/PictureTest.cpp",
   "$_tests/PixelRefTest.cpp",
+  "$_tests/PixelsRecTest.cpp",
   "$_tests/Point3Test.cpp",
   "$_tests/PointTest.cpp",
   "$_tests/PolyUtilsTest.cpp",
@@ -323,6 +325,9 @@ graphite_tests_sources = [
   "$_tests/graphite/RecordingSurfacesTest.cpp",
   "$_tests/graphite/RectTest.cpp",
   "$_tests/graphite/ShapeTest.cpp",
+  "$_tests/graphite/SubmitWithFinishProcTest.cpp",
+  "$_tests/graphite/SwizzleTest.cpp",
+  "$_tests/graphite/TextureFormatTest.cpp",
   "$_tests/graphite/TextureProxyTest.cpp",
   "$_tests/graphite/TransformTest.cpp",
   "$_tests/graphite/UniformManagerTest.cpp",
@@ -351,6 +356,8 @@ precompile_tests_sources = [
   "$_tests/graphite/precompile/ThreadedPrecompileTest.cpp",
   "$_tests/graphite/precompile/UserdefinedStableKeyTest.cpp",
 ]
+
+sparse_strips_test_sources = [ "$_tests/graphite/sparse_strips/LUTTest.cpp" ]
 
 graphite_dawn_tests_sources = [ "$_tests/graphite/DawnBackendTextureTest.cpp" ]
 graphite_metal_tests_sources = [ "$_tests/graphite/MtlBackendTextureTest.mm" ]

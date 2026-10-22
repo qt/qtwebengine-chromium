@@ -50,13 +50,13 @@ struct CoherentPadOp : public dense_xpr_base<CoherentPadOp<XprType, SizeAtCompil
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoherentPadOp(const CoherentPadOp&) = default;
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoherentPadOp(CoherentPadOp&& other) = default;
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoherentPadOp(const XprType& xpr, Index size) : xpr_(xpr), size_(size) {
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE CoherentPadOp(const XprType& xpr, Index size) : m_xpr(xpr), m_size(size) {
     static_assert(XprNested_::IsVectorAtCompileTime, "input type must be a vector");
   }
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const XprNested_& nestedExpression() const { return xpr_; }
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE const XprNested_& nestedExpression() const { return m_xpr; }
 
-  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index size() const { return size_.value(); }
+  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index size() const { return m_size.value(); }
 
   EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Index rows() const {
     return traits<CoherentPadOp>::IsRowMajor ? Index(1) : size();
@@ -67,8 +67,8 @@ struct CoherentPadOp : public dense_xpr_base<CoherentPadOp<XprType, SizeAtCompil
   }
 
  private:
-  XprNested xpr_;
-  const internal::variable_if_dynamic<Index, SizeAtCompileTime> size_;
+  XprNested m_xpr;
+  const internal::variable_if_dynamic<Index, SizeAtCompileTime> m_size;
 };
 
 // Adapted from the Replicate evaluator.

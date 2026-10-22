@@ -79,6 +79,7 @@ void WorkerIdSet::Add(const WorkerId& worker_id,
                       content::BrowserContext* context) {
   // We should not try to register the same WorkerId multiple times.
   CHECK(!Contains(worker_id));
+  CHECK(worker_id.start_token.has_value());
 
   std::vector<WorkerId> previous_worker_ids =
       GetAllForExtension(worker_id.extension_id);
@@ -90,9 +91,10 @@ void WorkerIdSet::Add(const WorkerId& worker_id,
       kMaxWorkerCountToReport);
 
   if (!g_allow_multiple_workers_per_extension) {
-    // TODO(crbug.com/40936639):Enable this CHECK once multiple active workers
-    // is resolved. CHECK_LE(new_size, 1u) << "Extension with worker id " <<
-    // worker_id
+    // TODO(crbug.com/40936639): Enable this CHECK once multiple active workers
+    // is resolved.
+    // CHECK_LE(new_size, 1u) << "Extension with worker id "
+    //                        << worker_id
     //                        << " added additional worker";
   }
 

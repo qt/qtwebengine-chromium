@@ -9,11 +9,14 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "base/callback_list.h"
 #include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -26,6 +29,7 @@
 #include "ui/views/metadata/view_factory.h"
 #include "ui/views/view.h"
 #include "ui/views/view_tracker.h"
+#include "ui/views/view_utils.h"
 
 class GURL;
 
@@ -70,6 +74,8 @@ class WEBVIEW_EXPORT WebView : public View,
     kNoUpgrade,
   };
 
+  using ReturnCrashOverlayToOwnerCallback =
+      base::OnceCallback<void(std::unique_ptr<View>)>;
   using WebContentsAttachedCallback = base::RepeatingCallback<void(WebView*)>;
   using WebContentsDetachedCallback = base::RepeatingCallback<void(WebView*)>;
   using WebContentsFocusedCallback = base::RepeatingCallback<void(WebView*)>;
@@ -125,14 +131,59 @@ class WEBVIEW_EXPORT WebView : public View,
   void EnableSizingFromWebContents(const gfx::Size& min_size,
                                    const gfx::Size& max_size);
 
-  // If provided, this View will be shown in place of the web contents
-  // when the web contents is in a crashed state. This is cleared automatically
-  // if the web contents is changed. The passed-in overlay view must be owned by
-  // the client; this method never takes ownership of it.
-  //
-  // TODO(crbug.com/40278361): This method should take ownership of
-  // `crashed_overlay_view`.
-  void SetCrashedOverlayView(View* crashed_overlay_view);
+  // A scoped object that disconnects the webview from the accessibility tree.
+  // When destroyed, it restores the previous accessibility state.
+  class WEBVIEW_EXPORT ScopedAxDisconnectLock {
+   public:
+    ScopedAxDisconnectLock(const ScopedAxDisconnectLock&) = delete;
+    ScopedAxDisconnectLock& operator=(const ScopedAxDisconnectLock&) = delete;
+    ~ScopedAxDisconnectLock();
+
+   private:
+    friend class WebView;
+    explicit ScopedAxDisconnectLock(base::WeakPtr<WebView> web_view);
+
+    base::WeakPtr<WebView> web_view_;
+  };
+
+  // Temporarily prevents the webview from generating its own AX tree or being
+  // exposed to screen readers, in favor of another WebContents, e.g. in the
+  // Immersive Reading Mode view.  Returns a scoped object that will restore the
+  // previous state when destroyed.
+  [[nodiscard]] std::unique_ptr<ScopedAxDisconnectLock>
+  DisconnectWebContentsAccessibility();
+
+  // Takes ownership of `crashed_overlay_view` and shows it when the web
+  // contents is in a crashed state. If the web_contents is cleared, the view
+  // is returned to the caller via `return_to_owner`. By default, ownership is
+  // not returned in any the view is destroyed. Returns the raw pointer for
+  // callers that may want to hold a pointer to the view.
+  template <typename T>
+  T* TakeCrashedOverlayView(
+      std::unique_ptr<T> crashed_overlay_view,
+      ReturnCrashOverlayToOwnerCallback return_to_owner = base::DoNothing()) {
+    T* view_ptr = crashed_overlay_view.get();
+    TakeCrashedOverlayViewImpl(std::move(crashed_overlay_view),
+                               std::move(return_to_owner));
+    return view_ptr;
+  }
+
+  std::nullptr_t TakeCrashedOverlayView(std::nullptr_t);
+
+  // Detaches and returns the current crash overlay view. null if unavailable.
+  // Because this is directly detaching the crash overlay view, ownership will
+  // NOT be returned to the caller of TakeCrashedOverlayView.
+  template <typename T = View>
+  std::unique_ptr<T> DetachCrashedOverlayView() {
+    std::unique_ptr<View> old_view = DetachCrashedOverlayViewImpl();
+    if (old_view) {
+      std::unique_ptr<T> typed_old_view =
+          views::AsViewClass<T>(std::move(old_view));
+      CHECK(typed_old_view);
+      return typed_old_view;
+    }
+    return nullptr;
+  }
 
   // Adds a callback for when a WebContents is attached to this WebView.
   base::CallbackListSubscription AddWebContentsAttachedCallback(
@@ -156,6 +207,7 @@ class WEBVIEW_EXPORT WebView : public View,
   void set_allow_accelerators(bool allow_accelerators) {
     allow_accelerators_ = allow_accelerators;
   }
+  bool allow_accelerators() const { return allow_accelerators_; }
 
   // When `lock = true` changes in web contents will not reset the override.
   // Default is false.
@@ -185,6 +237,9 @@ class WEBVIEW_EXPORT WebView : public View,
 
     ~ScopedWebContentsCreatorForTesting();
   };
+
+  // View:
+  FocusBehavior GetFocusBehavior() const override;
 
  protected:
   // Called when letterboxing (scaling the native view to preserve aspect
@@ -229,6 +284,12 @@ class WEBVIEW_EXPORT WebView : public View,
 
  private:
   friend class WebViewUnitTest;
+
+  void TakeCrashedOverlayViewImpl(
+      std::unique_ptr<View> crashed_overlay_view,
+      ReturnCrashOverlayToOwnerCallback return_to_owner);
+  std::unique_ptr<View> DetachCrashedOverlayViewImpl();
+
   bool IsObservingAXModeForTesting();
   bool IsObservingWidgetAXManagerForTesting();
 
@@ -237,6 +298,7 @@ class WEBVIEW_EXPORT WebView : public View,
   void UpdateCrashedOverlayView();
   void UpdateNativeViewHostAccessibleParent();
   void NotifyAccessibilityWebContentsChanged();
+  void UpdateAccessibilityDisconnectState(bool disconnect);
   void HandleWidgetAXManagerEnablement();
 
   // Called when the main frame in the renderer becomes present.
@@ -259,6 +321,11 @@ class WEBVIEW_EXPORT WebView : public View,
       const GURL& url,
       base::Location creator_location);
 
+  // Number of active ScopedAxDisconnectLocks. This must be declared before
+  // |holder_| as |holder_|'s initialization calls |GetFocusBehavior()|, which
+  // reads this value.
+  int ax_disconnect_count_ = 0;
+
   const raw_ptr<NativeViewHost> holder_ =
       AddChildView(std::make_unique<NativeViewHost>());
   base::ScopedObservation<ui::AXPlatform, ui::AXModeObserver>
@@ -267,6 +334,8 @@ class WEBVIEW_EXPORT WebView : public View,
       widget_ax_manager_observation_{this};
   // Non-NULL if |web_contents()| was created and is owned by this WebView.
   std::unique_ptr<content::WebContents> wc_owner_;
+  // Returns ownership of a crashed overlay view.
+  ReturnCrashOverlayToOwnerCallback return_crashed_overlay_to_owner_;
   // Set to true when |holder_| is letterboxed (scaled to be smaller than this
   // view, to preserve its aspect ratio).
   bool is_letterboxing_ = false;
@@ -293,6 +362,8 @@ class WEBVIEW_EXPORT WebView : public View,
 
   // List of subscriptions listening for attached WebContents being focused.
   base::RepeatingCallbackList<void(WebView*)> web_contents_focused_callbacks_;
+
+  base::WeakPtrFactory<WebView> weak_ptr_factory_{this};
 };
 
 BEGIN_VIEW_BUILDER(WEBVIEW_EXPORT, WebView, View)
@@ -302,7 +373,6 @@ VIEW_BUILDER_PROPERTY(bool, FastResize)
 VIEW_BUILDER_METHOD(EnableSizingFromWebContents,
                     const gfx::Size&,
                     const gfx::Size&)
-VIEW_BUILDER_PROPERTY(View*, CrashedOverlayView)
 VIEW_BUILDER_METHOD(set_is_primary_web_contents_for_window, bool)
 VIEW_BUILDER_METHOD(set_allow_accelerators, bool)
 END_VIEW_BUILDER

@@ -27,10 +27,10 @@ source_set("e2e_test_support") {
     "//chrome/browser",
     "//chrome/browser:browser_process",
     "//chrome/browser/autofill:test_support_ui",
-    "//chrome/browser/contextual_cueing",
     "//chrome/browser/glic",
     "//chrome/browser/glic:impl",
     "//chrome/browser/glic/fre",
+    "//chrome/browser/glic/suggestions",
     "//chrome/browser/glic/test_support",
     "//chrome/browser/signin/e2e_tests:test_support",
     "//chrome/browser/ui:ui_features",
@@ -73,7 +73,7 @@ test("glic_internal_e2e_interactive_ui_tests") {
     "//third_party/catapult/telemetry/telemetry/bin/",
 
     # Used in WPR command.
-    "//third_party/catapult/web_page_replay_go/deterministic.js",
+    "//third_party/webpagereplay/deterministic.js",
   ]
   defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
   deps = [

@@ -34,7 +34,7 @@ inline void findBlendRangeAtRow(const gfx::Rect& src,
                                 int& width1,
                                 int& left2,
                                 int& width2) {
-  SECURITY_DCHECK(canvasY >= src.y() && canvasY < src.bottom());
+  SECURITY_CHECK(canvasY >= src.y() && canvasY < src.bottom());
   left1 = -1;
   width1 = 0;
   left2 = -1;
@@ -302,7 +302,7 @@ bool WEBPImageDecoder::UpdateDemuxer() {
   } else {
     buffer_.reserve(base::checked_cast<wtf_size_t>(data_->size()));
     while (buffer_.size() < data_->size()) {
-      buffer_.AppendSpan(data_->GetSomeData(buffer_.size()));
+      buffer_.append_range(data_->GetSomeData(buffer_.size()));
     }
     DCHECK_EQ(buffer_.size(), data_->size());
     consolidated_data_ =
@@ -535,8 +535,8 @@ void WEBPImageDecoder::ApplyPostProcessing(wtf_size_t frame_index) {
   }
 
   const gfx::Rect& frame_rect = buffer.OriginalFrameRect();
-  SECURITY_DCHECK(width == frame_rect.width());
-  SECURITY_DCHECK(decoded_height <= frame_rect.height());
+  SECURITY_CHECK(width == frame_rect.width());
+  SECURITY_CHECK(decoded_height <= frame_rect.height());
   const int left = frame_rect.x();
   const int top = frame_rect.y();
 

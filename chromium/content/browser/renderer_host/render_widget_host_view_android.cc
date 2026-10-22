@@ -233,7 +233,7 @@ std::string CompressAndSaveBitmap(const std::string& dir,
   return screenshot_path.value();
 }
 
-blink::mojom::RecordContentToVisibleTimeRequestPtr
+std::optional<blink::RecordContentToVisibleTimeRequest>
 TakeContentToVisibleTimeRequest(RenderWidgetHostImpl* host) {
   return host->GetVisibleTimeRequestTrigger().TakeRequest();
 }
@@ -508,8 +508,8 @@ bool RenderWidgetHostViewAndroid::ScreenStateChangeHandler::
           // immediately. For the browser, schedule a vsync-aligned update to
           // process it smoothly.
           sync_needed = true;
-          if (base::FeatureList::IsEnabled(features::kFluidResize) &&
-              rwhva_->using_browser_compositor_) {
+          if (rwhva_->using_browser_compositor_ &&
+              features::IsFluidResizeEnabled()) {
             sync_needed = false;
             if (!rwhva_->visual_properties_update_pending_) {
               rwhva_->visual_properties_update_pending_ = true;
@@ -1345,6 +1345,14 @@ void RenderWidgetHostViewAndroid::UpdateCursor(const ui::Cursor& cursor) {
   view_.OnCursorChanged(cursor);
 }
 
+void RenderWidgetHostViewAndroid::DisplayCursor(const ui::Cursor& cursor) {
+  if (base::FeatureList::IsEnabled(features::kAndroidDisplayCursor)) {
+    view_.OnCursorChanged(cursor);
+  } else {
+    RenderWidgetHostViewBase::DisplayCursor(cursor);
+  }
+}
+
 input::CursorManager* RenderWidgetHostViewAndroid::GetCursorManager() {
   return cursor_manager_.get();
 }
@@ -1420,8 +1428,8 @@ void RenderWidgetHostViewAndroid::SendStateOnTouchTransfer(
     return;
   }
 
-  const float y_offset_pix =
-      host()->delegate()->GetCurrentTouchSequenceYOffset();
+  const gfx::PointF web_contents_offset =
+      host()->delegate()->GetCurrentTouchSequenceOffset();
 
   std::optional<std::unique_ptr<ui::MotionEventAndroid>> motion_event_android =
       std::nullopt;
@@ -1431,7 +1439,7 @@ void RenderWidgetHostViewAndroid::SendStateOnTouchTransfer(
             gfx::PointF(event.GetX(0), event.GetY(0)));
   }
   remote->StateOnTouchTransfer(input::mojom::TouchTransferState::New(
-      event.GetRawDownTime(), GetFrameSinkId(), y_offset_pix,
+      event.GetRawDownTime(), GetFrameSinkId(), web_contents_offset,
       view_.GetDipScale(), browser_would_have_handled,
       std::move(motion_event_android)));
 }
@@ -2069,7 +2077,7 @@ bool RenderWidgetHostViewAndroid::SupportsAnimation() const {
 }
 
 void RenderWidgetHostViewAndroid::SetNeedsAnimate() {
-  if (base::FeatureList::IsEnabled(features::kFluidResize)) {
+  if (features::IsFluidResizeEnabled()) {
     // The synchronous (WebView) compositor does not have a proper browser
     // compositor with which to drive animations.
     CHECK(using_browser_compositor_);
@@ -2453,8 +2461,7 @@ bool RenderWidgetHostViewAndroid::Animate(base::TimeTicks frame_time) {
   if (touch_selection_controller_)
     needs_animate |= touch_selection_controller_->Animate(frame_time);
 
-  if (visual_properties_update_pending_ &&
-      base::FeatureList::IsEnabled(features::kFluidResize)) {
+  if (visual_properties_update_pending_ && features::IsFluidResizeEnabled()) {
     visual_properties_update_pending_ = false;
     // Use a short deadline for fluid resizing. We don't want to block the
     // UI thread, but we want the update to happen quickly.
@@ -2813,8 +2820,8 @@ bool RenderWidgetHostViewAndroid::IsTouchSequencePotentiallyActiveOnViz() {
 }
 
 void RenderWidgetHostViewAndroid::RequestInputBackForDragAndDrop(
+    WeakDocumentPtr source_document,
     blink::mojom::DragDataPtr drag_data,
-    const url::Origin& source_origin,
     blink::DragOperationsMask drag_operations_mask,
     SkBitmap bitmap,
     gfx::Vector2d cursor_offset_in_dip,
@@ -2829,11 +2836,11 @@ void RenderWidgetHostViewAndroid::RequestInputBackForDragAndDrop(
       base::BindOnce(&RenderWidgetHostViewAndroid::CleanupDraggingCallback,
                      GetWeakPtrAndroid()));
   CHECK(host());
-  start_dragging_callback_ =
-      base::BindOnce(&RenderWidgetHostImpl::StartDragging, host()->GetWeakPtr(),
-                     std::move(drag_data), source_origin, drag_operations_mask,
-                     std::move(bitmap), std::move(cursor_offset_in_dip),
-                     std::move(drag_obj_rect_in_dip), std::move(event_info));
+  start_dragging_callback_ = base::BindOnce(
+      &RenderWidgetHostImpl::AsyncStartDragging, host()->GetWeakPtr(),
+      std::move(source_document), std::move(drag_data), drag_operations_mask,
+      std::move(bitmap), std::move(cursor_offset_in_dip),
+      std::move(drag_obj_rect_in_dip), std::move(event_info));
 }
 
 void RenderWidgetHostViewAndroid::DismissTextHandles() {
@@ -3140,17 +3147,6 @@ void RenderWidgetHostViewAndroid::OnDetachCompositor() {
 void RenderWidgetHostViewAndroid::OnAnimate(base::TimeTicks begin_frame_time) {
   if (Animate(begin_frame_time))
     SetNeedsAnimate();
-}
-
-void RenderWidgetHostViewAndroid::OnUnfoldStarted(
-    base::TimeTicks unfold_begin_time) {
-  TRACE_EVENT0("browser", "RenderWidgetHostViewAndroid::OnUnfoldStarted");
-  host()->RequestSuccessfulPresentationTimeForNextFrame(
-      blink::mojom::RecordContentToVisibleTimeRequest::New(
-          unfold_begin_time, /*destination_is_loaded=*/false,
-          /*show_reason_tab_switching=*/false,
-          /*show_reason_bfcache_restore=*/false,
-          /*show_reason_unfolding=*/true));
 }
 
 void RenderWidgetHostViewAndroid::OnActivityStopped() {
@@ -3483,7 +3479,8 @@ void RenderWidgetHostViewAndroid::OverrideDisplayFeatureForEmulation(
 }
 
 void RenderWidgetHostViewAndroid::NotifyHostAndDelegateOnWasShown(
-    blink::mojom::RecordContentToVisibleTimeRequestPtr visible_time_request) {
+    std::optional<blink::RecordContentToVisibleTimeRequest>
+        visible_time_request) {
   // Whether evicted or not, we stop batching for rotation in order to get
   // content ready for the new orientation.
   bool rotation_override = in_rotation_;
@@ -3530,25 +3527,23 @@ void RenderWidgetHostViewAndroid::NotifyHostAndDelegateOnWasShown(
   }
 
   // Whenever the page is restored, via back-forward cache, or tab changes,
-  // record content to visible time.
-  bool show_reason_bfcache_restore =
-      visible_time_request ? visible_time_request->show_reason_bfcache_restore
-                           : false;
-  bool has_saved_frame = delegated_frame_host_->HasSavedFrame();
-  if (show_reason_bfcache_restore) {
-    host()->WasShown(visible_time_request.Clone());
-  } else {
-    host()->WasShown(has_saved_frame
-                         ? blink::mojom::RecordContentToVisibleTimeRequestPtr()
-                         : visible_time_request.Clone());
+  // record content to visible time. However if the frame for the renderer is
+  // already available, then the tab-switching time is the presentation time for
+  // the browser-compositor.
+  std::optional<blink::RecordContentToVisibleTimeRequest>
+      delegated_visible_time_request;
+  if (visible_time_request && delegated_frame_host_->HasSavedFrame()) {
+    delegated_visible_time_request =
+        visible_time_request->ExtractTabSwitchEvents();
   }
+
+  host()->WasShown(std::move(visible_time_request));
 
   if (delegated_frame_host_) {
     delegated_frame_host_->WasShown(
         local_surface_id_allocator_.GetCurrentLocalSurfaceId(),
         GetCompositorViewportPixelSize(), host()->delegate()->IsFullscreen(),
-        has_saved_frame ? std::move(visible_time_request)
-                        : blink::mojom::RecordContentToVisibleTimeRequestPtr());
+        std::move(delegated_visible_time_request));
   }
 
   if (view_.parent() && view_.GetWindowAndroid()) {
@@ -3590,19 +3585,20 @@ void RenderWidgetHostViewAndroid::NotifyHostAndDelegateOnWasShown(
 
 void RenderWidgetHostViewAndroid::
     RequestSuccessfulPresentationTimeFromHostOrDelegate(
-        blink::mojom::RecordContentToVisibleTimeRequestPtr
-            visible_time_request) {
-  bool has_saved_frame = delegated_frame_host_->HasSavedFrame();
-  // No need to check for saved frames for the case of bfcache restore.
-  if (visible_time_request->show_reason_bfcache_restore || !has_saved_frame) {
-    host()->RequestSuccessfulPresentationTimeForNextFrame(
-        visible_time_request.Clone());
-  }
-
+        blink::RecordContentToVisibleTimeRequest visible_time_request) {
   // If the frame for the renderer is already available, then the
   // tab-switching time is the presentation time for the browser-compositor.
-  if (has_saved_frame) {
-    delegated_frame_host_->RequestSuccessfulPresentationTimeForNextFrame(
+  if (delegated_frame_host_->HasSavedFrame()) {
+    if (std::optional<blink::RecordContentToVisibleTimeRequest>
+            delegated_visible_time_request =
+                visible_time_request.ExtractTabSwitchEvents()) {
+      delegated_frame_host_->RequestSuccessfulPresentationTimeForNextFrame(
+          std::move(*delegated_visible_time_request));
+    }
+  }
+
+  if (!visible_time_request.events.empty()) {
+    host()->RequestSuccessfulPresentationTimeForNextFrame(
         std::move(visible_time_request));
   }
 }

@@ -1,7 +1,15 @@
+# Copyright 2025 Google LLC
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Base class for x86 dot kernel generators.
 
 Handles accumulating C tiles to the output.
 """
+
+# pylint: disable=missing-class-docstring
+# pylint: disable=invalid-name
 
 from ynnpack.kernels.dot.generator.dot_base import dot_base, indent
 
@@ -22,27 +30,45 @@ class x86(dot_base):
   def _mm(self, bits=0):
     if bits == 0:
       bits = self.bits
-    if bits == 128:
+    if bits <= 128:
       return "_mm"
     else:
       return f"_mm{bits}"
 
+  def c_bits(self):
+    if self.c_type == "float":
+      return 32
+    elif self.c_type == "double":
+      return 64
+    elif self.c_type == "int32_t":
+      return 32
+    else:
+      raise ValueError(f"Unsupported c_type: {self.c_type}")
+
   def init_c_tile(self, i, j):
     if self.c_type == "float":
       return f"__m{self.bits} c_{i}_{j} = {self._mm()}_setzero_ps();\n"
+    elif self.c_type == "double":
+      return f"__m{self.bits}d c_{i}_{j} = {self._mm()}_setzero_pd();\n"
     elif self.c_type == "int32_t":
       return f"__m{self.bits}i c_{i}_{j} = {self._mm()}_setzero_si{self.bits}();\n"
     else:
       raise ValueError(f"Unsupported c_type: {self.c_type}")
 
   def add_c_tile(self, i, j):
+    io_bits = min(self.bits, self.block_shape[1] * self.c_bits())
     if self.c_type == "float":
-      io_bits = min(self.bits, self.block_shape[1] * 32)
       load = f"{self._mm(io_bits)}_loadu_ps({self.c_in_ptr(i, j)})"
       if io_bits < self.bits:
         # The tile is smaller than a vector, do a smaller load and cast.
         load = f"{self._mm()}_castps{io_bits}_ps{self.bits}({load})"
       return f"c_{i}_{j} = {self._mm()}_add_ps(c_{i}_{j}, {load});\n"
+    elif self.c_type == "double":
+      load = f"{self._mm(io_bits)}_loadu_pd({self.c_in_ptr(i, j)})"
+      if io_bits < self.bits:
+        # The tile is smaller than a vector, do a smaller load and cast.
+        load = f"{self._mm()}_castpd{io_bits}_pd{self.bits}({load})"
+      return f"c_{i}_{j} = {self._mm()}_add_pd(c_{i}_{j}, {load});\n"
     elif self.c_type == "int32_t":
       return (
           f"c_{i}_{j} = {self._mm()}_add_epi32(c_{i}_{j},"
@@ -52,13 +78,19 @@ class x86(dot_base):
       raise ValueError(f"Unsupported c_type: {self.c_type}")
 
   def store_c_tile(self, i, j):
+    io_bits = min(self.block_shape[1] * self.c_bits(), self.bits)
     if self.c_type == "float":
-      io_bits = min(self.block_shape[1] * 32, self.bits)
       c_ij = f"c_{i}_{j}"
       if io_bits < self.bits:
         # The tile is smaller than a vector, cast and do a smaller store.
         c_ij = f"{self._mm()}_castps{self.bits}_ps{io_bits}({c_ij})"
       return f"{self._mm(io_bits)}_storeu_ps({self.c_out_ptr(i, j)}, {c_ij});\n"
+    elif self.c_type == "double":
+      c_ij = f"c_{i}_{j}"
+      if io_bits < self.bits:
+        # The tile is smaller than a vector, cast and do a smaller store.
+        c_ij = f"{self._mm()}_castpd{self.bits}_pd{io_bits}({c_ij})"
+      return f"{self._mm(io_bits)}_storeu_pd({self.c_out_ptr(i, j)}, {c_ij});\n"
     elif self.c_type == "int32_t":
       return (
           f"{self._mm()}_storeu_si{self.bits}({self.c_out_ptr(i, j, f'__m{self.bits}i')},"
@@ -85,7 +117,7 @@ class x86(dot_base):
     return result
 
   def add_c_block_vectors(self, n):
-    assert(n % (self.bits//32) == 0)
+    assert n % (self.bits // self.c_bits()) == 0
     result = self.add_c_tiles(n)
 
     result += self.shift_c_tiles(n)
@@ -97,15 +129,19 @@ class x86(dot_base):
   def add_c_block_tail(self):
     result = ""
     n = self.block_shape[1] // 2
-    while n >= self.bits//32:
+    while n >= self.bits // self.c_bits():
       # This might be a whole vector.
       result += f"if (N & {n}) {{\n"
       result += indent(self.add_c_block_vectors(n), "  ")
       result += "\n}\n"
       n //= 2
-    result += "if (N > 0) {\n"
-    result += indent(self.add_c_block_vector_tail(), "  ")
-    result += "\n}\n"
+    if self.block_shape[1] > self.bits // self.c_bits():
+      result += "if (N > 0) {\n"
+      result += indent(self.add_c_block_vector_tail(), "  ")
+      result += "\n}\n"
+    else:
+      result += "assert(N > 0);\n"
+      result += self.add_c_block_vector_tail()
 
     return result
 
@@ -113,7 +149,7 @@ class x86(dot_base):
 class x86_sse2(x86):
   def add_c_block_vector_tail(self):
     result = ""
-    result += f"assert(N < {self.bits//32});\n"
+    result += f"assert(N < {self.bits//self.c_bits()});\n"
 
     result += "if (N & 2) {\n"
 
@@ -170,7 +206,10 @@ static const int32_t mask_table[16] = {-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 
     result += f"assert(N < {self.bits//32});\n"
 
     # Load all of the output and add it, before writing anything.
-    result += f"const __m{self.bits}i mask = {self._mm()}_loadu_si{self.bits}((const __m{self.bits}i*) &mask_table[8 - N]);\n"
+    result += (
+        f"const __m{self.bits}i mask = {self._mm()}_loadu_si{self.bits}((const"
+        f" __m{self.bits}i*) &mask_table[8 - N*{self.c_bits()//32}]);\n"
+    )
 
     add_c_tiles = ""
     for i in range(0, self.block_shape[0]):
@@ -178,6 +217,11 @@ static const int32_t mask_table[16] = {-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 
         add_c_tiles += (
             f"c_{i}_0 = {self._mm()}_add_ps(c_{i}_0,"
             f" {self._mm()}_maskload_ps({self.c_in_ptr(i, 0)}, mask));\n"
+        )
+      elif self.c_type == "double":
+        add_c_tiles += (
+            f"c_{i}_0 = {self._mm()}_add_pd(c_{i}_0,"
+            f" {self._mm()}_maskload_pd({self.c_in_ptr(i, 0)}, mask));\n"
         )
       elif self.c_type == "int32_t":
         add_c_tiles += (
@@ -197,6 +241,11 @@ static const int32_t mask_table[16] = {-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 
             f"{self._mm()}_maskstore_ps({self.c_out_ptr(i, 0)}, mask,"
             f" c_{i}_0);\n"
         )
+      elif self.c_type == "double":
+        result += (
+            f"{self._mm()}_maskstore_pd({self.c_out_ptr(i, 0)}, mask,"
+            f" c_{i}_0);\n"
+        )
       elif self.c_type == "int32_t":
         result += (
             f"{self._mm()}_maskstore_epi32({self.c_out_ptr(i, 0)}, mask,"
@@ -208,12 +257,15 @@ static const int32_t mask_table[16] = {-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 
     result += f"N = 0;\n"
     return result
 
-class x86_avx512f(x86):
+
+class x86_avx512(x86):
   def add_c_block_vector_tail(self):
     result = ""
-    result += f"assert(N < {self.bits//32});\n"
+    result += f"assert(N < {self.bits//self.c_bits()});\n"
 
-    result += f"const __mmask16 mask = _cvtu32_mask16((uint32_t) (((UINT64_C(1) << N) - 1) >> 0));\n"
+    result += (
+        "const __mmask16 mask = _cvtu32_mask16((uint32_t) ((1 << N) - 1));\n"
+    )
 
     add_c_tiles = ""
     # Load all of the output and add it, before writing anything.
@@ -222,6 +274,12 @@ class x86_avx512f(x86):
         add_c_tiles += (
             f"c_{i}_0 = {self._mm()}_add_ps(c_{i}_0,"
             f" {self._mm()}_mask_loadu_ps(c_{i}_0, mask,"
+            f" {self.c_in_ptr(i, 0)}));\n"
+        )
+      elif self.c_type == "double":
+        add_c_tiles += (
+            f"c_{i}_0 = {self._mm()}_add_pd(c_{i}_0,"
+            f" {self._mm()}_mask_loadu_pd(c_{i}_0, mask,"
             f" {self.c_in_ptr(i, 0)}));\n"
         )
       elif self.c_type == "int32_t":
@@ -240,6 +298,11 @@ class x86_avx512f(x86):
       if self.c_type == "float":
         result += (
             f"{self._mm()}_mask_storeu_ps({self.c_out_ptr(i, 0)}, mask,"
+            f" c_{i}_0);\n"
+        )
+      elif self.c_type == "double":
+        result += (
+            f"{self._mm()}_mask_storeu_pd({self.c_out_ptr(i, 0)}, mask,"
             f" c_{i}_0);\n"
         )
       elif self.c_type == "int32_t":

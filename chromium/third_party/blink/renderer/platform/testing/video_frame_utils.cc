@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/platform/testing/video_frame_utils.h"
 
 #include "base/functional/callback_helpers.h"
+#include "base/logging.h"
 #include "components/viz/common/resources/shared_image_format.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "gpu/command_buffer/client/test_shared_image_interface.h"
@@ -60,7 +61,7 @@ scoped_refptr<media::VideoFrame> CreateTestFrame(
       auto frame = media::VideoFrame::WrapMappableSharedImage(
           std::move(shared_image), test_sii->GenVerifiedSyncToken(),
           base::NullCallback(), visible_rect, natural_size, timestamp);
-
+      frame->set_color_space(color_space);
       return frame;
     }
     case media::VideoFrame::STORAGE_OPAQUE: {

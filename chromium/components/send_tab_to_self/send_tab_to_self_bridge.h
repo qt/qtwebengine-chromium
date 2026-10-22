@@ -6,10 +6,11 @@
 #define COMPONENTS_SEND_TAB_TO_SELF_SEND_TAB_TO_SELF_BRIDGE_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
-#include "base/containers/flat_set.h"
+#include "base/containers/flat_map.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
@@ -17,6 +18,7 @@
 #include "components/history/core/browser/history_service.h"
 #include "components/history/core/browser/history_service_observer.h"
 #include "components/prefs/pref_service.h"
+#include "components/send_tab_to_self/page_context.h"
 #include "components/send_tab_to_self/send_tab_to_self_entry.h"
 #include "components/send_tab_to_self/send_tab_to_self_model.h"
 #include "components/sync/base/data_type.h"
@@ -44,7 +46,6 @@ struct TargetDeviceInfo;
 // All interface methods have to be called on main thread.
 class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
                             public SendTabToSelfModel,
-                            public syncer::DeviceInfoTracker::Observer,
                             public history::HistoryServiceObserver {
  public:
   // The caller should ensure that all raw pointers are not null and will
@@ -79,6 +80,8 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
       const syncer::EntityData& entity_data) const override;
   std::string GetStorageKey(
       const syncer::EntityData& entity_data) const override;
+  sync_pb::EntitySpecifics TrimAllSupportedFieldsFromRemoteSpecifics(
+      const sync_pb::EntitySpecifics& entity_specifics) const override;
   bool IsEntityDataValid(const syncer::EntityData& entity_data) const override;
   void ApplyDisableSyncChanges(std::unique_ptr<syncer::MetadataChangeList>
                                    delete_metadata_change_list) override;
@@ -90,7 +93,9 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   const SendTabToSelfEntry* AddEntry(
       const GURL& url,
       const std::string& title,
-      const std::string& target_device_cache_guid) override;
+      const std::string& target_device_cache_guid,
+      const PageContext& context,
+      NavigationHistory navigation_history) override;
   void DeleteEntry(const std::string& guid) override;
   void DismissEntry(const std::string& guid) override;
   void MarkEntryOpened(const std::string& guid) override;
@@ -101,9 +106,6 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   // history::HistoryServiceObserver:
   void OnHistoryDeletions(history::HistoryService* history_service,
                           const history::DeletionInfo& deletion_info) override;
-
-  // syncer::DeviceInfoTracker::Observer overrides.
-  void OnDeviceInfoChange() override;
 
   // For testing only.
   static std::unique_ptr<syncer::DataTypeStore> DestroyAndStealStoreForTest(
@@ -136,7 +138,6 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   void OnStoreCreated(const std::optional<syncer::ModelError>& error,
                       std::unique_ptr<syncer::DataTypeStore> store);
   void OnReadAllData(std::unique_ptr<SendTabToSelfEntries> initial_entries,
-                     std::unique_ptr<std::string> local_device_name,
                      const std::optional<syncer::ModelError>& error);
   void OnReadAllMetadata(const std::optional<syncer::ModelError>& error,
                          std::unique_ptr<syncer::MetadataBatch> metadata_batch);
@@ -149,10 +150,14 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   // exist.
   SendTabToSelfEntry* GetMutableEntryByGUID(const std::string& guid) const;
 
+  // Returns the name of the local device.
+  std::string GetLocalFullName() const;
+
+  // Returns true if the device should be included in the target list.
+  bool ShouldIncludeDevice(const syncer::DeviceInfo& device) const;
+
   // Delete expired entries.
   void DoGarbageCollection();
-
-  void ComputeTargetDeviceInfoSortedList();
 
   // Remove entry with |guid| from entries, but doesn't call Commit on provided
   // |batch|. This allows multiple for deletions without duplicate batch calls.
@@ -171,10 +176,11 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   SendTabToSelfEntries entries_;
 
   // Stores guids of entries that have been opened from a layer other than
-  // SendTabToSelfModel. Once the bridge receives the respective entries, they
-  // will be marked opened. Entries are in-memory only and will be lost on
-  // browser restart.
-  base::flat_set<std::string> unknown_opened_entries_;
+  // SendTabToSelfModel, along with the time the open was requested. Once
+  // the bridge receives the respective entries, they will be marked opened
+  // using the stored timestamp. Entries are in-memory only and will be lost
+  // on browser restart.
+  base::flat_map<std::string, base::Time> unknown_opened_entries_;
 
   // |clock_| isn't owned.
   const raw_ptr<const base::Clock> clock_;
@@ -191,8 +197,8 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   // `pref_service_` isn't owned.
   const raw_ptr<PrefService> pref_service_;
 
-  // The name of this local device.
-  std::string local_device_name_;
+  // The name of this local device, set only for testing.
+  std::optional<std::string> local_device_name_for_testing_;
 
   // In charge of actually persisting changes to disk, or loading previous data.
   std::unique_ptr<syncer::DataTypeStore> store_;
@@ -200,14 +206,8 @@ class SendTabToSelfBridge : public syncer::DataTypeSyncBridge,
   // A pointer to the most recently used entry used for deduplication.
   raw_ptr<const SendTabToSelfEntry, DanglingUntriaged> mru_entry_;
 
-  // The list of target devices, deduplicated and sorted by most recently used.
-  std::vector<TargetDeviceInfo> target_device_info_sorted_list_;
-
   base::ScopedObservation<history::HistoryService, HistoryServiceObserver>
       history_service_observation_{this};
-  base::ScopedObservation<syncer::DeviceInfoTracker,
-                          syncer::DeviceInfoTracker::Observer>
-      device_info_tracker_observation_{this};
 
   base::WeakPtrFactory<SendTabToSelfBridge> weak_ptr_factory_{this};
 };

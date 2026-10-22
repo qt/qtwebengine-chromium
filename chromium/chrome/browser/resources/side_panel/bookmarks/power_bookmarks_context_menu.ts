@@ -138,12 +138,14 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
   private getMenuItemsForBookmarks_(): MenuItem[] {
     // TODO(crbug.com/40262319): Factor in URLs not available in incognito.
     let bookmarkCount = 0;
-    this.bookmarks_.forEach((bookmark) => {
+    // Filter out undefined bookmarks which might exist temporarily as the
+    // bookmarks tree is being manipulated.
+    this.bookmarks_.filter(bookmark => !!bookmark).forEach((bookmark) => {
       if (bookmark.url) {
         bookmarkCount += 1;
       } else if (bookmark.children) {
         bookmarkCount +=
-            bookmark.children.filter((child) => !!child.url).length;
+            bookmark.children.filter((child) => child && !!child.url).length;
       }
     });
     const menuItems: MenuItem[] = [
@@ -164,6 +166,14 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
       },
     ];
 
+    if (bookmarkCount === 1 && this.bookmarks_[0].url) {
+      menuItems.push({
+        id: MenuItemId.OPEN_SPLIT_VIEW,
+        label: loadTimeData.getString('menuOpenSplitView'),
+        disabled: this.isInSplitView_,
+      });
+    }
+
     if (!loadTimeData.getBoolean('incognitoMode') &&
         loadTimeData.getBoolean('isIncognitoModeAvailable')) {
       menuItems.push({
@@ -173,14 +183,6 @@ export class PowerBookmarksContextMenuElement extends PolymerElement {
             loadTimeData.getStringF(
                 'menuOpenIncognitoWithCount', this.incognitoCount_),
         disabled: this.incognitoCount_ === 0,
-      });
-    }
-
-    if (bookmarkCount === 1 && this.bookmarks_[0].url) {
-      menuItems.push({
-        id: MenuItemId.OPEN_SPLIT_VIEW,
-        label: loadTimeData.getString('menuOpenSplitView'),
-        disabled: this.isInSplitView_,
       });
     }
 

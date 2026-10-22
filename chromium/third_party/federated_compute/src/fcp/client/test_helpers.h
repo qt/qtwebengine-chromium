@@ -58,7 +58,6 @@
 #include "fcp/client/stats.h"
 #include "fcp/client/task_result_info.pb.h"
 #include "fcp/client/tensorflow/tensorflow_runner.h"
-#include "fcp/protos/confidentialcompute/payload_metadata.pb.h"
 #include "fcp/protos/federated_api.pb.h"
 #include "fcp/protos/federatedcompute/confidential_aggregations.pb.h"
 #include "fcp/protos/opstats.pb.h"
@@ -291,6 +290,12 @@ class MockEventPublisher : public EventPublisher {
                const NetworkStats& network_stats,
                absl::Duration phase_duration),
               (override));
+  MOCK_METHOD(void, PublishComputationInsufficientData,
+              (absl::string_view error_message,
+               const ExampleStats& example_stats,
+               const NetworkStats& network_stats,
+               absl::Duration phase_duration),
+              (override));
   MOCK_METHOD(void, PublishResultUploadStarted, (), (override));
   MOCK_METHOD(void, PublishResultUploadIOError,
               (absl::string_view error_message,
@@ -510,21 +515,17 @@ class MockFederatedProtocol : public FederatedProtocol {
        const std::function<void(size_t)>& payload_uris_received_callback,
        std::optional<std::string> attestation_measurement));
 
-  absl::Status ReportCompleted(
+  ReportResult ReportCompleted(
       ComputationResults results, absl::Duration plan_duration,
-      std::optional<std::string> aggregation_session_id,
-      std::optional<confidentialcompute::PayloadMetadata> payload_metadata)
-      final {
+      std::optional<std::string> aggregation_session_id) final {
     network_stats_ += kReportCompletedNetworkStats;
     retry_window_ = GetPostReportCompletedRetryWindow();
     return MockReportCompleted(std::move(results), plan_duration,
-                               aggregation_session_id, payload_metadata);
+                               aggregation_session_id);
   };
-  MOCK_METHOD(
-      absl::Status, MockReportCompleted,
-      (ComputationResults results, absl::Duration plan_duration,
-       std::optional<std::string> aggregation_session_id,
-       std::optional<confidentialcompute::PayloadMetadata> payload_metadata));
+  MOCK_METHOD(ReportResult, MockReportCompleted,
+              (ComputationResults results, absl::Duration plan_duration,
+               std::optional<std::string> aggregation_session_id));
 
   absl::Status ReportNotCompleted(
       engine::PhaseOutcome phase_outcome, absl::Duration plan_duration,
@@ -710,6 +711,7 @@ class MockFlags : public Flags {
   MOCK_METHOD(bool, enable_lightweight_client_report_wire_format, (),
               (const, override));
   MOCK_METHOD(bool, enable_confidential_aggregation, (), (const, override));
+  MOCK_METHOD(bool, enable_willow_secure_aggregation, (), (const, override));
   MOCK_METHOD(bool, check_trustworthiness_for_min_sep_policy, (),
               (const, override));
   MOCK_METHOD(bool, enable_direct_data_upload_task, (), (const, override));
@@ -721,6 +723,10 @@ class MockFlags : public Flags {
   MOCK_METHOD(bool, move_device_attestation_to_start_task_assignment, (),
               (const, override));
   MOCK_METHOD(bool, enable_privacy_id_generation, (), (const, override));
+  MOCK_METHOD(bool, enable_attestation_transparency_verifier, (),
+              (const, override));
+  MOCK_METHOD(bool, drop_out_based_data_availability, (), (const, override));
+  MOCK_METHOD(bool, enable_private_logger, (), (const, override));
 };
 
 // Helper methods for extracting opstats fields from TF examples.
@@ -926,6 +932,11 @@ class MockPhaseLogger : public PhaseLogger {
                const NetworkStats& network_stats,
                absl::Time run_plan_start_time, absl::Time reference_time,
                (std::optional<int64_t> min_sep_policy_index)),
+              (override));
+  MOCK_METHOD(void, LogComputationInsufficientData,
+              (absl::Status error_status, const ExampleStats& example_stats,
+               const NetworkStats& network_stats,
+               absl::Time run_plan_start_time, absl::Time reference_time),
               (override));
   MOCK_METHOD(absl::Status, LogResultUploadStarted, (), (override));
   MOCK_METHOD(void, LogResultUploadIOError,

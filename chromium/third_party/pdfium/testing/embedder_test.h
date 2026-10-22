@@ -32,6 +32,9 @@ class TestLoader;
 // loaded. So, if a test suite has a lot of tests that need a font manager they
 // can end up executing very, very slowly.
 
+// Helper macro for common equality assertions with a fixed tolerance of 0.001.
+#define EXPECT_NEAR_THREE_PLACES(a, b) EXPECT_NEAR((a), (b), 0.001)
+
 // This class is used to load a PDF document, and then run programatic
 // API tests against it.
 class EmbedderTest : public ::testing::Test,
@@ -94,6 +97,7 @@ class EmbedderTest : public ::testing::Test,
    public:
     ScopedSavedDoc();
     explicit ScopedSavedDoc(EmbedderTest* test);
+    ScopedSavedDoc(EmbedderTest* test, const char* password);
     ScopedSavedDoc(const ScopedSavedDoc&) = delete;
     ScopedSavedDoc& operator=(const ScopedSavedDoc&) = delete;
     ScopedSavedDoc(ScopedSavedDoc&&) noexcept;
@@ -307,8 +311,8 @@ class EmbedderTest : public ::testing::Test,
 
   // Check `bitmap` matches `expectation_png_name`, where `expectation_png_name`
   // is the name of testing/resources/embedder_tests/expectation_png_name.png.
-  static void CompareBitmapToPng(FPDF_BITMAP bitmap,
-                                 std::string_view expectation_png_name);
+  static void CompareBitmap(FPDF_BITMAP bitmap,
+                            std::string_view expectation_png_name);
 
   // Like CompareBitmap(), except instead of just adding ".png" to
   // `expectation_png_name`, this method will look for the expectation PNG using
@@ -330,23 +334,16 @@ class EmbedderTest : public ::testing::Test,
   //
   // `max_pixel_per_channel_delta` can optionally be set to tolerate minor pixel
   // discrepancies. The default is exact matching.
-  static void CompareBitmapToPngWithExpectationSuffix(
+  static void CompareBitmapWithExpectationSuffix(
       FPDF_BITMAP bitmap,
       std::string_view expectation_png_name,
       int max_pixel_per_channel_delta = 0);
 
-  // Same as `CompareBitmapToPngWithExpectationSuffix()`, but automatically
+  // Same as `CompareBitmapWithExpectationSuffix()`, but automatically
   // applies platform-specific tolerance.
-  static void CompareBitmapToPngWithFuzzyExpectationSuffix(
+  static void CompareBitmapWithFuzzyExpectationSuffix(
       FPDF_BITMAP bitmap,
       std::string_view expectation_png_name);
-
-  // Check `bitmap` to make sure it has the right dimensions and content.
-  // TODO(crbug.com/468228360): Switch to the CompareBitmap() overload above.
-  static void CompareBitmap(FPDF_BITMAP bitmap,
-                            int expected_width,
-                            int expected_height,
-                            const char* expected_md5sum);
 
   void ClearString() { data_string_.clear(); }
   const std::string& GetString() const { return data_string_; }
@@ -358,28 +355,26 @@ class EmbedderTest : public ::testing::Test,
 
   // See comments in the respective non-Saved versions of these methods.
   ScopedSavedDoc OpenScopedSavedDocument();
-  FPDF_DOCUMENT OpenSavedDocument();
-  FPDF_DOCUMENT OpenSavedDocumentWithPassword(const char* password);
-  void CloseSavedDocument();
+  ScopedSavedDoc OpenScopedSavedDocumentWithPassword(const char* password);
   ScopedSavedPage LoadScopedSavedPage(int page_index);
   FPDF_PAGE LoadSavedPage(int page_index);
   void CloseSavedPage(FPDF_PAGE page);
 
-  // See comments for CompareBitmap(), CompareBitmapToPng(), and
-  // CompareBitmapToPngWithExpectationSuffix() above.
-  void VerifySavedRenderingToPng(FPDF_PAGE page,
-                                 std::string_view expectation_png_name);
-  void VerifySavedRenderingToPngWithExpectationSuffix(
+  // See comments for CompareBitmap() and CompareBitmapWithExpectationSuffix()
+  // above.
+  void VerifySavedRendering(FPDF_PAGE page,
+                            std::string_view expectation_png_name);
+  void VerifySavedRenderingWithExpectationSuffix(
       FPDF_PAGE page,
       std::string_view expectation_png_name);
-  void VerifySavedRendering(FPDF_PAGE page,
-                            int width,
-                            int height,
-                            const char* md5);
-  void VerifySavedDocumentToPng(std::string_view expectation_png_name);
-  void VerifySavedDocumentToPngWithExpectationSuffix(
+  void VerifySavedRenderingWithFuzzyExpectationSuffix(
+      FPDF_PAGE page,
       std::string_view expectation_png_name);
-  void VerifySavedDocument(int width, int height, const char* md5);
+  void VerifySavedDocument(std::string_view expectation_png_name);
+  void VerifySavedDocumentWithExpectationSuffix(
+      std::string_view expectation_png_name);
+  void VerifySavedDocumentWithFuzzyExpectationSuffix(
+      std::string_view expectation_png_name);
 
   void SetWholeFileAvailable();
 
@@ -406,6 +401,17 @@ class EmbedderTest : public ::testing::Test,
 
   // Same as GetPageNumberForLoadedPage(), but with `saved_page_map_`.
   int GetPageNumberForSavedPage(FPDF_PAGE page) const;
+
+  // Helpers for opening saved documents. These are intended for internal use
+  // only. Callers should use the Scoped methods that manage lifetime
+  // automatically.
+  FPDF_DOCUMENT OpenSavedDocument();
+  FPDF_DOCUMENT OpenSavedDocumentWithPassword(const char* password);
+
+  // Closes a document opened via OpenSavedDocument(). This must only be invoked
+  // in documents opened by the helpers above. This is intended for internal use
+  // in the destructor of the scoped methods.
+  void CloseSavedDocument();
 
   void UnloadPageCommon(FPDF_PAGE page, bool do_events);
   FPDF_PAGE LoadPageCommon(int page_index, bool do_events);

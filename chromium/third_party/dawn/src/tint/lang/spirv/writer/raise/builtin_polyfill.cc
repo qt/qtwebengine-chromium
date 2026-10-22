@@ -52,7 +52,7 @@
 #include "src/tint/lang/core/type/u8.h"
 #include "src/tint/lang/spirv/ir/binary.h"
 #include "src/tint/lang/spirv/ir/builtin_call.h"
-#include "src/tint/lang/spirv/ir/literal_operand.h"
+#include "src/tint/lang/spirv/type/literal.h"
 #include "src/tint/lang/spirv/type/sampled_image.h"
 #include "src/tint/utils/ice/ice.h"
 #include "src/tint/utils/internal_limits.h"
@@ -212,6 +212,8 @@ struct State {
                     case core::BuiltinFn::kAtomicAdd:
                     case core::BuiltinFn::kAtomicAnd:
                     case core::BuiltinFn::kAtomicCompareExchangeWeak:
+                    case core::BuiltinFn::kAtomicStoreMax:
+                    case core::BuiltinFn::kAtomicStoreMin:
                     case core::BuiltinFn::kAtomicExchange:
                     case core::BuiltinFn::kAtomicLoad:
                     case core::BuiltinFn::kAtomicMax:
@@ -266,7 +268,7 @@ struct State {
             if (auto* construct = inst->As<core::ir::Construct>()) {
                 if (auto* sm = construct->Result()->Type()->As<core::type::SubgroupMatrix>()) {
                     if (sm->Type()->IsAnyOf<core::type::I8, core::type::U8>() &&
-                        construct->Args().Length() > 0) {
+                        construct->Args().size() > 0) {
                         subgroup_matrix_constructors.Push(construct);
                     }
                 }
@@ -290,6 +292,8 @@ struct State {
                 case core::BuiltinFn::kAtomicStore:
                 case core::BuiltinFn::kAtomicSub:
                 case core::BuiltinFn::kAtomicXor:
+                case core::BuiltinFn::kAtomicStoreMax:
+                case core::BuiltinFn::kAtomicStoreMin:
                     Atomic(builtin);
                     break;
                 case core::BuiltinFn::kDot:
@@ -380,7 +384,7 @@ struct State {
         // SPIR-V requires that the value passed to OpCompositeConstruct is an 8-bit value.
         for (auto* construct : subgroup_matrix_constructors) {
             auto* sm_ty = construct->Result()->Type()->As<core::type::SubgroupMatrix>();
-            TINT_IR_ASSERT(ir, construct->Args().Length() == 1u);
+            TINT_IR_ASSERT(ir, construct->Args().size() == 1u);
             TINT_IR_ASSERT(ir, sm_ty);
             auto* value = construct->Args()[0];
             b.InsertBefore(construct, [&] {
@@ -403,8 +407,9 @@ struct State {
     /// Create a literal operand.
     /// @param value the literal value
     /// @returns the literal operand
-    spirv::ir::LiteralOperand* Literal(u32 value) {
-        return ir.CreateValue<spirv::ir::LiteralOperand>(b.ConstantValue(value));
+    core::ir::Value* Literal(u32 value) {
+        return b.Constant(
+            ir.constant_values.Get<core::constant::Scalar<u32>>(ty.Get<type::Literal>(), value));
     }
 
     /// Handle an `arrayLength()` builtin.
@@ -419,7 +424,7 @@ struct State {
 
         auto* access = ptr->Instruction()->As<core::ir::Access>();
         TINT_IR_ASSERT(ir, access);
-        TINT_IR_ASSERT(ir, access->Indices().Length() == 1u);
+        TINT_IR_ASSERT(ir, access->Indices().size() == 1u);
         TINT_IR_ASSERT(ir, access->Object()->Type()->UnwrapPtr()->Is<core::type::Struct>());
         auto* const_idx = access->Indices()[0]->As<core::ir::Constant>();
 
@@ -514,6 +519,17 @@ struct State {
                     call = build(spirv::BuiltinFn::kAtomicUMin);
                 }
                 call->AppendArg(builtin->Args()[1]);
+                break;
+            case core::BuiltinFn::kAtomicStoreMax: {
+                call = build(spirv::BuiltinFn::kAtomicUMax);
+                call->AppendArg(builtin->Args()[1]);
+                call->Result()->SetType(ty.u64());
+                break;
+            }
+            case core::BuiltinFn::kAtomicStoreMin:
+                call = build(spirv::BuiltinFn::kAtomicUMin);
+                call->AppendArg(builtin->Args()[1]);
+                call->Result()->SetType(ty.u64());
                 break;
             case core::BuiltinFn::kAtomicStore:
                 call = build(spirv::BuiltinFn::kAtomicStore);
@@ -728,7 +744,7 @@ struct State {
         // Helper to get the next argument from the call, or nullptr if there are no more arguments.
         uint32_t arg_idx = 0;
         auto next_arg = [&]() {
-            return arg_idx < builtin->Args().Length() ? builtin->Args()[arg_idx++] : nullptr;
+            return arg_idx < builtin->Args().size() ? builtin->Args()[arg_idx++] : nullptr;
         };
 
         auto* texture = next_arg();
@@ -866,7 +882,7 @@ struct State {
         // Helper to get the next argument from the call, or nullptr if there are no more arguments.
         uint32_t arg_idx = 0;
         auto next_arg = [&]() {
-            return arg_idx < builtin->Args().Length() ? builtin->Args()[arg_idx++] : nullptr;
+            return arg_idx < builtin->Args().size() ? builtin->Args()[arg_idx++] : nullptr;
         };
 
         auto* component = next_arg();
@@ -940,7 +956,7 @@ struct State {
         // Helper to get the next argument from the call, or nullptr if there are no more arguments.
         uint32_t arg_idx = 0;
         auto next_arg = [&]() {
-            return arg_idx < builtin->Args().Length() ? builtin->Args()[arg_idx++] : nullptr;
+            return arg_idx < builtin->Args().size() ? builtin->Args()[arg_idx++] : nullptr;
         };
 
         auto* texture = next_arg();
@@ -999,7 +1015,7 @@ struct State {
         // Helper to get the next argument from the call, or nullptr if there are no more arguments.
         uint32_t arg_idx = 0;
         auto next_arg = [&]() {
-            return arg_idx < builtin->Args().Length() ? builtin->Args()[arg_idx++] : nullptr;
+            return arg_idx < builtin->Args().size() ? builtin->Args()[arg_idx++] : nullptr;
         };
 
         auto* texture = next_arg();
@@ -1038,7 +1054,7 @@ struct State {
         // Helper to get the next argument from the call, or nullptr if there are no more arguments.
         uint32_t arg_idx = 0;
         auto next_arg = [&]() {
-            return arg_idx < builtin->Args().Length() ? builtin->Args()[arg_idx++] : nullptr;
+            return arg_idx < builtin->Args().size() ? builtin->Args()[arg_idx++] : nullptr;
         };
 
         auto* texture = next_arg();
@@ -1170,7 +1186,7 @@ struct State {
     /// Handle an inputAttachmentLoad() builtin.
     /// @param builtin the builtin call instruction
     void InputAttachmentLoad(core::ir::CoreBuiltinCall* builtin) {
-        TINT_IR_ASSERT(ir, builtin->Args().Length() == 1);
+        TINT_IR_ASSERT(ir, builtin->Args().size() == 1);
 
         auto* texture = builtin->Args()[0];
         // coords for input_attachment are always (0, 0)
@@ -1199,7 +1215,7 @@ struct State {
     /// builtins.
     /// @param builtin the builtin call instruction
     void SubgroupShuffle(core::ir::CoreBuiltinCall* builtin, bool clamp_subgroup_shuffle) {
-        TINT_IR_ASSERT(ir, builtin->Args().Length() == 2);
+        TINT_IR_ASSERT(ir, builtin->Args().size() == 2);
         // The second argument is either 'id' , 'delta', or 'mask'.
         // All must be bound by [0, 128)
         auto* arg2 = builtin->Args()[1];
@@ -1225,7 +1241,7 @@ struct State {
     /// Handle a SubgroupBroadcast() builtin.
     /// @param builtin the builtin call instruction
     void SubgroupBroadcast(core::ir::CoreBuiltinCall* builtin) {
-        TINT_IR_ASSERT(ir, builtin->Args().Length() == 2);
+        TINT_IR_ASSERT(ir, builtin->Args().size() == 2);
         auto* id = builtin->Args()[1];
         TINT_IR_ASSERT(ir, id->Is<core::ir::Constant>());
 
@@ -1238,7 +1254,7 @@ struct State {
     /// Handle a QuadBroadcast() builtin.
     /// @param builtin the builtin call instruction
     void QuadBroadcast(core::ir::CoreBuiltinCall* builtin) {
-        TINT_IR_ASSERT(ir, builtin->Args().Length() == 2);
+        TINT_IR_ASSERT(ir, builtin->Args().size() == 2);
         auto* id = builtin->Args()[1];
         TINT_IR_ASSERT(ir, id->Is<core::ir::Constant>());
 
@@ -1270,19 +1286,18 @@ struct State {
             // in WGSL they both mean the number of elements. When the subgroup matrix element type
             // is `i8` or `u8`, and the input array type is `i32` or `u32`, we need to convert the
             // `stride` and `offset` in WGSL into the ones in SPIR-V by dividing them with 4.
-            core::ir::Value* applied_stride = nullptr;
-            core::ir::Value* applied_offset = nullptr;
+            auto* applied_stride = stride;
+            auto* applied_offset = offset;
             if (result_ty->Type()->Size() == 1u && arr->ElemType()->Size() == 4u) {
-                auto* applied_stride_binary =
-                    b.Binary(core::BinaryOp::kDivide, stride->Type(), stride, u32(4));
-                applied_stride = applied_stride_binary->Result();
+                if (!config.cooperative_matrix_stride_is_matrix_elements) {
+                    auto* applied_stride_binary =
+                        b.Binary(core::BinaryOp::kDivide, stride->Type(), stride, u32(4));
+                    applied_stride = applied_stride_binary->Result();
+                }
 
                 auto* applied_offset_binary =
                     b.Binary(core::BinaryOp::kDivide, offset->Type(), offset, u32(4));
                 applied_offset = applied_offset_binary->Result();
-            } else {
-                applied_stride = stride;
-                applied_offset = offset;
             }
 
             // Make a pointer to the first element of the array that we will load from.
@@ -1316,19 +1331,18 @@ struct State {
             // in WGSL they both mean the number of elements. When the subgroup matrix element type
             // is `i8` or `u8`, and the input array type is `i32` or `u32`, we need to convert the
             // `stride` and `offset` in WGSL into the ones in SPIR-V by dividing them with 4.
-            core::ir::Value* applied_stride = nullptr;
-            core::ir::Value* applied_offset = nullptr;
+            auto* applied_stride = stride;
+            auto* applied_offset = offset;
             if (value_type->Type()->Size() == 1u && arr->ElemType()->Size() == 4u) {
-                auto* applied_stride_binary =
-                    b.Binary(core::BinaryOp::kDivide, stride->Type(), stride, u32(4));
-                applied_stride = applied_stride_binary->Result();
+                if (!config.cooperative_matrix_stride_is_matrix_elements) {
+                    auto* applied_stride_binary =
+                        b.Binary(core::BinaryOp::kDivide, stride->Type(), stride, u32(4));
+                    applied_stride = applied_stride_binary->Result();
+                }
 
                 auto* applied_offset_binary =
                     b.Binary(core::BinaryOp::kDivide, offset->Type(), offset, u32(4));
                 applied_offset = applied_offset_binary->Result();
-            } else {
-                applied_stride = stride;
-                applied_offset = offset;
             }
 
             // Make a pointer to the first element of the array that we will write to.
@@ -1350,9 +1364,8 @@ struct State {
     /// @param input_ty the type of the input matrices
     /// @param result_ty the type of the result matrix
     /// @returns the literal operands
-    ir::LiteralOperand* SubgroupMatrixMultiplyOperands(
-        const core::type::SubgroupMatrix* input_ty,
-        const core::type::SubgroupMatrix* result_ty) {
+    core::ir::Value* SubgroupMatrixMultiplyOperands(const core::type::SubgroupMatrix* input_ty,
+                                                    const core::type::SubgroupMatrix* result_ty) {
         uint32_t operands = SpvCooperativeMatrixOperandsMaskNone;
         if (input_ty->Type()->IsSignedIntegerScalar()) {
             operands |= SpvCooperativeMatrixOperandsMatrixASignedComponentsKHRMask;
@@ -1432,12 +1445,13 @@ struct State {
 }  // namespace
 
 Result<SuccessType> BuiltinPolyfill(core::ir::Module& ir, PolyfillConfig config) {
-    TINT_CHECK_RESULT(ValidateAndDumpIfNeeded(ir, "spirv.BuiltinPolyfill",
-                                              core::ir::Capabilities{
-                                                  core::ir::Capability::kAllow8BitIntegers,
-                                                  core::ir::Capability::kAllowDuplicateBindings,
-                                                  core::ir::Capability::kAllowNonCoreTypes,
-                                              }));
+    AssertValid(ir,
+                core::ir::Capabilities{
+                    core::ir::Capability::kAllow8BitIntegers,
+                    core::ir::Capability::kAllowDuplicateBindings,
+                    core::ir::Capability::kAllowNonCoreTypes,
+                },
+                "before spirv.BuiltinPolyfill");
 
     State{ir, config}.Process();
 

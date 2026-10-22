@@ -2339,22 +2339,29 @@ $B1: {  # root
 %load_signed = func(%coords:vec2<i32>, %level:i32):vec4<f32> {
   $B2: {
     %5:texture_multisampled_2d<f32> = load %texture
-    %6:vec2<u32> = textureDimensions %5
-    %7:vec2<u32> = sub %6, vec2<u32>(1u)
-    %8:vec2<u32> = convert %coords
-    %9:vec2<u32> = min %8, %7
-    %10:vec4<f32> = textureLoad %5, %9, %level
-    ret %10
+    %6:u32 = textureNumSamples %5
+    %7:u32 = sub %6, 1u
+    %8:u32 = convert %level
+    %9:u32 = min %8, %7
+    %10:vec2<u32> = textureDimensions %5
+    %11:vec2<u32> = sub %10, vec2<u32>(1u)
+    %12:vec2<u32> = convert %coords
+    %13:vec2<u32> = min %12, %11
+    %14:vec4<f32> = textureLoad %5, %13, %9
+    ret %14
   }
 }
 %load_unsigned = func(%coords_1:vec2<u32>, %level_1:u32):vec4<f32> {  # %coords_1: 'coords', %level_1: 'level'
   $B3: {
-    %14:texture_multisampled_2d<f32> = load %texture
-    %15:vec2<u32> = textureDimensions %14
-    %16:vec2<u32> = sub %15, vec2<u32>(1u)
-    %17:vec2<u32> = min %coords_1, %16
-    %18:vec4<f32> = textureLoad %14, %17, %level_1
-    ret %18
+    %18:texture_multisampled_2d<f32> = load %texture
+    %19:u32 = textureNumSamples %18
+    %20:u32 = sub %19, 1u
+    %21:u32 = min %level_1, %20
+    %22:vec2<u32> = textureDimensions %18
+    %23:vec2<u32> = sub %22, vec2<u32>(1u)
+    %24:vec2<u32> = min %coords_1, %23
+    %25:vec4<f32> = textureLoad %18, %24, %21
+    ret %25
   }
 }
 )";
@@ -2626,22 +2633,29 @@ $B1: {  # root
 %load_signed = func(%coords:vec2<i32>, %index:i32):f32 {
   $B2: {
     %5:texture_depth_multisampled_2d = load %texture
-    %6:vec2<u32> = textureDimensions %5
-    %7:vec2<u32> = sub %6, vec2<u32>(1u)
-    %8:vec2<u32> = convert %coords
-    %9:vec2<u32> = min %8, %7
-    %10:f32 = textureLoad %5, %9, %index
-    ret %10
+    %6:u32 = textureNumSamples %5
+    %7:u32 = sub %6, 1u
+    %8:u32 = convert %index
+    %9:u32 = min %8, %7
+    %10:vec2<u32> = textureDimensions %5
+    %11:vec2<u32> = sub %10, vec2<u32>(1u)
+    %12:vec2<u32> = convert %coords
+    %13:vec2<u32> = min %12, %11
+    %14:f32 = textureLoad %5, %13, %9
+    ret %14
   }
 }
 %load_unsigned = func(%coords_1:vec2<u32>, %index_1:u32):f32 {  # %coords_1: 'coords', %index_1: 'index'
   $B3: {
-    %14:texture_depth_multisampled_2d = load %texture
-    %15:vec2<u32> = textureDimensions %14
-    %16:vec2<u32> = sub %15, vec2<u32>(1u)
-    %17:vec2<u32> = min %coords_1, %16
-    %18:f32 = textureLoad %14, %17, %index_1
-    ret %18
+    %18:texture_depth_multisampled_2d = load %texture
+    %19:u32 = textureNumSamples %18
+    %20:u32 = sub %19, 1u
+    %21:u32 = min %index_1, %20
+    %22:vec2<u32> = textureDimensions %18
+    %23:vec2<u32> = sub %22, vec2<u32>(1u)
+    %24:vec2<u32> = min %coords_1, %23
+    %25:f32 = textureLoad %18, %24, %21
+    ret %25
   }
 }
 )";
@@ -5398,6 +5412,670 @@ $B1: {  # root
     Run(Robustness, cfg);
 
     EXPECT_EQ(expect, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferView_u32_ConstOffsetAndLength_InRange) {
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(storage, ty.unsized_buffer()));
+    func->SetParams({p});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(storage, ty.u32()), BuiltinFn::kBufferView, Vector{ty.u32()}, p, 16_u,
+                       32_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = func(%p:ptr<storage, buffer, read_write>):void {
+  $B1: {
+    %3:ptr<storage, u32, read_write> = bufferView<u32> %p, 16u, 32u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    RobustnessConfig cfg;
+    cfg.clamp_storage = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferView_u32_ConstOffsetAndLength_OutOfRange) {
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(storage, ty.unsized_buffer()));
+    func->SetParams({p});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(storage, ty.u32()), BuiltinFn::kBufferView, Vector{ty.u32()}, p, 16_u,
+                       12_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = func(%p:ptr<storage, buffer, read_write>):void {
+  $B1: {
+    %3:ptr<storage, u32, read_write> = bufferView<u32> %p, 16u, 12u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%p:ptr<storage, buffer, read_write>):void {
+  $B1: {
+    %3:ptr<storage, u32, read_write> = bufferView<u32> %p, 0u, 12u
+    ret
+  }
+}
+)";
+
+    RobustnessConfig cfg;
+    cfg.clamp_storage = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(GetParam() ? expect : src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferView_RuntimeStruct_ConstOffsetAndLength_InRange) {
+    auto* s = ty.Struct(mod.symbols.Register("S"),
+                        {
+                            {mod.symbols.Register("a"), ty.vec4(ty.u32())},
+                            {mod.symbols.Register("b"), ty.runtime_array(ty.u32())},
+                        });
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(uniform, ty.unsized_buffer()));
+    func->SetParams({p});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(uniform, s), BuiltinFn::kBufferView, Vector{s}, p, 16_u, 64_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+%foo = func(%p:ptr<uniform, buffer, read>):void {
+  $B1: {
+    %3:ptr<uniform, S, read> = bufferView<S> %p, 16u, 64u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    RobustnessConfig cfg;
+    cfg.clamp_uniform = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferView_RuntimeStruct_ConstOffsetAndLength_OutOfRange) {
+    auto* s = ty.Struct(mod.symbols.Register("S"),
+                        {
+                            {mod.symbols.Register("a"), ty.vec4(ty.u32())},
+                            {mod.symbols.Register("b"), ty.runtime_array(ty.u32())},
+                        });
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(uniform, ty.unsized_buffer()));
+    func->SetParams({p});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(uniform, s), BuiltinFn::kBufferView, Vector{s}, p, 16_u, 32_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+%foo = func(%p:ptr<uniform, buffer, read>):void {
+  $B1: {
+    %3:ptr<uniform, S, read> = bufferView<S> %p, 16u, 32u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+%foo = func(%p:ptr<uniform, buffer, read>):void {
+  $B1: {
+    %3:ptr<uniform, S, read> = bufferView<S> %p, 0u, 32u
+    ret
+  }
+}
+)";
+
+    RobustnessConfig cfg;
+    cfg.clamp_uniform = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(GetParam() ? expect : src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferView_RuntimeStruct_NonConst) {
+    auto* s = ty.Struct(mod.symbols.Register("S"),
+                        {
+                            {mod.symbols.Register("a"), ty.vec4(ty.u32())},
+                            {mod.symbols.Register("b"), ty.runtime_array(ty.u32())},
+                        });
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(workgroup, ty.unsized_buffer()));
+    auto* o = b.FunctionParam("o", ty.i32());
+    func->SetParams({p, o});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(workgroup, s), BuiltinFn::kBufferView, Vector{s}, p, o);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+%foo = func(%p:ptr<workgroup, buffer, read_write>, %o:i32):void {
+  $B1: {
+    %4:ptr<workgroup, S, read_write> = bufferView<S> %p, %o
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+%foo = func(%p:ptr<workgroup, buffer, read_write>, %o:i32):void {
+  $B1: {
+    %4:u32 = bufferLength %p
+    %5:u32 = bitcast<u32> %o
+    %6:u32 = and %5, 4294967280u
+    %7:u32 = add 20u, %6
+    %8:bool = lt %4, %7
+    %9:u32 = select %6, 0u, %8
+    %10:ptr<workgroup, S, read_write> = bufferView<S> %p, %9
+    ret
+  }
+}
+)";
+
+    RobustnessConfig cfg;
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(expect, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferView_RuntimeStruct_ConstOffset) {
+    auto* s = ty.Struct(mod.symbols.Register("S"),
+                        {
+                            {mod.symbols.Register("a"), ty.vec4(ty.u32())},
+                            {mod.symbols.Register("b"), ty.runtime_array(ty.u32())},
+                        });
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(storage, ty.unsized_buffer()));
+    func->SetParams({p});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(storage, s), BuiltinFn::kBufferView, Vector{s}, p, 16_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>):void {
+  $B1: {
+    %3:ptr<storage, S, read_write> = bufferView<S> %p, 16u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>):void {
+  $B1: {
+    %3:u32 = bufferLength %p
+    %4:bool = lt %3, 36u
+    %5:u32 = select 16u, 0u, %4
+    %6:ptr<storage, S, read_write> = bufferView<S> %p, %5
+    ret
+  }
+}
+)";
+
+    RobustnessConfig cfg;
+    cfg.clamp_storage = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(GetParam() ? expect : src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferView_RuntimeStruct_ConstLength) {
+    auto* s = ty.Struct(mod.symbols.Register("S"),
+                        {
+                            {mod.symbols.Register("a"), ty.vec4(ty.u32())},
+                            {mod.symbols.Register("b"), ty.runtime_array(ty.u32())},
+                        });
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(storage, ty.unsized_buffer()));
+    auto* o = b.FunctionParam("o", ty.i32());
+    func->SetParams({p, o});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(storage, s), BuiltinFn::kBufferView, Vector{s}, p, o, 64_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>, %o:i32):void {
+  $B1: {
+    %4:ptr<storage, S, read_write> = bufferView<S> %p, %o, 64u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+S = struct @align(16) {
+  a:vec4<u32> @offset(0)
+  b:array<u32> @offset(16)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>, %o:i32):void {
+  $B1: {
+    %4:u32 = bitcast<u32> %o
+    %5:u32 = and %4, 4294967280u
+    %6:u32 = add 20u, %5
+    %7:bool = lt 64u, %6
+    %8:u32 = select %5, 0u, %7
+    %9:ptr<storage, S, read_write> = bufferView<S> %p, %8, 64u
+    ret
+  }
+}
+)";
+
+    RobustnessConfig cfg;
+    cfg.clamp_storage = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(GetParam() ? expect : src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferArrayView_ArrayU32_ConstOffsetAndSizeAndLength_InRange) {
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(storage, ty.unsized_buffer()));
+    func->SetParams({p});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(storage, ty.runtime_array(ty.u32())), BuiltinFn::kBufferArrayView,
+                       Vector{ty.runtime_array(ty.u32())}, p, 16_u, 8_u, 32_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = func(%p:ptr<storage, buffer, read_write>):void {
+  $B1: {
+    %3:ptr<storage, array<u32>, read_write> = bufferArrayView<array<u32>> %p, 16u, 8u, 32u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    RobustnessConfig cfg;
+    cfg.clamp_storage = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferArrayView_ArrayU32_ConstOffsetAndSizeAndLength_OutOfRange) {
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(storage, ty.unsized_buffer()));
+    func->SetParams({p});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(storage, ty.runtime_array(ty.u32())), BuiltinFn::kBufferArrayView,
+                       Vector{ty.runtime_array(ty.u32())}, p, 4_u, 12_u, 12_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+%foo = func(%p:ptr<storage, buffer, read_write>):void {
+  $B1: {
+    %3:ptr<storage, array<u32>, read_write> = bufferArrayView<array<u32>> %p, 4u, 12u, 12u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+%foo = func(%p:ptr<storage, buffer, read_write>):void {
+  $B1: {
+    %3:ptr<storage, array<u32>, read_write> = bufferArrayView<array<u32>> %p, 0u, 4u, 12u
+    ret
+  }
+}
+)";
+
+    RobustnessConfig cfg;
+    cfg.clamp_storage = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(GetParam() ? expect : src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferArrayView_RuntimeStruct_ConstOffsetAndSizeAndLength_InRange) {
+    auto* s = ty.Struct(mod.symbols.Register("S"),
+                        {
+                            {mod.symbols.Register("a"), ty.array(ty.u32(), 5)},
+                            {mod.symbols.Register("b"), ty.runtime_array(ty.vec2(ty.u32()))},
+                        });
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(storage, ty.unsized_buffer()));
+    func->SetParams({p});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(storage, s), BuiltinFn::kBufferArrayView, Vector{s}, p, 16_u, 32_u,
+                       64_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+S = struct @align(8) {
+  a:array<u32, 5> @offset(0)
+  b:array<vec2<u32>> @offset(24)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>):void {
+  $B1: {
+    %3:ptr<storage, S, read_write> = bufferArrayView<S> %p, 16u, 32u, 64u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    RobustnessConfig cfg;
+    cfg.clamp_storage = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferArrayView_RuntimeStruct_ConstOffsetAndSizeAndLength_OutOfRange) {
+    auto* s = ty.Struct(mod.symbols.Register("S"),
+                        {
+                            {mod.symbols.Register("a"), ty.array(ty.u32(), 5)},
+                            {mod.symbols.Register("b"), ty.runtime_array(ty.vec2(ty.u32()))},
+                        });
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(storage, ty.unsized_buffer()));
+    func->SetParams({p});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(storage, s), BuiltinFn::kBufferArrayView, Vector{s}, p, 16_u, 32_u,
+                       32_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+S = struct @align(8) {
+  a:array<u32, 5> @offset(0)
+  b:array<vec2<u32>> @offset(24)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>):void {
+  $B1: {
+    %3:ptr<storage, S, read_write> = bufferArrayView<S> %p, 16u, 32u, 32u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+S = struct @align(8) {
+  a:array<u32, 5> @offset(0)
+  b:array<vec2<u32>> @offset(24)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>):void {
+  $B1: {
+    %3:ptr<storage, S, read_write> = bufferArrayView<S> %p, 0u, 32u, 32u
+    ret
+  }
+}
+)";
+
+    RobustnessConfig cfg;
+    cfg.clamp_storage = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(GetParam() ? expect : src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferArrayView_RuntimeStruct_NonConst) {
+    auto* S = ty.Struct(mod.symbols.Register("S"),
+                        {
+                            {mod.symbols.Register("a"), ty.array(ty.u32(), 5)},
+                            {mod.symbols.Register("b"), ty.runtime_array(ty.vec2(ty.u32()))},
+                        });
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(storage, ty.unsized_buffer()));
+    auto* o = b.FunctionParam("o", ty.i32());
+    auto* s = b.FunctionParam("s", ty.i32());
+    func->SetParams({p, o, s});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(storage, S), BuiltinFn::kBufferArrayView, Vector{S}, p, o, s);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+S = struct @align(8) {
+  a:array<u32, 5> @offset(0)
+  b:array<vec2<u32>> @offset(24)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>, %o:i32, %s:i32):void {
+  $B1: {
+    %5:ptr<storage, S, read_write> = bufferArrayView<S> %p, %o, %s
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+S = struct @align(8) {
+  a:array<u32, 5> @offset(0)
+  b:array<vec2<u32>> @offset(24)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>, %o:i32, %s:i32):void {
+  $B1: {
+    %5:u32 = bufferLength %p
+    %6:u32 = bitcast<u32> %o
+    %7:u32 = and %6, 4294967288u
+    %8:u32 = bitcast<u32> %s
+    %9:u32 = sub %8, 24u
+    %10:u32 = div %9, 8u
+    %11:u32 = mul %10, 8u
+    %12:u32 = add %11, 24u
+    %13:u32 = max %12, 32u
+    %14:u32 = add %7, %13
+    %15:bool = lt %5, %14
+    %16:u32 = select %7, 0u, %15
+    %17:u32 = select %13, 32u, %15
+    %18:ptr<storage, S, read_write> = bufferArrayView<S> %p, %16, %17
+    ret
+  }
+}
+)";
+
+    RobustnessConfig cfg;
+    cfg.clamp_storage = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(GetParam() ? expect : src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferArrayView_RuntimeStruct_ConstOffset) {
+    auto* S = ty.Struct(mod.symbols.Register("S"),
+                        {
+                            {mod.symbols.Register("a"), ty.array(ty.u32(), 5)},
+                            {mod.symbols.Register("b"), ty.runtime_array(ty.vec2(ty.u32()))},
+                        });
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(storage, ty.unsized_buffer()));
+    auto* s = b.FunctionParam("s", ty.i32());
+    func->SetParams({p, s});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(storage, S), BuiltinFn::kBufferArrayView, Vector{S}, p, 8_u, s);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+S = struct @align(8) {
+  a:array<u32, 5> @offset(0)
+  b:array<vec2<u32>> @offset(24)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>, %s:i32):void {
+  $B1: {
+    %4:ptr<storage, S, read_write> = bufferArrayView<S> %p, 8u, %s
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+S = struct @align(8) {
+  a:array<u32, 5> @offset(0)
+  b:array<vec2<u32>> @offset(24)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>, %s:i32):void {
+  $B1: {
+    %4:u32 = bufferLength %p
+    %5:u32 = bitcast<u32> %s
+    %6:u32 = sub %5, 24u
+    %7:u32 = div %6, 8u
+    %8:u32 = mul %7, 8u
+    %9:u32 = add %8, 24u
+    %10:u32 = max %9, 32u
+    %11:u32 = add 8u, %10
+    %12:bool = lt %4, %11
+    %13:u32 = select 8u, 0u, %12
+    %14:u32 = select %10, 32u, %12
+    %15:ptr<storage, S, read_write> = bufferArrayView<S> %p, %13, %14
+    ret
+  }
+}
+)";
+
+    RobustnessConfig cfg;
+    cfg.clamp_storage = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(GetParam() ? expect : src, str());
+}
+
+TEST_P(IR_RobustnessTest, BufferArrayView_RuntimeStruct_ConstSize) {
+    auto* S = ty.Struct(mod.symbols.Register("S"),
+                        {
+                            {mod.symbols.Register("a"), ty.array(ty.u32(), 5)},
+                            {mod.symbols.Register("b"), ty.runtime_array(ty.vec2(ty.u32()))},
+                        });
+    auto* func = b.Function("foo", ty.void_());
+    auto* p = b.FunctionParam("p", ty.ptr(storage, ty.unsized_buffer()));
+    auto* o = b.FunctionParam("o", ty.i32());
+    func->SetParams({p, o});
+    b.Append(func->Block(), [&] {
+        b.CallExplicit(ty.ptr(storage, S), BuiltinFn::kBufferArrayView, Vector{S}, p, o, 64_u);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+S = struct @align(8) {
+  a:array<u32, 5> @offset(0)
+  b:array<vec2<u32>> @offset(24)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>, %o:i32):void {
+  $B1: {
+    %4:ptr<storage, S, read_write> = bufferArrayView<S> %p, %o, 64u
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    auto* expect = R"(
+S = struct @align(8) {
+  a:array<u32, 5> @offset(0)
+  b:array<vec2<u32>> @offset(24)
+}
+
+%foo = func(%p:ptr<storage, buffer, read_write>, %o:i32):void {
+  $B1: {
+    %4:u32 = bufferLength %p
+    %5:u32 = bitcast<u32> %o
+    %6:u32 = and %5, 4294967288u
+    %7:u32 = add 64u, %6
+    %8:bool = lt %4, %7
+    %9:u32 = select %6, 0u, %8
+    %10:u32 = select 64u, 32u, %8
+    %11:ptr<storage, S, read_write> = bufferArrayView<S> %p, %9, %10
+    ret
+  }
+}
+)";
+
+    RobustnessConfig cfg;
+    cfg.clamp_storage = GetParam();
+    Run(Robustness, cfg);
+
+    EXPECT_EQ(GetParam() ? expect : src, str());
 }
 
 TEST_F(IR_RobustnessWithIntegerRangeAnalysisTest, AccessArrayWithIndex_MaxBound_Equal_Limit) {

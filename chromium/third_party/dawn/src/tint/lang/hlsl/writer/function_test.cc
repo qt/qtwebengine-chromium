@@ -45,7 +45,8 @@ TEST_F(HlslWriterTest, FunctionEmpty) {
     auto* func = b.ComputeFunction("main");
     func->Block()->Append(b.Return(func));
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -68,7 +69,8 @@ TEST_F(HlslWriterTest, FunctionWithParams) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 void my_func(float a, int b) {
 }
@@ -85,7 +87,8 @@ TEST_F(HlslWriterTest, FunctionEntryPoint) {
     auto* func = b.ComputeFunction("main");
     func->Block()->Append(b.Return(func));
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -110,7 +113,8 @@ TEST_F(HlslWriterTest, FunctionEntryPointWithParams) {
 
     func->Block()->Append(b.Return(func));
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct Interface {
   float4 pos;
 };
@@ -151,7 +155,8 @@ TEST_F(HlslWriterTest, FunctionPtrParameter) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 float f(inout float foo) {
   return foo;
@@ -179,7 +184,8 @@ TEST_F(HlslWriterTest, FunctionEntryPointWithInAndOutLocations) {
     func->SetReturnLocation(1);
     func->Block()->Append(b.Return(func, foo));
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct main_outputs {
   float tint_symbol : SV_Target1;
 };
@@ -217,7 +223,8 @@ TEST_F(HlslWriterTest, FunctionEntryPointWithInOutBuiltins) {
         b.Return(func, a);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(struct main_outputs {
   float tint_symbol : SV_Depth;
 };
@@ -279,7 +286,8 @@ TEST_F(HlslWriterTest, FunctionEntryPointWithUniform) {
         b.Return(frag_func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_ubo : register(b0, space1) {
   uint4 ubo[1];
@@ -325,7 +333,8 @@ TEST_F(HlslWriterTest, FunctionEntryPointWithUniformStruct) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_ubo : register(b0, space1) {
   uint4 ubo[1];
@@ -366,7 +375,8 @@ TEST_F(HlslWriterTest, FunctionEntryPointWithRWStorageBufferRead) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl,
               R"(
 RWByteAddressBuffer coord : register(u0, space1);
@@ -405,7 +415,8 @@ TEST_F(HlslWriterTest, FunctionEntryPointWithROStorageBufferRead) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl,
               R"(
 ByteAddressBuffer coord : register(t0, space1);
@@ -443,7 +454,8 @@ TEST_F(HlslWriterTest, FunctionEntryPointWithWOStorageBufferStore) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl,
               R"(
 RWByteAddressBuffer coord : register(u0, space1);
@@ -481,7 +493,8 @@ TEST_F(HlslWriterTest, FunctionEntryPointWithStorageBufferStore) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl,
               R"(
 RWByteAddressBuffer coord : register(u0, space1);
@@ -528,7 +541,8 @@ TEST_F(HlslWriterTest, FunctionCalledByEntryPointWithUniform) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 cbuffer cbuffer_coord : register(b0, space1) {
   uint4 coord[1];
@@ -577,7 +591,8 @@ TEST_F(HlslWriterTest, FunctionCalledByEntryPointWithStorageBuffer) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl,
               R"(
 RWByteAddressBuffer coord : register(u0, space1);
@@ -598,7 +613,8 @@ TEST_F(HlslWriterTest, FunctionEntryPointCompute) {
     auto* func = b.ComputeFunction("main");
     func->Block()->Append(b.Return(func));
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(1, 1, 1)]
 void main() {
@@ -613,7 +629,8 @@ TEST_F(HlslWriterTest, FunctionEntryPointComputeWithWorkgroupLiteral) {
     auto* func = b.ComputeFunction("main", 2_u, 4_u, 6_u);
     func->Block()->Append(b.Return(func));
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 [numthreads(2, 4, 6)]
 void main() {
@@ -640,7 +657,8 @@ TEST_F(HlslWriterTest, FunctionWithArrayParams) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 void my_func(float a[5]) {
 }
@@ -668,7 +686,8 @@ TEST_F(HlslWriterTest, FunctionWithArrayReturn) {
         b.Return(eb);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 typedef float ary_ret[5];
 ary_ret my_func() {
@@ -715,7 +734,8 @@ TEST_F(HlslWriterTest, FunctionWithDiscardAndVoidReturnWithContinueExecution) {
 
     // FXC must use demote to helper transform.
     options.compiler = tint::hlsl::writer::Options::Compiler::kFXC;
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 static bool continue_execution = true;
 void my_func(int a) {
@@ -764,7 +784,8 @@ TEST_F(HlslWriterTest, FunctionWithDiscardAndVoidReturnWithPlatformDiscard) {
     options.entry_point_name = "main";
 
     options.compiler = tint::hlsl::writer::Options::Compiler::kDXC;
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 void my_func(int a) {
   if ((a == int(0))) {
@@ -812,7 +833,8 @@ TEST_F(HlslWriterTest, FunctionWithDiscardAndNonVoidReturnWithContinueExecution)
     // FXC must use demote to helper transform.
     options.compiler = tint::hlsl::writer::Options::Compiler::kFXC;
 
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 static bool continue_execution = true;
 int my_func(int a) {
@@ -861,7 +883,8 @@ TEST_F(HlslWriterTest, FunctionWithDiscardAndNonVoidReturnWithPlatformDiscard) {
 
     tint::hlsl::writer::Options options;
     options.compiler = tint::hlsl::writer::Options::Compiler::kDXC;
-    ASSERT_TRUE(Generate(options)) << err_ << output_.hlsl;
+    auto result = Generate(options);
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 int my_func(int a) {
   if ((a == int(0))) {
@@ -888,7 +911,8 @@ TEST_F(HlslWriterTest, DuplicateConstant) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(output_.hlsl, R"(
 typedef int4 ary_ret[4];
 ary_ret ret_arr() {
@@ -910,7 +934,8 @@ TEST_F(HlslWriterTest, WorkgroupStorageSizeEmpty) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(0u, output_.workgroup_info.storage_size);
 }
 
@@ -925,7 +950,8 @@ TEST_F(HlslWriterTest, WorkgroupStorageSizeSimple) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(32u, output_.workgroup_info.storage_size);
 }
 
@@ -952,7 +978,8 @@ TEST_F(HlslWriterTest, WorkgroupStorageSizeCompoundTypes) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(96u, output_.workgroup_info.storage_size);
 }
 
@@ -967,7 +994,8 @@ TEST_F(HlslWriterTest, WorkgroupStorageSizeAlignmentPadding) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(16u, output_.workgroup_info.storage_size);
 }
 
@@ -989,7 +1017,8 @@ TEST_F(HlslWriterTest, WorkgroupStorageSizeStructAlignment) {
         b.Return(func);
     });
 
-    ASSERT_TRUE(Generate()) << err_ << output_.hlsl;
+    auto result = Generate();
+    ASSERT_EQ(result, Success) << result.Failure().reason << output_.hlsl;
     EXPECT_EQ(1024u, output_.workgroup_info.storage_size);
 }
 

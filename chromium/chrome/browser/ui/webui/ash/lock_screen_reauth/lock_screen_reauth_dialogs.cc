@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "ash/constants/webui_url_constants.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_writer.h"
@@ -15,6 +16,8 @@
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/ash/login/helper.h"
 #include "chrome/browser/ash/login/profile_auth_data.h"
+#include "chrome/browser/ash/login/signin_partition_manager.h"
+#include "chrome/browser/ash/login/signin_partition_manager_factory.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
@@ -26,7 +29,6 @@
 #include "chrome/browser/ui/webui/ash/lock_screen_reauth/lock_screen_network_dialog.h"
 #include "chrome/browser/ui/webui/ash/lock_screen_reauth/lock_screen_reauth_handler.h"
 #include "chrome/browser/ui/webui/ash/lock_screen_reauth/lock_screen_start_reauth_ui.h"
-#include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/browser_resources.h"
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/ash/components/network/network_connection_handler.h"
@@ -269,7 +271,7 @@ void LockScreenStartReauthDialog::OnCaptivePortalDialogReadyForTesting() {
 }
 
 LockScreenStartReauthDialog::LockScreenStartReauthDialog()
-    : BaseLockDialog(GURL(chrome::kChromeUILockScreenStartReauthURL),
+    : BaseLockDialog(GURL(ash::kChromeUILockScreenStartReauthURL),
                      CalculateOobeDialogSizeForPrimaryDisplay()),
       network_state_informer_(base::MakeRefCounted<NetworkStateInformer>()) {
   network_state_informer_->Init();
@@ -442,7 +444,7 @@ void LockScreenStartReauthDialog::RemoveObserver(
 void LockScreenStartReauthDialog::TransferHttpAuthCaches() {
   CHECK(profile_);
   content::StoragePartition* webview_storage_partition =
-      login::SigninPartitionManager::Factory::GetForBrowserContext(profile_)
+      login::SigninPartitionManagerFactory::GetForBrowserContext(profile_)
           ->GetCurrentStoragePartition();
   if (webview_storage_partition) {
     // Transfer auth cache to system network context. This allows to preserve

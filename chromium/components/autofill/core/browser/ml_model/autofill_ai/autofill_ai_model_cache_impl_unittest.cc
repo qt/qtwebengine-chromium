@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "base/types/optional_ref.h"
 #include "components/autofill/core/browser/autofill_field.h"
+#include "components/autofill/core/browser/autofill_format_string.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/ml_model/autofill_ai/autofill_ai_model_cache.h"
 #include "components/autofill/core/browser/proto/autofill_ai_model_cache.pb.h"
@@ -245,8 +246,7 @@ TEST_F(AutofillAiModelCacheImplTest, GetFieldPredictionsInvalidType) {
   {
     auto* field_response = model_response.add_field_responses();
     constexpr int invalid_field_type = 789;
-    static_assert(ToSafeFieldType(invalid_field_type, NO_SERVER_DATA) ==
-                  NO_SERVER_DATA);
+    static_assert(!ToSafeFieldType(invalid_field_type).has_value());
     field_response->set_field_type(invalid_field_type);
   }
 

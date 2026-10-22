@@ -7,9 +7,10 @@
 
 #include <optional>
 
-#include "third_party/blink/public/web/web_document.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_control_element.h"
+#include "third_party/blink/renderer/core/html/forms/listed_element.h"
+#include "third_party/blink/renderer/core/script_tools/script_tool_types.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
@@ -18,8 +19,9 @@
 
 namespace blink {
 
-class HTMLFormElement;
+class HTMLFieldSetElement;
 class HTMLFormControlElement;
+class HTMLFormElement;
 
 // Represents the JSON Schema for some <form> element.
 //
@@ -31,7 +33,7 @@ class CORE_EXPORT FormMCPSchema {
   // Form controls may be named, but there is not a 1:1 relationship
   // between names and form controls; we keep track of all form controls
   // associated with a given name. (See name_to_controls_.)
-  using ControlVector = GCedHeapVector<Member<HTMLFormControlElement>>;
+  using ControlVector = GCedHeapVector<Member<ListedElement>>;
 
  public:
   explicit FormMCPSchema(HTMLFormElement&);
@@ -45,7 +47,7 @@ class CORE_EXPORT FormMCPSchema {
   // Returns std::nullopt on success, or some error if the provided
   // object did not match the structure of the form. In the error case,
   // all form control states are left unchanged.
-  std::optional<WebDocument::ScriptToolError> FillData(const JSONObject&);
+  std::optional<ScriptToolError> FillData(const JSONObject&);
 
   // The first successful submit button (IsSuccessfulSubmitButton())
   // found within the form.
@@ -58,6 +60,15 @@ class CORE_EXPORT FormMCPSchema {
       const ControlVector& controls_for_name,
       bool& required);
   std::unique_ptr<JSONObject> ComputeDateParameterSchema(
+      const ControlVector& controls_for_name,
+      bool& required);
+  std::unique_ptr<JSONObject> ComputeDatetimeLocalParameterSchema(
+      const ControlVector& controls_for_name,
+      bool& required);
+  std::unique_ptr<JSONObject> ComputeMonthParameterSchema(
+      const ControlVector& controls_for_name,
+      bool& required);
+  std::unique_ptr<JSONObject> ComputeWeekParameterSchema(
       const ControlVector& controls_for_name,
       bool& required);
   std::unique_ptr<JSONObject> ComputeTimeParameterSchema(
@@ -80,12 +91,15 @@ class CORE_EXPORT FormMCPSchema {
   std::unique_ptr<JSONObject> ComputeColorParameterSchema(
       const ControlVector& controls_for_name,
       bool& required);
+  std::unique_ptr<JSONObject> ComputeCustomElementParameterSchema(
+      const ControlVector& controls_for_name,
+      bool& required);
   std::unique_ptr<JSONObject> ComputeFileParameterSchema(
       const ControlVector& controls_for_name,
       bool& required);
 
   // Compute an array representing the values (as HTMLInputElement::Value()
-  // of the specified controls, suitable for assignment to a 'oneOf' field.
+  // of the specified controls, suitable for assignment to a 'anyOf' field.
   //
   // The return value of this function will be an array of objects
   // on the form { "const": "X", "title": "..." }. In addition to that,
@@ -97,7 +111,7 @@ class CORE_EXPORT FormMCPSchema {
   //
   // The argument to 'required' will be set if at least one of the controls
   // are required.
-  std::unique_ptr<JSONArray> ComputeOneOfArray(
+  std::unique_ptr<JSONArray> ComputeAnyOfArray(
       const ControlVector& controls_for_name,
       std::unique_ptr<JSONArray>& enum_array,
       bool& required);
@@ -123,45 +137,45 @@ class CORE_EXPORT FormMCPSchema {
                         const JSONValue&);
   void FillRadioData(const ControlVector& controls_for_name, const JSONValue&);
   void FillSelectData(const ControlVector& controls_for_name, const JSONValue&);
+  void FillCustomElementData(const ControlVector& controls_for_name,
+                             const JSONValue&);
   void FillFileData(const ControlVector& controls_for_name, const JSONValue&);
 
-  void AddTitle(HTMLFormControlElement&, JSONObject&);
-  void AddDescription(HTMLFormControlElement&, JSONObject&);
+  void AddDescription(const ControlVector&, JSONObject&, String = String());
+  void AddPattern(HTMLFormControlElement&, JSONObject&);
 
-  // It's not clear yet where to host the toolparamtitle/description
-  // attributes for <input type=radio>, or other parameters that are
-  // associated with more than one element. For now, we use the attributes
-  // set on the first control within a group.
-  //
-  // Note that unlike AddTitle()/AddDescription(), this does not try
-  // to find "fallback" values (from <label>, etc) when tool-* attributes
-  // are missing.
-  //
-  // See also: https://github.com/webmachinelearning/webmcp/issues/71
-  void AddTitleAndDescriptionFromToolAttributesOnly(HTMLFormControlElement&,
-                                                    JSONObject&);
-
-  String ToolParamTitleAttribute(HTMLFormControlElement&);
-  String ToolParamDescriptionAttribute(HTMLFormControlElement&);
-  String ComputeDescription(HTMLFormControlElement&);
-  String LabelText(HTMLFormControlElement&);
+  String ComputeDescription(const ControlVector&);
+  const HTMLFieldSetElement* ComputeCommonAncestorFieldSet(
+      const ControlVector&);
+  String ToolParamDescriptionAttribute(const ListedElement&) const;
+  String LabelText(ListedElement&);
 
   void ProcessForm(HTMLFormElement&);
   ControlVector& EnsureControlVector(const String& name);
 
-  bool IsText(HTMLFormControlElement&) const;
-  bool IsDate(HTMLFormControlElement&) const;
-  bool IsTime(HTMLFormControlElement&) const;
-  bool IsNumber(HTMLFormControlElement&) const;
-  bool IsSelect(HTMLFormControlElement&) const;
-  bool IsRange(HTMLFormControlElement&) const;
-  bool IsCheckbox(HTMLFormControlElement&) const;
-  bool IsRadio(HTMLFormControlElement&) const;
-  bool IsColor(HTMLFormControlElement&) const;
-  bool IsFile(HTMLFormControlElement&) const;
+  // AuditsIssues.
+  void ReportParameterIssueIfNeeded(const String& name, const JSONObject&);
+
+  bool IsText(ListedElement&) const;
+  bool IsDate(ListedElement&) const;
+  bool IsDatetimeLocal(ListedElement&) const;
+  bool IsMonth(ListedElement&) const;
+  bool IsWeek(ListedElement&) const;
+  bool IsTime(ListedElement&) const;
+  bool IsNumber(ListedElement&) const;
+  bool IsSelect(ListedElement&) const;
+  bool IsRange(ListedElement&) const;
+  bool IsCheckbox(ListedElement&) const;
+  bool IsRadio(ListedElement&) const;
+  bool IsColor(ListedElement&) const;
+  bool IsCustomElement(ListedElement&) const;
+  bool IsFile(ListedElement&) const;
 
   bool IsText(const ControlVector& controls_for_name) const;
   bool IsDate(const ControlVector& controls_for_name) const;
+  bool IsDatetimeLocal(const ControlVector& controls_for_name) const;
+  bool IsMonth(const ControlVector& controls_for_name) const;
+  bool IsWeek(const ControlVector& controls_for_name) const;
   bool IsTime(const ControlVector& controls_for_name) const;
   bool IsNumber(const ControlVector& controls_for_name) const;
   bool IsSelect(const ControlVector& controls_for_name) const;
@@ -169,6 +183,7 @@ class CORE_EXPORT FormMCPSchema {
   bool IsCheckbox(const ControlVector& controls_for_name) const;
   bool IsRadio(const ControlVector& controls_for_name) const;
   bool IsColor(const ControlVector& controls_for_name) const;
+  bool IsCustomElement(const ControlVector& controls_for_name) const;
   bool IsFile(const ControlVector& controls_for_name) const;
 
   // Maps a WebMCP parameter name (HTMLFormControlElement::
@@ -178,6 +193,7 @@ class CORE_EXPORT FormMCPSchema {
   // we want to produce the JSON object entries in that same order.
   HeapVector<String> ordered_names_;
   HTMLFormControlElement* submit_button_ = nullptr;
+  HTMLFormElement* form_ = nullptr;
 };
 
 }  // namespace blink

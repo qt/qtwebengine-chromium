@@ -7,6 +7,7 @@
 #include <array>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include "discovery/mdns/impl/mdns_probe_manager.h"
 #include "discovery/mdns/impl/mdns_publisher.h"
@@ -160,7 +161,7 @@ void ApplyQueryResults(MdnsMessage* message,
       OSP_CHECK(record.dns_type() == DnsType::kPTR);
 
       const DomainName& target =
-          absl::get<PtrRecordRdata>(record.rdata()).ptr_domain();
+          std::get<PtrRecordRdata>(record.rdata()).ptr_domain();
       AddAdditionalRecords(message, record_handler, target, known_answers,
                            DnsType::kSRV, clazz, true);
       AddAdditionalRecords(message, record_handler, target, known_answers,
@@ -178,7 +179,7 @@ void ApplyQueryResults(MdnsMessage* message,
       {
         const MdnsRecord& srv_record = message->additional_records()[i];
         const DomainName& target =
-            absl::get<SrvRecordRdata>(srv_record.rdata()).target();
+            std::get<SrvRecordRdata>(srv_record.rdata()).target();
         AddAdditionalRecords(message, record_handler, target, known_answers,
                              DnsType::kA, clazz, target == domain);
       }
@@ -188,7 +189,7 @@ void ApplyQueryResults(MdnsMessage* message,
       {
         const MdnsRecord& srv_record = message->additional_records()[i];
         const DomainName& target =
-            absl::get<SrvRecordRdata>(srv_record.rdata()).target();
+            std::get<SrvRecordRdata>(srv_record.rdata()).target();
         AddAdditionalRecords(message, record_handler, target, known_answers,
                              DnsType::kAAAA, clazz, target == domain);
       }
@@ -203,7 +204,7 @@ void ApplyQueryResults(MdnsMessage* message,
       OSP_CHECK(srv_record.dns_type() == DnsType::kSRV);
 
       const DomainName& target =
-          absl::get<SrvRecordRdata>(srv_record.rdata()).target();
+          std::get<SrvRecordRdata>(srv_record.rdata()).target();
       AddAdditionalRecords(message, record_handler, target, known_answers,
                            DnsType::kA, clazz, target == domain);
       AddAdditionalRecords(message, record_handler, target, known_answers,

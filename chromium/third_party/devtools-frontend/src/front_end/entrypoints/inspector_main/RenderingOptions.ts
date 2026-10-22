@@ -7,6 +7,7 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Root from '../../core/root/root.js';
 import * as SettingsUI from '../../ui/legacy/components/settings_ui/settings_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
@@ -145,10 +146,14 @@ const UIStrings = {
    */
   disableAvifImageFormat: 'Disable `AVIF` image format',
   /**
-   * @description Explanation text for both the 'Disable AVIF image format' and 'Disable WebP image
-   * format' settings in the Rendering tool.
+   * @description Explanation text for the image format disabling settings in the Rendering tool.
    */
   requiresAPageReloadToApplyAnd: 'Requires a page reload to apply and disables caching for image requests.',
+  /**
+   * @description The name of a checkbox setting in the Rendering tool. This setting disables the
+   * page from loading images with the JPEG XL format.
+   */
+  disableJpegXlImageFormat: 'Disable `JPEG XL` image format',
   /**
    * @description The name of a checkbox setting in the Rendering tool. This setting disables the
    * page from loading images with the WebP format.
@@ -184,7 +189,13 @@ const supportsPrefersContrast = (): boolean => {
   return window.matchMedia(query).matches;
 };
 
+const supportsJpegXl = (): boolean => {
+  return Boolean(Root.Runtime.hostConfig.devToolsJpegXlImageFormat?.enabled);
+};
+
 export class RenderingOptionsView extends UI.Widget.VBox {
+  #jpegXlCheckboxAdded = false;
+
   constructor() {
     super({useShadowDom: true});
     this.registerRequiredCSS(renderingOptionsStyles);
@@ -266,13 +277,19 @@ export class RenderingOptionsView extends UI.Widget.VBox {
 
     this.contentElement.createChild('div').classList.add('panel-section-separator');
 
-    this.#appendCheckbox(
-        i18nString(UIStrings.disableAvifImageFormat), i18nString(UIStrings.requiresAPageReloadToApplyAnd),
-        Common.Settings.Settings.instance().moduleSetting('avif-format-disabled'));
+    const avifFormatDisabledSetting = Common.Settings.Settings.instance().moduleSetting('avif-format-disabled');
+    const jpegXlFormatDisabledSetting = Common.Settings.Settings.instance().moduleSetting('jpeg-xl-format-disabled');
+    const webpFormatDisabledSetting = Common.Settings.Settings.instance().moduleSetting('webp-format-disabled');
 
     this.#appendCheckbox(
+        i18nString(UIStrings.disableAvifImageFormat), i18nString(UIStrings.requiresAPageReloadToApplyAnd),
+        avifFormatDisabledSetting);
+
+    const webpCheckbox = this.#appendCheckbox(
         i18nString(UIStrings.disableWebpImageFormat), i18nString(UIStrings.requiresAPageReloadToApplyAnd),
-        Common.Settings.Settings.instance().moduleSetting('webp-format-disabled'));
+        webpFormatDisabledSetting);
+
+    this.#appendJpegXlCheckboxWhenSupported(webpCheckbox, jpegXlFormatDisabledSetting);
 
     this.contentElement.createChild('div').classList.add('panel-section-separator');
   }
@@ -284,6 +301,18 @@ export class RenderingOptionsView extends UI.Widget.VBox {
     UI.UIUtils.bindCheckbox(checkbox, setting, metric);
     this.contentElement.appendChild(checkbox);
     return checkbox;
+  }
+
+  #appendJpegXlCheckboxWhenSupported(
+      webpCheckbox: UI.UIUtils.CheckboxLabel, jpegXlFormatDisabledSetting: Common.Settings.Setting<boolean>): void {
+    if (this.#jpegXlCheckboxAdded || !supportsJpegXl()) {
+      return;
+    }
+
+    this.#jpegXlCheckboxAdded = true;
+    webpCheckbox.before(this.#appendCheckbox(
+        i18nString(UIStrings.disableJpegXlImageFormat), i18nString(UIStrings.requiresAPageReloadToApplyAnd),
+        jpegXlFormatDisabledSetting));
   }
 
   #appendSelect(label: string, setting: Common.Settings.Setting<unknown>): void {

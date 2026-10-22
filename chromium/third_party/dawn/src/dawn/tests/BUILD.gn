@@ -327,6 +327,7 @@ dawn_test("dawn_unittests") {
     "${dawn_root}/src/dawn/wire/server/ServerMemoryTransferService_mock.h",
     "DawnNativeTest.cpp",
     "DawnNativeTest.h",
+    "unittests/AlgebraTests.cpp",
     "unittests/AsyncTaskTests.cpp",
     "unittests/BitSetRangeIteratorTests.cpp",
     "unittests/BuddyAllocatorTests.cpp",
@@ -368,6 +369,7 @@ dawn_test("dawn_unittests") {
     "unittests/SerialQueueTests.cpp",
     "unittests/Sha3Tests.cpp",
     "unittests/SlabAllocatorTests.cpp",
+    "unittests/StringsTests.cpp",
     "unittests/SubresourceStorageTests.cpp",
     "unittests/SystemUtilsTests.cpp",
     "unittests/ToBackendTests.cpp",
@@ -375,6 +377,7 @@ dawn_test("dawn_unittests") {
     "unittests/TypedIntegerTests.cpp",
     "unittests/UnicodeTests.cpp",
     "unittests/WeakRefTests.cpp",
+    "unittests/WorkerTaskPoolTests.cpp",
     "unittests/native/AllowedErrorTests.cpp",
     "unittests/native/BlobTests.cpp",
     "unittests/native/BufferBaseTests.cpp",
@@ -485,12 +488,10 @@ dawn_test("dawn_unittests") {
     sources += [ "unittests/d3d12/CopySplitTests.cpp" ]
   }
 
-  if (dawn_enable_vulkan) {
-    sources += [
-      "unittests/validation/YCbCrInfoValidationTests.cpp",
-      "unittests/vulkan/MemoryTypeSelectorTests.cpp",
-    ]
-  }
+  sources += [
+    "unittests/validation/YCbCrValidationTests.cpp",
+    "unittests/vulkan/MemoryTypeSelectorTests.cpp",
+  ]
 
   if (tint_build_spv_reader) {
     deps += [ "${dawn_spirv_tools_dir}:spvtools_opt" ]
@@ -615,6 +616,7 @@ source_set("end2end_tests_sources") {
     "end2end/AdapterEnumerationTests.cpp",
     "end2end/AdapterFormatCapabilitiesVkTests.cpp",
     "end2end/AdapterPropertiesD3DTests.cpp",
+    "end2end/AdapterPropertiesDrmTests.cpp",
     "end2end/AdapterPropertiesVkTests.cpp",
     "end2end/ArchTierLimitsExhaustive.cpp",
     "end2end/BasicTests.cpp",
@@ -642,6 +644,7 @@ source_set("end2end_tests_sources") {
     "end2end/CreateDestroyTests.cpp",
     "end2end/CreatePipelineAsyncTests.cpp",
     "end2end/CullingTests.cpp",
+    "end2end/DawnTestInfraTests.cpp",
     "end2end/DebugMarkerTests.cpp",
     "end2end/DepthBiasTests.cpp",
     "end2end/DepthStencilCopyTests.cpp",
@@ -718,6 +721,7 @@ source_set("end2end_tests_sources") {
     "end2end/SubgroupsTests.cpp",
     "end2end/SubresourceRenderAttachmentTests.cpp",
     "end2end/SupportedFeatureArch.cpp",
+    "end2end/TexelBufferTests.cpp",
     "end2end/Texture3DTests.cpp",
     "end2end/TextureComponentSwizzleTests.cpp",
     "end2end/TextureCorruptionTests.cpp",
@@ -784,10 +788,7 @@ source_set("end2end_tests_sources") {
   }
 
   if (dawn_enable_vulkan) {
-    sources += [
-      "end2end/AllocatorMemoryInstrumentationTests.cpp",
-      "end2end/YCbCrInfoTests.cpp",
-    ]
+    sources += [ "end2end/AllocatorMemoryInstrumentationTests.cpp" ]
   }
 
   if (dawn_enable_webgpu_on_webgpu) {
@@ -878,7 +879,10 @@ source_set("white_box_tests_sources") {
     }
 
     if (is_android) {
-      sources += [ "white_box/SharedTextureMemoryTests_android.cpp" ]
+      sources += [
+        "white_box/SharedTextureMemoryTests_android.cpp",
+        "white_box/SharedTextureMemoryYCbCrAndroidTests.cpp",
+      ]
     }
 
     if (dawn_enable_error_injection) {
@@ -934,7 +938,7 @@ source_set("white_box_tests_sources") {
       "white_box/EGLImageWrappingTests.cpp",
       "white_box/GLTextureWrappingTests.cpp",
     ]
-    include_dirs = [ "//third_party/khronos" ]
+    include_dirs = [ "//third_party/EGL-Registry" ]
   }
 }
 

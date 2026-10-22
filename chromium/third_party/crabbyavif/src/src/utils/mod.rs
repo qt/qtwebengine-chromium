@@ -55,6 +55,72 @@ impl UFraction {
             _ => Ok(()),
         }
     }
+
+    #[cfg(feature = "jpeg")]
+    fn from_f64(v: f64, max_n: u32) -> Option<Self> {
+        if v.is_nan() || v < 0.0 || v > max_n as f64 {
+            return None;
+        }
+        let max_d = if v <= 1.0 { u32::MAX } else { (max_n as f64 / v).floor() as u32 };
+
+        // Find the best approximation of v as a fraction using continued fractions:
+        // https://en.wikipedia.org/wiki/Continued_fraction
+        let mut d = 1u32;
+        let mut prev_d = 0u32;
+        let mut current_v = v - v.floor();
+        // Most numbers should converge in less than ~20 iterations. The golden ratio is the worst
+        // case and takes 39 iterations.
+        for _ in 0..39 {
+            let n_double = d as f64 * v;
+            let n = n_double.round() as u32;
+            if (n_double - n as f64).abs() == 0.0 {
+                return Some(UFraction(n, d));
+            }
+            if current_v == 0.0 {
+                return Some(UFraction(n, d));
+            }
+            current_v = 1.0 / current_v;
+            let new_d = prev_d as f64 + current_v.floor() * d as f64;
+            if new_d > max_d as f64 {
+                return Some(UFraction(n, d));
+            }
+            prev_d = d;
+            d = new_d as u32;
+            current_v -= current_v.floor();
+        }
+        let n = (d as f64 * v).round() as u32;
+        Some(UFraction(n, d))
+    }
+}
+
+#[cfg(feature = "jpeg")]
+impl From<f32> for UFraction {
+    fn from(v: f32) -> Self {
+        UFraction::from_f64(v as f64, u32::MAX).unwrap_or_default()
+    }
+}
+
+#[cfg(feature = "jpeg")]
+impl From<f64> for UFraction {
+    fn from(v: f64) -> Self {
+        UFraction::from_f64(v, u32::MAX).unwrap_or_default()
+    }
+}
+
+#[cfg(feature = "jpeg")]
+impl From<f64> for Fraction {
+    fn from(v: f64) -> Self {
+        match UFraction::from_f64(v.abs(), i32::MAX as u32) {
+            Some(uf) => {
+                let mut n = uf.0 as i32;
+                if v < 0.0 {
+                    n *= -1;
+                }
+                Fraction(n, uf.1)
+            }
+            None => Fraction::default(),
+        }
+    }
 }
 
 // 'clap' fractions do not follow this pattern: both numerators and denominators
