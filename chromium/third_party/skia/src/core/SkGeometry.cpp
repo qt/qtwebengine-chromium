@@ -1482,9 +1482,6 @@ bool SkConic::asQuadTol(SkScalar tol) const {
     return (x * x + y * y) <= tol * tol;
 }
 
-// Limit the number of suggested quads to approximate a conic
-#define kMaxConicToQuadPOW2     5
-
 int SkConic::computeQuadPOW2(SkScalar tol) const {
     if (tol < 0 || !SkIsFinite(tol) || !SkPointPriv::AreFinite(fPts, 3)) {
         return 0;
