@@ -1270,6 +1270,13 @@
       status: "experimental",
     },
     {
+      // Killswitch for preventing cross-origin relatedTarget on boundary
+      // events.
+      // https://issues.chromium.org/issues/574379564
+      name: "ClearCrossOriginRelatedTarget",
+      status: "stable",
+    },
+    {
       name: "CSSCustomMedia",
       status: "test",
     },
