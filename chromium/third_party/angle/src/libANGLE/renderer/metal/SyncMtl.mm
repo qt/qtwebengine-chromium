@@ -157,6 +157,7 @@ class EventSyncImpl : public SyncImpl
         ANGLE_MTL_OBJC_SCOPE
         {
             mMetalEvent = contextMtl->getMetalDevice().newEvent();
+            ANGLE_CHECK(contextMtl, mMetalEvent, "Failed to create MTLEvent.", GL_OUT_OF_MEMORY);
         }
 
         mEncodedCommandBufferSerial = contextMtl->queueEventSignal(mMetalEvent, kEventSignalValue);
@@ -347,6 +348,11 @@ egl::Error EGLSyncMtl::initialize(const egl::Display *display,
             if (!mSharedEvent)
             {
                 mSharedEvent = contextMtl->getMetalDevice().newSharedEvent();
+                if (!mSharedEvent)
+                {
+                    return egl::Error(EGL_BAD_ALLOC,
+                                      "eglCreateSyncKHR failed to create MTLSharedEvent");
+                }
             }
 
             uint64_t signalValue = 0;
