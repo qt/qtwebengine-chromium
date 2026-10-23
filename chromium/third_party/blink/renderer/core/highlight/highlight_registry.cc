@@ -362,7 +362,7 @@ HeapVector<Member<HighlightHitResult>> HighlightRegistry::highlightsFromPoint(
     CHECK(highlights_iterator != highlights_.end());
     Highlight* highlight = highlights_iterator->Get()->highlight;
     HeapVector<Member<AbstractRange>> highlight_ranges_hit;
-    for (auto& abstract_range : highlight->GetRanges()) {
+    for (AbstractRange* abstract_range : highlight->GetRanges()) {
       // If the range starts and ends in a different tree scope than the hit
       // node (i.e., the range encloses a shadow tree), do not return it when
       // the hit is on a node inside that shadow tree. Only consider ranges
