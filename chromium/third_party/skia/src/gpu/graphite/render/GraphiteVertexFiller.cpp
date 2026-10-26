@@ -59,7 +59,8 @@ using Rect = skgpu::graphite::Rect;
 using Transform = skgpu::graphite::Transform;
 
 std::tuple<Rect, Transform> VertexFiller::boundsAndDeviceMatrix(const Transform& localToDevice,
-                                                                SkPoint drawOrigin) const {
+                                                                SkPoint drawOrigin,
+                                                                bool supportBilerpAtlas) const {
     // The baked-in matrix differs from the current localToDevice by a translation if the
     // upper 2x2 remains the same, and there's no perspective. Since there's no projection,
     // Z is irrelevant, so it's okay that fCreationMatrix is an SkMatrix and has
@@ -83,6 +84,13 @@ std::tuple<Rect, Transform> VertexFiller::boundsAndDeviceMatrix(const Transform&
                     Transform(SkM44::Translate(SkScalarRoundToInt(offset.x),
                                                SkScalarRoundToInt(offset.y)))};
         }
+    }
+
+    if (fCanDrawDirect && !supportBilerpAtlas) {
+        // Direct-mask glyphs have no padding in the atlas when atlas bilerp is unsupported.
+        // Drawing with a fractional translation or non-identical matrix causes sampling
+        // outside the glyph's atlas bounds, leaking neighboring atlas texels.
+        return {Rect(SkRect::MakeEmpty()), Transform::Identity()};
     }
 
     // Otherwise compute the relative transformation from fCreationMatrix to

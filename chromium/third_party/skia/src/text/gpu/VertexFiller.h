@@ -93,7 +93,9 @@ public:
                           SkScalar depth) const;
 
     std::tuple<skgpu::graphite::Rect, skgpu::graphite::Transform> boundsAndDeviceMatrix(
-            const skgpu::graphite::Transform& localToDevice, SkPoint drawOrigin) const;
+            const skgpu::graphite::Transform& localToDevice,
+            SkPoint drawOrigin,
+            bool supportBilerpAtlas = true) const;
 
     // Return true if the positionMatrix represents an integer translation. Return the device
     // bounding box of all the glyphs. If the bounding box is empty, then something went singular

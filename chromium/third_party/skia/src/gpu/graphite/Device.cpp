@@ -1324,7 +1324,12 @@ void Device::drawAtlasSubRun(const sktext::gpu::AtlasSubRun* subRun,
         }
         if (glyphsRegenerated) {
             auto [bounds, localToDevice] = subRun->vertexFiller().boundsAndDeviceMatrix(
-                                                   this->localToDeviceTransform(), drawOrigin);
+                    this->localToDeviceTransform(), drawOrigin,
+                    fRecorder->priv().caps()->supportBilerpFromGlyphAtlas());
+
+            if (bounds.isEmptyNegativeOrNaN()) {
+                return;
+            }
             SkPaint subRunPaint = paint;
             // For color emoji, shaders don't affect the final color
             if (subRun->maskFormat() == skgpu::MaskFormat::kARGB) {
@@ -2222,6 +2227,10 @@ sk_sp<sktext::gpu::Slug> Device::convertGlyphRunListToSlug(const sktext::GlyphRu
 
 void Device::drawSlug(SkCanvas* canvas, const sktext::gpu::Slug* slug, const SkPaint& paint) {
     auto slugImpl = static_cast<const sktext::gpu::SlugImpl*>(slug);
+    if (!slugImpl->canDraw(this->localToDevice(),
+                           fRecorder->priv().caps()->supportBilerpFromGlyphAtlas())) {
+        return;
+    }
     slugImpl->subRuns()->draw(canvas, slugImpl->origin(), paint, slugImpl, this->atlasDelegate());
 }
 
