@@ -649,7 +649,7 @@ std::optional<ui::Cursor> EventHandler::SelectCursor(
                                  kRespectImageOrientation);
 
       float scale = style_image->ImageScaleFactor();
-      Image* image = style_image->CachedImage()->GetImage();
+      scoped_refptr<Image> image = style_image->CachedImage()->GetImage();
       if (image->IsSVGImage()) {
         // `StyleImage::ImageSize` does not take `StyleImage::ImageScaleFactor`
         // into account when computing the size for SVG images.
@@ -668,19 +668,17 @@ std::optional<ui::Cursor> EventHandler::SelectCursor(
       // If the image is an SVG, then adjust the scale to reflect the device
       // scale factor so that the SVG can be rasterized in the native
       // resolution and scaled down to the correct size for the cursor.
-      scoped_refptr<Image> svg_image_holder;
-      if (auto* svg_image = DynamicTo<SVGImage>(image)) {
+      if (auto* svg_image = DynamicTo<SVGImage>(image.get())) {
         scale *= device_scale_factor;
         // Re-scale back from DIP to device pixels.
         size.Scale(scale);
 
         // TODO(fs): Should pass proper URL. Use StyleImage::GetImage.
-        svg_image_holder = SVGImageForContainer::Create(
+        image = SVGImageForContainer::Create(
             *svg_image, size, device_scale_factor, nullptr,
             frame_->GetDocument()
                 ->GetStyleEngine()
                 .ResolveColorSchemeForEmbedding(&style));
-        image = svg_image_holder.get();
       }
 
       // Convert from DIP to physical pixels.

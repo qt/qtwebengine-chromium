@@ -341,7 +341,7 @@ gfx::Rect WebElement::VisibleBoundsInWidget() const {
 }
 
 SkBitmap WebElement::ImageContents() {
-  Image* image = GetImage();
+  scoped_refptr<Image> image = GetImage();
   if (!image)
     return {};
   return image->AsSkBitmapForCurrentFrame(kRespectImageOrientation);
